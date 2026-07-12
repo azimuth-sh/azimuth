@@ -121,7 +121,7 @@ Derive the derivable; hand-hold only judgment.
 | Tool | Does |
 |---|---|
 | [`rtm`](./rtm) | reads specs + tags → the traceability matrix, exits non-zero on holes |
-| `code-map` | *(next)* generates the structural half of the code-map from code + `realizes` |
+| [`code-map`](./rtm) | reads `realizes` tags → the derivable half of a code-map (per site, what it realizes) |
 
 Both are single Rust binaries — logic lives once, language wrappers stay thin (the pattern of
 ruff, biome, uv). Tags are read from a **language-neutral manifest** each codebase emits, or from
