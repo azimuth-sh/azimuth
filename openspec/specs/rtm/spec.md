@@ -1,0 +1,76 @@
+# rtm Specification
+
+## Purpose
+The traceability-matrix generator, specified in its own format so it validates itself: `rtm` run
+on this spec and its own tagged source reports no holes.
+
+_spec-id: azimuth-rtm_
+
+## Requirements
+
+### Requirement: Generate the traceability matrix
+
+The generator SHALL read a spec's scenarios, the `covers` tags on tests, and the `realizes` tags
+on code, and produce, for each scenario, its realizing code sites and covering tests, keyed by
+the (spec-id, req-id, scenario-id) triple.
+
+_req-id: generate_
+
+#### Scenario: A covered and realized scenario lists both columns
+
+_scenario-id: covered-and-realized-lists-both • form: example_
+
+- **WHEN** a scenario has both a `realizes` tag and a `covers` tag for its triple
+- **THEN** the matrix lists that scenario with its code site and its test, and reports no hole for it
+
+### Requirement: Flag an uncovered scenario
+
+The generator SHALL flag a scenario that no `covers` tag covers.
+
+_req-id: flag-uncovered_
+
+#### Scenario: A scenario with no covering test is flagged uncovered
+
+_scenario-id: second-scenario-uncovered • form: example_
+
+- **WHEN** a scenario has no `covers` tag
+- **THEN** it is reported as an uncovered hole
+
+### Requirement: Flag an unrealized scenario
+
+The generator SHALL flag a scenario that no `realizes` tag realizes.
+
+_req-id: flag-unrealized_
+
+#### Scenario: A scenario with no realizing code is flagged unrealized
+
+_scenario-id: tested-but-unrealized • form: example_
+
+- **WHEN** a scenario has a `covers` tag but no `realizes` tag
+- **THEN** it is reported as an unrealized hole
+
+### Requirement: Flag a scenario missing its required form
+
+The generator SHALL flag a scenario whose covering tags do not include its required form.
+
+_req-id: flag-wrong-form_
+
+#### Scenario: A completeness scenario covered only by an example is flagged
+
+_scenario-id: completeness-only-example • form: example_
+
+- **WHEN** a scenario requires the completeness form but its only covering tag is an example
+- **THEN** it is reported as a wrong-form hole
+
+### Requirement: Flag a dangling tag
+
+The generator SHALL flag a `covers` tag whose triple matches no scenario.
+
+_req-id: flag-dangling_
+
+#### Scenario: A tag for an unknown scenario is flagged dangling
+
+_scenario-id: unknown-scenario-dangling • form: example_
+
+- **WHEN** a `covers` tag references a triple that no scenario declares
+- **THEN** it is reported as a dangling tag

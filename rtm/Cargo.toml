@@ -1,0 +1,14 @@
+[package]
+name = "azimuth-rtm"
+version = "0.0.1"
+edition = "2021"
+description = "Generate a requirements-traceability matrix from openspec specs and linkage tags, and flag its holes."
+license = "MIT"
+
+[[bin]]
+name = "rtm"
+path = "src/main.rs"
+
+[lib]
+name = "azimuth_rtm"
+path = "src/lib.rs"
