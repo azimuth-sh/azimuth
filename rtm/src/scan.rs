@@ -26,7 +26,10 @@ fn walk(path: &Path, tags: &mut Vec<Tag>, realizations: &mut Vec<Realization>) {
                 walk(&entry.path(), tags, realizations);
             }
         }
-    } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+    } else if matches!(
+        path.extension().and_then(|ext| ext.to_str()),
+        Some("rs" | "cs" | "ts" | "tsx")
+    ) {
         if let Ok(text) = std::fs::read_to_string(path) {
             scan_text(&text, tags, realizations);
         }
@@ -86,23 +89,46 @@ fn key(spec: &str, req: &str, scenario: &str) -> Key {
     }
 }
 
-/// The name of the first `fn`/`struct`/`enum` at or after the marker — the tagged site.
+/// The name of the declared item at or after the marker — the tagged site. Recognises a keyword
+/// declaration (`fn`/`struct`/`enum`/`class`/`function`/`def`, across Rust, C#, TS, Python) or,
+/// failing that, a method-style `Name(` — enough to name sites in several languages.
 fn item_after(lines: &[&str], from: usize) -> String {
     for line in lines.iter().skip(from + 1).take(8) {
-        for keyword in ["fn ", "struct ", "enum "] {
+        for keyword in ["fn ", "struct ", "enum ", "class ", "function ", "def "] {
             if let Some(pos) = line.find(keyword) {
-                let rest = &line[pos + keyword.len()..];
-                let name: String = rest
-                    .chars()
-                    .take_while(|c| c.is_alphanumeric() || *c == '_')
-                    .collect();
-                if !name.is_empty() {
+                if let Some(name) = ident(&line[pos + keyword.len()..]) {
                     return name;
                 }
             }
         }
+        if let Some(name) = method_name(line) {
+            return name;
+        }
     }
     "unknown".to_string()
+}
+
+fn ident(text: &str) -> Option<String> {
+    let name: String = text
+        .trim_start()
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
+    (!name.is_empty()).then_some(name)
+}
+
+/// The identifier immediately before the first `(` — a method/function declaration or call, used
+/// for languages (C#) whose method declarations have no leading keyword.
+fn method_name(line: &str) -> Option<String> {
+    let open = line.find('(')?;
+    let before: String = line[..open]
+        .chars()
+        .rev()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
+    let name: String = before.chars().rev().collect();
+    (!name.is_empty() && name.chars().next().is_some_and(|c| c.is_alphabetic() || c == '_'))
+        .then_some(name)
 }
 
 #[cfg(test)]
