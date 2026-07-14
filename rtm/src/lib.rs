@@ -5,6 +5,7 @@
 
 use std::fmt;
 
+pub mod manifest;
 pub mod scan;
 pub mod spec;
 

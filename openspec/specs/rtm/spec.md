@@ -75,3 +75,17 @@ _scenario-id: unknown-scenario-dangling • scope: unit • quant: example_
 
 - **WHEN** a `covers` tag references a triple that no scenario declares
 - **THEN** it is reported as a dangling tag
+
+### Requirement: Ingest a language-neutral manifest
+
+The generator SHALL read `realizes` and `covers` tags from a `*.manifest.json` a codebase emits,
+equivalently to scanning source comments, so the method is polyglot.
+
+_req-id: ingest-manifest_
+
+#### Scenario: A manifest's realizes and covers entries enter the matrix
+
+_scenario-id: manifest-entries-ingested • scope: unit • quant: example_
+
+- **WHEN** a manifest lists a `realizes` entry and a `covers` entry for a scenario
+- **THEN** `rtm` builds the matrix from them as it would from scanned comment tags

@@ -1,14 +1,15 @@
-//! `rtm <spec-dir> <source-root>...` — parse every spec under the spec dir, scan the source roots
-//! for `covers`/`realizes` tags, print the matrix, and exit non-zero if it has holes.
+//! `rtm <spec-dir> <source-or-manifest>...` — parse every spec under the spec dir, then for each
+//! remaining argument either read a `*.json` linkage manifest or scan a source root for
+//! `covers`/`realizes` comment tags, print the matrix, and exit non-zero if it has holes.
 
-use azimuth_rtm::{build, scan, spec, Matrix, Scenario};
+use azimuth_rtm::{build, manifest, scan, spec, Matrix, Scenario};
 use std::path::Path;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() < 2 {
-        eprintln!("usage: rtm <spec-dir> <source-root>...");
+        eprintln!("usage: rtm <spec-dir> <source-or-manifest>...");
         return ExitCode::from(64);
     }
 
@@ -16,10 +17,10 @@ fn main() -> ExitCode {
 
     let mut tags = Vec::new();
     let mut realizations = Vec::new();
-    for root in &args[1..] {
-        let (mut file_tags, mut file_realizations) = scan::scan_dir(root);
-        tags.append(&mut file_tags);
-        realizations.append(&mut file_realizations);
+    for source in &args[1..] {
+        let (mut source_tags, mut source_realizations) = read_source(source);
+        tags.append(&mut source_tags);
+        realizations.append(&mut source_realizations);
     }
 
     let matrix = build(&scenarios, &tags, &realizations);
@@ -29,6 +30,16 @@ fn main() -> ExitCode {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
+    }
+}
+
+/// A `.json` argument is a linkage manifest; anything else is a source root to scan for comment
+/// tags. Both feed the same tag/realization streams, so a run can mix manifests and scanned source.
+fn read_source(source: &str) -> (Vec<azimuth_rtm::Tag>, Vec<azimuth_rtm::Realization>) {
+    if Path::new(source).extension().and_then(|ext| ext.to_str()) == Some("json") {
+        manifest::read_manifest(Path::new(source))
+    } else {
+        scan::scan_dir(source)
     }
 }
 
