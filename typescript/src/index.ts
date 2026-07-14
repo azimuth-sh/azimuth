@@ -7,6 +7,7 @@ export type {
   EmitOutput,
   Manifest,
   RealizesEntry,
+  ScanOptions,
   ScanResult,
   ScanWarning,
   UntracedTestEntry,

@@ -46,25 +46,47 @@ test('emits realizes + covers from the sample fixture with resolved sites and fo
   assert.equal(unpublished.oracle, undefined);
 });
 
-test('emits an untraced_tests entry for a bare test in a tracing file, but not the opted-out one', () => {
-  const { manifest } = emit({ root: fixturesDir, include: ['sample.ts'] });
+test('emits untraced_tests only for files under a traced root', () => {
+  const { manifest } = emit({
+    root: fixturesDir,
+    include: ['sample.ts'],
+    tracedRoots: ['sample.ts'],
+  });
 
   assert.deepEqual(manifest.untraced_tests, [
     { site: 'seeds fixtures before the suite', file: 'sample.ts' },
   ]);
 });
 
-test('flags a bare test but not one carrying covers or untraced', () => {
+test('emits no untraced_tests when no traced root is given', () => {
+  const { manifest } = emit({ root: fixturesDir, include: ['sample.ts'] });
+  assert.deepEqual(manifest.untraced_tests, []);
+});
+
+test('flags a bare test but not one carrying covers or untraced (under a traced root)', () => {
   const text = [
     "test('revoked is hidden', () => { covers('c', 'revoke', 'hides', 'component', 'invariant'); });",
     "test('seeds fixtures', () => {});",
     "test('setup only', () => { untraced('harness'); });",
   ].join('\n');
-  const { untraced: entries } = scanText(text, 'revoke.test.ts');
+  const { untraced: entries } = scanText(text, 'revoke.test.ts', { traced: true });
   assert.deepEqual(entries, [{ site: 'seeds fixtures', file: 'revoke.test.ts' }]);
 });
 
-test('does not flag tests in a file that does not participate in tracing', () => {
+test('flags bare tests in an entirely untagged file under a traced root', () => {
+  // The case the covers-gated rule missed: a whole file with no covers at all, inside a traced area.
+  const text = [
+    "test('seeds fixtures', () => {});",
+    "test('runs the flow', () => {});",
+  ].join('\n');
+  const { untraced: entries } = scanText(text, 'untagged.test.ts', { traced: true });
+  assert.deepEqual(entries, [
+    { site: 'seeds fixtures', file: 'untagged.test.ts' },
+    { site: 'runs the flow', file: 'untagged.test.ts' },
+  ]);
+});
+
+test('does not flag tests in a file outside every traced root', () => {
   const text = "test('unrelated', () => {});";
   const { untraced: entries } = scanText(text, 'plain.test.ts');
   assert.deepEqual(entries, []);
@@ -77,7 +99,7 @@ test('finds the untraced test nested inside a describe block', () => {
     "  test('seeds', () => {});",
     '});',
   ].join('\n');
-  const { untraced: entries } = scanText(text, 'grouped.test.ts');
+  const { untraced: entries } = scanText(text, 'grouped.test.ts', { traced: true });
   assert.deepEqual(entries, [{ site: 'seeds', file: 'grouped.test.ts' }]);
 });
 

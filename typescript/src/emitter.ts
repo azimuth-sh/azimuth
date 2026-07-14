@@ -62,7 +62,12 @@ const TEST_CASES: readonly string[] = ['test', 'it'];
  * Scan one source file's text for marker calls. `file` is the path recorded in the manifest (already
  * made relative to the codebase root by the caller); `sourcePath` is only used to key the AST.
  */
-export function scanText(text: string, file: string): ScanResult {
+export interface ScanOptions {
+  /** Whether this file sits under a traced root — only then is it held to the untraced-test check. */
+  traced?: boolean;
+}
+
+export function scanText(text: string, file: string, options: ScanOptions = {}): ScanResult {
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, scriptKindOf(file));
   const result: ScanResult = { realizes: [], covers: [], untraced: [], warnings: [] };
 
@@ -79,9 +84,10 @@ export function scanText(text: string, file: string): ScanResult {
   };
   visit(source);
 
-  // Scope rule: only a file that participates in tracing (≥1 covers) is held to the untraced-test
-  // check — the TS analog of a C# class that opts into tracing.
-  if (result.covers.length > 0) {
+  // Area scope: a file is held to the untraced-test check only when it sits under an opt-in traced
+  // root. This catches whole untagged test files inside a traced area and never touches files
+  // outside the declared roots — the TS analog of a C# namespace-prefixed traced root.
+  if (options.traced) {
     collectUntraced(source, file, result);
   }
 
@@ -257,6 +263,8 @@ function scriptKindOf(file: string): ts.ScriptKind {
 export interface EmitOptions {
   root: string;
   include: string[];
+  /** Path globs (under `root`) of the opt-in traced areas held to the untraced-test check. */
+  tracedRoots?: string[];
 }
 
 export interface EmitOutput {
@@ -273,6 +281,12 @@ export function emit(options: EmitOptions): EmitOutput {
     .readDirectory(root, ['.ts', '.tsx'], undefined, include)
     .filter((file) => !file.endsWith('.d.ts'));
 
+  const tracedGlobs = options.tracedRoots ?? [];
+  const tracedFiles =
+    tracedGlobs.length > 0
+      ? new Set(ts.sys.readDirectory(root, ['.ts', '.tsx'], undefined, tracedGlobs))
+      : new Set<string>();
+
   const manifest: Manifest = { realizes: [], covers: [], untraced_tests: [] };
   const warnings: ScanWarning[] = [];
   const scanned: string[] = [];
@@ -280,7 +294,7 @@ export function emit(options: EmitOptions): EmitOutput {
   for (const absolute of files) {
     const relative = path.relative(root, absolute).split(path.sep).join('/');
     const text = fs.readFileSync(absolute, 'utf8');
-    const result = scanText(text, relative);
+    const result = scanText(text, relative, { traced: tracedFiles.has(absolute) });
     manifest.realizes.push(...result.realizes);
     manifest.covers.push(...result.covers);
     manifest.untraced_tests.push(...result.untraced);
