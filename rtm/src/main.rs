@@ -107,8 +107,8 @@ fn read_source(source: &str) -> (Vec<Tag>, Vec<Realization>, Vec<UntracedTest>) 
     if Path::new(source).extension().and_then(|ext| ext.to_str()) == Some("json") {
         manifest::read_manifest(Path::new(source))
     } else {
-        // The comment scanner cannot see class participation, so it emits no untraced tests — that
-        // check rides on the polyglot manifest path (the C#/TS emitters), not the source scan.
+        // The comment scanner cannot see traced-root membership, so it emits no untraced tests —
+        // that check rides on the polyglot manifest path (the C#/TS emitters), not the source scan.
         let (tags, realizations) = scan::scan_dir(source);
         (tags, realizations, Vec::new())
     }

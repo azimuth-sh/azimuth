@@ -133,19 +133,20 @@ _scenario-id: upholds-undeclared-invariant-dangles • scope: unit • quant: ex
 
 ### Requirement: Flag an untraced test
 
-The generator SHALL flag every test a manifest reports as untraced — a test in a class that
-participates in tracing (has ≥1 `covers`) yet declares no scenario and is not explicitly opted out
-— so a test that exercises behavior the spec never named cannot stay invisible. This is the dual of
-an uncovered scenario: the RTM asks whether every scenario has a test; this asks whether every test
-in a tracing class declares a scenario.
+The generator SHALL flag every test a manifest reports as untraced — a test under a traced root (an
+opt-in area, e.g. a namespace prefix or path glob) that declares no scenario and is not explicitly
+opted out — so a test that exercises behavior the spec never named cannot stay invisible. This is
+the dual of an uncovered scenario: the RTM asks whether every scenario has a test; this asks whether
+every test in a traced area declares a scenario. Because the area is opt-in, this also catches whole
+untagged test files inside it, and never flags anything outside the declared roots.
 
 _req-id: flag-untraced-test_
 
-#### Scenario: A test in a traced class with no scenario is flagged untraced
+#### Scenario: A test under a traced root with no scenario is flagged untraced
 
 _scenario-id: traced-test-without-scenario-untraced • scope: unit • quant: example_
 
-- **WHEN** a manifest reports an `untraced_tests` entry (a test in a tracing class carrying neither a `covers` nor an opt-out)
+- **WHEN** a manifest reports an `untraced_tests` entry (a test under a traced root carrying neither a `covers` nor an opt-out)
 - **THEN** it is reported as an untraced-test hole naming the test site
 
 ### Requirement: Scope a run to requested specs

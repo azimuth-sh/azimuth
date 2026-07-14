@@ -177,10 +177,10 @@ pub struct Realization {
     pub site: String,
 }
 
-/// A test the emitter reports as untraced: it lives in a class that participates in tracing (has
-/// ≥1 `covers`) yet declares no scenario and is not explicitly opted out. No key — it names no
-/// scenario; that absence *is* the defect. The scope rule (only tracing classes contribute) is
-/// applied at emission, so the core reports every entry a manifest carries.
+/// A test the emitter reports as untraced: it lives under a traced root (an opt-in area) yet
+/// declares no scenario and is not explicitly opted out. No key — it names no scenario; that
+/// absence *is* the defect. The area scope (only tests under a declared root contribute) is applied
+/// at emission, so the core reports every entry a manifest carries.
 #[derive(Debug, Clone)]
 pub struct UntracedTest {
     pub site: String,
@@ -208,9 +208,9 @@ pub enum HoleKind {
     DanglingUpholds {
         invariant_id: String,
     },
-    /// A test in a class that participates in tracing (has ≥1 `covers`) that declares no scenario —
-    /// the dual of an uncovered scenario. It may exercise behavior the spec never named, and without
-    /// this it stays invisible.
+    /// A test under a traced root (an opt-in area) that declares no scenario — the dual of an
+    /// uncovered scenario. It may exercise behavior the spec never named, and without this it stays
+    /// invisible.
     UntracedTest {
         site: String,
     },
@@ -360,7 +360,7 @@ pub fn build(
             },
             key: None,
             detail: format!(
-                "test '{}' ({}) is in a traced class but declares no scenario; add covers or [Untraced]",
+                "test '{}' ({}) is under a traced root but declares no scenario; add covers or [Untraced]",
                 test.site, test.file
             ),
         });
@@ -761,7 +761,7 @@ mod tests {
 
     #[test]
     // covers: azimuth-rtm flag-untraced-test traced-test-without-scenario-untraced unit example
-    fn an_untraced_test_in_a_traced_class_is_flagged() {
+    fn an_untraced_test_under_a_traced_root_is_flagged() {
         let matrix = build(&[], &[], &[], &[], &[untraced("RevokeTests.SeedsFixtures")]);
         assert_eq!(matrix.holes.len(), 1);
         assert!(matches!(
@@ -770,8 +770,9 @@ mod tests {
         ));
     }
 
-    // The opt-out (`[Untraced]`) and the scope rule (a class with zero `covers`) are applied at
-    // emission — both simply withhold the entry — so at the core they reduce to "no entry, no hole".
+    // The opt-out (`[Untraced]`) and the area scope (a test outside every traced root) are applied
+    // at emission — both simply withhold the entry — so at the core they reduce to "no entry, no
+    // hole".
     #[test]
     fn a_manifest_with_no_untraced_entries_adds_no_holes() {
         let matrix = build(
