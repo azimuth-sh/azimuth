@@ -46,6 +46,41 @@ test('emits realizes + covers from the sample fixture with resolved sites and fo
   assert.equal(unpublished.oracle, undefined);
 });
 
+test('emits an untraced_tests entry for a bare test in a tracing file, but not the opted-out one', () => {
+  const { manifest } = emit({ root: fixturesDir, include: ['sample.ts'] });
+
+  assert.deepEqual(manifest.untraced_tests, [
+    { site: 'seeds fixtures before the suite', file: 'sample.ts' },
+  ]);
+});
+
+test('flags a bare test but not one carrying covers or untraced', () => {
+  const text = [
+    "test('revoked is hidden', () => { covers('c', 'revoke', 'hides', 'component', 'invariant'); });",
+    "test('seeds fixtures', () => {});",
+    "test('setup only', () => { untraced('harness'); });",
+  ].join('\n');
+  const { untraced: entries } = scanText(text, 'revoke.test.ts');
+  assert.deepEqual(entries, [{ site: 'seeds fixtures', file: 'revoke.test.ts' }]);
+});
+
+test('does not flag tests in a file that does not participate in tracing', () => {
+  const text = "test('unrelated', () => {});";
+  const { untraced: entries } = scanText(text, 'plain.test.ts');
+  assert.deepEqual(entries, []);
+});
+
+test('finds the untraced test nested inside a describe block', () => {
+  const text = [
+    "describe('revoke', () => {",
+    "  test('is hidden', () => { covers('c', 'revoke', 'hides', 'component', 'invariant'); });",
+    "  test('seeds', () => {});",
+    '});',
+  ].join('\n');
+  const { untraced: entries } = scanText(text, 'grouped.test.ts');
+  assert.deepEqual(entries, [{ site: 'seeds', file: 'grouped.test.ts' }]);
+});
+
 test('the emitted manifest validates against the shared schema shape', () => {
   const { manifest } = emit({ root: fixturesDir, include: ['sample.ts'] });
   for (const entry of manifest.realizes) {

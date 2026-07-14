@@ -29,9 +29,16 @@ export interface CoversEntry extends RealizesEntry {
   oracle?: Oracle;
 }
 
+/** A test in a tracing file that declares no scenario and is not opted out — the dual of uncovered. */
+export interface UntracedTestEntry {
+  site: string;
+  file: string;
+}
+
 export interface Manifest {
   realizes: RealizesEntry[];
   covers: CoversEntry[];
+  untraced_tests: UntracedTestEntry[];
 }
 
 /** A marker call the scanner could not turn into a manifest entry, with why — surfaced by the CLI. */
@@ -44,8 +51,12 @@ export interface ScanWarning {
 export interface ScanResult {
   realizes: RealizesEntry[];
   covers: CoversEntry[];
+  untraced: UntracedTestEntry[];
   warnings: ScanWarning[];
 }
+
+/** The test-launcher calls that name a single test case (a `describe` groups, it is not a case). */
+const TEST_CASES: readonly string[] = ['test', 'it'];
 
 /**
  * Scan one source file's text for marker calls. `file` is the path recorded in the manifest (already
@@ -53,7 +64,7 @@ export interface ScanResult {
  */
 export function scanText(text: string, file: string): ScanResult {
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, scriptKindOf(file));
-  const result: ScanResult = { realizes: [], covers: [], warnings: [] };
+  const result: ScanResult = { realizes: [], covers: [], untraced: [], warnings: [] };
 
   const visit = (node: ts.Node): void => {
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
@@ -68,7 +79,64 @@ export function scanText(text: string, file: string): ScanResult {
   };
   visit(source);
 
+  // Scope rule: only a file that participates in tracing (≥1 covers) is held to the untraced-test
+  // check — the TS analog of a C# class that opts into tracing.
+  if (result.covers.length > 0) {
+    collectUntraced(source, file, result);
+  }
+
   return result;
+}
+
+/**
+ * Flag each test case in a tracing file whose body carries neither a `covers` (it traces a scenario)
+ * nor an `untraced` (a deliberate opt-out) marker — the dual of an uncovered scenario. A test case is
+ * a `test(...)`/`it(...)` call named by a string literal; a `describe` groups cases and is not one.
+ */
+function collectUntraced(source: ts.SourceFile, file: string, result: ScanResult): void {
+  const visit = (node: ts.Node): void => {
+    if (isTestCase(node)) {
+      const name = (node.arguments[0] as ts.StringLiteralLike).text;
+      if (!subtreeHasMarker(node, ['covers', 'untraced'])) {
+        result.untraced.push({ site: name, file });
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+}
+
+/** A `test('name', …)` / `it('name', …)` call — a single named test case. */
+function isTestCase(node: ts.Node): node is ts.CallExpression {
+  if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression)) {
+    return false;
+  }
+  if (!TEST_CASES.includes(node.expression.text)) {
+    return false;
+  }
+  const first = node.arguments[0];
+  return first !== undefined && ts.isStringLiteralLike(first);
+}
+
+/** Whether the node's subtree contains a call to any of the named markers. */
+function subtreeHasMarker(node: ts.Node, markers: readonly string[]): boolean {
+  let found = false;
+  const visit = (current: ts.Node): void => {
+    if (found) {
+      return;
+    }
+    if (
+      ts.isCallExpression(current) &&
+      ts.isIdentifier(current.expression) &&
+      markers.includes(current.expression.text)
+    ) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(current, visit);
+  };
+  ts.forEachChild(node, visit);
+  return found;
 }
 
 function collectRealizes(
@@ -205,7 +273,7 @@ export function emit(options: EmitOptions): EmitOutput {
     .readDirectory(root, ['.ts', '.tsx'], undefined, include)
     .filter((file) => !file.endsWith('.d.ts'));
 
-  const manifest: Manifest = { realizes: [], covers: [] };
+  const manifest: Manifest = { realizes: [], covers: [], untraced_tests: [] };
   const warnings: ScanWarning[] = [];
   const scanned: string[] = [];
 
@@ -215,14 +283,20 @@ export function emit(options: EmitOptions): EmitOutput {
     const result = scanText(text, relative);
     manifest.realizes.push(...result.realizes);
     manifest.covers.push(...result.covers);
+    manifest.untraced_tests.push(...result.untraced);
     warnings.push(...result.warnings);
     scanned.push(relative);
   }
 
   manifest.realizes.sort(compareRealizes);
   manifest.covers.sort(compareRealizes);
+  manifest.untraced_tests.sort(compareUntraced);
 
   return { manifest, warnings, files: scanned };
+}
+
+function compareUntraced(a: UntracedTestEntry, b: UntracedTestEntry): number {
+  return a.file.localeCompare(b.file) || a.site.localeCompare(b.site);
 }
 
 function compareRealizes(a: RealizesEntry, b: RealizesEntry): number {

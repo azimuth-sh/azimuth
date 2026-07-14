@@ -40,3 +40,13 @@ export function covers(
   void quantification;
   void oracle;
 }
+
+/**
+ * Opt a test out of tracing: it legitimately maps to no scenario (setup, infra, or smoke). The dual
+ * of an uncovered scenario, the untraced-test check holds every test in a *tracing file* (one with
+ * ≥1 `covers`) to carrying either a `covers` or this opt-out; a bare test declares behavior the spec
+ * never named. `reason` records why the opt-out is deliberate. At runtime it does nothing.
+ */
+export function untraced(reason: string): void {
+  void reason;
+}
