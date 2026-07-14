@@ -177,6 +177,16 @@ pub struct Realization {
     pub site: String,
 }
 
+/// A test the emitter reports as untraced: it lives in a class that participates in tracing (has
+/// ≥1 `covers`) yet declares no scenario and is not explicitly opted out. No key — it names no
+/// scenario; that absence *is* the defect. The scope rule (only tracing classes contribute) is
+/// applied at emission, so the core reports every entry a manifest carries.
+#[derive(Debug, Clone)]
+pub struct UntracedTest {
+    pub site: String,
+    pub file: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HoleKind {
     Uncovered,
@@ -197,6 +207,12 @@ pub enum HoleKind {
     /// A scenario that `upholds` an invariant no spec declares.
     DanglingUpholds {
         invariant_id: String,
+    },
+    /// A test in a class that participates in tracing (has ≥1 `covers`) that declares no scenario —
+    /// the dual of an uncovered scenario. It may exercise behavior the spec never named, and without
+    /// this it stays invisible.
+    UntracedTest {
+        site: String,
     },
 }
 
@@ -239,11 +255,13 @@ impl Matrix {
 // realizes: azimuth-rtm flag-invariant-breach exposure-without-guard-breaches
 // realizes: azimuth-rtm flag-dangling-invariant invariant-over-empty-class-dangles
 // realizes: azimuth-rtm flag-dangling-upholds upholds-undeclared-invariant-dangles
+// realizes: azimuth-rtm flag-untraced-test traced-test-without-scenario-untraced
 pub fn build(
     scenarios: &[Scenario],
     invariants: &[Invariant],
     tags: &[Tag],
     realizations: &[Realization],
+    untraced: &[UntracedTest],
 ) -> Matrix {
     let mut rows = Vec::new();
     let mut holes = Vec::new();
@@ -334,6 +352,19 @@ pub fn build(
     }
 
     check_invariants(scenarios, invariants, realizations, &mut holes);
+
+    for test in untraced {
+        holes.push(Hole {
+            kind: HoleKind::UntracedTest {
+                site: test.site.clone(),
+            },
+            key: None,
+            detail: format!(
+                "test '{}' ({}) is in a traced class but declares no scenario; add covers or [Untraced]",
+                test.site, test.file
+            ),
+        });
+    }
 
     Matrix { rows, holes }
 }
@@ -517,6 +548,7 @@ mod tests {
             &[],
             &[tag("runs", unit_example())],
             &[realization("runs")],
+            &[],
         );
         assert!(matrix.is_whole());
         assert_eq!(matrix.rows[0].covering_tags.len(), 1);
@@ -531,6 +563,7 @@ mod tests {
             &[],
             &[],
             &[realization("runs")],
+            &[],
         );
         assert_eq!(matrix.holes.len(), 1);
         assert_eq!(matrix.holes[0].kind, HoleKind::Uncovered);
@@ -543,6 +576,7 @@ mod tests {
             &[scenario("runs", unit_example())],
             &[],
             &[tag("runs", unit_example())],
+            &[],
             &[],
         );
         assert_eq!(matrix.holes.len(), 1);
@@ -557,6 +591,7 @@ mod tests {
             &[],
             &[tag("guarded", unit_example())],
             &[realization("guarded")],
+            &[],
         );
         assert_eq!(matrix.holes.len(), 1);
         assert_eq!(matrix.holes[0].kind, HoleKind::WrongForm);
@@ -569,6 +604,7 @@ mod tests {
             &[],
             &[tag("guarded", component_invariant())],
             &[realization("guarded")],
+            &[],
         );
         assert!(matrix.is_whole());
     }
@@ -583,6 +619,7 @@ mod tests {
             &[],
             &[tag("guarded", unit_example())],
             &[realization("guarded")],
+            &[],
         );
         assert_eq!(matrix.holes[0].kind, HoleKind::WrongForm);
     }
@@ -595,6 +632,7 @@ mod tests {
             &[],
             &[tag("runs", unit_example()), tag("ghost", unit_example())],
             &[realization("runs")],
+            &[],
         );
         assert_eq!(matrix.holes.len(), 1);
         assert_eq!(matrix.holes[0].kind, HoleKind::Dangling);
@@ -641,6 +679,7 @@ mod tests {
                 realization_at("detail-valid", "GetPublicCertificate"),
                 realization_at("detail-revoked-void", "GetPublicCertificate"),
             ],
+            &[],
         );
         assert!(matrix.is_whole(), "unexpected holes: {:?}", matrix.holes);
     }
@@ -666,6 +705,7 @@ mod tests {
                 realization_at("detail-revoked-void", "GetPublicCertificate"),
                 realization_at("sitemap-lists-public", "GetSitemap"),
             ],
+            &[],
         );
         let breaches: Vec<&Hole> = matrix
             .holes
@@ -683,6 +723,7 @@ mod tests {
         let matrix = build(
             &[],
             &[invariant("revoked-hidden", "public-cert", &[])],
+            &[],
             &[],
             &[],
         );
@@ -703,11 +744,44 @@ mod tests {
             &[],
             &[tag("guards-a-ghost", component_invariant())],
             &[realization("guards-a-ghost")],
+            &[],
         );
         assert!(matrix.holes.iter().any(|hole| matches!(
             &hole.kind,
             HoleKind::DanglingUpholds { invariant_id } if invariant_id == "no-such-invariant"
         )));
+    }
+
+    fn untraced(site: &str) -> UntracedTest {
+        UntracedTest {
+            site: site.into(),
+            file: "RevokeTests.cs".into(),
+        }
+    }
+
+    #[test]
+    // covers: azimuth-rtm flag-untraced-test traced-test-without-scenario-untraced unit example
+    fn an_untraced_test_in_a_traced_class_is_flagged() {
+        let matrix = build(&[], &[], &[], &[], &[untraced("RevokeTests.SeedsFixtures")]);
+        assert_eq!(matrix.holes.len(), 1);
+        assert!(matches!(
+            &matrix.holes[0].kind,
+            HoleKind::UntracedTest { site } if site == "RevokeTests.SeedsFixtures"
+        ));
+    }
+
+    // The opt-out (`[Untraced]`) and the scope rule (a class with zero `covers`) are applied at
+    // emission — both simply withhold the entry — so at the core they reduce to "no entry, no hole".
+    #[test]
+    fn a_manifest_with_no_untraced_entries_adds_no_holes() {
+        let matrix = build(
+            &[scenario("runs", unit_example())],
+            &[],
+            &[tag("runs", unit_example())],
+            &[realization("runs")],
+            &[],
+        );
+        assert!(matrix.is_whole());
     }
 
     #[test]

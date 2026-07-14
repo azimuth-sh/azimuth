@@ -131,6 +131,23 @@ _scenario-id: upholds-undeclared-invariant-dangles • scope: unit • quant: ex
 - **WHEN** a scenario carries `upholds: I` but no spec declares an invariant `I`
 - **THEN** it is reported as a dangling-upholds hole
 
+### Requirement: Flag an untraced test
+
+The generator SHALL flag every test a manifest reports as untraced — a test in a class that
+participates in tracing (has ≥1 `covers`) yet declares no scenario and is not explicitly opted out
+— so a test that exercises behavior the spec never named cannot stay invisible. This is the dual of
+an uncovered scenario: the RTM asks whether every scenario has a test; this asks whether every test
+in a tracing class declares a scenario.
+
+_req-id: flag-untraced-test_
+
+#### Scenario: A test in a traced class with no scenario is flagged untraced
+
+_scenario-id: traced-test-without-scenario-untraced • scope: unit • quant: example_
+
+- **WHEN** a manifest reports an `untraced_tests` entry (a test in a tracing class carrying neither a `covers` nor an opt-out)
+- **THEN** it is reported as an untraced-test hole naming the test site
+
 ### Requirement: Scope a run to requested specs
 
 The generator SHALL, given a `--only` set of spec-ids, narrow the matrix to those specs plus the

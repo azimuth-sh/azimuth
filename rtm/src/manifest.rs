@@ -3,23 +3,24 @@
 //! JSON (see `schema/manifest.schema.json`) and `rtm` ingests them the same as scanned comments.
 //! std-only: a tiny JSON reader lives in the `json` submodule so the tool builds offline.
 
-use crate::{Form, Key, Oracle, Quantification, Realization, Scope, Tag};
+use crate::{Form, Key, Oracle, Quantification, Realization, Scope, Tag, UntracedTest};
 use std::path::Path;
 
-pub fn read_manifest(path: &Path) -> (Vec<Tag>, Vec<Realization>) {
+pub fn read_manifest(path: &Path) -> (Vec<Tag>, Vec<Realization>, Vec<UntracedTest>) {
     match std::fs::read_to_string(path) {
         Ok(text) => parse_manifest(&text),
-        Err(_) => (Vec::new(), Vec::new()),
+        Err(_) => (Vec::new(), Vec::new(), Vec::new()),
     }
 }
 
 // realizes: azimuth-rtm ingest-manifest manifest-entries-ingested
-pub fn parse_manifest(text: &str) -> (Vec<Tag>, Vec<Realization>) {
+pub fn parse_manifest(text: &str) -> (Vec<Tag>, Vec<Realization>, Vec<UntracedTest>) {
     let mut tags = Vec::new();
     let mut realizations = Vec::new();
+    let mut untraced = Vec::new();
 
     let Some(root) = json::parse(text) else {
-        return (tags, realizations);
+        return (tags, realizations, untraced);
     };
 
     if let Some(items) = root.get("realizes").and_then(json::Value::as_array) {
@@ -28,8 +29,11 @@ pub fn parse_manifest(text: &str) -> (Vec<Tag>, Vec<Realization>) {
     if let Some(items) = root.get("covers").and_then(json::Value::as_array) {
         tags.extend(items.iter().filter_map(tag_of));
     }
+    if let Some(items) = root.get("untraced_tests").and_then(json::Value::as_array) {
+        untraced.extend(items.iter().filter_map(untraced_of));
+    }
 
-    (tags, realizations)
+    (tags, realizations, untraced)
 }
 
 fn key_of(item: &json::Value) -> Option<Key> {
@@ -51,6 +55,17 @@ fn realization_of(item: &json::Value) -> Option<Realization> {
     Some(Realization {
         key: key_of(item)?,
         site: site_of(item),
+    })
+}
+
+fn untraced_of(item: &json::Value) -> Option<UntracedTest> {
+    Some(UntracedTest {
+        site: item.get("site")?.as_str()?.to_string(),
+        file: item
+            .get("file")
+            .and_then(json::Value::as_str)
+            .unwrap_or("unknown")
+            .to_string(),
     })
 }
 
@@ -289,7 +304,7 @@ mod tests {
               "site": "DoThingTest", "file": "a.test.cs", "lang": "csharp" }
           ]
         }"#;
-        let (tags, realizations) = parse_manifest(text);
+        let (tags, realizations, _untraced) = parse_manifest(text);
         assert_eq!(realizations.len(), 1);
         assert_eq!(realizations[0].key.scenario_id, "it-works");
         assert_eq!(realizations[0].site, "DoThing");
@@ -303,23 +318,39 @@ mod tests {
     }
 
     #[test]
+    // covers: azimuth-rtm ingest-manifest manifest-entries-ingested unit example
+    fn ingests_untraced_test_entries() {
+        let text = r#"{
+          "untraced_tests": [
+            { "site": "RevokeTests.SeedsFixtures", "file": "RevokeTests.cs" }
+          ]
+        }"#;
+        let (_, _, untraced) = parse_manifest(text);
+        assert_eq!(untraced.len(), 1);
+        assert_eq!(untraced[0].site, "RevokeTests.SeedsFixtures");
+        assert_eq!(untraced[0].file, "RevokeTests.cs");
+    }
+
+    #[test]
     fn a_covers_entry_without_scope_or_quant_is_skipped() {
         let text = r#"{ "covers": [ { "spec": "d", "req": "r", "scenario": "s", "site": "T" } ] }"#;
-        let (tags, _) = parse_manifest(text);
+        let (tags, _, _) = parse_manifest(text);
         assert!(tags.is_empty());
     }
 
     #[test]
     fn a_malformed_manifest_is_treated_as_empty() {
-        let (tags, realizations) = parse_manifest("{ not json ");
+        let (tags, realizations, untraced) = parse_manifest("{ not json ");
         assert!(tags.is_empty());
         assert!(realizations.is_empty());
+        assert!(untraced.is_empty());
     }
 
     #[test]
     fn an_omitted_array_yields_nothing() {
-        let (tags, realizations) = parse_manifest(r#"{ "realizes": [] }"#);
+        let (tags, realizations, untraced) = parse_manifest(r#"{ "realizes": [] }"#);
         assert!(tags.is_empty());
         assert!(realizations.is_empty());
+        assert!(untraced.is_empty());
     }
 }

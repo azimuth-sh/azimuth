@@ -18,7 +18,7 @@ fn azimuth_rtm_regenerates_a_matrix_with_no_holes() {
 
     let (tags, realizations) = scan::scan_dir(&format!("{manifest}/src"));
 
-    let matrix = build(&parsed.scenarios, &parsed.invariants, &tags, &realizations);
+    let matrix = build(&parsed.scenarios, &parsed.invariants, &tags, &realizations, &[]);
 
     assert!(
         matrix.is_whole(),

@@ -8,7 +8,7 @@
 
 use azimuth_rtm::{
     build, manifest, scan, scope_closure, spec, HoleKind, Invariant, Matrix, ParsedSpec,
-    Realization, Scenario, Tag,
+    Realization, Scenario, Tag, UntracedTest,
 };
 use std::path::Path;
 use std::process::ExitCode;
@@ -26,16 +26,20 @@ fn main() -> ExitCode {
 
     let mut tags = Vec::new();
     let mut realizations = Vec::new();
+    let mut untraced = Vec::new();
     for source in &sources {
-        let (mut source_tags, mut source_realizations) = read_source(source);
+        let (mut source_tags, mut source_realizations, mut source_untraced) = read_source(source);
         tags.append(&mut source_tags);
         realizations.append(&mut source_realizations);
+        untraced.append(&mut source_untraced);
     }
 
     let (scenarios, invariants, tags, realizations) =
         apply_scope(parsed, tags, realizations, &only);
 
-    let matrix = build(&scenarios, &invariants, &tags, &realizations);
+    // Untraced tests carry no spec, so `--only` cannot scope them: a bare test in a traced class is
+    // a gap no matter which capability the gate targets. They are reported for every emitted manifest.
+    let matrix = build(&scenarios, &invariants, &tags, &realizations, &untraced);
     report(&matrix);
 
     if matrix.is_whole() {
@@ -99,11 +103,14 @@ fn apply_scope(
 
 /// A `.json` argument is a linkage manifest; anything else is a source root to scan for comment
 /// tags. Both feed the same tag/realization streams, so a run can mix manifests and scanned source.
-fn read_source(source: &str) -> (Vec<Tag>, Vec<Realization>) {
+fn read_source(source: &str) -> (Vec<Tag>, Vec<Realization>, Vec<UntracedTest>) {
     if Path::new(source).extension().and_then(|ext| ext.to_str()) == Some("json") {
         manifest::read_manifest(Path::new(source))
     } else {
-        scan::scan_dir(source)
+        // The comment scanner cannot see class participation, so it emits no untraced tests — that
+        // check rides on the polyglot manifest path (the C#/TS emitters), not the source scan.
+        let (tags, realizations) = scan::scan_dir(source);
+        (tags, realizations, Vec::new())
     }
 }
 
@@ -163,5 +170,6 @@ fn kind_label(kind: &HoleKind) -> &'static str {
         HoleKind::InvariantBreach { .. } => "invariant-breach",
         HoleKind::DanglingInvariant { .. } => "dangling-invariant",
         HoleKind::DanglingUpholds { .. } => "dangling-upholds",
+        HoleKind::UntracedTest { .. } => "untraced-test",
     }
 }
