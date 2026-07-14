@@ -15,6 +15,11 @@
       "type": "array",
       "description": "Tests that verify a scenario, each at a declared form.",
       "items": { "$ref": "#/$defs/coversEntry" }
+    },
+    "untraced_tests": {
+      "type": "array",
+      "description": "The dual of an uncovered scenario: test methods in a class that participates in tracing (has ≥1 covers) yet declare no scenario and are not explicitly opted out. Optional and back-compatible — an absent array means the emitter found none (or does not emit them).",
+      "items": { "$ref": "#/$defs/untracedTestEntry" }
     }
   },
   "$defs": {
@@ -69,6 +74,21 @@
       },
       "required": ["spec", "req", "scenario", "site", "file", "lang", "scope", "quantification"],
       "unevaluatedProperties": false
+    },
+    "untracedTestEntry": {
+      "type": "object",
+      "properties": {
+        "site": {
+          "type": "string",
+          "description": "The test method site (e.g. Type.Method) — the test that declares no scenario."
+        },
+        "file": {
+          "type": "string",
+          "description": "Source path of the test, relative to the emitting codebase root."
+        }
+      },
+      "required": ["site", "file"],
+      "additionalProperties": false
     }
   }
 }
