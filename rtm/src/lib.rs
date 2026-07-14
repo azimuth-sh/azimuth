@@ -129,12 +129,35 @@ pub struct Key {
     pub scenario_id: String,
 }
 
-/// A specified behavior: the coverage unit.
+/// A specified behavior: the coverage unit. `exposes`/`upholds` ride on the scenario (not on code
+/// tags): a site *realizing* an `exposes` scenario joins that surface class, and a site realizing
+/// an `upholds` scenario discharges that invariant there.
 #[derive(Debug, Clone)]
 pub struct Scenario {
     pub key: Key,
     pub required_form: Form,
     pub name: String,
+    pub exposes: Option<String>,
+    pub upholds: Option<String>,
+}
+
+/// A named cross-cutting invariant: a guarantee that must hold across every site in a surface
+/// class. Declared once in the owner spec (`## Invariant`). Neither requirement nor scenario — it
+/// binds a class of surfaces to a guard the tool demands at each of them.
+#[derive(Debug, Clone)]
+pub struct Invariant {
+    pub id: String,
+    pub over: String,
+    pub references: Vec<String>,
+    pub name: String,
+    pub spec_id: String,
+}
+
+/// A parsed spec's two authored artifacts: its scenarios and its invariant declarations.
+#[derive(Debug, Clone, Default)]
+pub struct ParsedSpec {
+    pub scenarios: Vec<Scenario>,
+    pub invariants: Vec<Invariant>,
 }
 
 /// A `covers` tag on a test: this test verifies that scenario, at this form. The `oracle` is a
@@ -154,19 +177,35 @@ pub struct Realization {
     pub site: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HoleKind {
     Uncovered,
     Unrealized,
     WrongForm,
     Dangling,
     DanglingRealization,
+    /// A site in an invariant's surface class that does not discharge the invariant — the leak the
+    /// per-scenario matrix cannot see (the scenario is realized elsewhere, so it looks covered).
+    InvariantBreach {
+        invariant_id: String,
+        site: String,
+    },
+    /// An invariant `over` a class with no exposure sites — nothing to guard (likely a typo).
+    DanglingInvariant {
+        invariant_id: String,
+    },
+    /// A scenario that `upholds` an invariant no spec declares.
+    DanglingUpholds {
+        invariant_id: String,
+    },
 }
 
+/// A defect in the matrix. `key` names the scenario for scenario-scoped holes; invariant-scoped
+/// holes carry their context in the `kind` instead and leave `key` empty.
 #[derive(Debug, Clone)]
 pub struct Hole {
     pub kind: HoleKind,
-    pub key: Key,
+    pub key: Option<Key>,
     pub detail: String,
 }
 
@@ -189,15 +228,23 @@ impl Matrix {
     }
 }
 
-/// The pure core: scenarios + realizations (code) + tags (tests) → the matrix and its holes.
-/// Two independent axes (realized? covered?); a hole per empty axis, so the cross-states fall out
-/// without double-reporting.
+/// The pure core: scenarios + invariants + realizations (code) + tags (tests) → the matrix and its
+/// holes. Two independent per-scenario axes (realized? covered?) plus a cross-cutting-invariant
+/// pass, so structural holes and leaked guarantees both fall out without double-reporting.
 // realizes: azimuth-rtm generate covered-and-realized-lists-both
 // realizes: azimuth-rtm flag-uncovered second-scenario-uncovered
 // realizes: azimuth-rtm flag-unrealized tested-but-unrealized
 // realizes: azimuth-rtm flag-wrong-form under-proven-on-either-axis
 // realizes: azimuth-rtm flag-dangling unknown-scenario-dangling
-pub fn build(scenarios: &[Scenario], tags: &[Tag], realizations: &[Realization]) -> Matrix {
+// realizes: azimuth-rtm flag-invariant-breach exposure-without-guard-breaches
+// realizes: azimuth-rtm flag-dangling-invariant invariant-over-empty-class-dangles
+// realizes: azimuth-rtm flag-dangling-upholds upholds-undeclared-invariant-dangles
+pub fn build(
+    scenarios: &[Scenario],
+    invariants: &[Invariant],
+    tags: &[Tag],
+    realizations: &[Realization],
+) -> Matrix {
     let mut rows = Vec::new();
     let mut holes = Vec::new();
 
@@ -216,7 +263,7 @@ pub fn build(scenarios: &[Scenario], tags: &[Tag], realizations: &[Realization])
         if realizing.is_empty() {
             holes.push(Hole {
                 kind: HoleKind::Unrealized,
-                key: scenario.key.clone(),
+                key: Some(scenario.key.clone()),
                 detail: format!("'{}' has no code realizing it", scenario.name),
             });
         }
@@ -224,7 +271,7 @@ pub fn build(scenarios: &[Scenario], tags: &[Tag], realizations: &[Realization])
         if covering.is_empty() {
             holes.push(Hole {
                 kind: HoleKind::Uncovered,
-                key: scenario.key.clone(),
+                key: Some(scenario.key.clone()),
                 detail: format!("'{}' has no covering test", scenario.name),
             });
         } else if !covering
@@ -233,7 +280,7 @@ pub fn build(scenarios: &[Scenario], tags: &[Tag], realizations: &[Realization])
         {
             holes.push(Hole {
                 kind: HoleKind::WrongForm,
-                key: scenario.key.clone(),
+                key: Some(scenario.key.clone()),
                 detail: format!(
                     "'{}' requires {} but is covered only by {}",
                     scenario.name,
@@ -261,7 +308,7 @@ pub fn build(scenarios: &[Scenario], tags: &[Tag], realizations: &[Realization])
         if !declared.contains(&tag.key) {
             holes.push(Hole {
                 kind: HoleKind::Dangling,
-                key: tag.key.clone(),
+                key: Some(tag.key.clone()),
                 detail: format!(
                     "'{}' covers ({}, {}, {}) which no scenario declares",
                     tag.site, tag.key.spec_id, tag.key.req_id, tag.key.scenario_id
@@ -274,7 +321,7 @@ pub fn build(scenarios: &[Scenario], tags: &[Tag], realizations: &[Realization])
         if !declared.contains(&realization.key) {
             holes.push(Hole {
                 kind: HoleKind::DanglingRealization,
-                key: realization.key.clone(),
+                key: Some(realization.key.clone()),
                 detail: format!(
                     "'{}' realizes ({}, {}, {}) which no scenario declares",
                     realization.site,
@@ -286,7 +333,130 @@ pub fn build(scenarios: &[Scenario], tags: &[Tag], realizations: &[Realization])
         }
     }
 
+    check_invariants(scenarios, invariants, realizations, &mut holes);
+
     Matrix { rows, holes }
+}
+
+/// The cross-cutting-invariant pass. A surface class is realization-defined: a site joins class `C`
+/// by realizing a scenario that `exposes: C`, and discharges invariant `I` by realizing a scenario
+/// that `upholds: I`. Every class member that does not discharge the invariant is a breach — the
+/// new-surface leak the per-scenario matrix cannot catch, since the guard scenario is realized
+/// somewhere else and the class looks covered.
+fn check_invariants(
+    scenarios: &[Scenario],
+    invariants: &[Invariant],
+    realizations: &[Realization],
+    holes: &mut Vec<Hole>,
+) {
+    use std::collections::{BTreeSet, HashSet};
+
+    let mut class_sites: std::collections::HashMap<&str, BTreeSet<String>> = Default::default();
+    let mut upheld: std::collections::HashMap<&str, HashSet<String>> = Default::default();
+
+    for scenario in scenarios {
+        let sites: Vec<String> = realizations
+            .iter()
+            .filter(|realization| realization.key == scenario.key)
+            .map(|realization| realization.site.clone())
+            .collect();
+        if let Some(class) = &scenario.exposes {
+            class_sites
+                .entry(class)
+                .or_default()
+                .extend(sites.iter().cloned());
+        }
+        if let Some(invariant) = &scenario.upholds {
+            upheld
+                .entry(invariant)
+                .or_default()
+                .extend(sites.iter().cloned());
+        }
+    }
+
+    let declared: HashSet<&str> = invariants
+        .iter()
+        .map(|invariant| invariant.id.as_str())
+        .collect();
+
+    let mut reported_dangling: BTreeSet<&str> = BTreeSet::new();
+    for scenario in scenarios {
+        if let Some(invariant) = &scenario.upholds {
+            if !declared.contains(invariant.as_str()) && reported_dangling.insert(invariant) {
+                holes.push(Hole {
+                    kind: HoleKind::DanglingUpholds {
+                        invariant_id: invariant.clone(),
+                    },
+                    key: None,
+                    detail: format!(
+                        "'{}' upholds '{}' which no spec declares as an invariant",
+                        scenario.name, invariant
+                    ),
+                });
+            }
+        }
+    }
+
+    for invariant in invariants {
+        let sites = class_sites.get(invariant.over.as_str());
+        let guarded = upheld.get(invariant.id.as_str());
+
+        match sites {
+            None => holes.push(Hole {
+                kind: HoleKind::DanglingInvariant {
+                    invariant_id: invariant.id.clone(),
+                },
+                key: None,
+                detail: format!(
+                    "invariant '{}' is over class '{}' which no exposure scenario realizes",
+                    invariant.id, invariant.over
+                ),
+            }),
+            Some(sites) => {
+                for site in sites {
+                    if !guarded.is_some_and(|guarded| guarded.contains(site)) {
+                        holes.push(Hole {
+                            kind: HoleKind::InvariantBreach {
+                                invariant_id: invariant.id.clone(),
+                                site: site.clone(),
+                            },
+                            key: None,
+                            detail: format!(
+                                "'{}' realizes an 'exposes: {}' scenario but discharges no 'upholds: {}' guard",
+                                site, invariant.over, invariant.id
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The set of spec-ids in scope for a `--only` run: the requested specs plus the transitive
+/// `references` closure of every invariant declared in an in-scope spec. Load-bearing — an
+/// invariant's referenced capability must enter scope so its exposure sites join the class and a
+/// leak there is visible; without it the leak surface is out of scope and invisible.
+// realizes: azimuth-rtm scope-to-requested-specs references-closure-pulls-referenced
+pub fn scope_closure(
+    requested: &[String],
+    invariants: &[Invariant],
+) -> std::collections::HashSet<String> {
+    let mut scope: std::collections::HashSet<String> = requested.iter().cloned().collect();
+    loop {
+        let mut grew = false;
+        for invariant in invariants {
+            if scope.contains(&invariant.spec_id) {
+                for reference in &invariant.references {
+                    grew |= scope.insert(reference.clone());
+                }
+            }
+        }
+        if !grew {
+            break;
+        }
+    }
+    scope
 }
 
 #[cfg(test)]
@@ -306,6 +476,8 @@ mod tests {
             key: key(scenario_id),
             required_form: form,
             name: scenario_id.into(),
+            exposes: None,
+            upholds: None,
         }
     }
 
@@ -319,9 +491,13 @@ mod tests {
     }
 
     fn realization(scenario_id: &str) -> Realization {
+        realization_at(scenario_id, "C")
+    }
+
+    fn realization_at(scenario_id: &str, site: &str) -> Realization {
         Realization {
             key: key(scenario_id),
-            site: "C".into(),
+            site: site.into(),
         }
     }
 
@@ -338,6 +514,7 @@ mod tests {
     fn a_covered_and_realized_scenario_leaves_no_hole() {
         let matrix = build(
             &[scenario("runs", unit_example())],
+            &[],
             &[tag("runs", unit_example())],
             &[realization("runs")],
         );
@@ -352,6 +529,7 @@ mod tests {
         let matrix = build(
             &[scenario("runs", unit_example())],
             &[],
+            &[],
             &[realization("runs")],
         );
         assert_eq!(matrix.holes.len(), 1);
@@ -363,6 +541,7 @@ mod tests {
     fn an_unrealized_scenario_is_flagged() {
         let matrix = build(
             &[scenario("runs", unit_example())],
+            &[],
             &[tag("runs", unit_example())],
             &[],
         );
@@ -375,6 +554,7 @@ mod tests {
     fn a_scenario_under_proven_on_either_axis_is_flagged() {
         let matrix = build(
             &[scenario("guarded", component_invariant())],
+            &[],
             &[tag("guarded", unit_example())],
             &[realization("guarded")],
         );
@@ -386,6 +566,7 @@ mod tests {
     fn a_stronger_form_than_required_still_satisfies() {
         let matrix = build(
             &[scenario("guarded", unit_example())],
+            &[],
             &[tag("guarded", component_invariant())],
             &[realization("guarded")],
         );
@@ -399,6 +580,7 @@ mod tests {
                 "guarded",
                 Form::new(Scope::E2e, Quantification::Example),
             )],
+            &[],
             &[tag("guarded", unit_example())],
             &[realization("guarded")],
         );
@@ -410,10 +592,141 @@ mod tests {
     fn a_tag_for_an_unknown_scenario_is_dangling() {
         let matrix = build(
             &[scenario("runs", unit_example())],
+            &[],
             &[tag("runs", unit_example()), tag("ghost", unit_example())],
             &[realization("runs")],
         );
         assert_eq!(matrix.holes.len(), 1);
         assert_eq!(matrix.holes[0].kind, HoleKind::Dangling);
+    }
+
+    fn exposure(scenario_id: &str, class: &str) -> Scenario {
+        Scenario {
+            exposes: Some(class.into()),
+            ..scenario(scenario_id, unit_example())
+        }
+    }
+
+    fn guard(scenario_id: &str, invariant: &str) -> Scenario {
+        Scenario {
+            upholds: Some(invariant.into()),
+            ..scenario(scenario_id, component_invariant())
+        }
+    }
+
+    fn invariant(id: &str, over: &str, references: &[&str]) -> Invariant {
+        Invariant {
+            id: id.into(),
+            over: over.into(),
+            references: references.iter().map(|r| r.to_string()).collect(),
+            name: id.into(),
+            spec_id: "spec".into(),
+        }
+    }
+
+    #[test]
+    fn a_class_site_that_discharges_the_invariant_leaves_no_breach() {
+        // The public-detail site realizes both the exposure and the guard scenario.
+        let matrix = build(
+            &[
+                exposure("detail-valid", "public-cert"),
+                guard("detail-revoked-void", "revoked-hidden"),
+            ],
+            &[invariant("revoked-hidden", "public-cert", &[])],
+            &[
+                tag("detail-valid", unit_example()),
+                tag("detail-revoked-void", component_invariant()),
+            ],
+            &[
+                realization_at("detail-valid", "GetPublicCertificate"),
+                realization_at("detail-revoked-void", "GetPublicCertificate"),
+            ],
+        );
+        assert!(matrix.is_whole(), "unexpected holes: {:?}", matrix.holes);
+    }
+
+    #[test]
+    // covers: azimuth-rtm flag-invariant-breach exposure-without-guard-breaches unit example
+    fn a_class_site_without_a_guard_is_an_invariant_breach() {
+        // A new surface (the sitemap) realizes the exposure but discharges no guard → the leak.
+        let matrix = build(
+            &[
+                exposure("detail-valid", "public-cert"),
+                guard("detail-revoked-void", "revoked-hidden"),
+                exposure("sitemap-lists-public", "public-cert"),
+            ],
+            &[invariant("revoked-hidden", "public-cert", &[])],
+            &[
+                tag("detail-valid", unit_example()),
+                tag("detail-revoked-void", component_invariant()),
+                tag("sitemap-lists-public", unit_example()),
+            ],
+            &[
+                realization_at("detail-valid", "GetPublicCertificate"),
+                realization_at("detail-revoked-void", "GetPublicCertificate"),
+                realization_at("sitemap-lists-public", "GetSitemap"),
+            ],
+        );
+        let breaches: Vec<&Hole> = matrix
+            .holes
+            .iter()
+            .filter(|hole| {
+                matches!(&hole.kind, HoleKind::InvariantBreach { site, .. } if site == "GetSitemap")
+            })
+            .collect();
+        assert_eq!(breaches.len(), 1, "holes: {:?}", matrix.holes);
+    }
+
+    #[test]
+    // covers: azimuth-rtm flag-dangling-invariant invariant-over-empty-class-dangles unit example
+    fn an_invariant_over_an_empty_class_is_dangling() {
+        let matrix = build(
+            &[],
+            &[invariant("revoked-hidden", "public-cert", &[])],
+            &[],
+            &[],
+        );
+        assert!(matches!(
+            matrix.holes.as_slice(),
+            [Hole {
+                kind: HoleKind::DanglingInvariant { .. },
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    // covers: azimuth-rtm flag-dangling-upholds upholds-undeclared-invariant-dangles unit example
+    fn a_scenario_upholding_an_undeclared_invariant_is_dangling() {
+        let matrix = build(
+            &[guard("guards-a-ghost", "no-such-invariant")],
+            &[],
+            &[tag("guards-a-ghost", component_invariant())],
+            &[realization("guards-a-ghost")],
+        );
+        assert!(matrix.holes.iter().any(|hole| matches!(
+            &hole.kind,
+            HoleKind::DanglingUpholds { invariant_id } if invariant_id == "no-such-invariant"
+        )));
+    }
+
+    #[test]
+    // covers: azimuth-rtm scope-to-requested-specs references-closure-pulls-referenced unit example
+    fn scope_closure_pulls_in_referenced_capabilities_transitively() {
+        let invariants = [
+            Invariant {
+                spec_id: "public-certificates".into(),
+                ..invariant("revoked-hidden", "public-cert", &["seo"])
+            },
+            Invariant {
+                spec_id: "seo".into(),
+                ..invariant("seo-inv", "seo-surface", &["search-index"])
+            },
+        ];
+        let scope = scope_closure(&["public-certificates".to_string()], &invariants);
+        assert!(scope.contains("public-certificates"));
+        assert!(scope.contains("seo"));
+        assert!(scope.contains("search-index"));
+        assert!(!scope.contains("unrelated"));
     }
 }

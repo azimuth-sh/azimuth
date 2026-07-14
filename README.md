@@ -81,13 +81,36 @@ sites and its covering tests, and flags the **holes**:
 |---|---|
 | **uncovered** | a scenario no test covers |
 | **unrealized** | a scenario no code realizes |
-| **wrong-form** | covered, but never at the required form |
+| **wrong-form** | covered, but never at the required form (on either axis) |
 | **dangling tag** | a `covers` pointing at no scenario |
 | **dangling realization** | a `realizes` pointing at no scenario |
+| **invariant-breach** | a site in a cross-cutting invariant's class that discharges no guard |
+| **dangling invariant** | an invariant over a class no exposure scenario realizes |
+| **dangling upholds** | a scenario that upholds an invariant no spec declares |
 
 Two independent axes — realized? (code) and covered? (test) — so the cross-states fall out
 without double-reporting: *realized-but-untested* is an uncovered row that has code;
 *tested-but-unimplemented* is an unrealized row that has tests; an *orphan* trips both.
+
+### Cross-cutting invariants — catching the new-surface leak
+
+The per-scenario matrix has a blind spot: an invariant realized at six sites is "realized," so a
+*new public surface that silently forgets it* is invisible (its scenario is realized elsewhere).
+Azimuth closes this with a **named cross-cutting invariant**, declared once in the owner spec:
+
+```
+## Invariant: revoked-hidden
+_invariant-id: revoked-hidden • over: public-certificate_
+_references: seo_
+```
+
+A scenario carrying `• exposes: <class>` is an **exposure**: any site realizing it *joins* that
+surface class — membership is inferred from what the code built, so it can't escape by forgetting a
+tag. A scenario carrying `• upholds: <invariant>` is a **guard**: a site realizing it discharges the
+invariant there. Every class member that discharges no guard is an **invariant-breach**. `rtm
+--only <spec>…` scopes a run to the named specs plus the `references` closure of their invariants,
+so the surface an invariant reaches across (the sitemap under `seo`) is pulled into scope and its
+leak is caught.
 
 ## Two tiers: machine, then agent
 

@@ -89,3 +89,59 @@ _scenario-id: manifest-entries-ingested • scope: unit • quant: example_
 
 - **WHEN** a manifest lists a `realizes` entry and a `covers` entry for a scenario
 - **THEN** `rtm` builds the matrix from them as it would from scanned comment tags
+
+### Requirement: Flag a cross-cutting invariant breach
+
+The generator SHALL flag every code site that realizes an `exposes: C` scenario but does not also
+realize an `upholds: I` scenario for an invariant `I over: C` — the leak the per-scenario matrix
+cannot see, since the guard scenario is realized at some other site and the class looks covered.
+
+_req-id: flag-invariant-breach_
+
+#### Scenario: An exposure site without a guard breaches the invariant
+
+_scenario-id: exposure-without-guard-breaches • scope: unit • quant: example_
+
+- **WHEN** a site realizes an `exposes: C` scenario but no `upholds: I` scenario for `I over: C`
+- **THEN** it is reported as an invariant-breach hole naming the invariant and the site
+
+### Requirement: Flag a dangling invariant
+
+The generator SHALL flag an invariant whose surface class has no exposure sites.
+
+_req-id: flag-dangling-invariant_
+
+#### Scenario: An invariant over an empty class is flagged dangling
+
+_scenario-id: invariant-over-empty-class-dangles • scope: unit • quant: example_
+
+- **WHEN** an invariant is declared `over: C` but no realized scenario exposes class `C`
+- **THEN** it is reported as a dangling-invariant hole
+
+### Requirement: Flag a dangling upholds
+
+The generator SHALL flag a scenario that `upholds` an invariant no spec declares.
+
+_req-id: flag-dangling-upholds_
+
+#### Scenario: A scenario upholding an undeclared invariant is flagged dangling
+
+_scenario-id: upholds-undeclared-invariant-dangles • scope: unit • quant: example_
+
+- **WHEN** a scenario carries `upholds: I` but no spec declares an invariant `I`
+- **THEN** it is reported as a dangling-upholds hole
+
+### Requirement: Scope a run to requested specs
+
+The generator SHALL, given a `--only` set of spec-ids, narrow the matrix to those specs plus the
+transitive `references` closure of their invariants, so an invariant's reached surfaces stay in
+scope while unrelated capabilities drop out.
+
+_req-id: scope-to-requested-specs_
+
+#### Scenario: The references closure pulls in a referenced capability
+
+_scenario-id: references-closure-pulls-referenced • scope: unit • quant: example_
+
+- **WHEN** a requested spec declares an invariant that `references` another capability
+- **THEN** that capability's spec enters scope so its exposure sites join the invariant's class
