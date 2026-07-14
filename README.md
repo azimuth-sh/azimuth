@@ -43,21 +43,25 @@ spec  →  requirement (a SHALL rule)  →  scenario (a WHEN/THEN behavior)
 The **scenario** is the unit of coverage — the enumerated behavior. A requirement with five
 scenarios where one is tested is a hole, and requirement-level thinking hides it. Each level
 carries a **stable id** so links survive a rename of any display name, and each scenario carries
-a **required form** — the honest *kind* of check it demands:
+a **required form** — the honest *kind* of check it demands, as a pair of orthogonal axes:
 
 ```
-example · component · integration · e2e · completeness · invariant
+scope          ∈ { unit, component, e2e }   — how much of the real system runs
+quantification ∈ { example, invariant }      — one case (∃) vs a property over all (∀)
 ```
 
-A completeness scenario (e.g. "no implemented case is missing") checked only by an `example` is
-a hole, even though a test exists.
+Both axes are ladders (a stronger form on either still satisfies a weaker requirement). A
+completeness rule — a named invariant, "no implemented case is missing" — checked only by a unit
+`example` is a hole on both axes, even though a test exists. An optional **oracle** label
+(`direct, golden, metamorphic, model-based, contract`) records *how* the expected result was
+obtained: descriptive only, never gated.
 
 ### 2. Linkage tags — intent, self-declared
 
 Two tags, on the two sides:
 
-- **`covers(spec, req, scenario, form)`** on a **test** — "this test verifies that scenario, at
-  this form."
+- **`covers(spec, req, scenario, scope, quantification[, oracle])`** on a **test** — "this test
+  verifies that scenario, at this form."
 - **`realizes(spec, req, scenario)`** on **production code** — "this code site is on that
   scenario's path." No form: form is how a test *checks*, not a property of code.
 

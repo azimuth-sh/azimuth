@@ -4,9 +4,9 @@
 //! parsing code. The convention is a plain comment so any language can carry it; here it reads
 //! Rust `.rs` files.
 //!
-//! `covers: <spec> <req> <scenario> <form>`  ·  `realizes: <spec> <req> <scenario>`
+//! `covers: <spec> <req> <scenario> <scope> <quant> [oracle]`  ·  `realizes: <spec> <req> <scenario>`
 
-use crate::{Form, Key, Realization, Tag};
+use crate::{Form, Key, Oracle, Quantification, Realization, Scope, Tag};
 use std::path::Path;
 
 const COVERS: &str = "covers:";
@@ -47,10 +47,11 @@ fn scan_text(text: &str, tags: &mut Vec<Tag>, realizations: &mut Vec<Realization
         };
 
         if let Some(body) = comment.strip_prefix(COVERS) {
-            if let Some((key, form)) = parse_covers(body) {
+            if let Some((key, form, oracle)) = parse_covers(body) {
                 tags.push(Tag {
                     key,
                     form,
+                    oracle,
                     site: item_after(&lines, index),
                 });
             }
@@ -65,12 +66,21 @@ fn scan_text(text: &str, tags: &mut Vec<Tag>, realizations: &mut Vec<Realization
     }
 }
 
-fn parse_covers(body: &str) -> Option<(Key, Form)> {
+fn parse_covers(body: &str) -> Option<(Key, Form, Option<Oracle>)> {
     let fields: Vec<&str> = body.split_whitespace().collect();
-    match fields.as_slice() {
-        [spec, req, scenario, form] => Form::parse(form).map(|form| (key(spec, req, scenario), form)),
-        _ => None,
-    }
+    let (form, oracle) = match fields.as_slice() {
+        [_, _, _, scope, quant] => (form_of(scope, quant)?, None),
+        [_, _, _, scope, quant, oracle] => (form_of(scope, quant)?, Oracle::parse(oracle)),
+        _ => return None,
+    };
+    Some((key(fields[0], fields[1], fields[2]), form, oracle))
+}
+
+fn form_of(scope: &str, quant: &str) -> Option<Form> {
+    Some(Form::new(
+        Scope::parse(scope)?,
+        Quantification::parse(quant)?,
+    ))
 }
 
 fn parse_realizes(body: &str) -> Option<Key> {
@@ -127,8 +137,12 @@ fn method_name(line: &str) -> Option<String> {
         .take_while(|c| c.is_alphanumeric() || *c == '_')
         .collect();
     let name: String = before.chars().rev().collect();
-    (!name.is_empty() && name.chars().next().is_some_and(|c| c.is_alphabetic() || c == '_'))
-        .then_some(name)
+    (!name.is_empty()
+        && name
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_alphabetic() || c == '_'))
+    .then_some(name)
 }
 
 #[cfg(test)]
@@ -141,19 +155,33 @@ mod tests {
 
     #[test]
     fn reads_a_covers_marker_and_its_site() {
-        let text = "// covers: demo do-thing it-works example\nfn it_works_test() {}\n";
+        let text = "// covers: demo do-thing it-works unit example\nfn it_works_test() {}\n";
         let mut tags = Vec::new();
         let mut realizations = Vec::new();
         scan_text(text, &mut tags, &mut realizations);
         assert_eq!(tags.len(), 1);
         assert_eq!(tags[0].key.scenario_id, "it-works");
-        assert_eq!(tags[0].form, Form::Example);
+        assert_eq!(
+            tags[0].form,
+            Form::new(Scope::Unit, Quantification::Example)
+        );
         assert_eq!(tags[0].site, "it_works_test");
     }
 
     #[test]
+    fn reads_an_optional_oracle_field() {
+        let text =
+            "// covers: demo rank stable component invariant metamorphic\nfn stable_test() {}\n";
+        let mut tags = Vec::new();
+        let mut realizations = Vec::new();
+        scan_text(text, &mut tags, &mut realizations);
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].oracle, Some(Oracle::Metamorphic));
+    }
+
+    #[test]
     fn ignores_the_marker_string_when_not_line_leading() {
-        let text = "let pattern = \"covers: a b c example\";";
+        let text = "let pattern = \"covers: a b c unit example\";";
         let mut tags = Vec::new();
         let mut realizations = Vec::new();
         scan_text(text, &mut tags, &mut realizations);

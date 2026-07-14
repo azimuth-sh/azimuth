@@ -8,35 +8,115 @@ use std::fmt;
 pub mod scan;
 pub mod spec;
 
-/// The honest kind of check a scenario demands. A completeness scenario covered only by an
-/// example is a hole, not a pass.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Form {
-    Example,
+/// How much of the real system a check runs against — the radius of blast. A ladder: a check at a
+/// higher scope also satisfies a lower requirement. `integration` folds into `component` (a
+/// component test *is* the service-integration level here).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Scope {
+    Unit,
     Component,
-    Integration,
     E2e,
-    Completeness,
-    Invariant,
 }
 
-impl Form {
-    pub fn parse(text: &str) -> Option<Form> {
+impl Scope {
+    pub fn parse(text: &str) -> Option<Scope> {
         match text.trim().to_ascii_lowercase().as_str() {
-            "example" => Some(Form::Example),
-            "component" => Some(Form::Component),
-            "integration" => Some(Form::Integration),
-            "e2e" => Some(Form::E2e),
-            "completeness" => Some(Form::Completeness),
-            "invariant" => Some(Form::Invariant),
+            "unit" => Some(Scope::Unit),
+            "component" | "integration" => Some(Scope::Component),
+            "e2e" => Some(Scope::E2e),
             _ => None,
         }
     }
 }
 
+/// The logical form of the claim: `example` (∃ one case) or `invariant` (∀ a property over all
+/// inputs/states). A ladder: an invariant also satisfies an example requirement. `completeness`
+/// (no implemented case is lost) is a named invariant, so it folds in here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Quantification {
+    Example,
+    Invariant,
+}
+
+impl Quantification {
+    pub fn parse(text: &str) -> Option<Quantification> {
+        match text.trim().to_ascii_lowercase().as_str() {
+            "example" => Some(Quantification::Example),
+            "invariant" | "completeness" => Some(Quantification::Invariant),
+            _ => None,
+        }
+    }
+}
+
+/// Where the expected result came from. A descriptive label, never gated: it records *how* the
+/// oracle was obtained, not the *strength* of the proof (strength is the (scope, quantification)
+/// pair). Kept for the code-map and for teaching; the matrix never reddens on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Oracle {
+    Direct,
+    Golden,
+    Metamorphic,
+    ModelBased,
+    Contract,
+}
+
+impl Oracle {
+    pub fn parse(text: &str) -> Option<Oracle> {
+        match text.trim().to_ascii_lowercase().as_str() {
+            "direct" => Some(Oracle::Direct),
+            "golden" => Some(Oracle::Golden),
+            "metamorphic" => Some(Oracle::Metamorphic),
+            "model-based" => Some(Oracle::ModelBased),
+            "contract" => Some(Oracle::Contract),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for Oracle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let text = match self {
+            Oracle::Direct => "direct",
+            Oracle::Golden => "golden",
+            Oracle::Metamorphic => "metamorphic",
+            Oracle::ModelBased => "model-based",
+            Oracle::Contract => "contract",
+        };
+        write!(f, "{text}")
+    }
+}
+
+/// The honest kind of check a scenario demands: the pair of orthogonal axes that encode proof
+/// *strength*. The matrix reddens (`WrongForm`) when neither axis is met.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Form {
+    pub scope: Scope,
+    pub quantification: Quantification,
+}
+
+impl Form {
+    pub fn new(scope: Scope, quantification: Quantification) -> Form {
+        Form {
+            scope,
+            quantification,
+        }
+    }
+
+    /// A delivered form satisfies a required one when it is at least as strong on *both* axes — a
+    /// higher scope or a stronger quantification still counts, an under-proof on either does not.
+    pub fn satisfies(self, required: Form) -> bool {
+        self.scope >= required.scope && self.quantification >= required.quantification
+    }
+}
+
 impl fmt::Display for Form {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", format!("{self:?}").to_ascii_lowercase())
+        write!(
+            f,
+            "{}/{}",
+            format!("{:?}", self.scope).to_ascii_lowercase(),
+            format!("{:?}", self.quantification).to_ascii_lowercase(),
+        )
     }
 }
 
@@ -56,11 +136,13 @@ pub struct Scenario {
     pub name: String,
 }
 
-/// A `covers` tag on a test: this test verifies that scenario, at this form.
+/// A `covers` tag on a test: this test verifies that scenario, at this form. The `oracle` is a
+/// descriptive note, never gated.
 #[derive(Debug, Clone)]
 pub struct Tag {
     pub key: Key,
     pub form: Form,
+    pub oracle: Option<Oracle>,
     pub site: String,
 }
 
@@ -112,7 +194,7 @@ impl Matrix {
 // realizes: azimuth-rtm generate covered-and-realized-lists-both
 // realizes: azimuth-rtm flag-uncovered second-scenario-uncovered
 // realizes: azimuth-rtm flag-unrealized tested-but-unrealized
-// realizes: azimuth-rtm flag-wrong-form completeness-only-example
+// realizes: azimuth-rtm flag-wrong-form under-proven-on-either-axis
 // realizes: azimuth-rtm flag-dangling unknown-scenario-dangling
 pub fn build(scenarios: &[Scenario], tags: &[Tag], realizations: &[Realization]) -> Matrix {
     let mut rows = Vec::new();
@@ -144,7 +226,10 @@ pub fn build(scenarios: &[Scenario], tags: &[Tag], realizations: &[Realization])
                 key: scenario.key.clone(),
                 detail: format!("'{}' has no covering test", scenario.name),
             });
-        } else if covering.iter().all(|tag| tag.form != scenario.required_form) {
+        } else if !covering
+            .iter()
+            .any(|tag| tag.form.satisfies(scenario.required_form))
+        {
             holes.push(Hole {
                 kind: HoleKind::WrongForm,
                 key: scenario.key.clone(),
@@ -227,6 +312,7 @@ mod tests {
         Tag {
             key: key(scenario_id),
             form,
+            oracle: None,
             site: "T".into(),
         }
     }
@@ -238,12 +324,20 @@ mod tests {
         }
     }
 
+    fn unit_example() -> Form {
+        Form::new(Scope::Unit, Quantification::Example)
+    }
+
+    fn component_invariant() -> Form {
+        Form::new(Scope::Component, Quantification::Invariant)
+    }
+
     #[test]
-    // covers: azimuth-rtm generate covered-and-realized-lists-both example
+    // covers: azimuth-rtm generate covered-and-realized-lists-both unit example
     fn a_covered_and_realized_scenario_leaves_no_hole() {
         let matrix = build(
-            &[scenario("runs", Form::Example)],
-            &[tag("runs", Form::Example)],
+            &[scenario("runs", unit_example())],
+            &[tag("runs", unit_example())],
             &[realization("runs")],
         );
         assert!(matrix.is_whole());
@@ -252,10 +346,10 @@ mod tests {
     }
 
     #[test]
-    // covers: azimuth-rtm flag-uncovered second-scenario-uncovered example
+    // covers: azimuth-rtm flag-uncovered second-scenario-uncovered unit example
     fn an_uncovered_scenario_is_flagged() {
         let matrix = build(
-            &[scenario("runs", Form::Example)],
+            &[scenario("runs", unit_example())],
             &[],
             &[realization("runs")],
         );
@@ -264,31 +358,58 @@ mod tests {
     }
 
     #[test]
-    // covers: azimuth-rtm flag-unrealized tested-but-unrealized example
+    // covers: azimuth-rtm flag-unrealized tested-but-unrealized unit example
     fn an_unrealized_scenario_is_flagged() {
-        let matrix = build(&[scenario("runs", Form::Example)], &[tag("runs", Form::Example)], &[]);
+        let matrix = build(
+            &[scenario("runs", unit_example())],
+            &[tag("runs", unit_example())],
+            &[],
+        );
         assert_eq!(matrix.holes.len(), 1);
         assert_eq!(matrix.holes[0].kind, HoleKind::Unrealized);
     }
 
     #[test]
-    // covers: azimuth-rtm flag-wrong-form completeness-only-example example
-    fn a_scenario_missing_its_required_form_is_flagged() {
+    // covers: azimuth-rtm flag-wrong-form under-proven-on-either-axis unit example
+    fn a_scenario_under_proven_on_either_axis_is_flagged() {
         let matrix = build(
-            &[scenario("complete", Form::Completeness)],
-            &[tag("complete", Form::Example)],
-            &[realization("complete")],
+            &[scenario("guarded", component_invariant())],
+            &[tag("guarded", unit_example())],
+            &[realization("guarded")],
         );
         assert_eq!(matrix.holes.len(), 1);
         assert_eq!(matrix.holes[0].kind, HoleKind::WrongForm);
     }
 
     #[test]
-    // covers: azimuth-rtm flag-dangling unknown-scenario-dangling example
+    fn a_stronger_form_than_required_still_satisfies() {
+        let matrix = build(
+            &[scenario("guarded", unit_example())],
+            &[tag("guarded", component_invariant())],
+            &[realization("guarded")],
+        );
+        assert!(matrix.is_whole());
+    }
+
+    #[test]
+    fn a_scenario_under_proven_on_only_scope_is_flagged() {
+        let matrix = build(
+            &[scenario(
+                "guarded",
+                Form::new(Scope::E2e, Quantification::Example),
+            )],
+            &[tag("guarded", unit_example())],
+            &[realization("guarded")],
+        );
+        assert_eq!(matrix.holes[0].kind, HoleKind::WrongForm);
+    }
+
+    #[test]
+    // covers: azimuth-rtm flag-dangling unknown-scenario-dangling unit example
     fn a_tag_for_an_unknown_scenario_is_dangling() {
         let matrix = build(
-            &[scenario("runs", Form::Example)],
-            &[tag("runs", Form::Example), tag("ghost", Form::Example)],
+            &[scenario("runs", unit_example())],
+            &[tag("runs", unit_example()), tag("ghost", unit_example())],
             &[realization("runs")],
         );
         assert_eq!(matrix.holes.len(), 1);
