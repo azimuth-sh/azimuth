@@ -57,6 +57,36 @@ public sealed class ManifestEmitterTests
     }
 
     [Fact]
+    public void Flags_a_test_in_a_tracing_class_that_declares_no_scenario()
+    {
+        var manifest = ManifestCollector.Collect(typeof(GetPublicCertificate).Assembly, Root);
+
+        manifest.UntracedTests.Should().Contain(entry =>
+            entry.Site == "SampleTracedRevokeTests.SeedsFixtures" &&
+            entry.File == "SampleUntracedTests.cs");
+    }
+
+    [Fact]
+    public void Does_not_flag_a_test_that_carries_covers_or_untraced()
+    {
+        var manifest = ManifestCollector.Collect(typeof(GetPublicCertificate).Assembly, Root);
+
+        manifest.UntracedTests.Should().NotContain(entry =>
+            entry.Site == "SampleTracedRevokeTests.RevokedCertificateIsHidden");
+        manifest.UntracedTests.Should().NotContain(entry =>
+            entry.Site == "SampleTracedRevokeTests.ResetsDatabase");
+    }
+
+    [Fact]
+    public void Does_not_flag_untagged_tests_in_a_class_that_does_not_trace()
+    {
+        var manifest = ManifestCollector.Collect(typeof(GetPublicCertificate).Assembly, Root);
+
+        manifest.UntracedTests.Should().NotContain(entry =>
+            entry.Site == "SampleUntracedNeighbourTests.SomeUnrelatedTest");
+    }
+
+    [Fact]
     public void Resolves_the_source_file_relative_to_the_repo_root()
     {
         var manifest = ManifestCollector.Collect(typeof(GetPublicCertificate).Assembly, Root);

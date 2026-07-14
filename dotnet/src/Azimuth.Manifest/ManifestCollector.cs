@@ -14,6 +14,18 @@ public static class ManifestCollector
     private const string Lang = "csharp";
     private const string RealizesName = "Azimuth.Annotations.RealizesAttribute";
     private const string CoversName = "Azimuth.Annotations.CoversAttribute";
+    private const string UntracedName = "Azimuth.Annotations.UntracedAttribute";
+
+    /// <summary>
+    /// Attributes (matched by simple name, so no test-framework reference is needed) that mark a
+    /// method as a test. Kept a small const list rather than hard-wired to one call so another
+    /// xUnit-style framework can be added without touching the walk.
+    /// </summary>
+    private static readonly HashSet<string> TestAttributeNames = new(StringComparer.Ordinal)
+    {
+        "FactAttribute",
+        "TheoryAttribute",
+    };
 
     public static Manifest Collect(Assembly assembly, string? root = null) =>
         Collect(new[] { assembly }, root);
@@ -22,14 +34,15 @@ public static class ManifestCollector
     {
         var realizes = new List<RealizesEntry>();
         var covers = new List<CoversEntry>();
+        var untraced = new List<UntracedTestEntry>();
 
         foreach (var assembly in assemblies)
         {
             using var files = SourceFileResolver.ForAssembly(assembly);
-            CollectFrom(assembly, files, root, realizes, covers);
+            CollectFrom(assembly, files, root, realizes, covers, untraced);
         }
 
-        return new Manifest { Realizes = realizes, Covers = covers };
+        return new Manifest { Realizes = realizes, Covers = covers, UntracedTests = untraced };
     }
 
     private static void CollectFrom(
@@ -37,7 +50,8 @@ public static class ManifestCollector
         SourceFileResolver files,
         string? root,
         List<RealizesEntry> realizes,
-        List<CoversEntry> covers)
+        List<CoversEntry> covers,
+        List<UntracedTestEntry> untraced)
     {
         foreach (var type in Types(assembly))
         {
@@ -52,7 +66,13 @@ public static class ManifestCollector
                 }
             }
 
-            foreach (var method in Methods(type))
+            var methods = Methods(type).ToList();
+
+            // Scope rule: only classes that opt into tracing (≥1 covers) are held to the
+            // untraced-test check, so unrelated test classes are never red-walled.
+            var typeParticipatesInTracing = methods.Any(HasCovers);
+
+            foreach (var method in methods)
             {
                 var methodSite = $"{method.DeclaringType!.Name}.{method.Name}";
                 var methodFile = files.FileFor(method, root);
@@ -68,9 +88,31 @@ public static class ManifestCollector
                         covers.Add(CoversOf(data, methodSite, methodFile));
                     }
                 }
+
+                if (typeParticipatesInTracing && IsUntracedTest(method))
+                {
+                    untraced.Add(new UntracedTestEntry(methodSite, methodFile));
+                }
             }
         }
     }
+
+    /// <summary>A test method in a tracing class earns an untraced entry unless it carries a
+    /// <c>[Covers]</c> (it traces a scenario) or an <c>[Untraced]</c> (a deliberate opt-out).</summary>
+    private static bool IsUntracedTest(MethodInfo method)
+    {
+        var data = method.GetCustomAttributesData();
+        var isTest = data.Any(d => TestAttributeNames.Contains(d.AttributeType.Name));
+        if (!isTest)
+        {
+            return false;
+        }
+
+        return !data.Any(d => IsAttr(d, CoversName) || IsAttr(d, UntracedName));
+    }
+
+    private static bool HasCovers(MethodInfo method) =>
+        method.GetCustomAttributesData().Any(data => IsAttr(data, CoversName));
 
     private static RealizesEntry RealizesOf(CustomAttributeData data, string site, string file)
     {

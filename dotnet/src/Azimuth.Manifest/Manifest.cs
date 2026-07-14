@@ -14,6 +14,9 @@ public sealed record Manifest
 
     [JsonPropertyName("covers")]
     public IReadOnlyList<CoversEntry> Covers { get; init; } = [];
+
+    [JsonPropertyName("untraced_tests")]
+    public IReadOnlyList<UntracedTestEntry> UntracedTests { get; init; } = [];
 }
 
 /// <summary>A production-code site on a scenario's path. No form — form is a property of tests.</summary>
@@ -36,3 +39,12 @@ public sealed record CoversEntry(
     [property: JsonPropertyName("scope")] string Scope,
     [property: JsonPropertyName("quantification")] string Quantification,
     [property: JsonPropertyName("oracle")] string Oracle);
+
+/// <summary>
+/// A test method in a tracing class (one with ≥1 <c>[Covers]</c>) that declares no scenario and is
+/// not explicitly opted out — the dual of an uncovered scenario. No form: it names no behavior to
+/// have a form for.
+/// </summary>
+public sealed record UntracedTestEntry(
+    [property: JsonPropertyName("site")] string Site,
+    [property: JsonPropertyName("file")] string File);
