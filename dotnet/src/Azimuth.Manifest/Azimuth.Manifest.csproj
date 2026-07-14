@@ -10,6 +10,13 @@
     <RootNamespace>Azimuth.Manifest</RootNamespace>
   </PropertyGroup>
 
+  <!-- Reflecting over an ASP.NET Core assembly (e.g. DrimDev.Api) resolves shared-framework
+       types (Microsoft.Extensions.Hosting.Abstractions, …) when the collector reads a type's
+       namespace. Host the ASP.NET Core runtime so those resolve instead of throwing. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Azimuth.Annotations\Azimuth.Annotations.csproj" />
   </ItemGroup>
