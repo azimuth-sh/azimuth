@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://azimuth.dev/schema/manifest.schema.json",
+  "title": "Azimuth linkage manifest",
+  "description": "The language-neutral artifact each codebase emits: the realizes tags on production code and the covers tags on tests, keyed by the (spec, req, scenario) triple. Derived intent — scenario form (scope/quantification), invariant declarations, and exposes/upholds live in the spec, never here.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "realizes": {
+      "type": "array",
+      "description": "Production-code sites on a scenario's path. No form: form is how a test checks, not a property of code.",
+      "items": { "$ref": "#/$defs/realizesEntry" }
+    },
+    "covers": {
+      "type": "array",
+      "description": "Tests that verify a scenario, each at a declared form.",
+      "items": { "$ref": "#/$defs/coversEntry" }
+    }
+  },
+  "$defs": {
+    "triple": {
+      "type": "object",
+      "properties": {
+        "spec": {
+          "type": "string",
+          "description": "Stable spec-id."
+        },
+        "req": {
+          "type": "string",
+          "description": "Stable req-id within the spec."
+        },
+        "scenario": {
+          "type": "string",
+          "description": "Stable scenario-id within the requirement."
+        },
+        "site": {
+          "type": "string",
+          "description": "The enclosing symbol the tag sits on — the code or test site."
+        },
+        "file": {
+          "type": "string",
+          "description": "Source path of the site, relative to the emitting codebase root."
+        },
+        "lang": {
+          "type": "string",
+          "description": "Emitting language (e.g. csharp, typescript, rust) — for the polyglot fan-out view."
+        }
+      },
+      "required": ["spec", "req", "scenario", "site", "file", "lang"]
+    },
+    "realizesEntry": {
+      "$ref": "#/$defs/triple"
+    },
+    "coversEntry": {
+      "allOf": [{ "$ref": "#/$defs/triple" }],
+      "properties": {
+        "scope": {
+          "enum": ["unit", "component", "e2e"],
+          "description": "How much of the real system the check runs against."
+        },
+        "quantification": {
+          "enum": ["example", "invariant"],
+          "description": "One case (example, ∃) vs a property over all inputs/states (invariant, ∀)."
+        },
+        "oracle": {
+          "enum": ["direct", "golden", "metamorphic", "model-based", "contract"],
+          "description": "How the expected result was obtained. Descriptive only — never gated."
+        }
+      },
+      "required": ["spec", "req", "scenario", "site", "file", "lang", "scope", "quantification"],
+      "unevaluatedProperties": false
+    }
+  }
+}
