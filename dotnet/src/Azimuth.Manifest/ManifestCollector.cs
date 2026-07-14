@@ -27,11 +27,18 @@ public static class ManifestCollector
         "TheoryAttribute",
     };
 
-    public static Manifest Collect(Assembly assembly, string? root = null) =>
-        Collect(new[] { assembly }, root);
+    public static Manifest Collect(
+        Assembly assembly,
+        string? root = null,
+        IReadOnlyList<string>? tracedRoots = null) =>
+        Collect(new[] { assembly }, root, tracedRoots);
 
-    public static Manifest Collect(IEnumerable<Assembly> assemblies, string? root = null)
+    public static Manifest Collect(
+        IEnumerable<Assembly> assemblies,
+        string? root = null,
+        IReadOnlyList<string>? tracedRoots = null)
     {
+        var roots = tracedRoots ?? Array.Empty<string>();
         var realizes = new List<RealizesEntry>();
         var covers = new List<CoversEntry>();
         var untraced = new List<UntracedTestEntry>();
@@ -39,7 +46,7 @@ public static class ManifestCollector
         foreach (var assembly in assemblies)
         {
             using var files = SourceFileResolver.ForAssembly(assembly);
-            CollectFrom(assembly, files, root, realizes, covers, untraced);
+            CollectFrom(assembly, files, root, roots, realizes, covers, untraced);
         }
 
         return new Manifest { Realizes = realizes, Covers = covers, UntracedTests = untraced };
@@ -49,6 +56,7 @@ public static class ManifestCollector
         Assembly assembly,
         SourceFileResolver files,
         string? root,
+        IReadOnlyList<string> tracedRoots,
         List<RealizesEntry> realizes,
         List<CoversEntry> covers,
         List<UntracedTestEntry> untraced)
@@ -66,13 +74,12 @@ public static class ManifestCollector
                 }
             }
 
-            var methods = Methods(type).ToList();
+            // Area scope: a test is held to the untraced-test check only when its type sits under an
+            // opt-in traced root (a namespace prefix). This catches whole untagged test files inside
+            // a traced area, and never red-walls anything outside the declared roots.
+            var typeIsTraced = IsUnderTracedRoot(type, tracedRoots);
 
-            // Scope rule: only classes that opt into tracing (≥1 covers) are held to the
-            // untraced-test check, so unrelated test classes are never red-walled.
-            var typeParticipatesInTracing = methods.Any(HasCovers);
-
-            foreach (var method in methods)
+            foreach (var method in Methods(type))
             {
                 var methodSite = $"{method.DeclaringType!.Name}.{method.Name}";
                 var methodFile = files.FileFor(method, root);
@@ -89,7 +96,7 @@ public static class ManifestCollector
                     }
                 }
 
-                if (typeParticipatesInTracing && IsUntracedTest(method))
+                if (typeIsTraced && IsUntracedTest(method))
                 {
                     untraced.Add(new UntracedTestEntry(methodSite, methodFile));
                 }
@@ -97,7 +104,17 @@ public static class ManifestCollector
         }
     }
 
-    /// <summary>A test method in a tracing class earns an untraced entry unless it carries a
+    /// <summary>A type is under a traced root when its namespace equals or is nested beneath one of
+    /// the declared prefixes (matched on the dot boundary, so <c>Foo.Bar</c> never captures
+    /// <c>Foo.BarBaz</c>).</summary>
+    private static bool IsUnderTracedRoot(Type type, IReadOnlyList<string> tracedRoots)
+    {
+        var ns = type.Namespace ?? string.Empty;
+        return tracedRoots.Any(prefix =>
+            ns == prefix || ns.StartsWith(prefix + ".", StringComparison.Ordinal));
+    }
+
+    /// <summary>A test method under a traced root earns an untraced entry unless it carries a
     /// <c>[Covers]</c> (it traces a scenario) or an <c>[Untraced]</c> (a deliberate opt-out).</summary>
     private static bool IsUntracedTest(MethodInfo method)
     {
@@ -110,9 +127,6 @@ public static class ManifestCollector
 
         return !data.Any(d => IsAttr(d, CoversName) || IsAttr(d, UntracedName));
     }
-
-    private static bool HasCovers(MethodInfo method) =>
-        method.GetCustomAttributesData().Any(data => IsAttr(data, CoversName));
 
     private static RealizesEntry RealizesOf(CustomAttributeData data, string site, string file)
     {

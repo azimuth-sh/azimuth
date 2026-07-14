@@ -56,34 +56,48 @@ public sealed class ManifestEmitterTests
             entry.Oracle == "model-based");
     }
 
+    private static readonly string[] TracedRoots = { "Azimuth.Manifest.Tests.Fixtures.Traced" };
+
     [Fact]
-    public void Flags_a_test_in_a_tracing_class_that_declares_no_scenario()
+    public void Flags_every_bare_test_under_a_traced_root_including_entirely_untagged_classes()
     {
-        var manifest = ManifestCollector.Collect(typeof(GetPublicCertificate).Assembly, Root);
+        var manifest = ManifestCollector.Collect(typeof(GetPublicCertificate).Assembly, Root, TracedRoots);
+
+        // The entirely-untagged class inside the traced root — the case the class rule missed.
+        manifest.UntracedTests.Should().Contain(entry =>
+            entry.Site == "EntirelyUntaggedRevokeTests.SeedsFixtures" &&
+            entry.File == "SampleUntracedTests.cs");
 
         manifest.UntracedTests.Should().Contain(entry =>
-            entry.Site == "SampleTracedRevokeTests.SeedsFixtures" &&
-            entry.File == "SampleUntracedTests.cs");
+            entry.Site == "PartiallyTaggedRevokeTests.UntaggedCase");
     }
 
     [Fact]
     public void Does_not_flag_a_test_that_carries_covers_or_untraced()
     {
-        var manifest = ManifestCollector.Collect(typeof(GetPublicCertificate).Assembly, Root);
+        var manifest = ManifestCollector.Collect(typeof(GetPublicCertificate).Assembly, Root, TracedRoots);
 
         manifest.UntracedTests.Should().NotContain(entry =>
-            entry.Site == "SampleTracedRevokeTests.RevokedCertificateIsHidden");
+            entry.Site == "PartiallyTaggedRevokeTests.RevokedCertificateIsHidden");
         manifest.UntracedTests.Should().NotContain(entry =>
-            entry.Site == "SampleTracedRevokeTests.ResetsDatabase");
+            entry.Site == "PartiallyTaggedRevokeTests.ResetsDatabase");
     }
 
     [Fact]
-    public void Does_not_flag_untagged_tests_in_a_class_that_does_not_trace()
+    public void Does_not_flag_tests_outside_every_traced_root()
+    {
+        var manifest = ManifestCollector.Collect(typeof(GetPublicCertificate).Assembly, Root, TracedRoots);
+
+        manifest.UntracedTests.Should().NotContain(entry =>
+            entry.Site == "NeighbourTests.SomeUnrelatedTest");
+    }
+
+    [Fact]
+    public void Emits_no_untraced_tests_when_no_traced_root_is_declared()
     {
         var manifest = ManifestCollector.Collect(typeof(GetPublicCertificate).Assembly, Root);
 
-        manifest.UntracedTests.Should().NotContain(entry =>
-            entry.Site == "SampleUntracedNeighbourTests.SomeUnrelatedTest");
+        manifest.UntracedTests.Should().BeEmpty();
     }
 
     [Fact]

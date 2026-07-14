@@ -19,9 +19,13 @@ public static class ManifestEmitter
 
     public static string ToJson(Manifest manifest) => JsonSerializer.Serialize(manifest, JsonOptions);
 
-    public static Manifest Emit(IEnumerable<Assembly> assemblies, string outputPath, string? root = null)
+    public static Manifest Emit(
+        IEnumerable<Assembly> assemblies,
+        string outputPath,
+        string? root = null,
+        IReadOnlyList<string>? tracedRoots = null)
     {
-        var manifest = ManifestCollector.Collect(assemblies, root);
+        var manifest = ManifestCollector.Collect(assemblies, root, tracedRoots);
         var directory = Path.GetDirectoryName(Path.GetFullPath(outputPath));
         if (!string.IsNullOrEmpty(directory))
         {
