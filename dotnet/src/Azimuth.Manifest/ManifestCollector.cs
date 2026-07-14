@@ -63,7 +63,7 @@ public static class ManifestCollector
     {
         foreach (var type in Types(assembly))
         {
-            var typeSite = type.Name;
+            var typeSite = QualifiedTypeName(type);
             var typeFile = files.FileFor(type, root);
 
             foreach (var data in type.GetCustomAttributesData())
@@ -81,7 +81,7 @@ public static class ManifestCollector
 
             foreach (var method in Methods(type))
             {
-                var methodSite = $"{method.DeclaringType!.Name}.{method.Name}";
+                var methodSite = $"{QualifiedTypeName(method.DeclaringType!)}.{method.Name}";
                 var methodFile = files.FileFor(method, root);
 
                 foreach (var data in method.GetCustomAttributesData())
@@ -126,6 +126,19 @@ public static class ManifestCollector
         }
 
         return !data.Any(d => IsAttr(d, CoversName) || IsAttr(d, UntracedName));
+    }
+
+    /// A readable, collision-free site name: nested types are qualified by their declaring type(s)
+    /// (e.g. `RevokeCertificate.Endpoint`), so the per-slice `Endpoint`/`RequestHandler` classes of
+    /// vertical-slice architecture don't all collapse to one site and defeat per-site invariant checks.
+    private static string QualifiedTypeName(Type type)
+    {
+        var name = type.Name;
+        for (var declaring = type.DeclaringType; declaring is not null; declaring = declaring.DeclaringType)
+        {
+            name = $"{declaring.Name}.{name}";
+        }
+        return name;
     }
 
     private static RealizesEntry RealizesOf(CustomAttributeData data, string site, string file)
