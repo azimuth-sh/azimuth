@@ -1,6 +1,6 @@
 # Change: experimental-source-isolation
 
-Status: implemented
+Status: accepted and complete
 
 Exploration: canonical-alpha-release
 Carries decisions: CAR3, CAR17; change-map node C3

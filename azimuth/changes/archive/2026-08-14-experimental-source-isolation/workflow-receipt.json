@@ -1,0 +1,10 @@
+{
+  "format": "azimuth-github-workflow-receipt",
+  "schemaVersion": 1,
+  "repository": "drim-dev/azimuth",
+  "workflow": ".github/workflows/ci.yml",
+  "revision": "64992346726bb75af4ea7997f85cf1db33661262",
+  "conclusion": "success",
+  "accountFingerprint": "85515e106888ab78cc8e934e00700c3cd80ba6f194eaa5a03e4708914697a877",
+  "runUrl": "https://github.com/drim-dev/azimuth/actions/runs/31811542129"
+}

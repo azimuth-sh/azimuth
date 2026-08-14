@@ -68,3 +68,45 @@ experimental root and move a public manifest under one, and both mutations fail.
 implementation that omitted an approved experimental family from the account or assigned a public
 package manifest inside it would therefore be rejected. The evidence ranges over both complete
 sets named by the predicate and does not treat the absence of current manifests as proof.
+
+## Claim: external-domain-evidence-is-citation-only
+Verdict: sound
+Fingerprint: d146f045a4bbeb27
+Judged: 2026-08-14
+Judge: Codex
+
+I inspected the tracked-reference enumerator, the executable-input boundary, all three current
+domain citations and the test that derives that complete set. The test replaces each derived commit
+identity with `main` and requires the direct oracle to reject every mutation; it also injects a
+local demo locator. The component qualification separately rejects even a pinned domain URL when
+it occurs in an executable input. A wrong account using a branch URL, local checkout path or pinned
+link as a build input therefore fails. The exact synthetic fixture is excluded from the production
+population because it is the constructed violation rather than a provenance assertion.
+
+## Claim: all-experimental-source-is-gated
+Verdict: sound
+Fingerprint: 84c81a24c83756a5
+Judged: 2026-08-14
+Judge: Codex
+
+I inspected the catalog-derived population, root-to-command resolver, canonical root sequence,
+workflow validator, mutation cases and exact-revision workflow receipt. The account covers all 11
+declared roots and rejects a newly unaccounted root, a removed gate and a no-op textual mention.
+GitHub run 31811542129 checked out revision
+`64992346726bb75af4ea7997f85cf1db33661262` and completed the sole
+`./scripts/check.sh` step successfully. Archived reuse additionally requires that revision in Git
+history and the same derived isolation-account fingerprint. A dropped relation, bypassed root gate
+or receipt floating to a changed account therefore fails before emitting this evidence.
+
+## Claim: experiment-gates-need-no-domain-checkout
+Verdict: sound
+Fingerprint: fb146ee6921ff6bb
+Judged: 2026-08-14
+Judge: Codex
+
+I inspected all 49 derived executable inputs, the local and mounted locator detectors, the clean
+checkout workflow and its exact successful receipt. The mutation tests inject both local and
+mounted domain paths, and the executable-input scan also rejects domain repository URLs even when
+commit-pinned. The hosted runner checked out only `drim-dev/azimuth` and completed every experiment
+gate at the recorded revision. A gate reading the demo checkout through a path, mount or repository
+URL would be rejected, while an undeclared ambient dependency would fail on that clean runner.
