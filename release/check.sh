@@ -8,7 +8,11 @@ if [[ $# -ne 1 || "$1" != "--experiments-executed" ]]; then
   exit 2
 fi
 
-python3 -m unittest -v release.test_qualify release.test_isolate_experiments
+python3 -m unittest -v \
+  release.test_qualify \
+  release.test_isolate_experiments \
+  release.test_orchestrate
+python3 release/orchestrate.py workflows
 python3 release/qualify.py --allow-dirty
 python3 release/isolate_experiments.py --experiments-executed
 cargo run --quiet --manifest-path tools/azimuth/Cargo.toml -- check \
