@@ -2,7 +2,7 @@
 
 ## Claim: one-source-version
 Verdict: sound
-Fingerprint: 348309ebeec8fb00
+Fingerprint: d8fc2b384f3939cf
 Judged: 2026-08-14
 Judge: Codex
 
@@ -16,7 +16,7 @@ selected set.
 
 ## Claim: registry-identities-match-contract
 Verdict: sound
-Fingerprint: 6265ac892beeb8e9
+Fingerprint: 18f2b229efda5780
 Judged: 2026-08-14
 Judge: Codex
 
@@ -30,7 +30,7 @@ registry set.
 
 ## Claim: packed-contents-are-bounded-and-licensed
 Verdict: sound
-Fingerprint: b31d51025fd5e5fb
+Fingerprint: 412b72b13404b2da
 Judged: 2026-08-14
 Judge: Codex
 
@@ -45,7 +45,7 @@ both halves of the predicate over every selected package.
 
 ## Claim: support-and-platforms-are-explicit
 Verdict: sound
-Fingerprint: 65c7d7b1d7873c5f
+Fingerprint: 2302625d4614b46e
 Judged: 2026-08-14
 Judge: Codex
 
@@ -58,7 +58,7 @@ the complete approved support account rather than inferring support from reposit
 
 ## Claim: experimental-source-is-not-published
 Verdict: sound
-Fingerprint: 66a68e0b4fd8d15b
+Fingerprint: 4749bbe352d01112
 Judged: 2026-08-14
 Judge: Codex
 
@@ -68,3 +68,17 @@ experimental root and move a public manifest under one, and both mutations fail.
 implementation that omitted an approved experimental family from the account or assigned a public
 package manifest inside it would therefore be rejected. The evidence ranges over both complete
 sets named by the predicate and does not treat the absence of current manifests as proof.
+
+## Claim: external-domain-evidence-is-citation-only
+Verdict: sound
+Fingerprint: bc6802d4ba14cc3e
+Judged: 2026-08-14
+Judge: Codex
+
+I inspected the tracked-reference enumerator, the executable-input boundary, all three current
+domain citations and the test that derives that complete set. The test replaces each derived commit
+identity with `main` and requires the direct oracle to reject every mutation; it also injects a
+local demo locator. The component qualification separately rejects even a pinned domain URL when
+it occurs in an executable input. A wrong account using a branch URL, local checkout path or pinned
+link as a build input therefore fails. The exact synthetic fixture is excluded from the production
+population because it is the constructed violation rather than a provenance assertion.
