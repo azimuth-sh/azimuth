@@ -1,6 +1,6 @@
 # Outcome: generic-assurance-observations
 
-Status: implemented, pending acceptance
+Status: accepted
 
 ## Result *(revised 2026-08-14)*
 
@@ -20,7 +20,22 @@ dependency:
 - Repository: `https://github.com/drim-dev/azimuth-demo.git`
 - Revision: `68a2eb5d46daf01ba087ec94b6a1ea7901c63bfd`
 
-## Departures *(revised 2026-08-14)*
+## Acceptance evidence
+
+- The synthetic assurance-extension experiment emitted 2 load evidence bindings, 3 chaos evidence
+  bindings and 6 SARIF challenge bindings. Its 6-claim model had zero holes, errors or warnings.
+- Thirty-four Rust machine-check cases passed, including duplicate observation identity, unresolved
+  challenge subjects, freshness, failed evidence and multi-claim observation behavior.
+- All 50 TypeScript extractor cases passed, including Stryker.NET, PIT, SARIF, load and chaos
+  provider-boundary failures and projections.
+- A source search found no Stryker, SARIF, k6, Chaos Mesh or mutation-specific type name in the Rust
+  core.
+- The complete standalone repository check passed without reading the cited demo repository.
+
+## Departures
+
+This section was revised on 2026-08-14 when CAR16 separated domain authority from the generic
+mechanism.
 
 The initial change boundary mixed generic protocol work with ride-hailing intent and evidence.
 `ride-hailing-delivery-alerts` now owns the domain transition, while this change owns only the
@@ -45,10 +60,9 @@ The opaque provider payload is intentionally agent-facing. The machine tier fing
 fails closed on broken bindings, but does not acquire tool-specific policy for mutation scores,
 SARIF severities, performance thresholds or chaos-resource states.
 
-The split leaves this as a framework-only change with no parsed intent delta. The current local
-finalizer requires at least one applied intent delta, so canonical acceptance needs an honest
-framework-change completion path. An unrelated product delta must not be invented to pass that
-gate.
+The framework-only completion blocker was resolved on 2026-08-14 by the accepted
+`framework-only-change-completion` change. This proposal now declares unchanged intent explicitly;
+an unrelated product delta was not invented to pass the gate.
 
 ## Measurements
 
@@ -57,9 +71,10 @@ gate.
 - One synthetic load execution supplies two separately formed evidence bindings; one chaos
   execution supplies three. A single SARIF observation challenges all six fixture claims without
   covering any of them.
-- The experiment model contains six claims and is hole-free after importing those three
-  observations. The accepted application model contains 90 claims in 11 specs and is also
-  hole-free with zero errors or warnings.
+- The experiment model contains 6 claims and is hole-free after importing those 3 observations.
+  The current canonical model contains 2 routine claims in 1 spec and is also hole-free with zero
+  errors or warnings. The earlier 90-claim, 11-spec application account remains pre-extraction
+  provenance.
 - At the cited pre-split revision, the federation suite contained 33 passing cases and the
   operations repository supplied both Prometheus realizations and rule-test evidence relations.
 - Federation testing found one real source-identity collision: a Prometheus alert rule and its rule

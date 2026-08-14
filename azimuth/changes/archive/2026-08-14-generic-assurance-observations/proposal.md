@@ -1,6 +1,9 @@
 # Change: generic-assurance-observations
 
-Status: implemented, pending acceptance
+Status: accepted and complete
+
+Intent delta: none
+Because: provider-neutral observation transport changes no accepted model intent
 
 Exploration: composable-assurance-extensions
 Carries decisions: E1, E2, E3, E4, E5
