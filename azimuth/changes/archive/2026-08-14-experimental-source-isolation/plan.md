@@ -6,5 +6,5 @@
 - [x] Add one canonical workflow that invokes the root repository check.
 - [x] Run mutation cases and the clean-checkout gate.
 - [x] Update current facets and record the pre-rollout outcome.
-- [ ] Run the exact-revision GitHub workflow and import its successful receipt.
-- [ ] Judge the two hosted-run-dependent claims from that receipt.
+- [x] Run the exact-revision GitHub workflow and import its successful receipt.
+- [x] Judge the two hosted-run-dependent claims from that receipt.

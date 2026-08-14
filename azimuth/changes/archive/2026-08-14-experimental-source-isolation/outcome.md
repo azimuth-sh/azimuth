@@ -1,6 +1,6 @@
 # Outcome: experimental-source-isolation
 
-Status: implemented, pending rollout acceptance
+Status: accepted
 
 ## Result
 
@@ -11,12 +11,8 @@ release qualification; a caller cannot run the complete qualifier without declar
 
 The account rejects local and mounted domain locators in executable inputs. It separately ranges
 over retained domain-repository references and accepts only immutable commit-pinned citations. The
-canonical workflow has one checkout and invokes only `./scripts/check.sh`; its successful execution
-must be imported as an exact-revision receipt before the two component claims are judged.
-
-The change is implemented but not accepted. No hosted receipt exists for the implementation
-revision, so this outcome does not establish clean hosted execution and the change must not be
-archived.
+canonical workflow has one checkout and invokes only `./scripts/check.sh`. GitHub run 31809174051
+completed that command at exact revision `4d89c0e369dd3a49b562e4e97dfd39daaf60d43e`.
 
 ## Evidence
 
@@ -28,9 +24,11 @@ archived.
 - The release suites ran 19 tests: 7 artifact-contract tests and 12 isolation tests. Isolation
   mutations cover an unaccounted root, a removed or no-op gate, sequence drift, local and mounted
   locators, mutable citations, workflow drift, and stale or unsuccessful hosted receipts.
-- The current model contains 10 claims in 2 specs with no holes, errors or warnings. The
-  citation-only claim and the six existing release-artifact claims have current sound judgments.
-  The two new component claims remain unjudged until the exact-revision hosted receipt exists.
+- GitHub run 31809174051 succeeded in 4 minutes 5 seconds from one canonical checkout. Its imported
+  receipt names the repository, workflow, exact revision, successful conclusion and run URL.
+- The current model contains 10 claims in 2 specs with no holes, errors or warnings. All eight
+  release-artifact claims have current sound judgments; the two routine lifecycle claims
+  deliberately owe no judgment.
 
 ## Departures
 
@@ -45,14 +43,19 @@ archived.
   complete repository gate.
 - Hosted evidence is represented by a revision-bound receipt rather than inferred from workflow
   syntax or a local run. This keeps the proposal's rollout condition observable after commit.
+- The first hosted attempt exposed an unpublished `actions/setup-java@v6`; qualification now uses
+  published major v5. A second attempt exposed Java 25/JUnit discovery drift against the fixture's
+  declared Java 21 toolchain, so the workflow now runs Java 21.
+- The successful hosted execution also required replacing three `rg -c` assertions with `grep -c`.
+  Ripgrep was an undeclared local prerequisite; the replacement preserves the exact counts while
+  removing that ambient dependency.
 
 ## Residual decisions
 
-- Acceptance requires a successful run of `.github/workflows/ci.yml` at the exact implementation
-  revision, followed by receipt import and judgments for
-  `all-experimental-source-is-gated` and `experiment-gates-need-no-domain-checkout`.
 - The workflow pins action majors and declared toolchain families. Toolchain optimization and
   broader runner matrices remain outside this change.
+- The setup-go action emits a non-fatal cache warning because no `go.mod` exists at repository
+  root. All Go tests run successfully; cache-path optimization remains outside this change.
 - Experimental packages retain no public identity, publish command or support promise.
 
 ## Measurements
@@ -62,5 +65,7 @@ archived.
 - Domain citations accepted as immutable provenance: 3 of 3.
 - Isolation test methods: 12; complete release qualification test methods: 19.
 - Current-model diagnostics after implementation: 0 holes, 0 errors and 0 warnings.
-- Hosted workflow executions attributable to the implementation revision: 0; acceptance remains
-  pending by construction.
+- Hosted workflow executions attributable to the accepted implementation revision: 1 successful
+  run in 4 minutes 5 seconds.
+- Hosted failures preceding acceptance: 2; both produced specific portability corrections and
+  neither was treated as covering evidence.
