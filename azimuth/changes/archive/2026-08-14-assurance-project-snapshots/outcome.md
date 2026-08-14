@@ -1,14 +1,14 @@
 # Outcome: assurance-project-snapshots
 
-Status: implemented, pending acceptance
+Status: accepted
 
 ## Result
 
 Azimuth now exports one immutable assurance project snapshot from a complete, hole-free accepted
-model. The current fixture yields 85 stable contracts from 90 claims; routine claims remain outside
-the service. Contract fingerprints include claim and effective verification semantics plus
-surfaces and area realization obligations. Exact model fingerprints continue to include source
-relations and enumerated members.
+model. Every non-routine claim yields one stable contract; routine claims remain outside the
+service. Contract fingerprints include claim and effective verification semantics plus surfaces
+and area realization obligations. Exact model fingerprints continue to include source relations
+and enumerated members.
 
 The assurance service stores snapshots immutably and recomputes every content identity. Evidence
 definitions use structured claim references and cannot be registered before their contract is
@@ -31,9 +31,13 @@ applicability rules.
   replay, definition-before-snapshot refusal, observation provenance refusal, qualification reuse
   across an unchanged contract and architectural drift requiring a revised definition.
 - The Next.js diagnostic client passed strict TypeScript checking and a production build.
-- A real fixture export produced 85 non-routine claim contracts from a zero-finding accepted model.
-- The agent-tier worklist contained no stale or adverse non-routine judgment. The five unjudged
-  entries are the expected routine claims, which owe no judgment.
+- Two exports of the canonical accepted model were byte-identical and carried the same snapshot id,
+  model fingerprint and zero contracts. Zero is correct because its 2 accepted claims are routine.
+- The canonical model had zero holes, errors or warnings. It owes no agent judgments because every
+  accepted claim is routine (D20).
+
+The earlier fixture export of 85 contracts from 90 claims remains implementation provenance from
+the source repository before extraction. It is not presented as current canonical evidence.
 
 ## Departures
 
@@ -57,8 +61,9 @@ removed that mismatch before the repository gate.
 
 ## Measurements
 
-- accepted claims: 90;
-- exported claim contracts: 85;
+- current accepted claims: 2 routine;
+- current exported claim contracts: 0;
+- pre-extraction provenance: 90 accepted claims and 85 exported contracts;
 - routine claims added to service ceremony: 0;
 - repository mechanics reimplemented in the service: 0;
 - pure lifecycle cases: 11;

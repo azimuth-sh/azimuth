@@ -1,6 +1,9 @@
 # Change: assurance-project-snapshots
 
-Status: implemented, pending acceptance
+Status: accepted and complete
+
+Intent delta: none
+Because: snapshot projection strengthens optional assurance transport without changing model intent
 
 ## Problem
 
@@ -42,11 +45,11 @@ Out of scope:
 - automatic network publication by `azimuth check`;
 - federated snapshot conversion in this first local slice;
 - per-area evidence definitions or one test per obligated area;
-- changing ride-hailing product intent.
+- changing consumer-product intent.
 
 ## Affected claims
 
-None in the ride-hailing model. This change strengthens the optional assurance protocol using
+None in the accepted Azimuth model. This change strengthens the optional assurance protocol using
 synthetic framework and service accounts.
 
 ## Completion conditions
