@@ -4,14 +4,12 @@ services:
     environment:
       POSTGRES_DB: azimuth
       POSTGRES_USER: azimuth
-      POSTGRES_PASSWORD: azimuth
+      POSTGRES_PASSWORD: "${ASSURANCE_POSTGRES_PASSWORD:?set ASSURANCE_POSTGRES_PASSWORD}"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U azimuth -d azimuth"]
       interval: 2s
       timeout: 2s
       retries: 20
-    ports:
-      - "5434:5432"
     volumes:
       - assurance-data:/var/lib/postgresql/data
 
@@ -20,13 +18,13 @@ services:
       context: ../..
       dockerfile: services/assurance/server/Dockerfile
     environment:
-      DATABASE_URL: postgres://azimuth:azimuth@postgres:5432/azimuth
+      DATABASE_URL: "postgres://azimuth:${ASSURANCE_POSTGRES_PASSWORD:?set ASSURANCE_POSTGRES_PASSWORD}@postgres:5432/azimuth"
       RUST_LOG: azimuth_assurance_server=info,tower_http=info
     depends_on:
       postgres:
         condition: service_healthy
     ports:
-      - "8080:8080"
+      - "127.0.0.1:${ASSURANCE_API_PORT:-8080}:8080"
 
   web:
     build:
@@ -36,7 +34,7 @@ services:
     depends_on:
       - api
     ports:
-      - "3000:3000"
+      - "127.0.0.1:${ASSURANCE_WEB_PORT:-3000}:3000"
 
 volumes:
   assurance-data:

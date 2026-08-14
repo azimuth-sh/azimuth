@@ -12,8 +12,8 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://azimuth:azimuth@localhost:5432/azimuth".into());
+    let database_url =
+        std::env::var("DATABASE_URL").expect("DATABASE_URL must name the assurance database");
     let address = std::env::var("ASSURANCE_ADDRESS").unwrap_or_else(|_| "0.0.0.0:8080".into());
     let pool = connect(&database_url)
         .await

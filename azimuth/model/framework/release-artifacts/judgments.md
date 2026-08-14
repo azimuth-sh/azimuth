@@ -2,7 +2,7 @@
 
 ## Claim: one-source-version
 Verdict: sound
-Fingerprint: d8fc2b384f3939cf
+Fingerprint: a8480b73627e2ab2
 Judged: 2026-08-14
 Judge: Codex
 
@@ -16,7 +16,7 @@ selected set.
 
 ## Claim: registry-identities-match-contract
 Verdict: sound
-Fingerprint: 18f2b229efda5780
+Fingerprint: b082d49c4b5f0633
 Judged: 2026-08-14
 Judge: Codex
 
@@ -30,7 +30,7 @@ registry set.
 
 ## Claim: packed-contents-are-bounded-and-licensed
 Verdict: sound
-Fingerprint: 412b72b13404b2da
+Fingerprint: bccf4bfcfe9ad991
 Judged: 2026-08-14
 Judge: Codex
 
@@ -45,7 +45,7 @@ both halves of the predicate over every selected package.
 
 ## Claim: support-and-platforms-are-explicit
 Verdict: sound
-Fingerprint: 2302625d4614b46e
+Fingerprint: 850a2a989352184e
 Judged: 2026-08-14
 Judge: Codex
 
@@ -58,7 +58,7 @@ the complete approved support account rather than inferring support from reposit
 
 ## Claim: experimental-source-is-not-published
 Verdict: sound
-Fingerprint: 4749bbe352d01112
+Fingerprint: 37bcfdfd33da15ea
 Judged: 2026-08-14
 Judge: Codex
 

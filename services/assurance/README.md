@@ -1,31 +1,53 @@
 # Azimuth assurance service
 
-This is the open reference implementation of D40's lifecycle boundary. It keeps three kinds of
-state distinct:
+This is the open reference implementation of D40's lifecycle boundary. It keeps repository
+evidence, accepted-model snapshots, execution observations and derived gate decisions distinct.
+The service is optional: neither `azimuth check` nor repository finalization requires a running
+ledger.
 
-- repository-authored evidence definitions and semantic qualifications;
-- immutable accepted-model snapshots and their claim contracts;
-- immutable CI or production observations and challenge results;
-- derived lifecycle-gate decisions and focused work.
+## Private single-team deployment
 
-The service is optional. Nothing in `azimuth check`, routine changes, repository finalization or
-the accepted model requires it to be running.
-
-## Run the complete application
-
-From this directory:
+The supplied Compose profile is for private dogfood on one host. Generate a URL-safe deployment
+credential and keep it in the process environment:
 
 ```bash
-docker compose up --build
+export ASSURANCE_POSTGRES_PASSWORD="$(openssl rand -hex 32)"
+docker compose up --detach --build
 ./seed-demo.sh
 ```
 
-The API listens on `http://127.0.0.1:8080`, PostgreSQL is exposed on port 5434, and the diagnostic
-interface is at `http://127.0.0.1:3000`. The seed is replay-safe.
+The API listens on `http://127.0.0.1:8080` and the diagnostic interface listens on
+`http://127.0.0.1:3000`. PostgreSQL has no host-published port. `ASSURANCE_API_PORT` and
+`ASSURANCE_WEB_PORT` may select different loopback ports. The database password has no default;
+Compose refuses to resolve until the deployment supplies it.
+
+Loopback is the repository-owned containment boundary. Remote access must cross an
+operator-controlled trusted reverse proxy, SSH tunnel or VPN. This profile does not add
+application authentication, authorization or tenant isolation, and it is not ready for direct
+internet exposure. TLS termination, rate limiting, abuse controls and proxy configuration remain
+operator responsibilities.
+
+The named `assurance-data` volume retains PostgreSQL data when the application containers stop or
+are recreated. API startup applies embedded SQLx migrations before serving. Downgrades are
+unsupported. This first schema has no prior version to upgrade from; every later schema-changing
+release must demonstrate that an old image's accepted history remains readable after the new image
+applies its forward migration.
+
+A named volume is not a recovery system. Backups, restore tests, host-volume loss, corruption,
+high availability and disaster recovery are outside this private profile.
+
+Stop the applications without deleting their data:
+
+```bash
+docker compose stop
+```
+
+Delete the stack only when its ledger history is no longer required. `docker compose down
+--volumes` deletes the named database volume and is therefore destructive.
 
 ## Run during development
 
-Start PostgreSQL by any convenient method and set `DATABASE_URL`, then run:
+Start PostgreSQL by any convenient method, set `DATABASE_URL`, then run:
 
 ```bash
 cargo run --manifest-path Cargo.toml -p azimuth-assurance-server
@@ -34,8 +56,8 @@ npm install
 npm run dev
 ```
 
-The backend defaults to `postgres://azimuth:azimuth@localhost:5432/azimuth`. The web process reads
-`ASSURANCE_API_URL`, defaulting to `http://127.0.0.1:8080`.
+The backend requires `DATABASE_URL`. The web process reads `ASSURANCE_API_URL`, defaulting to
+`http://127.0.0.1:8080`.
 
 ## Protocol surface
 
@@ -91,12 +113,14 @@ npm run build
 ```
 
 The Rust component suite starts real PostgreSQL with Testcontainers and drives the public HTTP
-boundary. Docker access is therefore required. The original lifecycle experiment stays
-at `../../experiments/assurance-service` and consumes the same domain crate.
+boundary. Docker access is therefore required. The private-deployment qualifier additionally
+checks resolved Compose containment, ledger survival across the documented lifecycle and every
+catalog-selected image/platform build. The original lifecycle experiment stays at
+`../../experiments/assurance-service` and consumes the same domain crate.
 
 ## Deliberate reference-service limits
 
 This application has no authentication, tenant isolation, signed provenance, retention policy,
 report-object storage, backup policy, rate limiting, service telemetry or availability objective.
-Deploying it beyond an isolated evaluation environment requires those controls. Its purpose is to
-freeze and demonstrate the provider-neutral semantic protocol before production hardening.
+Its private profile exists to dogfood the provider-neutral semantic protocol behind an explicit
+operator-owned network boundary, not to imply production hardening.

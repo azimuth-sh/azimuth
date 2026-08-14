@@ -1,0 +1,142 @@
+{
+  "realizes": [
+    {
+      "spec": "framework/assurance-deployment",
+      "scenario": "deployment-owns-secrets",
+      "site": "private_compose_profile",
+      "file": "services/assurance/docker-compose.yml",
+      "lang": "yaml",
+      "source_fingerprint": "fae663b8d9a5cffc89a900dc54b0a0f1c63f73a1272ffc23d901879dba21fb1c"
+    },
+    {
+      "spec": "framework/assurance-deployment",
+      "scenario": "host-bindings-match-private-boundary",
+      "site": "private_compose_profile",
+      "file": "services/assurance/docker-compose.yml",
+      "lang": "yaml",
+      "source_fingerprint": "fae663b8d9a5cffc89a900dc54b0a0f1c63f73a1272ffc23d901879dba21fb1c"
+    },
+    {
+      "spec": "framework/assurance-deployment",
+      "scenario": "containment-is-not-authentication",
+      "site": "private_deployment_account",
+      "file": "services/assurance/README.md",
+      "lang": "markdown",
+      "source_fingerprint": "0fa30613296298968aeddfcffe0c62661e13ff60a56cccb2d3c463cf0e667ccf"
+    },
+    {
+      "spec": "framework/assurance-deployment",
+      "scenario": "history-survives-current-service-recreation",
+      "site": "assurance_data_volume",
+      "file": "services/assurance/docker-compose.yml",
+      "lang": "yaml",
+      "source_fingerprint": "fae663b8d9a5cffc89a900dc54b0a0f1c63f73a1272ffc23d901879dba21fb1c"
+    },
+    {
+      "spec": "framework/assurance-deployment",
+      "scenario": "retained-database-migrates-forward",
+      "site": "assurance_server_startup",
+      "file": "services/assurance/server/src/main.rs",
+      "lang": "rust",
+      "source_fingerprint": "ebd9615bfad1467598f1fa947271aa6c2e558fa6694846321f72da139e233bb8"
+    },
+    {
+      "spec": "framework/assurance-deployment",
+      "scenario": "complete-selected-image-matrix-builds",
+      "site": "build_selected_images",
+      "file": "services/assurance/deployment/qualify.py",
+      "lang": "python",
+      "source_fingerprint": "efb475f9d4ff192d09516b3e9aab1d60087caea8f8452558ab1a4eb9c3b92a14"
+    }
+  ],
+  "covers": [
+    {
+      "spec": "framework/assurance-deployment",
+      "scenario": "deployment-owns-secrets",
+      "site": "resolved_configuration",
+      "file": "services/assurance/deployment/qualify.py",
+      "lang": "python",
+      "source_fingerprint": "efb475f9d4ff192d09516b3e9aab1d60087caea8f8452558ab1a4eb9c3b92a14",
+      "scope": "component",
+      "quantification": "universal",
+      "oracle": "direct"
+    },
+    {
+      "spec": "framework/assurance-deployment",
+      "scenario": "host-bindings-match-private-boundary",
+      "site": "validate_configuration",
+      "file": "services/assurance/deployment/qualify.py",
+      "lang": "python",
+      "source_fingerprint": "efb475f9d4ff192d09516b3e9aab1d60087caea8f8452558ab1a4eb9c3b92a14",
+      "scope": "component",
+      "quantification": "universal",
+      "oracle": "direct"
+    },
+    {
+      "spec": "framework/assurance-deployment",
+      "scenario": "containment-is-not-authentication",
+      "site": "validate_documentation",
+      "file": "services/assurance/deployment/qualify.py",
+      "lang": "python",
+      "source_fingerprint": "efb475f9d4ff192d09516b3e9aab1d60087caea8f8452558ab1a4eb9c3b92a14",
+      "scope": "component",
+      "quantification": "universal",
+      "oracle": "direct"
+    },
+    {
+      "spec": "framework/assurance-deployment",
+      "scenario": "history-survives-current-service-recreation",
+      "site": "demonstrate_lifecycle",
+      "file": "services/assurance/deployment/qualify.py",
+      "lang": "python",
+      "source_fingerprint": "efb475f9d4ff192d09516b3e9aab1d60087caea8f8452558ab1a4eb9c3b92a14",
+      "scope": "e2e",
+      "quantification": "universal",
+      "oracle": "direct"
+    },
+    {
+      "spec": "framework/assurance-deployment",
+      "scenario": "retained-database-migrates-forward",
+      "site": "demonstrate_lifecycle",
+      "file": "services/assurance/deployment/qualify.py",
+      "lang": "python",
+      "source_fingerprint": "efb475f9d4ff192d09516b3e9aab1d60087caea8f8452558ab1a4eb9c3b92a14",
+      "scope": "component",
+      "quantification": "universal",
+      "oracle": "direct"
+    },
+    {
+      "spec": "framework/assurance-deployment",
+      "scenario": "complete-selected-image-matrix-builds",
+      "site": "build_selected_images",
+      "file": "services/assurance/deployment/qualify.py",
+      "lang": "python",
+      "source_fingerprint": "efb475f9d4ff192d09516b3e9aab1d60087caea8f8452558ab1a4eb9c3b92a14",
+      "scope": "component",
+      "quantification": "universal",
+      "oracle": "direct"
+    }
+  ],
+  "mechanism_implementations": [],
+  "mechanism_covers": [],
+  "class_members": [],
+  "enumerations": [],
+  "artifacts": [
+    {
+      "id": "private-deployment-qualification",
+      "kind": "repository-guard",
+      "file": "services/assurance/deployment/qualify.py"
+    },
+    {
+      "id": "private-deployment-lifecycle",
+      "kind": "composed-lifecycle-test",
+      "file": "services/assurance/deployment/qualify.py"
+    },
+    {
+      "id": "private-deployment-image-build",
+      "kind": "oci-build-guard",
+      "file": "services/assurance/deployment/qualify.py"
+    }
+  ],
+  "observations": []
+}
