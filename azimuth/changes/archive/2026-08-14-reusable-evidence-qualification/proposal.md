@@ -1,6 +1,9 @@
 # Change: reusable-evidence-qualification
 
-Status: implemented, pending acceptance
+Status: accepted and complete
+
+Intent delta: none
+Because: the experiment qualifies a framework protocol without changing accepted model intent
 
 Exploration: continuous-assurance-service
 Carries decisions: E2, E3, E5
@@ -41,7 +44,7 @@ Out of scope:
 
 ## Affected claims
 
-None in the ride-hailing model. This change tests the Azimuth protocol against a synthetic
+None in the accepted Azimuth model. This change tests the Azimuth protocol against a synthetic
 assurance lifecycle.
 
 ## Completion conditions

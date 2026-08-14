@@ -1,6 +1,6 @@
 # Outcome: reusable-evidence-qualification
 
-Status: implemented, pending acceptance
+Status: accepted
 
 ## Result
 
@@ -17,18 +17,24 @@ gate decisions and work items are derived outputs.
 
 ## Measurements
 
-- pre-registered executable cases: 8 passed, 0 failed;
-- promoted-domain temporal regression cases: 1 passed, 0 failed;
+- original pre-registered executable cases: 8 passed, 0 failed;
+- current lifecycle experiment cases: 11 passed, 0 failed;
+- promoted-domain wire-contract regression cases: 1 passed, 0 failed;
 - semantic qualifications for two successful CI revisions: 1;
 - repository writes caused by those execution results: 0;
 - false cross-subject or cross-stage passes: 0;
 - sleeps or wall-clock dependence: 0.
 
+The 8-case count is immutable implementation provenance. Acceptance on 2026-08-14 reran the
+current 11-case experiment and the promoted-domain regression from the canonical checkout; all 12
+tests passed. `azimuth change check` also reported zero incomplete plan items and zero accepted-
+state errors or warnings against the two-claim framework model.
+
 ## Departures
 
 None. The experiment remained a pure library with no persistence or network boundary.
 
-## Residue carried into the service
+## Residual decisions
 
 - Persistent records need idempotent identity and immutable history.
 - When several qualifications or challenges exist, the evaluator must select the latest applicable
