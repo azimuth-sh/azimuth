@@ -66,6 +66,12 @@ If a production observation really is needed to accept the solution, the proposa
 implementation. Examples include a provider with no representative sandbox or a latency predicate
 that cannot be sampled under representative pre-production load.
 
+A framework mechanism or operating document may change without changing accepted intent. Such a
+proposal declares adjacent metadata lines `Intent delta: none` and `Because: <rationale>`. The
+declaration replaces only the parsed-delta completion requirement. It is dishonest when a consumer
+obligation changes, and it is contradictory when the change also contains a supported intent
+delta. Absence of a `specs/` directory is never enough to infer this mode.
+
 ### 2. Write and classify intent
 
 The intent owner authors the intent delta. The mechanism and evidence owners challenge ambiguous

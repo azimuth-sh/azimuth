@@ -117,3 +117,46 @@ fn assurance_export_refuses_a_partial_model() {
         .contains("requires the complete accepted model"));
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn unchanged_intent_is_visible_and_finalizable() {
+    let root = root();
+    let model = root.join("model");
+    let change = root.join("changes/framework-only");
+    fs::create_dir_all(&model).unwrap();
+    fs::create_dir_all(&change).unwrap();
+    fs::write(
+        change.join("proposal.md"),
+        "# Change: framework-only\n\nStatus: accepted and complete\n\nIntent delta: none\nBecause: only the framework mechanism changes\n\n## Problem\n",
+    )
+    .unwrap();
+    fs::write(change.join("plan.md"), "- [x] Complete.\n").unwrap();
+    fs::write(
+        change.join("outcome.md"),
+        "# Outcome: framework-only\n\nStatus: accepted\n\n## Departures\n\nNone.\n\n## Residual decisions\n\nNone.\n",
+    )
+    .unwrap();
+
+    let checked = azimuth(&[
+        "change",
+        "check",
+        change.to_str().unwrap(),
+        "--model",
+        model.to_str().unwrap(),
+    ]);
+    let finalized = azimuth(&[
+        "change",
+        "finalize",
+        change.to_str().unwrap(),
+        "--model",
+        model.to_str().unwrap(),
+    ]);
+
+    assert!(checked.status.success());
+    assert!(String::from_utf8(checked.stdout)
+        .unwrap()
+        .contains("intent unchanged · only the framework mechanism changes"));
+    assert!(finalized.status.success());
+    assert!(change.join("finalization.json").is_file());
+    fs::remove_dir_all(root).unwrap();
+}

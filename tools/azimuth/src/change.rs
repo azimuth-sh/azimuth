@@ -45,6 +45,7 @@ pub struct Report {
     pub id: String,
     pub additions: Vec<Addition>,
     pub criticality_changes: Vec<CriticalityChange>,
+    pub unchanged_intent_reason: Option<String>,
     pub incomplete_plan_items: usize,
     pub current_claims: usize,
     pub target_claims: usize,
@@ -59,9 +60,16 @@ pub fn inspect(root: &Path, model: &Model) -> Result<Report, Vec<String>> {
     else {
         return Err(vec!["change path has no id".into()]);
     };
-    if !root.join("proposal.md").is_file() {
-        errors.push("proposal.md is missing".into());
-    }
+    let proposal_path = root.join("proposal.md");
+    let proposal = match fs::read_to_string(&proposal_path) {
+        Ok(proposal) => proposal,
+        Err(_) => {
+            errors.push("proposal.md is missing".into());
+            String::new()
+        }
+    };
+    let unchanged_intent_reason =
+        parse_unchanged_intent_reason(&proposal_path, &proposal, &mut errors);
     let plan = match fs::read_to_string(root.join("plan.md")) {
         Ok(plan) => plan,
         Err(_) => {
@@ -96,6 +104,14 @@ pub fn inspect(root: &Path, model: &Model) -> Result<Report, Vec<String>> {
         }
     }
 
+    if unchanged_intent_reason.is_some()
+        && (!additions.is_empty() || !criticality_changes.is_empty())
+    {
+        errors.push(
+            "proposal declares unchanged intent but specs contain a supported intent delta".into(),
+        );
+    }
+
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -108,10 +124,73 @@ pub fn inspect(root: &Path, model: &Model) -> Result<Report, Vec<String>> {
         id,
         additions,
         criticality_changes,
+        unchanged_intent_reason,
         incomplete_plan_items,
         current_claims: model.scenario_count(),
         target_claims: model.scenario_count() + unapplied_claims,
     })
+}
+
+fn parse_unchanged_intent_reason(
+    path: &Path,
+    proposal: &str,
+    errors: &mut Vec<String>,
+) -> Option<String> {
+    let metadata = proposal
+        .lines()
+        .enumerate()
+        .take_while(|(_, line)| !line.trim_start().starts_with("## "))
+        .collect::<Vec<_>>();
+    let declarations = metadata
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, line))| line.trim_start().starts_with("Intent delta:"))
+        .collect::<Vec<_>>();
+
+    if declarations.len() > 1 {
+        errors.push(format!(
+            "{}: proposal metadata declares `Intent delta:` more than once",
+            path.display()
+        ));
+        return None;
+    }
+    let Some((metadata_index, (line_index, declaration))) = declarations.first().copied() else {
+        return None;
+    };
+    if declaration.trim() != "Intent delta: none" {
+        errors.push(format!(
+            "{}:{}: proposal metadata supports only `Intent delta: none`",
+            path.display(),
+            line_index + 1
+        ));
+        return None;
+    }
+
+    let Some((because_line, because)) = metadata.get(metadata_index + 1).copied() else {
+        errors.push(format!(
+            "{}:{}: `Intent delta: none` requires an adjacent non-empty `Because:`",
+            path.display(),
+            line_index + 1
+        ));
+        return None;
+    };
+    let Some(reason) = because.trim().strip_prefix("Because:").map(str::trim) else {
+        errors.push(format!(
+            "{}:{}: `Intent delta: none` requires an adjacent non-empty `Because:`",
+            path.display(),
+            because_line + 1
+        ));
+        return None;
+    };
+    if reason.is_empty() {
+        errors.push(format!(
+            "{}:{}: `Because:` must state why accepted intent is unchanged",
+            path.display(),
+            because_line + 1
+        ));
+        return None;
+    }
+    Some(reason.to_string())
 }
 
 fn collect_markdown(root: &Path, files: &mut Vec<PathBuf>, errors: &mut Vec<String>) {
@@ -413,7 +492,10 @@ fn parse_criticality_change(
 
 pub fn completion_issues(root: &Path, report: &Report) -> Vec<String> {
     let mut issues = Vec::new();
-    if report.additions.is_empty() && report.criticality_changes.is_empty() {
+    if report.additions.is_empty()
+        && report.criticality_changes.is_empty()
+        && report.unchanged_intent_reason.is_none()
+    {
         issues.push("change declares no supported intent delta".into());
     }
     if report.incomplete_plan_items > 0 {
@@ -568,6 +650,96 @@ mod tests {
             completion_issues(&root, &report),
             vec!["change declares no supported intent delta"]
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn an_explicit_unchanged_intent_reason_satisfies_only_the_delta_gate() {
+        let root = temp_change();
+        fs::write(
+            root.join("proposal.md"),
+            "# Change: x\n\nStatus: proposed\n\nIntent delta: none\nBecause: the parser contract changes without changing accepted intent\n\n## Problem\n",
+        )
+        .unwrap();
+        fs::write(root.join("plan.md"), "- [ ] Complete.\n").unwrap();
+        let report = inspect(&root, &Model::default()).unwrap();
+
+        let issues = completion_issues(&root, &report);
+
+        assert_eq!(
+            report.unchanged_intent_reason.as_deref(),
+            Some("the parser contract changes without changing accepted intent")
+        );
+        assert!(!issues
+            .iter()
+            .any(|issue| issue == "change declares no supported intent delta"));
+        assert!(issues
+            .iter()
+            .any(|issue| issue == "1 plan item(s) remain incomplete"));
+        assert!(issues
+            .iter()
+            .any(|issue| issue == "proposal status is not `accepted and complete`"));
+        assert!(issues.iter().any(|issue| issue == "outcome.md is missing"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn an_unchanged_intent_declaration_requires_an_adjacent_reason() {
+        let root = temp_change();
+        fs::write(
+            root.join("proposal.md"),
+            "# Change: x\n\nStatus: proposed\n\nIntent delta: none\n\nBecause: separated\n\n## Problem\n",
+        )
+        .unwrap();
+        fs::write(root.join("plan.md"), "- [ ] Complete.\n").unwrap();
+
+        let errors = inspect(&root, &Model::default()).unwrap_err();
+
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("requires an adjacent non-empty `Because:`")));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn unchanged_intent_cannot_be_declared_twice() {
+        let root = temp_change();
+        fs::write(
+            root.join("proposal.md"),
+            "# Change: x\n\nStatus: proposed\n\nIntent delta: none\nBecause: first\nIntent delta: none\nBecause: second\n\n## Problem\n",
+        )
+        .unwrap();
+        fs::write(root.join("plan.md"), "- [ ] Complete.\n").unwrap();
+
+        let errors = inspect(&root, &Model::default()).unwrap_err();
+
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("declares `Intent delta:` more than once")));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn unchanged_intent_contradicts_a_supported_delta() {
+        let root = temp_change();
+        fs::write(
+            root.join("proposal.md"),
+            "# Change: x\n\nStatus: proposed\n\nIntent delta: none\nBecause: no accepted intent changes\n\n## Problem\n",
+        )
+        .unwrap();
+        fs::write(root.join("plan.md"), "- [ ] Complete.\n").unwrap();
+        fs::create_dir_all(root.join("specs")).unwrap();
+        fs::write(
+            root.join("specs/alpha.md"),
+            "# Intent delta: alpha\n\n## Add requirement: added\nCriticality: routine\n\nText.\n\n### Add scenario: visible\nWHEN x\nTHEN y\n",
+        )
+        .unwrap();
+
+        let errors = inspect(&root, &Model::default()).unwrap_err();
+
+        assert!(errors.iter().any(|error| error.contains(
+            "proposal declares unchanged intent but specs contain a supported intent delta"
+        )));
         fs::remove_dir_all(root).unwrap();
     }
 

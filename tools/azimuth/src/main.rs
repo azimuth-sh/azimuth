@@ -785,6 +785,9 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
                     change_obligations(change.to)
                 );
             }
+            if let Some(reason) = &report.unchanged_intent_reason {
+                println!("  intent unchanged · {reason}");
+            }
             println!(
                 "current {} claim(s) → target {} claim(s)",
                 report.current_claims, report.target_claims
