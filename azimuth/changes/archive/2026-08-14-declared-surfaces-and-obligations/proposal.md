@@ -1,6 +1,9 @@
 # Change: declared-surfaces-and-obligations
 
-Status: implemented, pending acceptance
+Status: accepted and complete
+
+Intent delta: none
+Because: workspace architecture declarations strengthen checks without changing accepted intent
 
 ## Problem
 
@@ -32,11 +35,11 @@ In scope:
 
 - structured monorepo area declarations and path-derived area attribution;
 - surface declarations binding semantic ids to an enumerator and contributing areas;
-- replacement of this repository's ad-hoc Next surface assignment with that declaration;
+- replacement of ad-hoc semantic-id pairing with workspace-declared Next surface assignment;
 - area realization obligations for non-routine claims;
 - machine holes for missing/failed surface derivation, unknown areas and absent obligated
   realizations;
-- synthetic and corpus validation, including an untagged-route negative case;
+- synthetic validation, including an untagged-route negative case;
 - documentation, glossary, formats and agent-skill guidance.
 
 Out of scope:
@@ -50,20 +53,19 @@ Out of scope:
 
 ## Affected claims
 
-No product intent changes. The current `trips/rider-view#position-confined-to-live-phases`
-invariant and `referrals/rewards#referral-summary-explains-state` claim are the corpus fixtures used
-to validate the two mechanics.
+None in the accepted Azimuth model. The source-repository implementation used consumer-domain
+claims as pre-extraction fixtures; standalone acceptance depends only on synthetic framework
+evidence.
 
 ## Completion conditions
 
 - `azimuth check` reads validated area, surface and realization-obligation declarations.
 - A site-domain claim with no surface, a surface with an unknown area or failed enumerator, and an
   area obligation with no matching realization each produce distinct errors.
-- The rider Next application is assigned to `trips/rider-view` through configuration rather than a
-  semantic-id command-line pairing.
-- Existing routes pass; a synthetic newly enumerated untagged route fails with
-  `invariant-breach`.
-- A synthetic backend-only realization fails a required rider-web obligation.
+- The TypeScript extractor derives Next surface targets through workspace configuration rather
+  than semantic-id command-line pairing.
+- Tagged synthetic routes pass; a newly enumerated untagged route fails with `invariant-breach`.
+- A synthetic realization in only one area fails an obligation requiring a second area.
 - Tags do not gain mandatory area or role arguments; area is derived from source location.
 - Verification documentation states that obligations do not imply area-local tests.
 - Targeted tool tests and the repository check pass, with departures and residuals recorded.
