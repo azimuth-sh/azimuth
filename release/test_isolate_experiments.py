@@ -1,12 +1,15 @@
 import copy
+import json
+import tempfile
 import unittest
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 from release.isolate_experiments import (
     IsolationError,
     POLYGLOT_GATE,
     ROOT_GATE,
     WORKFLOW,
+    archived_workflow_receipt,
     derive_root_account,
     executable_inputs,
     reference_sources,
@@ -121,6 +124,8 @@ class ExperimentalIsolationTests(unittest.TestCase):
             validate_workflow(
                 source.replace("./scripts/check.sh", "./experiments/polyglot/check.sh")
             )
+        with self.assertRaisesRegex(IsolationError, "retain history"):
+            validate_workflow(source.replace("fetch-depth: 0", "fetch-depth: 1"))
 
     def test_release_qualification_follows_every_experiment_gate(self):
         account = derive_root_account(self.catalog, self.root, self.tracked)
@@ -136,6 +141,7 @@ class ExperimentalIsolationTests(unittest.TestCase):
 
     def test_workflow_receipt_is_exact_revision_evidence(self):
         revision = "a" * 40
+        account_fingerprint = "c" * 64
         receipt = {
             "format": "azimuth-github-workflow-receipt",
             "schemaVersion": 1,
@@ -143,15 +149,59 @@ class ExperimentalIsolationTests(unittest.TestCase):
             "workflow": ".github/workflows/ci.yml",
             "revision": revision,
             "conclusion": "success",
+            "accountFingerprint": account_fingerprint,
             "runUrl": "https://github.com/drim-dev/azimuth/actions/runs/123",
         }
-        self.assertEqual(validate_workflow_receipt(receipt, revision)["revision"], revision)
-        for field, value in (("revision", "b" * 40), ("conclusion", "failure")):
+        self.assertEqual(
+            validate_workflow_receipt(receipt, revision, account_fingerprint)["revision"],
+            revision,
+        )
+        historical = {**receipt, "revision": "b" * 40}
+        self.assertEqual(
+            validate_workflow_receipt(
+                historical,
+                revision,
+                account_fingerprint,
+                lambda candidate: candidate == historical["revision"],
+            )["revision"],
+            historical["revision"],
+        )
+        for field, value in (
+            ("revision", "b" * 40),
+            ("conclusion", "failure"),
+            ("accountFingerprint", "d" * 64),
+        ):
             with self.subTest(field=field):
                 changed = dict(receipt)
                 changed[field] = value
                 with self.assertRaisesRegex(IsolationError, f"workflow receipt {field}"):
-                    validate_workflow_receipt(changed, revision)
+                    validate_workflow_receipt(changed, revision, account_fingerprint)
+
+    def test_archived_receipt_is_selected_only_for_the_same_account(self):
+        revision = "a" * 40
+        account_fingerprint = "c" * 64
+        receipt = {
+            "format": "azimuth-github-workflow-receipt",
+            "schemaVersion": 1,
+            "repository": "drim-dev/azimuth",
+            "workflow": ".github/workflows/ci.yml",
+            "revision": revision,
+            "conclusion": "success",
+            "accountFingerprint": account_fingerprint,
+            "runUrl": "https://github.com/drim-dev/azimuth/actions/runs/123",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive = root / "azimuth/changes/archive/2026-08-14-isolation"
+            archive.mkdir(parents=True)
+            (archive / "workflow-receipt.json").write_text(json.dumps(receipt))
+            self.assertEqual(
+                archived_workflow_receipt(root, revision, account_fingerprint)["revision"],
+                revision,
+            )
+            self.assertIsNone(
+                archived_workflow_receipt(root, revision, "d" * 64)
+            )
 
     def test_current_executable_inputs_have_no_domain_locator(self):
         validate_domain_inputs(

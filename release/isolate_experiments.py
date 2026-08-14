@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -107,6 +108,15 @@ def git_revision(root):
         text=True,
     )
     return result.stdout.strip()
+
+
+def git_revision_is_ancestor(root, revision):
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", revision, "HEAD"],
+        cwd=root,
+        capture_output=True,
+    )
+    return result.returncode == 0
 
 
 def readable_tracked_files(root, paths):
@@ -247,6 +257,10 @@ def validate_workflow(source):
     )
     require(len(checkout_steps) == 1, "CI must contain exactly one canonical checkout step")
     require(
+        len(re.findall(r"^\s*fetch-depth:\s*0\s*$", source, re.MULTILINE)) == 1,
+        "CI checkout must retain history for archived receipt attribution",
+    )
+    require(
         not re.search(r"^\s*repository:\s*", source, re.MULTILINE),
         "CI must not check out another repository",
     )
@@ -258,26 +272,87 @@ def validate_workflow(source):
     return {"file": str(WORKFLOW), "command": run_steps[0]}
 
 
-def validate_workflow_receipt(receipt, revision):
+def isolation_account_fingerprint(root_account, execution, workflow, inputs, citations):
+    account = {
+        "roots": root_account,
+        "execution": execution,
+        "workflow": workflow,
+        "executableInputs": sorted(str(path) for path in inputs),
+        "domainCitations": citations,
+    }
+    canonical = json.dumps(account, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def validate_workflow_receipt(
+    receipt,
+    revision,
+    account_fingerprint,
+    revision_is_ancestor=None,
+):
     expected = {
         "format": "azimuth-github-workflow-receipt",
         "schemaVersion": 1,
         "repository": "drim-dev/azimuth",
         "workflow": str(WORKFLOW),
-        "revision": revision,
         "conclusion": "success",
+        "accountFingerprint": account_fingerprint,
     }
     for field, value in expected.items():
         require(
             receipt.get(field) == value,
             f"workflow receipt {field} is {receipt.get(field)!r}, expected {value!r}",
         )
+    receipt_revision = receipt.get("revision", "")
+    require(
+        re.fullmatch(r"[0-9a-f]{40}", receipt_revision) is not None,
+        "workflow receipt revision is not a full Git commit identity",
+    )
+    is_ancestor = revision_is_ancestor or (lambda candidate: False)
+    require(
+        receipt_revision == revision or is_ancestor(receipt_revision),
+        "workflow receipt revision is neither current nor an ancestor",
+    )
     run_url = receipt.get("runUrl", "")
     require(
         re.fullmatch(r"https://github\.com/drim-dev/azimuth/actions/runs/[0-9]+", run_url),
         "workflow receipt runUrl does not identify a canonical Actions run",
     )
-    return {field: receipt[field] for field in (*expected, "runUrl")}
+    return {
+        field: receipt[field]
+        for field in (*expected, "revision", "runUrl")
+    }
+
+
+def archived_workflow_receipt(
+    root,
+    revision,
+    account_fingerprint,
+    revision_is_ancestor=None,
+):
+    archive = root / "azimuth/changes/archive"
+    candidates = sorted(archive.glob("*/workflow-receipt.json"))
+    matches = []
+    for path in candidates:
+        try:
+            receipt = json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError) as error:
+            raise IsolationError(f"cannot read archived workflow receipt {path}: {error}")
+        if receipt.get("accountFingerprint") != account_fingerprint:
+            continue
+        matches.append(
+            validate_workflow_receipt(
+                receipt,
+                revision,
+                account_fingerprint,
+                revision_is_ancestor,
+            )
+        )
+    require(
+        len(matches) <= 1,
+        "more than one archived workflow receipt matches the current isolation account",
+    )
+    return matches[0] if matches else None
 
 
 def validate_root_sequence(source, account):
@@ -447,21 +522,40 @@ def qualify_experimental_isolation(
     root_account = derive_root_account(catalog, root, tracked)
     execution = validate_root_sequence((root / ROOT_GATE).read_text(), root_account)
     workflow = validate_workflow((root / WORKFLOW).read_text())
-    workflow_execution = (
-        {"status": "pending"}
-        if workflow_receipt is None
-        else validate_workflow_receipt(workflow_receipt, git_revision(root))
-    )
     inputs = executable_inputs(catalog, root, tracked)
     validate_domain_inputs(inputs)
     citations = validate_domain_references(reference_sources(root, tracked))
+    account_fingerprint = isolation_account_fingerprint(
+        root_account,
+        execution,
+        workflow,
+        inputs,
+        citations,
+    )
+    revision = git_revision(root)
+    workflow_execution = (
+        validate_workflow_receipt(
+            workflow_receipt,
+            revision,
+            account_fingerprint,
+            lambda candidate: git_revision_is_ancestor(root, candidate),
+        )
+        if workflow_receipt is not None
+        else archived_workflow_receipt(
+            root,
+            revision,
+            account_fingerprint,
+            lambda candidate: git_revision_is_ancestor(root, candidate),
+        )
+    )
     qualification = {
         "format": "azimuth-experimental-isolation",
         "schemaVersion": 1,
+        "accountFingerprint": account_fingerprint,
         "roots": root_account,
         "execution": execution,
         "workflow": workflow,
-        "workflowExecution": workflow_execution,
+        "workflowExecution": workflow_execution or {"status": "pending"},
         "executableInputs": sorted(str(path) for path in inputs),
         "domainCitations": citations,
     }

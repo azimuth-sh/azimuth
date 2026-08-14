@@ -1,6 +1,6 @@
 # Change: experimental-source-isolation
 
-Status: accepted and complete
+Status: implemented
 
 Exploration: canonical-alpha-release
 Carries decisions: CAR3, CAR17; change-map node C3
@@ -78,6 +78,8 @@ criticality therefore matches the consequence.
   toolchains and invokes `scripts/check.sh` rather than duplicating its commands.
 - One successful workflow execution is attributable to the exact active-change revision. A local
   workflow parse or green developer checkout does not substitute for this rollout evidence.
+- The receipt remains attributable through the content-preserving archive transition and cannot be
+  reused when the derived isolation account changes.
 - The current model has no holes, all three new standard claims have current agent judgments, and
   the complete repository gate remains green.
 - No experimental package gains a public identity, publish command or support promise.

@@ -8,3 +8,5 @@
 - [x] Update current facets and record the pre-rollout outcome.
 - [x] Run the exact-revision GitHub workflow and import its successful receipt.
 - [x] Judge the two hosted-run-dependent claims from that receipt.
+- [ ] Persist the receipt across the content-preserving archive transition.
+- [ ] Re-finalize, archive and run the complete post-archive repository gate.

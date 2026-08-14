@@ -21,6 +21,12 @@ registries; those are execution prerequisites, not source or evidence authoritie
 The first hosted run is rollout-dependent evidence. Implementation may be committed while that
 condition is pending, but acceptance and archive wait for an exact-revision successful run.
 
+Acceptance stores the receipt with the archived change. Later checks may reuse it only when its
+revision remains in repository history and its derived isolation-account fingerprint equals the
+current account. This separates evidence revision from the later acceptance-record commit without
+allowing the success to float across a changed root, workflow, executable-input or citation
+account.
+
 ## Domain boundary
 
 Isolation validation distinguishes a source dependency from a citation. An executable input must

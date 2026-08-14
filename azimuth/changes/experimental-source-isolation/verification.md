@@ -28,3 +28,8 @@ tag or unpinned repository URLs.
 The first successful GitHub Actions run is rollout-dependent component evidence. Record the
 repository, workflow identity, exact commit SHA and conclusion. A successful run at another
 revision is stale and cannot satisfy acceptance.
+
+After archive, rerun the complete repository gate. It must select the archived receipt only when
+the receipt revision is current or retained as an ancestor and the derived isolation-account
+fingerprint is unchanged. Mutating that fingerprint must return the account to pending rather than
+reusing the historical success.

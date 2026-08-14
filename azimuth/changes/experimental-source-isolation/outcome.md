@@ -1,6 +1,6 @@
 # Outcome: experimental-source-isolation
 
-Status: accepted
+Status: implemented, pending rollout durability acceptance
 
 ## Result
 
@@ -13,6 +13,11 @@ The account rejects local and mounted domain locators in executable inputs. It s
 over retained domain-repository references and accepts only immutable commit-pinned citations. The
 canonical workflow has one checkout and invokes only `./scripts/check.sh`. GitHub run 31809174051
 completed that command at exact revision `4d89c0e369dd3a49b562e4e97dfd39daaf60d43e`.
+
+The first archive was revoked after its hosted check regenerated pending workflow evidence and made
+the two accepted judgments stale. The successful receipt was exact but not yet durable across the
+content-preserving archive transition, so the change is not accepted again until that condition is
+exercised.
 
 ## Evidence
 
