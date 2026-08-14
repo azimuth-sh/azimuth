@@ -1,0 +1,13 @@
+{
+  "id": "expected-load-20260811",
+  "kind": "load-test",
+  "tool": "k6",
+  "tool_version": "1.0.0",
+  "observed_at": "2026-08-11T12:00:00Z",
+  "expires_at": 4102444800,
+  "bindings": [
+    {"role":"evidence","spec":"system/assurance","scenario":"latency-objective","assertion":"p95 latency is below 300 milliseconds","outcome":"satisfied","subjects":[],"scope":"e2e","quantification":"example","oracle":"direct"},
+    {"role":"evidence","spec":"system/assurance","scenario":"error-rate-objective","assertion":"error rate is below 0.5 percent","outcome":"satisfied","subjects":[],"scope":"e2e","quantification":"example","oracle":"direct"}
+  ],
+  "payload": {"workload_rps":500,"duration_seconds":1200,"p95_ms":241,"error_rate":0.001}
+}

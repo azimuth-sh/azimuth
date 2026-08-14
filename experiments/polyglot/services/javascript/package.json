@@ -1,0 +1,10 @@
+{
+  "name": "azimuth-polyglot-javascript",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node service.js",
+    "test": "node --test service.test.js"
+  }
+}

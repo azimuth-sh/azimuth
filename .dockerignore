@@ -1,0 +1,9 @@
+.git
+.azimuth
+**/.next
+**/node_modules
+**/target
+**/bin
+**/obj
+build
+dist

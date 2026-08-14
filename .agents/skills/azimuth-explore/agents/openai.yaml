@@ -1,0 +1,4 @@
+interface:
+  display_name: "Azimuth Explore"
+  short_description: "Settle an initiative one decision at a time"
+  default_prompt: "Use $azimuth-explore to research facts, pressure-test decisions one question at a time, and shape this initiative before creating changes."

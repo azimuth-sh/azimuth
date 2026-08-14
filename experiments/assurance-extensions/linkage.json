@@ -1,0 +1,16 @@
+{
+  "realizes": [
+    {"spec":"system/assurance","scenario":"latency-objective","site":"Service.Handle","file":"experiments/assurance-extensions/fixture/service.txt","lang":"synthetic","source_fingerprint":"service-v1"},
+    {"spec":"system/assurance","scenario":"error-rate-objective","site":"Service.Handle","file":"experiments/assurance-extensions/fixture/service.txt","lang":"synthetic","source_fingerprint":"service-v1"},
+    {"spec":"system/assurance","scenario":"degraded-service-is-bounded","site":"Service.Handle","file":"experiments/assurance-extensions/fixture/service.txt","lang":"synthetic","source_fingerprint":"service-v1"},
+    {"spec":"system/assurance","scenario":"queued-work-recovers","site":"Queue.Recover","file":"experiments/assurance-extensions/fixture/service.txt","lang":"synthetic","source_fingerprint":"service-v1"},
+    {"spec":"system/assurance","scenario":"interruption-raises-alert","site":"Alert.Backlog","file":"experiments/assurance-extensions/fixture/service.txt","lang":"synthetic","source_fingerprint":"service-v1"},
+    {"spec":"system/assurance","scenario":"analyzed-sites-enter-judgment","site":"Service.Handle","file":"experiments/assurance-extensions/fixture/service.txt","lang":"synthetic","source_fingerprint":"service-v1"}
+  ],
+  "covers": [],
+  "mechanism_implementations": [],
+  "mechanism_covers": [],
+  "class_members": [],
+  "enumerations": [],
+  "artifacts": []
+}

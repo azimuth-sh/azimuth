@@ -1,0 +1,1 @@
+Synthetic service surface used only to give SARIF and linkage a shared addressable artifact.

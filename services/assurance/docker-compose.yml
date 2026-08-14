@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: azimuth
+      POSTGRES_USER: azimuth
+      POSTGRES_PASSWORD: azimuth
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U azimuth -d azimuth"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    ports:
+      - "5434:5432"
+    volumes:
+      - assurance-data:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: ../..
+      dockerfile: services/assurance/server/Dockerfile
+    environment:
+      DATABASE_URL: postgres://azimuth:azimuth@postgres:5432/azimuth
+      RUST_LOG: azimuth_assurance_server=info,tower_http=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  web:
+    build:
+      context: ./web
+    environment:
+      ASSURANCE_API_URL: http://api:8080
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+volumes:
+  assurance-data:

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Azimuth Coordinate"
+  short_description: "Coordinate validated Azimuth work packages"
+  default_prompt: "Use $azimuth-coordinate to execute this change through independent work packages."

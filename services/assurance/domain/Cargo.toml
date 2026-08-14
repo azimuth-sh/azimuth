@@ -1,0 +1,10 @@
+[package]
+name = "azimuth-assurance-domain"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+azimuth = { path = "../../../tools/azimuth" }
+serde.workspace = true
+serde_json.workspace = true

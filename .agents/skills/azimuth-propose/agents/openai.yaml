@@ -1,0 +1,4 @@
+interface:
+  display_name: "Azimuth Propose"
+  short_description: "Create one bounded Azimuth change proposal"
+  default_prompt: "Use $azimuth-propose to turn the approved direction into an Azimuth change."

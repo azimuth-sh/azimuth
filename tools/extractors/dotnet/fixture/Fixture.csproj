@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A synthetic fixture for the emitter's own tests (D2): the tool's tests never assert against
+       real demo specs, or the two are welded together and neither can move independently. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <DebugType>portable</DebugType>
+    <AssemblyName>Azimuth.Fixture</AssemblyName>
+    <RootNamespace>Azimuth.Fixture</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../../../packages/dotnet/Azimuth.Annotations/Azimuth.Annotations.csproj" />
+  </ItemGroup>
+
+</Project>

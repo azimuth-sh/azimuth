@@ -1,0 +1,4 @@
+interface:
+  display_name: "Azimuth Apply"
+  short_description: "Implement and verify an Azimuth change"
+  default_prompt: "Use $azimuth-apply to implement this Azimuth change and establish its evidence."

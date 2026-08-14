@@ -1,9 +1,0 @@
-<Solution>
-  <Folder Name="/src/">
-    <Project Path="src/Azimuth.Annotations/Azimuth.Annotations.csproj" />
-    <Project Path="src/Azimuth.Manifest/Azimuth.Manifest.csproj" />
-  </Folder>
-  <Folder Name="/test/">
-    <Project Path="test/Azimuth.Manifest.Tests/Azimuth.Manifest.Tests.csproj" />
-  </Folder>
-</Solution>

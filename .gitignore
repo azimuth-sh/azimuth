@@ -1,2 +1,14 @@
-/target
-**/target
+.serena/
+target/
+build/
+node_modules/
+dist/
+.gradle/
+__pycache__/
+.next/
+next-env.d.ts
+bin/
+obj/
+package-lock.json
+!services/assurance/web/package-lock.json
+.azimuth/
