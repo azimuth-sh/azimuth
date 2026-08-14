@@ -26,7 +26,7 @@ cargo run --quiet --manifest-path tools/azimuth/Cargo.toml -- export \
   --manifest "$OUT/load.json" --manifest "$OUT/chaos.json" --manifest "$OUT/sarif.json" \
   --out "$OUT/model.json"
 
-test "$(rg -c '\"id\": \"expected-load-20260811\"' "$OUT/model.json")" -eq 1
-test "$(rg -c '\"id\": \"broker-loss-20260811\"' "$OUT/model.json")" -eq 1
-test "$(rg -c '\"role\": \"challenge\"' "$OUT/model.json")" -eq 6
+test "$(grep -c '\"id\": \"expected-load-20260811\"' "$OUT/model.json")" -eq 1
+test "$(grep -c '\"id\": \"broker-loss-20260811\"' "$OUT/model.json")" -eq 1
+test "$(grep -c '\"role\": \"challenge\"' "$OUT/model.json")" -eq 6
 echo "assurance extension conformance passed"
