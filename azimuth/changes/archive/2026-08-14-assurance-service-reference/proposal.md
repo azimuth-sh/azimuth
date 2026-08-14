@@ -1,6 +1,9 @@
 # Change: assurance-service-reference
 
-Status: implemented, pending acceptance
+Status: accepted and complete
+
+Intent delta: none
+Because: the optional reference service realizes an accepted protocol without changing model intent
 
 Exploration: continuous-assurance-service
 Carries decisions: E1, E2, E3, E4, E5, E7; D40
@@ -43,7 +46,7 @@ Out of scope:
 
 ## Affected claims
 
-None in the ride-hailing reference model. This change validates optional framework infrastructure
+None in the accepted Azimuth model. This change validates optional framework infrastructure
 against a synthetic assurance project.
 
 ## Completion conditions

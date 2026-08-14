@@ -1,6 +1,6 @@
 # Outcome: assurance-service-reference
 
-Status: implemented, pending acceptance
+Status: accepted
 
 ## Result
 
@@ -16,8 +16,10 @@ the complete reference slice authorized by the proposal.
 
 ## Evidence executed
 
-- Nine pure lifecycle cases passed: the eight pre-registered falsifiers plus rejection of a future
-  qualification for an earlier gate.
+- Eleven current pure lifecycle cases passed, including qualification reuse, exact-subject and
+  temporal confinement, expiry, violation, definition and claim-contract drift, context mismatch,
+  challenge findings and unknown-snapshot registration work.
+- The promoted domain wire-contract regression passed.
 - One HTTP component lifecycle passed against a real PostgreSQL Testcontainer. It exercised
   idempotent replay and identity conflict, two exact CI revisions, subject and context mismatch,
   failure, challenge finding and resolution, canary expiry, definition drift, decision order,
@@ -25,12 +27,16 @@ the complete reference slice authorized by the proposal.
 - The Rust workspace compiled across all targets with no warnings.
 - The Next.js client passed strict type-checking and a production build; its project route is
   server-rendered and consumes the API as its only decision source.
-- Both production Docker images built. The Compose stack migrated, accepted the replay-safe seed,
-  returned a healthy API response and rendered the seeded open gate. Its disposable containers,
-  network and database volume were removed afterward.
-- The complete repository check passed: 90 accepted claims across 11 specs, zero holes, zero
-  errors and zero warnings, plus all existing service, browser, monitoring, extractor, polyglot and
-  assurance-extension suites.
+- Both production Docker images built. The isolated Compose stack migrated, reported a healthy API,
+  accepted the replay-safe seed twice, returned the seeded open gate and rendered the same state
+  through the Next.js route. Its containers, network and database volume were removed afterward.
+- The canonical accepted model contained 2 routine claims in 1 spec with zero holes, errors or
+  warnings. `azimuth change check` reported zero incomplete plan items and zero accepted-state
+  findings.
+
+The earlier 9-case evaluator count and 90-claim repository check remain implementation provenance
+from the source repository before extraction. Acceptance on 2026-08-14 reran the current protocol,
+HTTP/PostgreSQL component and Compose runbook from the standalone canonical checkout.
 
 ## Departures
 
@@ -42,7 +48,7 @@ production-hardening change from that map.
 Gate history uses a database sequence in addition to UUID identity. Wall-clock seconds alone were
 not a sufficient order because several decisions may be evaluated within one second.
 
-## Residual production work
+## Residual decisions
 
 - Authenticate producers and readers; isolate organizations and projects.
 - Bind semantic inputs and execution receipts to verifiable source and artifact provenance.
