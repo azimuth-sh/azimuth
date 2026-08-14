@@ -75,6 +75,8 @@ def retained_path(candidate, output):
 
 
 def build_packages(root, output, allow_dirty):
+    root = Path(root).resolve()
+    output = Path(output).resolve()
     catalog = catalog_at(root)
     validate_catalog(catalog, root)
     validate_approved_contract(catalog)
@@ -239,6 +241,8 @@ def native_binary(root, target):
 
 
 def build_native(root, output, target):
+    root = Path(root).resolve()
+    output = Path(output).resolve()
     catalog = catalog_at(root)
     require(target in catalog["nativeBinaries"]["targets"], f"native target {target!r} is absent")
     version = catalog["release"]["version"]
