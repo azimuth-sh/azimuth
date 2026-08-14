@@ -1,10 +1,33 @@
 {
-  "name": "@azimuth/emit-ts",
-  "version": "0.0.1",
+  "name": "@azimuth/emit",
+  "version": "0.1.0-alpha.1",
   "description": "Static-scan emitter: TypeScript linkage tags to the Azimuth manifest.",
   "license": "Apache-2.0",
-  "private": true,
   "type": "commonjs",
+  "files": [
+    "dist/cli.js",
+    "dist/emitter.js",
+    "dist/manual-cli.js",
+    "dist/manual-results.js",
+    "dist/mutation-cli.js",
+    "dist/mutation-results.js",
+    "dist/observation-cli.js",
+    "dist/observations.js",
+    "dist/pit-cli.js",
+    "dist/pit-results.js",
+    "dist/pit-xml.js",
+    "dist/prometheus.js",
+    "dist/sarif-cli.js",
+    "dist/sarif-results.js",
+    "dist/workspace.js"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/drim-dev/azimuth.git",
+    "directory": "tools/extractors/typescript"
+  },
+  "homepage": "https://github.com/drim-dev/azimuth/tree/main/tools/extractors/typescript",
+  "publishConfig": { "access": "public" },
   "bin": {
     "azimuth-emit-ts": "dist/cli.js",
     "azimuth-import-manual": "dist/manual-cli.js",
@@ -15,6 +38,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
     "test": "node --test dist/*.test.js"
   },
   "dependencies": { "typescript": "^5.9.3" },

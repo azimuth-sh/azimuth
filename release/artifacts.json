@@ -1,0 +1,119 @@
+{
+  "format": "azimuth-release-artifacts",
+  "schemaVersion": 1,
+  "release": {
+    "version": "0.1.0-alpha.1",
+    "tag": "v0.1.0-alpha.1",
+    "license": "Apache-2.0",
+    "repository": "https://github.com/drim-dev/azimuth"
+  },
+  "packages": [
+    {
+      "id": "rust-cli-core",
+      "ecosystem": "cargo",
+      "identity": "azimuth",
+      "manifest": "tools/azimuth/Cargo.toml",
+      "requiredFiles": ["*/src/lib.rs", "*/src/main.rs", "*/README.md", "*/LICENSE"],
+      "allowedFiles": [
+        "*/.cargo_vcs_info.json",
+        "*/Cargo.lock",
+        "*/Cargo.toml",
+        "*/Cargo.toml.orig",
+        "*/LICENSE",
+        "*/README.md",
+        "*/src/*.rs"
+      ]
+    },
+    {
+      "id": "dotnet-annotations",
+      "ecosystem": "nuget",
+      "identity": "Azimuth.Annotations",
+      "manifest": "packages/dotnet/Azimuth.Annotations/Azimuth.Annotations.csproj",
+      "requiredFiles": ["*.nuspec", "README.md", "lib/netstandard2.0/Azimuth.Annotations.dll"],
+      "allowedFiles": [
+        "[Content_Types].xml",
+        "_rels/.rels",
+        "*.nuspec",
+        "README.md",
+        "lib/netstandard2.0/Azimuth.Annotations.dll",
+        "lib/netstandard2.0/Azimuth.Annotations.xml",
+        "package/services/metadata/core-properties/*.psmdcp"
+      ]
+    },
+    {
+      "id": "dotnet-emitter",
+      "ecosystem": "nuget",
+      "identity": "Azimuth.Emit",
+      "manifest": "tools/extractors/dotnet/Azimuth.Emit/Azimuth.Emit.csproj",
+      "requiredFiles": ["*.nuspec", "README.md", "tools/net10.0/any/azimuth-emit-dotnet.dll"],
+      "allowedFiles": [
+        "[Content_Types].xml",
+        "_rels/.rels",
+        "*.nuspec",
+        "README.md",
+        "package/services/metadata/core-properties/*.psmdcp",
+        "tools/net10.0/any/*"
+      ]
+    },
+    {
+      "id": "typescript-annotations",
+      "ecosystem": "npm",
+      "identity": "@azimuth/annotations",
+      "manifest": "packages/typescript/package.json",
+      "requiredFiles": ["package/package.json", "package/dist/index.js", "package/dist/index.d.ts"],
+      "allowedFiles": ["package/package.json", "package/dist/index.js", "package/dist/index.d.ts"]
+    },
+    {
+      "id": "typescript-emitter",
+      "ecosystem": "npm",
+      "identity": "@azimuth/emit",
+      "manifest": "tools/extractors/typescript/package.json",
+      "requiredFiles": ["package/package.json", "package/dist/cli.js", "package/dist/emitter.js"],
+      "allowedFiles": ["package/package.json", "package/dist/*.js"]
+    }
+  ],
+  "images": [
+    {
+      "id": "assurance-api",
+      "identity": "ghcr.io/drim-dev/azimuth-assurance-api",
+      "dockerfile": "services/assurance/server/Dockerfile",
+      "versionManifest": "services/assurance/Cargo.toml",
+      "platforms": ["linux/amd64", "linux/arm64"]
+    },
+    {
+      "id": "assurance-web",
+      "identity": "ghcr.io/drim-dev/azimuth-assurance-web",
+      "dockerfile": "services/assurance/web/Dockerfile",
+      "versionManifest": "services/assurance/web/package.json",
+      "platforms": ["linux/amd64", "linux/arm64"]
+    }
+  ],
+  "nativeBinaries": {
+    "identity": "azimuth",
+    "targets": [
+      "x86_64-unknown-linux-gnu",
+      "aarch64-apple-darwin",
+      "x86_64-pc-windows-msvc"
+    ]
+  },
+  "supportedSurfaces": [
+    "rust-cli-core",
+    "dotnet-integration",
+    "typescript-integration",
+    "assurance-reference",
+    "repository-contracts"
+  ],
+  "experimentalSource": [
+    "experiments",
+    "packages/cpp",
+    "packages/go",
+    "packages/jvm",
+    "packages/python",
+    "packages/rust",
+    "tools/extractors/cpp",
+    "tools/extractors/go",
+    "tools/extractors/jvm",
+    "tools/extractors/python",
+    "tools/extractors/rust"
+  ]
+}

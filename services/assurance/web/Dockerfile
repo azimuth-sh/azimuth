@@ -1,3 +1,5 @@
+ARG AZIMUTH_VERSION=0.1.0-alpha.1
+
 FROM node:22-bookworm-slim AS dependencies
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -10,6 +12,11 @@ COPY . .
 RUN npm run build
 
 FROM node:22-bookworm-slim AS runtime
+ARG AZIMUTH_VERSION
+LABEL org.opencontainers.image.title="Azimuth Assurance Web" \
+      org.opencontainers.image.source="https://github.com/drim-dev/azimuth" \
+      org.opencontainers.image.version="$AZIMUTH_VERSION" \
+      org.opencontainers.image.licenses="Apache-2.0"
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000

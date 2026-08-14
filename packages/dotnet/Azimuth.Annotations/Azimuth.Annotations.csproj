@@ -7,9 +7,18 @@
     <AssemblyName>Azimuth.Annotations</AssemblyName>
     <RootNamespace>Azimuth.Annotations</RootNamespace>
     <PackageId>Azimuth.Annotations</PackageId>
+    <Version>0.1.0-alpha.1</Version>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <Description>Azimuth linkage tags: realizes on production code, covers on tests.</Description>
+    <RepositoryUrl>https://github.com/drim-dev/azimuth</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>requirements;traceability;verification</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
 
 </Project>

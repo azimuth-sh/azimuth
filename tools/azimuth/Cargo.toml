@@ -1,6 +1,6 @@
 [package]
 name = "azimuth"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 edition = "2021"
 description = "Derives a model from claims, linkage tags and evidence, and flags its holes."
 license = "Apache-2.0"
@@ -10,7 +10,7 @@ homepage = "https://github.com/drim-dev/azimuth/tree/main/tools/azimuth"
 keywords = ["requirements", "traceability", "verification", "sdd"]
 categories = ["command-line-utilities", "development-tools"]
 rust-version = "1.85"
-include = ["src/**", "tests/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE"]
+include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE"]
 
 # No dependencies, by decision (D17). The destination is other people's CI.
 

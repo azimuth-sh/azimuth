@@ -6,8 +6,8 @@ model for everything else to consume.
 No dependencies (D17). `cargo build` needs nothing but a toolchain.
 
 Install a checkout with `cargo install --path tools/azimuth`. The crate is release-shaped as
-`azimuth` 0.1.0; `cargo package` verifies its standalone contents. A tagged-release workflow can
-publish the crate and native binaries once the repository owner supplies the registry token.
+`azimuth` 0.1.0-alpha.1; `cargo package` verifies its standalone contents. Publication remains a
+separate release operation after every selected artifact is qualified.
 
 ## Use
 

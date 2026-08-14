@@ -4,8 +4,9 @@ Azimuth keeps intent, implementation linkage, evidence and agent judgment in one
 project account. The command-line tool checks local model packages and can assemble revision-bound
 accounts across repositories without making a hosted service authoritative.
 
-This repository is the canonical source for the framework. The first public alpha is being
-qualified; no published artifact should be inferred from the versions currently present in source.
+This repository is the canonical source for the framework. Version `0.1.0-alpha.1` is the selected
+first public alpha contract; it is not published until the release operation verifies every
+registry target.
 
 ## Repository layout
 
@@ -24,6 +25,21 @@ qualified; no published artifact should be inferred from the versions currently 
 
 The implementations for Go, JVM, Python, Rust annotations and C++ remain experiments. Their
 presence in source is not a publication or compatibility promise.
+
+## First-alpha support contract
+
+The supported alpha surface comprises the Rust CLI and core (including federation), the .NET and
+TypeScript annotations and extractors, and the optional assurance API and diagnostic web images.
+Formats, standards, skills and documentation are supported as repository artifacts at the same Git
+tag. Alpha contracts may change incompatibly in a later prerelease.
+
+Qualified native CLI targets are Linux x64, macOS ARM64 and Windows x64. Qualified assurance-image
+platforms are Linux AMD64 and Linux ARM64. Other source may compile elsewhere, but that is not a
+qualified binary or image claim.
+
+The Go, JVM, Python, Rust-annotation and C++ integrations and every tree under `experiments/` are
+experimental source. CI exercises them, but version `0.1.0-alpha.1` assigns them no public package
+identity or support promise.
 
 ## Start here
 

@@ -8,13 +8,23 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>azimuth-emit-dotnet</AssemblyName>
     <RootNamespace>Azimuth.Emit</RootNamespace>
+    <PackageId>Azimuth.Emit</PackageId>
+    <Version>0.1.0-alpha.1</Version>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <Description>Extracts Azimuth linkage tags from compiled .NET assemblies.</Description>
+    <RepositoryUrl>https://github.com/drim-dev/azimuth</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>requirements;traceability;extractor;dotnet-tool</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>azimuth-emit-dotnet</ToolCommandName>
   </PropertyGroup>
 
   <!-- D17 constrains the core, not the extractors. AST and metadata work belongs here, in an
        ecosystem where the tooling is already present and idiomatic. -->
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <None Include="../../../../README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 
   <ItemGroup>

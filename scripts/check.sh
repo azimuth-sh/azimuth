@@ -42,3 +42,5 @@ if docker info >/dev/null 2>&1; then
 else
   printf '%s\n' 'Docker is unavailable; assurance lifecycle integration evidence was not run.' >&2
 fi
+
+./release/check.sh
