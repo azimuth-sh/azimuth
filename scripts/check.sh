@@ -37,10 +37,15 @@ cargo test --manifest-path services/assurance/Cargo.toml --lib
   npm run build
 )
 
+python3 -m unittest -v services.assurance.deployment.test_qualify
+python3 services/assurance/deployment/qualify.py
+
 if docker info >/dev/null 2>&1; then
   cargo test --manifest-path services/assurance/Cargo.toml --test lifecycle_api
+  python3 services/assurance/deployment/qualify.py --lifecycle --images
 else
   printf '%s\n' 'Docker is unavailable; assurance lifecycle integration evidence was not run.' >&2
+  printf '%s\n' 'Docker is unavailable; private deployment and image evidence was not run.' >&2
 fi
 
 ./release/check.sh --experiments-executed

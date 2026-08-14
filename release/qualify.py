@@ -94,6 +94,8 @@ def validate_catalog(catalog, root):
         require(package.get("allowedFiles"), f"{package.get('id')}: allowedFiles is empty")
 
     for image in images:
+        context = Path(image.get("context", ""))
+        require((root / context).is_dir(), f"{image.get('id')}: build context does not exist")
         dockerfile = Path(image.get("dockerfile", ""))
         require((root / dockerfile).is_file(), f"{image.get('id')}: Dockerfile does not exist")
         version_manifest = Path(image.get("versionManifest", ""))

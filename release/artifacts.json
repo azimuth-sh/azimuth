@@ -76,6 +76,7 @@
     {
       "id": "assurance-api",
       "identity": "ghcr.io/drim-dev/azimuth-assurance-api",
+      "context": ".",
       "dockerfile": "services/assurance/server/Dockerfile",
       "versionManifest": "services/assurance/Cargo.toml",
       "platforms": ["linux/amd64", "linux/arm64"]
@@ -83,6 +84,7 @@
     {
       "id": "assurance-web",
       "identity": "ghcr.io/drim-dev/azimuth-assurance-web",
+      "context": "services/assurance/web",
       "dockerfile": "services/assurance/web/Dockerfile",
       "versionManifest": "services/assurance/web/package.json",
       "platforms": ["linux/amd64", "linux/arm64"]
