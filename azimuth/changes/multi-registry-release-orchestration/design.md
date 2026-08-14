@@ -37,9 +37,9 @@ Binding: release-publication-plan
 
 Before any write, one planner compares the complete selected population with retrieved registry
 state and classifies every target as absent, exact or conflicting. Publication jobs consume only
-the resulting absent set; any conflict prevents a plan. Completion performs a fresh public read
-over the complete population. Removing the planner would make partial recovery depend on mutable
-operator memory.
+the resulting absent set; any conflict prevents a plan. Completion rejects an incomplete state,
+but the publication operation must still bind each registry adapter to a fresh public read.
+Removing the planner would make partial recovery depend on mutable operator memory.
 
 ## Residue
 

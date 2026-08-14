@@ -89,6 +89,8 @@ def build_packages(root, output, allow_dirty):
         elif package["ecosystem"] == "nuget":
             candidate = nuget_candidate(package, root, output)
         else:
+            package_root = (root / package["manifest"]).parent
+            run(["npm", "ci", "--ignore-scripts"], cwd=package_root)
             candidate = npm_candidate(package, root, output)
         candidate = retained_path(candidate, output)
         files = archive_files(candidate, package["ecosystem"])

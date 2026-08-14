@@ -14,6 +14,10 @@ CATALOG_FILE = ROOT / "release/artifacts.json"
 ORDINARY_WORKFLOW = ROOT / ".github/workflows/ci.yml"
 RELEASE_WORKFLOW = ROOT / ".github/workflows/release.yml"
 ROOT_GATE = ROOT / "scripts/check.sh"
+OUTPUT_ROOT = ROOT / ".azimuth/release"
+ORDINARY_RECEIPT = OUTPUT_ROOT / "ordinary-workflow-receipt.json"
+RELEASE_RECEIPT = OUTPUT_ROOT / "release-workflow-receipt.json"
+SPEC = "framework/release-orchestration"
 
 
 class OrchestrationError(Exception):
@@ -203,6 +207,93 @@ def digest(path):
     return checksum.hexdigest()
 
 
+def combined_digest(paths):
+    checksum = hashlib.sha256()
+    for path in paths:
+        checksum.update(Path(path).read_bytes())
+    return checksum.hexdigest()
+
+
+def git_revision_is_ancestor(root, revision):
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", revision, "HEAD"],
+        cwd=root,
+        capture_output=True,
+    )
+    return result.returncode == 0
+
+
+def expected_release_jobs(catalog):
+    return [
+        "packages",
+        *(f"native:{item['target']}" for item in native_matrix(catalog)),
+        *(f"image:{item['id']}" for item in image_matrix(catalog)),
+        "account",
+    ]
+
+
+def validate_ordinary_receipt(receipt, root=ROOT, ancestor=git_revision_is_ancestor):
+    root = Path(root)
+    expected = {
+        "format": "azimuth-ordinary-workflow-receipt",
+        "schemaVersion": 1,
+        "workflow": ".github/workflows/ci.yml",
+        "conclusion": "success",
+        "workflowSha256": digest(root / ".github/workflows/ci.yml"),
+        "rootGateSha256": digest(root / "scripts/check.sh"),
+    }
+    for field, value in expected.items():
+        require(receipt.get(field) == value, f"ordinary receipt {field} differs")
+    source_revision = receipt.get("sourceRevision", "")
+    require(re.fullmatch(r"[0-9a-f]{40}", source_revision) is not None,
+            "ordinary receipt sourceRevision is invalid")
+    require(ancestor(root, source_revision), "ordinary receipt source revision is not current")
+    require(re.fullmatch(r"[0-9a-f]{40}", receipt.get("executionRevision", "")) is not None,
+            "ordinary receipt executionRevision is invalid")
+    require(re.fullmatch(r"https://github\.com/drim-dev/azimuth/actions/runs/[0-9]+",
+                         receipt.get("runUrl", "")) is not None,
+            "ordinary receipt runUrl is invalid")
+    duration = receipt.get("durationSeconds")
+    require(isinstance(duration, int) and 0 < duration < 45 * 60,
+            "ordinary receipt exceeds the hosted-job limit")
+    return receipt
+
+
+def validate_release_receipt(receipt, root=ROOT, ancestor=git_revision_is_ancestor):
+    root = Path(root)
+    catalog = catalog_at(root)
+    expected = {
+        "format": "azimuth-release-workflow-receipt",
+        "schemaVersion": 1,
+        "workflow": ".github/workflows/release.yml",
+        "conclusion": "success",
+        "workflowSha256": digest(root / ".github/workflows/release.yml"),
+        "accountSha256": digest(root / "release/orchestrate.py"),
+        "consumerSha256": digest(root / "release/candidates.py"),
+    }
+    for field, value in expected.items():
+        require(receipt.get(field) == value, f"release receipt {field} differs")
+    source_revision = receipt.get("sourceRevision", "")
+    require(re.fullmatch(r"[0-9a-f]{40}", source_revision) is not None,
+            "release receipt sourceRevision is invalid")
+    require(ancestor(root, source_revision), "release receipt source revision is not current")
+    require(re.fullmatch(r"[0-9a-f]{40}", receipt.get("executionRevision", "")) is not None,
+            "release receipt executionRevision is invalid")
+    require(re.fullmatch(r"https://github\.com/drim-dev/azimuth/actions/runs/[0-9]+",
+                         receipt.get("runUrl", "")) is not None,
+            "release receipt runUrl is invalid")
+    require(receipt.get("jobs") == expected_release_jobs(catalog),
+            "release receipt job population differs")
+    expected_names = [item["filename"] for item in expected_subjects(catalog)]
+    require(receipt.get("subjects") == expected_names,
+            "release receipt subject population differs")
+    require(receipt.get("attestedSubjects") == expected_names,
+            "release receipt provenance population differs")
+    require(re.fullmatch(r"[0-9a-f]{64}", receipt.get("candidateAccountSha256", "")) is not None,
+            "release receipt candidate account digest is invalid")
+    return receipt
+
+
 def assemble(candidate_root, revision, tag, root=ROOT):
     require(re.fullmatch(r"[0-9a-f]{40}", revision) is not None, "revision is not a full Git id")
     catalog = catalog_at(root)
@@ -365,6 +456,196 @@ def rehearse_publication(account):
     }
 
 
+def source_entry(scenario, site, file, fingerprint):
+    language = {
+        ".json": "github-actions-receipt",
+        ".py": "python",
+        ".yml": "yaml",
+    }.get(Path(file).suffix, "release-orchestration")
+    return {
+        "spec": SPEC,
+        "scenario": scenario,
+        "site": site,
+        "file": file,
+        "lang": language,
+        "source_fingerprint": fingerprint,
+    }
+
+
+def cover_entry(scenario, site, file, fingerprint, scope):
+    return {
+        **source_entry(scenario, site, file, fingerprint),
+        "scope": scope,
+        "quantification": "universal",
+        "oracle": "direct",
+    }
+
+
+def write_linkage(root, output_root, ordinary_receipt=None, release_receipt=None):
+    root = Path(root)
+    orchestrator = root / "release/orchestrate.py"
+    candidates = root / "release/candidates.py"
+    tests = root / "release/test_orchestrate.py"
+    workflow = root / ".github/workflows/release.yml"
+    orchestrator_fingerprint = digest(orchestrator)
+    candidates_fingerprint = digest(candidates)
+    workflow_fingerprint = digest(workflow)
+    test_fingerprint = combined_digest([tests, orchestrator])
+    realization_sites = {
+        "ordinary-ci-excludes-release-only-matrix":
+            ("workflow_account", "release/orchestrate.py", orchestrator_fingerprint),
+        "selected-lanes-are-independent":
+            ("release_rehearsal_dag", ".github/workflows/release.yml", workflow_fingerprint),
+        "complete-account-needs-every-lane":
+            ("assemble", "release/orchestrate.py", orchestrator_fingerprint),
+        "tag-catalog-and-revision-agree":
+            ("verify_tag", "release/orchestrate.py", orchestrator_fingerprint),
+        "retained-downloads-have-checksums":
+            ("verify", "release/orchestrate.py", orchestrator_fingerprint),
+        "executable-subjects-have-provenance":
+            ("release_provenance", ".github/workflows/release.yml", workflow_fingerprint),
+        "packed-packages-install":
+            ("smoke_packages", "release/candidates.py", candidates_fingerprint),
+        "native-binaries-run":
+            ("build_native", "release/candidates.py", candidates_fingerprint),
+        "selected-image-platforms-start":
+            ("smoke_image", "release/candidates.py", candidates_fingerprint),
+        "exact-existing-target-is-preserved":
+            ("plan_publication", "release/orchestrate.py", orchestrator_fingerprint),
+        "absent-target-is-selected":
+            ("plan_publication", "release/orchestrate.py", orchestrator_fingerprint),
+        "conflicting-target-fails":
+            ("plan_publication", "release/orchestrate.py", orchestrator_fingerprint),
+        "completion-needs-public-retrieval":
+            ("validate_completion", "release/orchestrate.py", orchestrator_fingerprint),
+    }
+    test_covers = {
+        "selected-lanes-are-independent":
+            "test_each_release_lane_is_required_by_the_workflow_account",
+        "complete-account-needs-every-lane":
+            "test_each_missing_and_duplicate_candidate_and_an_unexpected_candidate_fail",
+        "tag-catalog-and-revision-agree":
+            "test_annotated_tag_must_name_the_candidate_revision",
+        "retained-downloads-have-checksums":
+            "test_tag_revision_and_each_candidate_byte_set_fail_independently",
+        "exact-existing-target-is-preserved":
+            "test_exact_targets_are_preserved_and_conflicts_fail_closed",
+        "absent-target-is-selected":
+            "test_each_absent_target_is_the_only_selected_publication",
+        "conflicting-target-fails":
+            "test_exact_targets_are_preserved_and_conflicts_fail_closed",
+        "completion-needs-public-retrieval":
+            "test_completion_needs_every_target_and_provenance",
+    }
+    covers = [
+        cover_entry(scenario, site, "release/test_orchestrate.py", test_fingerprint, "component")
+        for scenario, site in test_covers.items()
+    ]
+    if ordinary_receipt is not None:
+        receipt = output_root / ORDINARY_RECEIPT.name
+        covers.append(
+            cover_entry(
+                "ordinary-ci-excludes-release-only-matrix",
+                "hosted_ordinary_gate",
+                f".azimuth/release/{receipt.name}",
+                combined_digest(
+                    [receipt, root / ".github/workflows/ci.yml", root / "scripts/check.sh"]
+                ),
+                "e2e",
+            )
+        )
+    if release_receipt is not None:
+        receipt = output_root / RELEASE_RECEIPT.name
+        receipt_fingerprint = combined_digest([receipt, workflow, orchestrator, candidates])
+        for scenario in (
+            "executable-subjects-have-provenance",
+            "packed-packages-install",
+            "native-binaries-run",
+            "selected-image-platforms-start",
+        ):
+            covers.append(
+                cover_entry(
+                    scenario,
+                    "hosted_release_rehearsal",
+                    f".azimuth/release/{receipt.name}",
+                    receipt_fingerprint,
+                    "e2e",
+                )
+            )
+    linkage = {
+        "realizes": [
+            source_entry(scenario, site, file, fingerprint)
+            for scenario, (site, file, fingerprint) in realization_sites.items()
+        ],
+        "covers": covers,
+        "mechanism_implementations": [],
+        "mechanism_covers": [],
+        "class_members": [],
+        "enumerations": [],
+        "artifacts": [
+            {
+                "id": "release-rehearsal-account",
+                "kind": "hosted-workflow-dag",
+                "file": ".github/workflows/release.yml",
+            },
+            {
+                "id": "release-candidate-manifest",
+                "kind": "candidate-account-guard",
+                "file": "release/orchestrate.py",
+            },
+            {
+                "id": "release-consumer-rehearsal",
+                "kind": "disposable-consumer-guard",
+                "file": "release/candidates.py",
+            },
+            {
+                "id": "release-publication-plan",
+                "kind": "registry-state-guard",
+                "file": "release/orchestrate.py",
+            },
+        ],
+        "observations": [],
+    }
+    (output_root / "orchestration-linkage.json").write_text(
+        json.dumps(linkage, indent=2) + "\n"
+    )
+
+
+def qualify_orchestration(root=ROOT, output_root=OUTPUT_ROOT):
+    root = Path(root)
+    output_root = Path(output_root)
+    account = workflow_account(root)
+    ordinary_path = output_root / ORDINARY_RECEIPT.name
+    release_path = output_root / RELEASE_RECEIPT.name
+    ordinary_receipt = (
+        validate_ordinary_receipt(read_json(ordinary_path), root)
+        if ordinary_path.is_file()
+        else None
+    )
+    release_receipt = (
+        validate_release_receipt(read_json(release_path), root)
+        if release_path.is_file()
+        else None
+    )
+    catalog = catalog_at(root)
+    qualification = {
+        "format": "azimuth-release-orchestration-qualification",
+        "schemaVersion": 1,
+        "workflow": account,
+        "nativeMatrix": native_matrix(catalog),
+        "imageMatrix": image_matrix(catalog),
+        "subjects": expected_subjects(catalog),
+        "ordinaryExecution": ordinary_receipt or {"status": "pending"},
+        "releaseExecution": release_receipt or {"status": "pending"},
+    }
+    output_root.mkdir(parents=True, exist_ok=True)
+    (output_root / "release-orchestration.json").write_text(
+        json.dumps(qualification, indent=2) + "\n"
+    )
+    write_linkage(root, output_root, ordinary_receipt, release_receipt)
+    return qualification
+
+
 def write_account(account, output):
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -416,6 +697,15 @@ def command_workflows(arguments):
     print(json.dumps(account, indent=2))
 
 
+def command_qualify(arguments):
+    result = qualify_orchestration(arguments.root, arguments.out)
+    print(
+        f"qualified {len(result['subjects'])} retained subject(s), "
+        f"{len(result['nativeMatrix'])} native runner(s), and "
+        f"{len(result['imageMatrix'])} image lane(s)"
+    )
+
+
 def parser():
     root = argparse.ArgumentParser()
     commands = root.add_subparsers(dest="command", required=True)
@@ -459,6 +749,11 @@ def parser():
     workflows = commands.add_parser("workflows")
     workflows.add_argument("--root", type=Path, default=ROOT)
     workflows.set_defaults(run=command_workflows)
+
+    qualify = commands.add_parser("qualify")
+    qualify.add_argument("--root", type=Path, default=ROOT)
+    qualify.add_argument("--out", type=Path, default=OUTPUT_ROOT)
+    qualify.set_defaults(run=command_qualify)
     return root
 
 

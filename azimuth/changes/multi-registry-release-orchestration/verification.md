@@ -46,6 +46,8 @@ the catalog-derived population must make manifest verification fail.
 Scope: e2e
 Quantification: universal
 Oracle: direct
+Residual: GHCR image-digest provenance is absent until the images are published
+Accepted: the rehearsal attests retained OCI archives; discharge during alpha publication
 
 The hosted rehearsal submits every downloadable subject to GitHub's provenance action and validates
 the workflow's exact subject population. Image publication provenance remains rollout-dependent
@@ -100,9 +102,11 @@ For each registry kind, a retrieved identity with different content prevents the
 emitting any publication set.
 
 ## Add claim: completion-needs-public-retrieval
-Scope: e2e
+Scope: component
 Quantification: universal
 Oracle: direct
+Residual: registry state is synthetic rather than retrieved from public targets
+Accepted: no alpha target exists; bind registry adapters and discharge during alpha publication
 
 The completion checker ranges over the complete public population and rejects each missing or
 mismatched package, native archive, image index, checksum, provenance subject or platform. A passed

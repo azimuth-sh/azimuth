@@ -13,7 +13,11 @@ from release.orchestrate import (
     native_matrix,
     plan_publication,
     rehearse_publication,
+    digest,
+    expected_release_jobs,
     validate_completion,
+    validate_ordinary_receipt,
+    validate_release_receipt,
     verify,
     verify_tag,
     workflow_account,
@@ -53,6 +57,39 @@ class ReleaseOrchestrationTests(unittest.TestCase):
             }
         }
 
+    def ordinary_receipt(self):
+        return {
+            "format": "azimuth-ordinary-workflow-receipt",
+            "schemaVersion": 1,
+            "workflow": ".github/workflows/ci.yml",
+            "sourceRevision": REVISION,
+            "executionRevision": "b" * 40,
+            "runUrl": "https://github.com/drim-dev/azimuth/actions/runs/123",
+            "conclusion": "success",
+            "durationSeconds": 120,
+            "workflowSha256": digest(self.root / ".github/workflows/ci.yml"),
+            "rootGateSha256": digest(self.root / "scripts/check.sh"),
+        }
+
+    def release_receipt(self):
+        filenames = [item["filename"] for item in expected_subjects(self.catalog)]
+        return {
+            "format": "azimuth-release-workflow-receipt",
+            "schemaVersion": 1,
+            "workflow": ".github/workflows/release.yml",
+            "sourceRevision": REVISION,
+            "executionRevision": "b" * 40,
+            "runUrl": "https://github.com/drim-dev/azimuth/actions/runs/123",
+            "conclusion": "success",
+            "workflowSha256": digest(self.root / ".github/workflows/release.yml"),
+            "accountSha256": digest(self.root / "release/orchestrate.py"),
+            "consumerSha256": digest(self.root / "release/candidates.py"),
+            "jobs": expected_release_jobs(self.catalog),
+            "subjects": filenames,
+            "attestedSubjects": filenames,
+            "candidateAccountSha256": "c" * 64,
+        }
+
     def test_selected_matrices_derive_from_the_catalog(self):
         natives = native_matrix(self.catalog)
         images = image_matrix(self.catalog)
@@ -62,6 +99,37 @@ class ReleaseOrchestrationTests(unittest.TestCase):
         )
         self.assertEqual([item["id"] for item in images], ["assurance-api", "assurance-web"])
         self.assertTrue(all(item["platforms"] == "linux/amd64,linux/arm64" for item in images))
+
+    def test_hosted_receipts_bind_timing_jobs_subjects_and_executable_inputs(self):
+        ancestor = lambda _root, revision: revision == REVISION
+        ordinary = self.ordinary_receipt()
+        release = self.release_receipt()
+        self.assertEqual(
+            validate_ordinary_receipt(ordinary, self.root, ancestor),
+            ordinary,
+        )
+        self.assertEqual(validate_release_receipt(release, self.root, ancestor), release)
+        mutations = {
+            "ordinary duration": (ordinary, "durationSeconds", 45 * 60),
+            "ordinary workflow": (ordinary, "workflowSha256", "f" * 64),
+            "release jobs": (release, "jobs", release["jobs"][:-1]),
+            "release subjects": (release, "subjects", release["subjects"][:-1]),
+            "release provenance": (
+                release,
+                "attestedSubjects",
+                release["attestedSubjects"][:-1],
+            ),
+            "release consumer": (release, "consumerSha256", "f" * 64),
+        }
+        for name, (receipt, field, value) in mutations.items():
+            with self.subTest(name=name):
+                changed = copy.deepcopy(receipt)
+                changed[field] = value
+                with self.assertRaises(OrchestrationError):
+                    if receipt is ordinary:
+                        validate_ordinary_receipt(changed, self.root, ancestor)
+                    else:
+                        validate_release_receipt(changed, self.root, ancestor)
 
     def test_exact_candidate_population_assembles_and_verifies(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -221,6 +289,22 @@ class ReleaseOrchestrationTests(unittest.TestCase):
         account = workflow_account(self.root)
         self.assertFalse(account["releaseImagesInOrdinaryGate"])
         self.assertEqual(account["releaseLanes"], ["packages", "native", "images", "account"])
+
+    def test_each_release_lane_is_required_by_the_workflow_account(self):
+        release = (self.root / ".github/workflows/release.yml").read_text()
+        ordinary = (self.root / ".github/workflows/ci.yml").read_text()
+        gate = (self.root / "scripts/check.sh").read_text()
+        for lane in ("packages", "native", "images", "account"):
+            with self.subTest(lane=lane), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / ".github/workflows").mkdir(parents=True)
+                (root / "scripts").mkdir()
+                (root / ".github/workflows/ci.yml").write_text(ordinary)
+                (root / "scripts/check.sh").write_text(gate)
+                changed = release.replace(f"  {lane}:\n", "", 1)
+                (root / ".github/workflows/release.yml").write_text(changed)
+                with self.assertRaisesRegex(OrchestrationError, f"lane {lane!r}"):
+                    workflow_account(root)
 
 
 if __name__ == "__main__":
