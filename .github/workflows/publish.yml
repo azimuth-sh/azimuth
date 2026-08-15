@@ -1,0 +1,263 @@
+name: publish first alpha
+
+on:
+  workflow_dispatch:
+    inputs:
+      rehearsal_run_id:
+        description: Successful release-rehearsal run built from the tagged revision
+        required: true
+        type: string
+      dry_run:
+        description: Stop after public-state and credential preflight
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      actions: read
+      contents: write
+      packages: write
+      id-token: write
+    outputs:
+      image-matrix: ${{ steps.matrix.outputs.images }}
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+          scope: "@azimuth"
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - run: |
+          sudo apt-get update
+          sudo apt-get install --yes skopeo
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: candidates-*
+          path: dist/candidates
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.rehearsal_run_id }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: candidate-account
+          path: dist/account
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.rehearsal_run_id }}
+      - id: rehearsal
+        name: Verify rehearsal run
+        shell: bash
+        env:
+          RUN_ID: ${{ inputs.rehearsal_run_id }}
+        run: |
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || {
+            echo "rehearsal_run_id must be numeric" >&2
+            exit 2
+          }
+          gh run view "$RUN_ID" --json conclusion,event,headSha,workflowName,url \
+            > dist/rehearsal-run.json
+          [[ "$(jq -r .conclusion dist/rehearsal-run.json)" == success ]]
+          [[ "$(jq -r .workflowName dist/rehearsal-run.json)" == "release rehearsal" ]]
+          echo "revision=$(jq -r .headSha dist/rehearsal-run.json)" >> "$GITHUB_OUTPUT"
+      - id: matrix
+        shell: bash
+        run: |
+          echo "images=$(python3 release/orchestrate.py matrix image)" >> "$GITHUB_OUTPUT"
+      - name: Read public state and prove the no-write boundary
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          REHEARSAL_REVISION: ${{ steps.rehearsal.outputs.revision }}
+          REHEARSAL_RUN: ${{ inputs.rehearsal_run_id }}
+          REQUIRE_CREDENTIALS: ${{ !inputs.dry_run }}
+        run: |
+          credential_args=()
+          if [[ "$REQUIRE_CREDENTIALS" == true ]]; then
+            credential_args+=(--require-credentials)
+          fi
+          python3 release/publication.py preflight \
+            --account dist/account/candidates.json \
+            --candidates dist/candidates \
+            --sums dist/account/SHA256SUMS \
+            --tag "$RELEASE_TAG" \
+            --run-revision "$REHEARSAL_REVISION" \
+            --rehearsal-run "$REHEARSAL_RUN" \
+            --state-out dist/publication/public-state.json \
+            --plan-out dist/publication/publication-plan.json \
+            --receipt-out dist/publication/preflight.json \
+            "${credential_args[@]}"
+      - name: Publish planner-selected retained targets
+        if: ${{ !inputs.dry_run }}
+        run: |
+          python3 release/publication.py publish \
+            --account dist/account/candidates.json \
+            --candidates dist/candidates \
+            --sums dist/account/SHA256SUMS \
+            --state dist/publication/public-state.json \
+            --plan dist/publication/publication-plan.json \
+            --out dist/publication/publication-result.json
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: publication-preflight
+          path: |
+            dist/publication/*
+            dist/rehearsal-run.json
+          if-no-files-found: error
+
+  image-provenance:
+    if: ${{ !inputs.dry_run }}
+    needs: publish
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.publish.outputs.image-matrix) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - run: |
+          sudo apt-get update
+          sudo apt-get install --yes skopeo
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: candidates-*
+          path: dist/candidates
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.rehearsal_run_id }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: candidate-account
+          path: dist/account
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.rehearsal_run_id }}
+      - id: image
+        shell: bash
+        env:
+          IMAGE_ID: ${{ matrix.id }}
+        run: |
+          python3 release/publication.py image-state \
+            --account dist/account/candidates.json \
+            --candidates dist/candidates \
+            --id "$IMAGE_ID" > dist/image-state.json
+          echo "name=$(jq -r .name dist/image-state.json)" >> "$GITHUB_OUTPUT"
+          echo "digest=$(jq -r .digest dist/image-state.json)" >> "$GITHUB_OUTPUT"
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ steps.image.outputs.name }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+
+  complete:
+    if: ${{ !inputs.dry_run }}
+    needs: [publish, image-provenance]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      attestations: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - run: |
+          sudo apt-get update
+          sudo apt-get install --yes skopeo
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: candidates-*
+          path: dist/candidates
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.rehearsal_run_id }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: candidate-account
+          path: dist/account
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.rehearsal_run_id }}
+      - name: Retrieve every public target
+        shell: bash
+        env:
+          PUBLICATION_RUN: ${{ github.run_id }}
+          REHEARSAL_RUN: ${{ inputs.rehearsal_run_id }}
+        run: |
+          for attempt in {1..20}; do
+            if python3 release/publication.py complete \
+              --account dist/account/candidates.json \
+              --candidates dist/candidates \
+              --sums dist/account/SHA256SUMS \
+              --rehearsal-run "$REHEARSAL_RUN" \
+              --publication-run "$PUBLICATION_RUN" \
+              --out dist/publication/completion.json; then
+              exit 0
+            fi
+            if [[ "$attempt" == 20 ]]; then
+              exit 1
+            fi
+            sleep 15
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: public-release-completion
+          path: dist/publication/completion.json
+          if-no-files-found: error
