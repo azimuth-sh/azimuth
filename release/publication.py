@@ -55,6 +55,7 @@ REPOSITORY = "azimuth-sh/azimuth"
 USER_AGENT = "azimuth-release/0.1.0-alpha.1 (https://github.com/azimuth-sh/azimuth)"
 SUPPORT_ASSETS = ("candidates.json", "SHA256SUMS")
 PUBLICATION_WORKFLOW = ROOT / ".github/workflows/publish.yml"
+UNSET = object()
 
 
 class PublicationError(Exception):
@@ -340,7 +341,19 @@ def package_url(subject, version, metadata=None):
     return versions.get(version, {}).get("dist", {}).get("tarball")
 
 
-def package_bytes(subject, version):
+def npm_registry_metadata(subject):
+    identity = urllib.parse.quote(subject["identity"], safe="")
+    status, _, content = request(f"https://registry.npmjs.org/{identity}")
+    if status == 404:
+        return None
+    require(status == 200, f"{subject['key']}: npm state returned HTTP {status}")
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError as error:
+        raise PublicationError(f"{subject['key']}: npm state is malformed") from error
+
+
+def package_bytes(subject, version, npm_metadata=UNSET):
     if subject["ecosystem"] == "cargo":
         name = subject["identity"].lower()
         if len(name) == 1:
@@ -363,15 +376,13 @@ def package_bytes(subject, version):
             return None, None
         url = package_url(subject, version)
     elif subject["ecosystem"] == "npm":
-        identity = urllib.parse.quote(subject["identity"], safe="")
-        status, _, content = request(f"https://registry.npmjs.org/{identity}")
-        if status == 404:
+        metadata = (
+            npm_registry_metadata(subject)
+            if npm_metadata is UNSET
+            else npm_metadata
+        )
+        if metadata is None:
             return None, None
-        require(status == 200, f"{subject['key']}: npm state returned HTTP {status}")
-        try:
-            metadata = json.loads(content)
-        except json.JSONDecodeError as error:
-            raise PublicationError(f"{subject['key']}: npm state is malformed") from error
         url = package_url(subject, version, metadata)
         if url is None:
             return None, None
@@ -478,8 +489,13 @@ def collect_state(
     for subject in account["subjects"]:
         observed = None
         url = None
+        npm_metadata = UNSET
         if subject["kind"] == "package":
-            content, url = package_bytes(subject, version)
+            if subject["ecosystem"] == "npm":
+                npm_metadata = npm_registry_metadata(subject)
+                content, url = package_bytes(subject, version, npm_metadata)
+            else:
+                content, url = package_bytes(subject, version)
             if content is not None:
                 registry_checksum = hashlib.sha256(content).hexdigest()
                 if subject["ecosystem"] == "nuget":
@@ -523,6 +539,8 @@ def collect_state(
             target["registrySha256"] = registry_checksum
             target["payloadSha256"] = payload_checksum
             target["repositorySignatureVerified"] = True
+        if subject.get("ecosystem") == "npm":
+            target["distTags"] = dict(npm_metadata.get("dist-tags", {}))
         if subject["kind"] == "image":
             target["platforms"] = platforms
         state["targets"][subject["key"]] = target
@@ -624,7 +642,7 @@ def preflight(arguments):
         arguments.repository,
         publication_revision,
     )
-    plan = plan_publication(account, state)
+    plan = registry_publication_plan(account, state)
     credentials = credential_account()
     receipt = {
         "format": "azimuth-publication-preflight",
@@ -648,6 +666,7 @@ def preflight(arguments):
         require(credentials["ready"], "publication credentials are not ready")
     print(
         f"preflight: publish={len(plan['publish'])} preserve={len(plan['preserve'])} "
+        f"normalize_npm_tags={len(plan['normalizeNpmTags'])} "
         f"credentials_ready={str(credentials['ready']).lower()} writes=0"
     )
 
@@ -746,6 +765,65 @@ def npm_dist_tag(version):
     return tag
 
 
+def npm_tags_are_exact(version, tags):
+    channel = npm_dist_tag(version)
+    return (
+        tags.get(channel) == version
+        and (channel == "latest" or tags.get("latest") != version)
+    )
+
+
+def registry_publication_plan(account, state):
+    plan = plan_publication(account, state)
+    normalize = []
+    subjects = {subject["key"]: subject for subject in account["subjects"]}
+    for key in plan["publish"] + plan["preserve"]:
+        subject = subjects[key]
+        if subject.get("ecosystem") != "npm":
+            continue
+        observed = state.get("targets", {}).get(key)
+        if observed is None or not npm_tags_are_exact(
+            account["version"], observed.get("distTags", {})
+        ):
+            normalize.append(key)
+    return {**plan, "normalizeNpmTags": sorted(normalize)}
+
+
+def npm_cli_dist_tags(identity, env):
+    result = run(["npm", "dist-tag", "ls", identity], env=env)
+    tags = {}
+    for line in result.stdout.decode().splitlines():
+        name, separator, version = line.partition(": ")
+        require(separator and name and version, f"{identity}: npm dist-tags are malformed")
+        tags[name] = version
+    return tags
+
+
+def normalize_npm_dist_tags(subject, version):
+    token = os.environ.get("NPM_TOKEN", "")
+    require(token, "NPM_TOKEN is absent")
+    env = {**os.environ, "NODE_AUTH_TOKEN": token}
+    identity = subject["identity"]
+    channel = npm_dist_tag(version)
+    tags = npm_cli_dist_tags(identity, env)
+    if tags.get(channel) != version:
+        run(["npm", "dist-tag", "add", f"{identity}@{version}", channel], env=env)
+    if channel != "latest" and tags.get("latest") == version:
+        run(["npm", "dist-tag", "rm", identity, "latest"], env=env)
+    observed = npm_cli_dist_tags(identity, env)
+    require(
+        npm_tags_are_exact(version, observed),
+        f"{subject['key']}: npm dist-tags do not identify the release channel exactly",
+    )
+
+
+def validate_registry_completion(account, state):
+    completion = validate_completion(account, state)
+    repairs = registry_publication_plan(account, state)["normalizeNpmTags"]
+    require(not repairs, f"public release has npm dist-tag drift for {repairs}")
+    return completion
+
+
 def publish_target(subject, path, account, repository=REPOSITORY):
     if subject["kind"] == "package":
         if subject["ecosystem"] == "cargo":
@@ -792,7 +870,7 @@ def publish(arguments):
     account = public_account(retained_account, arguments.candidates)
     state = read_json(arguments.state)
     supplied_plan = read_json(arguments.plan)
-    expected_plan = plan_publication(account, state)
+    expected_plan = registry_publication_plan(account, state)
     require(supplied_plan == expected_plan, "publication plan is stale or modified")
     credentials = credential_account()
     require(credentials["ready"], "publication credentials are not ready")
@@ -810,6 +888,8 @@ def publish(arguments):
             arguments.repository,
         )
         published.append(key)
+    for key in supplied_plan["normalizeNpmTags"]:
+        normalize_npm_dist_tags(subjects[key], account["version"])
     result = {
         "format": "azimuth-publication-result",
         "schemaVersion": 1,
@@ -817,9 +897,13 @@ def publish(arguments):
         "revision": account["revision"],
         "published": published,
         "preserved": supplied_plan["preserve"],
+        "normalizedNpmTags": supplied_plan["normalizeNpmTags"],
     }
     write_json(arguments.out, result)
-    print(f"publication writes completed: {len(published)} target(s)")
+    print(
+        f"publication writes completed: {len(published)} target(s), "
+        f"normalized npm tags: {len(supplied_plan['normalizeNpmTags'])}"
+    )
 
 
 def image_state(arguments):
@@ -860,7 +944,7 @@ def complete(arguments):
         publication_revision,
     )
     require(not state["missingReleaseAssets"], "GitHub Release support assets are incomplete")
-    completion = validate_completion(account, state)
+    completion = validate_registry_completion(account, state)
     receipt = {
         "format": "azimuth-public-release-completion",
         "schemaVersion": 1,

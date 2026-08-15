@@ -2,7 +2,7 @@
 
 ## Claim: ordinary-ci-excludes-release-only-matrix
 Verdict: sound
-Fingerprint: 8a0bd10d3788a4fe
+Fingerprint: 859d255196d4b1e1
 Judged: 2026-08-15
 Judge: Codex
 
@@ -18,7 +18,7 @@ the diagnostic run only confirms that the identity revision did not introduce th
 
 ## Claim: selected-lanes-are-independent
 Verdict: sound
-Fingerprint: 7cdcd68c5bcff494
+Fingerprint: 48943d70db6cd103
 Judged: 2026-08-15
 Judge: Codex
 
@@ -32,7 +32,7 @@ account and that observed failure boundary.
 
 ## Claim: complete-account-needs-every-lane
 Verdict: sound
-Fingerprint: 8eacdb862603c77d
+Fingerprint: c43992b56678cb92
 Judged: 2026-08-15
 Judge: Codex
 
@@ -45,7 +45,7 @@ catalog population, so the component-universal tag is honest.
 
 ## Claim: tag-catalog-and-revision-agree
 Verdict: sound
-Fingerprint: 1993ae68cca543e8
+Fingerprint: 559e8b8dbb0eb9fa
 Judged: 2026-08-15
 Judge: Codex
 
@@ -77,7 +77,7 @@ that performed the external operation and cannot substitute for any candidate-si
 
 ## Claim: retained-downloads-have-checksums
 Verdict: sound
-Fingerprint: 8a344a77410f6c01
+Fingerprint: 7353bd643dd24523
 Judged: 2026-08-15
 Judge: Codex
 
@@ -104,7 +104,7 @@ the retained checksum as the published candidate identity.
 
 ## Claim: executable-subjects-have-provenance
 Verdict: sound
-Fingerprint: 377eff7999045d64
+Fingerprint: fe35527ed4382925
 Judged: 2026-08-15
 Judge: Codex
 
@@ -118,13 +118,14 @@ receipt population or digest lookup.
 The repaired image path permits direct provenance when candidate and publication revisions agree,
 or a chain when immutable public targets force a later orchestration repair. The chain test requires
 retained-archive provenance at the candidate revision and published-digest provenance at the
-publication revision; removing either lookup fails. Deterministic OCI inspection already binds the
-two digests. This is component evidence for the guard, not operational evidence that the two public
-image digests have now been attested. That rollout-dependent limitation remains explicit.
+publication revision; removing either lookup fails. Deterministic OCI inspection binds the two
+digests. Run 31905266399 created both public-digest attestations and its fresh state resolved each
+image through `retained-to-published` provenance. The final corrected completion receipt still has
+to retain that operational result in model source before archive.
 
 ## Claim: packed-packages-install
 Verdict: sound
-Fingerprint: c5896b4f55115161
+Fingerprint: 436483d23ace8da8
 Judged: 2026-08-15
 Judge: Codex
 
@@ -138,7 +139,7 @@ would fail before the lane artifact is accepted.
 
 ## Claim: native-binaries-run
 Verdict: sound
-Fingerprint: 006fbcdacb2ef8aa
+Fingerprint: dab87eb3897ba4bf
 Judged: 2026-08-15
 Judge: Codex
 
@@ -150,7 +151,7 @@ selected runner, so the universal population is the complete three-target catalo
 
 ## Claim: selected-image-platforms-start
 Verdict: sound
-Fingerprint: 300be7fa446593db
+Fingerprint: 509c875529fc1f64
 Judged: 2026-08-15
 Judge: Codex
 
@@ -163,7 +164,7 @@ are covered.
 
 ## Claim: exact-existing-target-is-preserved
 Verdict: sound
-Fingerprint: af97bb976926bc7e
+Fingerprint: 848c737d9eb01f92
 Judged: 2026-08-15
 Judge: Codex
 
@@ -190,11 +191,17 @@ Later read-only run 31902967972 retrieved both NuGet packages but the former raw
 their provider-added repository signatures conflicts. Direct comparison found every retained path
 and payload equal, and the official NuGet verifier accepted both signatures and reported the same
 content hashes as the retained candidates. The repaired adapter classified both payload identities
-as exact locally; a hosted preflight must still establish the eight-target preservation account.
+as exact locally. Hosted preflight 31905158474 then preserved those packages and the other six
+public targets while selecting only the absent npm tarballs.
+
+Run 31905266399 made both npm tarballs exact but exposed mutable tag drift: npm assigned the first
+versions to both `alpha` and `latest`. The revised registry plan keeps those exact tarballs in
+`preserve` and selects only their tags for normalization. The focused test requires that separation,
+so mutable metadata repair cannot become an excuse to republish immutable content.
 
 ## Claim: absent-target-is-selected
 Verdict: sound
-Fingerprint: 992671b2f865e82f
+Fingerprint: 95e9a35775954293
 Judged: 2026-08-15
 Judge: Codex
 
@@ -214,9 +221,14 @@ operation. That observation does not prove the preceding push was rejected rathe
 indexing. Selection remains the specified planner result, but recovery must wait for a later public
 observation before treating a newly written provider's immediate absence as permission to retry.
 
+Hosted preflight 31905158474 supplied that later observation: it preserved eight exact targets and
+selected exactly the two npm packages. Write run 31905266399 then reported those two and no others
+in its immutable publication set. The new tag-normalization set is separate; an absent npm package
+enters both sets because its first publish must also establish channel metadata.
+
 ## Claim: conflicting-target-fails
 Verdict: sound
-Fingerprint: 87490fe610a22d01
+Fingerprint: 582285855510bd45
 Judged: 2026-08-15
 Judge: Codex
 
@@ -239,7 +251,7 @@ therefore does not turn provider signing into a general content exception.
 
 ## Claim: completion-needs-public-retrieval
 Verdict: sound
-Fingerprint: 2111b66fe1a1dc14
+Fingerprint: 67ce590e4a51f491
 Judged: 2026-08-15
 Judge: Codex
 
@@ -247,13 +259,14 @@ I inspected completion as the planner's only success boundary. The test removes 
 removes provenance from every target independently; both populations must fail, while platform
 drift is also rejected for each image. A constant-complete result or a check of only one registry
 kind cannot pass. This evidence establishes the component guard over supplied registry state, not
-fresh public retrieval. The claim and design now bind concrete package, GitHub Release and GHCR
-adapters plus a post-provenance completion job. No public completion receipt exists, so the
-accepted rollout-dependent residual remains. This verdict does not authorize calling the alpha
-publication complete before real public reads discharge it.
+fresh public retrieval. The revised evidence also makes npm tag drift an independent completion
+failure: an exact prerelease tarball at `latest` remains preserved but cannot complete, and an
+absent npm package is scheduled for tag normalization after publication.
 
-The partial operation and follow-up observations do not discharge that residual. Eight targets are
-now publicly retrievable with matching content identities, but the two npm packages remain absent
-and both images still lack published-digest provenance. Targeted rerun attempt 2 of run 31902402263
-preserved the candidate SHA but GitHub skipped the provenance job again because its failed
-dependency remained failed; workflow text and a skipped job cannot satisfy the public oracle.
+Run 31905266399 retrieved all ten immutable targets and both image provenance chains, but its old
+completion oracle ignored distribution tags. Independent npm reads found each first package
+version at both `alpha` and `latest`; that adverse observation falsified the receipt rather than
+being hidden by it. The new normalizer removes `latest` only when it points to this prerelease and
+verifies the remaining channel state. The verdict is sound for the revised component guard, while
+the accepted rollout residual remains until a new hosted run and independent reads produce and
+retain a corrected receipt.

@@ -21,7 +21,11 @@
   equality as an invalid NuGet registry identity rule.
 - [x] Establish that a targeted rerun preserves the tagged SHA but cannot bypass the failed publish
   dependency; retain candidate authority and record a separate reviewed publication revision.
-- [ ] Wait for provider read state to settle, publish npm with the `alpha` tag and resume only the
-  targets still classified absent.
+- [x] Wait for provider read state to settle, pass hosted no-write run 31905158474 with eight
+  preserved targets, and let run 31905266399 publish only the two absent npm tarballs.
+- [x] Observe that npm assigned both first versions to `latest` despite the explicit `alpha` tag;
+  retain the tarballs and add a separate tag-normalization plan and completion gate.
+- [ ] Run the hosted normalization and retain a completion receipt whose fresh npm state assigns
+  `0.1.0-alpha.1` to `alpha` but not `latest`.
 - [ ] Retrieve every public target, judge the refreshed evidence and record the outcome.
 - [ ] Finalize the completed change for separate acceptance and archive.

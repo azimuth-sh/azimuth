@@ -27,13 +27,14 @@ public tag may name the preceding candidate while a repair is under review. Owne
 rehearsals do not replace an existing tag, so the publication input remains bound to the operator's
 annotated public ref.
 
-## Reads precede one closed-world plan
+## Reads precede one closed-world plan *(revised)*
 
 Provider adapters normalize public registry responses into the existing planner state. The state
-contains every selected key exactly once and distinguishes only absent, exact and conflicting
-targets. The operation retrieves all targets before the first write and asks the accepted planner
-for the absent set. An adapter error is unknown state and fails closed; it is never mapped to
-absence.
+contains every selected key exactly once and distinguishes absent, exact and conflicting immutable
+targets. npm state also records distribution tags because those names are mutable metadata rather
+than tarball identity. The operation retrieves all targets before the first write and asks the
+accepted planner for the absent set plus npm tag normalizations. An adapter error is unknown state
+and fails closed; it is never mapped to absence.
 
 ## Credential checks precede writes *(revised)*
 
@@ -52,7 +53,10 @@ Registry writes remain independent because no cross-registry transaction exists 
 adapter receives the planner-selected keys for its registry and publishes exact retained files.
 The npm adapter derives a non-`latest` distribution tag from a prerelease channel such as `alpha`
 or `rc`; stable versions use `latest`. npm rejects prerelease publication without that explicit
-channel.
+channel, but the first public version of a package may still acquire `latest`. After publishing
+selected tarballs, the adapter therefore ensures the derived channel points to the version and
+removes `latest` only when it points to that prerelease. An exact tarball with tag drift remains in
+the immutable preserve set and enters a separate normalization set; it is never republished.
 NuGet.org adds a repository signature during ingestion, so its downloadable archive is not
 byte-identical to the retained unsigned candidate. The adapter requires the official NuGet
 signature verifier to accept that archive, compares every non-signature path and payload through a
@@ -69,11 +73,12 @@ versioned multi-platform indexes and attaches GitHub provenance to the resulting
 ## Completion is a new public observation
 
 Publication success is insufficient. A final adapter pass retrieves package versions and content
-identities, GitHub Release asset digests and GHCR index/platform digests. The accepted completion
-checker compares that closed population with the retained account. Its receipt records the tag,
-source revision, rehearsal run, publication run, observation time and normalized public state.
-When repaired orchestration executes after the candidate tag, it also records the distinct
-publication revision.
+identities, npm distribution tags, GitHub Release asset digests and GHCR index/platform digests.
+The accepted completion checker compares that closed population with the retained account and
+rejects a prerelease whose channel does not select it or whose `latest` tag does. Its receipt
+records the tag, source revision, rehearsal run, publication run, observation time and normalized
+public state. When repaired orchestration executes after the candidate tag, it also records the
+distinct publication revision.
 
 ## Failure boundaries
 
@@ -92,5 +97,7 @@ publication revision.
   state to settle and repeats the no-write preflight before selecting another write.
 - An invalid NuGet repository signature or a changed non-signature payload fails before the
   settled package can be preserved.
+- An exact npm tarball with distribution-tag drift is preserved as immutable content but prevents
+  completion until the bounded metadata normalization is observed publicly.
 - A public target without the required checksum, platform population or provenance prevents
   completion even when its version string exists.
