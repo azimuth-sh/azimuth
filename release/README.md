@@ -37,3 +37,31 @@ copy beside its outcome. Then validate the records with:
 ```
 
 A failed run is diagnostic evidence only. It cannot replace either successful receipt.
+
+## Public alpha publication
+
+`.github/workflows/publish.yml` is owner-dispatched and accepts one successful rehearsal run id. It
+downloads that run's retained candidates and account; it does not build candidates. A dry run reads
+all public targets, derives the absent/exact/conflicting plan and records credential readiness with
+zero writes.
+
+Configure the `release` environment with `CARGO_REGISTRY_TOKEN`, `NUGET_API_KEY` and `NPM_TOKEN`.
+The npm identity must administer the `@azimuth` organization. The workflow's bounded GitHub token
+owns GitHub Release and GHCR access. NuGet and GHCR expose no non-writing probe that proves the
+right to create an unused identity, so the preflight records that limitation explicitly.
+
+After the publication change is merged, run the release rehearsal on `main`, wait for its complete
+account, create the annotated catalog tag at that same main revision and push the tag. Use `gh` to
+dispatch the no-write preflight against the tag:
+
+```sh
+gh workflow run publish.yml --ref v0.1.0-alpha.1 \
+  -f rehearsal_run_id=RUN_ID -f dry_run=true
+gh run watch PUBLICATION_RUN_ID --exit-status
+```
+
+Inspect the retained `publication-preflight` artifact before dispatching with `dry_run=false`. The
+write run re-reads every registry, rederives the plan and publishes only its absent set. A rerun
+after interruption preserves exact public targets. The workflow emits `public-release-completion`
+only after post-publication retrieval validates all ten targets, GitHub Release support assets,
+GHCR platform sets and provenance against the retained account.

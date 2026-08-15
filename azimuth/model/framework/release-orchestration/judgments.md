@@ -2,7 +2,7 @@
 
 ## Claim: ordinary-ci-excludes-release-only-matrix
 Verdict: sound
-Fingerprint: 6985638473130140
+Fingerprint: 510c92942e60e1ee
 Judged: 2026-08-15
 Judge: Codex
 
@@ -15,7 +15,7 @@ the complete bounded workflow rather than inferring ordinary cost from a local r
 
 ## Claim: selected-lanes-are-independent
 Verdict: sound
-Fingerprint: eebfc7ca1e39764c
+Fingerprint: 4e8e9e8f2cc4a592
 Judged: 2026-08-15
 Judge: Codex
 
@@ -29,7 +29,7 @@ account and that observed failure boundary.
 
 ## Claim: complete-account-needs-every-lane
 Verdict: sound
-Fingerprint: b4cc38faccbe2e05
+Fingerprint: 729553a679caa0af
 Judged: 2026-08-15
 Judge: Codex
 
@@ -42,7 +42,7 @@ catalog population, so the component-universal tag is honest.
 
 ## Claim: tag-catalog-and-revision-agree
 Verdict: sound
-Fingerprint: b6e19368784f3e25
+Fingerprint: 8d232bccf72503a4
 Judged: 2026-08-15
 Judge: Codex
 
@@ -53,9 +53,15 @@ hosted candidate account records tag `v0.1.0-alpha.1` and execution revision
 `bbe909363bd13a855fa482696b34b19177eac0fe`, which the workflow tagged before assembly. A tag
 pointing anywhere else cannot pass this choke point.
 
+I also inspected the publication preflight. It requires an annotated tag, reuses the retained
+account verifier and independently compares the rehearsal run revision with the account and peeled
+tag revision before registry state or credentials can authorize a write. This realization
+establishes the same predicate at the public-operation boundary rather than merely transporting the
+tag value.
+
 ## Claim: retained-downloads-have-checksums
 Verdict: sound
-Fingerprint: 53df6d3f2fec6c22
+Fingerprint: 44a18f862d122a93
 Judged: 2026-08-15
 Judge: Codex
 
@@ -66,9 +72,14 @@ GitHub run 31862856073 and matched every digest to `candidates.json`, whose own 
 `5dc651dd73e26703f0784e51387bf353c938df5d9181fa270451733147572e71`. A substituted retained
 download therefore cannot retain a passing account.
 
+The publication preflight downloads the cross-run candidates, invokes that verifier and derives an
+image registry digest only after the retained OCI archive checksum passes. The public account keeps
+the archive checksum separately, so this realization does not substitute a registry manifest
+digest for retained-byte identity.
+
 ## Claim: executable-subjects-have-provenance
 Verdict: sound
-Fingerprint: 68335ec5dea98db6
+Fingerprint: b7af1448cee78f92
 Judged: 2026-08-15
 Judge: Codex
 
@@ -78,11 +89,14 @@ subjects plus each of the three native archives and two OCI archives; every bund
 `.github/workflows/release.yml` and execution revision
 `bbe909363bd13a855fa482696b34b19177eac0fe`. A missing or substituted subject would fail the
 receipt population or digest lookup. The judgment does not extend this to future GHCR image
-digests; that rollout-dependent limitation is the claim's explicit accepted residual.
+digests. The owner workflow now names each published index digest and requests registry-attached
+GitHub provenance after publication, but that path has not executed. The rollout-dependent
+limitation therefore remains the claim's explicit accepted residual rather than becoming evidence
+from workflow text.
 
 ## Claim: packed-packages-install
 Verdict: sound
-Fingerprint: bd940464e123349f
+Fingerprint: 3595be8f4e9e620b
 Judged: 2026-08-15
 Judge: Codex
 
@@ -95,7 +109,7 @@ would fail before the lane artifact is accepted.
 
 ## Claim: native-binaries-run
 Verdict: sound
-Fingerprint: 031073ccd6c9a85c
+Fingerprint: 0656e92fa34152a8
 Judged: 2026-08-15
 Judge: Codex
 
@@ -107,7 +121,7 @@ selected runner, so the universal population is the complete three-target catalo
 
 ## Claim: selected-image-platforms-start
 Verdict: sound
-Fingerprint: d18f9d67f383aee1
+Fingerprint: 713e0dc3087ec501
 Judged: 2026-08-15
 Judge: Codex
 
@@ -120,7 +134,7 @@ are covered.
 
 ## Claim: exact-existing-target-is-preserved
 Verdict: sound
-Fingerprint: a2f07106396cbd1c
+Fingerprint: 15b8d15a97d3d9b8
 Judged: 2026-08-15
 Judge: Codex
 
@@ -131,9 +145,14 @@ conflict, so an implementation that simply preserved every existing identity wou
 loop contains no subject-specific exception; the component-universal tag therefore follows the
 catalog-derived population.
 
+I also inspected the public adapters and write boundary. They retrieve all selected providers into
+one state, preserve omitted keys as absent, keep provider errors distinct from absence and rederive
+the supplied plan immediately before writes. No provider adapter can independently bypass the
+planner for a target classified exact.
+
 ## Claim: absent-target-is-selected
 Verdict: sound
-Fingerprint: 25bb1f5d0fd9bfcd
+Fingerprint: 496ddc68e123d071
 Judged: 2026-08-15
 Judge: Codex
 
@@ -143,9 +162,14 @@ absent from `preserve`. A wrong planner that republishes an exact neighbor, skip
 selects the whole release after a partial failure would fail on the affected iteration. The direct
 component evidence ranges over every selected target rather than one representative absence.
 
+The new write path consumes only the planner's `publish` keys and recomputes that plan from the
+retained account and observed state before dispatch. The adapter tests deliberately remain ordinary
+detector evidence: one selected-write example does not replace the existing universal
+catalog-derived absence mutation.
+
 ## Claim: conflicting-target-fails
 Verdict: sound
-Fingerprint: e68feb559c72a90f
+Fingerprint: aee264f598c4a4d3
 Judged: 2026-08-15
 Judge: Codex
 
@@ -156,9 +180,14 @@ the three distinct comparison shapes; the implementation contains no identity-sp
 that could exempt another subject. A wrong comparison that ignored content or image platforms
 would therefore accept one of the constructed conflicts and fail the oracle.
 
+The provider boundary maps authorization failures, rate limits and malformed responses to errors,
+not absence, and separately rejects a conflicting GitHub Release support asset before planning.
+This realizes fail-closed public observation without overstating those provider fixtures as new
+universal Covers evidence.
+
 ## Claim: completion-needs-public-retrieval
 Verdict: sound
-Fingerprint: 0ab66f34f73d9df0
+Fingerprint: 027f46370374c9fe
 Judged: 2026-08-15
 Judge: Codex
 
@@ -166,6 +195,7 @@ I inspected completion as the planner's only success boundary. The test removes 
 removes provenance from every target independently; both populations must fail, while platform
 drift is also rejected for each image. A constant-complete result or a check of only one registry
 kind cannot pass. This evidence establishes the component guard over supplied registry state, not
-fresh public retrieval. The claim and design state that missing adapter explicitly as an accepted
-rollout-dependent residual, so this verdict does not authorize calling the alpha publication
-complete before real public reads discharge it.
+fresh public retrieval. The claim and design now bind concrete package, GitHub Release and GHCR
+adapters plus a post-provenance completion job. No public completion receipt exists, so the
+accepted rollout-dependent residual remains. This verdict does not authorize calling the alpha
+publication complete before real public reads discharge it.
