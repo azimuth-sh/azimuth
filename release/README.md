@@ -17,12 +17,14 @@ gh run download RUN_ID --dir DOWNLOAD_DIRECTORY
 ```
 
 For `.azimuth/release/release-workflow-receipt.json`, record the pull request's `headRefOid` as
-`sourceRevision` and the successful run's `headSha` as `executionRevision`. Derive `jobs` and
-`subjects` from `release/artifacts.json`; hash the downloaded `candidates.json` for
-`candidateAccountSha256`. Hash `.github/workflows/release.yml`, `release/orchestrate.py` and
-`release/candidates.py` for their named SHA-256 fields. Query each downloaded subject digest with
-`gh api repos/drim-dev/azimuth/attestations/sha256:DIGEST`, decode the signed statement and record
-`attestedSubjects` only after every exact subject names the workflow and execution revision.
+`sourceRevision` and confirm that it equals the run's `headSha`. Record the downloaded candidate
+account's `revision` as `executionRevision`, then confirm that revision against every signed
+attestation. Derive `jobs` and `subjects` from `release/artifacts.json`; hash the downloaded
+`candidates.json` for `candidateAccountSha256`. Hash `.github/workflows/release.yml`,
+`release/orchestrate.py` and `release/candidates.py` for their named SHA-256 fields. Query each
+downloaded subject digest with `gh api repos/drim-dev/azimuth/attestations/sha256:DIGEST`, decode the
+signed statement and record `attestedSubjects` only after every exact subject names the workflow
+and execution revision.
 
 For `.azimuth/release/ordinary-workflow-receipt.json`, record the same revision identities, compute
 the successful `check` job duration from its `startedAt` and `completedAt` values, and hash

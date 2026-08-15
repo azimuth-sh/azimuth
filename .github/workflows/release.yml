@@ -82,6 +82,7 @@ jobs:
           python release/candidates.py native
           --out dist/native
           --target "$TARGET"
+        shell: bash
         env:
           TARGET: ${{ matrix.target }}
       - uses: actions/attest-build-provenance@v4
