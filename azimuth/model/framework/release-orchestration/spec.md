@@ -90,3 +90,4 @@ THEN orchestration fails before any remaining target is published
 WHEN first-alpha publication is evaluated for completion
 THEN every selected package, native archive and image index is retrieved publicly
 AND each retrieved target matches the retained tag, identity, checksum, provenance and platforms
+AND each npm prerelease channel selects its version without assigning that version to `latest`

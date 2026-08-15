@@ -21,6 +21,7 @@ from release.publication import (
     has_provenance,
     image_manifest,
     image_state,
+    normalize_npm_dist_tags,
     nuget_payload_digest,
     package_bytes,
     preflight,
@@ -30,7 +31,9 @@ from release.publication import (
     publish_target,
     publication_workflow_account,
     qualify,
+    registry_publication_plan,
     subject_provenance,
+    validate_registry_completion,
     verify_nuget_repository_signature,
 )
 
@@ -86,6 +89,15 @@ class PublicAlphaPublicationTests(unittest.TestCase):
         account_path = directory / "candidates.json"
         write_account(account, account_path)
         return account, candidates, account_path, directory / "SHA256SUMS"
+
+    def exact_public_state(self, account):
+        state = exact_registry_state(account)
+        for subject in account["subjects"]:
+            if subject.get("ecosystem") == "npm":
+                state["targets"][subject["key"]]["distTags"] = {
+                    "alpha": account["version"]
+                }
+        return state
 
     def test_package_adapters_distinguish_absence_from_exact_bytes(self):
         subjects = {
@@ -323,7 +335,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 if subject["kind"] == "native"
             )
 
-            def package_result(subject, _version):
+            def package_result(subject, _version, *_metadata):
                 return (candidates / subject["filename"]).read_bytes(), "https://example/package"
 
             def asset_result(asset):
@@ -350,6 +362,9 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 "release.publication.image_manifest", side_effect=lambda *_: next(image_values)
             ), patch(
                 "release.publication.verify_nuget_repository_signature"
+            ), patch(
+                "release.publication.npm_registry_metadata",
+                return_value={"dist-tags": {"alpha": account["version"]}},
             ), patch("release.publication.has_provenance", return_value=True):
                 state = collect_state(account, account_path, sums_path)
             self.assertEqual(state["missingReleaseAssets"], [])
@@ -382,7 +397,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             directory = Path(temporary)
             retained, candidates, account_path, sums_path = self.retained_account(directory)
             account = public_account(retained, candidates)
-            exact = exact_registry_state(account)
+            exact = self.exact_public_state(account)
             arguments = argparse.Namespace(
                 account=account_path,
                 candidates=candidates,
@@ -423,16 +438,18 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             directory = Path(temporary)
             retained, candidates, account_path, sums_path = self.retained_account(directory)
             account = public_account(retained, candidates)
-            state = exact_registry_state(account)
-            selected = account["subjects"][0]["key"]
+            state = self.exact_public_state(account)
+            selected = next(
+                subject["key"]
+                for subject in account["subjects"]
+                if subject.get("ecosystem") != "npm"
+            )
             del state["targets"][selected]
             state.update({"releaseExists": True, "missingReleaseAssets": []})
             state_path = directory / "state.json"
             plan_path = directory / "plan.json"
             state_path.write_text(json.dumps(state))
-            plan_path.write_text(
-                json.dumps({"publish": [selected], "preserve": sorted(state["targets"])})
-            )
+            plan_path.write_text(json.dumps(registry_publication_plan(account, state)))
             arguments = argparse.Namespace(
                 account=account_path,
                 candidates=candidates,
@@ -501,6 +518,51 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             command = publish_command.call_args.args[0]
             self.assertEqual(command[-2:], ["--tag", tag])
             self.assertIn("--provenance", command)
+
+    def test_npm_tag_drift_is_planned_and_blocks_completion(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            retained, candidates, _, _ = self.retained_account(Path(temporary))
+            account = public_account(retained, candidates)
+            subject = next(
+                item for item in account["subjects"] if item.get("ecosystem") == "npm"
+            )
+            state = self.exact_public_state(account)
+            state["targets"][subject["key"]]["distTags"]["latest"] = account["version"]
+
+            plan = registry_publication_plan(account, state)
+            self.assertEqual(plan["publish"], [])
+            self.assertEqual(plan["normalizeNpmTags"], [subject["key"]])
+            with self.assertRaisesRegex(PublicationError, "npm dist-tag drift"):
+                validate_registry_completion(account, state)
+
+            absent = self.exact_public_state(account)
+            del absent["targets"][subject["key"]]
+            plan = registry_publication_plan(account, absent)
+            self.assertEqual(plan["publish"], [subject["key"]])
+            self.assertEqual(plan["normalizeNpmTags"], [subject["key"]])
+
+    def test_npm_tag_normalization_removes_an_alpha_from_latest(self):
+        subject = {
+            "key": "package:typescript-annotations",
+            "identity": "@azimuth-sh/annotations",
+        }
+        version = "0.1.0-alpha.1"
+        results = [
+            SimpleNamespace(stdout=f"alpha: {version}\nlatest: {version}\n".encode()),
+            SimpleNamespace(stdout=b""),
+            SimpleNamespace(stdout=f"alpha: {version}\n".encode()),
+        ]
+        with patch.dict("os.environ", {"NPM_TOKEN": "secret"}, clear=True), patch(
+            "release.publication.run", side_effect=results
+        ) as npm:
+            normalize_npm_dist_tags(subject, version)
+
+        commands = [call.args[0] for call in npm.call_args_list]
+        self.assertEqual(
+            commands[1],
+            ["npm", "dist-tag", "rm", "@azimuth-sh/annotations", "latest"],
+        )
+        self.assertNotIn("add", commands[1])
 
     def test_image_state_filters_attestation_descriptors_from_platforms(self):
         manifest = {

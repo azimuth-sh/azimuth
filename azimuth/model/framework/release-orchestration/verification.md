@@ -48,14 +48,15 @@ the catalog-derived population must make manifest verification fail.
 Scope: e2e
 Quantification: universal
 Oracle: direct
-Residual: GHCR image-digest provenance is absent until the images are published
-Accepted: the rehearsal attests retained OCI archives; discharge during alpha publication
+Residual: the successful public image attestations are not yet retained in the model-source receipt
+Accepted: import the final publication receipt before archiving the active alpha change
 
 The hosted rehearsal submits every downloadable subject to GitHub's provenance action and validates
-the workflow's exact subject population. Image publication provenance remains rollout-dependent
-until GHCR digests exist. A repair revision does not replace candidate provenance: completion must
-join retained-archive provenance at the tagged revision, deterministic index identity and
-published-digest provenance at the recorded publication revision.
+the workflow's exact subject population. Publication run 31905266399 attached attestations to both
+GHCR index digests. A repair revision does not replace candidate provenance: completion must join
+retained-archive provenance at the tagged revision, deterministic index identity and
+published-digest provenance at the recorded publication revision. The final receipt remains to be
+retained with the active change.
 
 ## Claim: packed-packages-install
 Scope: component
@@ -113,8 +114,10 @@ Residual: registry state is synthetic rather than retrieved from public targets
 Accepted: no alpha target exists; bind registry adapters and discharge during alpha publication
 
 The completion checker ranges over the complete public population and rejects each missing or
-mismatched package, native archive, image index, checksum, provenance subject or platform. A passed
-receipt remains rollout-dependent until the release operation retrieves real public targets.
+mismatched package, native archive, image index, checksum, provenance subject or platform. npm
+mutations also require every derived prerelease channel to select its version and reject that
+version at `latest`; exact tarballs remain preserved while their mutable tags are normalized. A
+passed receipt remains rollout-dependent until the release operation retrieves real public targets.
 
 ## Residual: registry-credentials-are-not-rehearsed
 Accepted: write authorization is provider-dependent; discharge from the publication operation
@@ -126,10 +129,12 @@ token expose their write authorization only through the first write; the resumab
 that limitation rather than requiring broader credentials.
 
 ## Residual: public-completion-is-rollout-dependent
-Accepted: no alpha target is published; discharge during `v0.1.0-alpha.1` publication
+Accepted: normalize npm tags and import the corrected public receipt before archive
 
-Dry registry fixtures can establish planner semantics but cannot show that real public targets are
-retrievable. The release remains incomplete until the publication operation supplies that evidence.
+All ten immutable targets are publicly retrievable, but the first npm versions also acquired
+`latest`. The receipt from run 31905266399 therefore does not satisfy the revised completion oracle.
+The release remains incomplete until a fresh operation removes those aliases and retains the
+corrected public observation.
 
 ## Residual: provenance-is-not-a-complete-supply-chain-account
 Accepted: first alpha scope from CAR13; revisit before stable or consumer demand

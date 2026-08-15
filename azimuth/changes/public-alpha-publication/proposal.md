@@ -54,6 +54,15 @@ runs reviewed orchestration from a later revision while keeping candidate author
 unchanged tag. The public account records both revisions and accepts image provenance only through
 the retained archive, its deterministic index digest and the publication-revision attestation.
 
+The repaired no-write run 31905158474 retrieved eight exact targets and selected only the two npm
+packages. Write run 31905266399 published those tarballs, attached both image attestations and
+emitted a ten-target completion receipt. An independent npm read then found both `alpha` and
+`latest` assigned to `0.1.0-alpha.1`. This falsifies the assumption that `npm publish --tag alpha`
+alone prevents a first package version from becoming `latest`, and it falsifies the completion
+gate because that gate did not read mutable distribution tags. The revised planner keeps the exact
+tarballs in the immutable preserve set, selects their tag metadata for normalization and requires a
+fresh completion read to observe `alpha` at this version and `latest` elsewhere or absent.
+
 ## Outcome
 
 One explicit repository-owner workflow consumes a successful rehearsal run whose source revision
@@ -66,7 +75,9 @@ recorded as such rather than represented as authenticated.
 The operation may be rerun after interruption. Exact public targets are preserved, conflicting
 immutable targets stop the operation before another write, and completion is emitted only after a
 fresh retrieval validates all packages, three GitHub Release archives, both multi-platform GHCR
-indexes, checksums and provenance against the tag-bound retained account.
+indexes, checksums and provenance against the tag-bound retained account. npm distribution tags
+are retrieved separately from tarball identity; prerelease completion requires the derived channel
+to select the version and forbids the same version at `latest`.
 
 ## Scope
 
@@ -83,7 +94,8 @@ In scope:
   the controlled `azimuth-sh` owner and `azimuth.sh` homepage;
 - GitHub prerelease metadata and provenance for published GHCR index digests;
 - exact-existing preservation, conflict rejection and missing-target resumption through the
-  accepted planner; and
+  accepted planner;
+- repair of mutable npm distribution tags without republishing exact tarballs; and
 - a public completion receipt derived from post-publication retrieval.
 
 Out of scope:
