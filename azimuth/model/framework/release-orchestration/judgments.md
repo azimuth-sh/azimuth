@@ -2,7 +2,7 @@
 
 ## Claim: ordinary-ci-excludes-release-only-matrix
 Verdict: sound
-Fingerprint: 539d6349c6e15029
+Fingerprint: afeacdd98483c953
 Judged: 2026-08-15
 Judge: Codex
 
@@ -18,7 +18,7 @@ the diagnostic run only confirms that the identity revision did not introduce th
 
 ## Claim: selected-lanes-are-independent
 Verdict: sound
-Fingerprint: da9d56840d436abf
+Fingerprint: 3f602e5ff9e0e835
 Judged: 2026-08-15
 Judge: Codex
 
@@ -26,26 +26,26 @@ I inspected the four-job DAG, both non-fail-fast matrices, the per-lane artifact
 account's `always()` dependency over all producer jobs. The mutation loop removes each lane and the
 static account rejects it. Earlier GitHub run 31859874354 supplied the relevant failure case: its
 package lane failed while all three native lanes and both image lanes completed and retained their
-artifacts, after which the account failed closed. GitHub run 31874120317 passed the revised
+artifacts, after which the account failed closed. GitHub run 31883286632 passed the revised
 complete DAG. A wrong serial dependency or fail-fast matrix would contradict both the source
 account and that observed failure boundary.
 
 ## Claim: complete-account-needs-every-lane
 Verdict: sound
-Fingerprint: 2ab7ebcd40e79515
+Fingerprint: 6e3979c8b3d299e4
 Judged: 2026-08-15
 Judge: Codex
 
 I inspected catalog-derived subject enumeration, recursive file indexing and the account assembly
 loop. The evidence removes and duplicates every one of the ten selected filenames independently
 and adds an unexpected file; every mutation fails before an account is returned. GitHub run
-31874120317 then downloaded all six lane artifacts and assembled exactly ten subjects. A wrong
+31883286632 then downloaded all six lane artifacts and assembled exactly ten subjects. A wrong
 assembler accepting one absent, duplicated or extra output is discriminated across the full
 catalog population, so the component-universal tag is honest.
 
 ## Claim: tag-catalog-and-revision-agree
 Verdict: sound
-Fingerprint: c36c673de1d9a331
+Fingerprint: 089c602b0715038b
 Judged: 2026-08-15
 Judge: Codex
 
@@ -53,8 +53,14 @@ I inspected the catalog tag/version checks, full-commit validation and `git rev-
 against the annotated tag. The test constructs a real repository and tag, then rejects a different
 full revision; independent invalid tag and short-revision cases exercise the other inputs. The
 hosted candidate account records tag `v0.1.0-alpha.1` and execution revision
-`ab38ada91236055681a8139acf8b84a4d18d1270`, which the workflow tagged before assembly. A tag
+`7f2d78ed982e05c9a316fa18ade8e3592fdaa86c`, which the workflow tagged before assembly. A tag
 pointing anywhere else cannot pass this choke point.
+
+Run 31882982629 supplied the adverse case: all producer lanes passed, but the account rejected the
+fetched public tag because it named the preceding candidate. The repaired pull-request path forces
+only its checkout-local synthetic tag, and run 31883286632 then passed at its merge revision. The
+workflow account rejects removal of that PR-only force while owner dispatch retains an existing
+fetched tag, so review isolation does not weaken the publication tag boundary.
 
 I also inspected the publication preflight. It requires an annotated tag, reuses the retained
 account verifier and independently compares the rehearsal run revision with the account and peeled
@@ -66,15 +72,15 @@ longer passes.
 
 ## Claim: retained-downloads-have-checksums
 Verdict: sound
-Fingerprint: e2f488a82b8a2aee
+Fingerprint: 1d6bd5fad596f352
 Judged: 2026-08-15
 Judge: Codex
 
 I inspected the exact filename index, byte-size and streaming SHA-256 account, and the verifier's
 comparison with retained files. The mutation ranges over every selected subject and changes its
 bytes; each must fail size or digest comparison. I also hashed all ten artifacts downloaded from
-GitHub run 31874120317 and matched every digest to `candidates.json`, whose own digest is
-`319930b7009e9e5dd26141a9ab7aa69f06c0c28ec6f24c148c3ec38545a24579`. A substituted retained
+GitHub run 31883286632 and matched every digest to `candidates.json`, whose own digest is
+`0d58e655f9801b8f8ee90886a2e163c7910215d3c64986d412edf851cfdb5500`. A substituted retained
 download therefore cannot retain a passing account.
 
 The publication preflight downloads the cross-run candidates, invokes that verifier and derives an
@@ -86,15 +92,15 @@ or substituted cross-run download therefore fails at that second consumption bou
 
 ## Claim: executable-subjects-have-provenance
 Verdict: sound
-Fingerprint: 84ec57d50cdbe212
+Fingerprint: fc58cedd783a0bb8
 Judged: 2026-08-15
 Judge: Codex
 
 I inspected each provenance step and queried GitHub's attestation API using the ten retained
-SHA-256 digests from run 31874120317. The signed bundle population contains all five package
+SHA-256 digests from run 31883286632. The signed bundle population contains all five package
 subjects plus each of the three native archives and two OCI archives; every bundle names workflow
 `.github/workflows/release.yml` and execution revision
-`ab38ada91236055681a8139acf8b84a4d18d1270`. A missing or substituted subject would fail the
+`7f2d78ed982e05c9a316fa18ade8e3592fdaa86c`. A missing or substituted subject would fail the
 receipt population or digest lookup. The judgment does not extend this to future GHCR image
 digests. The owner workflow now names each published index digest and requests registry-attached
 GitHub provenance after publication, but that path has not executed. The rollout-dependent
@@ -103,46 +109,46 @@ from workflow text.
 
 ## Claim: packed-packages-install
 Verdict: sound
-Fingerprint: 9751edd5ea5c213f
+Fingerprint: a2c1d76712ab657a
 Judged: 2026-08-15
 Judge: Codex
 
 I inspected all three disposable consumer implementations and the hosted package lane. Cargo
 installs the retained crate with `--locked`; NuGet restores both retained packages from an isolated
 source and invokes their entry points; npm installs both tarballs into a temporary consumer and
-exercises annotation and emitter behavior. Run 31874120317 completed that exact five-package path
+exercises annotation and emitter behavior. Run 31883286632 completed that exact five-package path
 using the two `@azimuth-sh` tarballs.
 A package that only works through workspace source, omits its executable or exports the wrong API
 would fail before the lane artifact is accepted.
 
 ## Claim: native-binaries-run
 Verdict: sound
-Fingerprint: 35d148cdf5680190
+Fingerprint: b5a27e8d414fdd11
 Judged: 2026-08-15
 Judge: Codex
 
 I inspected the catalog-derived native matrix, runner mapping, archive construction and extraction
 path. Each lane executes the binary from its retained archive and compares `--version` with the
-catalog. GitHub run 31874120317 passed on Linux x86-64, macOS ARM64 and Windows x86-64. A wrong
+catalog. GitHub run 31883286632 passed on Linux x86-64, macOS ARM64 and Windows x86-64. A wrong
 archive name, missing executable bit, incompatible binary or version drift would fail on its
 selected runner, so the universal population is the complete three-target catalog set.
 
 ## Claim: selected-image-platforms-start
 Verdict: sound
-Fingerprint: 2a222581729482ad
+Fingerprint: b52beec44782c9d2
 Judged: 2026-08-15
 Judge: Codex
 
 I inspected catalog-derived image matrices, recursive OCI platform inspection, per-platform
 `skopeo` import and both startup oracles. The API uses a real PostgreSQL container and `/health`;
-the web candidate must answer HTTP through its declared port. Run 31874120317 exercised AMD64 and
+the web candidate must answer HTTP through its declared port. Run 31883286632 exercised AMD64 and
 ARM64 for both renamed images. Dropping an index manifest, producing a non-starting architecture or
 bypassing the declared entry point fails before attestation and upload, so all four selected pairs
 are covered.
 
 ## Claim: exact-existing-target-is-preserved
 Verdict: sound
-Fingerprint: 905b79c631015c7b
+Fingerprint: 152a1808d362cab5
 Judged: 2026-08-15
 Judge: Codex
 
@@ -162,7 +168,7 @@ network source while retaining an exact classification.
 
 ## Claim: absent-target-is-selected
 Verdict: sound
-Fingerprint: fa851c54d79d05f6
+Fingerprint: 082c53f0baab7398
 Judged: 2026-08-15
 Judge: Codex
 
@@ -179,7 +185,7 @@ catalog-derived absence mutation.
 
 ## Claim: conflicting-target-fails
 Verdict: sound
-Fingerprint: 76c241c0ce3e9930
+Fingerprint: ab84db116ba17b36
 Judged: 2026-08-15
 Judge: Codex
 
@@ -198,7 +204,7 @@ fixtures as new universal Covers evidence.
 
 ## Claim: completion-needs-public-retrieval
 Verdict: sound
-Fingerprint: 1ed77191fc259b7b
+Fingerprint: be20f06edea7c1e3
 Judged: 2026-08-15
 Judge: Codex
 

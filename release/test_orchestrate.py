@@ -319,6 +319,21 @@ class ReleaseOrchestrationTests(unittest.TestCase):
         self.assertFalse(account["releaseImagesInOrdinaryGate"])
         self.assertEqual(account["releaseLanes"], ["packages", "native", "images", "account"])
 
+    def test_pull_request_rehearsal_isolates_its_synthetic_tag(self):
+        release = (self.root / ".github/workflows/release.yml").read_text()
+        ordinary = (self.root / ".github/workflows/ci.yml").read_text()
+        gate = (self.root / "scripts/check.sh").read_text()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / ".github/workflows").mkdir(parents=True)
+            (root / "scripts").mkdir()
+            (root / ".github/workflows/ci.yml").write_text(ordinary)
+            (root / "scripts/check.sh").write_text(gate)
+            changed = release.replace("tag --force --annotate", "tag --annotate", 1)
+            (root / ".github/workflows/release.yml").write_text(changed)
+            with self.assertRaisesRegex(OrchestrationError, "synthetic tag"):
+                workflow_account(root)
+
     def test_each_release_lane_is_required_by_the_workflow_account(self):
         release = (self.root / ".github/workflows/release.yml").read_text()
         ordinary = (self.root / ".github/workflows/ci.yml").read_text()

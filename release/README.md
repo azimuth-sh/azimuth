@@ -47,8 +47,10 @@ zero writes.
 
 Configure the `release` environment with `CARGO_REGISTRY_TOKEN`, `NUGET_API_KEY` and `NPM_TOKEN`.
 The npm identity must administer the `@azimuth-sh` organization. The workflow's bounded GitHub
-token owns GitHub Release and GHCR access. NuGet and GHCR expose no non-writing probe that proves
-the right to create an unused identity, so the preflight records that limitation explicitly.
+token owns GitHub Release and GHCR access. A crates.io token restricted to `publish-new` cannot use
+the legacy identity endpoint. NuGet, GitHub Release and GHCR likewise expose no non-writing probe
+that proves the right to create an unused identity, so the preflight records those limitations and
+learns authorization from the first write. npm organization administration is checked directly.
 
 After the publication change is merged, run the release rehearsal on `main`, wait for its complete
 account, create the annotated catalog tag at that same main revision and push the tag. Use `gh` to

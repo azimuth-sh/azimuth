@@ -40,13 +40,14 @@ state and classifies every target as absent, exact or conflicting. Publication j
 the resulting absent set; any conflict prevents a plan. The owner-dispatched publication workflow
 downloads the tag-bound rehearsal outputs rather than rebuilding them. Provider adapters retrieve
 package bytes, GitHub Release assets and GHCR index manifests into the closed-world state. A
-credential gate precedes the first write, and completion performs a new retrieval after image-index
-provenance is attached. Removing the planner would make partial recovery depend on mutable operator
-memory.
+credential gate checks presence plus provider-supported non-mutating identity before the first
+write, and completion performs a new retrieval after image-index provenance is attached. Removing
+the planner would make partial recovery depend on mutable operator memory.
 
 ## Residue
 
-The adapters cannot establish permission to create an unused NuGet or GHCR identity without the
-first registry write. GitHub build provenance does not supply complete SBOM or cross-ecosystem
-signing coverage. Public completion evidence is rollout-dependent and cannot exist until
-`v0.1.0-alpha.1` is actually published; the release operation retains that condition.
+The adapters cannot establish a narrowly scoped crates.io token's identity without requiring the
+broader legacy scope, or establish permission to create an unused NuGet, GitHub Release or GHCR
+identity without the first registry write. GitHub build provenance does not supply complete SBOM
+or cross-ecosystem signing coverage. Public completion evidence is rollout-dependent and cannot
+exist until `v0.1.0-alpha.1` is actually published; the release operation retains that condition.

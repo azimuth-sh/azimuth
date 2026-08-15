@@ -35,6 +35,9 @@ by elapsed time.
 
 ## Residual: provider authorization probes vary
 
-Some registries may not expose a non-mutating request that proves permission to create an unused
-name. Presence and authenticated identity are weaker than publish authorization. The outcome must
-name which adapters proved authorization and which first learned it from an attempted write.
+The write-enabled run on 2026-08-15 demonstrated that a crates.io `publish-new` token cannot use the
+legacy `/me` identity endpoint and that a repository read does not prove a job-scoped GitHub token's
+declared write permissions. NuGet and GHCR likewise expose no non-mutating request that proves
+permission to create an unused identity. Presence and authenticated npm administration are weaker
+than complete publish authorization. The outcome must name which adapters proved identity and
+which first learned authorization from an attempted write.

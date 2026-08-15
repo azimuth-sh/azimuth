@@ -15,6 +15,11 @@ contacting a writable registry. The account revision must equal the peeled tag r
 rehearsal run source revision. Rebuilding in the publication workflow is forbidden because a
 successful build would still produce bytes outside the reviewed retained account.
 
+Pull-request rehearsals replace the catalog tag only in their local checkout, because an existing
+public tag may name the preceding candidate while a repair is under review. Owner-dispatched
+rehearsals do not replace an existing tag, so the publication input remains bound to the operator's
+annotated public ref.
+
 ## Reads precede one closed-world plan
 
 Provider adapters normalize public registry responses into the existing planner state. The state
@@ -23,13 +28,16 @@ targets. The operation retrieves all targets before the first write and asks the
 for the absent set. An adapter error is unknown state and fails closed; it is never mapped to
 absence.
 
-## Credential checks precede writes
+## Credential checks precede writes *(revised)*
 
-The workflow verifies all five writable boundaries after read-only state retrieval and before
-publishing the first target. The check proves scoped access without reserving a name. Where a
-registry offers no non-mutating authorization probe, the credential's presence and authenticated
-identity are checked and the first publication remains the unavoidable permission test. That
-limitation is recorded rather than represented as stronger evidence.
+The workflow verifies credential presence for all five writable boundaries after read-only state
+retrieval and before publishing the first target. It performs provider-supported non-mutating
+identity checks: npm must resolve the token identity as an `@azimuth-sh` owner or administrator.
+A crates.io token restricted to `publish-new` cannot call the legacy `/me` endpoint, NuGet exposes
+no push authorization probe, and a repository read does not prove the job-scoped GitHub token's
+Release or GHCR write rights. Those values remain unknown until their first writes. The preflight
+records each limitation instead of requiring broader credentials or representing presence as
+authenticated access.
 
 ## Publication is resumable, not transactional
 
@@ -53,8 +61,9 @@ source revision, rehearsal run, publication run, observation time and normalized
 
 - A missing or lightweight tag fails before registry access.
 - A rehearsal run from another revision fails before credential checks.
-- A missing credential or unauthorized `@azimuth-sh` scope fails before the first write when the
-  provider exposes a non-mutating probe.
+- A missing credential or unauthorized `@azimuth-sh` scope fails before the first write. An
+  unprobeable write authorization fails at its first provider write and leaves later reruns to the
+  closed-world planner.
 - A timeout, rate limit or malformed response is unknown state, not absence.
 - A conflict in any registry suppresses the complete publication plan.
 - A mid-operation failure leaves already published immutable targets intact and produces no

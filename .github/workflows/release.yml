@@ -163,9 +163,13 @@ jobs:
         run: |
           tag=$(python3 -c \
             "import json; print(json.load(open('release/artifacts.json'))['release']['tag'])")
-          git rev-parse "$tag" >/dev/null 2>&1 || \
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            git -c user.name=Azimuth -c user.email=azimuth@example.test \
+              tag --force --annotate "$tag" --message rehearsal "$GITHUB_SHA"
+          elif ! git rev-parse "$tag" >/dev/null 2>&1; then
             git -c user.name=Azimuth -c user.email=azimuth@example.test \
               tag --annotate "$tag" --message rehearsal "$GITHUB_SHA"
+          fi
           python3 release/orchestrate.py assemble \
             --candidates dist/candidates \
             --revision "$GITHUB_SHA" \

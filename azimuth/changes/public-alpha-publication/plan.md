@@ -10,7 +10,11 @@
 - [x] Revise npm, source, homepage and GHCR identities; run every local component gate and confirm
   the composed gate stops only at the stale pre-transfer release receipt.
 - [x] Retain a fresh hosted rehearsal from `azimuth-sh/azimuth`.
-- [ ] Establish `@azimuth-sh` administration and bounded registry credentials.
-- [ ] Create the annotated tag and run the resumable publication operation.
+- [x] Establish `@azimuth-sh` administration and bounded registry credentials.
+- [x] Create the annotated tag, pass the no-write preflight and retain the first write-enabled
+  attempt that stopped before publication because two non-mutating probes overclaimed provider
+  authorization.
+- [ ] Replace the unused tag at the repaired revision and retain a fresh exact-tag rehearsal.
+- [ ] Repeat the no-write preflight and run the resumable publication operation.
 - [ ] Retrieve every public target, judge the refreshed evidence and record the outcome.
 - [ ] Finalize the completed change for separate acceptance and archive.
