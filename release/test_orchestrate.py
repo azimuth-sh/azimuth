@@ -212,7 +212,18 @@ class ReleaseOrchestrationTests(unittest.TestCase):
                 text=True,
             ).stdout.strip()
             subprocess.run(
-                ["git", "tag", "--annotate", "candidate", "--message", "candidate"],
+                [
+                    "git",
+                    "-c",
+                    "user.name=Azimuth",
+                    "-c",
+                    "user.email=azimuth@example.test",
+                    "tag",
+                    "--annotate",
+                    "candidate",
+                    "--message",
+                    "candidate",
+                ],
                 cwd=repository,
                 check=True,
             )

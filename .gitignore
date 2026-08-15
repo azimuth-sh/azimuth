@@ -10,5 +10,6 @@ next-env.d.ts
 bin/
 obj/
 package-lock.json
+!packages/typescript/package-lock.json
 !services/assurance/web/package-lock.json
 .azimuth/

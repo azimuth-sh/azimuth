@@ -6,6 +6,7 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import tarfile
 import tempfile
 import time
@@ -292,6 +293,8 @@ def image_contract(root, image_id):
 
 
 def inspect_image(root, image_id, archive):
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
     from services.assurance.deployment.qualify import inspect_oci_platforms
 
     image = image_contract(root, image_id)
