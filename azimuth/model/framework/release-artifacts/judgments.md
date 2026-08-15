@@ -2,8 +2,8 @@
 
 ## Claim: one-source-version
 Verdict: sound
-Fingerprint: a8480b73627e2ab2
-Judged: 2026-08-14
+Fingerprint: 0e427e0f1f7cb92e
+Judged: 2026-08-15
 Judge: Codex
 
 I inspected the release catalog, the independent approved account, the native metadata readers and
@@ -16,22 +16,23 @@ selected set.
 
 ## Claim: registry-identities-match-contract
 Verdict: sound
-Fingerprint: b082d49c4b5f0633
-Judged: 2026-08-14
+Fingerprint: 8810bcfae2bfbe3d
+Judged: 2026-08-15
 Judge: Codex
 
 I inspected the seven identities in the independent approved account, their catalog entries and
-the identity readers for Cargo, NuGet and npm candidates. The catalog validator rejects duplicate
-identities, and the image identities are compared as a complete keyed platform map. A wrong
-implementation that renamed, omitted, duplicated or added a selected identity would differ from
-the approved account; a package whose packed native identity differed from its catalog identity
-would fail archive-metadata validation. The evidence is discriminating for the complete selected
-registry set.
+the identity, repository and homepage readers for Cargo, NuGet and npm candidates. The same source
+and homepage values are required in both image Dockerfiles. The catalog validator rejects duplicate
+identities, and the image identities are compared as a complete keyed platform map. The mutation
+test changes the repository, homepage and identity dimensions independently. A wrong package or
+image that retained a Drim-owned coordinate, omitted one selected identity or substituted either
+metadata URL would fail before qualification is emitted. The evidence discriminates the complete
+revised registry set rather than merely observing the new names in the catalog.
 
 ## Claim: packed-contents-are-bounded-and-licensed
 Verdict: sound
-Fingerprint: bccf4bfcfe9ad991
-Judged: 2026-08-14
+Fingerprint: 159452d73a3c82ad
+Judged: 2026-08-15
 Judge: Codex
 
 I inspected the real packer invocations, archive readers, complete-file allowlists, required-file
@@ -45,8 +46,8 @@ both halves of the predicate over every selected package.
 
 ## Claim: support-and-platforms-are-explicit
 Verdict: sound
-Fingerprint: 850a2a989352184e
-Judged: 2026-08-14
+Fingerprint: d8d82c883e4e9c68
+Judged: 2026-08-15
 Judge: Codex
 
 I inspected the independently declared three native targets, both complete image platform sets and
@@ -58,8 +59,8 @@ the complete approved support account rather than inferring support from reposit
 
 ## Claim: experimental-source-is-not-published
 Verdict: sound
-Fingerprint: 37bcfdfd33da15ea
-Judged: 2026-08-14
+Fingerprint: 532c3a497405136c
+Judged: 2026-08-15
 Judge: Codex
 
 I inspected all eleven approved experimental roots, every selected public manifest and the
@@ -71,8 +72,8 @@ sets named by the predicate and does not treat the absence of current manifests 
 
 ## Claim: external-domain-evidence-is-citation-only
 Verdict: sound
-Fingerprint: d146f045a4bbeb27
-Judged: 2026-08-14
+Fingerprint: 96012f5761c99523
+Judged: 2026-08-15
 Judge: Codex
 
 I inspected the tracked-reference enumerator, the executable-input boundary, all three current
@@ -85,8 +86,8 @@ population because it is the constructed violation rather than a provenance asse
 
 ## Claim: all-experimental-source-is-gated
 Verdict: sound
-Fingerprint: 84c81a24c83756a5
-Judged: 2026-08-14
+Fingerprint: 5475d44b447209e3
+Judged: 2026-08-15
 Judge: Codex
 
 I inspected the catalog-derived population, root-to-command resolver, canonical root sequence,
@@ -94,19 +95,25 @@ workflow validator, mutation cases and exact-revision workflow receipt. The acco
 declared roots and rejects a newly unaccounted root, a removed gate and a no-op textual mention.
 GitHub run 31811542129 checked out revision
 `64992346726bb75af4ea7997f85cf1db33661262` and completed the sole
-`./scripts/check.sh` step successfully. Archived reuse additionally requires that revision in Git
-history and the same derived isolation-account fingerprint. A dropped relation, bypassed root gate
-or receipt floating to a changed account therefore fails before emitting this evidence.
+`./scripts/check.sh` step successfully. The repository transfer validator accepts that historical
+receipt only as the exact `drim-dev/azimuth` execution and rejects a repository/run-URL mismatch.
+The current isolation account has the same derived fingerprint, and diagnostic run 31874120337
+executed the revised experiment gates before failing later at a deliberately stale release receipt.
+A dropped relation, bypassed root gate or receipt floating to a different account therefore fails
+before emitting this evidence; the diagnostic run is corroboration, not a replacement receipt.
 
 ## Claim: experiment-gates-need-no-domain-checkout
 Verdict: sound
-Fingerprint: fb146ee6921ff6bb
-Judged: 2026-08-14
+Fingerprint: ea2f2ad3aec73e51
+Judged: 2026-08-15
 Judge: Codex
 
 I inspected all 49 derived executable inputs, the local and mounted locator detectors, the clean
 checkout workflow and its exact successful receipt. The mutation tests inject both local and
 mounted domain paths, and the executable-input scan also rejects domain repository URLs even when
-commit-pinned. The hosted runner checked out only `drim-dev/azimuth` and completed every experiment
-gate at the recorded revision. A gate reading the demo checkout through a path, mount or repository
-URL would be rejected, while an undeclared ambient dependency would fail on that clean runner.
+commit-pinned. The accepted hosted runner checked out only the release repository and completed
+every experiment gate at the recorded revision. The repository-transfer change preserves that
+receipt only under its exact former owner and matching run URL; current diagnostic run 31874120337
+repeated the gates in `azimuth-sh/azimuth` before its later stale-receipt failure. A gate reading
+the demo checkout through a path, mount or repository URL would be rejected, while an undeclared
+ambient dependency would fail on either clean runner.

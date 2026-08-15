@@ -9,7 +9,7 @@
 - [x] Record that identity replacement is not a supported projected intent delta in this version.
 - [x] Revise npm, source, homepage and GHCR identities; run every local component gate and confirm
   the composed gate stops only at the stale pre-transfer release receipt.
-- [ ] Retain a fresh hosted rehearsal from `azimuth-sh/azimuth`.
+- [x] Retain a fresh hosted rehearsal from `azimuth-sh/azimuth`.
 - [ ] Establish `@azimuth-sh` administration and bounded registry credentials.
 - [ ] Create the annotated tag and run the resumable publication operation.
 - [ ] Retrieve every public target, judge the refreshed evidence and record the outcome.
