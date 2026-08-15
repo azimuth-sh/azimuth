@@ -3,6 +3,16 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+RELEASE_IMAGES=false
+if [[ "${1:-}" == "--release-images" ]]; then
+  RELEASE_IMAGES=true
+  shift
+fi
+if [[ "$#" -ne 0 ]]; then
+  printf '%s\n' 'usage: ./scripts/check.sh [--release-images]' >&2
+  exit 2
+fi
+
 cargo test --manifest-path tools/azimuth/Cargo.toml
 dotnet test tools/extractors/dotnet/Azimuth.Emit.Tests/Azimuth.Emit.Tests.csproj
 dotnet build packages/dotnet/Azimuth.Annotations/Azimuth.Annotations.csproj
@@ -42,10 +52,16 @@ python3 services/assurance/deployment/qualify.py
 
 if docker info >/dev/null 2>&1; then
   cargo test --manifest-path services/assurance/Cargo.toml --test lifecycle_api
-  python3 services/assurance/deployment/qualify.py --lifecycle --images
+  python3 services/assurance/deployment/qualify.py --lifecycle
+  if [[ "$RELEASE_IMAGES" == true ]]; then
+    python3 services/assurance/deployment/qualify.py --images
+  fi
 else
   printf '%s\n' 'Docker is unavailable; assurance lifecycle integration evidence was not run.' >&2
-  printf '%s\n' 'Docker is unavailable; private deployment and image evidence was not run.' >&2
+  printf '%s\n' 'Docker is unavailable; private deployment lifecycle evidence was not run.' >&2
+  if [[ "$RELEASE_IMAGES" == true ]]; then
+    printf '%s\n' 'Docker is unavailable; release image evidence was not run.' >&2
+  fi
 fi
 
 ./release/check.sh --experiments-executed

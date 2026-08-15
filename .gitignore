@@ -10,5 +10,11 @@ next-env.d.ts
 bin/
 obj/
 package-lock.json
+!packages/typescript/package-lock.json
+!tools/extractors/typescript/package-lock.json
 !services/assurance/web/package-lock.json
-.azimuth/
+.azimuth/*
+!.azimuth/release/
+.azimuth/release/*
+!.azimuth/release/ordinary-workflow-receipt.json
+!.azimuth/release/release-workflow-receipt.json
