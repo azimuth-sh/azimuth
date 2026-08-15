@@ -13,7 +13,9 @@ content identity rather than version-string equality alone.
 A pull-request or manual dry run downloads retained candidates, verifies the tag/revision/account
 relation, reads live public state and evaluates credential readiness without a publish command.
 The workflow log and retained preflight receipt must show the complete selected population and zero
-writes. Secret values never enter artifacts or logs.
+writes. The run must originate from `azimuth-sh/azimuth` after the artifact identity revision;
+pre-transfer candidates cannot satisfy the revised catalog. Secret values never enter artifacts or
+logs.
 
 ## Interrupted publication
 

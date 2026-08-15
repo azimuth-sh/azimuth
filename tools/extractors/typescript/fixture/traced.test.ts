@@ -1,4 +1,4 @@
-import { covers } from '@azimuth/annotations';
+import { covers } from '@azimuth-sh/annotations';
 
 declare function test(name: string, body: () => void): void;
 

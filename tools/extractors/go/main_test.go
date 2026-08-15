@@ -10,7 +10,7 @@ func TestCompilerTreeResolvesFunctionAndForm(t *testing.T) {
 	directory := t.TempDir()
 	path := filepath.Join(directory, "service.go")
 	source := `package service
-import azimuth "github.com/drim-dev/azimuth-go/azimuth"
+import azimuth "github.com/azimuth-sh/azimuth-go/azimuth"
 func Identity() { azimuth.Realizes("polyglot/identity", "go-identifies") }
 func TestIdentity() { azimuth.Covers("polyglot/identity", "go-identifies", "unit", "example", "direct") }
 `
@@ -34,7 +34,7 @@ func TestInvalidFormFailsClosed(t *testing.T) {
 	directory := t.TempDir()
 	path := filepath.Join(directory, "service.go")
 	os.WriteFile(path, []byte(`package service
-import . "github.com/drim-dev/azimuth-go/azimuth"
+import . "github.com/azimuth-sh/azimuth-go/azimuth"
 func TestIdentity() { Covers("a", "s", "integration", "example") }
 `), 0o644)
 

@@ -22,9 +22,9 @@ account's `revision` as `executionRevision`, then confirm that revision against 
 attestation. Derive `jobs` and `subjects` from `release/artifacts.json`; hash the downloaded
 `candidates.json` for `candidateAccountSha256`. Hash `.github/workflows/release.yml`,
 `release/orchestrate.py` and `release/candidates.py` for their named SHA-256 fields. Query each
-downloaded subject digest with `gh api repos/drim-dev/azimuth/attestations/sha256:DIGEST`, decode the
-signed statement and record `attestedSubjects` only after every exact subject names the workflow
-and execution revision.
+downloaded subject digest with
+`gh api repos/azimuth-sh/azimuth/attestations/sha256:DIGEST`, decode the signed statement and record
+`attestedSubjects` only after every exact subject names the workflow and execution revision.
 
 For `.azimuth/release/ordinary-workflow-receipt.json`, record the same revision identities, compute
 the successful `check` job duration from its `startedAt` and `completedAt` values, and hash
@@ -46,9 +46,9 @@ all public targets, derives the absent/exact/conflicting plan and records creden
 zero writes.
 
 Configure the `release` environment with `CARGO_REGISTRY_TOKEN`, `NUGET_API_KEY` and `NPM_TOKEN`.
-The npm identity must administer the `@azimuth` organization. The workflow's bounded GitHub token
-owns GitHub Release and GHCR access. NuGet and GHCR expose no non-writing probe that proves the
-right to create an unused identity, so the preflight records that limitation explicitly.
+The npm identity must administer the `@azimuth-sh` organization. The workflow's bounded GitHub
+token owns GitHub Release and GHCR access. NuGet and GHCR expose no non-writing probe that proves
+the right to create an unused identity, so the preflight records that limitation explicitly.
 
 After the publication change is merged, run the release rehearsal on `main`, wait for its complete
 account, create the annotated catalog tag at that same main revision and push the tag. Use `gh` to

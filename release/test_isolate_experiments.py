@@ -145,16 +145,25 @@ class ExperimentalIsolationTests(unittest.TestCase):
         receipt = {
             "format": "azimuth-github-workflow-receipt",
             "schemaVersion": 1,
-            "repository": "drim-dev/azimuth",
+            "repository": "azimuth-sh/azimuth",
             "workflow": ".github/workflows/ci.yml",
             "revision": revision,
             "conclusion": "success",
             "accountFingerprint": account_fingerprint,
-            "runUrl": "https://github.com/drim-dev/azimuth/actions/runs/123",
+            "runUrl": "https://github.com/azimuth-sh/azimuth/actions/runs/123",
         }
         self.assertEqual(
             validate_workflow_receipt(receipt, revision, account_fingerprint)["revision"],
             revision,
+        )
+        transferred = {
+            **receipt,
+            "repository": "drim-dev/azimuth",
+            "runUrl": "https://github.com/drim-dev/azimuth/actions/runs/123",
+        }
+        self.assertEqual(
+            validate_workflow_receipt(transferred, revision, account_fingerprint)["repository"],
+            "drim-dev/azimuth",
         )
         historical = {**receipt, "revision": "b" * 40}
         self.assertEqual(
@@ -183,12 +192,12 @@ class ExperimentalIsolationTests(unittest.TestCase):
         receipt = {
             "format": "azimuth-github-workflow-receipt",
             "schemaVersion": 1,
-            "repository": "drim-dev/azimuth",
+            "repository": "azimuth-sh/azimuth",
             "workflow": ".github/workflows/ci.yml",
             "revision": revision,
             "conclusion": "success",
             "accountFingerprint": account_fingerprint,
-            "runUrl": "https://github.com/drim-dev/azimuth/actions/runs/123",
+            "runUrl": "https://github.com/azimuth-sh/azimuth/actions/runs/123",
         }
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

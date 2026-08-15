@@ -1,5 +1,5 @@
 // Synthetic fixture for the emitter's own tests (D2).
-import { realizes } from '@azimuth/annotations';
+import { realizes } from '@azimuth-sh/annotations';
 
 export function handler(): string {
   realizes('alpha', 'route-thing');

@@ -1,5 +1,12 @@
 # Design: public-alpha-publication
 
+## Independent identity precedes candidate retention
+
+The release repository, npm scope, package source metadata, product homepage and GHCR owner change
+as one catalog revision. Package manifests and image labels remain ecosystem-required copies whose
+values are checked against that catalog. Historical receipts remain unchanged because they record
+executions before the repository transfer; none can qualify candidates after the identity change.
+
 ## Retained candidates are the publication input
 
 The publication workflow accepts a rehearsal run id and an annotated tag. It downloads every
@@ -46,8 +53,8 @@ source revision, rehearsal run, publication run, observation time and normalized
 
 - A missing or lightweight tag fails before registry access.
 - A rehearsal run from another revision fails before credential checks.
-- A missing credential or unauthorized npm scope fails before the first write when the provider
-  exposes a non-mutating probe.
+- A missing credential or unauthorized `@azimuth-sh` scope fails before the first write when the
+  provider exposes a non-mutating probe.
 - A timeout, rate limit or malformed response is unknown state, not absence.
 - A conflict in any registry suppresses the complete publication plan.
 - A mid-operation failure leaves already published immutable targets intact and produces no

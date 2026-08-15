@@ -12,7 +12,8 @@
     <Version>0.1.0-alpha.1</Version>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <Description>Extracts Azimuth linkage tags from compiled .NET assemblies.</Description>
-    <RepositoryUrl>https://github.com/drim-dev/azimuth</RepositoryUrl>
+    <PackageProjectUrl>https://azimuth.sh</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/azimuth-sh/azimuth</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>requirements;traceability;extractor;dotnet-tool</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>

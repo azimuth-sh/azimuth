@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	azimuth "github.com/drim-dev/azimuth-go/azimuth"
+	azimuth "github.com/azimuth-sh/azimuth-go/azimuth"
 )
 
 func TestIdentity(t *testing.T) {

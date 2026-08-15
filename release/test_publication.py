@@ -194,7 +194,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 with self.assertRaisesRegex(PublicationError, "malformed"):
                     package_bytes(subjects[ecosystem], "0.1.0-alpha.1")
 
-        image = {"key": "image:api", "identity": "ghcr.io/drim-dev/api"}
+        image = {"key": "image:api", "identity": "ghcr.io/example/api"}
         malformed = SimpleNamespace(returncode=0, stdout=b"{", stderr=b"")
         with patch("release.publication.run", return_value=malformed):
             with self.assertRaisesRegex(PublicationError, "manifest is malformed"):
@@ -222,7 +222,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             with self.subTest(role=role), patch.dict(
                 "os.environ", {"NPM_TOKEN": "secret"}, clear=True
             ), patch("release.publication.run", side_effect=commands):
-                self.assertEqual(credential_account()["npm"]["azimuthScope"], expected)
+                self.assertEqual(credential_account()["npm"]["organizationAdmin"], expected)
 
     def test_public_state_covers_every_exact_registry_target(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -310,7 +310,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 candidates=candidates,
                 sums=sums_path,
                 root=self.root,
-                repository="drim-dev/azimuth",
+                repository="azimuth-sh/azimuth",
                 tag=account["tag"],
                 run_revision=REVISION,
                 rehearsal_run="123",
@@ -358,7 +358,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 candidates=candidates,
                 sums=sums_path,
                 root=self.root,
-                repository="drim-dev/azimuth",
+                repository="azimuth-sh/azimuth",
                 state=state_path,
                 plan=plan_path,
                 out=directory / "result.json",
@@ -415,7 +415,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             ],
         }
         raw = json.dumps(manifest, separators=(",", ":")).encode()
-        subject = {"key": "image:api", "identity": "ghcr.io/drim-dev/api"}
+        subject = {"key": "image:api", "identity": "ghcr.io/example/api"}
         result = type("Result", (), {"returncode": 0, "stdout": raw, "stderr": b""})()
         with patch("release.publication.run", return_value=result):
             checksum, platforms = image_manifest(subject, "0.1.0-alpha.1")
@@ -432,7 +432,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 {
                     "kind": "image",
                     "id": "api",
-                    "identity": "ghcr.io/drim-dev/api",
+                    "identity": "ghcr.io/example/api",
                     "registryDigest": "sha256:" + "b" * 64,
                     "platforms": ["linux/amd64", "linux/arm64"],
                 }

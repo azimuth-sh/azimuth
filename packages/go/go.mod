@@ -1,3 +1,3 @@
-module github.com/drim-dev/azimuth-go
+module github.com/azimuth-sh/azimuth-go
 
 go 1.24

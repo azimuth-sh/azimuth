@@ -9,7 +9,8 @@ RUN cargo build --release --manifest-path services/assurance/Cargo.toml -p azimu
 FROM debian:bookworm-slim AS runtime
 ARG AZIMUTH_VERSION
 LABEL org.opencontainers.image.title="Azimuth Assurance API" \
-      org.opencontainers.image.source="https://github.com/drim-dev/azimuth" \
+      org.opencontainers.image.url="https://azimuth.sh" \
+      org.opencontainers.image.source="https://github.com/azimuth-sh/azimuth" \
       org.opencontainers.image.version="$AZIMUTH_VERSION" \
       org.opencontainers.image.licenses="Apache-2.0"
 RUN apt-get update \

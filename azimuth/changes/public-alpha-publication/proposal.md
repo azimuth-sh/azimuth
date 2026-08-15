@@ -3,11 +3,14 @@
 Status: approved
 
 Exploration: canonical-alpha-release
-Carries decisions: CAR5, CAR8, CAR11, CAR12, CAR13; completes change-map node F
+Revision: independent-public-identity
+Carries decisions: CAR5, CAR11, CAR12, CAR13, IPI1, IPI2, IPI3, IPI4; completes change-map node F
 
 Intent delta: none
-Because: the accepted release-orchestration intent already defines public completion; this change
-binds real registry adapters and executes that existing obligation without changing its predicate.
+Because: the unavailable `@azimuth` npm organization and the domain-independence boundary require
+replacement of accepted identity values, but this Azimuth version does not project replacement
+operations (D21.4, D24). The alpha has no consumers, so the current scenario is revised in place
+under the repository's no-backward-compatibility policy and the limitation is recorded in the plan.
 
 ## Problem
 
@@ -17,10 +20,12 @@ crates.io, NuGet, npm, GitHub Releases and GHCR reads into planner state, no cre
 covering all five publication boundaries and no owner-triggered operation that publishes the exact
 retained bytes. The synthetic completion account cannot establish that `v0.1.0-alpha.1` exists.
 
-Live reads on 2026-08-15 found the five package identities absent. The authenticated npm identity
-`mitro52` cannot administer the `@azimuth` organization, the local environment has no crates.io
-token, and the repository has no publication secrets. Starting writes in that state would make a
-partial release likely before recovery has been exercised against real adapters.
+Live reads on 2026-08-15 found the five package identities absent, but the bare `@azimuth` npm
+organization was unavailable. The user created `@azimuth-sh`, acquired `azimuth.sh` and transferred
+the release repository to `azimuth-sh/azimuth`. The local npm credential cannot yet read the new
+organization, the local environment has no crates.io token, and the repository has no publication
+secrets. Starting writes in that state would make a partial release likely before recovery has
+been exercised against real adapters.
 
 ## Outcome
 
@@ -45,6 +50,8 @@ In scope:
   candidates;
 - publication of the Rust crate, two NuGet packages, two npm packages, three native archives,
   `SHA256SUMS`, the candidate account and two multi-platform assurance images;
+- replacement of the unavailable npm scope and Drim-owned repository and image coordinates with
+  the controlled `azimuth-sh` owner and `azimuth.sh` homepage;
 - GitHub prerelease metadata and provenance for published GHCR index digests;
 - exact-existing preservation, conflict rejection and missing-target resumption through the
   accepted planner; and
@@ -52,8 +59,8 @@ In scope:
 
 Out of scope:
 
-- changing `0.1.0-alpha.1`, `v0.1.0-alpha.1`, selected identities or qualified platforms;
-- creating registry accounts, claiming the `@azimuth` npm organization or generating credentials;
+- changing `0.1.0-alpha.1`, `v0.1.0-alpha.1`, the artifact population or qualified platforms;
+- creating additional registry accounts or generating credentials;
 - rebuilding a candidate during publication;
 - SBOMs, non-GitHub signing, additional platforms or compatibility promises;
 - Drim consumption, referrals or any other domain dependency; and
@@ -61,7 +68,9 @@ Out of scope:
 
 ## Affected claims
 
-No accepted intent changes. The change realizes and refreshes evidence for
+The change modifies
+`framework/release-artifacts#registry-identities-match-contract` and realizes or refreshes evidence
+for
 `framework/release-orchestration#tagged-candidates-are-verifiable`,
 `framework/release-orchestration#qualified-candidates-compose` and
 `framework/release-orchestration#partial-publication-resumes-safely`. It discharges the accepted
@@ -74,9 +83,11 @@ results; a missing credential or registry target remains a named incomplete cond
   any publish command can execute.
 - Preflight fails before writes unless the annotated tag, successful rehearsal source revision,
   retained account revision, catalog version and all ten candidate digests agree.
-- Every required credential is checked against only its target registry. Missing `@azimuth`
+- Every required credential is checked against only its target registry. Missing `@azimuth-sh`
   administration, crates.io access, NuGet push access or GitHub package/release permission prevents
   publication.
+- Every retained package names `https://github.com/azimuth-sh/azimuth` as its source and
+  `https://azimuth.sh` as its homepage; every image names both through OCI labels.
 - The owner-triggered workflow downloads the successful rehearsal artifacts by run id and never
   invokes a candidate build.
 - Each registry adapter receives only planner-selected absent targets. Exact targets are preserved

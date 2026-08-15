@@ -11,7 +11,7 @@ import { nextRoutes, scanText } from './emitter';
 
 test('resolves a site to its enclosing function', () => {
   const result = scanText(
-    `import { realizes } from '@azimuth/annotations';
+    `import { realizes } from '@azimuth-sh/annotations';
      export function handler() { realizes('alpha', 'route-thing'); }`,
     'a.ts',
   );

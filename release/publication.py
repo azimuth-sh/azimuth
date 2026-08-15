@@ -48,8 +48,8 @@ else:
 
 
 ROOT = Path(__file__).resolve().parent.parent
-REPOSITORY = "drim-dev/azimuth"
-USER_AGENT = "azimuth-release/0.1.0-alpha.1 (https://github.com/drim-dev/azimuth)"
+REPOSITORY = "azimuth-sh/azimuth"
+USER_AGENT = "azimuth-release/0.1.0-alpha.1 (https://github.com/azimuth-sh/azimuth)"
 SUPPORT_ASSETS = ("candidates.json", "SHA256SUMS")
 PUBLICATION_WORKFLOW = ROOT / ".github/workflows/publish.yml"
 
@@ -454,7 +454,7 @@ def credential_account(repository=REPOSITORY):
         if identity.returncode == 0:
             npm_identity = identity.stdout.decode().strip()
             membership = run(
-                ["npm", "org", "ls", "azimuth", "--json"],
+                ["npm", "org", "ls", "azimuth-sh", "--json"],
                 check=False,
                 env=npm_env,
             )
@@ -493,7 +493,7 @@ def credential_account(repository=REPOSITORY):
         "npm": {
             "configured": bool(npm_token),
             "identity": npm_identity,
-            "azimuthScope": npm_scope,
+            "organizationAdmin": npm_scope,
         },
         "github": {
             "configured": bool(github_token),
@@ -505,7 +505,7 @@ def credential_account(repository=REPOSITORY):
     result["ready"] = (
         result["cargo"]["authenticated"]
         and result["nuget"]["configured"]
-        and result["npm"]["azimuthScope"]
+        and result["npm"]["organizationAdmin"]
         and result["github"]["repositoryWrite"]
     )
     return result

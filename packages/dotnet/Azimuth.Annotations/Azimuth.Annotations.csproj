@@ -10,7 +10,8 @@
     <Version>0.1.0-alpha.1</Version>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <Description>Azimuth linkage tags: realizes on production code, covers on tests.</Description>
-    <RepositoryUrl>https://github.com/drim-dev/azimuth</RepositoryUrl>
+    <PackageProjectUrl>https://azimuth.sh</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/azimuth-sh/azimuth</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>requirements;traceability;verification</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>

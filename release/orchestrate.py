@@ -10,6 +10,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
+EVIDENCE_RUN_URL = re.compile(
+    r"https://github\.com/(?:drim-dev|azimuth-sh)/azimuth/actions/runs/[0-9]+"
+)
 CATALOG_FILE = ROOT / "release/artifacts.json"
 ORDINARY_WORKFLOW = ROOT / ".github/workflows/ci.yml"
 RELEASE_WORKFLOW = ROOT / ".github/workflows/release.yml"
@@ -307,8 +310,7 @@ def validate_ordinary_receipt(receipt, root=ROOT, ancestor=git_revision_is_ances
     require(ancestor(root, source_revision), "ordinary receipt source revision is not current")
     require(re.fullmatch(r"[0-9a-f]{40}", receipt.get("executionRevision", "")) is not None,
             "ordinary receipt executionRevision is invalid")
-    require(re.fullmatch(r"https://github\.com/drim-dev/azimuth/actions/runs/[0-9]+",
-                         receipt.get("runUrl", "")) is not None,
+    require(EVIDENCE_RUN_URL.fullmatch(receipt.get("runUrl", "")) is not None,
             "ordinary receipt runUrl is invalid")
     duration = receipt.get("durationSeconds")
     require(isinstance(duration, int) and 0 < duration < 45 * 60,
@@ -336,8 +338,7 @@ def validate_release_receipt(receipt, root=ROOT, ancestor=git_revision_is_ancest
     require(ancestor(root, source_revision), "release receipt source revision is not current")
     require(re.fullmatch(r"[0-9a-f]{40}", receipt.get("executionRevision", "")) is not None,
             "release receipt executionRevision is invalid")
-    require(re.fullmatch(r"https://github\.com/drim-dev/azimuth/actions/runs/[0-9]+",
-                         receipt.get("runUrl", "")) is not None,
+    require(EVIDENCE_RUN_URL.fullmatch(receipt.get("runUrl", "")) is not None,
             "release receipt runUrl is invalid")
     require(receipt.get("jobs") == expected_release_jobs(catalog),
             "release receipt job population differs")
