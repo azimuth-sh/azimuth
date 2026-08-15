@@ -4,7 +4,6 @@ import argparse
 import json
 import os
 import shutil
-import socket
 import subprocess
 import sys
 import tarfile
@@ -110,7 +109,7 @@ def smoke_cargo(catalog, archive):
     with tempfile.TemporaryDirectory(prefix="azimuth-cargo-consumer-") as temporary:
         consumer = Path(temporary)
         with tarfile.open(archive, "r:gz") as package:
-            package.extractall(consumer)
+            package.extractall(consumer, filter="data")
         source = next(path for path in consumer.iterdir() if path.is_dir())
         install = consumer / "install"
         run(["cargo", "install", "--locked", "--path", source, "--root", install])
@@ -281,7 +280,7 @@ def build_native(root, output, target):
                 candidate.extractall(consumer)
         else:
             with tarfile.open(archive, "r:gz") as candidate:
-                candidate.extractall(consumer)
+                candidate.extractall(consumer, filter="data")
         result = run([consumer / binary.name, "--version"], capture=True)
         require(version in result.stdout, f"{target}: retained CLI version differs")
     return archive
@@ -303,10 +302,11 @@ def inspect_image(root, image_id, archive):
     require(observed == sorted(image["platforms"]), f"{image_id}: OCI platform account differs")
 
 
-def free_port():
-    with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
-        return listener.getsockname()[1]
+def published_port(container, target):
+    result = run(["docker", "port", container, f"{target}/tcp"], capture=True)
+    ports = [line.rsplit(":", 1)[-1] for line in result.stdout.splitlines() if line]
+    require(len(ports) == 1 and ports[0].isdigit(), f"cannot resolve port for {container}")
+    return int(ports[0])
 
 
 def wait_for_url(url):
@@ -330,7 +330,6 @@ def smoke_api(tag, platform, suffix):
     network = f"azimuth-release-{suffix}"
     database = f"azimuth-release-db-{suffix}"
     candidate = f"azimuth-release-api-{suffix}"
-    port = free_port()
     run(["docker", "network", "create", network])
     try:
         run(
@@ -353,10 +352,11 @@ def smoke_api(tag, platform, suffix):
         run(
             [
                 "docker", "run", "--detach", "--platform", platform, "--name", candidate,
-                "--network", network, "--publish", f"127.0.0.1:{port}:8080", "--env",
+                "--network", network, "--publish", "127.0.0.1::8080", "--env",
                 "DATABASE_URL=postgres://azimuth:rehearsal@" + database + ":5432/azimuth", tag,
             ]
         )
+        port = published_port(candidate, 8080)
         wait_for_url(f"http://127.0.0.1:{port}/health")
     finally:
         run(["docker", "rm", "--force", candidate, database], check=False)
@@ -365,15 +365,15 @@ def smoke_api(tag, platform, suffix):
 
 def smoke_web(tag, platform, suffix):
     candidate = f"azimuth-release-web-{suffix}"
-    port = free_port()
     try:
         run(
             [
                 "docker", "run", "--detach", "--platform", platform, "--name", candidate,
-                "--publish", f"127.0.0.1:{port}:3000", "--env",
+                "--publish", "127.0.0.1::3000", "--env",
                 "ASSURANCE_API_URL=http://127.0.0.1:9", tag,
             ]
         )
+        port = published_port(candidate, 3000)
         wait_for_url(f"http://127.0.0.1:{port}")
     finally:
         run(["docker", "rm", "--force", candidate], check=False)

@@ -135,12 +135,70 @@ def expected_subjects(catalog):
     return subjects
 
 
+def workflow_jobs(source):
+    lines = source.splitlines()
+    try:
+        start = lines.index("jobs:") + 1
+    except ValueError as error:
+        raise OrchestrationError("workflow has no jobs mapping") from error
+    jobs = {}
+    name = None
+    body = []
+    for line in lines[start:]:
+        match = re.fullmatch(r"  ([A-Za-z0-9_-]+):", line)
+        if match:
+            if name is not None:
+                jobs[name] = "\n".join(body)
+            name = match.group(1)
+            body = [line]
+        elif name is not None:
+            if line and not line.startswith(" "):
+                break
+            body.append(line)
+    if name is not None:
+        jobs[name] = "\n".join(body)
+    return jobs
+
+
+def workflow_run_commands(job):
+    lines = job.splitlines()
+    commands = []
+    index = 0
+    while index < len(lines):
+        match = re.match(r"^(\s*)-\s+run:\s*(.*?)\s*$", lines[index])
+        if match is None:
+            index += 1
+            continue
+        value = match.group(2)
+        if value not in ("|", "|-", ">", ">-"):
+            commands.append(value)
+            index += 1
+            continue
+        block = []
+        index += 1
+        content_indent = None
+        while index < len(lines):
+            line = lines[index]
+            indent = len(line) - len(line.lstrip())
+            if line.strip() and content_indent is None:
+                content_indent = indent
+            if line.strip() and indent < content_indent:
+                break
+            block.append(line[content_indent:] if line.strip() else "")
+            index += 1
+        commands.append("\n".join(block) if value.startswith("|") else " ".join(block))
+    return commands
+
+
 def workflow_account(root=ROOT):
     root = Path(root)
     ordinary = (root / ORDINARY_WORKFLOW.relative_to(ROOT)).read_text()
     gate = (root / ROOT_GATE.relative_to(ROOT)).read_text()
     release = (root / RELEASE_WORKFLOW.relative_to(ROOT)).read_text()
-    ordinary_commands = re.findall(r"^\s*-\s+run:\s*(.+?)\s*$", ordinary, re.MULTILINE)
+    ordinary_jobs = workflow_jobs(ordinary)
+    release_jobs = workflow_jobs(release)
+    require("check" in ordinary_jobs, "ordinary CI has no check job")
+    ordinary_commands = workflow_run_commands(ordinary_jobs["check"])
     require(ordinary_commands == ["./scripts/check.sh"], "ordinary CI has a non-canonical command")
     require("--release-images" in gate, "root gate has no explicit release-image entry point")
     require(
@@ -148,11 +206,10 @@ def workflow_account(root=ROOT):
         "root gate does not isolate one release-only image entry point",
     )
     for lane in ("packages", "native", "images", "account"):
-        require(
-            re.search(rf"^  {lane}:$", release, re.MULTILINE),
-            f"release lane {lane!r} is absent",
-        )
-    require(release.count("fail-fast: false") == 2, "release matrices do not isolate failures")
+        require(lane in release_jobs, f"release lane {lane!r} is absent")
+    for lane in ("native", "images"):
+        fail_fast = re.findall(r"^\s+fail-fast:\s*(\S+)\s*$", release_jobs[lane], re.MULTILINE)
+        require(fail_fast == ["false"], f"release matrix {lane!r} does not isolate failures")
     require(
         "needs: [packages, native, images]" in release and "always()" in release,
         "release account does not observe every lane outcome",

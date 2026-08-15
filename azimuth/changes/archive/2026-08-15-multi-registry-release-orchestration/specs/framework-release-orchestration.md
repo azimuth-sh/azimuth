@@ -66,7 +66,7 @@ AND every catalog-selected image and platform is represented
 Criticality: critical
 
 The first-alpha publication SHALL preserve successful immutable targets and resume only targets
-that are absent from the retained release account.
+that are absent from retrieved registry state.
 
 ### Add scenario: exact-existing-target-is-preserved
 GIVEN a registry target whose retrieved identity and digest match the retained candidate

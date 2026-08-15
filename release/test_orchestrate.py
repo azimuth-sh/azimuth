@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from release.orchestrate import (
     OrchestrationError,
@@ -22,6 +23,7 @@ from release.orchestrate import (
     verify_tag,
     workflow_account,
 )
+from release.candidates import CandidateError, published_port
 
 
 REVISION = "a" * 40
@@ -100,8 +102,24 @@ class ReleaseOrchestrationTests(unittest.TestCase):
         self.assertEqual([item["id"] for item in images], ["assurance-api", "assurance-web"])
         self.assertTrue(all(item["platforms"] == "linux/amd64,linux/arm64" for item in images))
 
+    def test_published_port_uses_the_docker_assigned_loopback_port(self):
+        with patch("release.candidates.run") as docker_port:
+            docker_port.return_value = subprocess.CompletedProcess(
+                [], 0, stdout="127.0.0.1:49153\n"
+            )
+            self.assertEqual(published_port("candidate", 8080), 49153)
+            docker_port.assert_called_once_with(
+                ["docker", "port", "candidate", "8080/tcp"], capture=True
+            )
+        with patch("release.candidates.run") as docker_port:
+            docker_port.return_value = subprocess.CompletedProcess([], 0, stdout="unassigned\n")
+            with self.assertRaises(CandidateError):
+                published_port("candidate", 8080)
+
     def test_hosted_receipts_bind_timing_jobs_subjects_and_executable_inputs(self):
-        ancestor = lambda _root, revision: revision == REVISION
+        def ancestor(_root, revision):
+            return revision == REVISION
+
         ordinary = self.ordinary_receipt()
         release = self.release_receipt()
         self.assertEqual(
@@ -315,6 +333,43 @@ class ReleaseOrchestrationTests(unittest.TestCase):
                 changed = release.replace(f"  {lane}:\n", "", 1)
                 (root / ".github/workflows/release.yml").write_text(changed)
                 with self.assertRaisesRegex(OrchestrationError, f"lane {lane!r}"):
+                    workflow_account(root)
+
+    def test_workflow_account_accepts_folded_run_and_additional_isolated_matrix(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / ".github/workflows").mkdir(parents=True)
+            (root / "scripts").mkdir()
+            ordinary = (self.root / ".github/workflows/ci.yml").read_text().replace(
+                "      - run: ./scripts/check.sh\n",
+                "      - run: >-\n          ./scripts/check.sh\n",
+            )
+            release = (self.root / ".github/workflows/release.yml").read_text()
+            release += "  diagnostic:\n    strategy:\n      fail-fast: false\n"
+            (root / ".github/workflows/ci.yml").write_text(ordinary)
+            (root / ".github/workflows/release.yml").write_text(release)
+            (root / "scripts/check.sh").write_text(
+                (self.root / "scripts/check.sh").read_text()
+            )
+            self.assertEqual(workflow_account(root)["ordinaryCommand"], "./scripts/check.sh")
+
+    def test_each_selected_matrix_must_disable_fail_fast(self):
+        ordinary = (self.root / ".github/workflows/ci.yml").read_text()
+        release = (self.root / ".github/workflows/release.yml").read_text()
+        gate = (self.root / "scripts/check.sh").read_text()
+        for lane in ("native", "images"):
+            with self.subTest(lane=lane), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / ".github/workflows").mkdir(parents=True)
+                (root / "scripts").mkdir()
+                (root / ".github/workflows/ci.yml").write_text(ordinary)
+                (root / "scripts/check.sh").write_text(gate)
+                prefix, selected = release.split(f"  {lane}:\n", 1)
+                selected = selected.replace("      fail-fast: false", "      fail-fast: true", 1)
+                (root / ".github/workflows/release.yml").write_text(
+                    prefix + f"  {lane}:\n" + selected
+                )
+                with self.assertRaisesRegex(OrchestrationError, "does not isolate failures"):
                     workflow_account(root)
 
 

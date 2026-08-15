@@ -75,10 +75,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
       - run: >-
           python release/candidates.py native
           --out dist/native
-          --target "${{ matrix.target }}"
+          --target "$TARGET"
+        env:
+          TARGET: ${{ matrix.target }}
       - uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/native/${{ matrix.archive }}
@@ -119,8 +124,11 @@ jobs:
           provenance: mode=max
       - run: >-
           python3 release/candidates.py smoke-image
-          --id "${{ matrix.id }}"
-          --archive "dist/images/${{ matrix.archive }}"
+          --id "$IMAGE_ID"
+          --archive "dist/images/$IMAGE_ARCHIVE"
+        env:
+          IMAGE_ID: ${{ matrix.id }}
+          IMAGE_ARCHIVE: ${{ matrix.archive }}
       - uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/images/${{ matrix.archive }}
