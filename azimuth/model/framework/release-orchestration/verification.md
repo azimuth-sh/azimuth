@@ -113,10 +113,13 @@ mismatched package, native archive, image index, checksum, provenance subject or
 receipt remains rollout-dependent until the release operation retrieves real public targets.
 
 ## Residual: registry-credentials-are-not-rehearsed
-Accepted: offline orchestration change; revisit before the publication operation
+Accepted: write authorization is provider-dependent; discharge from the publication operation
 
-No credential is used during rehearsal. Publication cannot begin until every registry identity and
-permission is verified through its bounded release environment.
+No credential is used during rehearsal. Publication cannot begin until every credential is present
+and every provider-supported non-mutating identity check succeeds through the bounded release
+environment. A crates.io `publish-new` token, NuGet push key and GitHub Release or GHCR workflow
+token expose their write authorization only through the first write; the resumable planner retains
+that limitation rather than requiring broader credentials.
 
 ## Residual: public-completion-is-rollout-dependent
 Accepted: no alpha target is published; discharge during `v0.1.0-alpha.1` publication

@@ -224,6 +224,32 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             ), patch("release.publication.run", side_effect=commands):
                 self.assertEqual(credential_account()["npm"]["organizationAdmin"], expected)
 
+    def test_scoped_registry_tokens_record_unprobeable_write_authorization(self):
+        commands = [
+            SimpleNamespace(returncode=0, stdout=b"release-user\n", stderr=b""),
+            SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({"release-user": "owner"}).encode(),
+                stderr=b"",
+            ),
+        ]
+        environment = {
+            "CARGO_REGISTRY_TOKEN": "cargo-secret",
+            "NUGET_API_KEY": "nuget-secret",
+            "NPM_TOKEN": "npm-secret",
+            "GITHUB_TOKEN": "github-secret",
+        }
+        with patch.dict("os.environ", environment, clear=True), patch(
+            "release.publication.request"
+        ) as request, patch("release.publication.run", side_effect=commands) as run:
+            account = credential_account()
+
+        request.assert_not_called()
+        self.assertEqual(run.call_count, 2)
+        self.assertIsNone(account["cargo"]["authenticated"])
+        self.assertIsNone(account["github"]["repositoryWrite"])
+        self.assertTrue(account["ready"])
+
     def test_public_state_covers_every_exact_registry_target(self):
         with tempfile.TemporaryDirectory() as temporary:
             retained, candidates, account_path, sums_path = self.retained_account(Path(temporary))
@@ -490,6 +516,13 @@ class PublicAlphaPublicationTests(unittest.TestCase):
         source = (self.root / ".github/workflows/publish.yml").read_text()
         mutations = {
             "credential": source.replace("credential_args+=(--require-credentials)", "true"),
+            "cargo-secret": source.replace(
+                "CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}",
+                "CARGO_REGISTRY_TOKEN: ''",
+            ),
+            "github-release-permission": source.replace(
+                "      contents: write", "      contents: read", 1
+            ),
             "provenance": source.replace("push-to-registry: true", "push-to-registry: false"),
             "rebuild": source.replace(
                 "python3 release/publication.py publish",

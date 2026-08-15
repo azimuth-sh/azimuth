@@ -193,6 +193,17 @@ def publication_workflow_account(root=ROOT):
     for name in ("publish", "image-provenance", "complete"):
         require(name in jobs, f"publication workflow omits {name!r}")
         require("environment: release" in jobs[name], f"publication job {name!r} is unbounded")
+    for secret in ("CARGO_REGISTRY_TOKEN", "NPM_TOKEN", "NUGET_API_KEY"):
+        require(
+            f"{secret}: ${{{{ secrets.{secret} }}}}" in jobs["publish"],
+            f"publication workflow omits the {secret} release secret",
+        )
+    require("GH_TOKEN: ${{ github.token }}" in jobs["publish"],
+            "publication workflow omits the bounded GitHub token")
+    require("contents: write" in jobs["publish"],
+            "publication workflow cannot write the GitHub Release")
+    require("packages: write" in jobs["publish"],
+            "publication workflow cannot write GHCR")
     require("actions/download-artifact@v8" in source, "publication omits retained downloads")
     require("run-id: ${{ inputs.rehearsal_run_id }}" in source,
             "publication does not bind the rehearsal run")
@@ -433,18 +444,11 @@ def collect_state(account, account_path, sums_path, repository=REPOSITORY):
     return state
 
 
-def credential_account(repository=REPOSITORY):
+def credential_account():
     cargo_token = os.environ.get("CARGO_REGISTRY_TOKEN", "")
     nuget_token = os.environ.get("NUGET_API_KEY", "")
     npm_token = os.environ.get("NPM_TOKEN", "")
     github_token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN", "")
-    cargo_authenticated = False
-    if cargo_token:
-        status, _, _ = request(
-            "https://crates.io/api/v1/me",
-            headers={"Authorization": cargo_token},
-        )
-        cargo_authenticated = status == 200
 
     npm_identity = None
     npm_scope = False
@@ -468,23 +472,15 @@ def credential_account(repository=REPOSITORY):
                 except json.JSONDecodeError:
                     npm_scope = False
 
-    github_write = False
-    if github_token:
-        gh_env = {**os.environ, "GH_TOKEN": github_token}
-        repository_result = run(
-            ["gh", "api", f"repos/{repository}"],
-            check=False,
-            env=gh_env,
-        )
-        if repository_result.returncode == 0:
-            try:
-                repository_data = json.loads(repository_result.stdout)
-                github_write = repository_data.get("permissions", {}).get("push") is True
-            except json.JSONDecodeError:
-                github_write = False
-
     result = {
-        "cargo": {"configured": bool(cargo_token), "authenticated": cargo_authenticated},
+        "cargo": {
+            "configured": bool(cargo_token),
+            "authenticated": None,
+            "limitation": (
+                "A publish-new scoped token has no non-publishing identity probe; "
+                "authorization is first observed by the registry write"
+            ),
+        },
         "nuget": {
             "configured": bool(nuget_token),
             "authenticated": None,
@@ -497,16 +493,19 @@ def credential_account(repository=REPOSITORY):
         },
         "github": {
             "configured": bool(github_token),
-            "repositoryWrite": github_write,
+            "repositoryWrite": None,
             "packageWrite": None,
-            "limitation": "GHCR write permission is first observed by a registry write",
+            "limitation": (
+                "GitHub Release and GHCR write permission are first observed by their "
+                "registry writes; the workflow declaration bounds both tokens"
+            ),
         },
     }
     result["ready"] = (
-        result["cargo"]["authenticated"]
+        result["cargo"]["configured"]
         and result["nuget"]["configured"]
         and result["npm"]["organizationAdmin"]
-        and result["github"]["repositoryWrite"]
+        and result["github"]["configured"]
     )
     return result
 
@@ -530,7 +529,7 @@ def preflight(arguments):
     require(arguments.run_revision == account["revision"], "rehearsal run revision differs")
     state = collect_state(account, account_path, arguments.sums, arguments.repository)
     plan = plan_publication(account, state)
-    credentials = credential_account(arguments.repository)
+    credentials = credential_account()
     receipt = {
         "format": "azimuth-publication-preflight",
         "schemaVersion": 1,
@@ -680,7 +679,7 @@ def publish(arguments):
     supplied_plan = read_json(arguments.plan)
     expected_plan = plan_publication(account, state)
     require(supplied_plan == expected_plan, "publication plan is stale or modified")
-    credentials = credential_account(arguments.repository)
+    credentials = credential_account()
     require(credentials["ready"], "publication credentials are not ready")
     subjects = {subject["key"]: subject for subject in account["subjects"]}
     native_selected = any(subjects[key]["kind"] == "native" for key in supplied_plan["publish"])

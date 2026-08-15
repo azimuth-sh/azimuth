@@ -1,0 +1,50 @@
+{
+  "format": "azimuth-publication-preflight",
+  "schemaVersion": 1,
+  "observedAt": "2026-08-15T11:12:44+00:00",
+  "tag": "v0.1.0-alpha.1",
+  "revision": "96c2bbbb439a06f1406c5debd3782fdf1cffbfff",
+  "rehearsalRun": "31876696765",
+  "publicationRunUrl": "https://github.com/azimuth-sh/azimuth/actions/runs/31881441569",
+  "candidateAccountSha256": "c3c357c1ca9981c80804d0d2051e7a704afb93cd3cb13064ac12c8ebf5296f4e",
+  "stateSha256": "a35abfa3363617445fc2d7809be7c4ff0dbf60fad1a7af6840f79c26cf4a3827",
+  "plan": {
+    "publish": [
+      "image:assurance-api",
+      "image:assurance-web",
+      "native:aarch64-apple-darwin",
+      "native:x86_64-pc-windows-msvc",
+      "native:x86_64-unknown-linux-gnu",
+      "package:dotnet-annotations",
+      "package:dotnet-emitter",
+      "package:rust-cli-core",
+      "package:typescript-annotations",
+      "package:typescript-emitter"
+    ],
+    "preserve": []
+  },
+  "credentials": {
+    "cargo": {
+      "configured": true,
+      "authenticated": false
+    },
+    "nuget": {
+      "configured": true,
+      "authenticated": null,
+      "limitation": "NuGet exposes no non-publishing API-key authorization probe"
+    },
+    "npm": {
+      "configured": true,
+      "identity": "mitro52",
+      "organizationAdmin": true
+    },
+    "github": {
+      "configured": true,
+      "repositoryWrite": false,
+      "packageWrite": null,
+      "limitation": "GHCR write permission is first observed by a registry write"
+    },
+    "ready": false
+  },
+  "writes": 0
+}

@@ -2,7 +2,7 @@
 
 ## Claim: ordinary-ci-excludes-release-only-matrix
 Verdict: sound
-Fingerprint: 539d6349c6e15029
+Fingerprint: 5e3d06bb81a27a81
 Judged: 2026-08-15
 Judge: Codex
 
@@ -18,7 +18,7 @@ the diagnostic run only confirms that the identity revision did not introduce th
 
 ## Claim: selected-lanes-are-independent
 Verdict: sound
-Fingerprint: da9d56840d436abf
+Fingerprint: f63b5aaafe2df1ff
 Judged: 2026-08-15
 Judge: Codex
 
@@ -32,7 +32,7 @@ account and that observed failure boundary.
 
 ## Claim: complete-account-needs-every-lane
 Verdict: sound
-Fingerprint: 2ab7ebcd40e79515
+Fingerprint: a4111c56754536b5
 Judged: 2026-08-15
 Judge: Codex
 
@@ -45,7 +45,7 @@ catalog population, so the component-universal tag is honest.
 
 ## Claim: tag-catalog-and-revision-agree
 Verdict: sound
-Fingerprint: c36c673de1d9a331
+Fingerprint: 2be4559435a12010
 Judged: 2026-08-15
 Judge: Codex
 
@@ -66,7 +66,7 @@ longer passes.
 
 ## Claim: retained-downloads-have-checksums
 Verdict: sound
-Fingerprint: e2f488a82b8a2aee
+Fingerprint: 48331e8075185067
 Judged: 2026-08-15
 Judge: Codex
 
@@ -86,7 +86,7 @@ or substituted cross-run download therefore fails at that second consumption bou
 
 ## Claim: executable-subjects-have-provenance
 Verdict: sound
-Fingerprint: 84ec57d50cdbe212
+Fingerprint: a60d6af441e8c432
 Judged: 2026-08-15
 Judge: Codex
 
@@ -103,7 +103,7 @@ from workflow text.
 
 ## Claim: packed-packages-install
 Verdict: sound
-Fingerprint: 9751edd5ea5c213f
+Fingerprint: cb133034042d4c13
 Judged: 2026-08-15
 Judge: Codex
 
@@ -117,7 +117,7 @@ would fail before the lane artifact is accepted.
 
 ## Claim: native-binaries-run
 Verdict: sound
-Fingerprint: 35d148cdf5680190
+Fingerprint: 4cd4e06ce9333634
 Judged: 2026-08-15
 Judge: Codex
 
@@ -129,7 +129,7 @@ selected runner, so the universal population is the complete three-target catalo
 
 ## Claim: selected-image-platforms-start
 Verdict: sound
-Fingerprint: 2a222581729482ad
+Fingerprint: 091c1dd3d164c1f1
 Judged: 2026-08-15
 Judge: Codex
 
@@ -142,7 +142,7 @@ are covered.
 
 ## Claim: exact-existing-target-is-preserved
 Verdict: sound
-Fingerprint: 905b79c631015c7b
+Fingerprint: e4d3e13efa7bf35a
 Judged: 2026-08-15
 Judge: Codex
 
@@ -162,7 +162,7 @@ network source while retaining an exact classification.
 
 ## Claim: absent-target-is-selected
 Verdict: sound
-Fingerprint: fa851c54d79d05f6
+Fingerprint: f84e42f27f969963
 Judged: 2026-08-15
 Judge: Codex
 
@@ -179,7 +179,7 @@ catalog-derived absence mutation.
 
 ## Claim: conflicting-target-fails
 Verdict: sound
-Fingerprint: 76c241c0ce3e9930
+Fingerprint: 8d92ce4a5b56167d
 Judged: 2026-08-15
 Judge: Codex
 
@@ -198,7 +198,7 @@ fixtures as new universal Covers evidence.
 
 ## Claim: completion-needs-public-retrieval
 Verdict: sound
-Fingerprint: 1ed77191fc259b7b
+Fingerprint: 9dbd777ef29b1c6e
 Judged: 2026-08-15
 Judge: Codex
 

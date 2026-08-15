@@ -27,12 +27,20 @@ organization, the local environment has no crates.io token, and the repository h
 secrets. Starting writes in that state would make a partial release likely before recovery has
 been exercised against real adapters.
 
+The first write-enabled attempt on 2026-08-15 falsified the assumption that every credential can
+be authorized through a non-mutating request. A crates.io token restricted to `publish-new` cannot
+call the legacy `/me` endpoint, and the repository read made with a bounded GitHub Actions token did
+not report its job-declared write permissions. The attempt stopped with zero writes. Requiring
+broader tokens would hide the provider boundary rather than strengthen the release account.
+
 ## Outcome
 
 One explicit repository-owner workflow consumes a successful rehearsal run whose source revision
 equals the annotated release tag. It downloads and verifies the ten retained candidates, retrieves
-the complete public target population, rejects conflicts, proves every credential before its first
-write and publishes only targets classified absent by the accepted planner.
+the complete public target population, rejects conflicts, checks every credential to the strongest
+non-mutating extent its provider permits and publishes only targets classified absent by the
+accepted planner. An unprobeable write authorization remains unknown until its first write and is
+recorded as such rather than represented as authenticated.
 
 The operation may be rerun after interruption. Exact public targets are preserved, conflicting
 immutable targets stop the operation before another write, and completion is emitted only after a
@@ -44,8 +52,8 @@ indexes, checksums and provenance against the tag-bound retained account.
 In scope:
 
 - provider adapters for crates.io, NuGet, npm, GitHub Releases and GHCR public state;
-- a non-publishing preflight that checks tag, rehearsal revision, target state and bounded
-  credentials before any registry write;
+- a non-publishing preflight that checks tag, rehearsal revision, target state, credential presence
+  and provider-supported identity before any registry write;
 - an owner-dispatched GitHub Actions workflow that downloads rather than rebuilds retained
   candidates;
 - publication of the Rust crate, two NuGet packages, two npm packages, three native archives,
@@ -83,9 +91,9 @@ results; a missing credential or registry target remains a named incomplete cond
   any publish command can execute.
 - Preflight fails before writes unless the annotated tag, successful rehearsal source revision,
   retained account revision, catalog version and all ten candidate digests agree.
-- Every required credential is checked against only its target registry. Missing `@azimuth-sh`
-  administration, crates.io access, NuGet push access or GitHub package/release permission prevents
-  publication.
+- Every required credential is present and every provider-supported non-mutating identity check
+  succeeds before writes. npm administration is observed directly; crates.io `publish-new`, NuGet
+  push, GitHub Release and GHCR write authorization remain explicit first-write limitations.
 - Every retained package names `https://github.com/azimuth-sh/azimuth` as its source and
   `https://azimuth.sh` as its homepage; every image names both through OCI labels.
 - The owner-triggered workflow downloads the successful rehearsal artifacts by run id and never
