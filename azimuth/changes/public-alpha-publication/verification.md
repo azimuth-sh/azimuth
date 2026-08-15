@@ -2,10 +2,11 @@
 
 ## Registry-state adapters
 
-Provider fixtures cover absent, exact, conflicting, unauthorized, rate-limited and malformed
-responses for each registry kind. Mutations range over the complete catalog-derived target set.
-Tests require an adapter failure to prevent planner output and require exact digest or content
-identity rather than version-string equality alone.
+Provider fixtures cover absent and exact package responses, malformed Cargo, npm and GHCR
+responses, unauthorized, rate-limited and server-error package responses, GHCR command failures
+and a conflicting GitHub Release support asset. Mutations range over the complete catalog-derived
+target set. Tests require an adapter failure to prevent planner output and require exact digest or
+content identity rather than version-string equality alone.
 
 ## No-write hosted preflight
 

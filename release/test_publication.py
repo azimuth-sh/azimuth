@@ -7,14 +7,19 @@ import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from release.orchestrate import assemble, exact_registry_state, expected_subjects, write_account
 from release.publication import (
     PublicationError,
+    annotated_tag_revision,
     collect_state,
+    credential_account,
+    github_release,
     has_provenance,
     image_manifest,
+    image_state,
     package_bytes,
     preflight,
     public_account,
@@ -100,7 +105,9 @@ class PublicAlphaPublicationTests(unittest.TestCase):
 
         npm_metadata = {
             "versions": {
-                "0.1.0-alpha.1": {"dist": {"tarball": "https://registry.test/package.tgz"}}
+                "0.1.0-alpha.1": {
+                    "dist": {"tarball": "https://registry.npmjs.org/package.tgz"}
+                }
             }
         }
         responses = [
@@ -110,7 +117,35 @@ class PublicAlphaPublicationTests(unittest.TestCase):
         with patch("release.publication.request", side_effect=responses):
             content, url = package_bytes(subjects["npm"], "0.1.0-alpha.1")
         self.assertEqual(content, b"retained-npm-bytes")
-        self.assertEqual(url, "https://registry.test/package.tgz")
+        self.assertEqual(url, "https://registry.npmjs.org/package.tgz")
+
+    def test_npm_tarball_must_remain_on_the_registry_https_origin(self):
+        subject = next(
+            item
+            for item in expected_subjects(self.catalog)
+            if item.get("ecosystem") == "npm"
+        )
+        for url in ("file:///tmp/package.tgz", "https://registry.example/package.tgz"):
+            metadata = {
+                "versions": {"0.1.0-alpha.1": {"dist": {"tarball": url}}}
+            }
+            with self.subTest(url=url), patch(
+                "release.publication.request",
+                return_value=(200, {}, json.dumps(metadata).encode()),
+            ) as registry_request:
+                with self.assertRaisesRegex(PublicationError, "npm registry HTTPS URL"):
+                    package_bytes(subject, "0.1.0-alpha.1")
+                registry_request.assert_called_once()
+
+    def test_tag_lookup_uses_the_requested_checkout(self):
+        root = Path("/requested/checkout")
+        results = [
+            SimpleNamespace(stdout=b"tag\n"),
+            SimpleNamespace(stdout=f"{REVISION}\n".encode()),
+        ]
+        with patch("release.publication.run", side_effect=results) as git:
+            self.assertEqual(annotated_tag_revision(root, "v0.1.0-alpha.1"), REVISION)
+        self.assertEqual([call.kwargs["cwd"] for call in git.call_args_list], [root, root])
 
     def test_public_account_binds_each_image_index_digest_to_its_retained_archive(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -145,6 +180,49 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(PublicationError, f"HTTP {status}"):
                     package_bytes(subject, "0.1.0-alpha.1")
+
+    def test_malformed_provider_state_and_image_command_failures_are_unknown(self):
+        subjects = {
+            item.get("ecosystem"): item
+            for item in expected_subjects(self.catalog)
+            if item["kind"] == "package"
+        }
+        for ecosystem in ("cargo", "npm"):
+            with self.subTest(ecosystem=ecosystem), patch(
+                "release.publication.request", return_value=(200, {}, b"{")
+            ):
+                with self.assertRaisesRegex(PublicationError, "malformed"):
+                    package_bytes(subjects[ecosystem], "0.1.0-alpha.1")
+
+        image = {"key": "image:api", "identity": "ghcr.io/drim-dev/api"}
+        malformed = SimpleNamespace(returncode=0, stdout=b"{", stderr=b"")
+        with patch("release.publication.run", return_value=malformed):
+            with self.assertRaisesRegex(PublicationError, "manifest is malformed"):
+                image_manifest(image, "0.1.0-alpha.1")
+        failed = SimpleNamespace(returncode=1, stdout=b"", stderr=b"unauthorized")
+        with patch("release.publication.run", return_value=failed):
+            with self.assertRaisesRegex(PublicationError, "image state failed"):
+                image_manifest(image, "0.1.0-alpha.1")
+
+        malformed = SimpleNamespace(returncode=0, stdout=b"{", stderr=b"")
+        with patch("release.publication.run", return_value=malformed):
+            with self.assertRaisesRegex(PublicationError, "malformed JSON"):
+                github_release("v0.1.0-alpha.1")
+
+    def test_npm_scope_requires_an_administrative_role(self):
+        for role, expected in (("owner", True), ("admin", True), ("developer", False)):
+            commands = [
+                SimpleNamespace(returncode=0, stdout=b"release-user\n", stderr=b""),
+                SimpleNamespace(
+                    returncode=0,
+                    stdout=json.dumps({"release-user": role}).encode(),
+                    stderr=b"",
+                ),
+            ]
+            with self.subTest(role=role), patch.dict(
+                "os.environ", {"NPM_TOKEN": "secret"}, clear=True
+            ), patch("release.publication.run", side_effect=commands):
+                self.assertEqual(credential_account()["npm"]["azimuthScope"], expected)
 
     def test_public_state_covers_every_exact_registry_target(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -344,6 +422,39 @@ class PublicAlphaPublicationTests(unittest.TestCase):
         self.assertEqual(checksum, hashlib.sha256(raw).hexdigest())
         self.assertEqual(platforms, ["linux/amd64", "linux/arm64"])
 
+    def test_image_state_verifies_the_complete_retained_account(self):
+        root = Path("/requested/checkout")
+        candidates = Path("/retained/candidates")
+        retained = {"version": "0.1.0-alpha.1"}
+        account = {
+            "version": "0.1.0-alpha.1",
+            "subjects": [
+                {
+                    "kind": "image",
+                    "id": "api",
+                    "identity": "ghcr.io/drim-dev/api",
+                    "registryDigest": "sha256:" + "b" * 64,
+                    "platforms": ["linux/amd64", "linux/arm64"],
+                }
+            ],
+        }
+        arguments = argparse.Namespace(
+            account=Path("/retained/candidates.json"),
+            candidates=candidates,
+            root=root,
+            id="api",
+        )
+        with patch("release.publication.read_json", return_value=retained), patch(
+            "release.publication.verify", return_value=retained
+        ) as verify_account, patch(
+            "release.publication.public_account", return_value=account
+        ), patch(
+            "release.publication.image_manifest",
+            return_value=("b" * 64, ["linux/amd64", "linux/arm64"]),
+        ):
+            image_state(arguments)
+        verify_account.assert_called_once_with(retained, candidates, root)
+
     def test_provenance_requires_both_digest_and_tagged_revision(self):
         def payload(checksum, revision):
             return {
@@ -367,6 +478,13 @@ class PublicAlphaPublicationTests(unittest.TestCase):
         account = publication_workflow_account(self.root)
         self.assertEqual(account["trigger"], "workflow_dispatch")
         self.assertEqual(account["candidateBuilds"], 0)
+
+    def test_publication_workflow_scopes_tokens_and_supplies_complete_image_inputs(self):
+        source = (self.root / ".github/workflows/publish.yml").read_text()
+        self.assertEqual(source.count("persist-credentials: false"), 3)
+        self.assertEqual(source.count("attestations: write"), 1)
+        self.assertIn("permissions:\n  contents: read\n\njobs:", source)
+        self.assertEqual(source.count("pattern: candidates-*"), 3)
 
     def test_publication_workflow_fails_static_credential_and_provenance_mutations(self):
         source = (self.root / ".github/workflows/publish.yml").read_text()

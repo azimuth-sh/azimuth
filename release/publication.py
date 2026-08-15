@@ -63,13 +63,14 @@ def require(condition, message):
         raise PublicationError(message)
 
 
-def run(command, *, input_bytes=None, check=True, env=None):
+def run(command, *, input_bytes=None, check=True, env=None, cwd=None):
     result = subprocess.run(
         [str(item) for item in command],
         input=input_bytes,
         capture_output=True,
         check=False,
         env=env,
+        cwd=None if cwd is None else str(cwd),
     )
     if check and result.returncode != 0:
         message = result.stderr.decode(errors="replace").strip()
@@ -145,9 +146,9 @@ def public_account(retained_account, candidate_root):
 
 
 def annotated_tag_revision(root, tag):
-    kind = run(["git", "cat-file", "-t", tag]).stdout.decode().strip()
+    kind = run(["git", "cat-file", "-t", tag], cwd=root).stdout.decode().strip()
     require(kind == "tag", f"tag {tag!r} is not annotated")
-    revision = run(["git", "rev-list", "-n", "1", tag]).stdout.decode().strip()
+    revision = run(["git", "rev-list", "-n", "1", tag], cwd=root).stdout.decode().strip()
     require(re.fullmatch(r"[0-9a-f]{40}", revision) is not None, "tag revision is invalid")
     return revision
 
@@ -307,6 +308,11 @@ def package_bytes(subject, version):
         url = package_url(subject, version, metadata)
         if url is None:
             return None, None
+        location = urllib.parse.urlsplit(url)
+        require(
+            location.scheme == "https" and location.hostname == "registry.npmjs.org",
+            f"{subject['key']}: npm tarball URL is not an npm registry HTTPS URL",
+        )
     else:
         url = package_url(subject, version)
     status, _, content = request(url)
@@ -454,7 +460,11 @@ def credential_account(repository=REPOSITORY):
             )
             if membership.returncode == 0:
                 try:
-                    npm_scope = npm_identity in json.loads(membership.stdout)
+                    roster = json.loads(membership.stdout)
+                    npm_scope = (
+                        isinstance(roster, dict)
+                        and roster.get(npm_identity) in ("owner", "admin")
+                    )
                 except json.JSONDecodeError:
                     npm_scope = False
 
@@ -699,7 +709,7 @@ def publish(arguments):
 
 
 def image_state(arguments):
-    retained_account = read_json(arguments.account)
+    retained_account = verify(read_json(arguments.account), arguments.candidates, arguments.root)
     account = public_account(retained_account, arguments.candidates)
     subject = next(
         (

@@ -42,7 +42,7 @@ catalog population, so the component-universal tag is honest.
 
 ## Claim: tag-catalog-and-revision-agree
 Verdict: sound
-Fingerprint: 8d232bccf72503a4
+Fingerprint: 2e601b130821e887
 Judged: 2026-08-15
 Judge: Codex
 
@@ -57,11 +57,13 @@ I also inspected the publication preflight. It requires an annotated tag, reuses
 account verifier and independently compares the rehearsal run revision with the account and peeled
 tag revision before registry state or credentials can authorize a write. This realization
 establishes the same predicate at the public-operation boundary rather than merely transporting the
-tag value.
+tag value. The focused wrong-checkout test observes both tag commands and requires the requested
+root as their working directory; resolving either command against the agent's current checkout no
+longer passes.
 
 ## Claim: retained-downloads-have-checksums
 Verdict: sound
-Fingerprint: 44a18f862d122a93
+Fingerprint: 9d7af662ffd96898
 Judged: 2026-08-15
 Judge: Codex
 
@@ -75,11 +77,13 @@ download therefore cannot retain a passing account.
 The publication preflight downloads the cross-run candidates, invokes that verifier and derives an
 image registry digest only after the retained OCI archive checksum passes. The public account keeps
 the archive checksum separately, so this realization does not substitute a registry manifest
-digest for retained-byte identity.
+digest for retained-byte identity. The image-provenance job now downloads the complete candidate
+population and runs the same verifier before deriving its registry-attestation subject; a partial
+or substituted cross-run download therefore fails at that second consumption boundary too.
 
 ## Claim: executable-subjects-have-provenance
 Verdict: sound
-Fingerprint: b7af1448cee78f92
+Fingerprint: e503c4a1dd59d9d9
 Judged: 2026-08-15
 Judge: Codex
 
@@ -134,7 +138,7 @@ are covered.
 
 ## Claim: exact-existing-target-is-preserved
 Verdict: sound
-Fingerprint: 15b8d15a97d3d9b8
+Fingerprint: 40b54962cb7f5fc3
 Judged: 2026-08-15
 Judge: Codex
 
@@ -148,11 +152,13 @@ catalog-derived population.
 I also inspected the public adapters and write boundary. They retrieve all selected providers into
 one state, preserve omitted keys as absent, keep provider errors distinct from absence and rederive
 the supplied plan immediately before writes. No provider adapter can independently bypass the
-planner for a target classified exact.
+planner for a target classified exact. The npm adapter also rejects non-HTTPS and non-registry
+tarball locations before reading bytes, so remote metadata cannot substitute an unrelated local or
+network source while retaining an exact classification.
 
 ## Claim: absent-target-is-selected
 Verdict: sound
-Fingerprint: 496ddc68e123d071
+Fingerprint: 07567055d2dae382
 Judged: 2026-08-15
 Judge: Codex
 
@@ -169,7 +175,7 @@ catalog-derived absence mutation.
 
 ## Claim: conflicting-target-fails
 Verdict: sound
-Fingerprint: aee264f598c4a4d3
+Fingerprint: 4ab2c6c3c389ab58
 Judged: 2026-08-15
 Judge: Codex
 
@@ -182,12 +188,13 @@ would therefore accept one of the constructed conflicts and fail the oracle.
 
 The provider boundary maps authorization failures, rate limits and malformed responses to errors,
 not absence, and separately rejects a conflicting GitHub Release support asset before planning.
-This realizes fail-closed public observation without overstating those provider fixtures as new
-universal Covers evidence.
+Focused fixtures now exercise malformed Cargo, npm, GitHub Release and GHCR responses plus a GHCR
+command failure. This realizes fail-closed public observation without overstating those provider
+fixtures as new universal Covers evidence.
 
 ## Claim: completion-needs-public-retrieval
 Verdict: sound
-Fingerprint: 027f46370374c9fe
+Fingerprint: 6c37305cbaba59cd
 Judged: 2026-08-15
 Judge: Codex
 
