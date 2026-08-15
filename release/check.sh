@@ -20,4 +20,5 @@ cargo run --quiet --manifest-path tools/azimuth/Cargo.toml -- check \
   --standards azimuth/standards/verification.md \
   --manifest .azimuth/release/linkage.json \
   --manifest .azimuth/release/experimental-isolation-linkage.json \
+  --manifest .azimuth/release/orchestration-linkage.json \
   --manifest .azimuth/release/private-deployment-linkage.json

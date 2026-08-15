@@ -1,6 +1,6 @@
 # Change: multi-registry-release-orchestration
 
-Status: proposed
+Status: accepted and complete
 
 Exploration: canonical-alpha-release
 Carries decisions: CAR5, CAR6, CAR7, CAR8, CAR9, CAR10, CAR11, CAR12, CAR13

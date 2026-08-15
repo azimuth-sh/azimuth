@@ -1,0 +1,46 @@
+{
+  "format": "azimuth-release-workflow-receipt",
+  "schemaVersion": 1,
+  "workflow": ".github/workflows/release.yml",
+  "sourceRevision": "1d50936aa9384b45def6fef9bb6817aa5dca526b",
+  "executionRevision": "7d55069e8c9400a15001c23d6f177680d9495a17",
+  "runUrl": "https://github.com/drim-dev/azimuth/actions/runs/31860141686",
+  "conclusion": "success",
+  "workflowSha256": "69de894e98c179655b21fbdf1866aa25ea8115c00cbcc42b9becee3438a653d4",
+  "accountSha256": "d8e1a5ee31b849b6468c807f1db4f06ec22800cd9a732b589b6dceeec47392f9",
+  "consumerSha256": "398f2002b4fefeb2e7c49c24b14c5078830aea4ca24ebfd0ac9b847865ef8e22",
+  "jobs": [
+    "packages",
+    "native:x86_64-unknown-linux-gnu",
+    "native:aarch64-apple-darwin",
+    "native:x86_64-pc-windows-msvc",
+    "image:assurance-api",
+    "image:assurance-web",
+    "account"
+  ],
+  "subjects": [
+    "azimuth-0.1.0-alpha.1.crate",
+    "Azimuth.Annotations.0.1.0-alpha.1.nupkg",
+    "Azimuth.Emit.0.1.0-alpha.1.nupkg",
+    "azimuth-annotations-0.1.0-alpha.1.tgz",
+    "azimuth-emit-0.1.0-alpha.1.tgz",
+    "azimuth-0.1.0-alpha.1-x86_64-unknown-linux-gnu.tar.gz",
+    "azimuth-0.1.0-alpha.1-aarch64-apple-darwin.tar.gz",
+    "azimuth-0.1.0-alpha.1-x86_64-pc-windows-msvc.zip",
+    "assurance-api.oci.tar",
+    "assurance-web.oci.tar"
+  ],
+  "attestedSubjects": [
+    "azimuth-0.1.0-alpha.1.crate",
+    "Azimuth.Annotations.0.1.0-alpha.1.nupkg",
+    "Azimuth.Emit.0.1.0-alpha.1.nupkg",
+    "azimuth-annotations-0.1.0-alpha.1.tgz",
+    "azimuth-emit-0.1.0-alpha.1.tgz",
+    "azimuth-0.1.0-alpha.1-x86_64-unknown-linux-gnu.tar.gz",
+    "azimuth-0.1.0-alpha.1-aarch64-apple-darwin.tar.gz",
+    "azimuth-0.1.0-alpha.1-x86_64-pc-windows-msvc.zip",
+    "assurance-api.oci.tar",
+    "assurance-web.oci.tar"
+  ],
+  "candidateAccountSha256": "8b3e293debb617f9dc4695b4da0fd2107758c8c375afd98e46e7d21631c09059"
+}
