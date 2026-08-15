@@ -14,7 +14,14 @@
 - [x] Create the annotated tag, pass the no-write preflight and retain the first write-enabled
   attempt that stopped before publication because two non-mutating probes overclaimed provider
   authorization.
-- [ ] Replace the unused tag at the repaired revision and retain a fresh exact-tag rehearsal.
-- [ ] Repeat the no-write preflight and run the resumable publication operation.
+- [x] Replace the unused tag at the repaired revision and retain a fresh exact-tag rehearsal.
+- [x] Repeat the no-write preflight and retain the write attempt that published six observable
+  targets before npm rejected a prerelease without an explicit distribution tag.
+- [x] Wait for NuGet indexing, observe both provider-signed archives and identify raw archive
+  equality as an invalid NuGet registry identity rule.
+- [x] Establish that a targeted rerun preserves the tagged SHA but cannot bypass the failed publish
+  dependency; retain candidate authority and record a separate reviewed publication revision.
+- [ ] Wait for provider read state to settle, publish npm with the `alpha` tag and resume only the
+  targets still classified absent.
 - [ ] Retrieve every public target, judge the refreshed evidence and record the outcome.
 - [ ] Finalize the completed change for separate acceptance and archive.

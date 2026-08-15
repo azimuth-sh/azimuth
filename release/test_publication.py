@@ -6,6 +6,7 @@ import struct
 import tarfile
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -20,13 +21,17 @@ from release.publication import (
     has_provenance,
     image_manifest,
     image_state,
+    nuget_payload_digest,
     package_bytes,
     preflight,
     public_account,
     publish,
     publish_crate,
+    publish_target,
     publication_workflow_account,
     qualify,
+    subject_provenance,
+    verify_nuget_repository_signature,
 )
 
 
@@ -72,6 +77,9 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             path = candidates / subject["filename"]
             if subject["kind"] == "image":
                 self.oci_candidate(path, index)
+            elif subject.get("ecosystem") == "nuget":
+                with zipfile.ZipFile(path, "w") as package:
+                    package.writestr(f"payload-{index}.txt", f"candidate-{index}")
             else:
                 path.write_bytes(f"candidate-{index}".encode())
         account = assemble(candidates, REVISION, self.catalog["release"]["tag"], self.root)
@@ -167,6 +175,48 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 package.addfile(member, io.BytesIO(changed))
             with self.assertRaisesRegex(PublicationError, "checksum differs"):
                 public_account(retained, candidates)
+
+    def test_nuget_repository_signature_preserves_payload_identity(self):
+        retained = io.BytesIO()
+        with zipfile.ZipFile(retained, "w") as package:
+            package.writestr("package.nuspec", b"metadata")
+            package.writestr("lib/package.dll", b"assembly")
+        published = io.BytesIO()
+        with zipfile.ZipFile(published, "w") as package:
+            package.writestr("lib/package.dll", b"assembly")
+            package.writestr("package.nuspec", b"metadata")
+            package.writestr(".signature.p7s", b"repository-signature")
+
+        self.assertNotEqual(
+            hashlib.sha256(retained.getvalue()).digest(),
+            hashlib.sha256(published.getvalue()).digest(),
+        )
+        self.assertEqual(
+            nuget_payload_digest(retained.getvalue()),
+            nuget_payload_digest(published.getvalue()),
+        )
+        changed = io.BytesIO()
+        with zipfile.ZipFile(changed, "w") as package:
+            package.writestr("package.nuspec", b"changed")
+            package.writestr("lib/package.dll", b"assembly")
+            package.writestr(".signature.p7s", b"repository-signature")
+        self.assertNotEqual(
+            nuget_payload_digest(retained.getvalue()),
+            nuget_payload_digest(changed.getvalue()),
+        )
+
+        verified = SimpleNamespace(
+            returncode=0,
+            stdout=b"Signature type: Repository\n",
+            stderr=b"",
+        )
+        with patch("release.publication.run", return_value=verified):
+            verify_nuget_repository_signature(published.getvalue())
+        rejected = SimpleNamespace(returncode=1, stdout=b"", stderr=b"invalid")
+        with patch("release.publication.run", return_value=rejected), self.assertRaisesRegex(
+            PublicationError, "signature verification failed"
+        ):
+            verify_nuget_repository_signature(published.getvalue())
 
     def test_provider_errors_are_unknown_and_fail_closed(self):
         subject = next(
@@ -298,6 +348,8 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 },
             ), patch("release.publication.github_asset_bytes", side_effect=asset_result), patch(
                 "release.publication.image_manifest", side_effect=lambda *_: next(image_values)
+            ), patch(
+                "release.publication.verify_nuget_repository_signature"
             ), patch("release.publication.has_provenance", return_value=True):
                 state = collect_state(account, account_path, sums_path)
             self.assertEqual(state["missingReleaseAssets"], [])
@@ -340,6 +392,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 tag=account["tag"],
                 run_revision=REVISION,
                 rehearsal_run="123",
+                publication_revision="d" * 40,
                 state_out=directory / "state.json",
                 plan_out=directory / "plan.json",
                 receipt_out=directory / "preflight.json",
@@ -353,6 +406,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 preflight(arguments)
             receipt = json.loads(arguments.receipt_out.read_text())
             self.assertEqual(receipt["writes"], 0)
+            self.assertEqual(receipt["publicationRevision"], "d" * 40)
             self.assertEqual(receipt["plan"]["publish"], [])
 
             arguments.require_credentials = True
@@ -431,6 +485,23 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             self.assertEqual(captured["method"], "PUT")
             self.assertEqual(captured["headers"]["Accept"], "application/json")
 
+    def test_npm_publication_uses_the_release_channel_as_its_dist_tag(self):
+        subject = {"kind": "package", "ecosystem": "npm"}
+        archive = Path("azimuth-sh-annotations-0.1.0-alpha.1.tgz")
+        for version, tag in (
+            ("0.1.0-alpha.1", "alpha"),
+            ("0.2.0-rc.2", "rc"),
+            ("1.0.0", "latest"),
+        ):
+            with self.subTest(version=version), patch.dict(
+                "os.environ", {"NPM_TOKEN": "secret"}, clear=True
+            ), patch("release.publication.run") as publish_command:
+                publish_target(subject, archive, {"version": version})
+
+            command = publish_command.call_args.args[0]
+            self.assertEqual(command[-2:], ["--tag", tag])
+            self.assertIn("--provenance", command)
+
     def test_image_state_filters_attestation_descriptors_from_platforms(self):
         manifest = {
             "schemaVersion": 2,
@@ -500,10 +571,45 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             self.assertTrue(has_provenance(checksum, REVISION))
             self.assertFalse(has_provenance(checksum, "c" * 40))
 
+    def test_image_provenance_chains_candidate_and_publication_revisions(self):
+        subject = {"kind": "image", "retainedSha256": "a" * 64}
+        candidate_revision = "b" * 40
+        publication_revision = "c" * 40
+        evidence = {
+            (subject["retainedSha256"], candidate_revision),
+            ("d" * 64, publication_revision),
+        }
+        with patch(
+            "release.publication.has_provenance",
+            side_effect=lambda checksum, revision, _repository: (checksum, revision) in evidence,
+        ):
+            self.assertEqual(
+                subject_provenance(
+                    subject,
+                    "d" * 64,
+                    candidate_revision,
+                    publication_revision,
+                    "azimuth-sh/azimuth",
+                ),
+                (True, "retained-to-published"),
+            )
+            self.assertEqual(
+                subject_provenance(
+                    subject,
+                    "e" * 64,
+                    candidate_revision,
+                    publication_revision,
+                    "azimuth-sh/azimuth",
+                ),
+                (False, None),
+            )
+
     def test_publication_workflow_is_owner_dispatched_and_never_rebuilds(self):
         account = publication_workflow_account(self.root)
         self.assertEqual(account["trigger"], "workflow_dispatch")
         self.assertEqual(account["candidateBuilds"], 0)
+        source = (self.root / ".github/workflows/publish.yml").read_text()
+        self.assertEqual(source.count("--publication-revision"), 2)
 
     def test_publication_workflow_scopes_tokens_and_supplies_complete_image_inputs(self):
         source = (self.root / ".github/workflows/publish.yml").read_text()

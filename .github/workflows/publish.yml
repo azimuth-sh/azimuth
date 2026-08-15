@@ -7,6 +7,10 @@ on:
         description: Successful release-rehearsal run built from the tagged revision
         required: true
         type: string
+      candidate_tag:
+        description: Annotated candidate tag when publication runs from a repair revision
+        required: false
+        type: string
       dry_run:
         description: Stop after public-state and credential preflight
         required: true
@@ -93,7 +97,8 @@ jobs:
       - name: Read public state and prove the no-write boundary
         shell: bash
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.candidate_tag || github.ref_name }}
+          PUBLICATION_REVISION: ${{ github.sha }}
           REHEARSAL_REVISION: ${{ steps.rehearsal.outputs.revision }}
           REHEARSAL_RUN: ${{ inputs.rehearsal_run_id }}
           REQUIRE_CREDENTIALS: ${{ !inputs.dry_run }}
@@ -108,6 +113,7 @@ jobs:
             --sums dist/account/SHA256SUMS \
             --tag "$RELEASE_TAG" \
             --run-revision "$REHEARSAL_REVISION" \
+            --publication-revision "$PUBLICATION_REVISION" \
             --rehearsal-run "$REHEARSAL_RUN" \
             --state-out dist/publication/public-state.json \
             --plan-out dist/publication/publication-plan.json \
@@ -238,6 +244,7 @@ jobs:
       - name: Retrieve every public target
         shell: bash
         env:
+          PUBLICATION_REVISION: ${{ github.sha }}
           PUBLICATION_RUN: ${{ github.run_id }}
           REHEARSAL_RUN: ${{ inputs.rehearsal_run_id }}
         run: |
@@ -248,6 +255,7 @@ jobs:
               --sums dist/account/SHA256SUMS \
               --rehearsal-run "$REHEARSAL_RUN" \
               --publication-run "$PUBLICATION_RUN" \
+              --publication-revision "$PUBLICATION_REVISION" \
               --out dist/publication/completion.json; then
               exit 0
             fi

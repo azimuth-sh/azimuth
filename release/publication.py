@@ -5,16 +5,19 @@ import base64
 import copy
 import datetime
 import hashlib
+import io
 import json
 import os
 import re
 import struct
 import subprocess
 import tarfile
+import tempfile
 import tomllib
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 from pathlib import Path
 
 if __package__:
@@ -132,16 +135,52 @@ def oci_index_digest(path):
     return value
 
 
+def nuget_payload_digest(content):
+    checksum = hashlib.sha256()
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as package:
+            members = [
+                member
+                for member in package.infolist()
+                if not member.is_dir() and member.filename.lower() != ".signature.p7s"
+            ]
+            names = [member.filename.casefold() for member in members]
+            require(len(names) == len(set(names)), "NuGet package contains duplicate paths")
+            for member in sorted(members, key=lambda item: item.filename):
+                name = member.filename.encode()
+                payload = package.read(member)
+                checksum.update(struct.pack(">Q", len(name)))
+                checksum.update(name)
+                checksum.update(struct.pack(">Q", len(payload)))
+                checksum.update(payload)
+    except (OSError, RuntimeError, zipfile.BadZipFile) as error:
+        raise PublicationError(f"cannot inspect NuGet package: {error}") from error
+    require(members, "NuGet package contains no payload")
+    return checksum.hexdigest()
+
+
+def verify_nuget_repository_signature(content):
+    with tempfile.NamedTemporaryFile(suffix=".nupkg") as package:
+        package.write(content)
+        package.flush()
+        result = run(["dotnet", "nuget", "verify", package.name, "--all"], check=False)
+    require(result.returncode == 0, "NuGet repository signature verification failed")
+    output = result.stdout + result.stderr
+    require(b"Signature type: Repository" in output, "NuGet repository signature is absent")
+
+
 def public_account(retained_account, candidate_root):
     account = copy.deepcopy(retained_account)
     for subject in account["subjects"]:
-        if subject["kind"] != "image":
-            continue
-        retained_checksum = subject["sha256"]
-        registry_checksum = oci_index_digest(candidate_path(candidate_root, subject))
-        subject["retainedSha256"] = retained_checksum
-        subject["sha256"] = registry_checksum.removeprefix("sha256:")
-        subject["registryDigest"] = registry_checksum
+        retained = candidate_path(candidate_root, subject)
+        if subject["kind"] == "image":
+            retained_checksum = subject["sha256"]
+            registry_checksum = oci_index_digest(retained)
+            subject["retainedSha256"] = retained_checksum
+            subject["sha256"] = registry_checksum.removeprefix("sha256:")
+            subject["registryDigest"] = registry_checksum
+        elif subject.get("ecosystem") == "nuget":
+            subject["payloadSha256"] = nuget_payload_digest(retained.read_bytes())
     return account
 
 
@@ -187,6 +226,7 @@ def publication_workflow_account(root=ROOT):
     source = (Path(root) / PUBLICATION_WORKFLOW.relative_to(ROOT)).read_text()
     trigger = source.split("permissions:", 1)[0]
     require("workflow_dispatch:" in trigger, "publication workflow has no owner dispatch")
+    require("candidate_tag:" in trigger, "publication workflow cannot name an immutable candidate")
     require("pull_request:" not in trigger, "publication workflow runs on pull requests")
     require("push:" not in trigger, "publication workflow publishes from a push trigger")
     jobs = workflow_jobs(source)
@@ -214,6 +254,8 @@ def publication_workflow_account(root=ROOT):
     require("publication.py preflight" in commands, "publication omits preflight")
     require("--require-credentials" in commands, "publication omits the credential gate")
     require("publication.py publish" in commands, "publication omits the selected write step")
+    require("--publication-revision" in commands,
+            "publication preflight omits the executing revision")
     require(
         commands.index("publication.py preflight") < commands.index("publication.py publish"),
         "publication writes before preflight",
@@ -229,6 +271,8 @@ def publication_workflow_account(root=ROOT):
             "published image provenance is not attached to GHCR")
     require("needs: [publish, image-provenance]" in jobs["complete"],
             "completion does not wait for publication and provenance")
+    require("--publication-revision" in jobs["complete"],
+            "completion omits the executing revision")
     return {
         "trigger": "workflow_dispatch",
         "candidateBuilds": 0,
@@ -269,6 +313,18 @@ def has_provenance(checksum, revision, repository=REPOSITORY):
         if exact_subject and exact_revision:
             return True
     return False
+
+
+def subject_provenance(subject, observed, candidate_revision, publication_revision, repository):
+    if has_provenance(observed, candidate_revision, repository):
+        return True, "direct"
+    if subject["kind"] != "image":
+        return False, None
+    retained = has_provenance(subject["retainedSha256"], candidate_revision, repository)
+    published = has_provenance(observed, publication_revision, repository)
+    if retained and published:
+        return True, "retained-to-published"
+    return False, None
 
 
 def package_url(subject, version, metadata=None):
@@ -379,9 +435,16 @@ def support_asset_account(account_path, sums_path):
     }
 
 
-def collect_state(account, account_path, sums_path, repository=REPOSITORY):
+def collect_state(
+    account,
+    account_path,
+    sums_path,
+    repository=REPOSITORY,
+    publication_revision=None,
+):
     version = account["version"]
     revision = account["revision"]
+    publication_revision = publication_revision or revision
     state = {
         "format": "azimuth-public-registry-state",
         "schemaVersion": 1,
@@ -418,7 +481,17 @@ def collect_state(account, account_path, sums_path, repository=REPOSITORY):
         if subject["kind"] == "package":
             content, url = package_bytes(subject, version)
             if content is not None:
-                observed = hashlib.sha256(content).hexdigest()
+                registry_checksum = hashlib.sha256(content).hexdigest()
+                if subject["ecosystem"] == "nuget":
+                    verify_nuget_repository_signature(content)
+                    payload_checksum = nuget_payload_digest(content)
+                    observed = (
+                        subject["sha256"]
+                        if payload_checksum == subject["payloadSha256"]
+                        else registry_checksum
+                    )
+                else:
+                    observed = registry_checksum
         elif subject["kind"] == "native":
             asset = assets.get(subject["filename"])
             if asset is not None:
@@ -432,12 +505,24 @@ def collect_state(account, account_path, sums_path, repository=REPOSITORY):
                 url = f"https://ghcr.io/{subject['identity'].removeprefix('ghcr.io/')}:{version}"
         if observed is None:
             continue
+        provenance, provenance_mode = subject_provenance(
+            subject,
+            observed,
+            revision,
+            publication_revision,
+            repository,
+        )
         target = {
             "identity": subject["identity"],
             "sha256": observed,
-            "provenance": has_provenance(observed, revision, repository),
+            "provenance": provenance,
+            "provenanceMode": provenance_mode,
             "url": url,
         }
+        if subject.get("ecosystem") == "nuget":
+            target["registrySha256"] = registry_checksum
+            target["payloadSha256"] = payload_checksum
+            target["repositorySignatureVerified"] = True
         if subject["kind"] == "image":
             target["platforms"] = platforms
         state["targets"][subject["key"]] = target
@@ -527,7 +612,18 @@ def preflight(arguments):
         "annotated tag revision differs from retained account",
     )
     require(arguments.run_revision == account["revision"], "rehearsal run revision differs")
-    state = collect_state(account, account_path, arguments.sums, arguments.repository)
+    publication_revision = getattr(arguments, "publication_revision", None) or account["revision"]
+    require(
+        re.fullmatch(r"[0-9a-f]{40}", publication_revision) is not None,
+        "publication revision is invalid",
+    )
+    state = collect_state(
+        account,
+        account_path,
+        arguments.sums,
+        arguments.repository,
+        publication_revision,
+    )
     plan = plan_publication(account, state)
     credentials = credential_account()
     receipt = {
@@ -536,6 +632,7 @@ def preflight(arguments):
         "observedAt": now(),
         "tag": account["tag"],
         "revision": account["revision"],
+        "publicationRevision": publication_revision,
         "rehearsalRun": arguments.rehearsal_run,
         "candidateAccountSha256": digest(account_path),
         "stateSha256": None,
@@ -637,6 +734,18 @@ def ensure_github_release(account, state, account_path, sums_path, repository=RE
         run(["gh", "release", "upload", account["tag"], support[name], "--repo", repository])
 
 
+def npm_dist_tag(version):
+    _, separator, prerelease = version.partition("-")
+    if not separator:
+        return "latest"
+    tag = prerelease.split(".", 1)[0].lower()
+    require(
+        re.fullmatch(r"[a-z][0-9a-z-]*", tag) is not None,
+        f"npm prerelease {version!r} has no publishable dist-tag",
+    )
+    return tag
+
+
 def publish_target(subject, path, account, repository=REPOSITORY):
     if subject["kind"] == "package":
         if subject["ecosystem"] == "cargo":
@@ -654,7 +763,13 @@ def publish_target(subject, path, account, repository=REPOSITORY):
             token = os.environ.get("NPM_TOKEN", "")
             require(token, "NPM_TOKEN is absent")
             env = {**os.environ, "NODE_AUTH_TOKEN": token}
-            run(["npm", "publish", path, "--access", "public", "--provenance"], env=env)
+            run(
+                [
+                    "npm", "publish", path, "--access", "public", "--provenance",
+                    "--tag", npm_dist_tag(account["version"]),
+                ],
+                env=env,
+            )
     elif subject["kind"] == "native":
         run(
             [
@@ -732,7 +847,18 @@ def complete(arguments):
     account_path = Path(arguments.account)
     retained_account = verify(read_json(account_path), arguments.candidates, arguments.root)
     account = public_account(retained_account, arguments.candidates)
-    state = collect_state(account, account_path, arguments.sums, arguments.repository)
+    publication_revision = getattr(arguments, "publication_revision", None) or account["revision"]
+    require(
+        re.fullmatch(r"[0-9a-f]{40}", publication_revision) is not None,
+        "publication revision is invalid",
+    )
+    state = collect_state(
+        account,
+        account_path,
+        arguments.sums,
+        arguments.repository,
+        publication_revision,
+    )
     require(not state["missingReleaseAssets"], "GitHub Release support assets are incomplete")
     completion = validate_completion(account, state)
     receipt = {
@@ -741,6 +867,7 @@ def complete(arguments):
         "observedAt": now(),
         "tag": account["tag"],
         "revision": account["revision"],
+        "publicationRevision": publication_revision,
         "rehearsalRun": arguments.rehearsal_run,
         "publicationRun": arguments.publication_run,
         "candidateAccountSha256": digest(account_path),
@@ -841,6 +968,7 @@ def parser():
     preflight_parser.add_argument("--state-out", type=Path, required=True)
     preflight_parser.add_argument("--plan-out", type=Path, required=True)
     preflight_parser.add_argument("--receipt-out", type=Path, required=True)
+    preflight_parser.add_argument("--publication-revision")
     preflight_parser.add_argument("--require-credentials", action="store_true")
     preflight_parser.set_defaults(run=preflight)
 
@@ -865,6 +993,7 @@ def parser():
     complete_parser.add_argument("--sums", type=Path, required=True)
     complete_parser.add_argument("--rehearsal-run", required=True)
     complete_parser.add_argument("--publication-run", required=True)
+    complete_parser.add_argument("--publication-revision")
     complete_parser.add_argument("--out", type=Path, required=True)
     complete_parser.set_defaults(run=complete)
 

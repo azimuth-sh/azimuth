@@ -21,6 +21,13 @@ bind each lane's retained outputs before upload; convergence accepts only those 
 filenames and hashes their bytes. Removing the manifest choke point would allow publication to
 rebuild or substitute bytes after qualification.
 
+Publication normally runs at that tagged revision. When an immutable provider exposes a defect in
+the publication adapter after some targets exist, a reviewed repair revision may execute the
+operation against the unchanged tag-bound account. The completion receipt records both revisions.
+For a published image digest, the chain requires retained-archive provenance at the candidate
+revision, deterministic archive-to-index identity and registry-digest provenance at the repair
+revision. This distinguishes artifact source from the later operation that made it public.
+
 ## Requirement: qualified-candidates-compose
 Mechanism: disposable-candidate-consumers
 Enforcement: guard
@@ -41,13 +48,21 @@ the resulting absent set; any conflict prevents a plan. The owner-dispatched pub
 downloads the tag-bound rehearsal outputs rather than rebuilding them. Provider adapters retrieve
 package bytes, GitHub Release assets and GHCR index manifests into the closed-world state. A
 credential gate checks presence plus provider-supported non-mutating identity before the first
-write, and completion performs a new retrieval after image-index provenance is attached. Removing
-the planner would make partial recovery depend on mutable operator memory.
+write. npm publication derives an explicit distribution tag from the release's prerelease channel;
+stable versions use `latest`. NuGet retrieval requires a valid repository signature and compares a
+signature-independent payload digest because NuGet.org adds `.signature.p7s` during ingestion.
+Completion performs a new retrieval after image-index provenance is attached. Removing the planner
+would make partial recovery depend on mutable operator memory.
 
 ## Residue
 
 The adapters cannot establish a narrowly scoped crates.io token's identity without requiring the
 broader legacy scope, or establish permission to create an unused NuGet, GitHub Release or GHCR
-identity without the first registry write. GitHub build provenance does not supply complete SBOM
-or cross-ecosystem signing coverage. Public completion evidence is rollout-dependent and cannot
-exist until `v0.1.0-alpha.1` is actually published; the release operation retains that condition.
+identity without the first registry write. A provider may accept a write before its public read
+surface exposes the immutable target; recovery requires a later observation rather than treating
+an immediate absence as proof that no write occurred. A NuGet public archive's raw checksum differs
+from the retained candidate after repository signing; the state account therefore records both and
+uses non-signature payload identity for preservation. GitHub build provenance does not supply
+complete SBOM or cross-ecosystem signing coverage. Public completion evidence is rollout-dependent
+and cannot exist until `v0.1.0-alpha.1` is actually published; the release operation retains that
+condition.

@@ -53,7 +53,9 @@ Accepted: the rehearsal attests retained OCI archives; discharge during alpha pu
 
 The hosted rehearsal submits every downloadable subject to GitHub's provenance action and validates
 the workflow's exact subject population. Image publication provenance remains rollout-dependent
-until GHCR digests exist.
+until GHCR digests exist. A repair revision does not replace candidate provenance: completion must
+join retained-archive provenance at the tagged revision, deterministic index identity and
+published-digest provenance at the recorded publication revision.
 
 ## Claim: packed-packages-install
 Scope: component

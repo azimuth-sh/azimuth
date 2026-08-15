@@ -33,6 +33,27 @@ call the legacy `/me` endpoint, and the repository read made with a bounded GitH
 not report its job-declared write permissions. The attempt stopped with zero writes. Requiring
 broader tokens would hide the provider boundary rather than strengthen the release account.
 
+The repaired write-enabled attempt on 2026-08-15 falsified the assumption that npm infers a
+non-`latest` distribution tag from a prerelease version. It published six targets that a later
+preflight retrieved as exact, then npm rejected the first tarball before writing it. Two NuGet
+targets and two npm targets were absent from the public read account two minutes later. That
+observation does not distinguish a rejected NuGet write from indexing delay, so recovery waits for
+a later read rather than treating immediate absence as proof that no write occurred.
+
+The later 2026-08-15 observation retrieved both NuGet versions but classified their raw archive
+checksums as conflicts. NuGet's official verifier reports the same content hash before and after
+ingestion and verifies the downloaded repository signatures; unpacked comparison found the added
+`.signature.p7s` entry was the only content difference. This falsifies raw archive equality as the
+NuGet identity rule. The revised adapter requires a valid repository signature and equality of all
+non-signature paths and payloads.
+
+GitHub accepted a targeted rerun of the skipped image-provenance job but skipped it again because
+the original publication dependency remained failed. The tag cannot move after six immutable
+targets exist: doing so would break the candidate account and its attestations. Recovery therefore
+runs reviewed orchestration from a later revision while keeping candidate authority at the
+unchanged tag. The public account records both revisions and accepts image provenance only through
+the retained archive, its deterministic index digest and the publication-revision attestation.
+
 ## Outcome
 
 One explicit repository-owner workflow consumes a successful rehearsal run whose source revision
@@ -98,10 +119,16 @@ results; a missing credential or registry target remains a named incomplete cond
   `https://azimuth.sh` as its homepage; every image names both through OCI labels.
 - The owner-triggered workflow downloads the successful rehearsal artifacts by run id and never
   invokes a candidate build.
+- A repair revision can execute against an explicit candidate tag without changing candidate
+  authority; the receipt distinguishes the candidate and publication revisions.
 - Each registry adapter receives only planner-selected absent targets. Exact targets are preserved
   and any conflicting immutable identity prevents a publication plan.
 - A failed operation retains successful public targets and a rerun selects only the remaining
   absent targets.
+- npm prerelease publication names its prerelease channel explicitly and never assigns an alpha to
+  `latest`.
+- NuGet retrieval accepts the provider-added repository signature only when the official verifier
+  accepts it and every non-signature payload remains equal to the retained candidate.
 - GitHub Releases exposes all three native archives, `SHA256SUMS` and `candidates.json` under the
   annotated prerelease tag.
 - Each GHCR identity exposes one index containing Linux AMD64 and ARM64 and has GitHub provenance
