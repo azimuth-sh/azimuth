@@ -19,11 +19,26 @@ logs.
 
 ## Interrupted publication
 
-The real operation supplies evidence unavailable to synthetic rehearsal. If it stops after any
-successful immutable publication, the next run must retrieve that target as exact, preserve it and
-select only the missing set. An uninterrupted first run cannot demonstrate this branch; in that
-case the synthetic exhaustive mutation evidence remains the detector qualification and the public
-receipt establishes only complete publication.
+The real operation supplies evidence unavailable to synthetic rehearsal. Run 31902402263 stopped
+at npm after six targets became publicly retrievable. Read-only run 31902521510 preserved those six
+and selected four package targets. The two NuGet absences were observed only two minutes after the
+write attempt and may reflect indexing delay, so another observation is required before resumption.
+The final rerun must retrieve every settled exact target, preserve it and select only the remaining
+missing set.
+
+Read-only run 31902967972 later retrieved both NuGet packages but rejected their raw checksums.
+Direct inspection found that every retained path and payload remained equal and NuGet.org had added
+only `.signature.p7s`; `dotnet nuget verify --all` accepted both repository signatures and reported
+the same content hashes for the retained and published forms. Regression evidence must vary archive
+order and signature bytes without changing payload identity, and must reject an invalid signature
+or changed payload.
+
+Targeted rerun attempt 2 of run 31902402263 preserved the tagged SHA but GitHub skipped the
+image-provenance job again because its failed dependency remained failed. This establishes that job
+rerun is not a recovery mechanism for this dependency shape. The repair path instead requires two
+independent attestation lookups around the deterministic OCI index mapping: retained archive at the
+candidate revision and published digest at the recorded publication revision. Removing either
+lookup must fail completion.
 
 ## Public completion
 

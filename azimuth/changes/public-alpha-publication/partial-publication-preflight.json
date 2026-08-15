@@ -1,0 +1,53 @@
+{
+  "format": "azimuth-publication-preflight",
+  "schemaVersion": 1,
+  "observedAt": "2026-08-15T18:57:33+00:00",
+  "tag": "v0.1.0-alpha.1",
+  "revision": "49d350b9d3cacc1cfddd8874b97ba67301090960",
+  "rehearsalRun": "31901952648",
+  "failedPublicationRunUrl": "https://github.com/azimuth-sh/azimuth/actions/runs/31902402263",
+  "observationRunUrl": "https://github.com/azimuth-sh/azimuth/actions/runs/31902521510",
+  "candidateAccountSha256": "83576507f778b0103fe61f0eb0efe344f105e3a7486cd9384828ceea8664dc9d",
+  "stateSha256": "f4ac11556db984cf06dbe1a46c4bf62e04fc8e7629c7082abb52ffbe672864a4",
+  "plan": {
+    "publish": [
+      "package:dotnet-annotations",
+      "package:dotnet-emitter",
+      "package:typescript-annotations",
+      "package:typescript-emitter"
+    ],
+    "preserve": [
+      "image:assurance-api",
+      "image:assurance-web",
+      "native:aarch64-apple-darwin",
+      "native:x86_64-pc-windows-msvc",
+      "native:x86_64-unknown-linux-gnu",
+      "package:rust-cli-core"
+    ]
+  },
+  "credentials": {
+    "cargo": {
+      "configured": true,
+      "authenticated": null,
+      "limitation": "A publish-new scoped token has no non-publishing identity probe; authorization is first observed by the registry write"
+    },
+    "nuget": {
+      "configured": true,
+      "authenticated": null,
+      "limitation": "NuGet exposes no non-publishing API-key authorization probe"
+    },
+    "npm": {
+      "configured": true,
+      "identity": "mitro52",
+      "organizationAdmin": true
+    },
+    "github": {
+      "configured": true,
+      "repositoryWrite": null,
+      "packageWrite": null,
+      "limitation": "GitHub Release and GHCR write permission are first observed by their registry writes; the workflow declaration bounds both tokens"
+    },
+    "ready": true
+  },
+  "writes": 0
+}

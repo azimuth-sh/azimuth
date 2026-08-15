@@ -2,7 +2,7 @@
 
 ## Claim: ordinary-ci-excludes-release-only-matrix
 Verdict: sound
-Fingerprint: afeacdd98483c953
+Fingerprint: 8a0bd10d3788a4fe
 Judged: 2026-08-15
 Judge: Codex
 
@@ -18,7 +18,7 @@ the diagnostic run only confirms that the identity revision did not introduce th
 
 ## Claim: selected-lanes-are-independent
 Verdict: sound
-Fingerprint: 3f602e5ff9e0e835
+Fingerprint: 7cdcd68c5bcff494
 Judged: 2026-08-15
 Judge: Codex
 
@@ -32,7 +32,7 @@ account and that observed failure boundary.
 
 ## Claim: complete-account-needs-every-lane
 Verdict: sound
-Fingerprint: 6e3979c8b3d299e4
+Fingerprint: 8eacdb862603c77d
 Judged: 2026-08-15
 Judge: Codex
 
@@ -45,7 +45,7 @@ catalog population, so the component-universal tag is honest.
 
 ## Claim: tag-catalog-and-revision-agree
 Verdict: sound
-Fingerprint: 089c602b0715038b
+Fingerprint: 1993ae68cca543e8
 Judged: 2026-08-15
 Judge: Codex
 
@@ -70,9 +70,14 @@ tag value. The focused wrong-checkout test observes both tag commands and requir
 root as their working directory; resolving either command against the agent's current checkout no
 longer passes.
 
+The repaired workflow can accept the immutable candidate tag explicitly when orchestration runs
+from a later reviewed revision. Candidate authority is unchanged: the account, rehearsal revision
+and peeled tag must still agree. The separately recorded publication revision identifies the code
+that performed the external operation and cannot substitute for any candidate-side comparison.
+
 ## Claim: retained-downloads-have-checksums
 Verdict: sound
-Fingerprint: 1d6bd5fad596f352
+Fingerprint: 8a344a77410f6c01
 Judged: 2026-08-15
 Judge: Codex
 
@@ -90,26 +95,36 @@ digest for retained-byte identity. The image-provenance job now downloads the co
 population and runs the same verifier before deriving its registry-attestation subject; a partial
 or substituted cross-run download therefore fails at that second consumption boundary too.
 
+NuGet.org repository signing changes raw archive bytes after publication. The revised account keeps
+the retained archive SHA-256 for provenance and derives a separate path-and-payload digest that
+excludes only `.signature.p7s`. The regression changes signature bytes and ZIP order without
+changing that digest, then changes a payload and requires a different digest. The public adapter
+also requires `dotnet nuget verify --all` to report a repository signature before it can represent
+the retained checksum as the published candidate identity.
+
 ## Claim: executable-subjects-have-provenance
 Verdict: sound
-Fingerprint: fc58cedd783a0bb8
+Fingerprint: 377eff7999045d64
 Judged: 2026-08-15
 Judge: Codex
 
 I inspected each provenance step and queried GitHub's attestation API using the ten retained
-SHA-256 digests from run 31883286632. The signed bundle population contains all five package
-subjects plus each of the three native archives and two OCI archives; every bundle names workflow
-`.github/workflows/release.yml` and execution revision
-`7f2d78ed982e05c9a316fa18ade8e3592fdaa86c`. A missing or substituted subject would fail the
-receipt population or digest lookup. The judgment does not extend this to future GHCR image
-digests. The owner workflow now names each published index digest and requests registry-attached
-GitHub provenance after publication, but that path has not executed. The rollout-dependent
-limitation therefore remains the claim's explicit accepted residual rather than becoming evidence
-from workflow text.
+SHA-256 digests from exact-candidate run 31901952648. The signed bundle population contains all five
+package subjects plus each of the three native archives and two OCI archives; every bundle names
+workflow `.github/workflows/release.yml` and execution revision
+`49d350b9d3cacc1cfddd8874b97ba67301090960`. A missing or substituted subject would fail the
+receipt population or digest lookup.
+
+The repaired image path permits direct provenance when candidate and publication revisions agree,
+or a chain when immutable public targets force a later orchestration repair. The chain test requires
+retained-archive provenance at the candidate revision and published-digest provenance at the
+publication revision; removing either lookup fails. Deterministic OCI inspection already binds the
+two digests. This is component evidence for the guard, not operational evidence that the two public
+image digests have now been attested. That rollout-dependent limitation remains explicit.
 
 ## Claim: packed-packages-install
 Verdict: sound
-Fingerprint: a2c1d76712ab657a
+Fingerprint: c5896b4f55115161
 Judged: 2026-08-15
 Judge: Codex
 
@@ -123,7 +138,7 @@ would fail before the lane artifact is accepted.
 
 ## Claim: native-binaries-run
 Verdict: sound
-Fingerprint: b5a27e8d414fdd11
+Fingerprint: 006fbcdacb2ef8aa
 Judged: 2026-08-15
 Judge: Codex
 
@@ -135,7 +150,7 @@ selected runner, so the universal population is the complete three-target catalo
 
 ## Claim: selected-image-platforms-start
 Verdict: sound
-Fingerprint: b52beec44782c9d2
+Fingerprint: 300be7fa446593db
 Judged: 2026-08-15
 Judge: Codex
 
@@ -148,7 +163,7 @@ are covered.
 
 ## Claim: exact-existing-target-is-preserved
 Verdict: sound
-Fingerprint: 152a1808d362cab5
+Fingerprint: af97bb976926bc7e
 Judged: 2026-08-15
 Judge: Codex
 
@@ -166,9 +181,20 @@ planner for a target classified exact. The npm adapter also rejects non-HTTPS an
 tarball locations before reading bytes, so remote metadata cannot substitute an unrelated local or
 network source while retaining an exact classification.
 
+Write run 31902402263 stopped at npm after a partial release. Read-only run 31902521510 then
+retrieved both images, all three native archives and the Rust crate as exact and preserved those six
+while selecting four package targets. This is direct operational evidence for a heterogeneous
+partial state, not a replacement for the catalog-derived universal evidence.
+
+Later read-only run 31902967972 retrieved both NuGet packages but the former raw-byte adapter called
+their provider-added repository signatures conflicts. Direct comparison found every retained path
+and payload equal, and the official NuGet verifier accepted both signatures and reported the same
+content hashes as the retained candidates. The repaired adapter classified both payload identities
+as exact locally; a hosted preflight must still establish the eight-target preservation account.
+
 ## Claim: absent-target-is-selected
 Verdict: sound
-Fingerprint: 082c53f0baab7398
+Fingerprint: 992671b2f865e82f
 Judged: 2026-08-15
 Judge: Codex
 
@@ -183,9 +209,14 @@ retained account and observed state before dispatch. The adapter tests deliberat
 detector evidence: one selected-write example does not replace the existing universal
 catalog-derived absence mutation.
 
+The same read-only run observed both NuGet identities absent two minutes after the failed write
+operation. That observation does not prove the preceding push was rejected rather than still
+indexing. Selection remains the specified planner result, but recovery must wait for a later public
+observation before treating a newly written provider's immediate absence as permission to retry.
+
 ## Claim: conflicting-target-fails
 Verdict: sound
-Fingerprint: ab84db116ba17b36
+Fingerprint: 87490fe610a22d01
 Judged: 2026-08-15
 Judge: Codex
 
@@ -202,9 +233,13 @@ Focused fixtures now exercise malformed Cargo, npm, GitHub Release and GHCR resp
 command failure. This realizes fail-closed public observation without overstating those provider
 fixtures as new universal Covers evidence.
 
+The NuGet detector additionally rejects an invalid or absent repository signature before planning,
+and a non-signature payload mutation yields a conflicting checksum. Excluding `.signature.p7s`
+therefore does not turn provider signing into a general content exception.
+
 ## Claim: completion-needs-public-retrieval
 Verdict: sound
-Fingerprint: be20f06edea7c1e3
+Fingerprint: 2111b66fe1a1dc14
 Judged: 2026-08-15
 Judge: Codex
 
@@ -216,3 +251,9 @@ fresh public retrieval. The claim and design now bind concrete package, GitHub R
 adapters plus a post-provenance completion job. No public completion receipt exists, so the
 accepted rollout-dependent residual remains. This verdict does not authorize calling the alpha
 publication complete before real public reads discharge it.
+
+The partial operation and follow-up observations do not discharge that residual. Eight targets are
+now publicly retrievable with matching content identities, but the two npm packages remain absent
+and both images still lack published-digest provenance. Targeted rerun attempt 2 of run 31902402263
+preserved the candidate SHA but GitHub skipped the provenance job again because its failed
+dependency remained failed; workflow text and a skipped job cannot satisfy the public oracle.

@@ -15,6 +15,13 @@ contacting a writable registry. The account revision must equal the peeled tag r
 rehearsal run source revision. Rebuilding in the publication workflow is forbidden because a
 successful build would still produce bytes outside the reviewed retained account.
 
+The workflow may run from a later reviewed repair revision when the immutable candidate tag is
+supplied explicitly. The candidate account and rehearsal must still name the peeled tag revision;
+the completion receipt records the separate publication revision. Image provenance is direct when
+both revisions are equal. Otherwise, completion requires candidate-revision provenance for the
+retained OCI archive, deterministic equality between that archive's index and the public digest,
+and publication-revision provenance for the public digest.
+
 Pull-request rehearsals replace the catalog tag only in their local checkout, because an existing
 public tag may name the preceding candidate while a repair is under review. Owner-dispatched
 rehearsals do not replace an existing tag, so the publication input remains bound to the operator's
@@ -43,6 +50,15 @@ authenticated access.
 
 Registry writes remain independent because no cross-registry transaction exists (CAR12). Each
 adapter receives the planner-selected keys for its registry and publishes exact retained files.
+The npm adapter derives a non-`latest` distribution tag from a prerelease channel such as `alpha`
+or `rc`; stable versions use `latest`. npm rejects prerelease publication without that explicit
+channel.
+NuGet.org adds a repository signature during ingestion, so its downloadable archive is not
+byte-identical to the retained unsigned candidate. The adapter requires the official NuGet
+signature verifier to accept that archive, compares every non-signature path and payload through a
+signature-independent digest, and records both the public archive digest and retained provenance
+digest. Treating the added `.signature.p7s` entry as a conflict would make every successful
+NuGet.org publication irrecoverable.
 After any failure, the workflow stops; a rerun starts with fresh public reads and therefore
 preserves successful immutable targets while selecting only those still absent.
 
@@ -56,11 +72,15 @@ Publication success is insufficient. A final adapter pass retrieves package vers
 identities, GitHub Release asset digests and GHCR index/platform digests. The accepted completion
 checker compares that closed population with the retained account. Its receipt records the tag,
 source revision, rehearsal run, publication run, observation time and normalized public state.
+When repaired orchestration executes after the candidate tag, it also records the distinct
+publication revision.
 
 ## Failure boundaries
 
 - A missing or lightweight tag fails before registry access.
 - A rehearsal run from another revision fails before credential checks.
+- An explicitly supplied candidate tag that does not match the retained account fails before
+  registry access.
 - A missing credential or unauthorized `@azimuth-sh` scope fails before the first write. An
   unprobeable write authorization fails at its first provider write and leaves later reruns to the
   closed-world planner.
@@ -68,5 +88,9 @@ source revision, rehearsal run, publication run, observation time and normalized
 - A conflict in any registry suppresses the complete publication plan.
 - A mid-operation failure leaves already published immutable targets intact and produces no
   completion receipt.
+- A provider may accept a write before its public read surface exposes it. Recovery waits for that
+  state to settle and repeats the no-write preflight before selecting another write.
+- An invalid NuGet repository signature or a changed non-signature payload fails before the
+  settled package can be preserved.
 - A public target without the required checksum, platform population or provenance prevents
   completion even when its version string exists.

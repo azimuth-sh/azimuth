@@ -27,6 +27,9 @@ Criticality: critical
 Every retained first-alpha candidate SHALL remain attributable to one tagged source revision until
 public verification completes.
 
+*(revised)* Attribution may be direct or may chain a retained candidate to a separately attested
+publication operation when immutable provider state forces an orchestration repair.
+
 ### Scenario: tag-catalog-and-revision-agree
 WHEN a release candidate account is assembled
 THEN its tag and version match the release catalog
@@ -40,7 +43,7 @@ AND later use rejects any byte change
 ### Scenario: executable-subjects-have-provenance
 WHEN a downloadable candidate or container image is published
 THEN GitHub build provenance identifies its exact checksum or image digest
-AND the provenance names the tagged source revision
+AND direct provenance or a retained-to-published provenance chain names the tagged source revision
 
 ## Requirement: qualified-candidates-compose
 Criticality: standard
