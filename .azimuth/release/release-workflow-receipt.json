@@ -2,13 +2,13 @@
   "format": "azimuth-release-workflow-receipt",
   "schemaVersion": 1,
   "workflow": ".github/workflows/release.yml",
-  "sourceRevision": "1d50936aa9384b45def6fef9bb6817aa5dca526b",
-  "executionRevision": "7d55069e8c9400a15001c23d6f177680d9495a17",
-  "runUrl": "https://github.com/drim-dev/azimuth/actions/runs/31860141686",
+  "sourceRevision": "2e60a5c8399ef0af7c8a6dba685f3af8ffa2fbcf",
+  "executionRevision": "bbe909363bd13a855fa482696b34b19177eac0fe",
+  "runUrl": "https://github.com/drim-dev/azimuth/actions/runs/31862856073",
   "conclusion": "success",
-  "workflowSha256": "69de894e98c179655b21fbdf1866aa25ea8115c00cbcc42b9becee3438a653d4",
-  "accountSha256": "d8e1a5ee31b849b6468c807f1db4f06ec22800cd9a732b589b6dceeec47392f9",
-  "consumerSha256": "398f2002b4fefeb2e7c49c24b14c5078830aea4ca24ebfd0ac9b847865ef8e22",
+  "workflowSha256": "156859b649274767f1fcd831b168365dac5426c78b83fdf11d829b2662002136",
+  "accountSha256": "5ece41c03b7805ca8f216c53795a392be536ef8fb3e8e77af7617728d179720b",
+  "consumerSha256": "b920ff9c17d3a6a8029cd24c0231b4017a8a9684bff04b8b7bbd4ae9cfb54f19",
   "jobs": [
     "packages",
     "native:x86_64-unknown-linux-gnu",
@@ -42,5 +42,5 @@
     "assurance-api.oci.tar",
     "assurance-web.oci.tar"
   ],
-  "candidateAccountSha256": "8b3e293debb617f9dc4695b4da0fd2107758c8c375afd98e46e7d21631c09059"
+  "candidateAccountSha256": "5dc651dd73e26703f0784e51387bf353c938df5d9181fa270451733147572e71"
 }
