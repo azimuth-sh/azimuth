@@ -1,8 +1,9 @@
 # Azimuth
 
-Canonical repository for the Azimuth framework. The repository must build, test, release and
-accept framework changes without a checkout of Drim, the ride-hailing fixture or any other domain.
-Immutable citations may preserve provenance; executable or acceptance dependencies may not.
+Frozen distribution repository for the first Azimuth alpha. Framework development happens in the
+development repository; this release must build, test and publish without a checkout of Drim, the
+ride-hailing fixture or any other domain. Immutable citations may preserve provenance; executable
+or acceptance dependencies may not.
 
 ## Orientation
 

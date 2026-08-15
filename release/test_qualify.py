@@ -1,6 +1,4 @@
 import copy
-import json
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -34,6 +32,12 @@ class ReleaseQualificationTests(unittest.TestCase):
             "version": lambda item: item["release"].__setitem__("version", "0.1.0-alpha.2"),
             "tag": lambda item: item["release"].__setitem__("tag", "v0.1.0-alpha.2"),
             "license": lambda item: item["release"].__setitem__("license", "MIT"),
+            "repository": lambda item: item["release"].__setitem__(
+                "repository", "https://example.invalid/source"
+            ),
+            "homepage": lambda item: item["release"].__setitem__(
+                "homepage", "https://example.invalid"
+            ),
             "identities": lambda item: item["packages"][0].__setitem__("identity", "other"),
             "nativeTargets": lambda item: item["nativeBinaries"]["targets"].pop(),
             "imagePlatforms": lambda item: item["images"][0]["platforms"].pop(),

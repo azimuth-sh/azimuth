@@ -1,5 +1,5 @@
 {
-  "name": "@azimuth/emit",
+  "name": "@azimuth-sh/emit",
   "version": "0.1.0-alpha.1",
   "description": "Static-scan emitter: TypeScript linkage tags to the Azimuth manifest.",
   "license": "Apache-2.0",
@@ -23,10 +23,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/drim-dev/azimuth.git",
+    "url": "git+https://github.com/azimuth-sh/azimuth.git",
     "directory": "tools/extractors/typescript"
   },
-  "homepage": "https://github.com/drim-dev/azimuth/tree/main/tools/extractors/typescript",
+  "homepage": "https://azimuth.sh",
   "publishConfig": { "access": "public" },
   "bin": {
     "azimuth-emit-ts": "dist/cli.js",

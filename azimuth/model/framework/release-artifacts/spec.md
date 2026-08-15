@@ -13,10 +13,12 @@ THEN it matches version `0.1.0-alpha.1` and tag `v0.1.0-alpha.1`
 ### Scenario: registry-identities-match-contract
 WHEN a selected artifact is packed for its public registry
 THEN its native metadata names the identity declared by the release contract
+AND its source metadata names `https://github.com/azimuth-sh/azimuth`
+AND its homepage metadata names `https://azimuth.sh`
 AND package identities include `azimuth`, `Azimuth.Annotations` and `Azimuth.Emit`
-AND package identities also include `@azimuth/annotations` and `@azimuth/emit`
-AND image identities include `ghcr.io/drim-dev/azimuth-assurance-api`
-AND image identities also include `ghcr.io/drim-dev/azimuth-assurance-web`
+AND package identities also include `@azimuth-sh/annotations` and `@azimuth-sh/emit`
+AND image identities include `ghcr.io/azimuth-sh/azimuth-assurance-api`
+AND image identities also include `ghcr.io/azimuth-sh/azimuth-assurance-web`
 
 ### Scenario: packed-contents-are-bounded-and-licensed
 WHEN a selected package candidate is built

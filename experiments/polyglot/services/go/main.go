@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"os"
 
-	azimuth "github.com/drim-dev/azimuth-go/azimuth"
+	azimuth "github.com/azimuth-sh/azimuth-go/azimuth"
 )
 
 func identity() string {

@@ -5,7 +5,8 @@
     "version": "0.1.0-alpha.1",
     "tag": "v0.1.0-alpha.1",
     "license": "Apache-2.0",
-    "repository": "https://github.com/drim-dev/azimuth"
+    "repository": "https://github.com/azimuth-sh/azimuth",
+    "homepage": "https://azimuth.sh"
   },
   "packages": [
     {
@@ -58,7 +59,7 @@
     {
       "id": "typescript-annotations",
       "ecosystem": "npm",
-      "identity": "@azimuth/annotations",
+      "identity": "@azimuth-sh/annotations",
       "manifest": "packages/typescript/package.json",
       "requiredFiles": ["package/package.json", "package/dist/index.js", "package/dist/index.d.ts"],
       "allowedFiles": ["package/package.json", "package/dist/index.js", "package/dist/index.d.ts"]
@@ -66,7 +67,7 @@
     {
       "id": "typescript-emitter",
       "ecosystem": "npm",
-      "identity": "@azimuth/emit",
+      "identity": "@azimuth-sh/emit",
       "manifest": "tools/extractors/typescript/package.json",
       "requiredFiles": ["package/package.json", "package/dist/cli.js", "package/dist/emitter.js"],
       "allowedFiles": ["package/package.json", "package/dist/*.js"]
@@ -75,7 +76,7 @@
   "images": [
     {
       "id": "assurance-api",
-      "identity": "ghcr.io/drim-dev/azimuth-assurance-api",
+      "identity": "ghcr.io/azimuth-sh/azimuth-assurance-api",
       "context": ".",
       "dockerfile": "services/assurance/server/Dockerfile",
       "versionManifest": "services/assurance/Cargo.toml",
@@ -83,7 +84,7 @@
     },
     {
       "id": "assurance-web",
-      "identity": "ghcr.io/drim-dev/azimuth-assurance-web",
+      "identity": "ghcr.io/azimuth-sh/azimuth-assurance-web",
       "context": "services/assurance/web",
       "dockerfile": "services/assurance/web/Dockerfile",
       "versionManifest": "services/assurance/web/package.json",

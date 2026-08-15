@@ -2,15 +2,17 @@ APPROVED_CONTRACT = {
     "version": "0.1.0-alpha.1",
     "tag": "v0.1.0-alpha.1",
     "license": "Apache-2.0",
+    "repository": "https://github.com/azimuth-sh/azimuth",
+    "homepage": "https://azimuth.sh",
     "identities": sorted(
         [
             "azimuth",
             "Azimuth.Annotations",
             "Azimuth.Emit",
-            "@azimuth/annotations",
-            "@azimuth/emit",
-            "ghcr.io/drim-dev/azimuth-assurance-api",
-            "ghcr.io/drim-dev/azimuth-assurance-web",
+            "@azimuth-sh/annotations",
+            "@azimuth-sh/emit",
+            "ghcr.io/azimuth-sh/azimuth-assurance-api",
+            "ghcr.io/azimuth-sh/azimuth-assurance-web",
         ]
     ),
     "nativeTargets": sorted(
@@ -21,8 +23,8 @@ APPROVED_CONTRACT = {
         ]
     ),
     "imagePlatforms": {
-        "ghcr.io/drim-dev/azimuth-assurance-api": ["linux/amd64", "linux/arm64"],
-        "ghcr.io/drim-dev/azimuth-assurance-web": ["linux/amd64", "linux/arm64"],
+        "ghcr.io/azimuth-sh/azimuth-assurance-api": ["linux/amd64", "linux/arm64"],
+        "ghcr.io/azimuth-sh/azimuth-assurance-web": ["linux/amd64", "linux/arm64"],
     },
     "supportedSurfaces": sorted(
         [

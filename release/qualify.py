@@ -61,7 +61,7 @@ def validate_catalog(catalog, root):
     require(catalog.get("format") == "azimuth-release-artifacts", "catalog format is unsupported")
     require(catalog.get("schemaVersion") == 1, "catalog schemaVersion is unsupported")
     release = catalog.get("release", {})
-    for field in ("version", "tag", "license", "repository"):
+    for field in ("version", "tag", "license", "repository", "homepage"):
         require(release.get(field), f"release.{field} is required")
 
     packages = catalog.get("packages", [])
@@ -121,6 +121,7 @@ def native_package_metadata(package, root):
             "version": data["version"],
             "license": data["license"],
             "repository": data["repository"],
+            "homepage": data["homepage"],
         }
     if ecosystem == "npm":
         data = read_json(manifest)
@@ -132,6 +133,7 @@ def native_package_metadata(package, root):
             "version": data["version"],
             "license": data["license"],
             "repository": repository_url.replace("git+", "").removesuffix(".git"),
+            "homepage": data["homepage"],
         }
 
     project = ElementTree.parse(manifest).getroot()
@@ -141,6 +143,7 @@ def native_package_metadata(package, root):
         "version": values.get("Version"),
         "license": values.get("PackageLicenseExpression"),
         "repository": values.get("RepositoryUrl"),
+        "homepage": values.get("PackageProjectUrl"),
     }
 
 
@@ -153,6 +156,7 @@ def validate_source_metadata(catalog, root):
             "version": release["version"],
             "license": release["license"],
             "repository": release["repository"],
+            "homepage": release["homepage"],
         }
         for field, value in expected.items():
             require(
@@ -169,6 +173,10 @@ def validate_source_metadata(catalog, root):
         require(
             f'org.opencontainers.image.source="{release["repository"]}"' in source,
             f"{image['id']}: Dockerfile source label differs from the catalog",
+        )
+        require(
+            f'org.opencontainers.image.url="{release["homepage"]}"' in source,
+            f"{image['id']}: Dockerfile homepage label differs from the catalog",
         )
         require(
             f'org.opencontainers.image.licenses="{release["license"]}"' in source,
@@ -202,6 +210,8 @@ def approved_contract_differences(catalog, approved):
         "version": release.get("version"),
         "tag": release.get("tag"),
         "license": release.get("license"),
+        "repository": release.get("repository"),
+        "homepage": release.get("homepage"),
         "identities": sorted(
             item.get("identity") for item in catalog.get("packages", []) + catalog.get("images", [])
         ),

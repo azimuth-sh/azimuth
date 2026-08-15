@@ -1,7 +1,7 @@
-module github.com/drim-dev/azimuth-polyglot-go
+module github.com/azimuth-sh/azimuth-polyglot-go
 
 go 1.24
 
-require github.com/drim-dev/azimuth-go v0.0.0
+require github.com/azimuth-sh/azimuth-go v0.0.0
 
-replace github.com/drim-dev/azimuth-go => ../../../../packages/go
+replace github.com/azimuth-sh/azimuth-go => ../../../../packages/go

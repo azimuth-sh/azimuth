@@ -4,9 +4,9 @@ Azimuth keeps intent, implementation linkage, evidence and agent judgment in one
 project account. The command-line tool checks local model packages and can assemble revision-bound
 accounts across repositories without making a hosted service authoritative.
 
-This repository is the canonical source for the framework. Version `0.1.0-alpha.1` is the selected
-first public alpha contract; it is not published until the release operation verifies every
-registry target.
+This repository is the frozen distribution source for version `0.1.0-alpha.1`. The selected first
+public alpha contract is not published until the release operation verifies every registry target.
+The canonical product site is <https://azimuth.sh>.
 
 ## Repository layout
 

@@ -28,6 +28,7 @@ ROOT_GATE = PurePosixPath("scripts/check.sh")
 POLYGLOT_GATE = PurePosixPath("experiments/polyglot/check.sh")
 WORKFLOW = PurePosixPath(".github/workflows/ci.yml")
 REFERENCE_FIXTURES = {PurePosixPath("release/test_isolate_experiments.py")}
+EVIDENCE_REPOSITORIES = {"drim-dev/azimuth", "azimuth-sh/azimuth"}
 PINNED_DOMAIN_URL = re.compile(
     r"https://github\.com/drim-dev/azimuth-demo/(?:blob|tree)/"
     r"(?P<revision>[0-9a-f]{40})(?:/[^\s)\]}>]*)?"
@@ -293,7 +294,6 @@ def validate_workflow_receipt(
     expected = {
         "format": "azimuth-github-workflow-receipt",
         "schemaVersion": 1,
-        "repository": "drim-dev/azimuth",
         "workflow": str(WORKFLOW),
         "conclusion": "success",
         "accountFingerprint": account_fingerprint,
@@ -303,6 +303,11 @@ def validate_workflow_receipt(
             receipt.get(field) == value,
             f"workflow receipt {field} is {receipt.get(field)!r}, expected {value!r}",
         )
+    repository = receipt.get("repository", "")
+    require(
+        repository in EVIDENCE_REPOSITORIES,
+        "workflow receipt repository does not identify an accepted Actions repository",
+    )
     receipt_revision = receipt.get("revision", "")
     require(
         re.fullmatch(r"[0-9a-f]{40}", receipt_revision) is not None,
@@ -315,12 +320,12 @@ def validate_workflow_receipt(
     )
     run_url = receipt.get("runUrl", "")
     require(
-        re.fullmatch(r"https://github\.com/drim-dev/azimuth/actions/runs/[0-9]+", run_url),
+        re.fullmatch(rf"https://github\.com/{re.escape(repository)}/actions/runs/[0-9]+", run_url),
         "workflow receipt runUrl does not identify a canonical Actions run",
     )
     return {
         field: receipt[field]
-        for field in (*expected, "revision", "runUrl")
+        for field in (*expected, "repository", "revision", "runUrl")
     }
 
 
