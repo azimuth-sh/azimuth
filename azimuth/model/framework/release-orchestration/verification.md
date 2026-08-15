@@ -31,7 +31,9 @@ Scope: component
 Quantification: universal
 Oracle: direct
 
-Rehearsal uses a temporary annotated tag over the tested revision and rejects independent changes
+Pull-request rehearsal force-updates only its local temporary annotated tag over the tested
+revision, so a fetched public tag cannot make the isolated review run float or fail.
+Owner-dispatched rehearsal honors an existing fetched tag. Both paths reject independent changes
 to tag, version and full revision before any candidate is accepted.
 
 ## Claim: retained-downloads-have-checksums

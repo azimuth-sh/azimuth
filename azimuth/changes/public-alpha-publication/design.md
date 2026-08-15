@@ -15,6 +15,11 @@ contacting a writable registry. The account revision must equal the peeled tag r
 rehearsal run source revision. Rebuilding in the publication workflow is forbidden because a
 successful build would still produce bytes outside the reviewed retained account.
 
+Pull-request rehearsals replace the catalog tag only in their local checkout, because an existing
+public tag may name the preceding candidate while a repair is under review. Owner-dispatched
+rehearsals do not replace an existing tag, so the publication input remains bound to the operator's
+annotated public ref.
+
 ## Reads precede one closed-world plan
 
 Provider adapters normalize public registry responses into the existing planner state. The state

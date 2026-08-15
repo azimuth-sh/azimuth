@@ -223,6 +223,11 @@ def workflow_account(root=ROOT):
         "release image lane has no BuildKit cache output",
     )
     require("actions/attest-build-provenance@v4" in release, "release workflow omits provenance")
+    require(
+        '[[ "$GITHUB_EVENT_NAME" == "pull_request" ]]' in release_jobs["account"]
+        and 'tag --force --annotate "$tag"' in release_jobs["account"],
+        "release pull request does not isolate its synthetic tag",
+    )
     for subject_path in (
         "dist/packages/*",
         "dist/native/${{ matrix.archive }}",
