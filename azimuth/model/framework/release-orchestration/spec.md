@@ -71,6 +71,9 @@ Criticality: critical
 The first-alpha publication SHALL preserve successful immutable targets and resume only targets
 that are absent from retrieved registry state.
 
+*(revised)* Public image retrieval is anonymous; organization or workflow credentials cannot
+contribute to completion.
+
 ### Scenario: exact-existing-target-is-preserved
 GIVEN a registry target whose retrieved identity and digest match the retained candidate
 WHEN publication is resumed
@@ -89,6 +92,7 @@ THEN orchestration fails before any remaining target is published
 ### Scenario: completion-needs-public-retrieval
 WHEN first-alpha publication is evaluated for completion
 THEN every selected package, native archive and image index is retrieved publicly
+AND each image index is retrieved without registry credentials
 AND each retrieved target matches the retained tag, identity, checksum, provenance and platforms
 AND each npm prerelease channel selects its version
 AND `latest` does not select that prerelease when the package has any stable version

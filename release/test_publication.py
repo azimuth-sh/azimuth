@@ -604,10 +604,20 @@ class PublicAlphaPublicationTests(unittest.TestCase):
         raw = json.dumps(manifest, separators=(",", ":")).encode()
         subject = {"key": "image:api", "identity": "ghcr.io/example/api"}
         result = type("Result", (), {"returncode": 0, "stdout": raw, "stderr": b""})()
-        with patch("release.publication.run", return_value=result):
+        with patch("release.publication.run", return_value=result) as inspect:
             checksum, platforms = image_manifest(subject, "0.1.0-alpha.1")
         self.assertEqual(checksum, hashlib.sha256(raw).hexdigest())
         self.assertEqual(platforms, ["linux/amd64", "linux/arm64"])
+        self.assertEqual(
+            inspect.call_args.args[0],
+            [
+                "skopeo",
+                "inspect",
+                "--no-creds",
+                "--raw",
+                "docker://ghcr.io/example/api:0.1.0-alpha.1",
+            ],
+        )
 
     def test_image_state_verifies_the_complete_retained_account(self):
         root = Path("/requested/checkout")
@@ -704,6 +714,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
     def test_publication_workflow_scopes_tokens_and_supplies_complete_image_inputs(self):
         source = (self.root / ".github/workflows/publish.yml").read_text()
         self.assertEqual(source.count("persist-credentials: false"), 3)
+        self.assertEqual(source.count("docker/login-action@v4"), 2)
         self.assertEqual(source.count("attestations: write"), 1)
         self.assertIn("permissions:\n  contents: read\n\njobs:", source)
         self.assertEqual(source.count("pattern: candidates-*"), 3)

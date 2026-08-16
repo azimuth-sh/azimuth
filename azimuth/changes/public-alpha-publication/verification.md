@@ -79,6 +79,15 @@ provenance. The completion receipt is retained as operational evidence and its e
 artifact URLs are recorded in the change outcome. A failed, partial or unverifiable read is a
 release failure, not a residual accepted by elapsed time.
 
+Write-enabled run 31937065763 retained all ten exact targets and emitted a receipt after reading
+GHCR with the workflow token. Independent anonymous reads returned HTTP 403 for both images because
+their packages were private, so that receipt is adverse evidence rather than completion evidence.
+After the owner changed both packages to public, anonymous registry reads returned API digest
+`85c76fa563950b75dc3e5bece5e72618d322aedd9dad965d26dee4679bdac329` and web digest
+`25704694ebb7bebbff77832018ba90fb516d502c5795f78604d27e13b2a6a719`; both indexes contained Linux
+AMD64 and ARM64. Regression evidence must require `skopeo --no-creds` and reject a completion job
+that configures registry authentication. A fresh hosted receipt from that checker remains required.
+
 ## Residual: provider authorization probes vary
 
 The write-enabled run on 2026-08-15 demonstrated that a crates.io `publish-new` token cannot use the

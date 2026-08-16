@@ -2,7 +2,7 @@
 
 ## Claim: ordinary-ci-excludes-release-only-matrix
 Verdict: sound
-Fingerprint: e841d23f87f84254
+Fingerprint: 792f397c8c3e1629
 Judged: 2026-08-16
 Judge: Codex
 
@@ -18,7 +18,7 @@ the diagnostic run only confirms that the identity revision did not introduce th
 
 ## Claim: selected-lanes-are-independent
 Verdict: sound
-Fingerprint: d7d962726c659f6a
+Fingerprint: 172998ec936decd3
 Judged: 2026-08-16
 Judge: Codex
 
@@ -32,7 +32,7 @@ account and that observed failure boundary.
 
 ## Claim: complete-account-needs-every-lane
 Verdict: sound
-Fingerprint: dadf4848fb9cde83
+Fingerprint: a1e3dab1a9ba26c2
 Judged: 2026-08-16
 Judge: Codex
 
@@ -45,7 +45,7 @@ catalog population, so the component-universal tag is honest.
 
 ## Claim: tag-catalog-and-revision-agree
 Verdict: sound
-Fingerprint: 8c07e5989f045035
+Fingerprint: d2c059e7d180ff5b
 Judged: 2026-08-16
 Judge: Codex
 
@@ -77,7 +77,7 @@ that performed the external operation and cannot substitute for any candidate-si
 
 ## Claim: retained-downloads-have-checksums
 Verdict: sound
-Fingerprint: 5f4ffd788197f71c
+Fingerprint: 88ad0bf27184d9b6
 Judged: 2026-08-16
 Judge: Codex
 
@@ -104,7 +104,7 @@ the retained checksum as the published candidate identity.
 
 ## Claim: executable-subjects-have-provenance
 Verdict: sound
-Fingerprint: 85882ac8b20fb6ea
+Fingerprint: 5b5aee8544d9d559
 Judged: 2026-08-16
 Judge: Codex
 
@@ -125,7 +125,7 @@ to retain that operational result in model source before archive.
 
 ## Claim: packed-packages-install
 Verdict: sound
-Fingerprint: 85aaf57ec765e551
+Fingerprint: db5e9cbdd31a23aa
 Judged: 2026-08-16
 Judge: Codex
 
@@ -139,7 +139,7 @@ would fail before the lane artifact is accepted.
 
 ## Claim: native-binaries-run
 Verdict: sound
-Fingerprint: ea0803cfa8a0b11a
+Fingerprint: 31a2e4670c4262c1
 Judged: 2026-08-16
 Judge: Codex
 
@@ -151,7 +151,7 @@ selected runner, so the universal population is the complete three-target catalo
 
 ## Claim: selected-image-platforms-start
 Verdict: sound
-Fingerprint: 0a40b2e74c16e1ff
+Fingerprint: 6d655886d3854c86
 Judged: 2026-08-16
 Judge: Codex
 
@@ -164,7 +164,7 @@ are covered.
 
 ## Claim: exact-existing-target-is-preserved
 Verdict: sound
-Fingerprint: 2e38d07e68664123
+Fingerprint: c31d6ed290194336
 Judged: 2026-08-16
 Judge: Codex
 
@@ -201,7 +201,7 @@ so mutable metadata repair cannot become an excuse to republish immutable conten
 
 ## Claim: absent-target-is-selected
 Verdict: sound
-Fingerprint: 86ab2da04854778a
+Fingerprint: 599423fee476d567
 Judged: 2026-08-16
 Judge: Codex
 
@@ -228,7 +228,7 @@ enters both sets because its first publish must also establish channel metadata.
 
 ## Claim: conflicting-target-fails
 Verdict: sound
-Fingerprint: 1aea39df7f13bf5c
+Fingerprint: daa8bf71340bdcef
 Judged: 2026-08-16
 Judge: Codex
 
@@ -251,7 +251,7 @@ therefore does not turn provider signing into a general content exception.
 
 ## Claim: completion-needs-public-retrieval
 Verdict: sound
-Fingerprint: e8dd236c2e6522fb
+Fingerprint: 5fb964fcbb6a17b4
 Judged: 2026-08-16
 Judge: Codex
 
@@ -273,3 +273,11 @@ fresh WebAuthn-authorized deletion received HTTP 400. The npm registry package c
 mandatory alias when no stable version exists and refuses to guess a stable target otherwise. The
 verdict is sound for the revised component guard; the rollout residual remains until a new hosted
 run and independent reads retain the corrected public account.
+
+I also inspected the image adapter's exact command and the workflow account. The adapter passes
+`--no-creds` to `skopeo`, the completion job has no registry login, and the command-shape test plus
+workflow guard reject removing either boundary. This distinguishes public retrieval from the wrong
+implementation observed in run 31937065763, where an organization token made two private images
+appear retrievable. Independent anonymous reads first reproduced HTTP 403, then returned both
+retained index digests after the owner changed package visibility. The component evidence is
+toothy for supplied state and command shape; a fresh hosted receipt remains the rollout condition.

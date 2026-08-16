@@ -3,7 +3,7 @@
 Status: approved
 
 Exploration: canonical-alpha-release
-Revision: independent-public-identity
+Revision: anonymous-public-image-retrieval
 Carries decisions: CAR5, CAR11, CAR12, CAR13, IPI1, IPI2, IPI3, IPI4; completes change-map node F
 
 Intent delta: none
@@ -64,6 +64,14 @@ then rejected before its first deletion, and an interactive WebAuthn-authorized 
 HTTP 400. The npm registry package contract requires `latest`; these second observations falsify
 the proposed removal, not the immutable release. The revised planner records stable versions and
 accepts this alias only while none exist.
+
+Write-enabled run 31937065763 then passed the corrected npm rule and emitted a ten-target receipt,
+but the completion job had authenticated to GHCR before reading both images. Independent anonymous
+reads returned HTTP 403 because both container packages retained their default private visibility.
+This falsified authenticated retrieval as evidence of public availability. After the owner made
+both packages public, anonymous reads returned the retained index digests and selected platform
+sets. The checker is revised in place because public retrieval was already the stated predicate;
+it now makes the absence of registry credentials observable.
 
 ## Outcome
 
@@ -145,8 +153,8 @@ results; a missing credential or registry target remains a named incomplete cond
   accepts it and every non-signature payload remains equal to the retained candidate.
 - GitHub Releases exposes all three native archives, `SHA256SUMS` and `candidates.json` under the
   annotated prerelease tag.
-- Each GHCR identity exposes one index containing Linux AMD64 and ARM64 and has GitHub provenance
-  bound to its published digest.
+- Each GHCR identity exposes one anonymously retrievable index containing Linux AMD64 and ARM64
+  and has GitHub provenance bound to its published digest.
 - Fresh public retrieval after publication passes the accepted completion checker for all ten
   subjects and records an immutable completion receipt.
 - Unit tests, a no-write hosted preflight, the complete repository gate and the actual publication

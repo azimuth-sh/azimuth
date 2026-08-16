@@ -121,6 +121,9 @@ empty, because the registry package contract requires a `latest` tag. Once a sta
 the same alias is drift and completion fails without guessing the owner's intended stable target.
 Exact tarballs remain preserved while mutable channel metadata is considered separately. A passed
 receipt remains rollout-dependent until the release operation retrieves real public targets.
+Image retrieval invokes `skopeo --no-creds`, and the hosted completion job has no registry login.
+The command-shape test and workflow mutation guard therefore reject an implementation that lets an
+organization credential make a private GHCR image satisfy the public predicate.
 
 ## Residual: registry-credentials-are-not-rehearsed
 Accepted: write authorization is provider-dependent; discharge from the publication operation
@@ -140,6 +143,15 @@ WebAuthn-authorized removal reached the registry but returned HTTP 400. The regi
 requires at least the `latest` dist-tag, so the attempted repair falsified the prior oracle rather
 than the public package state. The release remains incomplete until a fresh operation records the
 empty stable-version populations and passes the corrected completion oracle.
+
+Write-enabled run 31937065763 passed the npm rule and retained ten exact immutable targets, but its
+GHCR reads followed a workflow registry login. Independent anonymous reads then returned HTTP 403
+for both images, proving that the packages were private and falsifying that receipt as public
+completion evidence. After the owner changed both packages to public, anonymous registry-protocol
+reads returned index digests
+`85c76fa563950b75dc3e5bece5e72618d322aedd9dad965d26dee4679bdac329` and
+`25704694ebb7bebbff77832018ba90fb516d502c5795f78604d27e13b2a6a719`, each with Linux AMD64 and
+ARM64. A new hosted receipt from the anonymous checker remains required.
 
 ## Residual: provenance-is-not-a-complete-supply-chain-account
 Accepted: first alpha scope from CAR13; revisit before stable or consumer demand
