@@ -274,6 +274,8 @@ def publication_workflow_account(root=ROOT):
             "completion does not wait for publication and provenance")
     require("--publication-revision" in jobs["complete"],
             "completion omits the executing revision")
+    require("docker/login-action" not in jobs["complete"],
+            "completion authenticates before public image retrieval")
     return {
         "trigger": "workflow_dispatch",
         "candidateBuilds": 0,
@@ -416,7 +418,13 @@ def github_asset_bytes(asset):
 
 def image_manifest(subject, version):
     result = run(
-        ["skopeo", "inspect", "--raw", f"docker://{subject['identity']}:{version}"],
+        [
+            "skopeo",
+            "inspect",
+            "--no-creds",
+            "--raw",
+            f"docker://{subject['identity']}:{version}",
+        ],
         check=False,
     )
     if result.returncode != 0:

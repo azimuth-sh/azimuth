@@ -66,4 +66,6 @@ Inspect the retained `publication-preflight` artifact before dispatching with `d
 write run re-reads every registry, rederives the plan and publishes only its absent set. A rerun
 after interruption preserves exact public targets. The workflow emits `public-release-completion`
 only after post-publication retrieval validates all ten targets, GitHub Release support assets,
-GHCR platform sets and provenance against the retained account.
+GHCR platform sets and provenance against the retained account. GHCR inspection always uses
+`skopeo --no-creds`, and the completion job configures no registry login, so an organization member
+or workflow token cannot make a private image satisfy public retrieval.

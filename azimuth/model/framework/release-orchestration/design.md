@@ -49,8 +49,10 @@ population are mutable metadata, so exact npm tarballs with channel drift enter 
 normalization set without leaving the immutable preserve set. The owner-dispatched publication
 workflow downloads the tag-bound rehearsal
 outputs rather than rebuilding them. Provider adapters retrieve package bytes, npm distribution
-tags, GitHub Release assets and GHCR index manifests into the closed-world state. A credential gate
-checks presence plus provider-supported non-mutating identity before the first write. npm
+tags, GitHub Release assets and GHCR index manifests into the closed-world state. GHCR inspection
+uses `skopeo --no-creds`, and the completion job configures no registry login, because an
+authenticated organization read does not establish public availability. A credential gate checks
+presence plus provider-supported non-mutating identity before the first write. npm
 publication derives an explicit distribution tag from the release's prerelease channel; stable
 versions use `latest`. The npm registry package model requires `latest`, so a package whose only
 versions are prereleases may expose the selected prerelease at both its explicit channel and

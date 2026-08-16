@@ -71,11 +71,14 @@ preserves successful immutable targets while selecting only those still absent.
 The GitHub Release is a prerelease under the annotated tag. Its assets are the three native
 archives, `SHA256SUMS` and `candidates.json`. GHCR publication copies retained OCI layouts into
 versioned multi-platform indexes and attaches GitHub provenance to the resulting index digests.
+Image-state retrieval always passes `--no-creds` to `skopeo`, and the completion job configures no
+registry login. This separates public availability from organization or workflow access.
 
 ## Completion is a new public observation
 
 Publication success is insufficient. A final adapter pass retrieves package versions and content
 identities, npm distribution tags, GitHub Release asset digests and GHCR index/platform digests.
+The GHCR pass is anonymous; authenticated retrieval cannot contribute to completion.
 The accepted completion checker compares that closed population with the retained account and
 rejects a prerelease whose channel does not select it. It also rejects `latest` at that prerelease
 when any stable version exists. Its receipt records the tag, source revision, rehearsal run,
