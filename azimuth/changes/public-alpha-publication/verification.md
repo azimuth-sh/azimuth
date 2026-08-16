@@ -86,7 +86,17 @@ After the owner changed both packages to public, anonymous registry reads return
 `85c76fa563950b75dc3e5bece5e72618d322aedd9dad965d26dee4679bdac329` and web digest
 `25704694ebb7bebbff77832018ba90fb516d502c5795f78604d27e13b2a6a719`; both indexes contained Linux
 AMD64 and ARM64. Regression evidence must require `skopeo --no-creds` and reject a completion job
-that configures registry authentication. A fresh hosted receipt from that checker remains required.
+that configures registry authentication. Those observations made a fresh hosted receipt necessary.
+
+No-write run 31938652438 then retrieved all ten targets with the corrected adapter, selected zero
+writes and zero npm normalizations, and preserved the two expected image index digests. Final run
+31938723090 again preserved all ten targets, attached both image attestations and completed an
+anonymous public retrieval at publication revision
+`7cabe21714add2c45ce2c4ebcc359464fe527908`. Its retained completion receipt has SHA-256
+`6c03769f4ade8709d7356a1629a4fce9617135a3254b8b9724446cdab7eda0ce`. Both npm targets recorded
+`alpha` and the provider-required first-version `latest` at `0.1.0-alpha.1` with empty stable-version
+populations. All eight downloadable subjects have direct provenance; both images have complete
+retained-to-published provenance chains.
 
 ## Residual: provider authorization probes vary
 

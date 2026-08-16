@@ -2,7 +2,7 @@
 
 ## Claim: ordinary-ci-excludes-release-only-matrix
 Verdict: sound
-Fingerprint: 792f397c8c3e1629
+Fingerprint: ae0a42a8463fb66c
 Judged: 2026-08-16
 Judge: Codex
 
@@ -18,7 +18,7 @@ the diagnostic run only confirms that the identity revision did not introduce th
 
 ## Claim: selected-lanes-are-independent
 Verdict: sound
-Fingerprint: 172998ec936decd3
+Fingerprint: 99ba94bcd46c76ea
 Judged: 2026-08-16
 Judge: Codex
 
@@ -32,7 +32,7 @@ account and that observed failure boundary.
 
 ## Claim: complete-account-needs-every-lane
 Verdict: sound
-Fingerprint: a1e3dab1a9ba26c2
+Fingerprint: c4132d3f8b8d2f63
 Judged: 2026-08-16
 Judge: Codex
 
@@ -45,7 +45,7 @@ catalog population, so the component-universal tag is honest.
 
 ## Claim: tag-catalog-and-revision-agree
 Verdict: sound
-Fingerprint: d2c059e7d180ff5b
+Fingerprint: 361a0237b088857e
 Judged: 2026-08-16
 Judge: Codex
 
@@ -77,7 +77,7 @@ that performed the external operation and cannot substitute for any candidate-si
 
 ## Claim: retained-downloads-have-checksums
 Verdict: sound
-Fingerprint: 88ad0bf27184d9b6
+Fingerprint: 48ceb5a22803b467
 Judged: 2026-08-16
 Judge: Codex
 
@@ -104,7 +104,7 @@ the retained checksum as the published candidate identity.
 
 ## Claim: executable-subjects-have-provenance
 Verdict: sound
-Fingerprint: 5b5aee8544d9d559
+Fingerprint: 04bcbc22222c2f3e
 Judged: 2026-08-16
 Judge: Codex
 
@@ -120,12 +120,12 @@ or a chain when immutable public targets force a later orchestration repair. The
 retained-archive provenance at the candidate revision and published-digest provenance at the
 publication revision; removing either lookup fails. Deterministic OCI inspection binds the two
 digests. Run 31905266399 created both public-digest attestations and its fresh state resolved each
-image through `retained-to-published` provenance. The final corrected completion receipt still has
-to retain that operational result in model source before archive.
+image through `retained-to-published` provenance. Final run 31938723090 repeated both attestations
+and retained the complete operational result in `public-release-completion.json`.
 
 ## Claim: packed-packages-install
 Verdict: sound
-Fingerprint: db5e9cbdd31a23aa
+Fingerprint: b2a90a524671f0e3
 Judged: 2026-08-16
 Judge: Codex
 
@@ -139,7 +139,7 @@ would fail before the lane artifact is accepted.
 
 ## Claim: native-binaries-run
 Verdict: sound
-Fingerprint: 31a2e4670c4262c1
+Fingerprint: 5be5c6526748f444
 Judged: 2026-08-16
 Judge: Codex
 
@@ -151,7 +151,7 @@ selected runner, so the universal population is the complete three-target catalo
 
 ## Claim: selected-image-platforms-start
 Verdict: sound
-Fingerprint: 6d655886d3854c86
+Fingerprint: d4c0707a9b664e41
 Judged: 2026-08-16
 Judge: Codex
 
@@ -164,7 +164,7 @@ are covered.
 
 ## Claim: exact-existing-target-is-preserved
 Verdict: sound
-Fingerprint: c31d6ed290194336
+Fingerprint: 0669191a709e209d
 Judged: 2026-08-16
 Judge: Codex
 
@@ -201,7 +201,7 @@ so mutable metadata repair cannot become an excuse to republish immutable conten
 
 ## Claim: absent-target-is-selected
 Verdict: sound
-Fingerprint: 599423fee476d567
+Fingerprint: aeba49e0048bd0b0
 Judged: 2026-08-16
 Judge: Codex
 
@@ -228,7 +228,7 @@ enters both sets because its first publish must also establish channel metadata.
 
 ## Claim: conflicting-target-fails
 Verdict: sound
-Fingerprint: daa8bf71340bdcef
+Fingerprint: b12fae2750930578
 Judged: 2026-08-16
 Judge: Codex
 
@@ -251,7 +251,7 @@ therefore does not turn provider signing into a general content exception.
 
 ## Claim: completion-needs-public-retrieval
 Verdict: sound
-Fingerprint: 5fb964fcbb6a17b4
+Fingerprint: ac1fa6ede438eb1f
 Judged: 2026-08-16
 Judge: Codex
 
@@ -270,14 +270,14 @@ version at both `alpha` and `latest`; that adverse observation falsified the rec
 being hidden by it. Hosted run 31907022845 then received HTTP 403 for token-based deletion, and a
 fresh WebAuthn-authorized deletion received HTTP 400. The npm registry package contract requires
 `latest`, so the latter observation falsifies the removal oracle. The normalizer now retains the
-mandatory alias when no stable version exists and refuses to guess a stable target otherwise. The
-verdict is sound for the revised component guard; the rollout residual remains until a new hosted
-run and independent reads retain the corrected public account.
+mandatory alias when no stable version exists and refuses to guess a stable target otherwise.
 
 I also inspected the image adapter's exact command and the workflow account. The adapter passes
 `--no-creds` to `skopeo`, the completion job has no registry login, and the command-shape test plus
 workflow guard reject removing either boundary. This distinguishes public retrieval from the wrong
 implementation observed in run 31937065763, where an organization token made two private images
 appear retrievable. Independent anonymous reads first reproduced HTTP 403, then returned both
-retained index digests after the owner changed package visibility. The component evidence is
-toothy for supplied state and command shape; a fresh hosted receipt remains the rollout condition.
+retained index digests after the owner changed package visibility. Final run 31938723090 then
+retrieved all ten targets through the corrected adapter, retained both provenance chains and
+recorded the empty stable-version populations. The component evidence is toothy for supplied state
+and command shape, and the retained operational receipt discharges the rollout condition.

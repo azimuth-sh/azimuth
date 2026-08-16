@@ -48,15 +48,13 @@ the catalog-derived population must make manifest verification fail.
 Scope: e2e
 Quantification: universal
 Oracle: direct
-Residual: the successful public image attestations are not yet retained in the model-source receipt
-Accepted: import the final publication receipt before archiving the active alpha change
 
 The hosted rehearsal submits every downloadable subject to GitHub's provenance action and validates
 the workflow's exact subject population. Publication run 31905266399 attached attestations to both
 GHCR index digests. A repair revision does not replace candidate provenance: completion must join
 retained-archive provenance at the tagged revision, deterministic index identity and
-published-digest provenance at the recorded publication revision. The final receipt remains to be
-retained with the active change.
+published-digest provenance at the recorded publication revision. Final run 31938723090 retained
+both complete provenance chains in `public-release-completion.json` after anonymous retrieval.
 
 ## Claim: packed-packages-install
 Scope: component
@@ -110,8 +108,6 @@ emitting any publication set.
 Scope: component
 Quantification: universal
 Oracle: direct
-Residual: registry state is synthetic rather than retrieved from public targets
-Accepted: no alpha target exists; bind registry adapters and discharge during alpha publication
 
 The completion checker ranges over the complete public population and rejects each missing or
 mismatched package, native archive, image index, checksum, provenance subject or platform. npm
@@ -125,6 +121,11 @@ Image retrieval invokes `skopeo --no-creds`, and the hosted completion job has n
 The command-shape test and workflow mutation guard therefore reject an implementation that lets an
 organization credential make a private GHCR image satisfy the public predicate.
 
+Final run 31938723090 retrieved all ten real targets through the corrected adapters, including both
+GHCR indexes without credentials. Its retained receipt records the exact candidate and publication
+revisions, all target identities and digests, both selected image platforms, the complete
+provenance population and the npm channel plus stable-version state.
+
 ## Residual: registry-credentials-are-not-rehearsed
 Accepted: write authorization is provider-dependent; discharge from the publication operation
 
@@ -134,15 +135,12 @@ environment. A crates.io `publish-new` token, NuGet push key and GitHub Release 
 token expose their write authorization only through the first write; the resumable planner retains
 that limitation rather than requiring broader credentials.
 
-## Residual: public-completion-is-rollout-dependent
-Accepted: import a fresh public receipt under the provider-required first-version rule before archive
-
 All ten immutable targets are publicly retrievable. The first npm versions also acquired `latest`.
 Hosted run 31907022845 could not remove the aliases with a bypass-2FA token, and an interactive
 WebAuthn-authorized removal reached the registry but returned HTTP 400. The registry package model
 requires at least the `latest` dist-tag, so the attempted repair falsified the prior oracle rather
-than the public package state. The release remains incomplete until a fresh operation records the
-empty stable-version populations and passes the corrected completion oracle.
+than the public package state. That failure required a fresh operation to record the empty
+stable-version populations and pass the corrected completion oracle.
 
 Write-enabled run 31937065763 passed the npm rule and retained ten exact immutable targets, but its
 GHCR reads followed a workflow registry login. Independent anonymous reads then returned HTTP 403
@@ -151,7 +149,13 @@ completion evidence. After the owner changed both packages to public, anonymous 
 reads returned index digests
 `85c76fa563950b75dc3e5bece5e72618d322aedd9dad965d26dee4679bdac329` and
 `25704694ebb7bebbff77832018ba90fb516d502c5795f78604d27e13b2a6a719`, each with Linux AMD64 and
-ARM64. A new hosted receipt from the anonymous checker remains required.
+ARM64. Those observations made a new hosted receipt from the anonymous checker necessary.
+
+No-write run 31938652438 selected zero writes, preserved ten targets and observed the same two
+anonymous image index digests. Final run 31938723090 preserved all ten again, emitted completion
+from the anonymous adapter and retained empty stable-version populations plus both required npm
+tags. The exact completion receipt is stored with the active change; its SHA-256 is
+`6c03769f4ade8709d7356a1629a4fce9617135a3254b8b9724446cdab7eda0ce`.
 
 ## Residual: provenance-is-not-a-complete-supply-chain-account
 Accepted: first alpha scope from CAR13; revisit before stable or consumer demand
