@@ -29,7 +29,7 @@
   `latest`, then revise completion to accept the alias only while no stable version exists.
 - [x] Retain run 31937065763 as adverse evidence: authenticated GHCR reads accepted two private
   images; require anonymous image reads and remove registry login from completion.
-- [ ] Retain a fresh completion receipt whose npm state assigns `0.1.0-alpha.1` to `alpha`, records
+- [x] Retain a fresh completion receipt whose npm state assigns `0.1.0-alpha.1` to `alpha`, records
   no stable versions and accounts for the provider-required `latest` alias.
-- [ ] Retrieve every public target, judge the refreshed evidence and record the outcome.
+- [x] Retrieve every public target, judge the refreshed evidence and record the outcome.
 - [ ] Finalize the completed change for separate acceptance and archive.

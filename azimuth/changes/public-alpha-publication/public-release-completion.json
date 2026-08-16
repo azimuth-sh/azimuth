@@ -1,0 +1,132 @@
+{
+  "format": "azimuth-public-release-completion",
+  "schemaVersion": 1,
+  "observedAt": "2026-08-16T09:21:20+00:00",
+  "tag": "v0.1.0-alpha.1",
+  "revision": "49d350b9d3cacc1cfddd8874b97ba67301090960",
+  "publicationRevision": "7cabe21714add2c45ce2c4ebcc359464fe527908",
+  "rehearsalRun": "31901952648",
+  "publicationRun": "31938723090",
+  "candidateAccountSha256": "83576507f778b0103fe61f0eb0efe344f105e3a7486cd9384828ceea8664dc9d",
+  "state": {
+    "format": "azimuth-public-registry-state",
+    "schemaVersion": 1,
+    "observedAt": "2026-08-16T09:21:02+00:00",
+    "tag": "v0.1.0-alpha.1",
+    "version": "0.1.0-alpha.1",
+    "revision": "49d350b9d3cacc1cfddd8874b97ba67301090960",
+    "targets": {
+      "package:rust-cli-core": {
+        "identity": "azimuth",
+        "sha256": "7fa6c9a8c49ebbbca809d44afd4814fc8dc09afe679c8f2ccbd16d96e960e384",
+        "provenance": true,
+        "provenanceMode": "direct",
+        "url": "https://static.crates.io/crates/azimuth/azimuth-0.1.0-alpha.1.crate"
+      },
+      "package:dotnet-annotations": {
+        "identity": "Azimuth.Annotations",
+        "sha256": "b9afb8d780e36965947272d95b52ea2c351fdd0e0d79ec675d4d11aefb4e2387",
+        "provenance": true,
+        "provenanceMode": "direct",
+        "url": "https://api.nuget.org/v3-flatcontainer/azimuth.annotations/0.1.0-alpha.1/azimuth.annotations.0.1.0-alpha.1.nupkg",
+        "registrySha256": "4b209697229bbaff3cf02c9354980742a2286d79ecfa8cd45dd5589e23a5ffd2",
+        "payloadSha256": "0982b4c02ccfb615aa0eaa4238d59896129e5e138e9dd629a2ff971bbc041120",
+        "repositorySignatureVerified": true
+      },
+      "package:dotnet-emitter": {
+        "identity": "Azimuth.Emit",
+        "sha256": "6a43d201ba139ce9183cd266e4d04e8c0386bc931195279f744f597f9ef31a10",
+        "provenance": true,
+        "provenanceMode": "direct",
+        "url": "https://api.nuget.org/v3-flatcontainer/azimuth.emit/0.1.0-alpha.1/azimuth.emit.0.1.0-alpha.1.nupkg",
+        "registrySha256": "d7c8ae22bd26d59377c65e37ebac85d89a4f35cf988ceef2160d966a02dba85f",
+        "payloadSha256": "298c1fee5cf1366148de366f611883b6314b6178fafed3cfa6930a3177a23cdd",
+        "repositorySignatureVerified": true
+      },
+      "package:typescript-annotations": {
+        "identity": "@azimuth-sh/annotations",
+        "sha256": "baf45482fd0a754f1c8d2e6271eb9173081d4fe0796e65cf578ce531341ac8d8",
+        "provenance": true,
+        "provenanceMode": "direct",
+        "url": "https://registry.npmjs.org/@azimuth-sh/annotations/-/annotations-0.1.0-alpha.1.tgz",
+        "distTags": {
+          "alpha": "0.1.0-alpha.1",
+          "latest": "0.1.0-alpha.1"
+        },
+        "stableVersions": []
+      },
+      "package:typescript-emitter": {
+        "identity": "@azimuth-sh/emit",
+        "sha256": "01e5f5eae762f87ef39b8229d08ee8258037cc471f99e6b668c0e1ec2310637d",
+        "provenance": true,
+        "provenanceMode": "direct",
+        "url": "https://registry.npmjs.org/@azimuth-sh/emit/-/emit-0.1.0-alpha.1.tgz",
+        "distTags": {
+          "alpha": "0.1.0-alpha.1",
+          "latest": "0.1.0-alpha.1"
+        },
+        "stableVersions": []
+      },
+      "native:x86_64-unknown-linux-gnu": {
+        "identity": "azimuth",
+        "sha256": "02d526a5f9198d90e379df9c648670d86a4b9d96e12fb5388e2a785f3481a3bf",
+        "provenance": true,
+        "provenanceMode": "direct",
+        "url": "https://github.com/azimuth-sh/azimuth/releases/download/v0.1.0-alpha.1/azimuth-0.1.0-alpha.1-x86_64-unknown-linux-gnu.tar.gz"
+      },
+      "native:aarch64-apple-darwin": {
+        "identity": "azimuth",
+        "sha256": "9c211dc13070561248dd559681d66550401c6aaba996624db7dd79a6263da6f5",
+        "provenance": true,
+        "provenanceMode": "direct",
+        "url": "https://github.com/azimuth-sh/azimuth/releases/download/v0.1.0-alpha.1/azimuth-0.1.0-alpha.1-aarch64-apple-darwin.tar.gz"
+      },
+      "native:x86_64-pc-windows-msvc": {
+        "identity": "azimuth",
+        "sha256": "b4a17552c808e4c2350b6e5d1f739661b8ec8a8f2df4c2868019b1c3e4ee92ae",
+        "provenance": true,
+        "provenanceMode": "direct",
+        "url": "https://github.com/azimuth-sh/azimuth/releases/download/v0.1.0-alpha.1/azimuth-0.1.0-alpha.1-x86_64-pc-windows-msvc.zip"
+      },
+      "image:assurance-api": {
+        "identity": "ghcr.io/azimuth-sh/azimuth-assurance-api",
+        "sha256": "85c76fa563950b75dc3e5bece5e72618d322aedd9dad965d26dee4679bdac329",
+        "provenance": true,
+        "provenanceMode": "retained-to-published",
+        "url": "https://ghcr.io/azimuth-sh/azimuth-assurance-api:0.1.0-alpha.1",
+        "platforms": [
+          "linux/amd64",
+          "linux/arm64"
+        ]
+      },
+      "image:assurance-web": {
+        "identity": "ghcr.io/azimuth-sh/azimuth-assurance-web",
+        "sha256": "25704694ebb7bebbff77832018ba90fb516d502c5795f78604d27e13b2a6a719",
+        "provenance": true,
+        "provenanceMode": "retained-to-published",
+        "url": "https://ghcr.io/azimuth-sh/azimuth-assurance-web:0.1.0-alpha.1",
+        "platforms": [
+          "linux/amd64",
+          "linux/arm64"
+        ]
+      }
+    },
+    "releaseExists": true,
+    "missingReleaseAssets": []
+  },
+  "completion": {
+    "outcome": "complete",
+    "targets": [
+      "image:assurance-api",
+      "image:assurance-web",
+      "native:aarch64-apple-darwin",
+      "native:x86_64-pc-windows-msvc",
+      "native:x86_64-unknown-linux-gnu",
+      "package:dotnet-annotations",
+      "package:dotnet-emitter",
+      "package:rust-cli-core",
+      "package:typescript-annotations",
+      "package:typescript-emitter"
+    ]
+  }
+}

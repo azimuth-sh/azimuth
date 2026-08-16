@@ -1,6 +1,6 @@
 # Change: public-alpha-publication
 
-Status: approved
+Status: implemented
 
 Exploration: canonical-alpha-release
 Revision: anonymous-public-image-retrieval
