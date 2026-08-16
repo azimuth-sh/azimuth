@@ -1,9 +1,10 @@
 # Azimuth
 
-Frozen distribution repository for the first Azimuth alpha. Framework development happens in the
-development repository; this release must build, test and publish without a checkout of Drim, the
-ride-hailing fixture or any other domain. Immutable citations may preserve provenance; executable
-or acceptance dependencies may not.
+Canonical development and release repository for Azimuth. Framework source, model packages,
+tooling, skills, documentation and release workflows evolve here; version tags identify immutable
+published states. The repository must build, test and publish without a checkout of Drim, the
+ride-hailing fixture or any other consumer domain. Immutable citations may preserve provenance;
+executable or acceptance dependencies may not.
 
 ## Orientation
 
@@ -31,8 +32,12 @@ overrides a decision.
   `azimuth check rtm` and `azimuth export`.
 - Evidence precedes notation: no mechanism enters the model until two structurally different
   concerns demand it in prose.
+- Framework development, pull requests and version history are authoritative in this repository.
+  Do not extract or synchronize generic source from a consumer fixture.
 - Tooling and its tests use synthetic fixtures. They never depend on consumer vocabulary, paths or
   checkouts.
+- Consumer-domain intent and real-domain fixtures remain in their owning repositories. Their
+  dogfood findings may motivate changes here but do not become executable repository dependencies.
 - Specs are organized by domain area, identifiers are declared rather than path-derived, and
   derivable artifacts are not maintained by hand.
 - A federated local check is incomplete when required workset inputs are missing. Never finalize a

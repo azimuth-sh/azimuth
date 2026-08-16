@@ -4,9 +4,10 @@ Azimuth keeps intent, implementation linkage, evidence and agent judgment in one
 project account. The command-line tool checks local model packages and can assemble revision-bound
 accounts across repositories without making a hosted service authoritative.
 
-This repository is the frozen distribution source for version `0.1.0-alpha.1`. The selected first
-public alpha contract is not published until the release operation verifies every registry target.
-The canonical product site is <https://azimuth.sh>.
+This is the canonical development and release repository. Framework changes, pull requests and
+version history land here, and publication derives artifacts from immutable version tags in the
+same history. Version `0.1.0-alpha.1` remains fixed by its tag while `main` carries subsequent
+development. The canonical product site is <https://azimuth.sh>.
 
 ## Repository layout
 
@@ -40,6 +41,17 @@ qualified binary or image claim.
 The Go, JVM, Python, Rust-annotation and C++ integrations and every tree under `experiments/` are
 experimental source. CI exercises them, but version `0.1.0-alpha.1` assigns them no public package
 identity or support promise.
+
+## Development and dogfooding
+
+Generic framework source, model packages, documentation, skills and release workflows are changed
+in this repository. Consumer-domain intent remains in the repository that owns it. Real-domain
+fixtures such as `azimuth-demo` consume candidate revisions or published versions and return
+findings here; this repository never builds, tests or publishes by reading those checkouts.
+
+That boundary keeps the public source independently usable while allowing federation and external
+dogfooding to test it. A release is tagged and published from this repository rather than extracted
+from a separate development tree.
 
 ## Start here
 

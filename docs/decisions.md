@@ -87,37 +87,50 @@ and it needs to be exercised, not avoided.
 
 ---
 
-## D2 — The repo is self-contained
+## D2 — Development and release share one canonical repository *(revised 2026-08-16)*
 
-**Decision.** Tooling, skills, scripts, specs and app all live in this repo. Extraction and
-release happen after the concepts stabilize.
+**Current decision *(supersedes D2.1)*.** `azimuth-sh/azimuth` is the singular authority for
+framework development and publication. Generic source, model packages, documentation, skills,
+branches, pull requests, release workflows and version tags share one history. Consumer-domain
+intent and real-domain fixtures remain under their own repository authorities.
 
-**Why.** The loop that matters is: change the notation → regenerate over real code → judge
-whether the hole is real — in one commit. A separate tool repo inserts a publish/consume cycle
-into every experiment. Additionally, the **agent tier is a skill**: keeping machine tier and
-agent tier beside the fixture means a change to the verify-pass prompt and a change to the
-matrix schema land together against one corpus.
+**Why revised.** The original decision optimized the discovery loop by colocating the framework
+and ride-hailing fixture before a public contract existed. After `0.1.0-alpha.1` publication, a
+separate frozen distribution repository would split contributor history from release history and
+require every version to transfer generic work. The transfer can diverge even though it adds no
+framework evidence. Candidate consumption by an external fixture retains the real-domain feedback
+without making extraction part of release production.
 
-**The rule that keeps extraction cheap.** Tooling never references the demo domain. No
-ride-hailing vocabulary, no fixture paths, no special cases. The app depends on the annotations
-package; nothing depends on the app. Enforced by a check in CI — and this rule is itself a
-code-shape rule (C16's shape), so the repo dogfoods the catalog on itself. Failure to express it
-in Azimuth's own terms is an early signal about the code-shape artifact.
+**Independence boundary.** This repository builds, tests and publishes without reading Drim,
+`azimuth-demo` or another consumer checkout. External fixtures may consume a candidate revision and
+return findings, but their successful execution is not an executable or acceptance dependency of
+the canonical repository. Immutable citations may retain provenance.
 
-**Corollary.** The tool's own tests use synthetic fixtures, never the demo specs. The moment
-`azimuth`'s test suite asserts against real demo content, the two are welded together.
+**Original decision *(superseded)*.** Tooling, skills, scripts, specs and the ride-hailing app lived
+in one development repository. Extraction and release were deferred until the concepts stabilized.
+The loop was: change the notation → regenerate over real code → judge whether the hole is real
+in one commit. A separate tool repository would have inserted a publish/consume cycle into every
+experiment. Keeping the agent-tier skill beside the fixture also let a verify-pass prompt and a
+matrix-schema revision land against one corpus.
 
-**Layout.**
+**Retained rule.** Tooling never references a consumer domain. No ride-hailing vocabulary, fixture
+paths or domain special cases enter `tools/`. Tool tests use synthetic fixtures, never demo specs.
+The public repository now enforces this as a dependency boundary rather than as preparation for
+later extraction.
+
+**Current layout.**
 
 ```
 tools/azimuth/     core: spec reader, model derivation, checks, CLI. No domain knowledge.
 tools/extractors/  per-language tag extraction → common manifest JSON
-packages/          annotations, per language, published-shaped from day one
-app/               the demo — services, BFFs, web, mobile
-azimuth/model/     colocated spec, design, verification and judgment packages
+packages/          published annotation packages
+services/          optional framework-owned services
+experiments/       synthetic, self-contained conformance evidence
+azimuth/model/     accepted framework intent, mechanism, evidence and judgment packages
 docs/              catalog, decisions, design notes
 .agents/skills/    agent tier: verify pass, spec authoring, tagging
 .claude/skills/    per-skill compatibility symlinks for Claude Code
+release/           candidate qualification and publication contracts
 scripts/
 ```
 
@@ -134,15 +147,18 @@ skills][claude-skills].
 [claude-skills]: https://code.claude.com/docs/en/skills#where-skills-live
 
 **Core architecture.** Each ecosystem emits a manifest natively; the core only reads manifests.
-This is the seam extraction will follow, and it makes adding a language a day's work rather
-than a fork of the core. The alpha's `Azimuth.Manifest` already implies this shape — keep it.
+This keeps the core language-neutral and makes adding a language an extractor change rather than a
+fork of the core.
 
-### D2.1 — `drim/azimuth` is frozen
+### D2.1 — `drim/azimuth` is frozen *(superseded 2026-08-16)*
 
-All development happens here. The alpha repo gets a README note pointing at this one. Avoids
-merging two divergent designs later.
+Before the first public alpha, `drim/azimuth` named an obsolete pre-alpha repository. Freezing it
+while development occurred in `azimuth-demo` avoided merging two divergent designs during the
+discovery phase. Publication replaced and transferred that repository to `azimuth-sh/azimuth`.
+The revised D2 makes the public repository the development authority; the immutable boundary now
+applies to published version tags, not to `main`.
 
-### D2.2 — Port selectively
+### D2.2 — Port selectively *(historical; completed by `0.1.0-alpha.1`)*
 
 **Inventory of the frozen alpha** (`drim-dev/azimuth`):
 
