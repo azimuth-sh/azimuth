@@ -32,4 +32,4 @@
 - [x] Retain a fresh completion receipt whose npm state assigns `0.1.0-alpha.1` to `alpha`, records
   no stable versions and accounts for the provider-required `latest` alias.
 - [x] Retrieve every public target, judge the refreshed evidence and record the outcome.
-- [ ] Finalize the completed change for separate acceptance and archive.
+- [x] Finalize the completed change for separate acceptance and archive.

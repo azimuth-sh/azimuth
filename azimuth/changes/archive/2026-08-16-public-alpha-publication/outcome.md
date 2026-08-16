@@ -1,6 +1,6 @@
 # Outcome: public-alpha-publication
 
-Status: implemented
+Status: accepted
 
 ## Result
 
