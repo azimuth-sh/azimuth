@@ -97,6 +97,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 state["targets"][subject["key"]]["distTags"] = {
                     "alpha": account["version"]
                 }
+                state["targets"][subject["key"]]["stableVersions"] = []
         return state
 
     def test_package_adapters_distinguish_absence_from_exact_bytes(self):
@@ -519,7 +520,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             self.assertEqual(command[-2:], ["--tag", tag])
             self.assertIn("--provenance", command)
 
-    def test_npm_tag_drift_is_planned_and_blocks_completion(self):
+    def test_first_npm_prerelease_accepts_the_registry_required_latest_tag(self):
         with tempfile.TemporaryDirectory() as temporary:
             retained, candidates, _, _ = self.retained_account(Path(temporary))
             account = public_account(retained, candidates)
@@ -528,6 +529,23 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             )
             state = self.exact_public_state(account)
             state["targets"][subject["key"]]["distTags"]["latest"] = account["version"]
+
+            plan = registry_publication_plan(account, state)
+            self.assertEqual(plan["publish"], [])
+            self.assertEqual(plan["normalizeNpmTags"], [])
+            validate_registry_completion(account, state)
+
+    def test_npm_latest_prerelease_with_a_stable_version_blocks_completion(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            retained, candidates, _, _ = self.retained_account(Path(temporary))
+            account = public_account(retained, candidates)
+            subject = next(
+                item for item in account["subjects"] if item.get("ecosystem") == "npm"
+            )
+            state = self.exact_public_state(account)
+            target = state["targets"][subject["key"]]
+            target["distTags"]["latest"] = account["version"]
+            target["stableVersions"] = ["0.0.1"]
 
             plan = registry_publication_plan(account, state)
             self.assertEqual(plan["publish"], [])
@@ -541,7 +559,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             self.assertEqual(plan["publish"], [subject["key"]])
             self.assertEqual(plan["normalizeNpmTags"], [subject["key"]])
 
-    def test_npm_tag_normalization_removes_an_alpha_from_latest(self):
+    def test_npm_tag_normalization_preserves_required_first_latest_tag(self):
         subject = {
             "key": "package:typescript-annotations",
             "identity": "@azimuth-sh/annotations",
@@ -549,20 +567,30 @@ class PublicAlphaPublicationTests(unittest.TestCase):
         version = "0.1.0-alpha.1"
         results = [
             SimpleNamespace(stdout=f"alpha: {version}\nlatest: {version}\n".encode()),
-            SimpleNamespace(stdout=b""),
-            SimpleNamespace(stdout=f"alpha: {version}\n".encode()),
+            SimpleNamespace(stdout=f"alpha: {version}\nlatest: {version}\n".encode()),
         ]
         with patch.dict("os.environ", {"NPM_TOKEN": "secret"}, clear=True), patch(
             "release.publication.run", side_effect=results
         ) as npm:
-            normalize_npm_dist_tags(subject, version)
+            normalize_npm_dist_tags(subject, version, [])
 
         commands = [call.args[0] for call in npm.call_args_list]
-        self.assertEqual(
-            commands[1],
-            ["npm", "dist-tag", "rm", "@azimuth-sh/annotations", "latest"],
-        )
-        self.assertNotIn("add", commands[1])
+        self.assertEqual(len(commands), 2)
+        self.assertTrue(all(command[:3] == ["npm", "dist-tag", "ls"] for command in commands))
+
+    def test_npm_tag_normalization_does_not_guess_a_stable_latest_target(self):
+        subject = {
+            "key": "package:typescript-annotations",
+            "identity": "@azimuth-sh/annotations",
+        }
+        version = "0.1.0-alpha.1"
+        result = SimpleNamespace(stdout=f"alpha: {version}\nlatest: {version}\n".encode())
+        with patch.dict("os.environ", {"NPM_TOKEN": "secret"}, clear=True), patch(
+            "release.publication.run", return_value=result
+        ) as npm, self.assertRaisesRegex(PublicationError, "intended stable target"):
+            normalize_npm_dist_tags(subject, version, ["0.0.1"])
+
+        self.assertEqual(len(npm.call_args_list), 1)
 
     def test_image_state_filters_attestation_descriptors_from_platforms(self):
         manifest = {

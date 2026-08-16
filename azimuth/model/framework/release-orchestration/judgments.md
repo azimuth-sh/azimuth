@@ -2,8 +2,8 @@
 
 ## Claim: ordinary-ci-excludes-release-only-matrix
 Verdict: sound
-Fingerprint: 859d255196d4b1e1
-Judged: 2026-08-15
+Fingerprint: e841d23f87f84254
+Judged: 2026-08-16
 Judge: Codex
 
 I inspected the sole ordinary workflow command, the root gate's explicit release-image branch, the
@@ -18,8 +18,8 @@ the diagnostic run only confirms that the identity revision did not introduce th
 
 ## Claim: selected-lanes-are-independent
 Verdict: sound
-Fingerprint: 48943d70db6cd103
-Judged: 2026-08-15
+Fingerprint: d7d962726c659f6a
+Judged: 2026-08-16
 Judge: Codex
 
 I inspected the four-job DAG, both non-fail-fast matrices, the per-lane artifact uploads and the
@@ -32,8 +32,8 @@ account and that observed failure boundary.
 
 ## Claim: complete-account-needs-every-lane
 Verdict: sound
-Fingerprint: c43992b56678cb92
-Judged: 2026-08-15
+Fingerprint: dadf4848fb9cde83
+Judged: 2026-08-16
 Judge: Codex
 
 I inspected catalog-derived subject enumeration, recursive file indexing and the account assembly
@@ -45,8 +45,8 @@ catalog population, so the component-universal tag is honest.
 
 ## Claim: tag-catalog-and-revision-agree
 Verdict: sound
-Fingerprint: 559e8b8dbb0eb9fa
-Judged: 2026-08-15
+Fingerprint: 8c07e5989f045035
+Judged: 2026-08-16
 Judge: Codex
 
 I inspected the catalog tag/version checks, full-commit validation and `git rev-list` comparison
@@ -77,8 +77,8 @@ that performed the external operation and cannot substitute for any candidate-si
 
 ## Claim: retained-downloads-have-checksums
 Verdict: sound
-Fingerprint: 7353bd643dd24523
-Judged: 2026-08-15
+Fingerprint: 5f4ffd788197f71c
+Judged: 2026-08-16
 Judge: Codex
 
 I inspected the exact filename index, byte-size and streaming SHA-256 account, and the verifier's
@@ -104,8 +104,8 @@ the retained checksum as the published candidate identity.
 
 ## Claim: executable-subjects-have-provenance
 Verdict: sound
-Fingerprint: fe35527ed4382925
-Judged: 2026-08-15
+Fingerprint: 85882ac8b20fb6ea
+Judged: 2026-08-16
 Judge: Codex
 
 I inspected each provenance step and queried GitHub's attestation API using the ten retained
@@ -125,8 +125,8 @@ to retain that operational result in model source before archive.
 
 ## Claim: packed-packages-install
 Verdict: sound
-Fingerprint: 436483d23ace8da8
-Judged: 2026-08-15
+Fingerprint: 85aaf57ec765e551
+Judged: 2026-08-16
 Judge: Codex
 
 I inspected all three disposable consumer implementations and the hosted package lane. Cargo
@@ -139,8 +139,8 @@ would fail before the lane artifact is accepted.
 
 ## Claim: native-binaries-run
 Verdict: sound
-Fingerprint: dab87eb3897ba4bf
-Judged: 2026-08-15
+Fingerprint: ea0803cfa8a0b11a
+Judged: 2026-08-16
 Judge: Codex
 
 I inspected the catalog-derived native matrix, runner mapping, archive construction and extraction
@@ -151,8 +151,8 @@ selected runner, so the universal population is the complete three-target catalo
 
 ## Claim: selected-image-platforms-start
 Verdict: sound
-Fingerprint: 509c875529fc1f64
-Judged: 2026-08-15
+Fingerprint: 0a40b2e74c16e1ff
+Judged: 2026-08-16
 Judge: Codex
 
 I inspected catalog-derived image matrices, recursive OCI platform inspection, per-platform
@@ -164,8 +164,8 @@ are covered.
 
 ## Claim: exact-existing-target-is-preserved
 Verdict: sound
-Fingerprint: 848c737d9eb01f92
-Judged: 2026-08-15
+Fingerprint: 2e38d07e68664123
+Judged: 2026-08-16
 Judge: Codex
 
 I inspected the planner's complete target map and its identity, digest and image-platform equality
@@ -201,8 +201,8 @@ so mutable metadata repair cannot become an excuse to republish immutable conten
 
 ## Claim: absent-target-is-selected
 Verdict: sound
-Fingerprint: 95e9a35775954293
-Judged: 2026-08-15
+Fingerprint: 86ab2da04854778a
+Judged: 2026-08-16
 Judge: Codex
 
 I inspected the absent branch in the planner and the mutation loop over the complete ten-subject
@@ -228,8 +228,8 @@ enters both sets because its first publish must also establish channel metadata.
 
 ## Claim: conflicting-target-fails
 Verdict: sound
-Fingerprint: 582285855510bd45
-Judged: 2026-08-15
+Fingerprint: 1aea39df7f13bf5c
+Judged: 2026-08-16
 Judge: Codex
 
 I inspected the single pre-plan conflict accumulator and its uniform loop over every selected key.
@@ -251,22 +251,25 @@ therefore does not turn provider signing into a general content exception.
 
 ## Claim: completion-needs-public-retrieval
 Verdict: sound
-Fingerprint: 67ce590e4a51f491
-Judged: 2026-08-15
+Fingerprint: e8dd236c2e6522fb
+Judged: 2026-08-16
 Judge: Codex
 
 I inspected completion as the planner's only success boundary. The test removes every target and
 removes provenance from every target independently; both populations must fail, while platform
 drift is also rejected for each image. A constant-complete result or a check of only one registry
 kind cannot pass. This evidence establishes the component guard over supplied registry state, not
-fresh public retrieval. The revised evidence also makes npm tag drift an independent completion
-failure: an exact prerelease tarball at `latest` remains preserved but cannot complete, and an
-absent npm package is scheduled for tag normalization after publication.
+fresh public retrieval. The npm evidence now distinguishes two populations: a first-only
+prerelease at both `alpha` and the registry-required `latest` completes, while adding any stable
+version makes the same tag state fail. Removing the stable-version read would make those two cases
+indistinguishable and fail the focused tests.
 
 Run 31905266399 retrieved all ten immutable targets and both image provenance chains, but its old
 completion oracle ignored distribution tags. Independent npm reads found each first package
 version at both `alpha` and `latest`; that adverse observation falsified the receipt rather than
-being hidden by it. The new normalizer removes `latest` only when it points to this prerelease and
-verifies the remaining channel state. The verdict is sound for the revised component guard, while
-the accepted rollout residual remains until a new hosted run and independent reads produce and
-retain a corrected receipt.
+being hidden by it. Hosted run 31907022845 then received HTTP 403 for token-based deletion, and a
+fresh WebAuthn-authorized deletion received HTTP 400. The npm registry package contract requires
+`latest`, so the latter observation falsifies the removal oracle. The normalizer now retains the
+mandatory alias when no stable version exists and refuses to guess a stable target otherwise. The
+verdict is sound for the revised component guard; the rollout residual remains until a new hosted
+run and independent reads retain the corrected public account.

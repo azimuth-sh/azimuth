@@ -541,6 +541,11 @@ def collect_state(
             target["repositorySignatureVerified"] = True
         if subject.get("ecosystem") == "npm":
             target["distTags"] = dict(npm_metadata.get("dist-tags", {}))
+            target["stableVersions"] = sorted(
+                candidate
+                for candidate in npm_metadata.get("versions", {})
+                if "-" not in candidate.partition("+")[0]
+            )
         if subject["kind"] == "image":
             target["platforms"] = platforms
         state["targets"][subject["key"]] = target
@@ -765,11 +770,15 @@ def npm_dist_tag(version):
     return tag
 
 
-def npm_tags_are_exact(version, tags):
+def npm_tags_are_exact(version, tags, stable_versions):
     channel = npm_dist_tag(version)
     return (
         tags.get(channel) == version
-        and (channel == "latest" or tags.get("latest") != version)
+        and (
+            channel == "latest"
+            or tags.get("latest") != version
+            or not stable_versions
+        )
     )
 
 
@@ -783,7 +792,9 @@ def registry_publication_plan(account, state):
             continue
         observed = state.get("targets", {}).get(key)
         if observed is None or not npm_tags_are_exact(
-            account["version"], observed.get("distTags", {})
+            account["version"],
+            observed.get("distTags", {}),
+            observed.get("stableVersions", []),
         ):
             normalize.append(key)
     return {**plan, "normalizeNpmTags": sorted(normalize)}
@@ -799,7 +810,7 @@ def npm_cli_dist_tags(identity, env):
     return tags
 
 
-def normalize_npm_dist_tags(subject, version):
+def normalize_npm_dist_tags(subject, version, stable_versions):
     token = os.environ.get("NPM_TOKEN", "")
     require(token, "NPM_TOKEN is absent")
     env = {**os.environ, "NODE_AUTH_TOKEN": token}
@@ -808,11 +819,14 @@ def normalize_npm_dist_tags(subject, version):
     tags = npm_cli_dist_tags(identity, env)
     if tags.get(channel) != version:
         run(["npm", "dist-tag", "add", f"{identity}@{version}", channel], env=env)
-    if channel != "latest" and tags.get("latest") == version:
-        run(["npm", "dist-tag", "rm", identity, "latest"], env=env)
+    require(
+        channel == "latest" or tags.get("latest") != version or not stable_versions,
+        f"{subject['key']}: npm latest selects a prerelease despite stable versions; "
+        "the intended stable target cannot be derived",
+    )
     observed = npm_cli_dist_tags(identity, env)
     require(
-        npm_tags_are_exact(version, observed),
+        npm_tags_are_exact(version, observed, stable_versions),
         f"{subject['key']}: npm dist-tags do not identify the release channel exactly",
     )
 
@@ -889,7 +903,12 @@ def publish(arguments):
         )
         published.append(key)
     for key in supplied_plan["normalizeNpmTags"]:
-        normalize_npm_dist_tags(subjects[key], account["version"])
+        observed = state.get("targets", {}).get(key, {})
+        normalize_npm_dist_tags(
+            subjects[key],
+            account["version"],
+            observed.get("stableVersions", []),
+        )
     result = {
         "format": "azimuth-publication-result",
         "schemaVersion": 1,

@@ -57,11 +57,19 @@ both packages. That observation falsified the then-current completion oracle.
 ## npm distribution tags
 
 Focused tests distinguish immutable tarball state from mutable distribution-tag state. Each absent
-npm package must enter both the publication and normalization sets. An exact tarball with `latest`
-at the prerelease must remain preserved, enter only the normalization set and fail completion. The
-normalizer must retain the derived `alpha` tag, remove `latest` only when it points to the alpha and
-verify the resulting public tag set. The final hosted receipt must contain the fresh distribution
-tags for both npm targets; independent reads must agree.
+npm package must enter both the publication and channel-normalization sets. Retrieval records
+stable versions as well as tags. An exact first-only prerelease at both `alpha` and `latest` remains
+preserved and may complete because the npm registry package model requires `latest`. The same tags
+with any stable version remain preserved but block completion; the normalizer must not guess a
+stable target. The final hosted receipt must contain the fresh distribution tags and empty
+stable-version populations for both npm targets; independent reads must agree.
+
+Write-enabled run 31907022845 selected no immutable publication and attempted the two planned tag
+normalizations. Its first bypass-2FA-token deletion returned HTTP 403, so it emitted no completion
+receipt. A fresh interactive login and WebAuthn authorization advanced the same deletion through
+the authentication challenge; the registry then returned HTTP 400. The npm registry API describes
+a package's `dist-tags` object as containing at least `latest`. Together these observations falsify
+the previous removal oracle and support the first-only exception above.
 
 ## Public completion
 
