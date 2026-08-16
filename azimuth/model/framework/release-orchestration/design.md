@@ -44,15 +44,20 @@ Binding: release-publication-plan
 
 Before any write, one planner compares the complete selected population with retrieved registry
 state and classifies every target as absent, exact or conflicting. Publication jobs consume only
-the resulting absent set; any conflict prevents a plan. npm distribution tags are mutable metadata,
-so exact npm tarballs with channel drift enter a separate normalization set without leaving the
-immutable preserve set. The owner-dispatched publication workflow downloads the tag-bound rehearsal
+the resulting absent set; any conflict prevents a plan. npm distribution tags and the stable-version
+population are mutable metadata, so exact npm tarballs with channel drift enter a separate
+normalization set without leaving the immutable preserve set. The owner-dispatched publication
+workflow downloads the tag-bound rehearsal
 outputs rather than rebuilding them. Provider adapters retrieve package bytes, npm distribution
 tags, GitHub Release assets and GHCR index manifests into the closed-world state. A credential gate
 checks presence plus provider-supported non-mutating identity before the first write. npm
 publication derives an explicit distribution tag from the release's prerelease channel; stable
-versions use `latest`. Prerelease normalization requires that channel and removes `latest` only when
-it points to the same prerelease. NuGet retrieval requires a valid repository signature and compares
+versions use `latest`. The npm registry package model requires `latest`, so a package whose only
+versions are prereleases may expose the selected prerelease at both its explicit channel and
+`latest`. Completion accepts that provider-required alias only while the retrieved package has no
+stable version. If a stable version exists, a prerelease at `latest` remains a blocking ambiguity:
+the adapter cannot derive which stable version the owner intends to select. NuGet retrieval requires
+a valid repository signature and compares
 a signature-independent payload digest because NuGet.org adds `.signature.p7s` during ingestion.
 Completion performs a new retrieval after image-index provenance is attached and tag metadata is
 normalized. Removing the planner would make partial recovery depend on mutable operator memory.

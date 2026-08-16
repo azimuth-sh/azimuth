@@ -115,9 +115,12 @@ Accepted: no alpha target exists; bind registry adapters and discharge during al
 
 The completion checker ranges over the complete public population and rejects each missing or
 mismatched package, native archive, image index, checksum, provenance subject or platform. npm
-mutations also require every derived prerelease channel to select its version and reject that
-version at `latest`; exact tarballs remain preserved while their mutable tags are normalized. A
-passed receipt remains rollout-dependent until the release operation retrieves real public targets.
+mutations also require every derived prerelease channel to select its version. Retrieval records
+the stable-version population: `latest` may select the prerelease only when that population is
+empty, because the registry package contract requires a `latest` tag. Once a stable version exists,
+the same alias is drift and completion fails without guessing the owner's intended stable target.
+Exact tarballs remain preserved while mutable channel metadata is considered separately. A passed
+receipt remains rollout-dependent until the release operation retrieves real public targets.
 
 ## Residual: registry-credentials-are-not-rehearsed
 Accepted: write authorization is provider-dependent; discharge from the publication operation
@@ -129,12 +132,14 @@ token expose their write authorization only through the first write; the resumab
 that limitation rather than requiring broader credentials.
 
 ## Residual: public-completion-is-rollout-dependent
-Accepted: normalize npm tags and import the corrected public receipt before archive
+Accepted: import a fresh public receipt under the provider-required first-version rule before archive
 
-All ten immutable targets are publicly retrievable, but the first npm versions also acquired
-`latest`. The receipt from run 31905266399 therefore does not satisfy the revised completion oracle.
-The release remains incomplete until a fresh operation removes those aliases and retains the
-corrected public observation.
+All ten immutable targets are publicly retrievable. The first npm versions also acquired `latest`.
+Hosted run 31907022845 could not remove the aliases with a bypass-2FA token, and an interactive
+WebAuthn-authorized removal reached the registry but returned HTTP 400. The registry package model
+requires at least the `latest` dist-tag, so the attempted repair falsified the prior oracle rather
+than the public package state. The release remains incomplete until a fresh operation records the
+empty stable-version populations and passes the corrected completion oracle.
 
 ## Residual: provenance-is-not-a-complete-supply-chain-account
 Accepted: first alpha scope from CAR13; revisit before stable or consumer demand

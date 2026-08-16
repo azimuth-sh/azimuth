@@ -57,11 +57,13 @@ the retained archive, its deterministic index digest and the publication-revisio
 The repaired no-write run 31905158474 retrieved eight exact targets and selected only the two npm
 packages. Write run 31905266399 published those tarballs, attached both image attestations and
 emitted a ten-target completion receipt. An independent npm read then found both `alpha` and
-`latest` assigned to `0.1.0-alpha.1`. This falsifies the assumption that `npm publish --tag alpha`
-alone prevents a first package version from becoming `latest`, and it falsifies the completion
-gate because that gate did not read mutable distribution tags. The revised planner keeps the exact
-tarballs in the immutable preserve set, selects their tag metadata for normalization and requires a
-fresh completion read to observe `alpha` at this version and `latest` elsewhere or absent.
+`latest` assigned to `0.1.0-alpha.1`. This falsified the assumption that `npm publish --tag alpha`
+alone prevents a first package version from becoming `latest`, and it falsified the completion gate
+because that gate did not read mutable distribution tags. Hosted normalization run 31907022845 was
+then rejected before its first deletion, and an interactive WebAuthn-authorized deletion returned
+HTTP 400. The npm registry package contract requires `latest`; these second observations falsify
+the proposed removal, not the immutable release. The revised planner records stable versions and
+accepts this alias only while none exist.
 
 ## Outcome
 
@@ -77,7 +79,7 @@ immutable targets stop the operation before another write, and completion is emi
 fresh retrieval validates all packages, three GitHub Release archives, both multi-platform GHCR
 indexes, checksums and provenance against the tag-bound retained account. npm distribution tags
 are retrieved separately from tarball identity; prerelease completion requires the derived channel
-to select the version and forbids the same version at `latest`.
+to select the version and forbids the same version at `latest` after a stable version exists.
 
 ## Scope
 
@@ -137,8 +139,8 @@ results; a missing credential or registry target remains a named incomplete cond
   and any conflicting immutable identity prevents a publication plan.
 - A failed operation retains successful public targets and a rerun selects only the remaining
   absent targets.
-- npm prerelease publication names its prerelease channel explicitly and never assigns an alpha to
-  `latest`.
+- npm prerelease publication names its prerelease channel explicitly; completion accepts npm's
+  required `latest` alias only while the package has no stable version.
 - NuGet retrieval accepts the provider-added repository signature only when the official verifier
   accepts it and every non-signature payload remains equal to the retained candidate.
 - GitHub Releases exposes all three native archives, `SHA256SUMS` and `candidates.json` under the

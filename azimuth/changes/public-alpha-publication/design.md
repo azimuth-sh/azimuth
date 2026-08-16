@@ -53,10 +53,12 @@ Registry writes remain independent because no cross-registry transaction exists 
 adapter receives the planner-selected keys for its registry and publishes exact retained files.
 The npm adapter derives a non-`latest` distribution tag from a prerelease channel such as `alpha`
 or `rc`; stable versions use `latest`. npm rejects prerelease publication without that explicit
-channel, but the first public version of a package may still acquire `latest`. After publishing
-selected tarballs, the adapter therefore ensures the derived channel points to the version and
-removes `latest` only when it points to that prerelease. An exact tarball with tag drift remains in
-the immutable preserve set and enters a separate normalization set; it is never republished.
+channel, but its package model also requires `latest`. A first public version therefore acquires
+`latest` even when it is published through `alpha`. Retrieval records both tags and the complete
+stable-version population. Completion accepts `latest` at the prerelease only when no stable
+version exists. Once a stable version exists, that state is drift, but the adapter stops instead of
+guessing which stable version the owner intends to select. An exact tarball with tag drift remains
+in the immutable preserve set and enters a separate normalization set; it is never republished.
 NuGet.org adds a repository signature during ingestion, so its downloadable archive is not
 byte-identical to the retained unsigned candidate. The adapter requires the official NuGet
 signature verifier to accept that archive, compares every non-signature path and payload through a
@@ -75,10 +77,10 @@ versioned multi-platform indexes and attaches GitHub provenance to the resulting
 Publication success is insufficient. A final adapter pass retrieves package versions and content
 identities, npm distribution tags, GitHub Release asset digests and GHCR index/platform digests.
 The accepted completion checker compares that closed population with the retained account and
-rejects a prerelease whose channel does not select it or whose `latest` tag does. Its receipt
-records the tag, source revision, rehearsal run, publication run, observation time and normalized
-public state. When repaired orchestration executes after the candidate tag, it also records the
-distinct publication revision.
+rejects a prerelease whose channel does not select it. It also rejects `latest` at that prerelease
+when any stable version exists. Its receipt records the tag, source revision, rehearsal run,
+publication run, observation time and normalized public state. When repaired orchestration
+executes after the candidate tag, it also records the distinct publication revision.
 
 ## Failure boundaries
 
@@ -98,6 +100,7 @@ distinct publication revision.
 - An invalid NuGet repository signature or a changed non-signature payload fails before the
   settled package can be preserved.
 - An exact npm tarball with distribution-tag drift is preserved as immutable content but prevents
-  completion until the bounded metadata normalization is observed publicly.
+  completion. A missing prerelease channel can be normalized; a prerelease at `latest` after stable
+  publication requires an owner-selected stable target.
 - A public target without the required checksum, platform population or provenance prevents
   completion even when its version string exists.
