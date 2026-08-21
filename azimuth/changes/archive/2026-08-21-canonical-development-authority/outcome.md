@@ -1,6 +1,6 @@
 # Outcome: canonical-development-authority
 
-Status: implemented
+Status: accepted
 
 ## Result
 

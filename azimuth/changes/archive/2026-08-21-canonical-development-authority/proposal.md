@@ -1,6 +1,6 @@
 # Change: canonical-development-authority
 
-Status: implemented
+Status: accepted and complete
 
 Intent delta: none
 Because: repository development and release authority changes without changing accepted claims
