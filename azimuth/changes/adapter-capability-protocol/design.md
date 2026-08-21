@@ -31,7 +31,6 @@ Each configured adapter pins:
 - the expected descriptor fingerprint;
 - exact non-secret semantic string settings;
 - exact non-secret environment literal values;
-- the names, but not values, of environment variables that may be inherited;
 - timeout, standard-output and standard-error limits; and
 - a dictionary of named capabilities.
 
@@ -51,21 +50,26 @@ semantic verdict.
 
 A capability fingerprint binds the protocol version, adapter version and build, behavior-changing
 executable and resource digests, capability declaration, supported classes, supported open forms
-and non-secret semantic settings. It excludes executable and resource locators, explanatory prose
-and secret values. The configuration fingerprint also binds behavior-changing digests, exact
-non-secret literals, inherited-name allowlist and process limits while excluding locators and
-secret values. This separation lets relocation leave semantic identity stable while behavior or a
-bounded invocation choice remains attributable.
+and non-secret semantic settings. It excludes executable and resource locators and explanatory
+prose. The configuration fingerprint also binds behavior-changing digests, exact non-secret
+literals and process limits while excluding locators. This separation lets relocation leave
+semantic identity stable while behavior or a bounded invocation choice remains attributable.
 
 ## Strict process protocol
 
-Every interaction hashes the executable and declared resource files before launching a short-lived
-configured process. Core clears the child environment and supplies only exact configured literals
-and values of explicitly allowed inherited names. It sends one complete JSON request on standard
-input, closes it and accepts exactly one JSON response on standard output. Standard output and
-standard error are drained concurrently into separate capped buffers so one full pipe cannot
-deadlock the process. Core enforces the configured timeout. Exit status and standard error never
-encode product outcomes.
+Every interaction opens each configured executable, resource and import input once, copies the
+bytes to a private invocation stage while hashing that same stream and verifies the expected
+digest before launching a short-lived configured process from the stage. Staged content is
+read-only, with executable permission only where required. This prevents content substitution
+between hashing and invocation; it is not a filesystem or network sandbox for authorized adapter
+code.
+
+Core clears the child environment and supplies only exact configured non-secret literals. Version
+1 has no ambient inheritance, secret reference or interpolation. It sends one complete JSON
+request on standard input, closes it and accepts exactly one JSON response on standard output.
+Standard output and standard error are drained concurrently into separate capped buffers so one
+full pipe cannot deadlock the process. Core enforces the configured timeout. Exit status and
+standard error never encode product outcomes.
 
 The protocol-v1 description operation returns adapter, version, build and capability declarations.
 `azimuth adapter verify` compares that exact description and its fingerprint with configuration.
@@ -107,20 +111,22 @@ current decision targets.
 ## Execute and import
 
 `azimuth run execute` accepts a launch plan and matching configuration. Core validates all
-configuration, descriptor, route and class identities before invocation. The adapter translates
-the already selected semantic targets to native work and returns one complete D46 bundle.
+configuration, descriptor, route, class and predecessor identities before invocation. The adapter
+translates the already selected semantic targets to native work and returns one complete D46
+bundle.
 
-`azimuth run import` additionally accepts explicit `<id>=<file>` inputs. Core validates each path,
-computes its byte size and content digest and puts those exact identities in the request. The
-adapter may parse provider-native content but cannot replace the input identity with a URL, run id
-or mutable report name. `model.extract` is part of the capability dictionary for future migration,
-not an E Run operation.
+`azimuth run import` additionally accepts explicit `<id>=<file>` inputs. Core stages each input from
+the same byte stream used to compute its size and digest, and puts those exact identities in the
+request. The adapter receives only staged input locators. It may parse provider-native content but
+cannot replace the input identity with a URL, run id or mutable report name. `model.extract` is
+part of the capability dictionary for future migration, not an E Run operation.
 
 The returned D46 bundle retains its semantic plan and actual-selection contract. Only its
 provenance is extended to repeat:
 
-- the exact `adapter/<configured-id>` normalizer id, adapter version and adapter fingerprint;
-- configured adapter id;
+- the exact `adapter/<configured-id>` normalizer id, configured adapter version and adapter
+  fingerprint;
+- configured adapter id and adapter version;
 - descriptor fingerprint;
 - configuration fingerprint;
 - launch fingerprint;
@@ -134,7 +140,17 @@ validation; exit 1 or 2 leaves no output.
 
 Import identities are protected by each bundle revision but are not correction anchors. A later
 or completed report from the same provider execution may change those bytes in the next correction;
-the Subject, plan, planned time, adapter, configuration and routes remain fixed.
+the Subject, plan, planned time, adapter, configuration, normalizer and routes remain fixed.
+
+Execute and import accept repeatable predecessor bundles. Core validates a complete linear chain
+before spawning and binds the sorted revision and bundle-fingerprint identities into the request
+fingerprint. No predecessors require revision zero. Otherwise the response must be exactly the
+terminal revision plus one, name the terminal bundle fingerprint in `corrects` and preserve every
+correction anchor. The adapter receives verified predecessor identities, not unchecked history.
+
+The Run id binds the launch fingerprint in addition to its D46 inputs. Changing an adapter,
+configuration or capability route therefore creates a different Run rather than a correction of
+an execution through another route.
 
 Violated Observations, Challenge findings and explicit partial, cancelled or timed-out Runs are
 honest product facts and exit zero when internally valid. A semantic, model, identity, selection or
@@ -143,9 +159,15 @@ transport mismatch exits one. CLI, configuration, request and response schema fa
 The exact public surface is:
 
 - `azimuth adapter verify [--config <file>]`;
-- `azimuth run plan --request <file> [model options] [--config <file>] [--out <file>]`;
-- `azimuth run execute --plan <file> [--config <file>] [--out <file>]`; and
-- `azimuth run import --plan <file> --input <id>=<file>... [--config <file>] [--out <file>]`.
+- `azimuth run plan --request <file> [--model <dir>] [--standards <file>]
+  [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]`;
+- `azimuth run execute --plan <file> [--predecessor <bundle>...] [--config <file>]
+  [--out <file>]`; and
+- `azimuth run import --plan <file> --input <id>=<file>...
+  [--predecessor <bundle>...] [--config <file>] [--out <file>]`.
+
+Planning rejects `--only`, federated project/workset options and local partial selection. Exact
+Check ids in the request are the sole selection surface in this change.
 
 Configuration defaults to `azimuth/adapters.json`; `run verify` and `run inspect` retain their D46
 behavior. `run ingest` remains unknown.

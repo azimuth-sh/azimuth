@@ -18,7 +18,14 @@ THEN Azimuth rejects the adapter before spawning it
 ### Add scenario: child-environment-is-an-explicit-allowlist
 WHEN Azimuth invokes an adapter
 THEN it clears the ambient child environment
-AND it passes only exact configured literals and explicitly allowed inherited names
+AND it passes only exact configured non-secret literals
+AND it performs no ambient inheritance, secret reference or interpolation
+
+### Add scenario: configured-content-is-staged-from-one-byte-stream
+WHEN core prepares an executable, declared resource or import input
+THEN it copies and hashes one opened byte stream into a private invocation stage
+AND it invokes or supplies only the staged content after digest validation
+AND the stage makes no filesystem or network sandbox claim
 
 ### Add scenario: configured-description-drift-fails-closed
 WHEN a running adapter reports an id, version, build, descriptor or capability dictionary
@@ -61,6 +68,7 @@ capability routes in one canonical launch plan.
 ### Add scenario: capability-substitution-changes-launch-identity
 WHEN a route substitutes a capability while the D46 semantic plan stays unchanged
 THEN the launch fingerprint changes
+AND the derived Run id changes
 
 ### Add scenario: one-adapter-routes-several-capabilities
 GIVEN one configured adapter exposes several capabilities
@@ -128,11 +136,17 @@ WHEN a native report has a mutable path, URI or provider execution id
 THEN those values remain provenance
 AND they do not substitute for the core-computed content identity
 
+### Add scenario: import-corrections-require-verified-predecessors
+WHEN an import or execution supplies predecessor bundles
+THEN core validates their complete linear correction chain before adapter invocation
+AND the request binds the sorted revision and bundle-fingerprint identities
+AND the response is exactly the next revision correcting the terminal predecessor
+
 ## Add requirement: capability-classes-and-provider-identities-stay-separate
 Criticality: routine
 
-Azimuth SHALL use a closed semantic capability-class vocabulary with open provider-family
-capability addresses and open challenge forms.
+Azimuth SHALL use a closed semantic capability-class vocabulary with open configured-adapter
+capability addresses, separate open provider-family identities and open challenge forms.
 
 ### Add scenario: one-capability-supports-several-classes
 WHEN one provider capability can execute or import more than one semantic role

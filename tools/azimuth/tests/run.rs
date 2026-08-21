@@ -1,4 +1,5 @@
 use azimuth::fingerprint::sha256;
+use azimuth::json::Json;
 use azimuth::run::*;
 use std::collections::BTreeMap;
 
@@ -84,9 +85,44 @@ fn valid_bundle() -> RunBundle {
                 uri: None,
             },
             normalizer: Normalizer {
-                id: "azimuth/local".into(),
+                id: "adapter/synthetic".into(),
                 version: "alpha.2".into(),
-                build_fingerprint: Some(fp('1')),
+                build_fingerprint: fp('1'),
+            },
+            adapter: AdapterProvenance {
+                id: "synthetic".into(),
+                adapter_version: "alpha.2".into(),
+                adapter_fingerprint: fp('1'),
+                descriptor_fingerprint: fp('3'),
+                configuration_fingerprint: fp('4'),
+                launch_fingerprint: fp('5'),
+                routes: vec![
+                    LaunchRoute {
+                        selection: RouteSelection {
+                            kind: RouteSelectionKind::Check,
+                            id: "payments/recovery".into(),
+                        },
+                        capability: RouteCapability {
+                            address: "synthetic/checks".into(),
+                            class: RouteCapabilityClass::CheckExecute,
+                            challenge_form: None,
+                            fingerprint: fp('6'),
+                        },
+                    },
+                    LaunchRoute {
+                        selection: RouteSelection {
+                            kind: RouteSelectionKind::Challenge,
+                            id: "recovery-credibility".into(),
+                        },
+                        capability: RouteCapability {
+                            address: "synthetic/challenges".into(),
+                            class: RouteCapabilityClass::ChallengeExecute,
+                            challenge_form: Some("implementation-perturbation".into()),
+                            fingerprint: fp('7'),
+                        },
+                    },
+                ],
+                import_inputs: vec![],
             },
             generated_at_ms: 5,
             principal: Some("ci/principal".into()),
@@ -206,6 +242,42 @@ fn terminal_without_selection(status: RunStatus) -> RunBundle {
     bundle.challenger_executions.clear();
     refresh(&mut bundle);
     bundle
+}
+
+fn import_bundle() -> RunBundle {
+    let mut bundle = valid_bundle();
+    bundle.provenance.mode = ProvenanceMode::Import;
+    bundle.provenance.adapter.routes[0].capability.class = RouteCapabilityClass::CheckImport;
+    bundle.provenance.adapter.routes[1].capability.class = RouteCapabilityClass::ChallengeImport;
+    bundle.provenance.adapter.import_inputs = vec![ImportInputIdentity {
+        id: "native-report".into(),
+        digest: fp('8'),
+        size_bytes: 12,
+    }];
+    refresh(&mut bundle);
+    bundle
+}
+
+fn object_mut<'a>(value: &'a mut Json, field: &str) -> &'a mut Json {
+    let Json::Obj(fields) = value else {
+        panic!("expected object");
+    };
+    fields
+        .iter_mut()
+        .find(|(name, _)| name == field)
+        .map(|(_, value)| value)
+        .unwrap_or_else(|| panic!("missing `{field}`"))
+}
+
+fn remove_field(value: &mut Json, field: &str) {
+    let Json::Obj(fields) = value else {
+        panic!("expected object");
+    };
+    let index = fields
+        .iter()
+        .position(|(name, _)| name == field)
+        .unwrap_or_else(|| panic!("missing `{field}`"));
+    fields.remove(index);
 }
 
 #[test]
@@ -455,6 +527,22 @@ fn result_fingerprints_bind_context_check_and_plan_local_challenge_id() {
             &changed_challenge.challenger_executions[0]
         )
     );
+}
+
+#[test]
+fn run_identity_binds_the_frozen_launch_route() {
+    let bundle = valid_bundle();
+    let identity = run_id(&bundle);
+    let literal = format!(
+        "{{\"format\":\"azimuth-run-identity\",\"launch_fingerprint\":\"{}\",\"plan_fingerprint\":\"{}\",\"source_execution\":\"native-17\",\"source_system\":\"local-runner\",\"subject_fingerprint\":\"{}\",\"version\":1}}",
+        bundle.provenance.adapter.launch_fingerprint,
+        bundle.plan.fingerprint,
+        bundle.subject_fingerprint,
+    );
+    assert_eq!(identity, format!("sha256:{}", sha256(literal.as_bytes())));
+    let mut different_launch = bundle.clone();
+    different_launch.provenance.adapter.launch_fingerprint = fp('9');
+    assert_ne!(identity, run_id(&different_launch));
 }
 
 #[test]
@@ -763,4 +851,210 @@ fn sparse_revision_checks_do_not_enumerate_the_revision_range() {
     let findings = verify_set(&[initial, distant]);
     assert!(has(&findings, "run/history-gap"));
     assert!(has(&findings, "run/history-missing-predecessor"));
+}
+
+#[test]
+fn public_component_helpers_construct_and_parse_strict_d46_values() {
+    let bundle = valid_bundle();
+    assert!(validate_subject_component(&bundle.subject).is_empty());
+    assert_eq!(
+        subject_from_json(&subject_to_json(&bundle.subject)).unwrap(),
+        bundle.subject
+    );
+
+    let plan = construct_plan(
+        &bundle.subject_fingerprint,
+        bundle.plan.model_fingerprint.clone(),
+        bundle.plan.required_context.clone(),
+        bundle.plan.checks.clone(),
+        bundle.plan.challenges.clone(),
+    )
+    .unwrap();
+    assert!(validate_plan_component(&bundle.subject_fingerprint, &plan).is_empty());
+    assert_eq!(plan_from_json(&plan_to_json(&plan)).unwrap(), plan);
+    assert_eq!(
+        canonical_fingerprint(&Json::obj(vec![("value", Json::Num(1.0))])).unwrap(),
+        format!("sha256:{}", sha256(b"{\"value\":1}"))
+    );
+
+    let duplicate = strict_json("duplicate.json", "{\"a\":1,\"a\":1}").unwrap_err();
+    assert!(duplicate.detail.contains("duplicate field"));
+
+    let mut unsorted = bundle.plan.checks.clone();
+    let mut earlier = unsorted[0].clone();
+    earlier.id = "aaa/check".into();
+    unsorted.push(earlier);
+    assert!(construct_plan(
+        &bundle.subject_fingerprint,
+        bundle.plan.model_fingerprint,
+        bundle.plan.required_context,
+        unsorted,
+        bundle.plan.challenges,
+    )
+    .is_err());
+}
+
+#[test]
+fn d47_adapter_provenance_is_required_without_a_compatibility_shape() {
+    let bundle = valid_bundle();
+    let provenance = provenance_to_json(&bundle.provenance);
+    assert_eq!(
+        provenance_from_json(&provenance).unwrap(),
+        bundle.provenance
+    );
+    assert_eq!(
+        adapter_provenance_from_json(&adapter_provenance_to_json(&bundle.provenance.adapter))
+            .unwrap(),
+        bundle.provenance.adapter
+    );
+
+    let mut old_shape = to_json(&bundle);
+    remove_field(object_mut(&mut old_shape, "provenance"), "adapter");
+    assert!(parse("old.json", &old_shape.to_string_pretty()).is_err());
+
+    let mut optional_build = to_json(&bundle);
+    let provenance = object_mut(&mut optional_build, "provenance");
+    remove_field(object_mut(provenance, "normalizer"), "build_fingerprint");
+    assert!(parse("old-normalizer.json", &optional_build.to_string_pretty()).is_err());
+
+    let mut missing_version = to_json(&bundle);
+    let provenance = object_mut(&mut missing_version, "provenance");
+    remove_field(object_mut(provenance, "adapter"), "adapter_version");
+    assert!(parse("old-adapter.json", &missing_version.to_string_pretty()).is_err());
+}
+
+#[test]
+fn adapter_routes_match_every_semantic_selection_in_exact_launch_order() {
+    let mut missing = valid_bundle();
+    missing.provenance.adapter.routes.pop();
+    refresh(&mut missing);
+    assert!(has(&verify(&missing), "run/provenance-route-cardinality"));
+
+    let mut spoofed = valid_bundle();
+    spoofed.provenance.adapter.routes[0].selection.id = "payments/other".into();
+    refresh(&mut spoofed);
+    assert!(has(&verify(&spoofed), "run/provenance-route-selection"));
+
+    let mut wrong_adapter = valid_bundle();
+    wrong_adapter.provenance.adapter.routes[0]
+        .capability
+        .address = "other/checks".into();
+    refresh(&mut wrong_adapter);
+    assert!(has(&verify(&wrong_adapter), "run/provenance-route-adapter"));
+
+    let mut reversed = valid_bundle();
+    reversed.provenance.adapter.routes.reverse();
+    refresh(&mut reversed);
+    let findings = verify(&reversed);
+    assert!(has(&findings, "run/non-canonical-array"));
+    assert!(has(&findings, "run/provenance-route-selection"));
+}
+
+#[test]
+fn normalizer_mode_route_classes_and_import_inputs_fail_closed() {
+    let mut normalizer = valid_bundle();
+    normalizer.provenance.normalizer.id = "adapter/other".into();
+    refresh(&mut normalizer);
+    assert!(has(&verify(&normalizer), "run/provenance-normalizer"));
+
+    let mut version = valid_bundle();
+    version.provenance.normalizer.version = "other-version".into();
+    refresh(&mut version);
+    assert!(has(&verify(&version), "run/provenance-normalizer"));
+
+    let mut execute_inputs = valid_bundle();
+    execute_inputs.provenance.adapter.import_inputs = vec![ImportInputIdentity {
+        id: "native-report".into(),
+        digest: fp('8'),
+        size_bytes: 12,
+    }];
+    refresh(&mut execute_inputs);
+    assert!(has(
+        &verify(&execute_inputs),
+        "run/provenance-import-inputs"
+    ));
+
+    let mut import_without_inputs = valid_bundle();
+    import_without_inputs.provenance.mode = ProvenanceMode::Import;
+    refresh(&mut import_without_inputs);
+    let findings = verify(&import_without_inputs);
+    assert!(has(&findings, "run/provenance-import-inputs"));
+    assert!(has(&findings, "run/provenance-route-class"));
+
+    let valid_import = import_bundle();
+    assert!(verify(&valid_import).is_empty());
+    let parsed = parse("import.json", &to_json(&valid_import).to_string_pretty()).unwrap();
+    assert_eq!(parsed.provenance.adapter.import_inputs[0].size_bytes, 12);
+}
+
+#[test]
+fn correction_anchors_fix_the_planned_adapter_route_but_not_import_bytes() {
+    let initial = import_bundle();
+    let mut later_bytes = initial.clone();
+    later_bytes.bundle_revision = 1;
+    later_bytes.corrects = Some(initial.bundle_fingerprint.clone());
+    later_bytes.correction_reason = Some("completed native report".into());
+    later_bytes.provenance.adapter.import_inputs[0].digest = fp('9');
+    later_bytes.provenance.adapter.import_inputs[0].size_bytes = 24;
+    later_bytes.finished_at_ms = 5;
+    later_bytes.provenance.generated_at_ms = 6;
+    refresh(&mut later_bytes);
+    assert!(verify_set(&[initial.clone(), later_bytes]).is_empty());
+
+    let mut changes = Vec::new();
+    let mut correction = initial.clone();
+    correction.planned_at_ms = 0;
+    changes.push(correction);
+    let mut correction = initial.clone();
+    correction.provenance.adapter.id = "replacement".into();
+    correction.provenance.normalizer.id = "adapter/replacement".into();
+    for route in &mut correction.provenance.adapter.routes {
+        let capability = route
+            .capability
+            .address
+            .split_once('/')
+            .unwrap()
+            .1
+            .to_string();
+        route.capability.address = format!("replacement/{capability}");
+    }
+    changes.push(correction);
+    let mut correction = initial.clone();
+    correction.provenance.adapter.descriptor_fingerprint = fp('a');
+    changes.push(correction);
+    let mut correction = initial.clone();
+    correction.provenance.adapter.configuration_fingerprint = fp('b');
+    changes.push(correction);
+    let mut correction = initial.clone();
+    correction.provenance.adapter.adapter_version = "alpha.2-corrected".into();
+    correction.provenance.normalizer.version = "alpha.2-corrected".into();
+    changes.push(correction);
+    let mut correction = initial.clone();
+    correction.provenance.adapter.routes[0]
+        .capability
+        .fingerprint = fp('d');
+    changes.push(correction);
+
+    for mut correction in changes {
+        correction.bundle_revision = 1;
+        correction.corrects = Some(initial.bundle_fingerprint.clone());
+        correction.correction_reason = Some("changed execution route".into());
+        refresh(&mut correction);
+        assert!(
+            has(
+                &verify_set(&[initial.clone(), correction]),
+                "run/history-anchor-change"
+            ),
+            "accepted a changed correction anchor"
+        );
+    }
+
+    let mut different_run = initial.clone();
+    different_run.bundle_revision = 1;
+    different_run.corrects = Some(initial.bundle_fingerprint.clone());
+    different_run.correction_reason = Some("changed launch".into());
+    different_run.provenance.adapter.launch_fingerprint = fp('c');
+    refresh(&mut different_run);
+    let findings = verify_set(&[initial, different_run]);
+    assert!(has(&findings, "run/history-missing-initial"));
 }

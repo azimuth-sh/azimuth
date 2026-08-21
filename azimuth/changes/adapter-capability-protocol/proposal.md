@@ -35,8 +35,8 @@ In scope:
 
 - define strict `azimuth/adapters.json` configuration with no discovery from `PATH`;
 - pin adapter id, version, build, executable and resource content digests, descriptor fingerprint,
-  semantic settings, exact non-secret environment literals, allowed inherited environment names,
-  process limits and a capability dictionary;
+  semantic settings, exact non-secret environment literals, process limits and a capability
+  dictionary;
 - define closed capability classes with open `<adapter-id>/<capability-id>` addresses and open
   challenge forms;
 - define canonical adapter, descriptor, configuration and capability fingerprints;
@@ -49,6 +49,7 @@ In scope:
   JSON response on standard output;
 - validate protocol handshake, configured description, class support, request identity, returned
   provenance, actual selection and the complete D46 bundle before atomic output;
+- stage executable, resource and import-input bytes from the same streams core hashes;
 - import core-content-addressed exact native report files;
 - expose adapter verification and Run planning, execution and import commands with stable exit
   classes;
@@ -98,37 +99,46 @@ atomically with implementation and the limitation must remain visible in the cha
 - Configuration rejects unknown fields, duplicate adapter or capability identities, relative
   escape, unpinned executable or resource content, unsupported classes and executable discovery
   from `PATH`.
-- An executable is absolute or relative to the configuration file, is invoked directly without a
-  shell and is hashed before spawn. The child starts with a cleared environment and receives only
-  exact configured literals plus explicitly allowed inherited names.
+- An executable is absolute or relative to the configuration file and is invoked directly without
+  a shell. Core copies executable, resource and import-input bytes to a private invocation stage
+  while hashing those same streams, verifies every configured digest and invokes only staged
+  content. The stage is an integrity boundary, not a filesystem or network sandbox.
+- The child starts with a cleared environment and receives only exact configured non-secret
+  literals. Version 1 has no ambient inheritance, secret reference or interpolation.
 - `azimuth adapter verify` performs the protocol-v1 description exchange and fails if adapter id,
   version, build, descriptor fingerprint or capability dictionary differs from configuration.
 - Capability and configuration fingerprints bind behavior-changing executable and resource
-  digests, protocol, adapter version and build, declarations and non-secret semantic settings while
-  excluding locators, prose and secret values.
+  digests, protocol, adapter version and build, declarations, exact environment literals and
+  non-secret semantic settings while excluding locators and prose.
 - A strict plan request supplies one exact D46 Subject, planned time, operation, exact string
   context and sorted Check selections with finite explicit units and capability addresses.
 - The public surface is `azimuth adapter verify [--config <file>]`,
-  `azimuth run plan --request <file> [model options] [--config <file>] [--out <file>]`,
-  `azimuth run execute --plan <file> [--config <file>] [--out <file>]` and
-  `azimuth run import --plan <file> --input <id>=<file>... [--config <file>] [--out <file>]`.
+  `azimuth run plan --request <file> [--model <dir>] [--standards <file>]
+  [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]`,
+  `azimuth run execute --plan <file> [--predecessor <bundle>...] [--config <file>]
+  [--out <file>]` and `azimuth run import --plan <file> --input <id>=<file>...
+  [--predecessor <bundle>...] [--config <file>] [--out <file>]`.
 - Planning loads and fingerprints the complete unselected model, resolves every Check fingerprint
   and complete stable implementation set, emits `challenges: []` and has no `--only` path.
 - Planning does not require a current Qualification or compare request context to an Evidence
   Binding; Change F owns decision resolution and applicability.
 - A launch plan freezes the Subject, planned time, operation, complete D46 semantic plan and one
   configured capability route per selection. Any capability substitution changes its canonical
-  fingerprint.
+  fingerprint and the derived Run id.
 - Exactly one configured adapter id serves a Run, while its routes may name several capabilities;
   one capability may implement several classes and one physical activity may return separate Check
   and Challenge outputs.
 - Execute and import use one request/response process, enforce configured timeout and output bounds,
   drain bounded standard output and standard error concurrently, and treat exit status, malformed
   response or timeout as transport failure. Execute is never retried automatically after timeout.
-- Import inputs are exact files whose digests and sizes core computes before invocation. Returned
-  bundle provenance repeats those identities; adapters cannot replace them with locators or native
-  run ids. A correction may carry later bytes from the same native execution while its launch route
-  remains fixed.
+- Import inputs are exact staged files whose digests and sizes core computes from the streams it
+  copies before invocation. Returned bundle provenance repeats those identities; adapters cannot
+  replace them with locators or native run ids. A correction may carry later bytes from the same
+  native execution while its launch route remains fixed.
+- Execute and import validate the complete ordered predecessor chain before spawning. The request
+  fingerprint binds the sorted revision and bundle-fingerprint identities. With no predecessor the
+  adapter returns revision zero; otherwise it returns exactly the terminal revision plus one,
+  corrects the terminal fingerprint and preserves all correction anchors.
 - Execute and import validate configuration, descriptor, class, launch identity, Subject, semantic
   plan, adapter provenance, routes, actual selection and the complete D46 bundle before atomic
   output.

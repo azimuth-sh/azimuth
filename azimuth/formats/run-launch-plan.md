@@ -77,6 +77,7 @@ The complete shape is:
   "plan": {},
   "adapter": {
     "id": "synthetic",
+    "adapter_version": "0.1.0-alpha.2",
     "adapter_fingerprint": "sha256:<adapter-fingerprint>",
     "descriptor_fingerprint": "sha256:<descriptor-fingerprint>",
     "configuration_fingerprint": "sha256:<configuration-fingerprint>"
@@ -104,8 +105,9 @@ including its supplied and recomputed fingerprint. The Plan is unchanged from D4
 Subject, adapter, capability, launch or import-input field. Core supplies the separately carried
 Subject fingerprint when recomputing the D46 Plan fingerprint.
 
-The adapter id is one lower-kebab segment. Every fingerprint has exact
-`sha256:<64-lowercase-hex>` shape and equals the selected configuration entry.
+The adapter id is one lower-kebab segment. Adapter version is the exact non-empty configured
+version. Every fingerprint has exact `sha256:<64-lowercase-hex>` shape and equals the selected
+configuration entry.
 
 ## Routes
 
@@ -178,11 +180,11 @@ fingerprint is
 `sha256:b75606956b9c1857f8b401d9bad207253b90f6948efddb5532a769b9f488fbfb`.
 
 ```json
-{"adapter":{"adapter_fingerprint":"sha256:0000000000000000000000000000000000000000000000000000000000000000","configuration_fingerprint":"sha256:1111111111111111111111111111111111111111111111111111111111111111","descriptor_fingerprint":"sha256:2222222222222222222222222222222222222222222222222222222222222222","id":"demo"},"format":"azimuth-run-launch-fingerprint","operation":"execute","plan":{"challenges":[],"checks":[{"fingerprint":"sha256:6666666666666666666666666666666666666666666666666666666666666666","id":"demo/check","implementations":[{"identity":"demo|rust-symbol|demo::check","source_fingerprint":"sha256:7777777777777777777777777777777777777777777777777777777777777777"}],"units":[{"id":"whole","parameters":{}}]}],"fingerprint":"sha256:b75606956b9c1857f8b401d9bad207253b90f6948efddb5532a769b9f488fbfb","model_fingerprint":"sha256:8888888888888888888888888888888888888888888888888888888888888888","required_context":{}},"planned_at_ms":1787300000000,"routes":[{"capability":{"address":"demo/check","class":"check.execute","fingerprint":"sha256:3333333333333333333333333333333333333333333333333333333333333333"},"selection":{"id":"demo/check","kind":"check"}}],"subject":{"artifacts":[{"digest":"sha256:4444444444444444444444444444444444444444444444444444444444444444","id":"image"}],"kind":"artifact"},"subject_fingerprint":"sha256:22478698e6731ce5984658e366386e466fe173216bc7cb721168e1638d2dee02","version":1}
+{"adapter":{"adapter_fingerprint":"sha256:0000000000000000000000000000000000000000000000000000000000000000","adapter_version":"1","configuration_fingerprint":"sha256:1111111111111111111111111111111111111111111111111111111111111111","descriptor_fingerprint":"sha256:2222222222222222222222222222222222222222222222222222222222222222","id":"demo"},"format":"azimuth-run-launch-fingerprint","operation":"execute","plan":{"challenges":[],"checks":[{"fingerprint":"sha256:6666666666666666666666666666666666666666666666666666666666666666","id":"demo/check","implementations":[{"identity":"demo|rust-symbol|demo::check","source_fingerprint":"sha256:7777777777777777777777777777777777777777777777777777777777777777"}],"units":[{"id":"whole","parameters":{}}]}],"fingerprint":"sha256:b75606956b9c1857f8b401d9bad207253b90f6948efddb5532a769b9f488fbfb","model_fingerprint":"sha256:8888888888888888888888888888888888888888888888888888888888888888","required_context":{}},"planned_at_ms":1787300000000,"routes":[{"capability":{"address":"demo/check","class":"check.execute","fingerprint":"sha256:3333333333333333333333333333333333333333333333333333333333333333"},"selection":{"id":"demo/check","kind":"check"}}],"subject":{"artifacts":[{"digest":"sha256:4444444444444444444444444444444444444444444444444444444444444444","id":"image"}],"kind":"artifact"},"subject_fingerprint":"sha256:22478698e6731ce5984658e366386e466fe173216bc7cb721168e1638d2dee02","version":1}
 ```
 
 Its SHA-256 value is
-`sha256:51835f2979749b5564f34d6172ab4f52cfc44032c1822cf1b49985d7528eb265`.
+`sha256:980dc9e544f41414e3a2735e84a6d9733aee85b2961899bb538f1f34c4347237`.
 
 ## Adapter request and returned bundle
 
@@ -196,18 +198,29 @@ adapter identity, routes and stable import-input identities in D47 provenance. C
 objects exactly, verifies actual selection against the semantic Plan and verifies the complete D46
 bundle before atomic output.
 
+Execute and import accept repeated predecessor bundle files in any order. Core verifies their full
+D46 correction chain and sends the sorted revision/fingerprint identities in the adapter request.
+No predecessor requires revision zero. Otherwise the response is exactly the next full revision,
+names the terminal predecessor and validates with the supplied chain. The returned bundle's Run id
+includes this launch fingerprint, so a predecessor from another route cannot join the chain.
+
 ## Command boundary
 
 ```text
-azimuth run plan --request <file> [model options] [--config <file>] [--out <file>]
-azimuth run execute --plan <file> [--config <file>] [--out <file>]
-azimuth run import --plan <file> --input <id>=<file>... [--config <file>] [--out <file>]
+azimuth run plan --request <file> [--model <dir>] [--standards <file>] \
+  [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
+azimuth run execute --plan <file> [--predecessor <bundle>...] \
+  [--config <file>] [--out <file>]
+azimuth run import --plan <file> --input <id>=<file>... \
+  [--predecessor <bundle>...] [--config <file>] [--out <file>]
 ```
 
 Configuration defaults to `azimuth/adapters.json`. Execute rejects an import launch and import
 rejects an execute launch. Import CLI ids sort uniquely after parsing and equal the adapter request
-inputs. Planning and successful provider exchange write JSON only after complete validation using a
-temporary sibling and atomic replacement.
+inputs. `--manifest` and `--predecessor` are repeatable. The four listed model inputs are the whole
+planning surface: `--only`, project accounts, worksets and local/federated selection modes are
+rejected. Planning and successful provider exchange write JSON only after complete validation
+using a temporary sibling and atomic replacement.
 
 Valid adverse or incomplete Run facts exit zero. Semantic, model, content, identity, transport or
 bundle-invariant mismatch exits one. CLI, configuration, planning-request, launch-plan or adapter-

@@ -2462,8 +2462,8 @@ Adapter configuration is the strict `azimuth/adapters.json` format. There is no 
 entry-point convention or `PATH` fallback. One configuration entry pins a project-local adapter
 id, provider family, protocol version, adapter version and build, executable and resource content,
 expected descriptor, non-secret semantic settings, child environment and process limits. A path is
-absolute or is contained beneath the configuration directory after resolution. Core hashes every
-executable and resource before spawn and invokes the executable directly without a shell.
+absolute or is contained beneath the configuration directory after resolution. Core stages and
+hashes content from one open handle and invokes the staged executable directly without a shell.
 
 **Capability identity.** The version 1 semantic classes are closed:
 
@@ -2473,25 +2473,26 @@ executable and resource before spawn and invokes the executable directly without
 - `challenge.execute`; and
 - `challenge.import`.
 
-Provider identities remain open. An address is exactly `<adapter-id>/<capability-id>`, where both
-parts are lower-kebab segments. One capability may support several classes. Challenge forms are
-open lower-kebab path ids declared by challenge capabilities rather than enumerated by core. One
-Run uses one adapter id, but its selections may route through several capabilities of that adapter.
+Provider-family identities remain open lower-kebab path ids and describe implementation families;
+they are not route addresses. A configured capability address is exactly
+`<configured-adapter-id>/<capability-id>`, where both address parts are lower-kebab segments. One
+capability may support several classes. Challenge forms are open lower-kebab path ids declared by
+challenge capabilities rather than enumerated by core. One Run uses one configured adapter id, but
+its selections may route through several capabilities of that adapter.
 
 Four identities separate concerns. The adapter fingerprint binds protocol, adapter identity,
 provider family, version, build and executable and resource digests. A capability fingerprint adds
 its id, classes, challenge forms and exact non-secret semantic settings. The descriptor fingerprint
 binds the complete reported adapter and capability dictionary. The configuration fingerprint also
-binds adapter-wide semantic settings, exact literal environment, inherited-name allowlist and
-timeout and stream limits. Locators and prose enter none of these fingerprints. Alpha 2 has no
-secret-value notation; a secret must be supplied by a separately governed future mechanism rather
-than hidden inside an unaccounted field.
+binds adapter-wide semantic settings, the complete exact literal environment and timeout and stream
+limits. Locators and prose enter none of these fingerprints. Alpha 2 has no inherited environment,
+secret value, secret reference or interpolation notation.
 
 **Static description handshake.** `azimuth adapter verify` launches the configured executable with
 one `describe` request. The returned description must equal the configured description, including
 adapter, build, content, capability and fingerprint fields. Execute and import responses repeat the
 same description, so replacing a binary after a successful verification still fails closed. Core
-rehashes configured content immediately before every invocation; a prior verify is not a lease.
+stages and hashes configured content for every invocation; a prior verify is not a lease.
 
 **Launch identity.** A launch plan contains one exact D46 Subject and Subject fingerprint, planned
 time, one `execute | import` operation, the complete D46 Plan, configured adapter identity and
@@ -2500,7 +2501,8 @@ routes require `check.execute` or `check.import` according to the operation. Cha
 require the matching Challenge class and repeat the open Challenger form supported by the
 capability. `model.extract` is a configuration capability, not a Run operation in this change. Any
 planned time, Subject, semantic Plan, operation, adapter or route substitution changes the launch
-fingerprint.
+fingerprint. The D47 Run-id preimage adds that launch fingerprint to D46's source, Subject and Plan
+identity, so route or configuration substitution creates a different Run id directly.
 
 The current planner accepts explicit Check ids, finite non-empty work-unit sets and capability
 addresses. It loads and fingerprints the complete unselected model, resolves the current Check
@@ -2514,9 +2516,17 @@ change.
 **Process protocol.** Every adapter interaction is one bounded short-lived process with one strict
 versioned JSON request on standard input and exactly one strict versioned JSON response on standard
 output. Core closes input after the request, clears the child environment, supplies only configured
-literal values and explicitly allowed inherited names, and drains standard output and standard
-error concurrently into independent capped buffers. It enforces the configured timeout and never
-automatically retries execute after a timeout because native work may already have occurred.
+non-secret literal values, and drains standard output and standard error concurrently into
+independent capped buffers. It enforces the configured timeout and never automatically retries
+execute after a timeout because native work may already have occurred.
+
+Core stages content before every invocation. It opens each configured executable, resource and
+import input exactly once, copies and hashes bytes from that same open handle into a private
+invocation directory, validates configured digest and size, makes staged content non-writable and
+uses only staged paths. Resources and inputs are read-only; the executable retains only the owner
+permissions needed to read and execute it. This closes hash-then-open substitution without
+pretending to sandbox authorized adapter code. The adapter retains the host filesystem and network
+authority of the Azimuth process.
 
 A description request fingerprint binds the targeted adapter and configuration. An execute or
 import request fingerprint binds the operation, launch identity and sorted core-computed input
@@ -2539,9 +2549,17 @@ launch, provenance, selection or bundle-invariant mismatch also exits one. CLI a
 schema errors, and malformed or schema-invalid adapter responses, exit two. Neither nonzero class
 publishes an output. Standard error and process exit status are diagnostics, never product facts.
 
-The D46 `normalizer` is now exactly `adapter/<configured-adapter-id>`, uses the adapter version and
-uses the adapter fingerprint as its build fingerprint. This removes two competing producer
-identities while the separate source object continues to identify provider-native execution.
+Execute and import may receive repeated predecessor bundle files. Core verifies the full D46 chain,
+then sends its unique `(bundle revision, bundle fingerprint)` identities in revision order and
+binds them in request identity. With no predecessors the adapter returns revision zero. Otherwise it
+returns exactly the next complete revision, corrects the terminal predecessor and preserves every
+anchor. Core verifies the combined chain before atomic publication.
+
+The launch and bundle adapter accounts repeat exact adapter version. The D46 `normalizer` is now
+exactly `adapter/<configured-adapter-id>`, uses that adapter version and uses the adapter
+fingerprint as its build fingerprint. The complete normalizer is a correction anchor. This removes
+two competing producer identities while the separate source object continues to identify
+provider-native execution.
 
 **Corrections.** D47 adapter provenance is part of the fixed execution route. Adapter,
 configuration, descriptor, launch and capability routes are correction anchors in addition to
@@ -2556,9 +2574,11 @@ single current alpha 2 v1 schema requires adapter provenance and rejects the pri
 compatibility reader or alternate interpretation remains.
 
 **Command boundary.** The public surface is `azimuth adapter verify [--config <file>]`,
-`azimuth run plan --request <file> [model options] [--config <file>] [--out <file>]`,
-`azimuth run execute --plan <file> [--config <file>] [--out <file>]` and
-`azimuth run import --plan <file> --input <id>=<file>... [--config <file>] [--out <file>]`.
+`azimuth run plan --request <file> [--model <dir>] [--standards <file>] [--workspace <file>]`
+` [--manifest <file>...] [--config <file>] [--out <file>]`,
+`azimuth run execute --plan <file> [--predecessor <bundle>...] [--config <file>] [--out <file>]`
+and `azimuth run import --plan <file> --input <id>=<file>...`
+` [--predecessor <bundle>...] [--config <file>] [--out <file>]`.
 Configuration defaults to `azimuth/adapters.json`. Existing standalone `run verify` and
 `run inspect` retain their protocol-only meaning. Durable `run ingest` remains absent.
 
@@ -2574,11 +2594,12 @@ developer workspace and CI. In-process plugins were also rejected: they weaken i
 language ABI authoritative and cannot apply the same executable, environment and stream bounds.
 
 **Validation.** Ordinary engineering tests must cover strict configuration and description shape,
-content drift, environment allowlisting, all five classes, capability substitution, canonical
-fingerprints, complete route cardinality, description drift, timeout, both stream bounds, malformed
-and extra response content, import relocation with stable content identity, returned provenance,
-atomic output and valid adverse facts. One executing and one importing synthetic adapter must share
-the conformance suite. All current Claims remain routine and create no Qualifications.
+same-handle staging, literal environment clearing, all five classes, capability substitution,
+canonical fingerprints, complete route cardinality, description drift, timeout, both stream bounds,
+malformed and extra response content, import relocation with stable content identity, predecessor
+chains, returned provenance, atomic output and valid adverse facts. One executing and one importing
+synthetic adapter must share the conformance suite. All current Claims remain routine and create no
+Qualifications.
 
 **What would falsify it.** Revisit the boundary if two structurally different providers require
 provider syntax in the D46 Plan, if one-request processes cannot safely represent bounded native

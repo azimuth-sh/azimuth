@@ -50,8 +50,7 @@ shape:
   "environment": {
     "literals": {
       "LANG": "C.UTF-8"
-    },
-    "inherit": ["TMPDIR"]
+    }
   },
   "limits": {
     "timeout_ms": 30000,
@@ -81,21 +80,22 @@ The executable and every resource are regular files. A locator is either host-ab
 relative path resolved beneath the directory containing the configuration file. A relative
 locator uses `/`, has no empty, `.` or `..` component and cannot escape after symlink-aware
 resolution. Core never searches `PATH`, expands a shell expression or invokes a shell. Resource
-arrays sort by unique lower-kebab path `id`. Core hashes the executable and every resource before
-each spawn and requires the configured digest.
+arrays sort by unique lower-kebab path `id`.
 
-Core invokes the resolved executable with no protocol command-line arguments and uses the resolved
-configuration directory as the child working directory. Every resource and import locator sent on
-standard input is absolute. A conforming adapter derives behavior from the request rather than the
-working-directory locator, which is excluded from identity.
+For each invocation, core creates one private staging directory. It opens each configured
+executable and resource exactly once, copies and hashes bytes from that same open handle, rejects a
+digest mismatch, and makes the completed staged files non-writable. Resources are read-only; the
+executable retains only the owner permissions needed to read and execute it. Core invokes only that
+staged executable, with no protocol command-line arguments, and passes only staged absolute resource
+paths. The staging directory is the child working directory and is removed after the exchange. This
+removes a hash-then-open substitution window.
 
 `semantic_settings`, `environment.literals` and all other string maps use unique keys. RFC 8785
 orders their keys for fingerprints; source object-key order is immaterial. Values are exact strings
 and may be empty. Version 1 supports no secret value, secret reference or interpolation syntax.
 Environment names match `[A-Za-z_][A-Za-z0-9_]*`.
-`inherit` sorts by unique environment name and is disjoint from `literals`. Core clears the child
-environment, then supplies the literal map and the current values of allowlisted inherited names.
-An inherited name that is absent in the parent stays absent in the child.
+Core clears the child environment and supplies only this exact non-secret literal map. Inherited
+environment names and values are not supported in version 1.
 
 Semantic settings configure provider translation. They cannot replace D46 required context or
 change what a selected Check or Challenger means. A behavior constraint needed for evidentiary
@@ -184,7 +184,7 @@ Core writes one complete request to standard input and closes it. A description 
       {
         "id": "normalization-rules",
         "digest": "sha256:<64-lowercase-hex>",
-        "locator": "/workspace/experiments/adapter-capabilities/rules.json"
+        "locator": "/private/staged-invocation/normalization-rules"
       }
     ],
     "capabilities": [
@@ -216,7 +216,7 @@ An execute or import request is:
       {
         "id": "normalization-rules",
         "digest": "sha256:<64-lowercase-hex>",
-        "locator": "/workspace/experiments/adapter-capabilities/rules.json"
+        "locator": "/private/staged-invocation/normalization-rules"
       }
     ],
     "capabilities": [
@@ -232,7 +232,13 @@ An execute or import request is:
       "id": "native-report",
       "digest": "sha256:<64-lowercase-hex>",
       "size_bytes": 18423,
-      "locator": "/private/tmp/report.json"
+      "locator": "/private/staged-invocation/native-report"
+    }
+  ],
+  "predecessors": [
+    {
+      "bundle_revision": 0,
+      "bundle_fingerprint": "sha256:<predecessor-bundle-fingerprint>"
     }
   ]
 }
@@ -241,10 +247,10 @@ An execute or import request is:
 `launch_plan` is the complete strict object from [run-launch-plan.md](run-launch-plan.md), and its
 operation equals the request operation. `configuration.fingerprint` equals the launch configuration
 fingerprint. Semantic settings equal the configured adapter-wide map. Resources equal the complete
-configured resource identities and use host-absolute resolved locators. Capabilities sort by unique
+configured resource identities and use staged absolute locators. Capabilities sort by unique
 address and equal the configured fingerprint and semantic settings for exactly the capabilities
 named by one or more launch routes. This gives the process all selected behavior-changing values
-without granting access to the configuration file.
+through the protocol.
 
 A describe request carries the same configuration object with every configured capability. Its
 adapter id and both configuration-fingerprint fields equal the selected entry. This lets the
@@ -252,13 +258,26 @@ adapter read pinned resources and validate configured settings during the handsh
 import request omits the `adapter` field and carries only capabilities used by its launch routes.
 
 Execute requires `inputs: []`. Import requires a non-empty array sorted by unique lower-kebab path
-`id`. Each input locator is a host-absolute regular-file path. Core computes digest and size before
-launch. The adapter verifies that the bytes it consumes have that exact digest and size; a
-mismatched or changing file produces failure, never a bundle.
+`id`. Core opens each source input once, copies and hashes bytes from that same handle into the
+private invocation directory, validates size and digest and marks the staged file read-only. Each
+request locator is the staged absolute regular-file path. The adapter verifies the bytes it
+consumes; a mismatch produces failure, never a bundle.
+
+`predecessors` is always present. It is empty for a new Run. Otherwise it contains the full verified
+existing correction chain, sorted by contiguous `bundle_revision` from zero, with exactly
+`bundle_revision` and `bundle_fingerprint` from each bundle. Core accepts predecessor CLI files in
+any order, verifies and deduplicates exact replay through D46 bundle-set verification, and rejects
+multiple Runs, gaps, forks, changed launch identities or conflicting revisions before invoking the
+adapter.
 
 Resource and input locators are transport-only and do not enter request or bundle identity. An
 adapter cannot replace the supplied input identity with a native URI, display path or provider
 execution id.
+
+Staging, a cleared environment and bounded streams are integrity and process controls, not a
+filesystem or network sandbox. A configured adapter is authorized project code and may retain the
+ambient operating-system access of the Azimuth process. Projects govern that authority outside
+this protocol.
 
 ## Responses
 
@@ -295,6 +314,12 @@ A successful execute or import response is:
 The description and bundle are complete strict objects, not references. Request id, operation and
 launch fingerprint equal the request. The description equals configured description. The bundle
 obeys [run-bundle.md](run-bundle.md), including exact returned adapter provenance.
+
+With no predecessors, the returned bundle has revision zero and forbids `corrects` and
+`correction_reason`. With predecessors, it is exactly one complete next revision, increments the
+terminal revision by one and names the terminal fingerprint in `corrects`. Core verifies the
+combined predecessor-plus-response chain before publishing only the returned bundle. A replay,
+skipped revision, changed correction anchor or non-terminal predecessor link is exit one.
 
 An adapter that cannot complete the exchange may return:
 
@@ -386,7 +411,7 @@ The configuration fingerprint preimage is:
 The description in its fingerprint preimage includes `adapter_fingerprint` and complete
 capabilities with their fingerprints. The configuration preimage excludes executable and resource
 locators but includes their content transitively through the adapter fingerprint. It includes
-literal environment values and inherited names, but no inherited runtime value.
+every literal environment value. There is no inherited environment in version 1.
 
 Request fingerprints use one of these exact preimages:
 
@@ -405,14 +430,16 @@ Request fingerprints use one of these exact preimages:
   "version": 1,
   "operation": <execute-or-import>,
   "launch_fingerprint": <launch-fingerprint>,
-  "inputs": <input-identities>
+  "inputs": <input-identities>,
+  "predecessors": <predecessor-identities>
 }
 ```
 
 `input-identities` contains only `id`, `digest` and `size_bytes`; locator relocation does not
-change request identity. The launch fingerprint already binds the configuration fingerprint, so
-it transitively binds semantic settings and resource content while transport locators stay out of
-identity. Every supplied fingerprint equals the recomputed value.
+change request identity. `predecessor-identities` contains only `bundle_revision` and
+`bundle_fingerprint` in revision order. The launch fingerprint already binds the configuration
+fingerprint, so it transitively binds semantic settings and resource content while transport
+locators stay out of identity. Every supplied fingerprint equals the recomputed value.
 
 ### Canonical vector
 
@@ -446,11 +473,11 @@ Its SHA-256 value is
 The corresponding configuration fingerprint preimage is:
 
 ```json
-{"adapter_fingerprint":"sha256:5274f56569ecfbe3cf6a1d8657ff431f78e99b0b97bf2365ea3d6714f950fa2a","capabilities":[{"challenge_forms":[],"classes":["check.execute"],"fingerprint":"sha256:41d224fdbb6fd9c43e067993ff30beb27eb5fc9793c32c9a7701d8678d3a397f","id":"check","semantic_settings":{"mode":"strict"}}],"descriptor_fingerprint":"sha256:f94a0c51a0050bbadfd0d0cb9b34fd6a696f4b7c06246c890b60310bbcb18670","environment":{"inherit":["TMPDIR"],"literals":{"LANG":"C"}},"format":"azimuth-adapter-configuration-fingerprint","limits":{"stderr_bytes":1024,"stdout_bytes":4096,"timeout_ms":1000},"semantic_settings":{"dialect":"v1"},"version":1}
+{"adapter_fingerprint":"sha256:5274f56569ecfbe3cf6a1d8657ff431f78e99b0b97bf2365ea3d6714f950fa2a","capabilities":[{"challenge_forms":[],"classes":["check.execute"],"fingerprint":"sha256:41d224fdbb6fd9c43e067993ff30beb27eb5fc9793c32c9a7701d8678d3a397f","id":"check","semantic_settings":{"mode":"strict"}}],"descriptor_fingerprint":"sha256:f94a0c51a0050bbadfd0d0cb9b34fd6a696f4b7c06246c890b60310bbcb18670","environment":{"literals":{"LANG":"C"}},"format":"azimuth-adapter-configuration-fingerprint","limits":{"stderr_bytes":1024,"stdout_bytes":4096,"timeout_ms":1000},"semantic_settings":{"dialect":"v1"},"version":1}
 ```
 
 Its SHA-256 value is
-`sha256:28da1f9c4f3262e5fed07c5c0667c6df340bf45351bd0c03ccc037e8a6584275`.
+`sha256:8b554d29e9bf8cdaee20699d1d10f64493acba3f2d1466c7523c078922c4f6e1`.
 
 The description request preimage is:
 
@@ -461,11 +488,30 @@ The description request preimage is:
 Its SHA-256 value is
 `sha256:4247bd475c6d87a35d495dc1b83f0125c2072d0453db1cd6353406603df18edf`.
 
+A new execute request preimage with no inputs or predecessors is:
+
+```json
+{"format":"azimuth-adapter-request-fingerprint","inputs":[],"launch_fingerprint":"sha256:9999999999999999999999999999999999999999999999999999999999999999","operation":"execute","predecessors":[],"version":1}
+```
+
+Its SHA-256 value is
+`sha256:17730bd1fa89859bb3c4562bc305a9316e079e0daa11756f432afa374e9d19f4`.
+
+An import correction request preimage with one input and predecessor is:
+
+```json
+{"format":"azimuth-adapter-request-fingerprint","inputs":[{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","id":"native-report","size_bytes":12}],"launch_fingerprint":"sha256:9999999999999999999999999999999999999999999999999999999999999999","operation":"import","predecessors":[{"bundle_fingerprint":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","bundle_revision":0}],"version":1}
+```
+
+Its SHA-256 value is
+`sha256:d2ca3469eff8a9bea75a43863fe23103a3b6c137b144b48b581772924a79427d`.
+
 ## Host validation and exit boundary
 
-Before spawn, core validates configuration shape, canonical order, all fingerprints, locator
-containment and content digests. It invokes the executable directly with a cleared environment and
-the configured bounds. After spawn it validates the single response shape before interpreting it.
+Before spawn, core validates configuration shape, canonical order, all fingerprints and locator
+containment, then stages and validates content from its open handles. It invokes the staged
+executable directly with a cleared environment and configured bounds. After spawn it validates the
+single response shape before interpreting it.
 `azimuth adapter verify [--config <file>]` performs that exchange for every configured adapter in
 sorted order; an empty valid configuration succeeds without spawning a process.
 

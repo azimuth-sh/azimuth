@@ -8,7 +8,7 @@ Objective: freeze adapter configuration, capability, launch, transport and prove
 Evidence: format review, strict examples and canonical-fingerprint vectors
 
 ## Work package: run-component-seam
-Status: pending
+Status: complete
 Depends on: protocol-authority
 Owns: tools/azimuth/src/run.rs, tools/azimuth/tests/run.rs
 Objective: expose reusable D46 construction and provenance validation without weakening verification
@@ -35,10 +35,17 @@ Owns: tools/azimuth/src/adapter_host.rs, tools/azimuth/tests/adapter_host.rs
 Objective: invoke bounded execute/import processes and validate complete returned bundles atomically
 Evidence: handshake, timeout, output-bound, import-digest, mismatch and no-retry tests
 
-## Work package: adapter-cli-surface
+## Work package: adapter-module-integration
 Status: pending
 Depends on: bounded-adapter-host
-Owns: tools/azimuth/src/lib.rs, tools/azimuth/src/main.rs, tools/azimuth/tests/adapter_cli.rs, tools/azimuth/tests/run_cli.rs
+Owns: tools/azimuth/src/lib.rs
+Objective: export the adapter, planner and host modules before public command routing
+Evidence: module compilation and complete Rust library tests
+
+## Work package: adapter-cli-surface
+Status: pending
+Depends on: adapter-module-integration
+Owns: tools/azimuth/src/main.rs, tools/azimuth/tests/adapter_cli.rs, tools/azimuth/tests/run_cli.rs
 Objective: expose adapter verify and Run plan, execute and import with exact exit classes
 Evidence: help, option, atomic-output, exit-class and absent-ingest tests
 

@@ -286,6 +286,7 @@ carry a subset of entries or units.
   },
   "adapter": {
     "id": "synthetic",
+    "adapter_version": "0.1.0-alpha.2",
     "adapter_fingerprint": "sha256:<adapter-fingerprint>",
     "descriptor_fingerprint": "sha256:<descriptor-fingerprint>",
     "configuration_fingerprint": "sha256:<configuration-fingerprint>",
@@ -324,8 +325,9 @@ forms and fingerprints follow that format exactly. Every address uses the one ad
 exactly one route for every semantic Plan selection and no other route.
 
 `normalizer.id` is exactly `adapter/<configured-adapter-id>`. Its version equals the returned
-adapter description's `adapter_version`, and its required build fingerprint equals
-`adapter.adapter_fingerprint`. The distinct `source` object retains the native provider execution.
+adapter description's `adapter_version` and `adapter.adapter_version`, and its required build
+fingerprint equals `adapter.adapter_fingerprint`. The distinct `source` object retains the native
+provider execution.
 
 For `mode: execute`, `import_inputs` is exactly `[]`. For `mode: import`, it is a non-empty array
 sorted by unique lower-kebab path `id`:
@@ -557,7 +559,8 @@ preimage objects, where angle-bracket values stand for the normalized JSON value
   "source_system": <system>,
   "source_execution": <execution>,
   "subject_fingerprint": <subject-fp>,
-  "plan_fingerprint": <plan-fp>
+  "plan_fingerprint": <plan-fp>,
+  "launch_fingerprint": <launch-fp>
 }
 {
   "format": "azimuth-observation-fingerprint",
@@ -585,6 +588,16 @@ preimage objects, where angle-bracket values stand for the normalized JSON value
   "bundle": <complete-bundle-without-bundle-fingerprint>
 }
 ```
+
+For the complete launch vector in [run-launch-plan.md](run-launch-plan.md), source system
+`synthetic` and source execution `run-1`, the canonical Run-id preimage is:
+
+```json
+{"format":"azimuth-run-identity","launch_fingerprint":"sha256:980dc9e544f41414e3a2735e84a6d9733aee85b2961899bb538f1f34c4347237","plan_fingerprint":"sha256:b75606956b9c1857f8b401d9bad207253b90f6948efddb5532a769b9f488fbfb","source_execution":"run-1","source_system":"synthetic","subject_fingerprint":"sha256:22478698e6731ce5984658e366386e466fe173216bc7cb721168e1638d2dee02","version":1}
+```
+
+Its SHA-256 value is
+`sha256:45acaf027cc7abee8a7a8ba8c0ff3ac80c6af61a16dbc904f6406e0fe11642dc`.
 
 `check`, `challenger` and `target` are the complete corresponding normalized objects, not joined
 strings. A plan preimage excludes the plan's `fingerprint`; a selection preimage excludes the
@@ -619,8 +632,8 @@ Input order is irrelevant. Exact bundle-fingerprint duplicates deduplicate. For 
 - `(run_id, bundle_revision)` cannot name different content;
 - one predecessor cannot have several successors;
 - Subject, Subject fingerprint, plan, plan fingerprint, required and actual context, source system,
-  source execution, adapter identity, descriptor, configuration, launch, routes, planned time and
-  started time are correction anchors and do not change; and
+  source execution, complete normalizer, adapter identity, version, descriptor, configuration,
+  launch, routes, planned time and started time are correction anchors and do not change; and
 - the set contains one linear chain with no missing predecessor, gap, fork or cycle.
 
 A correction is a complete bundle. Late work updates actual selection, activities, results,
