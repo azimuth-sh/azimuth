@@ -24,8 +24,14 @@ Archive records an accepted semantic transition. It is not a branch merge or dep
    correction set and `azimuth run inspect --bundle <file>...` for its deterministic account.
    Apply the strict [Run bundle format](../../../azimuth/formats/run-bundle.md) without treating a
    valid negative or partial fact as a protocol failure.
-7. Write `outcome.md` with `Status: accepted`, `## Departures` and `## Residual decisions`.
-8. Set the proposal to `Status: accepted and complete` only after the preceding facts hold.
+7. When adapters changed, run `azimuth adapter verify`, create the applicable launch plans and
+   exercise execute or import through the strict
+   [adapter](../../../azimuth/formats/adapter.md) and
+   [launch-plan](../../../azimuth/formats/run-launch-plan.md) contracts. Confirm process-limit,
+   containment, schema, identity and bundle failures publish no output, while valid adverse facts
+   remain successful exchanges.
+8. Write `outcome.md` with `Status: accepted`, `## Departures` and `## Residual decisions`.
+9. Set the proposal to `Status: accepted and complete` only after the preceding facts hold.
 
 ## Local acceptance
 
@@ -48,6 +54,8 @@ azimuth project accept-change --project <catalog> --before <active-workset> \
 ```
 
 The CLI verifies both immutable accounts. It creates no Git commit, deployment, Run or provider
-receipt. `azimuth run verify` and `azimuth run inspect` likewise perform no plan generation,
-provider execution, report import, durable ingest or Assurance State projection. The D42 service
-wire remains isolated, and no Assurance Service export command exists.
+receipt. `azimuth run verify` and `azimuth run inspect` likewise perform no planning, provider
+execution, report import, durable ingest or Assurance State projection. `azimuth run plan` resolves
+Checks only; Challenge Plan resolution, Claim-decision applicability, `model.extract` execution and
+durable ingest remain absent. The D42 service wire remains isolated, and no Assurance Service
+export command exists.

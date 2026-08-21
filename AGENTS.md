@@ -31,11 +31,23 @@ overrides a decision.
 - Use `azimuth` for the tool and reserve Check for a deliberately enrolled verification method.
   Commands for the current model are `azimuth validate`, `azimuth report traceability` and
   `azimuth export`.
+- Configure short-lived provider adapters explicitly in strict `azimuth/adapters.json`; core never
+  discovers executables through `PATH`, invokes a shell or inherits the ambient environment.
+- Use `azimuth adapter verify [--config <file>]` for the configured description handshake. Use
+  `azimuth run plan --request <file>` to resolve Checks from the complete unselected model, then
+  `azimuth run execute --plan <file>` or `azimuth run import --plan <file> --input <id>=<file>` for
+  one bounded provider exchange. Planning has no partial-model or `--only` mode.
+- Adapter content and import inputs are staged and hashed from the same opened streams. Every
+  invocation requires descendant-process containment, bounded output streams and complete response
+  validation before atomic output; this integrity boundary is not a filesystem or network sandbox.
 - Use `azimuth run verify --bundle <file>...` for standalone Run-protocol consistency and
   `azimuth run inspect --bundle <file>...` for a deterministic local account. These commands do
   not establish current model authority or Assurance State.
-- Run planning, provider execution and report import remain adapter work. Durable ingest and
-  Assurance State remain Run-ledger work; no current Run command performs them.
+- Current planning emits Check selections and `challenges: []`. Challenge Plan resolution,
+  Claim-decision applicability and `model.extract` execution remain deferred; hand-authored strict
+  launch plans may exercise Challenge transport without establishing model authority.
+- Durable ingest, authorization, retention and Assurance State remain Run-ledger work;
+  `azimuth run ingest` is not a current command.
 - Evidence precedes notation: no mechanism enters the model until two structurally different
   concerns demand it in prose.
 - Framework development, pull requests and version history are authoritative in this repository.
@@ -54,6 +66,24 @@ overrides a decision.
   paths and never finalize or archive.
 - There is no backward-compatibility obligation during the alpha design phase unless an accepted
   change states one explicitly.
+
+## Adapter command boundary
+
+```text
+azimuth adapter verify [--config <file>]
+azimuth run plan --request <file> [--model <dir>] [--standards <file>] \
+  [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
+azimuth run execute --plan <file> [--predecessor <bundle>...] \
+  [--config <file>] [--out <file>]
+azimuth run import --plan <file> --input <id>=<file>... \
+  [--predecessor <bundle>...] [--config <file>] [--out <file>]
+```
+
+`--manifest`, `--predecessor` and `--input` are repeatable where shown. Execute accepts only an
+execute launch; import accepts only an import launch and at least one exact input. A successful
+plan or provider exchange writes only after complete validation and atomic replacement. Exit one
+reports semantic, identity, content, transport or bundle mismatch; exit two reports command or
+schema failure. Neither nonzero class leaves the requested output file.
 
 ## Writing and commits
 

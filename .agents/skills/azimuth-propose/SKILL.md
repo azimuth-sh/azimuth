@@ -40,10 +40,25 @@ many-to-many Check/Claim relationships and semantic Challenge Plan selectors. Th
 `azimuth run inspect --bundle <file>...` presents a deterministic account with current model
 authority and Assurance State explicitly unresolved.
 
-Adapter configuration, plan generation, provider execute/import transport and native translation
-remain deferred. The Run ledger separately owns durable ingest, authorization and Assurance
-State. A proposal must not infer those authorities from a valid bundle, invent their contracts or
-restore removed alpha-era formats.
+Strict adapter configuration, the description handshake, complete-model Check planning and bounded
+execute/import transport are current. Configuration defaults to `azimuth/adapters.json`, names exact
+capability addresses and pins content, description, semantic settings, literal environment and
+process limits. A proposal must preserve core authority over the semantic Plan: an adapter only
+translates frozen selections or imports exact content-addressed native files.
+
+The current planner emits Checks and `challenges: []`; it does not resolve Challenge Plans,
+Qualifications or Claim Judgments. Hand-authored strict launch plans may exercise Challenge
+transport without creating model authority. `model.extract` is a declared capability but has no
+current execution command. The Run ledger separately owns durable ingest, authorization, retention
+and Assurance State. A proposal must not infer those authorities from a valid bundle, invent their
+contracts or restore removed alpha-era formats.
+
+When a proposal affects adapters, make the strict
+[adapter protocol](../../../azimuth/formats/adapter.md) and
+[launch-plan format](../../../azimuth/formats/run-launch-plan.md) explicit. Preserve direct
+shell-free invocation, same-stream content staging, exact literal child environment, descendant-
+process containment, bounded streams and validation before atomic output. These controls do not
+sandbox authorized adapter code.
 
 ## Routine path
 

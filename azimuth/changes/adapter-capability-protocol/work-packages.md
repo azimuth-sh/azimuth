@@ -78,7 +78,7 @@ Objective: document the implemented adapter journey and its challenge-planning a
 Evidence: command, terminology, link, 100-column and prohibited-name audits
 
 ## Work package: adapter-agent-guidance
-Status: pending
+Status: complete
 Depends on: adapter-cli-surface, current-intent-transition
 Owns: AGENTS.md, .agents/skills/azimuth-propose/SKILL.md, .agents/skills/azimuth-apply/SKILL.md, .agents/skills/azimuth-archive/SKILL.md
 Objective: teach explicit planning and invocation without inventing decision or state authority
