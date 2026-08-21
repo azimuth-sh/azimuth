@@ -1,6 +1,7 @@
 # Plan: Plan exact decision challenges from traceability
 
 - [x] Freeze Claim Judgment, policy, resolution, scope and planning authority.
+- [ ] Cut marker-derived mechanisms to qualified path-independent semantic identity.
 - [ ] Add the seven routine Challenge-planning requirements.
 - [x] Implement Claim Judgment parsing, identity and currentness.
 - [x] Generalize selector resolution and traceability impact projection.

@@ -1,4 +1,4 @@
-//! Strict provider-neutral Run bundle protocol (D46 and D47).
+//! Strict provider-neutral Run bundle and accountable launch-route protocol (D46 through D48).
 
 use crate::diag::validate_id;
 use crate::fingerprint::sha256;
@@ -326,9 +326,19 @@ pub struct AdapterProvenance {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchAdapterIdentity {
+    pub id: String,
+    pub adapter_version: String,
+    pub adapter_fingerprint: String,
+    pub descriptor_fingerprint: String,
+    pub configuration_fingerprint: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LaunchRoute {
     pub selection: RouteSelection,
     pub capability: RouteCapability,
+    pub inputs: Vec<LaunchInput>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -377,6 +387,76 @@ impl RouteCapabilityClass {
             Self::ChallengeImport => "challenge.import",
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct LaunchInput {
+    pub kind: LaunchInputKind,
+    pub id: String,
+    pub fingerprint: String,
+    pub source: LaunchInputSource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum LaunchInputKind {
+    CheckImplementation,
+    Realization,
+    MechanismImplementation,
+    Artifact,
+    SurfaceMember,
+    Enumeration,
+}
+
+impl LaunchInputKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::CheckImplementation => "check-implementation",
+            Self::Realization => "realization",
+            Self::MechanismImplementation => "mechanism-implementation",
+            Self::Artifact => "artifact",
+            Self::SurfaceMember => "surface-member",
+            Self::Enumeration => "enumeration",
+        }
+    }
+
+    fn from_scope_kind(kind: ChallengeScopeKind) -> Option<Self> {
+        match kind {
+            ChallengeScopeKind::CheckImplementation => Some(Self::CheckImplementation),
+            ChallengeScopeKind::Realization => Some(Self::Realization),
+            ChallengeScopeKind::MechanismImplementation => Some(Self::MechanismImplementation),
+            ChallengeScopeKind::Artifact => Some(Self::Artifact),
+            ChallengeScopeKind::SurfaceMember => Some(Self::SurfaceMember),
+            ChallengeScopeKind::Enumeration => Some(Self::Enumeration),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum LaunchInputSource {
+    Source {
+        file: String,
+        language: String,
+        site: String,
+    },
+    Artifact {
+        file: String,
+        artifact_kind: String,
+        identity: String,
+        unique: Option<bool>,
+        columns: Vec<String>,
+        predicate: Option<String>,
+    },
+    Enumeration {
+        file: String,
+        enumerator_kind: String,
+        identity: String,
+    },
+    SurfaceMember {
+        file: String,
+        language: String,
+        site: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -1449,7 +1529,7 @@ fn parse_adapter_provenance(value: &Json, where_: &str) -> Result<AdapterProvena
 }
 
 fn parse_launch_route(value: &Json, where_: &str) -> Result<LaunchRoute, String> {
-    let fields = object(value, where_, &["selection", "capability"])?;
+    let fields = object(value, where_, &["selection", "capability", "inputs"])?;
     let selection_where = format!("{where_}.selection");
     let selection = object(
         required(fields, "selection", where_)?,
@@ -1499,7 +1579,20 @@ fn parse_launch_route(value: &Json, where_: &str) -> Result<LaunchRoute, String>
     let address = nonempty(capability, "address", &capability_where)?;
     validate_capability_address(&address)
         .map_err(|detail| format!("{capability_where}.address {detail}"))?;
-    Ok(LaunchRoute {
+    let inputs = match kind {
+        RouteSelectionKind::Check => {
+            if fields.iter().any(|(field, _)| field == "inputs") {
+                return Err(format!("{where_}.inputs is forbidden for a Check route"));
+            }
+            Vec::new()
+        }
+        RouteSelectionKind::Challenge => {
+            let inputs = parse_array(fields, "inputs", where_, parse_launch_input)?;
+            ensure_sorted_unique(&inputs, launch_input_key, &format!("{where_}.inputs"))?;
+            inputs
+        }
+    };
+    let route = LaunchRoute {
         selection: RouteSelection {
             kind,
             id: id(selection, "id", &selection_where)?,
@@ -1510,7 +1603,106 @@ fn parse_launch_route(value: &Json, where_: &str) -> Result<LaunchRoute, String>
             challenge_form,
             fingerprint: fingerprint(capability, "fingerprint", &capability_where)?,
         },
-    })
+        inputs,
+    };
+    if let Some(error) = launch_route_structure_errors(&route, where_)
+        .into_iter()
+        .next()
+    {
+        return Err(error.to_string());
+    }
+    Ok(route)
+}
+
+fn parse_launch_input(value: &Json, where_: &str) -> Result<LaunchInput, String> {
+    let fields = object(value, where_, &["kind", "id", "fingerprint", "source"])?;
+    let kind = match string(fields, "kind", where_)? {
+        "check-implementation" => LaunchInputKind::CheckImplementation,
+        "realization" => LaunchInputKind::Realization,
+        "mechanism-implementation" => LaunchInputKind::MechanismImplementation,
+        "artifact" => LaunchInputKind::Artifact,
+        "surface-member" => LaunchInputKind::SurfaceMember,
+        "enumeration" => LaunchInputKind::Enumeration,
+        other => return Err(format!("{where_}.kind has unsupported value `{other}`")),
+    };
+    let source_where = format!("{where_}.source");
+    let source_fields = object_pairs(required(fields, "source", where_)?, &source_where)?;
+    let source_kind = string(source_fields, "kind", &source_where)?;
+    let source = match source_kind {
+        "source" => {
+            let source = object(
+                required(fields, "source", where_)?,
+                &source_where,
+                &["kind", "file", "language", "site"],
+            )?;
+            LaunchInputSource::Source {
+                file: nonempty(source, "file", &source_where)?,
+                language: segment(source, "language", &source_where)?,
+                site: nonempty(source, "site", &source_where)?,
+            }
+        }
+        "artifact" => {
+            let source = object(
+                required(fields, "source", where_)?,
+                &source_where,
+                &[
+                    "kind",
+                    "file",
+                    "artifact_kind",
+                    "identity",
+                    "unique",
+                    "columns",
+                    "predicate",
+                ],
+            )?;
+            LaunchInputSource::Artifact {
+                file: nonempty(source, "file", &source_where)?,
+                artifact_kind: segment(source, "artifact_kind", &source_where)?,
+                identity: nonempty(source, "identity", &source_where)?,
+                unique: nullable_bool(source, "unique", &source_where)?,
+                columns: string_set(source, "columns", &source_where)?,
+                predicate: nullable_string(source, "predicate", &source_where)?,
+            }
+        }
+        "enumeration" => {
+            let source = object(
+                required(fields, "source", where_)?,
+                &source_where,
+                &["kind", "file", "enumerator_kind", "identity"],
+            )?;
+            LaunchInputSource::Enumeration {
+                file: nonempty(source, "file", &source_where)?,
+                enumerator_kind: segment(source, "enumerator_kind", &source_where)?,
+                identity: nonempty(source, "identity", &source_where)?,
+            }
+        }
+        "surface-member" => {
+            let source = object(
+                required(fields, "source", where_)?,
+                &source_where,
+                &["kind", "member_kind", "file", "language", "site"],
+            )?;
+            exact_string(source, "member_kind", &source_where, "enumerated")?;
+            LaunchInputSource::SurfaceMember {
+                file: nonempty(source, "file", &source_where)?,
+                language: segment(source, "language", &source_where)?,
+                site: nonempty(source, "site", &source_where)?,
+            }
+        }
+        other => {
+            return Err(format!(
+                "{source_where}.kind has unsupported value `{other}`"
+            ))
+        }
+    };
+    let input = LaunchInput {
+        kind,
+        id: nonempty(fields, "id", where_)?,
+        fingerprint: fingerprint(fields, "fingerprint", where_)?,
+        source,
+    };
+    validate_launch_input(&input, where_)?;
+    Ok(input)
 }
 
 fn parse_import_input(value: &Json, where_: &str) -> Result<ImportInputIdentity, String> {
@@ -1911,6 +2103,30 @@ fn optional_nonempty(
         None => Ok(None),
         Some((_, Json::Str(value))) if !value.is_empty() => Ok(Some(value.clone())),
         Some(_) => Err(format!("{where_}.{field} must be a non-empty string")),
+    }
+}
+
+fn nullable_bool(
+    object: &[(String, Json)],
+    field: &str,
+    where_: &str,
+) -> Result<Option<bool>, String> {
+    match required(object, field, where_)? {
+        Json::Null => Ok(None),
+        Json::Bool(value) => Ok(Some(*value)),
+        _ => Err(format!("{where_}.{field} must be a boolean or null")),
+    }
+}
+
+fn nullable_string(
+    object: &[(String, Json)],
+    field: &str,
+    where_: &str,
+) -> Result<Option<String>, String> {
+    match required(object, field, where_)? {
+        Json::Null => Ok(None),
+        Json::Str(value) => Ok(Some(value.clone())),
+        _ => Err(format!("{where_}.{field} must be a string or null")),
     }
 }
 
@@ -2397,6 +2613,60 @@ pub fn challenge_scope_fingerprint(scope: &ChallengeScope) -> String {
     ]))
 }
 
+/// Recomputes the exact D47 launch fingerprint without depending on planner-owned types.
+pub fn launch_fingerprint(
+    operation: ProvenanceMode,
+    planned_at_ms: u64,
+    subject: &Subject,
+    subject_fingerprint: &str,
+    plan: &Plan,
+    adapter: &LaunchAdapterIdentity,
+    routes: &[LaunchRoute],
+) -> String {
+    jcs_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-run-launch-fingerprint")),
+        ("version", Json::Num(1.0)),
+        ("operation", Json::str(operation.name())),
+        ("planned_at_ms", Json::Num(planned_at_ms as f64)),
+        ("subject", subject_to_json(subject)),
+        ("subject_fingerprint", Json::str(subject_fingerprint)),
+        ("plan", plan_to_json(plan)),
+        (
+            "adapter",
+            Json::obj(vec![
+                ("id", Json::str(&adapter.id)),
+                ("adapter_version", Json::str(&adapter.adapter_version)),
+                (
+                    "adapter_fingerprint",
+                    Json::str(&adapter.adapter_fingerprint),
+                ),
+                (
+                    "descriptor_fingerprint",
+                    Json::str(&adapter.descriptor_fingerprint),
+                ),
+                (
+                    "configuration_fingerprint",
+                    Json::str(&adapter.configuration_fingerprint),
+                ),
+            ]),
+        ),
+        (
+            "routes",
+            Json::Arr(routes.iter().map(launch_route_to_json).collect()),
+        ),
+    ]))
+}
+
+fn launch_adapter_identity(adapter: &AdapterProvenance) -> LaunchAdapterIdentity {
+    LaunchAdapterIdentity {
+        id: adapter.id.clone(),
+        adapter_version: adapter.adapter_version.clone(),
+        adapter_fingerprint: adapter.adapter_fingerprint.clone(),
+        descriptor_fingerprint: adapter.descriptor_fingerprint.clone(),
+        configuration_fingerprint: adapter.configuration_fingerprint.clone(),
+    }
+}
+
 pub fn construct_challenge_scope(
     anchors: Vec<ChallengeScopeItem>,
     inputs: Vec<ChallengeScopeItem>,
@@ -2413,6 +2683,436 @@ pub fn construct_challenge_scope(
     }
     scope.fingerprint = challenge_scope_fingerprint(&scope);
     Ok(scope)
+}
+
+/// Constructs one strict D47 accountable input from a model-derived semantic component.
+pub fn construct_launch_input(
+    kind: LaunchInputKind,
+    id: String,
+    fingerprint: String,
+    source: LaunchInputSource,
+) -> Result<LaunchInput, SchemaError> {
+    let input = LaunchInput {
+        kind,
+        id,
+        fingerprint,
+        source,
+    };
+    validate_launch_input(&input, "$.input")
+        .map(|()| input)
+        .map_err(|detail| SchemaError {
+            path: "$.input".into(),
+            detail,
+        })
+}
+
+/// Constructs one strict D47 route from an already selected capability and accountable inputs.
+pub fn construct_launch_route(
+    selection: RouteSelection,
+    capability: RouteCapability,
+    inputs: Vec<LaunchInput>,
+) -> Result<LaunchRoute, Vec<SchemaError>> {
+    let route = LaunchRoute {
+        selection,
+        capability,
+        inputs,
+    };
+    let errors = launch_route_structure_errors(&route, "$.route");
+    if errors.is_empty() {
+        Ok(route)
+    } else {
+        Err(errors)
+    }
+}
+
+/// Validates strict D47 route shape and exact source-backed projection against a semantic Plan.
+pub fn validate_launch_routes_against_plan(
+    plan: &Plan,
+    routes: &[LaunchRoute],
+) -> Vec<SchemaError> {
+    let mut errors = Vec::new();
+    if let Err(detail) = ensure_sorted_unique(
+        routes,
+        |route| (route.selection.kind, route.selection.id.clone()),
+        "$.routes",
+    ) {
+        errors.push(SchemaError {
+            path: "$.routes".into(),
+            detail,
+        });
+    }
+    let expected = plan
+        .checks
+        .iter()
+        .map(|check| (RouteSelectionKind::Check, check.id.as_str()))
+        .chain(
+            plan.challenges
+                .iter()
+                .map(|challenge| (RouteSelectionKind::Challenge, challenge.id.as_str())),
+        )
+        .collect::<Vec<_>>();
+    if routes.len() != expected.len() {
+        errors.push(SchemaError {
+            path: "$.routes".into(),
+            detail: format!(
+                "must contain exactly one route for each of {} semantic selections",
+                expected.len()
+            ),
+        });
+    }
+    for (index, route) in routes.iter().enumerate() {
+        let path = format!("$.routes[{index}]");
+        errors.extend(launch_route_structure_errors(route, &path));
+        if expected.get(index).copied() != Some((route.selection.kind, route.selection.id.as_str()))
+        {
+            errors.push(SchemaError {
+                path: format!("{path}.selection"),
+                detail: "must repeat the semantic Plan selection in canonical order".into(),
+            });
+            continue;
+        }
+        if route.selection.kind == RouteSelectionKind::Challenge {
+            let challenge = plan
+                .challenges
+                .iter()
+                .find(|challenge| challenge.id == route.selection.id)
+                .expect("matching Challenge route follows the Plan account");
+            errors.extend(launch_input_projection_errors(challenge, route, &path));
+        }
+    }
+    errors.sort_by(|left, right| {
+        left.path
+            .cmp(&right.path)
+            .then_with(|| left.detail.cmp(&right.detail))
+    });
+    errors.dedup();
+    errors
+}
+
+fn launch_route_structure_errors(route: &LaunchRoute, path: &str) -> Vec<SchemaError> {
+    let mut errors = Vec::new();
+    if let Err(detail) = validate_id(&route.selection.id, true) {
+        errors.push(SchemaError {
+            path: format!("{path}.selection.id"),
+            detail,
+        });
+    }
+    if let Err(detail) = validate_capability_address(&route.capability.address) {
+        errors.push(SchemaError {
+            path: format!("{path}.capability.address"),
+            detail,
+        });
+    }
+    if !valid_fingerprint(&route.capability.fingerprint) {
+        errors.push(SchemaError {
+            path: format!("{path}.capability.fingerprint"),
+            detail: "must be `sha256:` followed by 64 lowercase hex digits".into(),
+        });
+    }
+    match route.selection.kind {
+        RouteSelectionKind::Check => {
+            if !matches!(
+                route.capability.class,
+                RouteCapabilityClass::CheckExecute | RouteCapabilityClass::CheckImport
+            ) {
+                errors.push(SchemaError {
+                    path: format!("{path}.capability.class"),
+                    detail: "must be a Check capability class".into(),
+                });
+            }
+            if route.capability.challenge_form.is_some() {
+                errors.push(SchemaError {
+                    path: format!("{path}.capability.challenge_form"),
+                    detail: "is forbidden for a Check route".into(),
+                });
+            }
+            if !route.inputs.is_empty() {
+                errors.push(SchemaError {
+                    path: format!("{path}.inputs"),
+                    detail: "is forbidden for a Check route".into(),
+                });
+            }
+        }
+        RouteSelectionKind::Challenge => {
+            if !matches!(
+                route.capability.class,
+                RouteCapabilityClass::ChallengeExecute | RouteCapabilityClass::ChallengeImport
+            ) {
+                errors.push(SchemaError {
+                    path: format!("{path}.capability.class"),
+                    detail: "must be a Challenge capability class".into(),
+                });
+            }
+            match route.capability.challenge_form.as_deref() {
+                Some(form) => {
+                    if let Err(detail) = validate_id(form, true) {
+                        errors.push(SchemaError {
+                            path: format!("{path}.capability.challenge_form"),
+                            detail,
+                        });
+                    }
+                }
+                None => errors.push(SchemaError {
+                    path: format!("{path}.capability.challenge_form"),
+                    detail: "is required for a Challenge route".into(),
+                }),
+            }
+            if let Err(detail) =
+                ensure_sorted_unique(&route.inputs, launch_input_key, &format!("{path}.inputs"))
+            {
+                errors.push(SchemaError {
+                    path: format!("{path}.inputs"),
+                    detail,
+                });
+            }
+            let mut identities = BTreeMap::<(LaunchInputKind, &str), &str>::new();
+            for (index, input) in route.inputs.iter().enumerate() {
+                let input_path = format!("{path}.inputs[{index}]");
+                if let Err(detail) = validate_launch_input(input, &input_path) {
+                    errors.push(SchemaError {
+                        path: input_path,
+                        detail,
+                    });
+                }
+                let identity = (input.kind, input.id.as_str());
+                if let Some(previous) = identities.insert(identity, input.fingerprint.as_str()) {
+                    if previous != input.fingerprint {
+                        errors.push(SchemaError {
+                            path: format!("{path}.inputs"),
+                            detail: format!(
+                                "conflicting fingerprints for `{}` `{}`",
+                                input.kind.name(),
+                                input.id
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    errors
+}
+
+fn launch_input_projection_errors(
+    challenge: &ChallengeSelection,
+    route: &LaunchRoute,
+    path: &str,
+) -> Vec<SchemaError> {
+    let expected = challenge
+        .scope
+        .anchors
+        .iter()
+        .chain(&challenge.scope.inputs)
+        .filter_map(|item| {
+            LaunchInputKind::from_scope_kind(item.kind)
+                .map(|kind| (kind, item.id.clone(), item.fingerprint.clone()))
+        })
+        .collect::<BTreeSet<_>>();
+    let actual = route
+        .inputs
+        .iter()
+        .map(launch_input_key)
+        .collect::<BTreeSet<_>>();
+    if actual == expected {
+        return Vec::new();
+    }
+    let missing = expected.difference(&actual).cloned().collect::<Vec<_>>();
+    let extra = actual.difference(&expected).cloned().collect::<Vec<_>>();
+    vec![SchemaError {
+        path: format!("{path}.inputs"),
+        detail: format!(
+            "must exactly project source-backed semantic scope; missing {missing:?}, extra {extra:?}"
+        ),
+    }]
+}
+
+fn launch_input_key(input: &LaunchInput) -> (LaunchInputKind, String, String) {
+    (input.kind, input.id.clone(), input.fingerprint.clone())
+}
+
+fn validate_launch_input(input: &LaunchInput, where_: &str) -> Result<(), String> {
+    if input.id.is_empty() {
+        return Err(format!("{where_}.id must not be empty"));
+    }
+    if !valid_fingerprint(&input.fingerprint) {
+        return Err(format!(
+            "{where_}.fingerprint must be `sha256:` followed by 64 lowercase hex digits"
+        ));
+    }
+    match (&input.kind, &input.source) {
+        (
+            LaunchInputKind::CheckImplementation
+            | LaunchInputKind::Realization
+            | LaunchInputKind::MechanismImplementation,
+            LaunchInputSource::Source {
+                file,
+                language,
+                site,
+            },
+        ) => {
+            validate_source_locator(file, language, site, where_)?;
+            validate_implementation_identity(&input.id)
+                .map_err(|detail| format!("{where_}.id {detail}"))
+        }
+        (
+            LaunchInputKind::SurfaceMember,
+            LaunchInputSource::Source {
+                file,
+                language,
+                site,
+            },
+        ) => {
+            validate_source_locator(file, language, site, where_)?;
+            let Some((surface, identity)) = input.id.split_once("|tagged|") else {
+                return Err(format!(
+                    "{where_}.id must have exact `<surface>|tagged|<SourceIdentity>` form"
+                ));
+            };
+            if surface.is_empty() {
+                return Err(format!("{where_}.id has an empty surface identity"));
+            }
+            validate_id(surface, true).map_err(|detail| format!("{where_}.id surface {detail}"))?;
+            validate_implementation_identity(identity)
+                .map_err(|detail| format!("{where_}.id tagged SourceIdentity {detail}"))
+        }
+        (
+            LaunchInputKind::Artifact,
+            LaunchInputSource::Artifact {
+                file,
+                artifact_kind,
+                identity,
+                unique,
+                columns,
+                predicate,
+            },
+        ) => {
+            validate_workspace_file(file, where_)?;
+            validate_implementation_identity(identity)
+                .map_err(|detail| format!("{where_}.source.identity {detail}"))?;
+            let identity_kind = identity.split('|').nth(1).unwrap_or_default();
+            if identity_kind != artifact_kind {
+                return Err(format!(
+                    "{where_}.source.artifact_kind must equal the SourceIdentity address kind"
+                ));
+            }
+            if columns.iter().any(String::is_empty) {
+                return Err(format!("{where_}.source.columns contains an empty value"));
+            }
+            let expected = crate::fingerprint::artifact_property_digest(&Json::obj(vec![
+                ("id", Json::str(&input.id)),
+                ("kind", Json::str(artifact_kind)),
+                ("identity", Json::str(identity)),
+                ("unique", unique.map(Json::Bool).unwrap_or(Json::Null)),
+                (
+                    "columns",
+                    Json::Arr(columns.iter().map(Json::str).collect()),
+                ),
+                (
+                    "predicate",
+                    predicate.as_ref().map(Json::str).unwrap_or(Json::Null),
+                ),
+            ]));
+            if input.fingerprint != expected {
+                return Err(format!("{where_}.fingerprint must be `{expected}`"));
+            }
+            Ok(())
+        }
+        (
+            LaunchInputKind::Enumeration,
+            LaunchInputSource::Enumeration {
+                file,
+                enumerator_kind,
+                identity,
+            },
+        ) => {
+            validate_workspace_file(file, where_)?;
+            validate_implementation_identity(identity)
+                .map_err(|detail| format!("{where_}.source.identity {detail}"))?;
+            let suffix = format!("|{identity}");
+            let Some(prefix) = input.id.strip_suffix(&suffix) else {
+                return Err(format!(
+                    "{where_}.id must end with its exact source identity"
+                ));
+            };
+            let parts = prefix.split('|').collect::<Vec<_>>();
+            if parts.len() != 4 || parts.iter().any(|part| part.is_empty()) {
+                return Err(format!(
+                    "{where_}.id must have exact surface/area/mount/enumerator/source identity"
+                ));
+            }
+            validate_id(parts[0], true)
+                .map_err(|detail| format!("{where_}.id surface {detail}"))?;
+            validate_id(parts[1], false).map_err(|detail| format!("{where_}.id area {detail}"))?;
+            validate_id(parts[2], false).map_err(|detail| format!("{where_}.id mount {detail}"))?;
+            validate_id(parts[3], false)
+                .map_err(|detail| format!("{where_}.id enumerator {detail}"))?;
+            if identity.split('|').next() != Some(parts[1]) {
+                return Err(format!(
+                    "{where_}.source.identity area must equal the semantic id area"
+                ));
+            }
+            if parts[3] != enumerator_kind {
+                return Err(format!(
+                    "{where_}.source.enumerator_kind must equal the semantic id enumerator"
+                ));
+            }
+            Ok(())
+        }
+        (
+            LaunchInputKind::SurfaceMember,
+            LaunchInputSource::SurfaceMember {
+                file,
+                language,
+                site,
+            },
+        ) => {
+            validate_source_locator(file, language, site, where_)?;
+            let Some((surface, member_file)) = input.id.split_once("|enumerated|") else {
+                return Err(format!(
+                    "{where_}.id must have exact `<surface>|enumerated|<file>` form"
+                ));
+            };
+            if surface.is_empty() || member_file != file {
+                return Err(format!(
+                    "{where_}.source.file must repeat the enumerated semantic member identity"
+                ));
+            }
+            validate_id(surface, true).map_err(|detail| format!("{where_}.id surface {detail}"))?;
+            let expected = crate::fingerprint::enumerated_surface_member_digest(surface, file);
+            if input.fingerprint != expected {
+                return Err(format!("{where_}.fingerprint must be `{expected}`"));
+            }
+            Ok(())
+        }
+        _ => Err(format!(
+            "{where_}.source variant does not match `{}`",
+            input.kind.name()
+        )),
+    }
+}
+
+fn validate_source_locator(
+    file: &str,
+    language: &str,
+    site: &str,
+    where_: &str,
+) -> Result<(), String> {
+    validate_workspace_file(file, where_)?;
+    validate_id(language, false).map_err(|detail| format!("{where_}.source.language {detail}"))?;
+    if site.is_empty() {
+        return Err(format!("{where_}.source.site must not be empty"));
+    }
+    Ok(())
+}
+
+fn validate_workspace_file(file: &str, where_: &str) -> Result<(), String> {
+    if valid_bundle_relative(file) {
+        Ok(())
+    } else {
+        Err(format!(
+            "{where_}.source.file is not a normalized workspace-relative path"
+        ))
+    }
 }
 
 /// Validates one typed D46 semantic Plan before it enters a launch plan or bundle.
@@ -3199,15 +3899,86 @@ pub fn launch_route_to_json(item: &LaunchRoute) -> Json {
         "fingerprint".into(),
         Json::str(&item.capability.fingerprint),
     ));
-    Json::obj(vec![
+    let mut fields = vec![
         (
-            "selection",
+            "selection".into(),
             Json::obj(vec![
                 ("kind", Json::str(item.selection.kind.name())),
                 ("id", Json::str(&item.selection.id)),
             ]),
         ),
-        ("capability", Json::Obj(capability)),
+        ("capability".into(), Json::Obj(capability)),
+    ];
+    if item.selection.kind == RouteSelectionKind::Challenge || !item.inputs.is_empty() {
+        fields.push((
+            "inputs".into(),
+            Json::Arr(item.inputs.iter().map(launch_input_to_json).collect()),
+        ));
+    }
+    Json::Obj(fields)
+}
+
+pub fn launch_input_to_json(item: &LaunchInput) -> Json {
+    let source = match &item.source {
+        LaunchInputSource::Source {
+            file,
+            language,
+            site,
+        } => Json::obj(vec![
+            ("kind", Json::str("source")),
+            ("file", Json::str(file)),
+            ("language", Json::str(language)),
+            ("site", Json::str(site)),
+        ]),
+        LaunchInputSource::Artifact {
+            file,
+            artifact_kind,
+            identity,
+            unique,
+            columns,
+            predicate,
+        } => Json::obj(vec![
+            ("kind", Json::str("artifact")),
+            ("file", Json::str(file)),
+            ("artifact_kind", Json::str(artifact_kind)),
+            ("identity", Json::str(identity)),
+            ("unique", unique.map(Json::Bool).unwrap_or(Json::Null)),
+            (
+                "columns",
+                Json::Arr(columns.iter().map(Json::str).collect()),
+            ),
+            (
+                "predicate",
+                predicate.as_ref().map(Json::str).unwrap_or(Json::Null),
+            ),
+        ]),
+        LaunchInputSource::Enumeration {
+            file,
+            enumerator_kind,
+            identity,
+        } => Json::obj(vec![
+            ("kind", Json::str("enumeration")),
+            ("file", Json::str(file)),
+            ("enumerator_kind", Json::str(enumerator_kind)),
+            ("identity", Json::str(identity)),
+        ]),
+        LaunchInputSource::SurfaceMember {
+            file,
+            language,
+            site,
+        } => Json::obj(vec![
+            ("kind", Json::str("surface-member")),
+            ("member_kind", Json::str("enumerated")),
+            ("file", Json::str(file)),
+            ("language", Json::str(language)),
+            ("site", Json::str(site)),
+        ]),
+    };
+    Json::obj(vec![
+        ("kind", Json::str(item.kind.name())),
+        ("id", Json::str(&item.id)),
+        ("fingerprint", Json::str(&item.fingerprint)),
+        ("source", source),
     ])
 }
 
@@ -3945,6 +4716,19 @@ fn validate_canonical_arrays(bundle: &RunBundle, add: &mut impl FnMut(&str, Stri
 /// Validates D47 provenance against the bundle's provider-neutral semantic Plan.
 pub fn verify_provenance(bundle: &RunBundle) -> Vec<Finding> {
     let mut findings = Vec::new();
+    let unsafe_numbers = unsafe_number_paths(bundle);
+    if !unsafe_numbers.is_empty() {
+        for path in unsafe_numbers {
+            findings.push(Finding {
+                run_id: bundle.run_id.clone(),
+                code: "run/unsafe-number".into(),
+                detail: format!("{path} exceeds the maximum safe integer {MAX_SAFE_INTEGER}"),
+            });
+        }
+        findings.sort();
+        findings.dedup();
+        return findings;
+    }
     let mut add = |code: &str, detail: String| {
         findings.push(Finding {
             run_id: bundle.run_id.clone(),
@@ -3952,16 +4736,6 @@ pub fn verify_provenance(bundle: &RunBundle) -> Vec<Finding> {
             detail,
         });
     };
-    for (index, input) in bundle.provenance.adapter.import_inputs.iter().enumerate() {
-        if input.size_bytes > MAX_SAFE_INTEGER {
-            add(
-                "run/unsafe-number",
-                format!(
-                    "provenance.adapter.import_inputs[{index}].size_bytes exceeds the maximum safe integer {MAX_SAFE_INTEGER}"
-                ),
-            );
-        }
-    }
     canonical(
         &bundle.provenance.adapter.routes,
         |item| (item.selection.kind, item.selection.id.clone()),
@@ -4004,6 +4778,31 @@ fn validate_provenance(bundle: &RunBundle, add: &mut impl FnMut(&str, String)) {
             "import provenance requires at least one import-input identity".into(),
         ),
         _ => {}
+    }
+
+    let expected_launch_fingerprint = launch_fingerprint(
+        provenance.mode,
+        bundle.planned_at_ms,
+        &bundle.subject,
+        &bundle.subject_fingerprint,
+        &bundle.plan,
+        &launch_adapter_identity(adapter),
+        &adapter.routes,
+    );
+    if adapter.launch_fingerprint != expected_launch_fingerprint {
+        add(
+            "run/provenance-launch-fingerprint",
+            format!("launch fingerprint must be `{expected_launch_fingerprint}`"),
+        );
+    }
+
+    for error in validate_launch_routes_against_plan(&bundle.plan, &adapter.routes) {
+        let code = if error.path.contains(".inputs") {
+            "run/provenance-route-inputs"
+        } else {
+            "run/provenance-route-shape"
+        };
+        add(code, error.to_string());
     }
 
     let expected_selections = bundle

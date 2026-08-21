@@ -1,4 +1,4 @@
-use azimuth::fingerprint::sha256;
+use azimuth::fingerprint::{artifact_property_digest, enumerated_surface_member_digest, sha256};
 use azimuth::json::Json;
 use azimuth::run::*;
 use std::collections::BTreeMap;
@@ -128,6 +128,7 @@ fn valid_bundle() -> RunBundle {
                             challenge_form: None,
                             fingerprint: fp('6'),
                         },
+                        inputs: vec![],
                     },
                     LaunchRoute {
                         selection: RouteSelection {
@@ -140,6 +141,28 @@ fn valid_bundle() -> RunBundle {
                             challenge_form: Some("implementation-perturbation".into()),
                             fingerprint: fp('7'),
                         },
+                        inputs: vec![
+                            LaunchInput {
+                                kind: LaunchInputKind::CheckImplementation,
+                                id: "payments|rust-symbol|recovery::replay".into(),
+                                fingerprint: fp('c'),
+                                source: LaunchInputSource::Source {
+                                    file: "tests/recovery.rs".into(),
+                                    language: "rust".into(),
+                                    site: "recovery::replay".into(),
+                                },
+                            },
+                            LaunchInput {
+                                kind: LaunchInputKind::Realization,
+                                id: "payments|rust-symbol|recovery::replay".into(),
+                                fingerprint: fp('c'),
+                                source: LaunchInputSource::Source {
+                                    file: "src/recovery.rs".into(),
+                                    language: "rust".into(),
+                                    site: "recovery::replay".into(),
+                                },
+                            },
+                        ],
                     },
                 ],
                 import_inputs: vec![],
@@ -228,11 +251,30 @@ fn valid_bundle() -> RunBundle {
     bundle
 }
 
+fn current_launch_fingerprint(bundle: &RunBundle) -> String {
+    launch_fingerprint(
+        bundle.provenance.mode,
+        bundle.planned_at_ms,
+        &bundle.subject,
+        &bundle.subject_fingerprint,
+        &bundle.plan,
+        &LaunchAdapterIdentity {
+            id: bundle.provenance.adapter.id.clone(),
+            adapter_version: bundle.provenance.adapter.adapter_version.clone(),
+            adapter_fingerprint: bundle.provenance.adapter.adapter_fingerprint.clone(),
+            descriptor_fingerprint: bundle.provenance.adapter.descriptor_fingerprint.clone(),
+            configuration_fingerprint: bundle.provenance.adapter.configuration_fingerprint.clone(),
+        },
+        &bundle.provenance.adapter.routes,
+    )
+}
+
 fn refresh(bundle: &mut RunBundle) {
     bundle.subject_fingerprint = subject_fingerprint(&bundle.subject);
     bundle.plan.fingerprint = plan_fingerprint(&bundle.subject_fingerprint, &bundle.plan);
     bundle.actual_selection.plan_fingerprint = bundle.plan.fingerprint.clone();
     bundle.actual_selection.fingerprint = selection_fingerprint(&bundle.actual_selection);
+    bundle.provenance.adapter.launch_fingerprint = current_launch_fingerprint(bundle);
     bundle.run_id = run_id(bundle);
     for index in 0..bundle.check_executions.len() {
         let fingerprint = observation_fingerprint(bundle, &bundle.check_executions[index]);
@@ -837,6 +879,351 @@ fn published_launch_fingerprint_vector_stays_stable() {
 }
 
 #[test]
+fn launch_routes_parse_the_breaking_accountable_input_shape() {
+    let bundle = valid_bundle();
+    let check = &bundle.provenance.adapter.routes[0];
+    let challenge = &bundle.provenance.adapter.routes[1];
+    assert_eq!(
+        launch_route_from_json(&launch_route_to_json(check)),
+        Ok(check.clone())
+    );
+    assert_eq!(
+        launch_route_from_json(&launch_route_to_json(challenge)),
+        Ok(challenge.clone())
+    );
+
+    let mut missing = launch_route_to_json(challenge);
+    remove_field(&mut missing, "inputs");
+    assert!(launch_route_from_json(&missing)
+        .unwrap_err()
+        .contains("missing `inputs`"));
+
+    let mut forbidden = launch_route_to_json(check);
+    let Json::Obj(fields) = &mut forbidden else {
+        unreachable!()
+    };
+    fields.push(("inputs".into(), Json::Arr(vec![])));
+    assert!(launch_route_from_json(&forbidden)
+        .unwrap_err()
+        .contains("forbidden for a Check route"));
+
+    let mut duplicate = launch_route_to_json(challenge);
+    let Json::Arr(inputs) = object_mut(&mut duplicate, "inputs") else {
+        unreachable!()
+    };
+    inputs.insert(1, inputs[0].clone());
+    assert!(launch_route_from_json(&duplicate)
+        .unwrap_err()
+        .contains("duplicate identity"));
+}
+
+#[test]
+fn launch_input_variants_bind_conditional_identity_and_fingerprints() {
+    let artifact_account = Json::obj(vec![
+        ("id", Json::str("recovery-index")),
+        ("kind", Json::str("postgres-index")),
+        (
+            "identity",
+            Json::str("payments|postgres-index|payments.recovery_unique"),
+        ),
+        ("unique", Json::Bool(true)),
+        ("columns", Json::Arr(vec![Json::str("recovery_key")])),
+        ("predicate", Json::Null),
+    ]);
+    let artifact = construct_launch_input(
+        LaunchInputKind::Artifact,
+        "recovery-index".into(),
+        artifact_property_digest(&artifact_account),
+        LaunchInputSource::Artifact {
+            file: "db/schema.sql".into(),
+            artifact_kind: "postgres-index".into(),
+            identity: "payments|postgres-index|payments.recovery_unique".into(),
+            unique: Some(true),
+            columns: vec!["recovery_key".into()],
+            predicate: None,
+        },
+    )
+    .unwrap();
+    let enumeration = LaunchInput {
+        kind: LaunchInputKind::Enumeration,
+        id: concat!(
+            "payments/routes|web|app|next-routes|",
+            "web|next-manifest|app-paths"
+        )
+        .into(),
+        fingerprint: fp('8'),
+        source: LaunchInputSource::Enumeration {
+            file: ".next/server/app-paths-manifest.json".into(),
+            enumerator_kind: "next-routes".into(),
+            identity: "web|next-manifest|app-paths".into(),
+        },
+    };
+    let enumerated_member = LaunchInput {
+        kind: LaunchInputKind::SurfaceMember,
+        id: "payments/routes|enumerated|app/payments/page.tsx".into(),
+        fingerprint: enumerated_surface_member_digest("payments/routes", "app/payments/page.tsx"),
+        source: LaunchInputSource::SurfaceMember {
+            file: "app/payments/page.tsx".into(),
+            language: "typescript".into(),
+            site: "GET /payments".into(),
+        },
+    };
+    let tagged_member = LaunchInput {
+        kind: LaunchInputKind::SurfaceMember,
+        id: "payments/routes|tagged|web|next-route|GET /payments".into(),
+        fingerprint: fp('9'),
+        source: LaunchInputSource::Source {
+            file: "app/payments/route.ts".into(),
+            language: "typescript".into(),
+            site: "GET /payments".into(),
+        },
+    };
+    let mut inputs = vec![artifact, tagged_member, enumerated_member, enumeration];
+    inputs.sort();
+    let route = construct_launch_route(
+        RouteSelection {
+            kind: RouteSelectionKind::Challenge,
+            id: format!("challenge/{}", "1".repeat(64)),
+        },
+        RouteCapability {
+            address: "synthetic/challenges".into(),
+            class: RouteCapabilityClass::ChallengeExecute,
+            challenge_form: Some("broad-analysis".into()),
+            fingerprint: fp('7'),
+        },
+        inputs,
+    )
+    .unwrap();
+    assert_eq!(
+        launch_route_from_json(&launch_route_to_json(&route)),
+        Ok(route.clone())
+    );
+
+    let mut wrong_artifact = route.clone();
+    let artifact = wrong_artifact
+        .inputs
+        .iter_mut()
+        .find(|input| input.kind == LaunchInputKind::Artifact)
+        .unwrap();
+    artifact.fingerprint = fp('a');
+    assert!(construct_launch_route(
+        wrong_artifact.selection,
+        wrong_artifact.capability,
+        wrong_artifact.inputs,
+    )
+    .unwrap_err()
+    .iter()
+    .any(|error| error.detail.contains("fingerprint must be")));
+
+    let mut wrong_member = route;
+    let member = wrong_member
+        .inputs
+        .iter_mut()
+        .find(|input| matches!(input.source, LaunchInputSource::SurfaceMember { .. }))
+        .unwrap();
+    if let LaunchInputSource::SurfaceMember { file, .. } = &mut member.source {
+        *file = "app/other/page.tsx".into();
+    }
+    assert!(construct_launch_route(
+        wrong_member.selection,
+        wrong_member.capability,
+        wrong_member.inputs,
+    )
+    .unwrap_err()
+    .iter()
+    .any(|error| error
+        .detail
+        .contains("repeat the enumerated semantic member")));
+}
+
+#[test]
+fn launch_inputs_exactly_project_semantic_scope_and_bind_locator_moves() {
+    let bundle = valid_bundle();
+    assert!(
+        validate_launch_routes_against_plan(&bundle.plan, &bundle.provenance.adapter.routes,)
+            .is_empty()
+    );
+
+    let route = &bundle.provenance.adapter.routes[1];
+    let first = canonical_fingerprint(&launch_route_to_json(route)).unwrap();
+    let mut relocated = route.clone();
+    let LaunchInputSource::Source { file, .. } = &mut relocated.inputs[0].source else {
+        unreachable!()
+    };
+    *file = "tests/moved_recovery.rs".into();
+    assert_ne!(
+        first,
+        canonical_fingerprint(&launch_route_to_json(&relocated)).unwrap()
+    );
+    assert_eq!(route.inputs[0].fingerprint, relocated.inputs[0].fingerprint);
+
+    let mut missing = bundle.provenance.adapter.routes.clone();
+    missing[1].inputs.pop();
+    let errors = validate_launch_routes_against_plan(&bundle.plan, &missing);
+    assert!(errors.iter().any(|error| error.detail.contains("missing")));
+
+    let mut substituted = bundle.provenance.adapter.routes.clone();
+    substituted[1].inputs[0].fingerprint = fp('9');
+    let errors = validate_launch_routes_against_plan(&bundle.plan, &substituted);
+    assert!(errors
+        .iter()
+        .any(|error| { error.detail.contains("missing") && error.detail.contains("extra") }));
+
+    let mut duplicate = bundle.provenance.adapter.routes.clone();
+    let repeated = duplicate[1].inputs[0].clone();
+    duplicate[1].inputs.insert(1, repeated);
+    let errors = validate_launch_routes_against_plan(&bundle.plan, &duplicate);
+    assert!(errors
+        .iter()
+        .any(|error| error.detail.contains("duplicate identity")));
+}
+
+#[test]
+fn launch_fingerprint_rejects_stale_locator_bound_identity() {
+    let mut bundle = valid_bundle();
+    let old_launch = bundle.provenance.adapter.launch_fingerprint.clone();
+    let old_run = bundle.run_id.clone();
+    let LaunchInputSource::Source { file, .. } =
+        &mut bundle.provenance.adapter.routes[1].inputs[0].source
+    else {
+        unreachable!()
+    };
+    *file = "tests/relocated_recovery.rs".into();
+    bundle.bundle_fingerprint = bundle_fingerprint(&bundle);
+
+    assert_eq!(bundle.provenance.adapter.launch_fingerprint, old_launch);
+    assert_eq!(bundle.run_id, old_run);
+    assert!(has(&verify(&bundle), "run/provenance-launch-fingerprint"));
+    assert!(has(
+        &verify_provenance(&bundle),
+        "run/provenance-launch-fingerprint"
+    ));
+
+    bundle.provenance.adapter.launch_fingerprint = current_launch_fingerprint(&bundle);
+    refresh(&mut bundle);
+    assert_ne!(bundle.provenance.adapter.launch_fingerprint, old_launch);
+    assert_ne!(bundle.run_id, old_run);
+    assert!(verify(&bundle).is_empty());
+}
+
+#[test]
+fn composite_launch_input_ids_reject_invalid_declared_segments() {
+    let identity = "web|next-manifest|app-paths";
+    let enumeration_source = || LaunchInputSource::Enumeration {
+        file: ".next/server/app-paths-manifest.json".into(),
+        enumerator_kind: "next-routes".into(),
+        identity: identity.into(),
+    };
+    let bad_enumerations = [
+        format!("Payments Routes|web|app|next-routes|{identity}"),
+        format!("payments/routes|web/routes|app|next-routes|{identity}"),
+        format!("payments/routes|web|app/routes|next-routes|{identity}"),
+        format!("payments/routes|web|app|NextRoutes|{identity}"),
+        format!("payments/routes|mobile|app|next-routes|{identity}"),
+    ];
+    for id in bad_enumerations {
+        let input = LaunchInput {
+            kind: LaunchInputKind::Enumeration,
+            id,
+            fingerprint: fp('8'),
+            source: enumeration_source(),
+        };
+        assert!(construct_launch_input(
+            input.kind,
+            input.id.clone(),
+            input.fingerprint.clone(),
+            input.source.clone(),
+        )
+        .is_err());
+        let route = LaunchRoute {
+            selection: RouteSelection {
+                kind: RouteSelectionKind::Challenge,
+                id: format!("challenge/{}", "1".repeat(64)),
+            },
+            capability: RouteCapability {
+                address: "synthetic/challenges".into(),
+                class: RouteCapabilityClass::ChallengeExecute,
+                challenge_form: Some("broad-analysis".into()),
+                fingerprint: fp('7'),
+            },
+            inputs: vec![input],
+        };
+        assert!(launch_route_from_json(&launch_route_to_json(&route)).is_err());
+    }
+
+    for marker in ["tagged", "enumerated"] {
+        let file = "app/payments/page.tsx";
+        let (id, fingerprint, source) = if marker == "tagged" {
+            (
+                "Payments Routes|tagged|web|next-route|GET /payments".to_string(),
+                fp('9'),
+                LaunchInputSource::Source {
+                    file: file.into(),
+                    language: "typescript".into(),
+                    site: "GET /payments".into(),
+                },
+            )
+        } else {
+            (
+                format!("Payments Routes|enumerated|{file}"),
+                enumerated_surface_member_digest("Payments Routes", file),
+                LaunchInputSource::SurfaceMember {
+                    file: file.into(),
+                    language: "typescript".into(),
+                    site: "GET /payments".into(),
+                },
+            )
+        };
+        let input = LaunchInput {
+            kind: LaunchInputKind::SurfaceMember,
+            id,
+            fingerprint,
+            source,
+        };
+        let route = LaunchRoute {
+            selection: RouteSelection {
+                kind: RouteSelectionKind::Challenge,
+                id: format!("challenge/{}", "1".repeat(64)),
+            },
+            capability: RouteCapability {
+                address: "synthetic/challenges".into(),
+                class: RouteCapabilityClass::ChallengeExecute,
+                challenge_form: Some("broad-analysis".into()),
+                fingerprint: fp('7'),
+            },
+            inputs: vec![input.clone()],
+        };
+        assert!(launch_route_from_json(&launch_route_to_json(&route)).is_err());
+        assert!(
+            construct_launch_input(input.kind, input.id, input.fingerprint, input.source,).is_err()
+        );
+    }
+}
+
+#[test]
+fn bundle_provenance_rejects_launch_input_drift() {
+    let mut bundle = valid_bundle();
+    bundle.provenance.adapter.routes[1].inputs.remove(0);
+    refresh(&mut bundle);
+    assert!(has(&verify(&bundle), "run/provenance-route-inputs"));
+
+    let mut bundle = valid_bundle();
+    bundle.provenance.adapter.routes[1].inputs[0].id =
+        "payments|rust-symbol|recovery::other".into();
+    refresh(&mut bundle);
+    assert!(has(&verify(&bundle), "run/provenance-route-inputs"));
+
+    let mut bundle = valid_bundle();
+    let mut extra = bundle.provenance.adapter.routes[1].inputs[0].clone();
+    extra.kind = LaunchInputKind::MechanismImplementation;
+    extra.id = "payments|rust-symbol|recovery::fault-site".into();
+    bundle.provenance.adapter.routes[1].inputs.push(extra);
+    bundle.provenance.adapter.routes[1].inputs.sort();
+    refresh(&mut bundle);
+    assert!(has(&verify(&bundle), "run/provenance-route-inputs"));
+}
+
+#[test]
 fn published_run_id_vector_stays_stable() {
     let mut bundle = valid_bundle();
     bundle.provenance.source.system = "synthetic".into();
@@ -1150,6 +1537,36 @@ fn every_in_memory_number_is_guarded_before_lossy_serialization() {
 }
 
 #[test]
+fn standalone_provenance_verification_never_canonicalizes_unsafe_times() {
+    let unsafe_value = 9_007_199_254_740_992;
+    let mut planned = valid_bundle();
+    planned.planned_at_ms = unsafe_value;
+
+    let mut monitoring = valid_bundle();
+    monitoring.subject = Subject::MonitoringWindow {
+        environment: "production".into(),
+        services: vec![ServiceState {
+            service: "orders/api".into(),
+            deployment: "orders/release".into(),
+            deployment_fingerprint: fp('5'),
+        }],
+        window_start_ms: unsafe_value,
+        window_end_ms: unsafe_value,
+    };
+
+    for (expected_path, bundle) in [
+        ("planned_at_ms", planned),
+        ("subject.window_start_ms", monitoring),
+    ] {
+        let outcome = std::panic::catch_unwind(|| verify_provenance(&bundle));
+        let findings = outcome.expect("unsafe typed Run must return a Finding, not panic");
+        assert!(findings.iter().any(|finding| {
+            finding.code == "run/unsafe-number" && finding.detail.contains(expected_path)
+        }));
+    }
+}
+
+#[test]
 fn correction_sets_are_order_independent_and_exact_replays_are_idempotent() {
     let initial = valid_bundle();
     let mut correction = initial.clone();
@@ -1446,9 +1863,9 @@ fn correction_anchors_fix_the_planned_adapter_route_but_not_import_bytes() {
         assert!(
             has(
                 &verify_set(&[initial.clone(), correction]),
-                "run/history-anchor-change"
+                "run/history-missing-initial"
             ),
-            "accepted a changed correction anchor"
+            "accepted a route mutation without deriving a new Run id"
         );
     }
 
@@ -1456,7 +1873,7 @@ fn correction_anchors_fix_the_planned_adapter_route_but_not_import_bytes() {
     different_run.bundle_revision = 1;
     different_run.corrects = Some(initial.bundle_fingerprint.clone());
     different_run.correction_reason = Some("changed launch".into());
-    different_run.provenance.adapter.launch_fingerprint = fp('c');
+    different_run.planned_at_ms += 1;
     refresh(&mut different_run);
     let findings = verify_set(&[initial, different_run]);
     assert!(has(&findings, "run/history-missing-initial"));
@@ -1474,7 +1891,7 @@ fn correction_cannot_mutate_adapter_fingerprint() {
 
     assert!(has(
         &verify_set(&[initial, correction]),
-        "run/history-anchor-change"
+        "run/history-missing-initial"
     ));
 }
 
