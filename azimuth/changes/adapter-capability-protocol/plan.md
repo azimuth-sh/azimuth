@@ -6,7 +6,7 @@
 - [x] Implement strict configuration, descriptor and capability identity validation.
 - [x] Implement complete-model Check planning and canonical launch fingerprints.
 - [x] Host bounded execute and import adapter processes without shells or implicit retries.
-- [ ] Integrate adapter, planner and host modules before public command routing.
+- [x] Integrate adapter, planner and host modules before public command routing.
 - [ ] Add adapter verification and Run plan, execute and import commands.
 - [ ] Build two synthetic adapters and their shared conformance experiment.
 - [ ] Integrate adapter conformance into the root and release-isolation gates.

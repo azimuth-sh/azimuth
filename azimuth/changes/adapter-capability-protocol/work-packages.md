@@ -36,7 +36,7 @@ Objective: invoke bounded execute/import processes and validate complete returne
 Evidence: handshake, staging cleanup, bounds, import digest, predecessor terminal and no-retry tests
 
 ## Work package: adapter-module-integration
-Status: pending
+Status: complete
 Depends on: bounded-adapter-host
 Owns: tools/azimuth/src/lib.rs
 Objective: export the adapter, planner and host modules before public command routing
