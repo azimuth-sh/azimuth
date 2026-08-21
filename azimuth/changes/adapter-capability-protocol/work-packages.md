@@ -50,7 +50,7 @@ Objective: expose adapter verify and Run plan, execute and import with exact exi
 Evidence: help, option, atomic-output, exit-class and absent-ingest tests
 
 ## Work package: adapter-conformance-experiment
-Status: pending
+Status: complete
 Depends on: adapter-cli-surface
 Owns: experiments/adapter-capabilities
 Objective: exercise executing and report-importing synthetic adapters through one conformance suite
