@@ -107,6 +107,7 @@ fn valid_bundle() -> RunBundle {
                         challenge_form: None,
                         fingerprint: fp('9'),
                     },
+                    inputs: Vec::new(),
                 }],
                 import_inputs: vec![],
             },
@@ -157,6 +158,21 @@ fn refresh(bundle: &mut RunBundle) {
     bundle.plan.fingerprint = plan_fingerprint(&bundle.subject_fingerprint, &bundle.plan);
     bundle.actual_selection.plan_fingerprint = bundle.plan.fingerprint.clone();
     bundle.actual_selection.fingerprint = selection_fingerprint(&bundle.actual_selection);
+    bundle.provenance.adapter.launch_fingerprint = launch_fingerprint(
+        bundle.provenance.mode,
+        bundle.planned_at_ms,
+        &bundle.subject,
+        &bundle.subject_fingerprint,
+        &bundle.plan,
+        &LaunchAdapterIdentity {
+            id: bundle.provenance.adapter.id.clone(),
+            adapter_version: bundle.provenance.adapter.adapter_version.clone(),
+            adapter_fingerprint: bundle.provenance.adapter.adapter_fingerprint.clone(),
+            descriptor_fingerprint: bundle.provenance.adapter.descriptor_fingerprint.clone(),
+            configuration_fingerprint: bundle.provenance.adapter.configuration_fingerprint.clone(),
+        },
+        &bundle.provenance.adapter.routes,
+    );
     bundle.run_id = run_id(bundle);
     for index in 0..bundle.check_executions.len() {
         bundle.check_executions[index].observation.fingerprint =
@@ -190,6 +206,10 @@ fn help_exposes_only_current_run_operations() {
         assert!(stdout.contains("[--model <dir>] [--standards <file>]"));
         assert!(stdout.contains("azimuth run execute --plan <file>"));
         assert!(stdout.contains("azimuth run import --plan <file>"));
+        assert!(stdout.contains("Checks, Challenges, or both"));
+        assert!(stdout.contains("azimuth/formats/run-launch-plan.md"));
+        assert!(!stdout.contains("--challenger"));
+        assert!(!stdout.contains("--challenge-form"));
         assert!(!stdout.contains(" run ingest"));
     }
 }

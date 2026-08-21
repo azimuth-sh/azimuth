@@ -59,6 +59,10 @@ OPTIONS
     --out <file>           export destination (default: stdout)
     -h, --help
     -V, --version
+
+RUN PLAN REQUESTS
+    The strict request file may select Checks, Challenges, or both. See
+    azimuth/formats/run-launch-plan.md for the complete request shape.
 ";
 
 const RUN_USAGE: &str = "\
@@ -71,6 +75,10 @@ USAGE
         [--predecessor <bundle>...] [--config <file>] [--out <file>]
     azimuth run verify --bundle <file>...
     azimuth run inspect --bundle <file>... [--format text|json] [--out <file>]
+
+PLAN REQUESTS
+    The strict request file may select Checks, Challenges, or both. See
+    azimuth/formats/run-launch-plan.md for the complete request shape.
 ";
 
 const ADAPTER_USAGE: &str = "\

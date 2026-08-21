@@ -4,7 +4,7 @@ use azimuth::adapter::{
 };
 use azimuth::json::Json;
 use azimuth::run::*;
-use azimuth::run_plan::{self, PlanRequest, RequestedCheck, RunOperation};
+use azimuth::run_plan::{self, PlanRequest, RequestedChallenge, RequestedCheck, RunOperation};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -70,31 +70,42 @@ fn configuration_with_script(root: &Path, script: &str) -> (PathBuf, ConfiguredA
             literals: BTreeMap::new(),
         },
         limits: AdapterLimits {
-            timeout_ms: 1_000,
+            timeout_ms: 5_000,
             stdout_bytes: 1_000_000,
             stderr_bytes: 1_024,
         },
-        capabilities: vec![Capability {
-            id: "checks".into(),
-            classes: vec![CapabilityClass::CheckExecute, CapabilityClass::CheckImport],
-            challenge_forms: Vec::new(),
-            semantic_settings: BTreeMap::new(),
-            fingerprint: String::new(),
-        }],
+        capabilities: vec![
+            Capability {
+                id: "challenges".into(),
+                classes: vec![
+                    CapabilityClass::ChallengeExecute,
+                    CapabilityClass::ChallengeImport,
+                ],
+                challenge_forms: vec!["mutation".into()],
+                semantic_settings: BTreeMap::new(),
+                fingerprint: String::new(),
+            },
+            Capability {
+                id: "checks".into(),
+                classes: vec![CapabilityClass::CheckExecute, CapabilityClass::CheckImport],
+                challenge_forms: Vec::new(),
+                semantic_settings: BTreeMap::new(),
+                fingerprint: String::new(),
+            },
+        ],
         adapter_fingerprint: String::new(),
         descriptor_fingerprint: String::new(),
         configuration_fingerprint: String::new(),
     };
     configured.adapter_fingerprint = adapter::adapter_fingerprint(&configured);
-    configured.capabilities[0].fingerprint = adapter::capability_fingerprint(
-        &configured.adapter_fingerprint,
-        &configured.capabilities[0],
-    );
+    for capability in &mut configured.capabilities {
+        capability.fingerprint =
+            adapter::capability_fingerprint(&configured.adapter_fingerprint, capability);
+    }
     configured.descriptor_fingerprint =
         adapter::descriptor_fingerprint(&configured.expected_description());
     configured.configuration_fingerprint = adapter::configuration_fingerprint(&configured);
 
-    let capability = &configured.capabilities[0];
     let json = Json::obj(vec![
         ("format", Json::str("azimuth-adapter-configuration")),
         ("version", Json::Num(1.0)),
@@ -127,29 +138,46 @@ fn configuration_with_script(root: &Path, script: &str) -> (PathBuf, ConfiguredA
                 (
                     "limits",
                     Json::obj(vec![
-                        ("timeout_ms", Json::Num(1_000.0)),
+                        ("timeout_ms", Json::Num(5_000.0)),
                         ("stdout_bytes", Json::Num(1_000_000.0)),
                         ("stderr_bytes", Json::Num(1_024.0)),
                     ]),
                 ),
                 (
                     "capabilities",
-                    Json::Arr(vec![Json::obj(vec![
-                        ("id", Json::str(&capability.id)),
-                        (
-                            "classes",
-                            Json::Arr(
-                                capability
-                                    .classes
-                                    .iter()
-                                    .map(|class| Json::str(class.name()))
-                                    .collect(),
-                            ),
-                        ),
-                        ("challenge_forms", Json::Arr(Vec::new())),
-                        ("semantic_settings", Json::Obj(Vec::new())),
-                        ("fingerprint", Json::str(&capability.fingerprint)),
-                    ])]),
+                    Json::Arr(
+                        configured
+                            .capabilities
+                            .iter()
+                            .map(|capability| {
+                                Json::obj(vec![
+                                    ("id", Json::str(&capability.id)),
+                                    (
+                                        "classes",
+                                        Json::Arr(
+                                            capability
+                                                .classes
+                                                .iter()
+                                                .map(|class| Json::str(class.name()))
+                                                .collect(),
+                                        ),
+                                    ),
+                                    (
+                                        "challenge_forms",
+                                        Json::Arr(
+                                            capability
+                                                .challenge_forms
+                                                .iter()
+                                                .map(Json::str)
+                                                .collect(),
+                                        ),
+                                    ),
+                                    ("semantic_settings", Json::Obj(Vec::new())),
+                                    ("fingerprint", Json::str(&capability.fingerprint)),
+                                ])
+                            })
+                            .collect(),
+                    ),
                 ),
                 (
                     "adapter_fingerprint",
@@ -226,6 +254,75 @@ fn model(root: &Path, checks: &[&str]) -> (PathBuf, PathBuf, PathBuf) {
     (model, workspace, manifest)
 }
 
+fn challenge_model(root: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
+    let (model, workspace, manifest) = model(root, &["demo/check"]);
+    fs::write(
+        model.join("demo/spec.md"),
+        "# Spec: demo\n\n## Requirement: works\nCriticality: standard\n\n\
+         The demo SHALL work.\n\n### Scenario: works\nWHEN invoked\nTHEN it works\n",
+    )
+    .unwrap();
+    let standards = root.join("standards.md");
+    fs::write(
+        &standards,
+        "# Decision policies and Challenge schedule\n\n\
+         ## Decision Policy: credible\nRequired challenge: mutation\n\n\
+         The decision must be challenged.\n\n\
+         ## Challenge Schedule: current\nGate challenge: mutation\n\nMutation is gate work.\n",
+    )
+    .unwrap();
+    let verification = model.join("demo/verification.md");
+    let render = |fingerprint: &str, verdict: &str, form: &str, selector: &str| {
+        format!(
+            "# Verification: demo\n\n\
+             ## Check: demo/check\nMethod: invoke\nTerminal: works\n\nOne result.\n\n\
+             ## Evidence Binding: demo/edge\nCheck: demo/check\nClaim: demo#works\n\
+             Proposition: direct\nScope: unit\nQuantification: example\nOracle: direct\n\
+             Context: {{\"platform\":\"linux\"}}\nChallenge domain: [\"realization\",\"mechanism\"]\n\
+             Policy: credible\n\nReviewable.\n\n\
+             ## Qualification: demo/edge\nVerdict: {verdict}\nFingerprint: {fingerprint}\n\
+             Qualified: 2026-08-22\nQualifier: owner\n\nQualified.\n\n\
+             ## Challenger: mutation/search\nForm: {form}\nSearches for: an undetected change\n\
+             Required scope: [\"binding\",\"check-implementation\"]\n\nSearches exact semantics.\n\n\
+             ## Challenge Plan: demo/plan\nChallenger: mutation/search\nSelect: {selector}\n\n\
+             Targets the current decision.\n"
+        )
+    };
+    fs::write(
+        &verification,
+        render(
+            &fp('0'),
+            "qualified",
+            "mutation",
+            "qualification from binding demo/edge",
+        ),
+    )
+    .unwrap();
+    let loaded = azimuth::load(
+        &model,
+        &standards,
+        &workspace,
+        std::slice::from_ref(&manifest),
+        &[],
+    )
+    .unwrap();
+    let fingerprint = loaded
+        .model
+        .expected_qualification_fingerprint(&loaded.model.verifications[0].bindings[0])
+        .unwrap();
+    fs::write(
+        &verification,
+        render(
+            &fingerprint,
+            "qualified",
+            "mutation",
+            "qualification from binding demo/edge",
+        ),
+    )
+    .unwrap();
+    (model, standards, workspace, manifest)
+}
+
 fn request(path: &Path, operation: RunOperation, check: &str) {
     let request = PlanRequest {
         operation,
@@ -240,6 +337,54 @@ fn request(path: &Path, operation: RunOperation, check: &str) {
         checks: vec![RequestedCheck {
             id: check.into(),
             capability: "synthetic/checks".into(),
+            units: vec![WorkUnit {
+                id: "whole".into(),
+                parameters: BTreeMap::new(),
+            }],
+        }],
+        challenges: Vec::new(),
+    };
+    fs::write(
+        path,
+        run_plan::plan_request_to_json(&request).to_string_pretty(),
+    )
+    .unwrap();
+}
+
+fn challenge_request(
+    path: &Path,
+    operation: RunOperation,
+    checks: bool,
+    context: &str,
+    capability: &str,
+    max_candidates: u64,
+) {
+    let request = PlanRequest {
+        operation,
+        planned_at_ms: 1_787_300_000_000,
+        subject: Subject::Artifact {
+            artifacts: vec![ArtifactState {
+                id: "candidate".into(),
+                digest: fp('8'),
+            }],
+        },
+        required_context: BTreeMap::from([("platform".into(), context.into())]),
+        checks: if checks {
+            vec![RequestedCheck {
+                id: "demo/check".into(),
+                capability: "synthetic/checks".into(),
+                units: vec![WorkUnit {
+                    id: "whole".into(),
+                    parameters: BTreeMap::new(),
+                }],
+            }]
+        } else {
+            Vec::new()
+        },
+        challenges: vec![RequestedChallenge {
+            id: "demo/plan".into(),
+            capability: capability.into(),
+            max_candidates,
             units: vec![WorkUnit {
                 id: "whole".into(),
                 parameters: BTreeMap::new(),
@@ -274,6 +419,77 @@ fn planning_arguments<'a>(
         "--config",
         config.to_str().unwrap(),
     ]
+}
+
+fn challenge_planning_arguments<'a>(
+    request: &'a Path,
+    model: &'a Path,
+    standards: &'a Path,
+    workspace: &'a Path,
+    manifest: &'a Path,
+    config: &'a Path,
+) -> Vec<&'a str> {
+    let mut arguments = planning_arguments(request, model, workspace, manifest, config);
+    arguments.extend(["--standards", standards.to_str().unwrap()]);
+    arguments
+}
+
+fn add_second_challenge_candidate(
+    model: &Path,
+    standards: &Path,
+    workspace: &Path,
+    manifest: &Path,
+) {
+    let manifest_source = fs::read_to_string(manifest).unwrap();
+    fs::write(
+        manifest,
+        manifest_source.replacen(
+            '{',
+            &format!(
+                "{{\"realizes\":[{{\"spec\":\"demo\",\"scenario\":\"works\",\
+                 \"site\":\"demo::works\",\"file\":\"src/demo.rs\",\
+                 \"lang\":\"rust-symbol\",\"source_fingerprint\":\"{}\"}}],",
+                fp('2')
+            ),
+            1,
+        ),
+    )
+    .unwrap();
+    let verification = model.join("demo/verification.md");
+    let source = fs::read_to_string(&verification).unwrap();
+    let source = source
+        .replace(
+            "## Challenger: mutation/search",
+            &format!(
+                "## Claim Judgment: demo#works\nVerdict: accepted\nPolicy: credible\nFingerprint: {}\n\
+                 Judged: 2026-08-22\nJudge: owner\nBasis: the exact composition is accepted\n\
+                 Residual risk: none identified\n\nAccepted.\n\n\
+                 ## Challenger: mutation/search",
+                fp('1')
+            ),
+        )
+        .replace(
+            "Select: qualification from binding demo/edge",
+            "Select: qualification from binding demo/edge\n\
+             Select: claim-judgment from claim demo#works",
+        );
+    fs::write(&verification, source).unwrap();
+    let loaded = azimuth::load(
+        model,
+        standards,
+        workspace,
+        std::slice::from_ref(&manifest.to_path_buf()),
+        &[],
+    )
+    .unwrap();
+    let fingerprint = loaded
+        .model
+        .expected_claim_judgment_fingerprint(&loaded.model.verifications[0].claim_judgments[0])
+        .unwrap();
+    let source = fs::read_to_string(&verification)
+        .unwrap()
+        .replace(&fp('1'), &fingerprint);
+    fs::write(verification, source).unwrap();
 }
 
 fn description_json(adapter: &ConfiguredAdapter) -> Json {
@@ -319,7 +535,12 @@ fn description_json(adapter: &ConfiguredAdapter) -> Json {
                                         .collect(),
                                 ),
                             ),
-                            ("challenge_forms", Json::Arr(Vec::new())),
+                            (
+                                "challenge_forms",
+                                Json::Arr(
+                                    capability.challenge_forms.iter().map(Json::str).collect(),
+                                ),
+                            ),
                             ("semantic_settings", Json::Obj(Vec::new())),
                             ("fingerprint", Json::str(&capability.fingerprint)),
                         ])
@@ -366,6 +587,10 @@ fn refresh_bundle(bundle: &mut RunBundle) {
     for index in 0..bundle.check_executions.len() {
         bundle.check_executions[index].observation.fingerprint =
             observation_fingerprint(bundle, &bundle.check_executions[index]);
+    }
+    for index in 0..bundle.challenger_executions.len() {
+        bundle.challenger_executions[index].result.fingerprint =
+            challenge_result_fingerprint(bundle, &bundle.challenger_executions[index]);
     }
     bundle.bundle_fingerprint = bundle_fingerprint(bundle);
 }
@@ -472,6 +697,148 @@ fn adapter_bundle(
             },
         });
     }
+    refresh_bundle(&mut bundle);
+    assert!(verify(&bundle).is_empty(), "{:?}", verify(&bundle));
+    bundle
+}
+
+fn challenge_adapter_bundle(
+    launch: &run_plan::LaunchPlan,
+    adapter: &ConfiguredAdapter,
+    inputs: Vec<ImportInputIdentity>,
+    outcome: Option<ChallengeOutcome>,
+) -> RunBundle {
+    let selection = launch.plan.challenges[0].clone();
+    let mut diagnostics = Vec::new();
+    let mut activities = Vec::new();
+    let mut executions = Vec::new();
+    let actual_challenges = if let Some(outcome) = outcome {
+        let objections = if outcome == ChallengeOutcome::Findings {
+            diagnostics.push(Diagnostic {
+                id: "mutation/finding".into(),
+                class: DiagnosticClass::Objection,
+                severity: Severity::Error,
+                code: "mutation/survived".into(),
+                message: "A mutation survived.".into(),
+                scope: DiagnosticScope::ChallengerExecution {
+                    challenger_fingerprint: selection.challenger.fingerprint.clone(),
+                    target_fingerprint: selection.target.fingerprint.clone(),
+                },
+                artifacts: Vec::new(),
+                details: BTreeMap::new(),
+            });
+            vec!["mutation/finding".into()]
+        } else {
+            Vec::new()
+        };
+        activities.push(Activity {
+            id: "challenge-attempt".into(),
+            status: if outcome == ChallengeOutcome::Inconclusive {
+                ActivityStatus::Failed
+            } else {
+                ActivityStatus::Completed
+            },
+            started_at_ms: launch.planned_at_ms + 1,
+            finished_at_ms: launch.planned_at_ms + 2,
+            artifacts: Vec::new(),
+            diagnostics: objections.clone(),
+            attributes: BTreeMap::new(),
+        });
+        executions.push(ChallengerExecution {
+            challenge: selection.id.clone(),
+            challenger: selection.challenger.clone(),
+            target: selection.target.clone(),
+            units: vec![ChallengeExecutionUnit {
+                id: "whole".into(),
+                attempts: vec![ChallengeAttempt {
+                    ordinal: 1,
+                    activity: "challenge-attempt".into(),
+                    outcome,
+                }],
+            }],
+            result: ChallengeResult {
+                outcome,
+                observed_at_ms: launch.planned_at_ms + 2,
+                fingerprint: fp('0'),
+                objections,
+                artifacts: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+        });
+        vec![selection.clone()]
+    } else {
+        diagnostics.push(Diagnostic {
+            id: "challenge/deferred".into(),
+            class: DiagnosticClass::Execution,
+            severity: Severity::Warning,
+            code: "challenge/deferred".into(),
+            message: "The scheduled Challenge did not execute.".into(),
+            scope: DiagnosticScope::ChallengeSelection(selection.id.clone()),
+            artifacts: Vec::new(),
+            details: BTreeMap::new(),
+        });
+        Vec::new()
+    };
+    let mode = match launch.operation {
+        RunOperation::Execute => ProvenanceMode::Execute,
+        RunOperation::Import => ProvenanceMode::Import,
+    };
+    let mut bundle = RunBundle {
+        run_id: fp('0'),
+        bundle_revision: 0,
+        corrects: None,
+        correction_reason: None,
+        bundle_fingerprint: fp('0'),
+        subject: launch.subject.clone(),
+        subject_fingerprint: launch.subject_fingerprint.clone(),
+        planned_at_ms: launch.planned_at_ms,
+        started_at_ms: launch.planned_at_ms + 1,
+        finished_at_ms: launch.planned_at_ms + 2,
+        status: if outcome.is_some() {
+            RunStatus::Complete
+        } else {
+            RunStatus::Partial
+        },
+        plan: launch.plan.clone(),
+        actual_selection: ActualSelection {
+            context: launch.plan.required_context.clone(),
+            plan_fingerprint: launch.plan.fingerprint.clone(),
+            checks: Vec::new(),
+            challenges: actual_challenges,
+            fingerprint: fp('0'),
+        },
+        provenance: Provenance {
+            mode,
+            source: SourceProvenance {
+                system: "synthetic/cli".into(),
+                execution: "native-challenge".into(),
+                uri: None,
+            },
+            normalizer: Normalizer {
+                id: format!("adapter/{}", adapter.id),
+                version: adapter.adapter_version.clone(),
+                build_fingerprint: adapter.adapter_fingerprint.clone(),
+            },
+            adapter: AdapterProvenance {
+                id: adapter.id.clone(),
+                adapter_version: adapter.adapter_version.clone(),
+                adapter_fingerprint: adapter.adapter_fingerprint.clone(),
+                descriptor_fingerprint: adapter.descriptor_fingerprint.clone(),
+                configuration_fingerprint: adapter.configuration_fingerprint.clone(),
+                launch_fingerprint: launch.fingerprint.clone(),
+                routes: launch.routes.clone(),
+                import_inputs: inputs,
+            },
+            generated_at_ms: launch.planned_at_ms + 3,
+            principal: None,
+            attributes: None,
+        },
+        artifacts: Vec::new(),
+        diagnostics,
+        activities,
+        check_executions: Vec::new(),
+        challenger_executions: executions,
+    };
     refresh_bundle(&mut bundle);
     assert!(verify(&bundle).is_empty(), "{:?}", verify(&bundle));
     bundle
@@ -721,6 +1088,180 @@ fn nonempty_verify_and_execute_import_routes_publish_valid_bundles() {
 }
 
 #[test]
+fn challenge_execute_and_import_accept_terminal_and_scheduled_incomplete_facts() {
+    let root = root();
+    let fixture = ProtocolFixture::new(&root);
+    let (model, standards, workspace, manifest) = challenge_model(&root);
+    let request_path = root.join("challenge-request.json");
+    challenge_request(
+        &request_path,
+        RunOperation::Execute,
+        false,
+        "linux",
+        "synthetic/challenges",
+        1,
+    );
+    let planned = azimuth(&challenge_planning_arguments(
+        &request_path,
+        &model,
+        &standards,
+        &workspace,
+        &manifest,
+        &fixture.config,
+    ));
+    assert!(
+        planned.status.success(),
+        "{}",
+        String::from_utf8_lossy(&planned.stderr)
+    );
+    let launch = run_plan::parse_launch_plan(
+        "challenge execute launch",
+        std::str::from_utf8(&planned.stdout).unwrap(),
+    )
+    .unwrap();
+    let launch_path = root.join("challenge-execute.json");
+    fs::write(&launch_path, &planned.stdout).unwrap();
+    for (index, outcome) in [
+        ChallengeOutcome::Clean,
+        ChallengeOutcome::Findings,
+        ChallengeOutcome::Inconclusive,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let bundle = challenge_adapter_bundle(&launch, &fixture.adapter, Vec::new(), Some(outcome));
+        fixture.respond(response_template(
+            "execute",
+            &fixture.adapter,
+            Some(&launch.fingerprint),
+            Some(&bundle),
+        ));
+        let output = azimuth(&[
+            "run",
+            "execute",
+            "--plan",
+            launch_path.to_str().unwrap(),
+            "--config",
+            fixture.config.to_str().unwrap(),
+        ]);
+        assert!(
+            output.status.success(),
+            "{index}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            parse(
+                "challenge execute",
+                std::str::from_utf8(&output.stdout).unwrap()
+            )
+            .unwrap(),
+            bundle
+        );
+        if index == 0 {
+            let output_path = root.join("challenge-execute-bundle.json");
+            let written = azimuth(&[
+                "run",
+                "execute",
+                "--plan",
+                launch_path.to_str().unwrap(),
+                "--config",
+                fixture.config.to_str().unwrap(),
+                "--out",
+                output_path.to_str().unwrap(),
+            ]);
+            assert!(written.status.success());
+            assert!(written.stdout.is_empty());
+            assert_eq!(output.stdout, fs::read(output_path).unwrap());
+        }
+        let bundle_path = root.join(format!("challenge-{index}.json"));
+        fs::write(&bundle_path, &output.stdout).unwrap();
+        assert!(
+            azimuth(&["run", "verify", "--bundle", bundle_path.to_str().unwrap()])
+                .status
+                .success()
+        );
+        assert!(
+            azimuth(&["run", "inspect", "--bundle", bundle_path.to_str().unwrap()])
+                .status
+                .success()
+        );
+    }
+
+    let schedule = fs::read_to_string(&standards)
+        .unwrap()
+        .replace("Gate challenge: mutation", "Scheduled challenge: mutation");
+    fs::write(&standards, schedule).unwrap();
+    challenge_request(
+        &request_path,
+        RunOperation::Import,
+        false,
+        "linux",
+        "synthetic/challenges",
+        1,
+    );
+    let planned = azimuth(&challenge_planning_arguments(
+        &request_path,
+        &model,
+        &standards,
+        &workspace,
+        &manifest,
+        &fixture.config,
+    ));
+    assert!(planned.status.success());
+    let launch = run_plan::parse_launch_plan(
+        "challenge import launch",
+        std::str::from_utf8(&planned.stdout).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(launch.plan.challenges[0].lane, ChallengeLane::Scheduled);
+    let launch_path = root.join("challenge-import.json");
+    fs::write(&launch_path, &planned.stdout).unwrap();
+    let native = root.join("native-challenge.json");
+    fs::write(&native, "{\"native\":true}\n").unwrap();
+    let identity = adapter::identify_input("native-challenge", &native).unwrap();
+    let bundle = challenge_adapter_bundle(
+        &launch,
+        &fixture.adapter,
+        vec![ImportInputIdentity {
+            id: identity.id,
+            digest: identity.digest,
+            size_bytes: identity.size_bytes,
+        }],
+        None,
+    );
+    fixture.respond(response_template(
+        "import",
+        &fixture.adapter,
+        Some(&launch.fingerprint),
+        Some(&bundle),
+    ));
+    let output = azimuth(&[
+        "run",
+        "import",
+        "--plan",
+        launch_path.to_str().unwrap(),
+        "--input",
+        &format!("native-challenge={}", native.display()),
+        "--config",
+        fixture.config.to_str().unwrap(),
+    ]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        parse(
+            "challenge import",
+            std::str::from_utf8(&output.stdout).unwrap()
+        )
+        .unwrap(),
+        bundle
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn invoke_exit_classes_preserve_sentinel_and_leave_no_temporary_output() {
     let root = root();
     let fixture = ProtocolFixture::new(&root);
@@ -808,6 +1349,200 @@ fn plan_loads_the_complete_model_and_has_exact_stdout_file_parity() {
     assert!(written.stdout.is_empty());
     assert_eq!(stdout.stdout, fs::read(&output).unwrap());
     fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn challenge_only_and_mixed_plans_have_exact_stdout_file_parity() {
+    let root = root();
+    let config = configuration(&root);
+    let (model, standards, workspace, manifest) = challenge_model(&root);
+    for (index, checks) in [false, true].into_iter().enumerate() {
+        let request_path = root.join(format!("challenge-request-{index}.json"));
+        challenge_request(
+            &request_path,
+            RunOperation::Execute,
+            checks,
+            "linux",
+            "synthetic/challenges",
+            1,
+        );
+        let arguments = challenge_planning_arguments(
+            &request_path,
+            &model,
+            &standards,
+            &workspace,
+            &manifest,
+            &config,
+        );
+        let stdout = azimuth(&arguments);
+        assert!(
+            stdout.status.success(),
+            "{}",
+            String::from_utf8_lossy(&stdout.stderr)
+        );
+        let launch = run_plan::parse_launch_plan(
+            "challenge launch",
+            std::str::from_utf8(&stdout.stdout).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(launch.plan.checks.len(), usize::from(checks));
+        assert_eq!(launch.plan.challenges.len(), 1);
+        assert_eq!(launch.routes.len(), usize::from(checks) + 1);
+        let output = root.join(format!("challenge-launch-{index}.json"));
+        let mut file_arguments = arguments;
+        file_arguments.extend(["--out", output.to_str().unwrap()]);
+        let written = azimuth(&file_arguments);
+        assert!(written.status.success());
+        assert!(written.stdout.is_empty());
+        assert_eq!(stdout.stdout, fs::read(output).unwrap());
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn challenge_request_schema_is_strict_and_preserves_sentinel_outputs() {
+    let root = root();
+    let config = configuration(&root);
+    let (model, standards, workspace, manifest) = challenge_model(&root);
+    let request_path = root.join("request.json");
+    challenge_request(
+        &request_path,
+        RunOperation::Execute,
+        false,
+        "linux",
+        "synthetic/challenges",
+        1,
+    );
+    let valid = azimuth::json::parse(&fs::read_to_string(&request_path).unwrap()).unwrap();
+    for (name, mutate) in [("missing", 0_u8), ("unknown", 1_u8)] {
+        let Json::Obj(mut fields) = valid.clone() else {
+            unreachable!()
+        };
+        if mutate == 0 {
+            fields.retain(|(key, _)| key != "challenges");
+        } else {
+            fields.push(("challengez".into(), Json::Arr(Vec::new())));
+        }
+        fs::write(&request_path, Json::Obj(fields).to_string_pretty()).unwrap();
+        let output_path = root.join(format!("{name}.json"));
+        fs::write(&output_path, "sentinel").unwrap();
+        let mut arguments = challenge_planning_arguments(
+            &request_path,
+            &model,
+            &standards,
+            &workspace,
+            &manifest,
+            &config,
+        );
+        arguments.extend(["--out", output_path.to_str().unwrap()]);
+        let output = azimuth(&arguments);
+        assert_eq!(output.status.code(), Some(2), "{name}");
+        assert!(output.stdout.is_empty());
+        assert_eq!(fs::read_to_string(output_path).unwrap(), "sentinel");
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn challenge_semantic_failures_exit_one_without_publishing() {
+    enum Failure {
+        Adverse,
+        Context,
+        Cap,
+        Form,
+        Capability,
+        UnknownPlan,
+    }
+    for (index, failure) in [
+        Failure::Adverse,
+        Failure::Context,
+        Failure::Cap,
+        Failure::Form,
+        Failure::Capability,
+        Failure::UnknownPlan,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let root = root();
+        let config = configuration(&root);
+        let (model, standards, workspace, manifest) = challenge_model(&root);
+        let request_path = root.join("request.json");
+        let mut context = "linux";
+        let mut capability = "synthetic/challenges";
+        if matches!(failure, Failure::Adverse) {
+            let path = model.join("demo/verification.md");
+            let source = fs::read_to_string(&path)
+                .unwrap()
+                .replace("Verdict: qualified", "Verdict: rejected");
+            fs::write(path, source).unwrap();
+        }
+        if matches!(failure, Failure::Context) {
+            context = "windows";
+        }
+        if matches!(failure, Failure::Cap) {
+            add_second_challenge_candidate(&model, &standards, &workspace, &manifest);
+        }
+        if matches!(failure, Failure::Form) {
+            let path = model.join("demo/verification.md");
+            let source = fs::read_to_string(&path)
+                .unwrap()
+                .replace("Form: mutation", "Form: destructive");
+            fs::write(path, source).unwrap();
+            let source = fs::read_to_string(&standards).unwrap().replace(
+                "Gate challenge: mutation",
+                "Gate challenge: mutation\nScheduled challenge: destructive",
+            );
+            fs::write(&standards, source).unwrap();
+        }
+        if matches!(failure, Failure::Capability) {
+            capability = "synthetic/missing";
+        }
+        challenge_request(
+            &request_path,
+            RunOperation::Execute,
+            false,
+            context,
+            capability,
+            1,
+        );
+        if matches!(failure, Failure::UnknownPlan) {
+            let source = fs::read_to_string(&request_path)
+                .unwrap()
+                .replace("demo/plan", "demo/missing");
+            fs::write(&request_path, source).unwrap();
+        }
+        let output_path = root.join(format!("failure-{index}.json"));
+        fs::write(&output_path, "sentinel").unwrap();
+        let mut arguments = challenge_planning_arguments(
+            &request_path,
+            &model,
+            &standards,
+            &workspace,
+            &manifest,
+            &config,
+        );
+        arguments.extend(["--out", output_path.to_str().unwrap()]);
+        let output = azimuth(&arguments);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(1), "{index}: {stderr}",);
+        let expected = match failure {
+            Failure::Adverse => "not runnable",
+            Failure::Context => "context must equal",
+            Failure::Cap => "exceeding max_candidates 1",
+            Failure::Form => "Challenge form `destructive`",
+            Failure::Capability => "unknown configured capability",
+            Failure::UnknownPlan => "unknown Challenge Plan",
+        };
+        assert!(stderr.contains(expected), "{index}: {stderr}");
+        assert!(output.stdout.is_empty());
+        assert_eq!(fs::read_to_string(&output_path).unwrap(), "sentinel");
+        assert!(!fs::read_dir(&root)
+            .unwrap()
+            .flatten()
+            .any(|entry| entry.file_name().to_string_lossy().ends_with(".tmp")));
+        fs::remove_dir_all(root).unwrap();
+    }
 }
 
 #[test]

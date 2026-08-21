@@ -78,7 +78,7 @@ Objective: expand requested Challenge Plans and derive exact capability routes a
 Evidence: complete-model, context, form, cap, dedupe, source-input and mixed-plan tests
 
 ## Work package: challenge-cli-cutover
-Status: pending
+Status: complete
 Depends on: semantic-challenge-planner
 Owns: tools/azimuth/src/main.rs, tools/azimuth/tests/adapter_cli.rs, tools/azimuth/tests/run_cli.rs
 Objective: accept strict Challenge requests without weakening command, exit or atomic-output contracts
