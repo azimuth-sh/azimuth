@@ -56,9 +56,16 @@ Owns: experiments/adapter-capabilities
 Objective: exercise executing and report-importing synthetic adapters through one conformance suite
 Evidence: execute, import, correction, drift, substitution, negative-fact and dual-role cases
 
+## Work package: run-bundle-fixture-migration
+Status: complete
+Depends on: protocol-authority, run-component-seam
+Owns: experiments/run-bundles
+Objective: migrate the existing Run conformance fixtures to the current D47 provenance shape
+Evidence: Run conformance gate, strict current-schema audit and absence of compatibility input
+
 ## Work package: adapter-gate-integration
 Status: pending
-Depends on: adapter-conformance-experiment
+Depends on: adapter-conformance-experiment, run-bundle-fixture-migration
 Owns: scripts/check.sh
 Objective: include adapter conformance before release qualification
 Evidence: shell syntax, release-isolation discovery and canonical root gate
