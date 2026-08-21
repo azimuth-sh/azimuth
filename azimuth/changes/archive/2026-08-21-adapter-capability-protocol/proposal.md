@@ -1,6 +1,6 @@
 # Change: adapter-capability-protocol
 
-Status: proposed
+Status: accepted and complete
 
 Exploration: evidence-control-plane-alpha-2
 Carries decisions: E10, E11, E12, E13

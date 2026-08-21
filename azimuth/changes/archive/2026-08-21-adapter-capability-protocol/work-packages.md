@@ -92,7 +92,7 @@ Objective: teach explicit planning and invocation without inventing decision or 
 Evidence: frontmatter, command, boundary and stale-guidance audits
 
 ## Work package: integration-audit
-Status: pending
+Status: complete
 Depends on: adapter-gate-integration, adapter-public-account, adapter-agent-guidance
 Owns: azimuth/changes/adapter-capability-protocol/plan.md, azimuth/changes/adapter-capability-protocol/work-packages.md, azimuth/changes/adapter-capability-protocol/proposal.md, azimuth/changes/adapter-capability-protocol/outcome.md, azimuth/changes/adapter-capability-protocol/finalization.json
 Objective: reconcile the complete change, record departures and prepare coordinator-only acceptance

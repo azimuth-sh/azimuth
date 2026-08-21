@@ -14,5 +14,5 @@
 - [x] Narrow the superseded Run command Claim to durable ingest only.
 - [x] Update public and agent guidance without claiming challenge planning or durable state.
 - [x] Correct the portable process boundary after adversarial containment review.
-- [ ] Run complete component, conformance, isolation and composed-model audits.
-- [ ] Record the accepted outcome and archive the change.
+- [x] Run complete component, conformance, isolation and composed-model audits.
+- [x] Record the accepted outcome and archive the change.
