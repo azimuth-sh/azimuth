@@ -8,14 +8,14 @@ Objective: freeze the provider-neutral Run contract and accepted transition
 Evidence: format review, change-account validation and work-package validation
 
 ## Work package: run-format-kernel
-Status: pending
+Status: complete
 Depends on: change-authority
 Owns: tools/azimuth/src/run.rs, tools/azimuth/tests/run.rs
 Objective: parse, fingerprint, reduce and verify strict Run bundles and correction sets
 Evidence: complete subject, selection, reduction, reference and history test matrix
 
 ## Work package: run-cli-surface
-Status: pending
+Status: complete
 Depends on: run-format-kernel
 Owns: tools/azimuth/src/lib.rs, tools/azimuth/src/main.rs, tools/azimuth/tests/run_cli.rs
 Objective: expose only service-free Run verification and inspection

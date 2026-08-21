@@ -10,6 +10,7 @@ pub mod json;
 pub mod labels;
 pub mod manifest;
 pub mod model;
+pub mod run;
 pub mod spec;
 pub mod traceability;
 pub mod validation;

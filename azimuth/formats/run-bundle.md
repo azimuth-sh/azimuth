@@ -227,11 +227,16 @@ Checks sort by `(id, fingerprint)` and ids are unique within a plan. Implementat
 `(identity, source_fingerprint)` and are non-empty. Units sort by id, are non-empty and have unique
 ids. One `whole` unit represents native work whose internal population is not separately planned.
 
+Implementation `identity` is the D45 stable semantic SourceIdentity
+`<area>|<address-kind>|<address>`. Area and address kind are lower kebab ids. Address is non-empty,
+glob-free semantic identity rather than a file, path, numeric line, or path-plus-line locator; it
+uses the realization-selector boundary from [verification.md](verification.md).
+
 Challenges sort by their plan-local id, which is unique. The semantic tuple of Challenger
 fingerprint, target kind and target fingerprint is also unique within the plan. Target kind is
 exactly `qualification | claim-judgment`. Qualification target ids are Evidence Binding ids; Claim
-Judgment target ids are case-level Claim ids. The fingerprint, not the display id, is the exact
-decision target.
+Judgment target ids have exact case-level Claim form `<spec-id>#<case-id>`. The fingerprint, not the
+display id, is the exact decision target.
 
 The standalone verifier recomputes plan identity and lexical exactness. It does not assert that
 the named model, Check, Challenger or decision is current. Dependent planning and ledger changes

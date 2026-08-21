@@ -5,6 +5,8 @@
 
 use azimuth::diag::Diag;
 use azimuth::validation;
+use std::collections::BTreeSet;
+use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -15,6 +17,8 @@ USAGE
     azimuth validate [options]
     azimuth report traceability [options]
     azimuth export [options]
+    azimuth run verify --bundle <file>...
+    azimuth run inspect --bundle <file>... [--format text|json] [--out <file>]
     azimuth init [--root <azimuth-dir>]
     azimuth explore create <id> [--title <text>] [--explorations <dir>]
     azimuth explore list|show [<id>] [--explorations <dir>]
@@ -44,6 +48,12 @@ OPTIONS
     --out <file>           export destination (default: stdout)
     -h, --help
     -V, --version
+";
+
+const RUN_USAGE: &str = "\
+USAGE
+    azimuth run verify --bundle <file>...
+    azimuth run inspect --bundle <file>... [--format text|json] [--out <file>]
 ";
 
 fn main() -> ExitCode {
@@ -91,6 +101,9 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
     }
     if command == "report" {
         return command_report(&args[1..]);
+    }
+    if command == "run" {
+        return command_run(&args[1..]);
     }
 
     match command.as_str() {
@@ -843,6 +856,368 @@ fn valid_date(value: &str) -> bool {
             .bytes()
             .enumerate()
             .all(|(index, byte)| index == 4 || index == 7 || byte.is_ascii_digit())
+}
+
+#[derive(Clone, Copy)]
+enum RunOutputFormat {
+    Text,
+    Json,
+}
+
+struct RunOptions {
+    bundles: Vec<PathBuf>,
+    format: RunOutputFormat,
+    out: Option<PathBuf>,
+}
+
+fn command_run(args: &[String]) -> Result<ExitCode, String> {
+    let Some(operation) = args.first() else {
+        return Err(format!("run needs verify or inspect\n\n{RUN_USAGE}"));
+    };
+    if operation == "-h" || operation == "--help" {
+        print!("{RUN_USAGE}");
+        return Ok(ExitCode::SUCCESS);
+    }
+    if args
+        .get(1)
+        .is_some_and(|argument| argument == "-h" || argument == "--help")
+    {
+        if matches!(operation.as_str(), "verify" | "inspect") && args.len() == 2 {
+            print!("{RUN_USAGE}");
+            return Ok(ExitCode::SUCCESS);
+        }
+    }
+    match operation.as_str() {
+        "verify" => command_run_verify(parse_run_options(&args[1..], false)?),
+        "inspect" => command_run_inspect(parse_run_options(&args[1..], true)?),
+        other => Err(format!("unknown run operation `{other}`\n\n{RUN_USAGE}")),
+    }
+}
+
+fn parse_run_options(args: &[String], inspect: bool) -> Result<RunOptions, String> {
+    let mut bundles = Vec::new();
+    let mut format = None;
+    let mut out = None;
+    let mut index = 0;
+    while index < args.len() {
+        let value = |name: &str| {
+            args.get(index + 1)
+                .cloned()
+                .ok_or_else(|| format!("`{name}` needs a value"))
+        };
+        match args[index].as_str() {
+            "--bundle" => {
+                bundles.push(PathBuf::from(value("--bundle")?));
+                index += 2;
+            }
+            "--format" if inspect => {
+                if format.is_some() {
+                    return Err("`--format` may be supplied only once".into());
+                }
+                format = Some(match value("--format")?.as_str() {
+                    "text" => RunOutputFormat::Text,
+                    "json" => RunOutputFormat::Json,
+                    other => return Err(format!("unknown run inspection format `{other}`")),
+                });
+                index += 2;
+            }
+            "--out" if inspect => {
+                if out.is_some() {
+                    return Err("`--out` may be supplied only once".into());
+                }
+                out = Some(PathBuf::from(value("--out")?));
+                index += 2;
+            }
+            value if value.starts_with('-') => {
+                return Err(format!("unknown run option `{value}`"));
+            }
+            value => return Err(format!("unexpected run positional argument `{value}`")),
+        }
+    }
+    if bundles.is_empty() {
+        return Err("run verification needs at least one `--bundle <file>`".into());
+    }
+    if let Some(output) = &out {
+        if bundles.iter().any(|bundle| bundle == output) {
+            return Err("run inspection output must not overwrite an input bundle".into());
+        }
+    }
+    Ok(RunOptions {
+        bundles,
+        format: format.unwrap_or(RunOutputFormat::Text),
+        out,
+    })
+}
+
+fn load_run_bundles(paths: &[PathBuf]) -> Result<Vec<azimuth::run::RunBundle>, ExitCode> {
+    let mut bundles = Vec::new();
+    let mut errors = Vec::new();
+    for path in paths {
+        match azimuth::run::load(path) {
+            Ok(bundle) => bundles.push(bundle),
+            Err(mut found) => errors.append(&mut found),
+        }
+    }
+    if errors.is_empty() {
+        Ok(bundles)
+    } else {
+        for error in &errors {
+            eprintln!("error: {error}");
+        }
+        eprintln!(
+            "\n{} Run bundle schema error(s); no account was derived",
+            errors.len()
+        );
+        Err(ExitCode::from(2))
+    }
+}
+
+fn command_run_verify(options: RunOptions) -> Result<ExitCode, String> {
+    let bundles = match load_run_bundles(&options.bundles) {
+        Ok(bundles) => bundles,
+        Err(code) => return Ok(code),
+    };
+    let findings = azimuth::run::verify_set(&bundles);
+    for finding in &findings {
+        println!("{}: {}: {}", finding.run_id, finding.code, finding.detail);
+    }
+    let unique = unique_run_bundles(&bundles);
+    let runs = unique
+        .iter()
+        .map(|bundle| bundle.run_id.as_str())
+        .collect::<BTreeSet<_>>()
+        .len();
+    if !findings.is_empty() {
+        println!();
+    }
+    println!("{} bundle revision(s) across {runs} Run(s)", unique.len());
+    if findings.is_empty() {
+        println!("protocol-consistent");
+    } else {
+        println!("{} protocol finding(s)", findings.len());
+    }
+    println!("current model: unresolved");
+    println!("Assurance State: unresolved");
+    Ok(if findings.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    })
+}
+
+fn command_run_inspect(options: RunOptions) -> Result<ExitCode, String> {
+    let bundles = match load_run_bundles(&options.bundles) {
+        Ok(bundles) => bundles,
+        Err(code) => return Ok(code),
+    };
+    let findings = azimuth::run::verify_set(&bundles);
+    let rendered = match options.format {
+        RunOutputFormat::Text => run_inspection_text(&bundles, &findings),
+        RunOutputFormat::Json => run_inspection_json(&bundles, &findings).to_string_pretty(),
+    };
+    match options.out {
+        Some(path) => std::fs::write(&path, rendered)
+            .map_err(|error| format!("cannot write {}: {error}", path.display()))?,
+        None => print!("{rendered}"),
+    }
+    Ok(if findings.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    })
+}
+
+fn unique_run_bundles(bundles: &[azimuth::run::RunBundle]) -> Vec<&azimuth::run::RunBundle> {
+    let mut unique = Vec::new();
+    for bundle in bundles {
+        if !unique.contains(&bundle) {
+            unique.push(bundle);
+        }
+    }
+    unique.sort_by(|left, right| {
+        left.run_id
+            .cmp(&right.run_id)
+            .then_with(|| left.bundle_revision.cmp(&right.bundle_revision))
+            .then_with(|| left.bundle_fingerprint.cmp(&right.bundle_fingerprint))
+    });
+    unique
+}
+
+fn subject_kind(subject: &azimuth::run::Subject) -> &'static str {
+    match subject {
+        azimuth::run::Subject::Workspace { .. } => "workspace",
+        azimuth::run::Subject::CiCandidate { .. } => "ci-candidate",
+        azimuth::run::Subject::Artifact { .. } => "artifact",
+        azimuth::run::Subject::Deployment { .. } => "deployment",
+        azimuth::run::Subject::Service { .. } => "service",
+        azimuth::run::Subject::MonitoringWindow { .. } => "monitoring-window",
+    }
+}
+
+fn run_inspection_text(
+    bundles: &[azimuth::run::RunBundle],
+    findings: &[azimuth::run::Finding],
+) -> String {
+    let unique = unique_run_bundles(bundles);
+    let mut rendered = String::new();
+    let _ = writeln!(rendered, "Run bundle inspection");
+    let _ = writeln!(
+        rendered,
+        "Protocol: {}",
+        if findings.is_empty() {
+            "consistent".into()
+        } else {
+            format!("{} finding(s)", findings.len())
+        }
+    );
+    let _ = writeln!(rendered, "Current model: unresolved");
+    let _ = writeln!(rendered, "Assurance State: unresolved");
+    for bundle in unique {
+        let _ = writeln!(rendered);
+        let _ = writeln!(rendered, "Run {}", bundle.run_id);
+        let _ = writeln!(
+            rendered,
+            "  Bundle: revision {} {}",
+            bundle.bundle_revision, bundle.bundle_fingerprint
+        );
+        let _ = writeln!(
+            rendered,
+            "  Subject: {} {}",
+            subject_kind(&bundle.subject),
+            bundle.subject_fingerprint
+        );
+        let _ = writeln!(rendered, "  Status: {}", bundle.status.name());
+        let mut observations = bundle.check_executions.iter().collect::<Vec<_>>();
+        observations.sort_by(|left, right| {
+            left.check
+                .id
+                .cmp(&right.check.id)
+                .then_with(|| left.check.fingerprint.cmp(&right.check.fingerprint))
+        });
+        for execution in observations {
+            let _ = writeln!(
+                rendered,
+                "  Observation: {} {} {}",
+                execution.check.id,
+                execution.observation.outcome.name(),
+                execution.observation.fingerprint
+            );
+        }
+        let mut challenges = bundle.challenger_executions.iter().collect::<Vec<_>>();
+        challenges.sort_by(|left, right| left.challenge.cmp(&right.challenge));
+        for execution in challenges {
+            let _ = writeln!(
+                rendered,
+                "  Challenge Result: {} {} {} {}",
+                execution.challenge,
+                execution.target.fingerprint,
+                execution.result.outcome.name(),
+                execution.result.fingerprint
+            );
+        }
+    }
+    for finding in findings {
+        let _ = writeln!(rendered);
+        let _ = writeln!(
+            rendered,
+            "Finding: {} {} {}",
+            finding.run_id, finding.code, finding.detail
+        );
+    }
+    rendered
+}
+
+fn run_inspection_json(
+    bundles: &[azimuth::run::RunBundle],
+    findings: &[azimuth::run::Finding],
+) -> azimuth::json::Json {
+    use azimuth::json::Json;
+    let bundles = unique_run_bundles(bundles)
+        .into_iter()
+        .map(|bundle| {
+            let mut observations = bundle.check_executions.iter().collect::<Vec<_>>();
+            observations.sort_by(|left, right| {
+                left.check
+                    .id
+                    .cmp(&right.check.id)
+                    .then_with(|| left.check.fingerprint.cmp(&right.check.fingerprint))
+            });
+            let observations = observations
+                .into_iter()
+                .map(|execution| {
+                    Json::obj(vec![
+                        ("check", Json::str(&execution.check.id)),
+                        ("check_fingerprint", Json::str(&execution.check.fingerprint)),
+                        ("outcome", Json::str(execution.observation.outcome.name())),
+                        ("fingerprint", Json::str(&execution.observation.fingerprint)),
+                    ])
+                })
+                .collect();
+            let mut challenges = bundle.challenger_executions.iter().collect::<Vec<_>>();
+            challenges.sort_by(|left, right| left.challenge.cmp(&right.challenge));
+            let challenges = challenges
+                .into_iter()
+                .map(|execution| {
+                    Json::obj(vec![
+                        ("challenge", Json::str(&execution.challenge)),
+                        ("challenger", Json::str(&execution.challenger.id)),
+                        (
+                            "challenger_fingerprint",
+                            Json::str(&execution.challenger.fingerprint),
+                        ),
+                        ("target_kind", Json::str(execution.target.kind.name())),
+                        ("target", Json::str(&execution.target.id)),
+                        (
+                            "target_fingerprint",
+                            Json::str(&execution.target.fingerprint),
+                        ),
+                        ("outcome", Json::str(execution.result.outcome.name())),
+                        ("fingerprint", Json::str(&execution.result.fingerprint)),
+                    ])
+                })
+                .collect();
+            Json::obj(vec![
+                ("run_id", Json::str(&bundle.run_id)),
+                ("bundle_revision", Json::Num(bundle.bundle_revision as f64)),
+                ("bundle_fingerprint", Json::str(&bundle.bundle_fingerprint)),
+                (
+                    "corrects",
+                    bundle
+                        .corrects
+                        .as_ref()
+                        .map(Json::str)
+                        .unwrap_or(Json::Null),
+                ),
+                ("subject_kind", Json::str(subject_kind(&bundle.subject))),
+                (
+                    "subject_fingerprint",
+                    Json::str(&bundle.subject_fingerprint),
+                ),
+                ("status", Json::str(bundle.status.name())),
+                ("observations", Json::Arr(observations)),
+                ("challenge_results", Json::Arr(challenges)),
+            ])
+        })
+        .collect();
+    let findings: Vec<Json> = findings
+        .iter()
+        .map(|finding| {
+            Json::obj(vec![
+                ("run_id", Json::str(&finding.run_id)),
+                ("code", Json::str(&finding.code)),
+                ("detail", Json::str(&finding.detail)),
+            ])
+        })
+        .collect();
+    Json::obj(vec![
+        ("format", Json::str("azimuth-run-inspection")),
+        ("version", Json::Num(1.0)),
+        ("protocol_consistent", Json::Bool(findings.is_empty())),
+        ("model_authority", Json::str("unresolved")),
+        ("assurance_state", Json::str("unresolved")),
+        ("bundles", Json::Arr(bundles)),
+        ("findings", Json::Arr(findings)),
+    ])
 }
 
 fn parse_options(args: &[String]) -> Result<Options, String> {
