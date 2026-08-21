@@ -1,17 +1,20 @@
-//! Strict D47 Check-only Run planning and launch-plan identity.
+//! Strict D47/D48 Run planning and launch-plan identity.
 //!
 //! The planner consumes a complete already-loaded model. It never loads provider semantics, applies
-//! a partial model selection, or derives Challenges. Provider routing is a separate launch layer
-//! over the unchanged D46 semantic Plan.
+//! a partial model selection. Provider routing is a separate launch layer over the unchanged D46
+//! semantic Plan.
 
 use crate::adapter::{AdapterConfiguration, CapabilityClass};
 use crate::diag::validate_id;
 use crate::json::Json;
-use crate::model::Model;
+use crate::model::{Model, SemanticChallengeScope, SemanticScopeComponent, SemanticScopeLocator};
 use crate::run::{
-    self, CheckSelection, Implementation, LaunchRoute, Plan, RouteCapability, RouteCapabilityClass,
-    RouteSelection, RouteSelectionKind, Subject, WorkUnit,
+    self, ChallengeLane, ChallengeScopeItem, ChallengeScopeKind, ChallengeSelection,
+    ChallengeTarget, ChallengeTargetKind, ChallengerRef, CheckSelection, Implementation,
+    LaunchInput, LaunchInputKind, LaunchInputSource, LaunchRoute, Plan, RouteCapability,
+    RouteCapabilityClass, RouteSelection, RouteSelectionKind, Subject, WorkUnit,
 };
+use crate::validation::{resolve_challenge_plan, DecisionKind};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -94,12 +97,21 @@ pub struct PlanRequest {
     pub subject: Subject,
     pub required_context: BTreeMap<String, String>,
     pub checks: Vec<RequestedCheck>,
+    pub challenges: Vec<RequestedChallenge>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequestedCheck {
     pub id: String,
     pub capability: String,
+    pub units: Vec<WorkUnit>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestedChallenge {
+    pub id: String,
+    pub capability: String,
+    pub max_candidates: u64,
     pub units: Vec<WorkUnit>,
 }
 
@@ -186,7 +198,7 @@ pub fn parse_launch_plan(path: &str, source: &str) -> Result<LaunchPlan, Vec<Sch
     }
 }
 
-/// Resolves a strict Check request against one complete, unselected model.
+/// Resolves a strict Check and Challenge request against one complete, unselected model.
 pub fn plan(
     model: &Model,
     configuration: &AdapterConfiguration,
@@ -285,24 +297,42 @@ pub fn plan(
             implementations: resolved_implementations,
             units: requested.units.clone(),
         });
-        routes.push(LaunchRoute {
-            selection: RouteSelection {
-                kind: RouteSelectionKind::Check,
-                id: requested.id.clone(),
-            },
-            capability: RouteCapability {
-                address: requested.capability.clone(),
-                class: request.operation.route_check_class(),
-                challenge_form: None,
-                fingerprint: capability.fingerprint.clone(),
-            },
-        });
+        routes.push(
+            run::construct_launch_route(
+                RouteSelection {
+                    kind: RouteSelectionKind::Check,
+                    id: requested.id.clone(),
+                },
+                RouteCapability {
+                    address: requested.capability.clone(),
+                    class: request.operation.route_check_class(),
+                    challenge_form: None,
+                    fingerprint: capability.fingerprint.clone(),
+                },
+                Vec::new(),
+            )
+            .expect("model-derived Check route is structurally valid"),
+        );
     }
+
+    let (challenges, challenge_routes, challenge_adapter, challenge_errors) =
+        resolve_requested_challenges(model, configuration, request);
+    errors.extend(challenge_errors);
+    if let Some(adapter) = challenge_adapter {
+        if let Some(check_adapter) = &selected_adapter {
+            if check_adapter != &adapter {
+                errors.push("one launch plan cannot route through several adapters".into());
+            }
+        } else {
+            selected_adapter = Some(adapter);
+        }
+    }
+    routes.extend(challenge_routes);
 
     if !errors.is_empty() {
         return Err(planning_errors(errors));
     }
-    let adapter_id = selected_adapter.expect("a valid request has a non-empty Check list");
+    let adapter_id = selected_adapter.expect("a valid request has a non-empty selection list");
     let adapter = configuration
         .adapter(&adapter_id)
         .expect("selected capability belongs to a configured adapter");
@@ -317,7 +347,7 @@ pub fn plan(
         model_fingerprint,
         request.required_context.clone(),
         checks,
-        Vec::new(),
+        challenges,
     )
     .map_err(|items| {
         planning_errors(
@@ -350,6 +380,463 @@ pub fn plan(
     } else {
         Err(planning_errors(validation_errors))
     }
+}
+
+fn resolve_requested_challenges(
+    model: &Model,
+    configuration: &AdapterConfiguration,
+    request: &PlanRequest,
+) -> (
+    Vec<ChallengeSelection>,
+    Vec<LaunchRoute>,
+    Option<String>,
+    Vec<String>,
+) {
+    #[derive(Clone)]
+    struct Pending {
+        selection: ChallengeSelection,
+        capability: RouteCapability,
+        semantic_scope: SemanticChallengeScope,
+    }
+
+    let mut errors = Vec::new();
+    let mut adapter_id = None;
+    let mut pending = BTreeMap::<String, Pending>::new();
+    let mut selected_forms = BTreeMap::<(DecisionKind, String), (String, BTreeSet<String>)>::new();
+    for requested in &request.challenges {
+        let plans = model
+            .challenge_plans()
+            .filter(|plan| plan.id == requested.id)
+            .collect::<Vec<_>>();
+        let authored = match plans.as_slice() {
+            [plan] => *plan,
+            [] => {
+                errors.push(format!("unknown Challenge Plan `{}`", requested.id));
+                continue;
+            }
+            _ => {
+                errors.push(format!(
+                    "Challenge Plan `{}` is declared more than once",
+                    requested.id
+                ));
+                continue;
+            }
+        };
+        let resolution = resolve_challenge_plan(model, authored);
+        if resolution.candidates.len() as u64 > requested.max_candidates {
+            errors.push(format!(
+                "Challenge Plan `{}` resolves {} candidates, exceeding max_candidates {}",
+                requested.id,
+                resolution.candidates.len(),
+                requested.max_candidates
+            ));
+            continue;
+        }
+        if !resolution.is_runnable() {
+            errors.push(if resolution.candidates.is_empty() {
+                format!("Challenge Plan `{}` resolves no targets", requested.id)
+            } else {
+                format!(
+                    "Challenge Plan `{}` is not runnable: {:?}",
+                    requested.id,
+                    resolution
+                        .candidates
+                        .iter()
+                        .map(|candidate| candidate.disposition.name())
+                        .collect::<Vec<_>>()
+                )
+            });
+            continue;
+        }
+        let challengers = model
+            .challengers()
+            .filter(|challenger| challenger.id == authored.challenger)
+            .collect::<Vec<_>>();
+        let challenger = match challengers.as_slice() {
+            [challenger] => *challenger,
+            _ => {
+                errors.push(format!(
+                    "Challenge Plan `{}` does not name exactly one current Challenger",
+                    requested.id
+                ));
+                continue;
+            }
+        };
+        let Some(standards) = model.decision_standards.as_ref() else {
+            errors.push("Challenge planning requires Decision Standards".into());
+            continue;
+        };
+        let lane = match (
+            standards
+                .schedule
+                .gate_challenges
+                .contains(&challenger.form),
+            standards
+                .schedule
+                .scheduled_challenges
+                .contains(&challenger.form),
+        ) {
+            (true, false) => ChallengeLane::Gate,
+            (false, true) => ChallengeLane::Scheduled,
+            _ => {
+                errors.push(format!(
+                    "Challenge form `{}` must have exactly one schedule lane",
+                    challenger.form
+                ));
+                continue;
+            }
+        };
+        let Some((adapter, capability)) = configuration.capability(&requested.capability) else {
+            errors.push(format!(
+                "unknown configured capability `{}`",
+                requested.capability
+            ));
+            continue;
+        };
+        let required_class = match request.operation {
+            RunOperation::Execute => CapabilityClass::ChallengeExecute,
+            RunOperation::Import => CapabilityClass::ChallengeImport,
+        };
+        if !capability.supports(required_class)
+            || !capability.challenge_forms.contains(&challenger.form)
+        {
+            errors.push(format!(
+                "capability `{}` must support `{}` and Challenge form `{}`",
+                requested.capability,
+                required_class.name(),
+                challenger.form
+            ));
+            continue;
+        }
+        if adapter_id.as_ref().is_some_and(|id| id != &adapter.id) {
+            errors.push("one launch plan cannot route through several adapters".into());
+            continue;
+        }
+        adapter_id = Some(adapter.id.clone());
+
+        let mut grouped =
+            BTreeMap::<(DecisionKind, String, String), Vec<SemanticChallengeScope>>::new();
+        for candidate in resolution.selected() {
+            let Some(target) = candidate.target.as_ref() else {
+                errors.push(format!(
+                    "Challenge Plan `{}` has a selected candidate without a target",
+                    requested.id
+                ));
+                continue;
+            };
+            let Some(fingerprint) = target.authored_fingerprint.clone() else {
+                errors.push(format!(
+                    "Challenge Plan `{}` has a target without an authored fingerprint",
+                    requested.id
+                ));
+                continue;
+            };
+            let Some(scope) = model.challenge_candidate_scope(candidate) else {
+                errors.push(format!(
+                    "Challenge Plan `{}` cannot derive exact semantic scope",
+                    requested.id
+                ));
+                continue;
+            };
+            grouped
+                .entry((target.kind, target.id.clone(), fingerprint))
+                .or_default()
+                .push(scope);
+        }
+        for ((kind, target_id, target_fingerprint), scopes) in grouped {
+            let Some(semantic_scope) = SemanticChallengeScope::merge(scopes) else {
+                errors.push(format!(
+                    "Challenge Plan `{}` has conflicting semantic scope",
+                    requested.id
+                ));
+                continue;
+            };
+            let present = semantic_scope
+                .anchors
+                .iter()
+                .chain(&semantic_scope.inputs)
+                .map(|item| item.kind)
+                .collect::<BTreeSet<_>>();
+            if !challenger
+                .required_scope
+                .iter()
+                .all(|required| present.contains(required))
+            {
+                errors.push(format!(
+                    "Challenge Plan `{}` does not satisfy Challenger `{}` required scope",
+                    requested.id, challenger.id
+                ));
+                continue;
+            }
+            let policy_id = match kind {
+                DecisionKind::Qualification => {
+                    let Some(binding) = model.evidence_bindings().find(|item| item.id == target_id)
+                    else {
+                        errors.push(format!("missing Evidence Binding `{target_id}`"));
+                        continue;
+                    };
+                    if binding.context != request.required_context {
+                        errors.push(format!(
+                            "Qualification `{target_id}` context must equal required_context"
+                        ));
+                        continue;
+                    }
+                    binding.policy.clone()
+                }
+                DecisionKind::ClaimJudgment => {
+                    let Some(judgment) = model.claim_judgments().find(|item| item.id == target_id)
+                    else {
+                        errors.push(format!("missing Claim Judgment `{target_id}`"));
+                        continue;
+                    };
+                    judgment.policy.clone()
+                }
+            };
+            selected_forms
+                .entry((kind, target_fingerprint.clone()))
+                .or_insert_with(|| (policy_id, BTreeSet::new()))
+                .1
+                .insert(challenger.form.clone());
+
+            let challenger_fingerprint = crate::fingerprint::challenger_fingerprint(challenger);
+            let target_kind = match kind {
+                DecisionKind::Qualification => ChallengeTargetKind::Qualification,
+                DecisionKind::ClaimJudgment => ChallengeTargetKind::ClaimJudgment,
+            };
+            let id = run::challenge_selection_id(
+                &challenger_fingerprint,
+                target_kind,
+                &target_fingerprint,
+            );
+            let scope = match construct_scope(&semantic_scope) {
+                Ok(scope) => scope,
+                Err(mut items) => {
+                    errors.append(&mut items);
+                    continue;
+                }
+            };
+            let candidate = Pending {
+                selection: ChallengeSelection {
+                    id: id.clone(),
+                    challenger: ChallengerRef {
+                        id: challenger.id.clone(),
+                        fingerprint: challenger_fingerprint,
+                    },
+                    target: ChallengeTarget {
+                        kind: target_kind,
+                        id: target_id,
+                        fingerprint: target_fingerprint,
+                    },
+                    lane,
+                    scope,
+                    units: requested.units.clone(),
+                },
+                capability: RouteCapability {
+                    address: requested.capability.clone(),
+                    class: request.operation.route_challenge_class(),
+                    challenge_form: Some(challenger.form.clone()),
+                    fingerprint: capability.fingerprint.clone(),
+                },
+                semantic_scope,
+            };
+            if let Some(existing) = pending.get_mut(&id) {
+                if existing.selection.challenger != candidate.selection.challenger
+                    || existing.selection.target != candidate.selection.target
+                    || existing.selection.lane != candidate.selection.lane
+                    || existing.selection.units != candidate.selection.units
+                    || existing.capability != candidate.capability
+                {
+                    errors.push(format!(
+                        "duplicate Challenge selection `{id}` has conflicting capability or units"
+                    ));
+                    continue;
+                }
+                let Some(merged) = SemanticChallengeScope::merge([
+                    existing.semantic_scope.clone(),
+                    candidate.semantic_scope,
+                ]) else {
+                    errors.push(format!(
+                        "duplicate Challenge selection `{id}` has conflicting semantic scope"
+                    ));
+                    continue;
+                };
+                match construct_scope(&merged) {
+                    Ok(scope) => existing.selection.scope = scope,
+                    Err(mut items) => errors.append(&mut items),
+                }
+                existing.semantic_scope = merged;
+            } else {
+                pending.insert(id, candidate);
+            }
+        }
+    }
+
+    if let Some(standards) = &model.decision_standards {
+        for ((kind, fingerprint), (policy_id, forms)) in selected_forms {
+            let Some(policy) = standards.policies.iter().find(|item| item.id == policy_id) else {
+                errors.push(format!(
+                    "selected {} `{fingerprint}` names unknown Decision Policy `{policy_id}`",
+                    kind.name()
+                ));
+                continue;
+            };
+            for required in &policy.required_challenges {
+                if !forms.contains(required) {
+                    errors.push(format!(
+                        "selected {} `{fingerprint}` is missing required Challenge form `{required}`",
+                        kind.name()
+                    ));
+                }
+            }
+        }
+    }
+
+    let mut selections = Vec::new();
+    let mut routes = Vec::new();
+    for (_, item) in pending {
+        let inputs = match construct_inputs(&item.semantic_scope) {
+            Ok(inputs) => inputs,
+            Err(mut items) => {
+                errors.append(&mut items);
+                continue;
+            }
+        };
+        let route = run::construct_launch_route(
+            RouteSelection {
+                kind: RouteSelectionKind::Challenge,
+                id: item.selection.id.clone(),
+            },
+            item.capability,
+            inputs,
+        );
+        match route {
+            Ok(route) => {
+                selections.push(item.selection);
+                routes.push(route);
+            }
+            Err(items) => errors.extend(items.into_iter().map(|item| item.detail)),
+        }
+    }
+    (selections, routes, adapter_id, errors)
+}
+
+fn construct_scope(scope: &SemanticChallengeScope) -> Result<run::ChallengeScope, Vec<String>> {
+    run::construct_challenge_scope(
+        scope.anchors.iter().map(scope_item).collect(),
+        scope.inputs.iter().map(scope_item).collect(),
+    )
+    .map_err(|items| items.into_iter().map(|item| item.detail).collect())
+}
+
+fn scope_item(item: &SemanticScopeComponent) -> ChallengeScopeItem {
+    ChallengeScopeItem {
+        kind: scope_kind(item.kind),
+        id: item.id.clone(),
+        fingerprint: item.fingerprint.clone(),
+    }
+}
+
+fn scope_kind(kind: crate::verification::SemanticScopeKind) -> ChallengeScopeKind {
+    use crate::verification::SemanticScopeKind as S;
+    match kind {
+        S::Claim => ChallengeScopeKind::Claim,
+        S::Binding => ChallengeScopeKind::Binding,
+        S::Qualification => ChallengeScopeKind::Qualification,
+        S::ClaimJudgment => ChallengeScopeKind::ClaimJudgment,
+        S::Check => ChallengeScopeKind::Check,
+        S::CheckImplementation => ChallengeScopeKind::CheckImplementation,
+        S::Realization => ChallengeScopeKind::Realization,
+        S::Mechanism => ChallengeScopeKind::Mechanism,
+        S::MechanismImplementation => ChallengeScopeKind::MechanismImplementation,
+        S::Artifact => ChallengeScopeKind::Artifact,
+        S::Context => ChallengeScopeKind::Context,
+        S::Policy => ChallengeScopeKind::Policy,
+        S::Area => ChallengeScopeKind::Area,
+        S::RealizationObligation => ChallengeScopeKind::RealizationObligation,
+        S::Surface => ChallengeScopeKind::Surface,
+        S::SurfaceMember => ChallengeScopeKind::SurfaceMember,
+        S::Enumeration => ChallengeScopeKind::Enumeration,
+    }
+}
+
+fn construct_inputs(scope: &SemanticChallengeScope) -> Result<Vec<LaunchInput>, Vec<String>> {
+    let mut inputs = BTreeMap::new();
+    for item in scope.anchors.iter().chain(&scope.inputs) {
+        let Some((kind, source)) = launch_input_parts(item) else {
+            continue;
+        };
+        let input =
+            run::construct_launch_input(kind, item.id.clone(), item.fingerprint.clone(), source)
+                .map_err(|error| vec![error.detail])?;
+        let key = (input.kind, input.id.clone(), input.fingerprint.clone());
+        if inputs.insert(key, input).is_some() {
+            continue;
+        }
+    }
+    Ok(inputs.into_values().collect())
+}
+
+fn launch_input_parts(
+    item: &SemanticScopeComponent,
+) -> Option<(LaunchInputKind, LaunchInputSource)> {
+    let kind = match item.kind {
+        crate::verification::SemanticScopeKind::CheckImplementation => {
+            LaunchInputKind::CheckImplementation
+        }
+        crate::verification::SemanticScopeKind::Realization => LaunchInputKind::Realization,
+        crate::verification::SemanticScopeKind::MechanismImplementation => {
+            LaunchInputKind::MechanismImplementation
+        }
+        crate::verification::SemanticScopeKind::Artifact => LaunchInputKind::Artifact,
+        crate::verification::SemanticScopeKind::SurfaceMember => LaunchInputKind::SurfaceMember,
+        crate::verification::SemanticScopeKind::Enumeration => LaunchInputKind::Enumeration,
+        _ => return None,
+    };
+    let source = match item.locator.as_ref()? {
+        SemanticScopeLocator::Source {
+            file,
+            language,
+            site,
+        } => LaunchInputSource::Source {
+            file: file.clone(),
+            language: language.clone(),
+            site: site.clone(),
+        },
+        SemanticScopeLocator::Artifact {
+            file,
+            artifact_kind,
+            identity,
+            unique,
+            columns,
+            predicate,
+        } => LaunchInputSource::Artifact {
+            file: file.clone(),
+            artifact_kind: artifact_kind.clone(),
+            identity: identity.clone(),
+            unique: *unique,
+            columns: columns.clone(),
+            predicate: predicate.clone(),
+        },
+        SemanticScopeLocator::Enumeration {
+            file,
+            enumerator_kind,
+            identity,
+        } => LaunchInputSource::Enumeration {
+            file: file.clone(),
+            enumerator_kind: enumerator_kind.clone(),
+            identity: identity.clone(),
+        },
+        SemanticScopeLocator::EnumeratedSurfaceMember {
+            file,
+            language,
+            site,
+        } => LaunchInputSource::SurfaceMember {
+            file: file.clone(),
+            language: language.clone(),
+            site: site.clone(),
+        },
+    };
+    Some((kind, source))
 }
 
 pub fn validate_launch_configuration(
@@ -434,6 +921,11 @@ pub fn validate_launch_plan(launch: &LaunchPlan) -> Vec<String> {
         run::validate_plan_component(&launch.subject_fingerprint, &launch.plan)
             .into_iter()
             .map(|error| format!("plan {}: {}", error.path, error.detail)),
+    );
+    errors.extend(
+        run::validate_launch_routes_against_plan(&launch.plan, &launch.routes)
+            .into_iter()
+            .map(|error| format!("routes {}: {}", error.path, error.detail)),
     );
     let planned_time_is_valid = launch.planned_at_ms <= MAX_SAFE_INTEGER;
     if !planned_time_is_valid {
@@ -532,8 +1024,24 @@ pub fn validate_launch_plan(launch: &LaunchPlan) -> Vec<String> {
 }
 
 pub fn launch_fingerprint(launch: &LaunchPlan) -> String {
-    run::canonical_fingerprint(&launch_fingerprint_json(launch))
-        .expect("typed launch plans must be canonicalizable")
+    run::launch_fingerprint(
+        match launch.operation {
+            RunOperation::Execute => run::ProvenanceMode::Execute,
+            RunOperation::Import => run::ProvenanceMode::Import,
+        },
+        launch.planned_at_ms,
+        &launch.subject,
+        &launch.subject_fingerprint,
+        &launch.plan,
+        &run::LaunchAdapterIdentity {
+            id: launch.adapter.id.clone(),
+            adapter_version: launch.adapter.adapter_version.clone(),
+            adapter_fingerprint: launch.adapter.adapter_fingerprint.clone(),
+            descriptor_fingerprint: launch.adapter.descriptor_fingerprint.clone(),
+            configuration_fingerprint: launch.adapter.configuration_fingerprint.clone(),
+        },
+        &launch.routes,
+    )
 }
 
 pub fn launch_plan_to_json(launch: &LaunchPlan) -> Json {
@@ -557,13 +1065,17 @@ pub fn plan_request_to_json(request: &PlanRequest) -> Json {
             "checks",
             Json::Arr(request.checks.iter().map(requested_check_json).collect()),
         ),
+        (
+            "challenges",
+            Json::Arr(
+                request
+                    .challenges
+                    .iter()
+                    .map(requested_challenge_json)
+                    .collect(),
+            ),
+        ),
     ])
-}
-
-fn launch_fingerprint_json(launch: &LaunchPlan) -> Json {
-    let mut fields = launch_fields(launch);
-    fields[0].1 = Json::str("azimuth-run-launch-fingerprint");
-    Json::Obj(fields)
 }
 
 fn launch_fields(launch: &LaunchPlan) -> Vec<(String, Json)> {
@@ -607,6 +1119,7 @@ fn parse_request_value(value: &Json) -> Result<PlanRequest, String> {
             "subject",
             "required_context",
             "checks",
+            "challenges",
         ],
     )?;
     exact_string(fields, "format", "$", REQUEST_FORMAT)?;
@@ -623,15 +1136,56 @@ fn parse_request_value(value: &Json) -> Result<PlanRequest, String> {
     for (index, value) in check_values.iter().enumerate() {
         checks.push(parse_requested_check(value, &format!("$.checks[{index}]"))?);
     }
+    let challenge_values = array(required(fields, "challenges", "$")?, "$.challenges")?;
+    let mut challenges = Vec::new();
+    for (index, value) in challenge_values.iter().enumerate() {
+        challenges.push(parse_requested_challenge(
+            value,
+            &format!("$.challenges[{index}]"),
+        )?);
+    }
     let request = PlanRequest {
         operation,
         planned_at_ms,
         subject,
         required_context,
         checks,
+        challenges,
     };
     validate_request(&request)?;
     Ok(request)
+}
+
+fn parse_requested_challenge(value: &Json, where_: &str) -> Result<RequestedChallenge, String> {
+    let fields = object(
+        value,
+        where_,
+        &["id", "capability", "max_candidates", "units"],
+    )?;
+    let id = nonempty(fields, where_, "id")?;
+    validate_id(&id, true).map_err(|detail| format!("{where_}.id {detail}"))?;
+    let capability = nonempty(fields, where_, "capability")?;
+    validate_capability_address(&capability)
+        .map_err(|detail| format!("{where_}.capability {detail}"))?;
+    let max_candidates = integer(fields, where_, "max_candidates")?;
+    if max_candidates == 0 {
+        return Err(format!("{where_}.max_candidates must be at least 1"));
+    }
+    let values = array(
+        required(fields, "units", where_)?,
+        &format!("{where_}.units"),
+    )?;
+    let mut units = Vec::new();
+    for (index, value) in values.iter().enumerate() {
+        units.push(parse_unit(value, &format!("{where_}.units[{index}]"))?);
+    }
+    validate_units(&units, &format!("{where_}.units"))?;
+    Ok(RequestedChallenge {
+        id,
+        capability,
+        max_candidates,
+        units,
+    })
 }
 
 fn parse_requested_check(value: &Json, where_: &str) -> Result<RequestedCheck, String> {
@@ -741,8 +1295,8 @@ fn validate_request(request: &PlanRequest) -> Result<(), String> {
     if let Some(error) = subject_errors.first() {
         return Err(format!("$.subject {}: {}", error.path, error.detail));
     }
-    if request.checks.is_empty() {
-        return Err("$.checks must not be empty".into());
+    if request.checks.is_empty() && request.challenges.is_empty() {
+        return Err("$.checks and $.challenges must not both be empty".into());
     }
     ensure_sorted_unique(&request.checks, |check| check.id.as_str(), "$.checks")?;
     for (index, check) in request.checks.iter().enumerate() {
@@ -750,6 +1304,23 @@ fn validate_request(request: &PlanRequest) -> Result<(), String> {
         validate_capability_address(&check.capability)
             .map_err(|detail| format!("$.checks[{index}].capability {detail}"))?;
         validate_units(&check.units, &format!("$.checks[{index}].units"))?;
+    }
+    ensure_sorted_unique(
+        &request.challenges,
+        |challenge| challenge.id.as_str(),
+        "$.challenges",
+    )?;
+    for (index, challenge) in request.challenges.iter().enumerate() {
+        validate_id(&challenge.id, true)
+            .map_err(|detail| format!("$.challenges[{index}].id {detail}"))?;
+        validate_capability_address(&challenge.capability)
+            .map_err(|detail| format!("$.challenges[{index}].capability {detail}"))?;
+        if challenge.max_candidates == 0 || challenge.max_candidates > MAX_SAFE_INTEGER {
+            return Err(format!(
+                "$.challenges[{index}].max_candidates must be from 1 through the safe-integer limit"
+            ));
+        }
+        validate_units(&challenge.units, &format!("$.challenges[{index}].units"))?;
     }
     Ok(())
 }
@@ -823,6 +1394,29 @@ fn requested_check_json(check: &RequestedCheck) -> Json {
             "units",
             Json::Arr(
                 check
+                    .units
+                    .iter()
+                    .map(|unit| {
+                        Json::obj(vec![
+                            ("id", Json::str(&unit.id)),
+                            ("parameters", string_map_json(&unit.parameters)),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
+    ])
+}
+
+fn requested_challenge_json(challenge: &RequestedChallenge) -> Json {
+    Json::obj(vec![
+        ("id", Json::str(&challenge.id)),
+        ("capability", Json::str(&challenge.capability)),
+        ("max_candidates", Json::Num(challenge.max_candidates as f64)),
+        (
+            "units",
+            Json::Arr(
+                challenge
                     .units
                     .iter()
                     .map(|unit| {

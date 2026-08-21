@@ -71,7 +71,7 @@ Objective: bind scheduling lane, semantic scope and accountable launch inputs in
 Evidence: parser, canonical fingerprints, route inputs, reduction, omission and mismatch tests
 
 ## Work package: semantic-challenge-planner
-Status: pending
+Status: complete
 Depends on: challenge-resolution-projection, challenge-run-protocol, decision-scope-integration
 Owns: tools/azimuth/src/run_plan.rs, tools/azimuth/tests/run_plan.rs
 Objective: expand requested Challenge Plans and derive exact capability routes and launch inputs
@@ -94,8 +94,8 @@ Evidence: selected scope, clean, findings, inconclusive, partial, drift and zero
 ## Work package: existing-challenge-fixture-migration
 Status: pending
 Depends on: semantic-challenge-planner, challenge-run-protocol, mechanism-identity-native, mechanism-identity-managed, mechanism-identity-typescript
-Owns: tools/azimuth/tests/adapter_host.rs, experiments/run-bundles, experiments/adapter-capabilities
-Objective: migrate strict hand-authored Challenge selections and routes to the current protocol shape
+Owns: tools/azimuth/tests/adapter_host.rs, tools/azimuth/tests/designs.rs, experiments/run-bundles, experiments/adapter-capabilities
+Objective: migrate strict hand-authored mechanism, Challenge-selection and route fixtures
 Evidence: adapter-host, Run-bundle and adapter-capability conformance gates
 
 ## Work package: challenge-gate-integration
