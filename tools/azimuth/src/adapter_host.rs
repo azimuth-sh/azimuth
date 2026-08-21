@@ -881,7 +881,7 @@ fn exchange(
 ) -> Result<ExchangeOutput, HostError> {
     request.push('\n');
     let mut command = Command::new(executable);
-    configure_process_tree(&mut command)?;
+    configure_process_group(&mut command)?;
     command
         .current_dir(working_directory)
         .env_clear()
@@ -892,7 +892,7 @@ fn exchange(
     let mut child = command.spawn().map_err(|error| {
         HostError::semantic(format!("adapter process could not start: {error}"))
     })?;
-    let process_tree = ProcessTree::new(&child)?;
+    let process_group = ProcessGroup::new(&child)?;
     let stdin = child
         .stdin
         .take()
@@ -931,7 +931,7 @@ fn exchange(
     let mut stderr_result = None;
     let mut status = None;
     let mut early_error = None;
-    let mut termination_requested = false;
+    let mut group_signaled = false;
     loop {
         if writer_result.is_none() {
             writer_result = writer_rx.try_recv().ok();
@@ -963,13 +963,13 @@ fn exchange(
         if let Some(Err(error)) = &stderr_result {
             early_error.get_or_insert_with(|| error.clone());
         }
-        if status.is_some() && !termination_requested {
-            process_tree.terminate_descendants();
-            termination_requested = true;
+        if status.is_some() && !group_signaled {
+            process_group.signal();
+            group_signaled = true;
         }
-        if early_error.is_some() && !termination_requested {
-            process_tree.terminate(&mut child);
-            termination_requested = true;
+        if early_error.is_some() && !group_signaled {
+            process_group.terminate_process_and_group(&mut child);
+            group_signaled = true;
         }
 
         let complete = writer_result.is_some()
@@ -984,10 +984,10 @@ fn exchange(
                 "adapter exchange exceeded its configured timeout before all streams closed".into()
             });
             if status.is_none() {
-                process_tree.terminate(&mut child);
+                process_group.terminate_process_and_group(&mut child);
                 status = child.wait().ok();
             } else {
-                process_tree.terminate_descendants();
+                process_group.signal();
             }
             break;
         }
@@ -996,7 +996,7 @@ fn exchange(
 
     // A channel result means the worker has completed its blocking operation; joins cannot extend
     // the protocol deadline in the fully successful case. In deadline failures unfinished workers
-    // are detached so descendant-held pipe handles cannot stall the host.
+    // are detached so escaped or otherwise open pipe handles cannot extend the core deadline.
     if writer_result.is_some() {
         let _ = writer.join();
     }
@@ -1068,25 +1068,25 @@ fn read_capped(mut input: impl Read, limit: u64, name: &str) -> Result<Vec<u8>, 
 }
 
 #[cfg(unix)]
-fn configure_process_tree(command: &mut Command) -> Result<(), HostError> {
+fn configure_process_group(command: &mut Command) -> Result<(), HostError> {
     use std::os::unix::process::CommandExt;
     command.process_group(0);
     Ok(())
 }
 
 #[cfg(not(unix))]
-fn configure_process_tree(_command: &mut Command) -> Result<(), HostError> {
+fn configure_process_group(_command: &mut Command) -> Result<(), HostError> {
     Err(HostError::semantic(
-        "bounded adapter process-tree containment is unavailable on this platform",
+        "fresh adapter process-group isolation is unavailable on this platform",
     ))
 }
 
-struct ProcessTree {
+struct ProcessGroup {
     #[cfg(unix)]
     group: i32,
 }
 
-impl ProcessTree {
+impl ProcessGroup {
     fn new(child: &std::process::Child) -> Result<Self, HostError> {
         #[cfg(unix)]
         {
@@ -1099,20 +1099,20 @@ impl ProcessTree {
         {
             let _ = child;
             Err(HostError::semantic(
-                "bounded adapter process-tree containment is unavailable on this platform",
+                "fresh adapter process-group isolation is unavailable on this platform",
             ))
         }
     }
 
-    fn terminate(&self, child: &mut std::process::Child) {
-        self.terminate_descendants();
+    fn terminate_process_and_group(&self, child: &mut std::process::Child) {
+        self.signal();
         let _ = child.kill();
     }
 
-    fn terminate_descendants(&self) {
+    fn signal(&self) {
         #[cfg(unix)]
         unsafe {
-            // Negative pid addresses the process group created immediately before spawn.
+            // Negative pid addresses only members that remain in the fresh adapter process group.
             let _ = kill(-self.group, SIGKILL);
         }
     }

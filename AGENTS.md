@@ -38,8 +38,13 @@ overrides a decision.
   `azimuth run execute --plan <file>` or `azimuth run import --plan <file> --input <id>=<file>` for
   one bounded provider exchange. Planning has no partial-model or `--only` mode.
 - Adapter content and import inputs are staged and hashed from the same opened streams. Every
-  invocation requires descendant-process containment, bounded output streams and complete response
-  validation before atomic output; this integrity boundary is not a filesystem or network sandbox.
+  invocation requires supported fresh process-group isolation before spawn, one bounded core
+  exchange whose deadline covers request writing, concurrent capped-stream draining and core's
+  wait, and complete response validation before atomic output.
+- Core signals the process group on every terminal path and cleans members and inherited pipes
+  while they remain in the group. Authorized descendants may escape with `setsid`, `setpgid` or
+  equivalent; core does not guarantee their termination. This is not non-escapable descendant
+  containment, a filesystem or network sandbox, daemon supervision or hostile-code isolation.
 - Use `azimuth run verify --bundle <file>...` for standalone Run-protocol consistency and
   `azimuth run inspect --bundle <file>...` for a deterministic local account. These commands do
   not establish current model authority or Assurance State.

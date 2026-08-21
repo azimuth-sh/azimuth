@@ -131,10 +131,17 @@ model, resolves each requested Check and all its stable implementations, then em
 semantic Plan and exact launch routes. There is no `--only` or partial-model planning path.
 
 For every exchange, core stages executable, resource and import-input bytes from the same open
-streams it hashes. It invokes only staged content with a cleared environment, contains the complete
-descendant process tree, drains independently bounded output streams and enforces one deadline.
-The bounds include pipes retained by descendants. These are integrity and process controls, not a
-filesystem or network sandbox.
+streams it hashes and invokes only staged content with a cleared environment. On a supported host,
+the adapter starts in a fresh process group before its code runs. One configured deadline bounds
+core request writing, concurrent response and diagnostic reads and core's own wait. Core signals
+remaining group members on every terminal path and cleans inherited pipes while those processes
+remain in the group. A host without the required process-group primitive rejects the exchange
+before spawn.
+
+Authorized adapter code can deliberately call `setsid`, `setpgid` or an equivalent and leave the
+group. An escaped descendant cannot extend core's wait beyond the deadline, but Azimuth does not
+guarantee its termination. This is not non-escapable descendant containment, daemon supervision,
+hostile-code isolation or a filesystem or network sandbox.
 
 Execute and import accept one strict response. Core validates request identity, the repeated
 description, launch and route provenance, actual selection, reduction and the complete Run bundle

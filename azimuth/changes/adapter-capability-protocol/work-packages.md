@@ -3,8 +3,8 @@
 ## Work package: protocol-authority
 Status: complete
 Depends on: none
-Owns: docs/decisions.md, azimuth/formats/adapter.md, azimuth/formats/run-bundle.md, azimuth/formats/run-launch-plan.md
-Objective: freeze adapter configuration, capability, launch, transport and provenance contracts
+Owns: docs/decisions.md, azimuth/formats/adapter.md, azimuth/formats/run-bundle.md, azimuth/formats/run-launch-plan.md, azimuth/changes/adapter-capability-protocol/design.md
+Objective: freeze adapter contracts and correct the portable process-group boundary honestly
 Evidence: format review, strict examples and canonical-fingerprint vectors
 
 ## Work package: run-component-seam
@@ -30,9 +30,9 @@ Evidence: complete-model, implementation-closure, route-substitution and empty-c
 
 ## Work package: bounded-adapter-host
 Status: complete
-Depends on: run-component-seam, adapter-contract-kernel, semantic-run-planner
+Depends on: protocol-authority, run-component-seam, adapter-contract-kernel, semantic-run-planner
 Owns: tools/azimuth/src/adapter_host.rs, tools/azimuth/tests/adapter_host.rs
-Objective: invoke bounded execute/import processes and validate complete returned bundles atomically
+Objective: invoke bounded exchanges, clean process groups and validate returned bundles atomically
 Evidence: handshake, staging cleanup, bounds, import digest, predecessor terminal and no-retry tests
 
 ## Work package: adapter-module-integration
@@ -64,7 +64,7 @@ Objective: migrate the existing Run conformance fixtures to the current D47 prov
 Evidence: Run conformance gate, strict current-schema audit and absence of compatibility input
 
 ## Work package: adapter-gate-integration
-Status: pending
+Status: complete
 Depends on: adapter-conformance-experiment, run-bundle-fixture-migration
 Owns: scripts/check.sh
 Objective: include adapter conformance before release qualification
@@ -73,20 +73,20 @@ Evidence: shell syntax, release-isolation discovery and canonical root gate
 ## Work package: current-intent-transition
 Status: complete
 Depends on: protocol-authority, adapter-cli-surface
-Owns: azimuth/model/framework/adapter-capability-protocol, azimuth/model/framework/run-bundle-protocol/spec.md
+Owns: azimuth/model/framework/adapter-capability-protocol, azimuth/model/framework/run-bundle-protocol/spec.md, azimuth/changes/adapter-capability-protocol/specs/framework-adapter-capability-protocol.md
 Objective: apply routine adapter intent and narrow the superseded Run command boundary to ingest
 Evidence: current-model parse, all-routine audit and absence of the superseded current Claim
 
 ## Work package: adapter-public-account
 Status: complete
-Depends on: adapter-cli-surface, adapter-conformance-experiment, current-intent-transition
+Depends on: bounded-adapter-host, adapter-cli-surface, adapter-conformance-experiment, current-intent-transition
 Owns: README.md, docs/framework.md, docs/glossary.md, docs/change-process.md, docs/assurance-extensions.md, azimuth/README.md, tools/azimuth/README.md
 Objective: document the implemented adapter journey and its challenge-planning and ledger boundaries
 Evidence: command, terminology, link, 100-column and prohibited-name audits
 
 ## Work package: adapter-agent-guidance
 Status: complete
-Depends on: adapter-cli-surface, current-intent-transition
+Depends on: bounded-adapter-host, adapter-cli-surface, current-intent-transition
 Owns: AGENTS.md, .agents/skills/azimuth-propose/SKILL.md, .agents/skills/azimuth-apply/SKILL.md, .agents/skills/azimuth-archive/SKILL.md
 Objective: teach explicit planning and invocation without inventing decision or state authority
 Evidence: frontmatter, command, boundary and stale-guidance audits
@@ -94,6 +94,6 @@ Evidence: frontmatter, command, boundary and stale-guidance audits
 ## Work package: integration-audit
 Status: pending
 Depends on: adapter-gate-integration, adapter-public-account, adapter-agent-guidance
-Owns: azimuth/changes/adapter-capability-protocol
+Owns: azimuth/changes/adapter-capability-protocol/plan.md, azimuth/changes/adapter-capability-protocol/work-packages.md, azimuth/changes/adapter-capability-protocol/proposal.md, azimuth/changes/adapter-capability-protocol/outcome.md, azimuth/changes/adapter-capability-protocol/finalization.json
 Objective: reconcile the complete change, record departures and prepare coordinator-only acceptance
 Evidence: change check, work-package graph, full root gate and composed-model audit

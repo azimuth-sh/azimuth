@@ -156,10 +156,17 @@ partial-model path, always emits `challenges: []` and neither requires a current
 infers evidentiary applicability.
 
 Execute and import stage executable, resource and input content from the streams core hashes,
-clear the child environment, contain the descendant process tree and bound both output streams and
-the complete exchange. Core validates the strict response, exact route provenance, actual
-selection and complete bundle before atomic publication. Repeatable predecessors must form one
-linear correction chain; the response is revision zero or the exact next complete revision.
+clear the child environment and bound both output streams. On supported hosts, the adapter starts
+in a fresh process group before its code runs. One deadline bounds core request writing, response
+and diagnostic reads and process wait. Core signals remaining group members on every terminal path.
+An adapter descendant can deliberately use `setsid`, `setpgid` or an equivalent to leave the group;
+it cannot extend core's wait beyond the deadline, but its termination is not guaranteed. This is
+not non-escapable descendant containment, daemon supervision, hostile-code isolation or a
+filesystem or network sandbox.
+
+Core validates the strict response, exact route provenance, actual selection and complete bundle
+before atomic publication. Repeatable predecessors must form one linear correction chain; the
+response is revision zero or the exact next complete revision.
 
 A valid violated Observation, Challenge finding, partial or cancelled Run, or adapter-returned
 protocol-valid `timed-out` Run fact is an execution fact and exits zero. A host-enforced process

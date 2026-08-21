@@ -28,8 +28,13 @@ Archive records an accepted semantic transition. It is not a branch merge or dep
    exercise execute or import through the strict
    [adapter](../../../azimuth/formats/adapter.md) and
    [launch-plan](../../../azimuth/formats/run-launch-plan.md) contracts. Confirm process-limit,
-   containment, schema, identity and bundle failures publish no output, while valid adverse facts
-   remain successful exchanges.
+   process-group, schema, identity and bundle failures publish no output, while valid adverse facts
+   remain successful exchanges. Confirm one bounded core exchange whose deadline covers request
+   writing, stream draining and core's wait. Confirm core establishes the process group before
+   spawn, signals it on every terminal path and cleans members and inherited pipes only while they
+   retain group membership. Authorized descendants may escape with `setsid`, `setpgid` or
+   equivalent, and their termination is not guaranteed. This is not non-escapable descendant
+   containment, a sandbox, daemon supervision or hostile-code isolation.
 8. Write `outcome.md` with `Status: accepted`, `## Departures` and `## Residual decisions`.
 9. Set the proposal to `Status: accepted and complete` only after the preceding facts hold.
 

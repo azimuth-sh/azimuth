@@ -71,10 +71,17 @@ Standard output and standard error are drained concurrently into separate capped
 full pipe cannot deadlock the process. Core enforces the configured timeout. Exit status and
 standard error never encode product outcomes.
 
-The bound covers the adapter's descendant process tree and inherited pipe handles, not only the
-direct child pid. Core establishes platform-equivalent containment before spawn and terminates the
-tree on every terminal path. If the host cannot establish that containment, invocation fails
-before spawn instead of silently weakening the contract.
+One deadline bounds request writing, concurrent response and diagnostic reading, and core's own
+wait. On a supported host, process creation places the adapter in a fresh process group before
+adapter code begins. Core signals the group on every terminal path and cleans members and inherited
+pipes while they retain group membership. If the host lacks that primitive, invocation fails before
+spawn.
+
+This is not non-escapable descendant containment. Authorized adapter code may call `setsid`,
+`setpgid` or an equivalent facility and escape. An escaped descendant cannot keep core reading or
+waiting beyond the deadline, but termination is not guaranteed. The process group is neither
+semantic identity nor a filesystem or network sandbox, daemon supervisor or hostile-code boundary.
+This corrects an earlier stronger draft after adversarial review demonstrated the escape.
 
 The protocol-v1 description operation returns adapter, version, build and capability declarations.
 `azimuth adapter verify` compares that exact description and its fingerprint with configuration.

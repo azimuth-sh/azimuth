@@ -64,7 +64,12 @@ D47 adds strict [`adapter`](azimuth/formats/adapter.md) configuration and
 model, derives a provider-neutral Check Plan and binds it to exact configured capability routes.
 `azimuth adapter verify`, `azimuth run plan`, `azimuth run execute` and `azimuth run import` expose
 the short-lived provider boundary. Adapter content and imports are staged from the same streams
-core hashes, and every exchange has descendant-process, timeout and output bounds.
+core hashes. On supported hosts, every exchange uses a fresh process group, bounded output and one
+deadline for core request, response, diagnostics and wait activity. Core signals remaining group
+members on every terminal path. Authorized adapter code can deliberately use `setsid`, `setpgid` or
+an equivalent to leave the group. It cannot extend core's wait beyond the deadline, but Azimuth does
+not guarantee its termination. This is not non-escapable descendant containment, daemon
+supervision, hostile-code isolation or a filesystem or network sandbox.
 
 Current planning is Check-only and emits no Challenges. Repository Challenge Plans already resolve
 authored Qualification targets, but projecting their current applicability into generated Run

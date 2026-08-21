@@ -60,6 +60,13 @@ provider-neutral semantic Plan to exact configured capability routes. Core plans
 complete unselected model, stages configured content and import inputs from the streams it hashes,
 and validates the returned bundle before atomic publication.
 
+On supported hosts, core starts each adapter in a fresh process group. One configured deadline
+bounds request writing, response and diagnostic reads and core's own wait; core signals remaining
+group members on every terminal path. An adapter descendant that deliberately calls `setsid`,
+`setpgid` or an equivalent can leave that group. It cannot extend core's wait beyond the deadline,
+but Azimuth does not guarantee its termination. This is not non-escapable descendant containment,
+daemon supervision, hostile-code isolation or a filesystem or network sandbox.
+
 The implemented journey is `azimuth adapter verify`, `azimuth run plan`, then either
 `azimuth run execute` or `azimuth run import`. Current planning always emits `challenges: []`.
 Hand-authored strict launch plans can exercise Challenge transport. Repository Challenge Plans

@@ -285,10 +285,18 @@ always emits `challenges: []`, requires no current Qualification and infers no e
 applicability.
 
 Execute and import stage the configured executable, resources and import inputs from the same open
-streams core hashes. Core clears the child environment, invokes the staged executable directly,
-contains its descendant process tree, drains independently bounded output streams and applies one
-exchange deadline, including pipes retained by descendants. The stage closes content-substitution
-windows; it is not a filesystem or network sandbox for authorized adapter code.
+streams core hashes. Core clears the child environment and invokes the staged executable directly.
+On a supported host, process creation places it in a fresh process group before adapter code runs.
+One configured deadline bounds request writing, concurrent response and diagnostic reads and
+core's own wait. Core signals remaining group members on every terminal path and cleans their
+inherited pipes while they retain group membership. A host without that process-group primitive
+rejects the exchange before spawn as an exit-one transport failure.
+
+This boundary is not non-escapable descendant containment. Authorized adapter code can call
+`setsid`, `setpgid` or an equivalent and leave the group. An escaped descendant cannot extend
+core's wait beyond the deadline, but core does not guarantee its termination. The stage and host
+controls provide neither daemon supervision nor hostile-code isolation and are not a filesystem or
+network sandbox.
 
 The adapter returns one strict response and complete bundle. Core validates description, request,
 launch, routes, provenance, actual selection, reduction and bundle identity before atomic output.

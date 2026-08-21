@@ -56,8 +56,13 @@ Implement the approved target without treating proposal prose as source truth.
   `challenges: []` and has no partial-model or `--only` path.
 - Strict hand-authored launch plans may carry Challenge routes for transport conformance, but
   Challenge Plan resolution and decision applicability remain deferred.
-- Invoke only staged configured content without a shell or ambient environment. Establish complete
-  descendant-process containment before spawn and drain bounded output streams concurrently.
+- Invoke only staged configured content without a shell or ambient environment. Require supported
+  fresh process-group isolation before spawn and one bounded core exchange whose deadline covers
+  request writing, concurrent bounded-stream draining and core's own wait.
+- Signal the process group on every terminal path and clean members and inherited pipes while they
+  retain group membership. Authorized descendants may escape with `setsid`, `setpgid` or equivalent;
+  core does not guarantee their termination. This is not non-escapable descendant containment, a
+  sandbox, daemon supervision or hostile-code isolation.
 - Validate request identity, description, launch, provenance, actual selection and the complete
   bundle before atomic output. A valid adverse or incomplete fact exits zero; no nonzero exit may
   publish an output bundle.

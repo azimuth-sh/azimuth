@@ -56,9 +56,13 @@ contracts or restore removed alpha-era formats.
 When a proposal affects adapters, make the strict
 [adapter protocol](../../../azimuth/formats/adapter.md) and
 [launch-plan format](../../../azimuth/formats/run-launch-plan.md) explicit. Preserve direct
-shell-free invocation, same-stream content staging, exact literal child environment, descendant-
-process containment, bounded streams and validation before atomic output. These controls do not
-sandbox authorized adapter code.
+shell-free invocation, same-stream content staging, exact literal child environment, supported
+fresh process-group isolation before spawn, bounded streams and one bounded core exchange whose
+deadline covers request writing, concurrent stream draining and core's wait. Validate completely
+before atomic output. Core signals the group on every terminal path and cleans members and inherited
+pipes while they remain in it. Authorized descendants may escape with `setsid`, `setpgid` or
+equivalent, and their termination is not guaranteed. This is not non-escapable descendant
+containment, a sandbox, daemon supervision or hostile-code isolation.
 
 ## Routine path
 

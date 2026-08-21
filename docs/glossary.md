@@ -308,10 +308,13 @@ current execution command.
 configured capability. It is distinct from the open provider-family identity and from an open
 Challenge form.
 
-**Bounded adapter exchange** — one strict request and response with same-stream content staging,
-a cleared child environment, descendant-process containment, one deadline and independent standard
-output and error bounds. It is an integrity and process boundary, not a filesystem or network
-sandbox.
+**Bounded adapter exchange** — one strict request and response with same-stream content staging, a
+cleared child environment, independent output bounds and one deadline for core request writing,
+response and diagnostic reads and process wait. On supported hosts, the adapter starts in a fresh
+process group and core signals remaining group members on every terminal path. Authorized code may
+use `setsid`, `setpgid` or an equivalent to leave the group; it cannot extend core's wait beyond the
+deadline, but its termination is not guaranteed. This is not non-escapable descendant containment,
+daemon supervision, hostile-code isolation or a filesystem or network sandbox.
 
 **Assurance Service** — the optional future durable ledger for accepted Runs and derived Assurance
 State. D42's version 1 service wire remains isolated until the Run-ledger replacement; it is neither

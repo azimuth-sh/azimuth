@@ -2520,12 +2520,22 @@ non-secret literal values, and drains standard output and standard error concurr
 independent capped buffers. It enforces the configured timeout and never automatically retries
 execute after a timeout because native work may already have occurred.
 
-Timeout and stream bounds cover the adapter's complete descendant process tree and every pipe a
-descendant retains. Core establishes platform-equivalent containment before spawn, then kills and
-reaps the contained tree on timeout or stream overflow. If equivalent containment is unavailable,
-the invocation is rejected before spawn as an exit-one transport failure and produces no output.
-Process groups, job objects and other platform mechanisms are implementation facts, not semantic
-protocol identity.
+One deadline derived from the configured timeout bounds request writing, concurrent response and
+diagnostic reading, and core's own wait. On a supported host, process creation places the adapter in
+a fresh process group before adapter code begins. Core signals the group on every terminal path and
+cleans members and inherited pipes while they retain group membership. If the host cannot provide
+the required process-group primitive, invocation is rejected before spawn as an exit-one transport
+failure and produces no output. The host mechanism is not semantic protocol identity.
+
+This is not non-escapable descendant containment. Authorized adapter code may call `setsid`,
+`setpgid` or equivalent facilities and leave the group. Such an escaped descendant cannot make core
+read or wait past the deadline, but core does not guarantee its termination. Version 1 is not a
+filesystem or network sandbox, daemon supervisor or hostile-code isolation boundary.
+
+**Adversarial correction, 2026-08-21.** An earlier D47 draft claimed that platform-equivalent
+process-tree containment could guarantee termination of every descendant and inherited pipe.
+Adversarial review falsified that claim because an authorized descendant can escape a Unix process
+group. The deadline and best-effort group-cleanup contract above replaces that stronger draft.
 
 Core stages content before every invocation. It opens each configured executable, resource and
 import input exactly once, copies and hashes bytes from that same open handle into a private

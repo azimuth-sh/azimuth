@@ -132,9 +132,13 @@ atomically with implementation and the limitation must remain visible in the cha
   and drain bounded standard output and standard error concurrently. Nonzero child status, timeout,
   overflow or extra response content exits one; malformed or schema-invalid response JSON exits
   two. Execute is never retried automatically after timeout.
-- Core contains the adapter's descendant process tree and inherited pipe handles within the same
-  exchange deadline. A host that cannot establish equivalent containment rejects the invocation
-  before spawning rather than claiming a weaker bounded exchange.
+- Core bounds request writing, concurrent response and diagnostic reads, and its own process wait
+  with one deadline. A supported host creates a fresh process group before adapter code; an
+  unsupported host rejects the invocation before spawn. Core signals remaining group members on
+  terminal paths, while authorized descendants that escape with `setsid` or `setpgid` are not
+  guaranteed terminated and cannot extend core's deadline.
+- Process-group isolation is not non-escapable descendant containment, daemon supervision,
+  hostile-code isolation or a filesystem or network sandbox.
 - Import inputs are exact staged files whose digests and sizes core computes from the streams it
   copies before invocation. Returned bundle provenance repeats those identities; adapters cannot
   replace them with locators or native run ids. A correction may carry later bytes from the same

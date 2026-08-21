@@ -1,10 +1,4 @@
-use azimuth::{diag, fingerprint, json, model, run, validation};
-#[path = "../src/adapter.rs"]
-mod adapter;
-#[path = "../src/adapter_host.rs"]
-mod adapter_host;
-#[path = "../src/run_plan.rs"]
-mod run_plan;
+use azimuth::{adapter, adapter_host, json, run, run_plan};
 
 use adapter::{
     AdapterConfiguration, AdapterContent, AdapterEnvironment, AdapterLimits, AdapterOperation,
@@ -41,7 +35,8 @@ struct Fixture {
     capture: PathBuf,
     mode: PathBuf,
     count: PathBuf,
-    descendant_pid: PathBuf,
+    group_member_pid: PathBuf,
+    escaped_pid: PathBuf,
     external_target: PathBuf,
     configuration: AdapterConfiguration,
     launch: LaunchPlan,
@@ -56,7 +51,8 @@ impl Fixture {
         let capture = root.join("request.json");
         let mode = root.join("mode");
         let count = root.join("count");
-        let descendant_pid = root.join("descendant-pid");
+        let group_member_pid = root.join("group-member-pid");
+        let escaped_pid = root.join("escaped-pid");
         let external_target = root.join("external-target");
         let executable = root.join("adapter");
         let resource = root.join("rules.json");
@@ -64,6 +60,7 @@ impl Fixture {
         fs::write(&mode, b"response\n").unwrap();
         fs::write(&response, b"{}\n").unwrap();
         fs::write(&external_target, b"outside-stage\n").unwrap();
+        let python = python3_executable();
         let script = format!(
             concat!(
                 "#!/bin/sh\n",
@@ -81,7 +78,8 @@ impl Fixture {
                 "malformed) printf '{{' ;;\n",
                 "extra) /bin/cat '{}'; printf '{{}}' ;;\n",
                 "failed) /bin/cat '{}' ;;\n",
-                "descendant) ( /bin/sleep 20 ) & child=$!; printf '%s' \"$child\" > '{}'; /bin/cat '{}' ;;\n",
+                "group-member) ( /bin/sleep 20 ) & child=$!; printf '%s' \"$child\" > '{}'; /bin/cat '{}' ;;\n",
+                "escaped-session) '{}' -c 'import os,time; os.setsid(); open(\"{}\",\"w\").write(str(os.getpid())); time.sleep(20)' & while [ ! -s '{}' ]; do /bin/sleep 0.01; done; /bin/cat '{}' ;;\n",
                 "stderr-exact) printf 1234567812345678123456781234567812345678123456781234567812345678 >&2; /bin/cat '{}' ;;\n",
                 "hostile-cleanup) /bin/mkdir nested; printf locked > nested/file; /bin/ln -s '{}' outside-link; /bin/chmod 000 nested; /bin/chmod 000 .; /bin/cat '{}' ;;\n",
                 "esac\n"
@@ -92,7 +90,11 @@ impl Fixture {
             response.display(),
             response.display(),
             response.display(),
-            descendant_pid.display(),
+            group_member_pid.display(),
+            response.display(),
+            python.display(),
+            escaped_pid.display(),
+            escaped_pid.display(),
             response.display(),
             response.display(),
             external_target.display(),
@@ -248,7 +250,8 @@ impl Fixture {
             capture,
             mode,
             count,
-            descendant_pid,
+            group_member_pid,
+            escaped_pid,
             external_target,
             configuration,
             launch,
@@ -489,6 +492,16 @@ fn temporary_directory() -> PathBuf {
     path
 }
 
+fn python3_executable() -> PathBuf {
+    std::env::var_os("PATH")
+        .into_iter()
+        .flat_map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
+        .map(|directory| directory.join("python3"))
+        .find(|candidate| candidate.is_file())
+        .and_then(|candidate| candidate.canonicalize().ok())
+        .expect("the Unix process-group regression requires python3")
+}
+
 fn map(values: &[(&str, &str)]) -> BTreeMap<String, String> {
     values
         .iter()
@@ -650,7 +663,7 @@ fn assert_no_invocation_stage_leaked() {
 }
 
 #[cfg(unix)]
-fn assert_process_disappears(path: &PathBuf) {
+fn assert_pid_disappears(path: &PathBuf) {
     let pid = fs::read_to_string(path).unwrap().parse::<i32>().unwrap();
     let deadline = Instant::now() + Duration::from_secs(2);
     while unix_process_exists(pid) && Instant::now() < deadline {
@@ -658,13 +671,50 @@ fn assert_process_disappears(path: &PathBuf) {
     }
     assert!(
         !unix_process_exists(pid),
-        "adapter descendant {pid} survived"
+        "adapter process {pid} survived process-group cleanup"
     );
 }
 
 #[cfg(unix)]
 fn unix_process_exists(pid: i32) -> bool {
     unsafe { test_kill(pid, 0) == 0 }
+}
+
+#[cfg(unix)]
+struct EscapedProcessGuard {
+    pid: i32,
+}
+
+#[cfg(unix)]
+impl EscapedProcessGuard {
+    fn from_path(path: &PathBuf) -> Self {
+        Self {
+            pid: fs::read_to_string(path).unwrap().parse::<i32>().unwrap(),
+        }
+    }
+
+    fn terminate(mut self) {
+        unsafe {
+            let _ = test_kill(self.pid, 9);
+        }
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while unix_process_exists(self.pid) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(!unix_process_exists(self.pid));
+        self.pid = 0;
+    }
+}
+
+#[cfg(unix)]
+impl Drop for EscapedProcessGuard {
+    fn drop(&mut self) {
+        if self.pid > 0 {
+            unsafe {
+                let _ = test_kill(self.pid, 9);
+            }
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -847,16 +897,36 @@ fn transport_failures_are_class_one_bounded_and_never_retried() {
 }
 
 #[test]
-fn successful_exchange_kills_and_reaps_leftover_descendants() {
+fn successful_exchange_cleans_remaining_process_group_members() {
     let _guard = test_lock();
     let fixture = Fixture::new(RunOperation::Execute, 1_000, 1_000_000, 1_000_000);
     fixture.set_bundle_response(&fixture.bundle(), &[]);
-    fixture.set_mode("descendant");
+    fixture.set_mode("group-member");
     let started = Instant::now();
     assert!(fixture.invoke(&[]).is_ok());
     assert!(started.elapsed() < Duration::from_millis(900));
     #[cfg(unix)]
-    assert_process_disappears(&fixture.descendant_pid);
+    assert_pid_disappears(&fixture.group_member_pid);
+    assert_no_invocation_stage_leaked();
+}
+
+#[cfg(unix)]
+#[test]
+fn escaped_session_cannot_extend_the_bounded_core_exchange() {
+    let _guard = test_lock();
+    let fixture = Fixture::new(RunOperation::Execute, 1_000, 1_000_000, 1_000_000);
+    fixture.set_bundle_response(&fixture.bundle(), &[]);
+    fixture.set_mode("escaped-session");
+    let started = Instant::now();
+    let result = fixture.invoke(&[]);
+    let escaped = EscapedProcessGuard::from_path(&fixture.escaped_pid);
+    assert!(started.elapsed() < Duration::from_millis(1_800));
+    let error = result.unwrap_err();
+    assert_eq!(error.class, HostErrorClass::Semantic);
+    assert_eq!(error.class.exit_code(), 1);
+    assert!(error.detail.contains("exchange exceeded"));
+    assert!(unix_process_exists(escaped.pid));
+    escaped.terminate();
     assert_no_invocation_stage_leaked();
 }
 

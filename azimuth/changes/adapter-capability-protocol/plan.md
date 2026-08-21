@@ -10,8 +10,9 @@
 - [x] Add adapter verification and Run plan, execute and import commands.
 - [x] Build two synthetic adapters and their shared conformance experiment.
 - [x] Migrate the existing Run conformance fixtures to D47 provenance.
-- [ ] Integrate adapter conformance into the root and release-isolation gates.
+- [x] Integrate adapter conformance into the root and release-isolation gates.
 - [x] Narrow the superseded Run command Claim to durable ingest only.
 - [x] Update public and agent guidance without claiming challenge planning or durable state.
+- [x] Correct the portable process boundary after adversarial containment review.
 - [ ] Run complete component, conformance, isolation and composed-model audits.
 - [ ] Record the accepted outcome and archive the change.

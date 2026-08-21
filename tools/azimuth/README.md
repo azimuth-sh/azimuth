@@ -83,10 +83,20 @@ separate [launch plan](../../azimuth/formats/run-launch-plan.md). The planner is
 
 `azimuth run execute` invokes an execute launch. `azimuth run import` invokes an import launch and
 requires one or more exact `<id>=<file>` inputs. Executable, resource and import bytes are staged
-and hashed from the same opened streams. Both operations contain the descendant process tree,
-bound time and output streams, validate the complete response and publish only by atomic
-replacement. Repeatable predecessors must form one exact correction chain; a response is revision
-zero or exactly the next revision with the terminal correction anchor.
+and hashed from the same opened streams. Both operations independently bound output bytes. On a
+supported host, core starts the adapter in a fresh process group before adapter code runs. One
+deadline bounds core request writing, response and diagnostic reads and process wait; core signals
+remaining group members on every terminal path. A host without the required primitive fails before
+spawn with exit `1`.
+
+An authorized descendant can deliberately use `setsid`, `setpgid` or an equivalent to leave the
+group. It cannot extend core's wait beyond the deadline, but core does not guarantee its
+termination. This is not non-escapable descendant containment, daemon supervision, hostile-code
+isolation or a filesystem or network sandbox.
+
+Core validates the complete response and publishes only by atomic replacement. Repeatable
+predecessors must form one exact correction chain; a response is revision zero or exactly the next
+revision with the terminal correction anchor.
 
 A valid violated Observation, Challenge finding, partial or cancelled Run, or adapter-returned
 protocol-valid `timed-out` Run fact exits `0`. A host-enforced process deadline is a transport

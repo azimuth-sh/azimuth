@@ -99,9 +99,11 @@ THEN Azimuth does not reinterpret exit status or diagnostics as an Observation o
 WHEN an execute operation times out after native work may have started
 THEN Azimuth does not automatically retry the operation
 
-### Add scenario: unavailable-process-tree-containment-fails-before-spawn
-WHEN a host cannot contain adapter descendants and inherited pipes within the exchange deadline
-THEN Azimuth rejects the invocation before spawning the adapter
+### Add scenario: unavailable-process-group-isolation-fails-before-spawn
+GIVEN a fresh process group and bounded core exchange are required
+WHEN a host cannot establish them before adapter code runs
+THEN Azimuth rejects the invocation before spawn as an exit-one transport failure
+AND it creates no adapter process or output bundle
 
 ## Add requirement: execute-validates-normalized-run-semantics
 Criticality: routine
