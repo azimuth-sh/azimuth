@@ -15,7 +15,7 @@ Objective: expose reusable D46 construction and provenance validation without we
 Evidence: component-construction, provenance-extension and regression tests
 
 ## Work package: adapter-contract-kernel
-Status: pending
+Status: complete
 Depends on: protocol-authority
 Owns: tools/azimuth/src/adapter.rs, tools/azimuth/tests/adapter.rs
 Objective: parse strict configuration and derive descriptor, configuration and capability identity

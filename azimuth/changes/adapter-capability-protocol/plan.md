@@ -3,7 +3,7 @@
 - [x] Freeze adapter configuration, launch-plan, transport and provenance authority.
 - [ ] Add the eight routine adapter-capability requirements.
 - [x] Establish a separable Run component seam for planning and returned-bundle validation.
-- [ ] Implement strict configuration, descriptor and capability identity validation.
+- [x] Implement strict configuration, descriptor and capability identity validation.
 - [ ] Implement complete-model Check planning and canonical launch fingerprints.
 - [ ] Host bounded execute and import adapter processes without shells or implicit retries.
 - [ ] Integrate adapter, planner and host modules before public command routing.
