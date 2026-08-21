@@ -2,7 +2,7 @@
 
 This is the open reference implementation of D40's lifecycle boundary. It keeps repository
 evidence, accepted-model snapshots, execution observations and derived gate decisions distinct.
-The service is optional: neither `azimuth check` nor repository finalization requires a running
+The service is optional: neither `azimuth validate` nor repository finalization requires a running
 ledger.
 
 ## Private single-team deployment
@@ -85,7 +85,7 @@ accepted only when that exact contract exists in at least one registered snapsho
 identity is logical: a changed semantic fingerprint appends a version and makes a qualification
 over the prior version stale.
 
-Generate a repository-authored snapshot only after the accepted model is hole-free:
+Generate a repository-authored snapshot only after validation reports no Findings:
 
 ```bash
 azimuth assurance export --project <id> --out assurance-snapshot.json \

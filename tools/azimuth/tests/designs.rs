@@ -1,10 +1,10 @@
 //! Design artifact tests. Synthetic fixtures only (D2).
 
-use azimuth::check::{rtm, HoleKind};
 use azimuth::design::{parse_design, Enforcement, Target};
 use azimuth::model::{Artifact, MechanismCover, MechanismImplementation, Model};
 use azimuth::plan::{parse_plan, parse_standards};
 use azimuth::spec::parse_spec;
+use azimuth::validation::{validate, FindingKind};
 
 const STANDARDS: &str = "\
 # Verification standards
@@ -96,8 +96,8 @@ fn model(design_source: &str, plan_source: &str) -> Model {
     m
 }
 
-fn kinds(m: &Model) -> Vec<(HoleKind, String)> {
-    rtm(m)
+fn kinds(m: &Model) -> Vec<(FindingKind, String)> {
+    validate(m)
         .into_iter()
         .map(|h| (h.kind, h.claim.unwrap_or_default()))
         .collect()
@@ -193,13 +193,13 @@ fn a_binding_needs_an_enforcement() {
 }
 
 #[test]
-fn a_binding_that_no_extractor_emitted_is_a_hole() {
+fn a_binding_that_no_extractor_emitted_is_a_finding() {
     let mut m = model(DESIGN, "");
     m.artifacts.clear();
-    let holes = kinds(&m);
+    let findings = kinds(&m);
     assert!(
-        holes.contains(&(HoleKind::UnresolvedDesignBinding, "alpha#matters".into())),
-        "{holes:?}"
+        findings.contains(&(FindingKind::UnresolvedDesignBinding, "alpha#matters".into())),
+        "{findings:?}"
     );
 }
 
@@ -207,10 +207,10 @@ fn a_binding_that_no_extractor_emitted_is_a_hole() {
 fn a_non_unique_index_cannot_back_constraint_enforcement() {
     let mut m = model(DESIGN, "");
     m.artifacts[0].unique = Some(false);
-    let holes = kinds(&m);
+    let findings = kinds(&m);
     assert!(
-        holes.contains(&(HoleKind::EnforcementMismatch, "alpha#matters".into())),
-        "{holes:?}"
+        findings.contains(&(FindingKind::EnforcementMismatch, "alpha#matters".into())),
+        "{findings:?}"
     );
 }
 
@@ -275,10 +275,10 @@ fn a_code_mechanism_may_derive_its_binding_from_an_implementation_tag() {
 
     assert!(!kinds(&m)
         .iter()
-        .any(|(kind, _)| *kind == HoleKind::UnresolvedDesignBinding));
+        .any(|(kind, _)| *kind == FindingKind::UnresolvedDesignBinding));
 
     m.mechanism_implementations.clear();
-    assert!(kinds(&m).contains(&(HoleKind::UnresolvedDesignBinding, "alpha#matters".into())));
+    assert!(kinds(&m).contains(&(FindingKind::UnresolvedDesignBinding, "alpha#matters".into())));
 }
 
 #[test]
@@ -293,14 +293,14 @@ fn a_mechanism_must_resolve_to_one_atomic_implementation() {
         source_fingerprint: "abc".into(),
         source: None,
     });
-    let hole = rtm(&m)
+    let finding = validate(&m)
         .into_iter()
-        .find(|hole| hole.kind == HoleKind::UnresolvedDesignBinding)
+        .find(|finding| finding.kind == FindingKind::UnresolvedDesignBinding)
         .expect("explicit plus derived is ambiguous");
     assert!(
-        hole.detail.contains("resolves to 2 bindings"),
+        finding.detail.contains("resolves to 2 bindings"),
         "{}",
-        hole.detail
+        finding.detail
     );
 }
 
@@ -340,14 +340,14 @@ fn mechanism_links_to_an_unknown_design_identity_are_dangling() {
     });
     let found = kinds(&m);
     assert!(found.contains(&(
-        HoleKind::DanglingMechanismImplementation,
+        FindingKind::DanglingMechanismImplementation,
         "alpha#ghost".into()
     )));
-    assert!(found.contains(&(HoleKind::DanglingMechanismCover, "alpha#ghost".into())));
+    assert!(found.contains(&(FindingKind::DanglingMechanismCover, "alpha#ghost".into())));
 }
 
-/// The residue attaches to no claim, participates in no check, and is the one part the machine
-/// must never pretend to understand.
+/// The residue attaches to no Claim, participates in no validation rule, and is the one part the
+/// machine must never pretend to understand.
 #[test]
 fn the_residue_is_never_parsed() {
     let source = "\
@@ -375,17 +375,17 @@ Binding: so is this one.
 /// Reported only once the artifact is in use: a spec covered by some other design file, with none
 /// of its own.
 #[test]
-fn a_critical_requirement_without_a_design_entry_is_a_hole() {
+fn a_critical_requirement_without_a_design_entry_is_a_finding() {
     let elsewhere =
         "# Design: beta\n\n## Requirement: other\nMechanism: guard\nEnforcement: guard\nBinding: x\n\nA reason.\n";
     let mut m = model("", "");
     m.designs = vec![azimuth::design::parse_design("beta.md", elsewhere).unwrap()];
-    let holes = kinds(&m);
+    let findings = kinds(&m);
     assert!(
-        holes.contains(&(HoleKind::UndeclaredMechanism, "alpha#matters".into())),
-        "{holes:?}"
+        findings.contains(&(FindingKind::UndeclaredMechanism, "alpha#matters".into())),
+        "{findings:?}"
     );
-    assert!(!holes.contains(&(HoleKind::UndeclaredMechanism, "alpha#lesser".into())));
+    assert!(!findings.contains(&(FindingKind::UndeclaredMechanism, "alpha#lesser".into())));
 }
 
 #[test]
@@ -393,7 +393,7 @@ fn a_design_entry_closes_it() {
     let m = model(DESIGN, "");
     assert!(!kinds(&m)
         .iter()
-        .any(|(k, _)| *k == HoleKind::UndeclaredMechanism));
+        .any(|(k, _)| *k == FindingKind::UndeclaredMechanism));
 }
 
 /// A facet attaches at the coarsest level where its statement is true, but an entry may key on a
@@ -413,7 +413,7 @@ A reason.
     let m = model(source, "");
     assert!(!kinds(&m)
         .iter()
-        .any(|(k, _)| *k == HoleKind::UndeclaredMechanism));
+        .any(|(k, _)| *k == FindingKind::UndeclaredMechanism));
 }
 
 #[test]
@@ -429,12 +429,12 @@ Binding: an index
 A reason.
 ";
     let m = model(source, "");
-    assert!(kinds(&m).contains(&(HoleKind::DanglingDesignEntry, "alpha#ghost".into())));
+    assert!(kinds(&m).contains(&(FindingKind::DanglingDesignEntry, "alpha#ghost".into())));
 }
 
-/// The three-artifact check. Proof comes from a mechanism at the top of the enforcement ladder,
-/// and the developer owns which mechanism that is — so a plan claiming proof with nothing behind
-/// it is asserting the strongest available result out of thin air.
+/// The three-artifact validation rule. Proof comes from a mechanism at the top of the enforcement
+/// ladder, and the developer owns which mechanism that is — so a plan claiming proof with nothing
+/// behind it is asserting the strongest available result out of thin air.
 #[test]
 fn proof_evidence_needs_a_proof_capable_mechanism() {
     let plan = "\
@@ -457,14 +457,16 @@ Binding: every handler checks
 Guards everywhere, because a choke point was not feasible.
 ";
     let m = model(weak_design, plan);
-    let holes = kinds(&m);
+    let findings = kinds(&m);
     assert!(
-        holes.contains(&(HoleKind::UnbackedProof, "alpha#concurrent-thing".into())),
-        "{holes:?}"
+        findings.contains(&(FindingKind::UnbackedProof, "alpha#concurrent-thing".into())),
+        "{findings:?}"
     );
 
     let m = model(DESIGN, plan);
-    assert!(!kinds(&m).iter().any(|(k, _)| *k == HoleKind::UnbackedProof));
+    assert!(!kinds(&m)
+        .iter()
+        .any(|(k, _)| *k == FindingKind::UnbackedProof));
 }
 
 #[test]
@@ -483,12 +485,12 @@ fn the_ladder_ranks_enforcement() {
 }
 
 /// D8.1: each mechanism is usable alone. A project that has not adopted the design artifact must
-/// not be told that every critical requirement is a hole.
+/// not be told that every critical requirement is a finding.
 #[test]
-fn without_any_design_artifact_the_mechanism_check_is_silent() {
+fn without_any_design_artifact_mechanism_validation_is_silent() {
     let m = model("", "");
     assert!(m.designs.is_empty());
     assert!(!kinds(&m)
         .iter()
-        .any(|(k, _)| *k == HoleKind::UndeclaredMechanism));
+        .any(|(k, _)| *k == FindingKind::UndeclaredMechanism));
 }

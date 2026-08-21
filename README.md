@@ -1,8 +1,8 @@
 # Azimuth
 
 Azimuth keeps intent, implementation linkage, evidence and agent judgment in one inspectable
-project account. The command-line tool checks local model packages and can assemble revision-bound
-accounts across repositories without making a hosted service authoritative.
+project account. The command-line tool validates local model packages and can assemble
+revision-bound accounts across repositories without making a hosted service authoritative.
 
 This is the canonical development and release repository. Framework changes, pull requests and
 version history land here, and publication derives artifacts from immutable version tags in the

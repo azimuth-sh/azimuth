@@ -145,8 +145,8 @@ to this boundary:
 
 Only `passed` and `failed` cross the boundary; provider-specific states must be mapped explicitly.
 The importer preserves failures, result attribution, observation time, expiry and a payload
-fingerprint. A failed or expired receipt is a hole and does not count as coverage. A charter or test
-case without an executed result emits nothing.
+fingerprint. A failed or expired receipt is a Finding and does not count as coverage. A charter or
+test case without an executed result emits nothing.
 
 ### Assurance observations
 
@@ -172,8 +172,9 @@ The adapter derives bindings by intersecting selected test names with existing `
 mutated files with existing `Realizes` sites, avoiding a second hand-maintained map. Its payload
 carries every final mutant-state count and review metadata for non-killed executable mutants.
 Unknown schemas or statuses fail closed. A renamed target or test becomes an
-`unresolved-observation-binding` hole. Survivors do not automatically fail `azimuth check`: only the
-agent can decide whether a generated wrong implementation is relevant to the claim.
+`unresolved-observation-binding` Finding. Survivors do not automatically become validation
+Findings: only the agent can decide whether a generated wrong implementation is relevant to the
+claim.
 
 `azimuth-import-pit` consumes PIT's `mutations.xml`, an ordinary JVM linkage manifest, the exact
 native configuration and a resolved source-selection input:
@@ -214,7 +215,7 @@ all contribute to the observation fingerprint.
 routine behavior, infrastructure or a project rule that no Azimuth claim names. `uncovered` is
 derived in the other direction, from a standard or critical claim with no sufficient evidence.
 Likewise, mechanism markers participate only when a design declares the named identity; orphaned
-implementation or evidence markers are dangling holes.
+implementation or evidence markers are dangling Findings.
 
 ## Tests
 

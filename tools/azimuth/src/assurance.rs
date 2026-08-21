@@ -4,10 +4,10 @@
 //! become a second spec parser or enumerator. This projection keeps that authority in the accepted
 //! model and transfers only canonical claim contracts plus one exact model identity.
 
-use crate::check::Hole;
 use crate::fingerprint::sha256;
 use crate::json::Json;
 use crate::model::{Criticality, Model};
+use crate::validation::Finding;
 
 pub const FORMAT: &str = "azimuth-assurance-project-snapshot";
 pub const VERSION: u64 = 1;
@@ -144,8 +144,8 @@ impl ProjectSnapshot {
     }
 }
 
-pub fn snapshot(model: &Model, holes: &[Hole], project: &str) -> ProjectSnapshot {
-    let (model_fingerprint, _) = crate::change::finalization(model, holes);
+pub fn snapshot(model: &Model, findings: &[Finding], project: &str) -> ProjectSnapshot {
+    let (model_fingerprint, _) = crate::change::finalization(model, findings);
     ProjectSnapshot::derive(project, &model_fingerprint, contracts(model))
 }
 

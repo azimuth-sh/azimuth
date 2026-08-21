@@ -10,10 +10,10 @@ version, configuration inputs and resolved realization, evidence or mechanism su
 bound claim's judgment fingerprint. A changed observation or subject makes the prior judgment
 stale.
 
-Ordinary `azimuth check` validates imported structure but does not execute external tools. A project
-or change chooses which challenges to run and when to refresh them. A broad scan has no implicit
-claim scope: its adapter derives explicit bindings from existing linkage, and no-finding output is
-not product evidence.
+Ordinary `azimuth validate` validates imported structure but does not execute external tools. A
+project or change chooses which challenges to run and when to refresh them. A broad scan has no
+implicit claim scope: its adapter derives explicit bindings from existing linkage, and no-finding
+output is not product evidence.
 
 ### Mutation testing
 

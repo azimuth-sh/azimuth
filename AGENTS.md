@@ -28,8 +28,9 @@ overrides a decision.
 ## Working rules
 
 - State claims as falsifiable propositions and distinguish decided, proposed and open work.
-- Use `azimuth` for the tool and `rtm` for one check. Commands are `azimuth check`,
-  `azimuth check rtm` and `azimuth export`.
+- Use `azimuth` for the tool and reserve Check for a deliberately enrolled verification method.
+  Commands for the current model are `azimuth validate`, `azimuth report traceability` and
+  `azimuth export`.
 - Evidence precedes notation: no mechanism enters the model until two structurally different
   concerns demand it in prose.
 - Framework development, pull requests and version history are authoritative in this repository.
@@ -40,8 +41,8 @@ overrides a decision.
   dogfood findings may motivate changes here but do not become executable repository dependencies.
 - Specs are organized by domain area, identifiers are declared rather than path-derived, and
   derivable artifacts are not maintained by hand.
-- A federated local check is incomplete when required workset inputs are missing. Never finalize a
-  project account from `--local` output.
+- A federated local project check is incomplete when required workset inputs are missing. Never
+  finalize a project account from `--local` output.
 - Model authority follows intent. Change authority is singular in a complete project account.
 - Exploration precedes commitment for uncertain multi-change work.
 - Validate `work-packages.md` before delegation. Workers edit only their declared non-overlapping

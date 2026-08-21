@@ -64,7 +64,7 @@ fn prose_before_the_first_requirement_is_not_a_statement() {
 /// D6.2 vs D11: a missing *declaration* is a hole, an unrecognized *construct* is a parse error.
 /// Conflating them would either let syntax through as findings or hide a semantic gap.
 #[test]
-fn missing_criticality_parses_and_becomes_a_hole_not_an_error() {
+fn missing_criticality_parses_and_becomes_a_finding_not_an_error() {
     let source = MINIMAL.replace("Criticality: standard\n", "");
     let spec = parse_spec("t.md", &source).expect("missing criticality still parses");
     assert_eq!(spec.requirements[0].criticality, None);

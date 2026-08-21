@@ -14,7 +14,7 @@ node "$IMPORT/observation-cli.js" experiments/assurance-extensions/chaos-result.
 node "$IMPORT/sarif-cli.js" experiments/assurance-extensions/static-analysis.sarif \
   experiments/assurance-extensions/linkage.json "$OUT/sarif.json" --root "$ROOT"
 
-cargo run --quiet --manifest-path tools/azimuth/Cargo.toml -- check \
+cargo run --quiet --manifest-path tools/azimuth/Cargo.toml -- validate \
   --model experiments/assurance-extensions/model \
   --standards experiments/assurance-extensions/standards/verification.md \
   --manifest experiments/assurance-extensions/linkage.json \

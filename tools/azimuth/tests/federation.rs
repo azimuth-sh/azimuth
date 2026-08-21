@@ -1,10 +1,10 @@
 //! Federation conformance tests. Each fixture repository is an independent Git history; the
 //! temporary directories are not folder aliases for one checkout.
 
-use azimuth::check;
 use azimuth::federation::{self, Assembly};
 use azimuth::fingerprint::sha256;
 use azimuth::judgment;
+use azimuth::validation;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -368,14 +368,14 @@ impl Drop for Lab {
 }
 
 #[test]
-fn complete_federated_project_is_revision_bound_and_hole_free() {
+fn complete_federated_project_is_revision_bound_and_finding_free() {
     let lab = Lab::new();
     let assembly = lab.assemble(None).expect("complete assembly");
     assert!(assembly.complete);
     assert_eq!(assembly.repositories.len(), 4);
     let loaded = azimuth::load_assembly(&assembly, &[]).expect("federated model loads");
     assert_eq!(loaded.model.specs.len(), 4);
-    assert!(check::rtm(&loaded.model).is_empty());
+    assert!(validation::validate(&loaded.model).is_empty());
 
     let snapshot = assembly.snapshot_json().expect("finalizable");
     assert!(snapshot.contains("\"format\": \"azimuth-project-snapshot\""));
@@ -755,8 +755,8 @@ fn split_and_monorepo_controls_derive_the_same_assurance_relations() {
         relation_projection(&monorepo.model)
     );
     assert_eq!(
-        check::rtm(&split.model).len(),
-        check::rtm(&monorepo.model).len()
+        validation::validate(&split.model).len(),
+        validation::validate(&monorepo.model).len()
     );
 }
 
@@ -803,7 +803,7 @@ fn operational_realization_and_evidence_may_originate_in_the_operations_reposito
 
     assert_eq!(realization.source.as_ref().unwrap().area, "monitoring");
     assert_eq!(evidence.source.as_ref().unwrap().area, "monitoring");
-    assert!(check::rtm(&loaded.model).is_empty());
+    assert!(validation::validate(&loaded.model).is_empty());
 }
 
 #[test]
@@ -841,7 +841,7 @@ fn assurance_observations_survive_repository_enveloping() {
     let assembly = lab.assemble(None).expect("observed project assembles");
     let loaded = azimuth::load_assembly(&assembly, &[]).expect("observed model loads");
     assert_eq!(loaded.model.observations.len(), 1);
-    assert!(check::rtm(&loaded.model).is_empty());
+    assert!(validation::validate(&loaded.model).is_empty());
 }
 
 #[test]
@@ -861,7 +861,7 @@ fn local_routine_work_is_clean_but_explicitly_incomplete() {
     assert_eq!(loaded.model.scenario_count(), 1);
     assert!(loaded.model.realizes.is_empty());
     assert!(loaded.model.covers.is_empty());
-    assert!(check::rtm(&loaded.model).is_empty());
+    assert!(validation::validate(&loaded.model).is_empty());
     assert!(assembly.snapshot_json().is_err());
 }
 

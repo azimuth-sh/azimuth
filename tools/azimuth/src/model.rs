@@ -213,7 +213,7 @@ impl Domain {
 #[derive(Debug, Clone)]
 pub struct Requirement {
     pub id: String,
-    /// `None` is the `unclassified` hole (D6.2), not a parse error: a missing *declaration* is a
+    /// `None` is the `unclassified` finding (D6.2), not a parse error: a missing *declaration* is a
     /// semantic gap, while an unrecognized *construct* fails the parse.
     pub criticality: Option<Criticality>,
     pub statement: String,
@@ -818,9 +818,9 @@ impl Model {
         })
     }
 
-    /// D10: the export is the extension seam. Checks, dashboards and PR annotations are all
-    /// consumers of this; nothing else re-parses specs.
-    pub fn to_json(&self, holes: &[crate::check::Hole]) -> Json {
+    /// D10 and D44: the export is the extension seam. Validation, dashboards and PR annotations
+    /// consume this model; nothing else re-parses specs.
+    pub fn to_json(&self, findings: &[crate::validation::Finding]) -> Json {
         let specs = self
             .specs
             .iter()
@@ -1001,8 +1001,8 @@ impl Model {
             ),
             ("mechanisms", Json::Arr(self.mechanism_json())),
             (
-                "holes",
-                Json::Arr(holes.iter().map(|h| h.to_json()).collect()),
+                "findings",
+                Json::Arr(findings.iter().map(|h| h.to_json()).collect()),
             ),
         ])
     }

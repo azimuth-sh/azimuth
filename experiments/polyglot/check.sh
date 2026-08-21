@@ -84,7 +84,7 @@ java -cp "$BUILD_ROOT/jvm/azimuth-annotations:$BUILD_ROOT/jvm/extractor" \
   --classes experiments/polyglot/services/kotlin/build/classes/kotlin/main \
   --classes experiments/polyglot/services/kotlin/build/classes/kotlin/test
 
-cargo run --quiet --manifest-path tools/azimuth/Cargo.toml -- check \
+cargo run --quiet --manifest-path tools/azimuth/Cargo.toml -- validate \
   --model experiments/polyglot/model \
   --standards experiments/polyglot/standards/verification.md \
   --manifest "$OUTPUT_ROOT/go.json" \

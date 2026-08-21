@@ -1,18 +1,19 @@
 //! The `azimuth` CLI.
 //!
-//! `azimuth` is the tool; `rtm` is one check among several (D9). The same binary owns deterministic
-//! checking, change authoring and lifecycle gates, exploration discovery, and federated assembly.
+//! The same binary owns deterministic validation and reporting, change authoring and lifecycle
+//! gates, exploration discovery, and federated assembly.
 
-use azimuth::check;
 use azimuth::diag::Diag;
+use azimuth::validation;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 const USAGE: &str = "\
-azimuth — derives a model from claims and linkage tags, and flags its holes
+azimuth — derives and validates an evidence-control-plane model
 
 USAGE
-    azimuth check [<check-id>...] [options]
+    azimuth validate [options]
+    azimuth report traceability [options]
     azimuth export [options]
     azimuth judge [options]
     azimuth assurance export --project <id> --out <snapshot.json> [options]
@@ -39,9 +40,6 @@ USAGE
 The judge command lists every claim with the fingerprint a judgment must carry, so the
 agent tier can record verdicts that expire when what they judged changes.
 
-CHECKS
-    rtm     claims against the code and evidence that reference them
-
 OPTIONS
     --model <dir>          current model packages (default: azimuth/model)
     --standards <file>     evidence standards (default: azimuth/standards/verification.md)
@@ -52,8 +50,6 @@ OPTIONS
     -h, --help
     -V, --version
 ";
-
-const CHECKS: &[&str] = &["rtm"];
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -73,7 +69,6 @@ struct Options {
     manifests: Vec<PathBuf>,
     only: Vec<String>,
     out: Option<PathBuf>,
-    checks: Vec<String>,
 }
 
 fn run(args: &[String]) -> Result<ExitCode, String> {
@@ -102,12 +97,14 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
     if command == "assurance" {
         return command_assurance(&args[1..]);
     }
-    let options = parse_options(&args[1..])?;
+    if command == "report" {
+        return command_report(&args[1..]);
+    }
 
     match command.as_str() {
-        "check" => command_check(options),
-        "export" => command_export(options),
-        "judge" => command_judge(options),
+        "validate" => command_validate(parse_options(&args[1..])?),
+        "export" => command_export(parse_options(&args[1..])?),
+        "judge" => command_judge(parse_options(&args[1..])?),
         other => Err(format!("unknown command `{other}`\n\n{USAGE}")),
     }
 }
@@ -158,8 +155,8 @@ fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
         }
     };
     report(&loaded.warnings, "warning");
-    let holes = check::rtm(&loaded.model);
-    let summary = check::summarize(&loaded.model, &holes);
+    let findings = validation::validate(&loaded.model);
+    let summary = validation::summarize(&loaded.model, &findings);
     if summary.errors > 0 || summary.warnings > 0 || !loaded.warnings.is_empty() {
         eprintln!(
             "error: accepted model has {} error(s), {} warning(s)",
@@ -168,7 +165,7 @@ fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
         );
         return Ok(ExitCode::from(1));
     }
-    let snapshot = azimuth::assurance::snapshot(&loaded.model, &holes, &project);
+    let snapshot = azimuth::assurance::snapshot(&loaded.model, &findings, &project);
     std::fs::write(&output, snapshot.to_json().to_string_pretty())
         .map_err(|error| format!("cannot write {}: {error}", output.display()))?;
     println!(
@@ -194,6 +191,12 @@ fn command_init(args: &[String]) -> Result<ExitCode, String> {
             println!("  {}", path.display());
         }
     }
+    println!(
+        "next: azimuth validate --model {} --standards {} --workspace {}",
+        root.join("model").display(),
+        root.join("standards/verification.md").display(),
+        root.join("workspace.json").display()
+    );
     Ok(ExitCode::SUCCESS)
 }
 
@@ -370,10 +373,10 @@ fn command_project(args: &[String]) -> Result<ExitCode, String> {
         }
     };
     report(&loaded.warnings, "warning");
-    let holes = check::rtm(&loaded.model);
+    let findings = validation::validate(&loaded.model);
     match operation.as_str() {
         "check" => {
-            report_holes(&loaded.model, &holes, &["rtm"]);
+            report_findings(&loaded.model, &findings);
             if assembly.complete {
                 println!(
                     "project `{}` complete · {} repository input(s)",
@@ -392,7 +395,7 @@ fn command_project(args: &[String]) -> Result<ExitCode, String> {
                     );
                 }
             }
-            let summary = check::summarize(&loaded.model, &holes);
+            let summary = validation::summarize(&loaded.model, &findings);
             Ok(if summary.errors > 0 {
                 ExitCode::from(1)
             } else {
@@ -400,7 +403,7 @@ fn command_project(args: &[String]) -> Result<ExitCode, String> {
             })
         }
         "export" => {
-            let json = loaded.model.to_json(&holes).to_string_pretty();
+            let json = loaded.model.to_json(&findings).to_string_pretty();
             match options.out {
                 Some(path) => std::fs::write(&path, json)
                     .map_err(|error| format!("cannot write {}: {error}", path.display()))?,
@@ -413,7 +416,7 @@ fn command_project(args: &[String]) -> Result<ExitCode, String> {
                 eprintln!("error: a partial project assembly cannot be finalized");
                 return Ok(ExitCode::from(1));
             }
-            let summary = check::summarize(&loaded.model, &holes);
+            let summary = validation::summarize(&loaded.model, &findings);
             if summary.errors > 0 || summary.warnings > 0 || !loaded.warnings.is_empty() {
                 eprintln!(
                     "error: project model has {} error(s), {} warning(s)",
@@ -754,7 +757,7 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
             return Ok(ExitCode::from(2));
         }
     };
-    let holes = check::rtm(&loaded.model);
+    let findings = validation::validate(&loaded.model);
 
     match operation.as_str() {
         "check" | "status" => {
@@ -793,7 +796,7 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
                 report.current_claims, report.target_claims
             );
             println!("{} incomplete plan item(s)", report.incomplete_plan_items);
-            let summary = check::summarize(&loaded.model, &holes);
+            let summary = validation::summarize(&loaded.model, &findings);
             println!(
                 "accepted-state model: {} error(s), {} warning(s)",
                 summary.errors, summary.warnings
@@ -806,7 +809,7 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
         }
         "finalize" => {
             let issues = azimuth::change::completion_issues(&root, &report);
-            let summary = check::summarize(&loaded.model, &holes);
+            let summary = validation::summarize(&loaded.model, &findings);
             if summary.errors > 0 || summary.warnings > 0 {
                 eprintln!(
                     "error: accepted-state model has {} error(s), {} warning(s)",
@@ -819,7 +822,8 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
             if summary.errors > 0 || summary.warnings > 0 || !issues.is_empty() {
                 return Ok(ExitCode::from(1));
             }
-            let (fingerprint, finalization) = azimuth::change::finalization(&loaded.model, &holes);
+            let (fingerprint, finalization) =
+                azimuth::change::finalization(&loaded.model, &findings);
             std::fs::write(root.join("finalization.json"), finalization).map_err(|error| {
                 format!("cannot write {}/finalization.json: {error}", root.display())
             })?;
@@ -849,15 +853,15 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
                     finalization_path.display()
                 )
             })?;
-            let (_, expected) = azimuth::change::finalization(&loaded.model, &holes);
+            let (_, expected) = azimuth::change::finalization(&loaded.model, &findings);
             if recorded != expected {
                 return Ok({
                     eprintln!("error: finalization is stale; run `azimuth change finalize` again");
                     ExitCode::from(1)
                 });
             }
-            if !holes.is_empty() {
-                eprintln!("error: accepted-state model has holes");
+            if !findings.is_empty() {
+                eprintln!("error: accepted-state model has findings");
                 return Ok(ExitCode::from(1));
             }
             if root
@@ -927,7 +931,6 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
         manifests: Vec::new(),
         only: Vec::new(),
         out: None,
-        checks: Vec::new(),
     };
     let mut i = 0;
     while i < args.len() {
@@ -963,16 +966,7 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
                 i += 2;
             }
             other if other.starts_with('-') => return Err(format!("unknown option `{other}`")),
-            other => {
-                if !CHECKS.contains(&other) {
-                    return Err(format!(
-                        "unknown check `{other}`\n  known checks: {}",
-                        CHECKS.join(", ")
-                    ));
-                }
-                o.checks.push(other.to_string());
-                i += 1;
-            }
+            other => return Err(format!("unexpected positional argument `{other}`")),
         }
     }
     if o.workspace.as_os_str().is_empty() {
@@ -991,39 +985,36 @@ fn report(diags: &[Diag], label: &str) {
     }
 }
 
-fn report_holes(model: &azimuth::model::Model, holes: &[check::Hole], selected: &[&str]) {
-    for hole in holes {
-        let where_ = if hole.line > 0 {
-            format!("{}:{}", hole.path, hole.line)
+fn report_findings(model: &azimuth::model::Model, findings: &[validation::Finding]) {
+    for finding in findings {
+        let where_ = if finding.line > 0 {
+            format!("{}:{}", finding.path, finding.line)
         } else {
-            hole.path.clone()
+            finding.path.clone()
         };
-        let claim = hole.claim.clone().unwrap_or_else(|| "-".into());
-        let level = hole
+        let claim = finding.claim.clone().unwrap_or_else(|| "-".into());
+        let level = finding
             .criticality
             .map(|criticality| format!(" ({})", criticality.name()))
             .unwrap_or_default();
         println!(
-            "{where_}: {} {} {claim}{level}\n    {}",
-            hole.severity.name(),
-            hole.kind.name(),
-            hole.detail
+            "{where_}: {} {} {} {claim}{level}\n    {}\n    help: {}",
+            finding.severity.name(),
+            finding.kind.category().name(),
+            finding.kind.name(),
+            finding.detail,
+            finding.kind.help()
         );
     }
-    let summary = check::summarize(model, holes);
-    let by_kind = check::counts_by_kind(holes)
+    let summary = validation::summarize(model, findings);
+    let by_kind = validation::counts_by_kind(findings)
         .into_iter()
         .map(|(kind, count)| format!("{count} {kind}"))
         .collect::<Vec<_>>();
     println!();
-    println!(
-        "{} claims in {} spec(s) · checks: {}",
-        summary.claims,
-        model.specs.len(),
-        selected.join(", ")
-    );
+    println!("{} claims in {} spec(s)", summary.claims, model.specs.len());
     if by_kind.is_empty() {
-        println!("no holes");
+        println!("no findings");
     } else {
         println!("{}", by_kind.join(" · "));
     }
@@ -1033,7 +1024,7 @@ fn report_holes(model: &azimuth::model::Model, holes: &[check::Hole], selected: 
     );
 }
 
-fn command_check(options: Options) -> Result<ExitCode, String> {
+fn command_validate(options: Options) -> Result<ExitCode, String> {
     let loaded = match azimuth::load(
         &options.model,
         &options.standards,
@@ -1050,67 +1041,48 @@ fn command_check(options: Options) -> Result<ExitCode, String> {
     };
     report(&loaded.warnings, "warning");
 
-    let selected: Vec<&str> = if options.checks.is_empty() {
-        CHECKS.to_vec()
-    } else {
-        options.checks.iter().map(|s| s.as_str()).collect()
-    };
-
-    let mut holes = Vec::new();
-    for id in &selected {
-        match *id {
-            "rtm" => holes.extend(check::rtm(&loaded.model)),
-            _ => unreachable!("checked during option parsing"),
-        }
-    }
-
-    for hole in &holes {
-        let where_ = if hole.line > 0 {
-            format!("{}:{}", hole.path, hole.line)
-        } else {
-            hole.path.clone()
-        };
-        let claim = hole.claim.clone().unwrap_or_else(|| "-".into());
-        let level = hole
-            .criticality
-            .map(|c| format!(" ({})", c.name()))
-            .unwrap_or_default();
-        println!(
-            "{where_}: {} {} {claim}{level}\n    {}",
-            hole.severity.name(),
-            hole.kind.name(),
-            hole.detail
-        );
-    }
-
-    let summary = check::summarize(&loaded.model, &holes);
-    let by_kind: Vec<String> = check::counts_by_kind(&holes)
-        .into_iter()
-        .map(|(k, n)| format!("{n} {k}"))
-        .collect();
-
-    println!();
-    println!(
-        "{} claims in {} spec(s) · checks: {}",
-        summary.claims,
-        loaded.model.specs.len(),
-        selected.join(", ")
-    );
-    if by_kind.is_empty() {
-        println!("no holes");
-    } else {
-        println!("{}", by_kind.join(" · "));
-    }
-    println!(
-        "{} error(s), {} warning(s)",
-        summary.errors, summary.warnings
-    );
+    let findings = validation::validate(&loaded.model);
+    let summary = validation::summarize(&loaded.model, &findings);
+    report_findings(&loaded.model, &findings);
 
     Ok(if summary.errors > 0 {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS
     })
+}
+
+fn command_report(args: &[String]) -> Result<ExitCode, String> {
+    let Some(operation) = args.first() else {
+        return Err("report needs traceability".into());
+    };
+    if operation != "traceability" {
+        return Err(format!("unknown report `{operation}`"));
+    }
+    let options = parse_options(&args[1..])?;
+    let loaded = match azimuth::load(
+        &options.model,
+        &options.standards,
+        &options.workspace,
+        &options.manifests,
+        &options.only,
+    ) {
+        Ok(loaded) => loaded,
+        Err(diags) => {
+            report(&diags, "error");
+            return Ok(ExitCode::from(2));
+        }
+    };
+    report(&loaded.warnings, "warning");
+    let json = azimuth::traceability::project(&loaded.model)
+        .to_json()
+        .to_string_pretty();
+    match options.out {
+        Some(path) => std::fs::write(&path, json)
+            .map_err(|error| format!("cannot write {}: {error}", path.display()))?,
+        None => print!("{json}"),
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 /// Lists claims and their current fingerprints — the agent tier's worklist.
@@ -1176,8 +1148,8 @@ fn command_export(options: Options) -> Result<ExitCode, String> {
     };
     report(&loaded.warnings, "warning");
 
-    let holes = check::rtm(&loaded.model);
-    let json = loaded.model.to_json(&holes).to_string_pretty();
+    let findings = validation::validate(&loaded.model);
+    let json = loaded.model.to_json(&findings).to_string_pretty();
 
     match options.out {
         Some(path) => std::fs::write(&path, json)

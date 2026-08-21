@@ -1,6 +1,10 @@
 ---
 name: azimuth-archive
-description: Accept, finalize, and archive a completed Azimuth change after current facets, evidence, judgments, outcomes, and rollout-dependent conditions are satisfied. Use at the completion boundary for local or federated changes; never manufacture evidence or commit source-control changes implicitly.
+description: >-
+  Accept, finalize, and archive a completed Azimuth change after current facets, evidence,
+  judgments, outcomes, and rollout-dependent conditions are satisfied. Use at the completion
+  boundary for local or federated changes; never manufacture evidence or commit source-control
+  changes implicitly.
 ---
 
 # Finalize and archive a change
@@ -9,11 +13,12 @@ Archive records an accepted semantic transition. It is not a branch merge or a d
 
 ## Preconditions
 
-1. Read the proposal's completion conditions and verify every plan and work-package item is complete.
+1. Read the proposal's completion conditions and verify every plan and work-package item is
+   complete.
 2. Confirm intent deltas are applied, current design names only existing mechanisms, and lasting
    verification deviations are current.
 3. Run every required build, test, manual-evidence import, detector test and composed check. Run
-   `azimuth check` over fresh manifests.
+   `azimuth validate` over fresh manifests.
 4. Invoke `azimuth-verify` for every new or stale critical judgment.
 5. Write `outcome.md` with `Status: accepted`, `## Departures` and `## Residual decisions`.
    Framework experiments may record Measurements; production changes do not owe that section.

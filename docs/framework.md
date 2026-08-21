@@ -23,11 +23,11 @@ third is what a traceability matrix does. The framework's bet is that the second
 where assurance is required. Criticality sets that boundary: a routine claim deliberately stops at
 intent, while standard and critical claims activate linkage and evidence (D20).
 
-The consequence that makes this checkable rather than editorial: **holes begin with facets that are
-missing relative to the declared rigor**, so a finding is a structural fact about the model rather
-than a matter of taste (D3, D20). Other finding kinds qualify incomplete facets, cross-facet
-consistency and the machinery that enumerates a claim's domain; D3's stronger taxonomy claim has
-already been partially falsified.
+The consequence that makes this checkable rather than editorial: **Findings begin with facets
+that are missing relative to the declared rigor**, so a Finding is a structural fact about the
+model rather than a matter of taste (D3, D20). Other finding kinds qualify incomplete facets,
+cross-facet consistency and the machinery that enumerates a claim's domain; D3's stronger taxonomy
+claim has already been partially falsified.
 
 Azimuth is also an **evidence control plane** (D43). The repository owns durable intent and
 reviewed evidentiary meaning. Execution systems contribute facts about exact Subjects through a
@@ -84,10 +84,10 @@ the dependent format change owns their exact syntax. A Claim with no plan entry 
 it means the project standard applies unmodified.
 
 **Residue** is the fourth thing in `design.md` and is deliberately outside the model: orientation,
-danger zones, deliberately broken corners, what is absent and why. It participates in no check and
-is derivable by nothing. It is named explicitly so the design file does not become a dumping
-ground, and it is distinct from a verification *residual*, which records missing evidence. The
-first is knowledge; the second is a gap.
+danger zones, deliberately broken corners, what is absent and why. It participates in neither
+validation nor evidence and is derivable by nothing. It is named explicitly so the design file
+does not become a dumping ground, and it is distinct from a verification *residual*, which
+records missing evidence. The first is knowledge; the second is a gap.
 
 **Accountability.** The model requires no roles (D3.1). Operating guidance calls the accountable
 capabilities `intent owner`, `mechanism owner` and `evidence owner`; analyst or product, developer
@@ -195,8 +195,8 @@ normalized Run and gains no provider-specific webhook logic.
 
 The three facets describe accepted current state. A **change** proposes a target state: intent
 deltas, solution design where needed, implementation work and verification obligations. The target
-is the current model with those deltas applied; current checks do not treat planned facts as facts
-about the running system (D21).
+is the current model with those deltas applied; current validation does not treat planned facts as
+facts about the running system (D21).
 
 Change design and current design have different lifetimes. `azimuth/changes/<id>/design.md` may
 name alternatives, components and mechanisms that do not exist yet. A current package's
@@ -221,7 +221,7 @@ in `azimuth/changes/README.md` (D21.4, D35).
 
 An exploration is a non-normative project account for research and decisions whose consequences
 may span several changes (D36). It lives under `azimuth/explorations/<id>/`, can terminate without
-a change, and never participates in current-model checks. Once its direction is confirmed,
+a change, and never participates in current-model validation. Once its direction is confirmed,
 individual change proposals carry the specific exploration decisions they implement. This keeps
 uncertainty and rejected alternatives available without allowing them to masquerade as accepted
 intent or current design.
@@ -244,7 +244,7 @@ link syntax. Alpha 1 `covers` tags remain transitional parser input until that c
 they do not define the alpha 2 semantic boundary or receive a compatibility reader.
 
 Routine Claims owe neither realization nor Check linkage. Ordinary native tests without deliberate
-enrollment remain outside Azimuth, not exempt and not holes (D20.1, D43).
+enrollment remain outside Azimuth, not exempt and not Findings (D20.1, D43).
 
 **Fan-out** is one claim realized at several sites, across components and languages. It is the
 reason specs are organized by domain area rather than by service. Mirroring services would
@@ -366,9 +366,9 @@ tier is weakest and D13.1's enumerator problem appears.
 
 ## Findings
 
-Most hole kinds are missing-facet combinations, which is D3's central structural claim:
+Most Finding kinds are missing-facet combinations, which is D3's central structural claim:
 
-| Facets present | Hole |
+| Facets present | Finding |
 |---|---|
 | intent, no mechanism | `unrealized` |
 | intent, no evidence | `uncovered` |
@@ -391,7 +391,7 @@ nothing has decided between them.
 
 Two tiers produce findings:
 
-- The **machine tier** is deterministic. It finds structural holes, cannot be argued with, and
+- The **machine tier** is deterministic. It reports structural Findings, cannot be argued with, and
   cannot establish truth.
 - The **agent tier** judges what the machine cannot: whether every declared realization site
   establishes part of the predicate, whether evidence is toothy, whether its declared form is
@@ -417,17 +417,22 @@ exists. Gate selection must not decide which authorized execution facts exist.
 ## The tool
 
 `azimuth` is the tool. D43 reserves **Check** for an enrolled verification method, so deterministic
-model validation and execution orchestration are separate tool responsibilities. The dependent
-command change owns their final command names and removes the alpha 1 aliases rather than retaining
-two vocabularies.
+model validation and execution orchestration are separate tool responsibilities. D44 makes
+`azimuth validate` the sole top-level validator and removes the alpha 1 command identities.
 
 ```
+azimuth validate
+azimuth report traceability
 azimuth export --out model.json
 ```
 
 Selection operates on ids rather than paths, so it survives a reorganization. Finding severity
 comes from criticality, not from a validation rule. Check identities and adapter capability
 identities are public semantic interfaces.
+
+`azimuth report traceability` is a pure deterministic projection over selected case-level Claims
+and their ordered realization source identities. It creates no authored authority or execution
+fact and writes no file unless `--out` is supplied.
 
 The core is dependency-free (D17) and reads only **manifests**, never source. One extractor per
 ecosystem finds tags in its own language and writes the same language-neutral manifest; that seam
@@ -521,7 +526,7 @@ Recorded before the evidence existed. `status.md` holds the current results; two
 
 - More than 40% of requirements at top criticality would make the level mechanism theatre:
   **fired** at 54%.
-- A hole kind outside the missing-facet combinations would make D3 incomplete: **fired** four
+- A Finding kind outside the missing-facet combinations would make D3 incomplete: **fired** four
   times, and possibly harder; see the Findings section.
 - Identical role views over the export would make the facet split decorative: never tested.
 - Artifact and annotation cost beyond the defects justified would make the framework ceremony:

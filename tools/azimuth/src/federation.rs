@@ -292,15 +292,15 @@ impl Assembly {
                 loaded.warnings.len()
             ));
         }
-        let holes = crate::check::rtm(&loaded.model);
-        let summary = crate::check::summarize(&loaded.model, &holes);
+        let findings = crate::validation::validate(&loaded.model);
+        let summary = crate::validation::summarize(&loaded.model, &findings);
         if summary.errors > 0 || summary.warnings > 0 {
             return Err(format!(
                 "project model has {} error(s), {} warning(s)",
                 summary.errors, summary.warnings
             ));
         }
-        let (model_fingerprint, _) = crate::change::finalization(&loaded.model, &holes);
+        let (model_fingerprint, _) = crate::change::finalization(&loaded.model, &findings);
         let repositories = self
             .repositories
             .iter()

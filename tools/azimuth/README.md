@@ -1,7 +1,7 @@
 # azimuth
 
-The core. Reads claims and linkage tags, derives a model, runs checks over it, and exports the
-model for everything else to consume.
+The core. Reads Claims and linkage tags, derives and validates a model, reports traceability, and
+exports the model for everything else to consume.
 
 No dependencies (D17). `cargo build` needs nothing but a toolchain.
 
@@ -12,8 +12,10 @@ separate release operation after every selected artifact is qualified.
 ## Use
 
 ```
-azimuth check                          # all checks, azimuth/model by default
-azimuth check rtm --only 'billing/**'  # one check, scoped by id
+azimuth validate                       # validate azimuth/model by default
+azimuth validate --only 'billing/**'   # validate Claims selected by id
+azimuth report traceability            # derived Claim-and-realization JSON on stdout
+azimuth report traceability --out traceability.json
 azimuth export --out model.json
 azimuth judge                          # claims with the fingerprint a judgment must carry
 azimuth assurance export --project <id> --out assurance-snapshot.json
@@ -40,7 +42,7 @@ azimuth project accept-change --project project.json --before active.json --afte
   --change <id> --date YYYY-MM-DD --out snapshot.json
 ```
 
-Exit codes: `0` clean, `1` errors found, `2` the model could not be derived.
+Validation exit codes: `0` clean, `1` Findings reported, `2` the model could not be derived.
 
 Selection operates on **ids**, not paths (`--only 'billing/**'`), so it keeps working if the tree
 is reorganized. Ids in this file are illustrative: the tool knows nothing about any particular
@@ -77,15 +79,16 @@ snapshot. Git commits and external receipts remain integration inputs rather tha
 
 [multirepo-provenance]: https://github.com/drim-dev/azimuth-demo/tree/68a2eb5d46daf01ba087ec94b6a1ea7901c63bfd/experiments/multirepo
 
-`rtm` is currently the only check. It is still one check among several by design (D9) — the check
-set is per-project (D9.3), ids are a public interface (D9.1), and severity comes from criticality
-rather than from the check (D9.2).
+Validation applies the complete deterministic rule set to the selected model. Finding severity
+comes from criticality rather than from the validation rule. `azimuth report traceability` is a
+pure projection over selected case-level Claims and their realization relations; it creates no
+authored authority or execution fact.
 
 ## What it does now
 
 - **`spec.rs`** parses the format in `azimuth/formats/spec.md`. Strict: an unrecognized construct
   fails the parse with file, line and what was expected. A missing *declaration* is different—a
-  requirement without `Criticality:` parses and becomes an `unclassified` hole (D6.2 vs D11).
+  requirement without `Criticality:` parses and becomes an `unclassified` Finding (D6.2 vs D11).
 - **`manifest.rs`** reads linkage and judgment-context manifests, keyed on the pair
   `(spec, scenario)` (D2.2). The
   alpha's triple is rejected with an explanation rather than silently accepted, so a stale emitter
@@ -94,8 +97,8 @@ rather than from the check (D9.2).
   assurance observations.
 - **`workspace.rs`** validates local areas, enumerator-backed surfaces and optional area realization
   obligations. Source area is derived from declared mounts rather than repeated in tags.
-- **`assurance.rs`** projects a hole-free accepted model into one exact project snapshot and stable
-  non-routine claim contracts for recurring assurance services. Contract fingerprints include
+- **`assurance.rs`** projects an accepted model with no Findings into one exact project snapshot
+  and stable non-routine Claim contracts for recurring assurance services. Fingerprints include
   claim, verification, surface and area-obligation semantics but exclude implementation bodies.
 - **`plan.rs`** parses `azimuth/standards/verification.md` and sibling verification plans. Entries
   are deviations only—a claim with no entry is not unplanned, the standard applies.
@@ -111,7 +114,9 @@ rather than from the check (D9.2).
 - **`judgment.rs`** reads the agent tier's verdicts — `sound`, `toothless`, `dishonest-tag`,
   `dishonest-realization`, `spec-gap` — each carrying a fingerprint over everything the judgment
   looked at. Worklists distinguish realization sites from evidence and context.
-- **`check.rs`** runs `rtm`.
+- **`validation.rs`** produces categorized Findings from the derived model. One exhaustive kind
+  registry drives detailed output, JSON and summaries.
+- **`traceability.rs`** projects deterministic case-level Claim and realization JSON.
 - **`model.rs`** holds the derived model and writes the export (D10).
 - **`change.rs`** projects additive and criticality-transition intent deltas, preflights accepted
   completion, fingerprints the derived model and gates deterministic archiving (D21.4, D24).
@@ -131,55 +136,33 @@ Four behaviours worth knowing:
   has no mechanism at the top two rungs behind it. This is the first check needing all three
   artifacts, and it is the concrete argument that three beat one.
 - **A judgment is evidence *about* evidence, and its value is negative** (D18, revising D14). It
-  cannot make a claim covered; it can take a claim that looks covered and report it as a hole.
+  cannot make a claim covered; it can take a claim that looks covered and report a Finding.
   Freshness isolates compiler-resolved evidence and realization sites while retaining whole-file
   fallback for inputs without a trustworthy boundary (D22, D28).
 
-### Hole kinds
+### Finding kinds
 
-Thirty, in seven groups.
+All 33 kinds have one closed category and one corrective help string. The exhaustive registry in
+`validation.rs` drives the summary so a new kind cannot disappear from counts.
 
-**Missing-facet** (D3's central structural claim — the facet is simply absent):
+- **Intent:** `unclassified`.
+- **Realization:** `unrealized`, `dangling-realization`, `missing-required-realization`,
+  `dangling-realization-obligation`.
+- **Verification:** `uncovered`, `dangling-tag`, `dangling-plan-entry`, `wrong-form`,
+  `unaccepted-weakening`, `unbacked-proof`, `failed-evidence`, `expired-evidence`,
+  `unresolved-evidence-binding`, `unresolved-detector-binding`.
+- **Mechanism:** `dangling-design-entry`, `undeclared-mechanism`,
+  `unresolved-design-binding`, `enforcement-mismatch`, `dangling-mechanism-implementation`,
+  `dangling-mechanism-cover`.
+- **Judgment:** `toothless-evidence`, `dishonest-tag-judged`, `dishonest-realization`, `spec-gap`,
+  `stale-judgment`, `unjudged`.
+- **Surface:** `invariant-breach`, `enumerator-unsound-or-underived`, `missing-surface`,
+  `unknown-surface`.
+- **Execution:** `duplicate-observation`, `unresolved-observation-binding`.
 
-`unrealized`, `uncovered`, `dangling-tag`, `dangling-realization`, `dangling-plan-entry`,
-`dangling-design-entry`, `wrong-form`.
-
-**Incomplete-facet** — the facet is present but a required part of it is missing:
-
-`unclassified`, `unaccepted-weakening`, `undeclared-mechanism`, `unjudged`.
-
-These are the recorded falsifier for D3, which claims the taxonomy is generated by facet
-*presence*. The premise fires and the conclusion does not: none of the four implies a fourth facet,
-so the claim needs qualifying rather than replacing. D3 has not been amended.
-
-Whether only these four count against the falsifier is unsettled — `unbacked-proof`, the agent-tier
-kinds and the two site-class kinds are not missing-facet combinations either. See
-`docs/framework.md`, which states the question without deciding it.
-
-**Cross-facet consistency:** `unbacked-proof`, `unresolved-design-binding`,
-`unresolved-evidence-binding`, `unresolved-detector-binding`, `enforcement-mismatch`,
-`duplicate-observation`, `unresolved-observation-binding`.
-
-**Mechanism linkage:** `dangling-mechanism-implementation`, `dangling-mechanism-cover`.
-
-**Agent tier** — findings the machine tier structurally cannot reach, because a tag is only as
-honest as whoever wrote it: `toothless-evidence`, `dishonest-tag-judged`, `spec-gap`,
-`dishonest-realization`, `stale-judgment`.
-
-**Site surface** — for claims ranging over a set of sites rather than over executions:
-`missing-surface`, `unknown-surface`, `invariant-breach`,
-`enumerator-unsound-or-underived`. An enumerator witness is
-required before member findings are authoritative; tags never count as a complete enumeration.
-`invariant-breach` is the one hole kind a per-scenario matrix structurally cannot find, because a
-claim quantified over a set of sites is not established by evidence about one site however good
-that evidence is.
-
-**External evidence lifecycle:** `failed-evidence`, `expired-evidence`. An imported manual result
-remains visible when adverse or stale and cannot be counted as coverage.
-
-`undeclared-mechanism` is gated on the design artifact being in use at all. D8.1 requires each
-mechanism to be usable alone, so a project running `rtm` without designs is not told that every
-critical requirement is a hole. Partial adoption still reports.
+The kind says what is structurally wrong; category groups remediation, and severity derives from
+the affected Claim's criticality. Detailed and JSON output also carry source location, optional
+Claim identity, detail and corrective help.
 
 ## What it does not do yet
 
@@ -191,9 +174,10 @@ critical requirement is a hole. Partial adoption still reports.
 - **Realization honesty is agent-judged, not inferred.** The machine supplies every realization
   source to the worklist and expires the verdict when its relation or source changes; it cannot
   decide whether arbitrary code establishes a prose predicate.
-- **`invariant-breach` verifies only the weakest rung of the enforcement ladder** — a guard at every
-  site. A choke point every member routes through would report N−1 breaches, which is exactly the
-  defect D7 names in the alpha. Crediting one needs call-graph analysis in the extractor (D10.1).
+- **`invariant-breach` verifies only the weakest rung of the enforcement ladder** — a guard at
+  every site. A choke point every member routes through would report N−1 breaches, which is
+  exactly the defect D7 names in the alpha. Crediting one needs call-graph analysis in the
+  extractor (D10.1).
 - **Authored non-test evidence is taken on trust by the machine tier.** Imported manual receipts are
   checked for pass/fail and expiry; a prose attestation in a plan is still believed at its stated
   strength. Semantic honesty remains the agent tier's job, and nothing forces a judgment except

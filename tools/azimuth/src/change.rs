@@ -4,12 +4,12 @@
 //! applied before archiving. Explanations of departures and residual acceptance remain authored
 //! because deriving them would manufacture the judgment the archive exists to preserve.
 
-use crate::check::{self, Hole};
 use crate::fingerprint::sha256;
 use crate::json::Json;
 use crate::labels::read_block;
 use crate::model::{Criticality, Model, StepKind};
 use crate::spec::parse_spec;
+use crate::validation::{self, Finding};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -552,10 +552,10 @@ pub fn completion_issues(root: &Path, report: &Report) -> Vec<String> {
     issues
 }
 
-pub fn finalization(model: &Model, holes: &[Hole]) -> (String, String) {
-    let model_json = model.to_json(holes).to_string_pretty();
+pub fn finalization(model: &Model, findings: &[Finding]) -> (String, String) {
+    let model_json = model.to_json(findings).to_string_pretty();
     let fingerprint = sha256(model_json.as_bytes());
-    let summary = check::summarize(model, holes);
+    let summary = validation::summarize(model, findings);
     let json = Json::obj(vec![
         ("version", Json::Num(1.0)),
         ("model_fingerprint", Json::str(&fingerprint)),

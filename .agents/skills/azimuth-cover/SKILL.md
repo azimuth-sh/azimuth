@@ -1,12 +1,16 @@
 ---
 name: azimuth-cover
-description: Write evidence for an Azimuth claim and tag it honestly — pick the form the claim's own quantifier demands, build it, and record a deviation in the plan when that form is not available. Use when adding or changing a Covers tag, closing a hole reported by azimuth check, or rewriting evidence after a judgment.
+description: >-
+  Write evidence for an Azimuth claim and tag it honestly — pick the form the claim's own
+  quantifier demands, build it, and record a deviation in the plan when that form is not
+  available. Use when adding or changing a Covers tag, resolving a Finding reported by azimuth
+  validate, or rewriting evidence after a judgment.
 ---
 
 # Writing evidence for a claim
 
 A `covers` tag is a self-declaration. Nothing in the machine tier can tell whether it describes the
-test: `azimuth check` compares the declared form to the required form and reports green when they
+test: `azimuth validate` compares the declared form to the required form and reports green when they
 match, whether or not the test is what the tag says. The observed failure is not agents writing
 weak tests — it is agents writing accurate-looking tags over tests that do not range over what the
 claim ranges over, because the required form was expensive and the tag was cheap.
@@ -49,9 +53,9 @@ Pick by what the axis *is*.
 
 ### A. The axis is a finite set the system already knows
 
-Derive the enumeration from the same source the system is built from — the state machine, the route
-table, the container, the migration set. Never hand-list it: a hand-listed enumeration that misses a
-member reports green over the gap, which is worse than no rule at all.
+Derive the enumeration from the same source the system is built from — the state machine, the
+route table, the container, the migration set. Never hand-list it: a hand-listed enumeration that
+misses a member reports green over the gap, which is worse than no rule at all.
 
 ```
 for each member of <enumeration derived from the system>:
@@ -102,9 +106,9 @@ axis is right, not because the space is exhausted; say so in the plan if the tri
 ### D. The axis is degenerate
 
 Some claims have one case. If the WHEN fixes every free variable and the remaining variation is
-irrelevant — clock time, generated identifiers — then `example` is the accurate tag and repeating
-the test buys nothing. Declaring a higher form here is over-declaration, not caution: it costs the
-reader the ability to tell which claims are actually ranged over.
+irrelevant — clock time, generated identifiers — then `example` is the accurate tag and
+repeating the test buys nothing. Declaring a higher form here is over-declaration, not caution: it
+costs the reader the ability to tell which claims are actually ranged over.
 
 ## Self-check before the tag goes on
 
@@ -144,8 +148,8 @@ cannot reach the required form:
   interleavings beyond repetition;
 - there is no oracle over the generated space, and inventing one means reimplementing the subject,
   so the test agrees with the code for the same reason the code is wrong;
-- the claim spans a boundary the test's scope cannot reach — in which case the defect is scope, and
-  quantification will not fix it.
+- the claim spans a boundary the test's scope cannot reach — in which case the defect is scope,
+  and quantification will not fix it.
 
 **Do not resolve this by writing the required form on the tag.** Tag what the test is, and record
 the deviation in the plan, where it is reviewable:

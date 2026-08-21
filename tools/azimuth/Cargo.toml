@@ -2,7 +2,7 @@
 name = "azimuth"
 version = "0.1.0-alpha.1"
 edition = "2021"
-description = "Derives a model from claims, linkage tags and evidence, and flags its holes."
+description = "Derives and validates an evidence-control-plane model."
 license = "Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/azimuth-sh/azimuth"

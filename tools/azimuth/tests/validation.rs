@@ -1,12 +1,14 @@
-//! Model, manifest and check tests. Synthetic fixtures only (D2).
+//! Model, manifest and validation tests. Synthetic fixtures only (D2).
 
-use azimuth::check::{rtm, HoleKind, Severity};
 use azimuth::json;
 use azimuth::judgment::{fingerprint, Judgment, Judgments, Verdict};
 use azimuth::manifest;
 use azimuth::model::Model;
 use azimuth::selects;
 use azimuth::spec::parse_spec;
+use azimuth::validation::{
+    counts_by_kind, validate, Finding, FindingCategory, FindingKind, Severity,
+};
 use azimuth::workspace::{
     Area, Mount, RealizationObligation, Surface, SurfaceContribution, Workspace,
 };
@@ -108,34 +110,139 @@ fn model_with(manifest_json: &str) -> Model {
     model
 }
 
-fn kinds(model: &Model) -> Vec<(HoleKind, String)> {
-    rtm(model)
+fn kinds(model: &Model) -> Vec<(FindingKind, String)> {
+    validate(model)
         .into_iter()
         .map(|h| (h.kind, h.claim.unwrap_or_default()))
         .collect()
 }
 
 #[test]
-fn an_untagged_claim_is_both_unrealized_and_uncovered() {
-    let holes = kinds(&model_with(""));
-    assert!(holes.contains(&(HoleKind::Unrealized, "alpha#guarded".into())));
-    assert!(holes.contains(&(HoleKind::Uncovered, "alpha#guarded".into())));
+fn every_finding_kind_has_one_category_and_corrective_help() {
+    let expected = [
+        (FindingKind::Unrealized, FindingCategory::Realization),
+        (FindingKind::Uncovered, FindingCategory::Verification),
+        (FindingKind::DanglingTag, FindingCategory::Verification),
+        (
+            FindingKind::DanglingRealization,
+            FindingCategory::Realization,
+        ),
+        (
+            FindingKind::DanglingPlanEntry,
+            FindingCategory::Verification,
+        ),
+        (FindingKind::WrongForm, FindingCategory::Verification),
+        (FindingKind::Unclassified, FindingCategory::Intent),
+        (
+            FindingKind::UnacceptedWeakening,
+            FindingCategory::Verification,
+        ),
+        (FindingKind::DanglingDesignEntry, FindingCategory::Mechanism),
+        (FindingKind::UndeclaredMechanism, FindingCategory::Mechanism),
+        (
+            FindingKind::UnresolvedDesignBinding,
+            FindingCategory::Mechanism,
+        ),
+        (FindingKind::EnforcementMismatch, FindingCategory::Mechanism),
+        (FindingKind::UnbackedProof, FindingCategory::Verification),
+        (FindingKind::ToothlessEvidence, FindingCategory::Judgment),
+        (FindingKind::DishonestTag, FindingCategory::Judgment),
+        (FindingKind::DishonestRealization, FindingCategory::Judgment),
+        (FindingKind::SpecGap, FindingCategory::Judgment),
+        (FindingKind::StaleJudgment, FindingCategory::Judgment),
+        (FindingKind::Unjudged, FindingCategory::Judgment),
+        (FindingKind::InvariantBreach, FindingCategory::Surface),
+        (
+            FindingKind::EnumeratorUnsoundOrUnderived,
+            FindingCategory::Surface,
+        ),
+        (FindingKind::FailedEvidence, FindingCategory::Verification),
+        (FindingKind::ExpiredEvidence, FindingCategory::Verification),
+        (
+            FindingKind::UnresolvedEvidenceBinding,
+            FindingCategory::Verification,
+        ),
+        (
+            FindingKind::UnresolvedDetectorBinding,
+            FindingCategory::Verification,
+        ),
+        (FindingKind::MissingSurface, FindingCategory::Surface),
+        (FindingKind::UnknownSurface, FindingCategory::Surface),
+        (
+            FindingKind::MissingRequiredRealization,
+            FindingCategory::Realization,
+        ),
+        (
+            FindingKind::DanglingRealizationObligation,
+            FindingCategory::Realization,
+        ),
+        (
+            FindingKind::DanglingMechanismImplementation,
+            FindingCategory::Mechanism,
+        ),
+        (
+            FindingKind::DanglingMechanismCover,
+            FindingCategory::Mechanism,
+        ),
+        (
+            FindingKind::DuplicateObservation,
+            FindingCategory::Execution,
+        ),
+        (
+            FindingKind::UnresolvedObservationBinding,
+            FindingCategory::Execution,
+        ),
+    ];
+
+    assert_eq!(FindingKind::ALL.len(), 33);
+    assert_eq!(FindingKind::ALL, expected.map(|(kind, _)| kind));
+    for (kind, category) in expected {
+        assert_eq!(kind.category(), category, "{} category", kind.name());
+        assert!(!kind.help().trim().is_empty(), "{} help", kind.name());
+    }
 }
 
-/// D20: `routine` stops at intent, so neither linkage facet exists to have a hole.
 #[test]
-fn a_routine_claim_has_no_linkage_holes() {
-    let holes = kinds(&model_with(""));
-    assert!(!holes.contains(&(HoleKind::Uncovered, "alpha#decorative".into())));
-    assert!(!holes.contains(&(HoleKind::Unrealized, "alpha#decorative".into())));
+fn kind_counts_are_driven_by_the_exhaustive_registry() {
+    let findings = FindingKind::ALL
+        .iter()
+        .map(|kind| Finding {
+            kind: *kind,
+            severity: Severity::Error,
+            claim: None,
+            criticality: None,
+            path: "model.md".into(),
+            line: 1,
+            detail: "synthetic".into(),
+        })
+        .collect::<Vec<_>>();
+
+    let counts = counts_by_kind(&findings);
+    assert_eq!(counts.len(), FindingKind::ALL.len());
+    assert!(counts.iter().all(|(_, count)| *count == 1));
 }
 
-/// D9.2: severity comes from criticality, not from the check. Routine has no linkage finding to
-/// classify under D20.
+#[test]
+fn an_untagged_claim_is_both_unrealized_and_uncovered() {
+    let findings = kinds(&model_with(""));
+    assert!(findings.contains(&(FindingKind::Unrealized, "alpha#guarded".into())));
+    assert!(findings.contains(&(FindingKind::Uncovered, "alpha#guarded".into())));
+}
+
+/// D20: `routine` stops at intent, so neither linkage facet exists to have a finding.
+#[test]
+fn a_routine_claim_has_no_linkage_findings() {
+    let findings = kinds(&model_with(""));
+    assert!(!findings.contains(&(FindingKind::Uncovered, "alpha#decorative".into())));
+    assert!(!findings.contains(&(FindingKind::Unrealized, "alpha#decorative".into())));
+}
+
+/// D9.2: severity comes from criticality, not from the validation rule. Routine has no linkage
+/// Finding to classify under D20.
 #[test]
 fn severity_follows_criticality() {
-    let holes = rtm(&model_with(""));
-    let critical = holes
+    let findings = validate(&model_with(""));
+    let critical = findings
         .iter()
         .find(|h| h.claim.as_deref() == Some("alpha#guarded"))
         .unwrap();
@@ -143,7 +250,7 @@ fn severity_follows_criticality() {
 }
 
 #[test]
-fn tags_close_holes() {
+fn tags_close_findings() {
     let model = model_with(
         r#"{
           "realizes": [
@@ -156,7 +263,7 @@ fn tags_close_holes() {
           ]
         }"#,
     );
-    assert!(rtm(&model).is_empty(), "{:?}", rtm(&model));
+    assert!(validate(&model).is_empty(), "{:?}", validate(&model));
 }
 
 #[test]
@@ -171,27 +278,27 @@ fn a_tag_naming_no_claim_is_dangling() {
           ]
         }"#,
     );
-    let holes = kinds(&model);
-    assert!(holes.contains(&(HoleKind::DanglingTag, "alpha#ghost".into())));
-    assert!(holes.contains(&(HoleKind::DanglingRealization, "beta#guarded".into())));
+    let findings = kinds(&model);
+    assert!(findings.contains(&(FindingKind::DanglingTag, "alpha#ghost".into())));
+    assert!(findings.contains(&(FindingKind::DanglingRealization, "beta#guarded".into())));
 }
 
-/// D6.2: a requirement without a declared criticality is a hole, and the parse still succeeds.
+/// D6.2: a requirement without a declared criticality is a finding, and the parse still succeeds.
 #[test]
-fn an_unclassified_requirement_is_a_hole() {
+fn an_unclassified_requirement_is_a_finding() {
     let source = SPEC.replace("Criticality: critical\n", "");
     let spec = parse_spec("alpha.md", &source).expect("parses");
     let model = Model {
         specs: vec![spec],
         ..Default::default()
     };
-    let holes = rtm(&model);
-    let hole = holes
+    let findings = validate(&model);
+    let finding = findings
         .iter()
-        .find(|h| h.kind == HoleKind::Unclassified)
+        .find(|h| h.kind == FindingKind::Unclassified)
         .expect("unclassified");
-    assert_eq!(hole.severity, Severity::Error);
-    assert_eq!(hole.claim.as_deref(), Some("alpha#matters"));
+    assert_eq!(finding.severity, Severity::Error);
+    assert_eq!(finding.claim.as_deref(), Some("alpha#matters"));
 }
 
 /// D2.2: the manifest key is the pair, not the alpha's triple. Silently ignoring `req` would leave
@@ -313,7 +420,8 @@ fn unknown_oracle_values_are_rejected() {
     assert!(text.contains("relational"), "{text}");
 }
 
-/// D19 renamed the quantification value `invariant` → `universal` with no alias (D2.3). The retired
+/// D19 renamed the quantification value `invariant` → `universal` with no alias (D2.3). The
+/// retired
 /// word must fail as an unknown value rather than be quietly accepted, because a manifest emitted
 /// by a stale extractor would otherwise report a form the model no longer defines.
 #[test]
@@ -349,27 +457,37 @@ fn selection_matches_id_prefixes() {
 }
 
 #[test]
-fn the_export_carries_claims_tags_and_holes() {
+fn the_export_carries_claims_tags_and_findings() {
     let model = model_with(
         r#"{"covers":[{"spec":"alpha","scenario":"guarded","site":"T.A","file":"t.cs",
             "lang":"csharp","scope":"unit","quantification":"example"}]}"#,
     );
-    let holes = rtm(&model);
-    let text = model.to_json(&holes).to_string_pretty();
+    let findings = validate(&model);
+    let text = model.to_json(&findings).to_string_pretty();
     let round_tripped = json::parse(&text).expect("export is valid json");
 
     assert!(round_tripped.get("specs").is_some());
     assert!(round_tripped.get("covers").is_some());
-    assert!(round_tripped.get("holes").is_some());
+    assert!(round_tripped.get("findings").is_some());
+    assert!(round_tripped.get("holes").is_none());
     assert_eq!(
         round_tripped
-            .get("holes")
+            .get("findings")
             .unwrap()
             .as_array()
             .unwrap()
             .len(),
-        holes.len()
+        findings.len()
     );
+    let first = round_tripped
+        .get("findings")
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .first()
+        .expect("fixture produces a Finding");
+    assert!(first.get("category").is_some());
+    assert!(first.get("help").is_some());
 }
 
 #[test]
@@ -390,10 +508,10 @@ fn a_tagged_site_that_does_not_discharge_breaches() {
             "source":"routes.json","source_fingerprint":"abc","area":"web",
             "address_kind":"route-manifest","address":"beta","mount":"code"}]}"#,
     );
-    let holes = kinds(&model);
+    let findings = kinds(&model);
     assert!(
-        holes.contains(&(HoleKind::InvariantBreach, "beta#confined".into())),
-        "{holes:?}"
+        findings.contains(&(FindingKind::InvariantBreach, "beta#confined".into())),
+        "{findings:?}"
     );
 }
 
@@ -411,18 +529,18 @@ fn an_emitted_member_with_no_tags_at_all_breaches() {
             "source":"routes.json","source_fingerprint":"abc","area":"web",
             "address_kind":"route-manifest","address":"beta","mount":"code"}]}"#,
     );
-    let holes = kinds(&model);
+    let findings = kinds(&model);
     assert!(
-        holes.contains(&(HoleKind::InvariantBreach, "beta#confined".into())),
-        "{holes:?}"
+        findings.contains(&(FindingKind::InvariantBreach, "beta#confined".into())),
+        "{findings:?}"
     );
     assert_eq!(
-        holes
+        findings
             .iter()
-            .filter(|(k, _)| *k == HoleKind::InvariantBreach)
+            .filter(|(k, _)| *k == FindingKind::InvariantBreach)
             .count(),
         1,
-        "the tagged-and-discharged site must not also breach: {holes:?}"
+        "the tagged-and-discharged site must not also breach: {findings:?}"
     );
 }
 
@@ -438,10 +556,12 @@ fn an_emitted_member_discharges_from_anywhere_in_its_file() {
             "source":"routes.json","source_fingerprint":"abc","area":"web",
             "address_kind":"route-manifest","address":"beta","mount":"code"}]}"#,
     );
-    let holes = kinds(&model);
+    let findings = kinds(&model);
     assert!(
-        !holes.iter().any(|(k, _)| *k == HoleKind::InvariantBreach),
-        "discharge in the same file should clear the member: {holes:?}"
+        !findings
+            .iter()
+            .any(|(k, _)| *k == FindingKind::InvariantBreach),
+        "discharge in the same file should clear the member: {findings:?}"
     );
 }
 
@@ -451,24 +571,24 @@ fn a_site_domain_without_a_derived_enumerator_fails_closed() {
         r#"{"realizes":[{"spec":"beta","scenario":"rendered","site":"Page",
             "file":"page.tsx","lang":"typescript"}]}"#,
     );
-    let holes = kinds(&model);
+    let findings = kinds(&model);
     assert!(
-        holes.contains(&(
-            HoleKind::EnumeratorUnsoundOrUnderived,
+        findings.contains(&(
+            FindingKind::EnumeratorUnsoundOrUnderived,
             "beta#confined".into()
         )),
-        "{holes:?}"
+        "{findings:?}"
     );
     assert!(
-        !holes
+        !findings
             .iter()
-            .any(|(kind, _)| *kind == HoleKind::InvariantBreach),
-        "a partial domain must not produce authoritative member findings: {holes:?}"
+            .any(|(kind, _)| *kind == FindingKind::InvariantBreach),
+        "a partial domain must not produce authoritative member findings: {findings:?}"
     );
 }
 
 #[test]
-fn a_site_domain_without_over_is_a_machine_hole() {
+fn a_site_domain_without_over_is_a_machine_finding() {
     let source = CLASS_SPEC.replace("Over: beta\n", "");
     let mut model = class_model(
         r#"{"enumerations":[{"class":"beta","kind":"routes","source":"routes.json",
@@ -477,7 +597,7 @@ fn a_site_domain_without_over_is_a_machine_hole() {
     );
     model.specs = vec![parse_spec("beta.md", &source).expect("missing declaration still parses")];
 
-    assert!(kinds(&model).contains(&(HoleKind::MissingSurface, "beta#confined".into())));
+    assert!(kinds(&model).contains(&(FindingKind::MissingSurface, "beta#confined".into())));
 }
 
 #[test]
@@ -489,7 +609,7 @@ fn a_site_domain_naming_no_declared_surface_fails_closed() {
     );
     model.workspace.surfaces.clear();
 
-    assert!(kinds(&model).contains(&(HoleKind::UnknownSurface, "beta#confined".into())));
+    assert!(kinds(&model).contains(&(FindingKind::UnknownSurface, "beta#confined".into())));
 }
 
 #[test]
@@ -501,7 +621,7 @@ fn every_declared_surface_contribution_requires_its_own_witness() {
     );
 
     assert!(kinds(&model).contains(&(
-        HoleKind::EnumeratorUnsoundOrUnderived,
+        FindingKind::EnumeratorUnsoundOrUnderived,
         "beta#confined".into()
     )));
 }
@@ -538,9 +658,9 @@ fn a_backend_only_realization_does_not_satisfy_a_web_area_obligation() {
         }],
     };
 
-    let missing = rtm(&model)
+    let missing = validate(&model)
         .into_iter()
-        .filter(|hole| hole.kind == HoleKind::MissingRequiredRealization)
+        .filter(|finding| finding.kind == FindingKind::MissingRequiredRealization)
         .collect::<Vec<_>>();
     assert_eq!(missing.len(), 1, "{missing:?}");
     assert!(missing[0].detail.contains("rider-experience"));
@@ -566,14 +686,14 @@ fn a_routine_claim_cannot_gain_an_area_obligation() {
         }],
     };
 
-    let holes = kinds(&model);
-    assert!(holes.contains(&(
-        HoleKind::DanglingRealizationObligation,
+    let findings = kinds(&model);
+    assert!(findings.contains(&(
+        FindingKind::DanglingRealizationObligation,
         "alpha#decorative".into()
     )));
-    assert!(!holes
+    assert!(!findings
         .iter()
-        .any(|(kind, _)| *kind == HoleKind::MissingRequiredRealization));
+        .any(|(kind, _)| *kind == FindingKind::MissingRequiredRealization));
 }
 
 #[test]
@@ -712,7 +832,7 @@ fn challenge_observation_subjects_must_still_resolve() {
     );
 
     assert!(kinds(&model).contains(&(
-        HoleKind::UnresolvedObservationBinding,
+        FindingKind::UnresolvedObservationBinding,
         "alpha#guarded".into()
     )));
 }
@@ -776,7 +896,7 @@ fn duplicate_observation_identity_fails_closed() {
         }"#,
     );
 
-    assert!(kinds(&model).contains(&(HoleKind::DuplicateObservation, String::new())));
+    assert!(kinds(&model).contains(&(FindingKind::DuplicateObservation, String::new())));
 }
 
 #[test]
@@ -814,7 +934,7 @@ fn realization_relation_and_source_changes_expire_a_judgment() {
 }
 
 #[test]
-fn a_dishonest_realization_verdict_is_a_distinct_hole() {
+fn a_dishonest_realization_verdict_is_a_distinct_finding() {
     let mut model = model_with(
         r#"{
           "realizes": [{"spec":"alpha","scenario":"guarded","site":"Production.Guard",
@@ -843,5 +963,5 @@ fn a_dishonest_realization_verdict_is_a_distinct_hole() {
         }],
     });
 
-    assert!(kinds(&model).contains(&(HoleKind::DishonestRealization, "alpha#guarded".into())));
+    assert!(kinds(&model).contains(&(FindingKind::DishonestRealization, "alpha#guarded".into())));
 }

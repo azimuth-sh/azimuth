@@ -534,6 +534,13 @@ second corpus of real repos is available in `~/drim` and is cheap to try.
 
 ## D9 — The CLI is `azimuth`
 
+**Alpha 2 revision, 2026-08-21.** D43 reserves Check for a deliberately enrolled verification
+method. D44 therefore removes the top-level `azimuth check` command and the `rtm` validator id.
+Deterministic model validation is `azimuth validate`; traceability is a derived report. D9.1 now
+applies to enrolled Check identities rather than validator plugins. D9.2 survives for Finding
+severity. D9.3's configurable validator set is superseded; execution selection belongs to the Run
+plan introduced by a dependent change.
+
 **Decision.** Rename `rtm` → `azimuth`. `rtm` survives as the name of one *check*.
 
 **Why it is not cosmetic.** `rtm` names one output as though it were the product. The matrix is
@@ -565,6 +572,11 @@ CLI: adopt exactly one check on day one.
 ---
 
 ## D10 — The derived model is a first-class artifact
+
+**Alpha 2 revision, 2026-08-21.** D44 names structural diagnostics Findings and exports them in a
+`findings` field without a `holes` compatibility field. D43 replaces the two check classes of
+D10.1 with enrolled Checks, Challengers and provider adapter capabilities. The derived model remains
+the only semantic input to validation and reporting.
 
 **Decision.** `azimuth export` emits the resolved model as JSON — requirements with criticality,
 scenarios, realizing sites, tests and forms, evidence items with strength and freshness, design
@@ -2066,6 +2078,76 @@ mirroring every native case, if traceability cannot select relevant Qualificatio
 whole-suite Challenge, if one neutral Run loses provider facts needed for interpretation, if local
 bundles and the optional service cannot share semantics, or if the vocabulary costs more adoption
 effort than the assurance distinctions prevent.
+
+---
+
+## D44 — Validation reports Findings; traceability is a derived report *(2026-08-21)*
+
+**Decision.** `azimuth validate` is the sole top-level deterministic model-validation command. The
+top-level `azimuth check`, positional validator selection and the `rtm` identity are removed rather
+than deprecated or redirected. Nested `azimuth change check` and `azimuth project check` retain
+their bounded lifecycle meanings.
+
+The CLI rejects positional arguments on `validate`, `export` and `judge`. Model, standards,
+workspace, manifest and id-selection options remain explicit. Initialization identifies
+`azimuth validate` as the next deterministic command.
+
+**Findings.** Validation produces Findings rather than holes. One exhaustive `FindingKind::ALL`
+registry drives detailed output, JSON and counts so a new kind cannot disappear from summaries.
+Each Finding includes a stable kind, category, severity, source location, optional Claim and
+criticality, detail and corrective help.
+
+The closed categories are:
+
+- `intent` for incomplete or contradictory Claim declarations;
+- `realization` for production linkage and required-area participation;
+- `verification` for evidence plans, forms, bindings and execution-derived evidence;
+- `mechanism` for design declarations, implementation bindings and enforcement;
+- `judgment` for agent decisions and freshness;
+- `surface` for derived domains and member discharge; and
+- `execution` for imported execution identity and target resolution.
+
+Existing kind ids remain stable while their semantics remain current. Later breaking changes remove
+kinds whose underlying concepts disappear; they do not retain misleading aliases. The complete
+model export contains `findings` and no `holes` field.
+
+**Traceability.** `azimuth report traceability` is a pure, deterministic projection over selected
+current case-level Claims. Its first form records Claim identity, parent requirement, criticality,
+statement and ordered realization source identities. It deliberately omits alpha 1 evidence rather
+than giving it a transitional name. The Evidence Binding change may enrich the report with Check
+relationships after that format exists.
+
+The report creates no authored authority or execution fact. Without `--out` it writes only to
+standard output; with `--out` it writes the identical JSON. Selection uses stable Claim ids rather
+than paths.
+
+**Why.** The current `rtm` function applies every structural rule across intent, realization,
+verification, design, judgment, surfaces, imported executions and federation. Calling that one
+requirements-traceability check hides the actual scope. D43 simultaneously gives Check a more
+important meaning: a method that can execute inside a Run and produce an Observation. Keeping both
+meanings would make public formats and commands ambiguous.
+
+An exhaustive Finding registry also repairs an observed maintenance failure. The implementation
+has 33 current kinds while its summary hard-codes only 27 and current guidance names another count.
+The discrepancy is possible because kind declaration and summary enumeration have separate
+authorities.
+
+**Strongest rejected alternative.** Keep `azimuth check rtm` as a compatibility alias while adding
+`azimuth validate`. This reduces immediate script churn but preserves the exact conceptual
+collision alpha 2 is intended to remove. A custom error may explain that a command is unknown; it
+must not execute or redirect to the new behavior.
+
+**Validation.** CLI tests must cover help, option preservation, all exit classes, removed-command
+rejection, positional rejection and initialization guidance. Type tests must prove all 33 kinds
+have exactly one category and help string and that counts are exhaustive. Report tests must prove
+stable ordering, id selection, identical stdout/file JSON and absence of writes without `--out`.
+Current scripts and active guidance must contain no top-level Check command or active `rtm`
+validator after the atomic cutover.
+
+**What would falsify it.** Revisit the command split if users cannot tell model validation from
+Check execution, if a Finding kind can again escape summaries, if the report requires a second
+authored traceability map, or if the narrow report cannot be enriched with Evidence Bindings
+without breaking its derived identity.
 
 ---
 

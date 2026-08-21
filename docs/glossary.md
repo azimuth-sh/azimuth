@@ -40,7 +40,7 @@ remains independently addressable. Ids are unique per spec, not per requirement,
 or merging a requirement touches no linkage.
 
 **Criticality** — `critical` | `standard` | `routine`. Declared on every requirement; absence is
-a hole, not a default. Determines which artifacts are required at all, not merely how strong the
+a Finding, not a default. Determines which artifacts are required at all, not merely how strong the
 evidence must be (D6.5, D20). Routine stops at intent and owes no linkage; standard and critical
 propagate to code along `realizes` edges. Criticality is never a property of a directory and may
 change through a change without changing claim identity (D21.1).
@@ -50,7 +50,7 @@ change through a change without changing claim identity (D21.1).
 ## Facets
 
 **Facet** — one of the three things that can be said about a claim. Missing facets relative to the
-declared rigor generate the basic completeness holes (D3, D20). Incomplete facets, cross-facet
+declared rigor generate the basic completeness Findings (D3, D20). Incomplete facets, cross-facet
 consistency and enumerator machinery generate further findings; the stronger claim that facet
 presence generates the whole taxonomy has been partially falsified.
 
@@ -103,7 +103,7 @@ still a sample (see **Demonstration**). *(revised — the value was `invariant` 
 renamed it because a Floyd or Meyer invariant is a predicate about the system, and this field is
 about the evidence. `invariant` is now no value of this field at all. The word survives here only
 as the alpha's name for a cross-cutting rule, which in this framework is a claim with a non-default
-domain, and in `invariant-breach`, the hole kind for a member of such a domain that discharges
+domain, and in `invariant-breach`, the Finding kind for a member of such a domain that discharges
 nothing.)*
 
 **Scope** — `unit` | `component` | `e2e`, defined by what must be *real*, not by how much runs
@@ -262,10 +262,11 @@ nothing to be exempted from (D20.1).
 
 ## Findings
 
-**Hole** — a finding. The basic completeness holes are missing-facet combinations relative to
-criticality:
+**Finding** — one deterministic model-validation result with a stable kind, closed category,
+severity, source location, optional Claim and criticality, detail and corrective help. The basic
+completeness Findings are missing-facet combinations relative to criticality:
 
-| Facets present | Hole |
+| Facets present | Finding |
 |---|---|
 | intent, no mechanism | **unrealized** |
 | intent, no evidence | **uncovered** |
@@ -339,8 +340,15 @@ updates none.
 **Finalization** — the derived model fingerprint and validation summary for an accepted, applied
 change. It gates the mechanical archive move and contains no authored risk decision.
 
-**Machine tier** — the deterministic checks. Finds structural holes. Cannot be argued with, and
-cannot establish truth.
+**Validation** — deterministic interpretation of the derived model. `azimuth validate` reports
+Findings without executing enrolled Checks.
+
+**Traceability report** — a pure derived view of selected case-level Claims and their ordered
+realization source identities. `azimuth report traceability` creates no repository authority or
+execution fact.
+
+**Machine tier** — deterministic model validation. Reports structural Findings. Cannot be argued
+with, and cannot establish truth.
 
 **Model package** — the physical directory `azimuth/model/<spec-id>/` anchored by `spec.md`, with
 optional sibling `design.md`, `verification.md` and `judgments.md`. Declared ids remain semantic
@@ -348,8 +356,8 @@ identity; colocation is navigation and creates no assurance relation (D32).
 
 **Agent tier** — the judgment pass: does each realization site establish part of the predicate, is
 the covering evidence toothy, is its declared form honest, and is a required behaviour missing
-from the spec. A judgment never establishes the claim; its negative verdicts create holes and its
-fingerprint expires when a relation or source it examined changes (D18, D28, D30).
+from the spec. A judgment never establishes the claim; its negative verdicts create Findings and
+its fingerprint expires when a relation or source it examined changes (D18, D28, D30).
 
 **Export** — the derived model, serialized. Validators, execution planners, dashboards, PR
 annotations and the agent tier are all consumers of it; nothing re-parses specs.

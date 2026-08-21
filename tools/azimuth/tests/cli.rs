@@ -22,15 +22,119 @@ fn azimuth(arguments: &[&str]) -> Output {
         .unwrap()
 }
 
+fn write_model(root: &std::path::Path, criticality: &str) -> PathBuf {
+    let model = root.join("model");
+    fs::create_dir_all(model.join("sample")).unwrap();
+    fs::write(
+        model.join("sample/spec.md"),
+        format!(
+            "# Spec: sample\n\n\
+             ## Requirement: visible\n\
+             Criticality: {criticality}\n\n\
+             The system SHALL expose its state.\n\n\
+             ### Scenario: state-is-visible\n\
+             WHEN the state is requested\n\
+             THEN the state is exposed\n"
+        ),
+    )
+    .unwrap();
+    fs::write(
+        root.join("workspace.json"),
+        "{\"format\":\"azimuth-workspace\",\"version\":1,\
+         \"areas\":[],\"surfaces\":[],\"realization_obligations\":[]}",
+    )
+    .unwrap();
+    model
+}
+
+#[test]
+fn help_exposes_validation_and_traceability_without_removed_identities() {
+    let output = azimuth(&["--help"]);
+    let stdout = String::from_utf8(output.stdout).unwrap();
+
+    assert!(output.status.success());
+    assert!(stdout.contains("azimuth validate [options]"));
+    assert!(stdout.contains("azimuth report traceability [options]"));
+    assert!(!stdout.contains("azimuth check"));
+    assert!(!stdout.contains("CHECKS"));
+    assert!(!stdout.contains("rtm"));
+}
+
+#[test]
+fn removed_commands_and_positional_validator_ids_fail_closed() {
+    for arguments in [
+        &["check"][..],
+        &["check", "rtm"][..],
+        &["validate", "rtm"][..],
+        &["export", "rtm"][..],
+        &["judge", "rtm"][..],
+    ] {
+        let output = azimuth(arguments);
+        assert_eq!(output.status.code(), Some(2), "{arguments:?}");
+        assert!(output.stdout.is_empty(), "{arguments:?}");
+    }
+}
+
+#[test]
+fn validate_reports_clean_and_finding_exit_classes() {
+    let root = root();
+    let model = write_model(&root, "routine");
+    let clean = azimuth(&["validate", "--model", model.to_str().unwrap()]);
+
+    assert!(clean.status.success());
+    assert!(String::from_utf8(clean.stdout)
+        .unwrap()
+        .contains("no findings"));
+
+    write_model(&root, "standard");
+    let finding = azimuth(&["validate", "--model", model.to_str().unwrap()]);
+    let stdout = String::from_utf8(finding.stdout).unwrap();
+    assert_eq!(finding.status.code(), Some(1));
+    assert!(stdout.contains("realization unrealized"), "{stdout}");
+    assert!(stdout.contains("help:"), "{stdout}");
+
+    fs::write(model.join("sample/spec.md"), "not a spec").unwrap();
+    let invalid = azimuth(&["validate", "--model", model.to_str().unwrap()]);
+    assert_eq!(invalid.status.code(), Some(2));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn traceability_report_writes_only_when_out_is_supplied() {
+    let root = root();
+    let model = write_model(&root, "routine");
+    let stdout_report = azimuth(&["report", "traceability", "--model", model.to_str().unwrap()]);
+    assert!(stdout_report.status.success());
+    assert!(!stdout_report.stdout.is_empty());
+    let expected = String::from_utf8(stdout_report.stdout).unwrap();
+    assert!(expected.contains("\"id\": \"sample#state-is-visible\""));
+
+    let destination = root.join("traceability.json");
+    let file_report = azimuth(&[
+        "report",
+        "traceability",
+        "--model",
+        model.to_str().unwrap(),
+        "--out",
+        destination.to_str().unwrap(),
+    ]);
+    assert!(file_report.status.success());
+    assert!(file_report.stdout.is_empty());
+    assert_eq!(fs::read_to_string(destination).unwrap(), expected);
+    fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn init_create_list_and_show_form_one_discoverable_path() {
     let root = root();
     let azimuth_root = root.join("azimuth");
     let changes = azimuth_root.join("changes");
 
-    assert!(azimuth(&["init", "--root", azimuth_root.to_str().unwrap()])
-        .status
-        .success());
+    let initialized = azimuth(&["init", "--root", azimuth_root.to_str().unwrap()]);
+    assert!(initialized.status.success());
+    assert!(String::from_utf8(initialized.stdout)
+        .unwrap()
+        .contains("next: azimuth validate"));
     assert!(azimuth(&[
         "change",
         "create",

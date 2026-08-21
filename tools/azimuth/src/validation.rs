@@ -1,9 +1,8 @@
-//! Checks over the model.
+//! Deterministic validation over the derived model.
 //!
-//! `rtm` is one check among several, not the product (D9). Every hole kind it reports is a
-//! missing-facet combination (D3) — intent without mechanism, intent without evidence, evidence
-//! without intent, mechanism without intent. A hole kind that is *not* one of those would imply a
-//! fourth facet, and is the recorded falsifier for D3.
+//! Validation reports structural Findings across every model facet (D44). Findings are distinct
+//! from enrolled Checks: validation interprets the derived model and never executes a verification
+//! method.
 
 use crate::design::Target;
 use crate::json::Json;
@@ -31,7 +30,48 @@ impl Severity {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HoleKind {
+pub enum FindingCategory {
+    Intent,
+    Realization,
+    Verification,
+    Mechanism,
+    Judgment,
+    Surface,
+    Execution,
+}
+
+impl FindingCategory {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Intent => "intent",
+            Self::Realization => "realization",
+            Self::Verification => "verification",
+            Self::Mechanism => "mechanism",
+            Self::Judgment => "judgment",
+            Self::Surface => "surface",
+            Self::Execution => "execution",
+        }
+    }
+}
+
+macro_rules! define_finding_kinds {
+    ($( $(#[$meta:meta])* $variant:ident),+ $(,)?) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum FindingKind {
+            $(
+                $(#[$meta])*
+                $variant,
+            )+
+        }
+
+        impl FindingKind {
+            /// The single exhaustive registry for validation output and summaries.
+            pub const ALL: &'static [Self] = &[$(Self::$variant),+];
+        }
+    };
+}
+
+define_finding_kinds! {
     /// intent present, mechanism absent
     Unrealized,
     /// intent present, evidence absent
@@ -47,7 +87,7 @@ pub enum HoleKind {
     /// D6.2: a requirement without a declared criticality.
     ///
     /// Not a missing-facet combination: the intent facet is *present but incomplete*. See
-    /// `UnacceptedWeakening` and the note on `rtm`.
+    /// `UnacceptedWeakening` and the note on `validate`.
     Unclassified,
     /// A plan requires less than the standard without recording and accepting the residual.
     /// Incomplete-facet, like `Unclassified`.
@@ -78,8 +118,8 @@ pub enum HoleKind {
     Unjudged,
     /// A site that joined a claim's class and discharges nothing.
     ///
-    /// The one hole kind the per-scenario matrix structurally cannot find: a claim quantified over
-    /// a *set of sites* is not established by evidence about one site, however good.
+    /// The one finding kind the per-scenario matrix structurally cannot find: a claim quantified
+    /// over a *set of sites* is not established by evidence about one site, however good.
     InvariantBreach,
     /// A site-domain claim has no successful derivation witness for the class it ranges over.
     EnumeratorUnsoundOrUnderived,
@@ -109,49 +149,169 @@ pub enum HoleKind {
     UnresolvedObservationBinding,
 }
 
-impl HoleKind {
+impl FindingKind {
     pub fn name(self) -> &'static str {
         match self {
-            HoleKind::Unrealized => "unrealized",
-            HoleKind::Uncovered => "uncovered",
-            HoleKind::DanglingTag => "dangling-tag",
-            HoleKind::DanglingRealization => "dangling-realization",
-            HoleKind::DanglingPlanEntry => "dangling-plan-entry",
-            HoleKind::WrongForm => "wrong-form",
-            HoleKind::Unclassified => "unclassified",
-            HoleKind::UnacceptedWeakening => "unaccepted-weakening",
-            HoleKind::DanglingDesignEntry => "dangling-design-entry",
-            HoleKind::UndeclaredMechanism => "undeclared-mechanism",
-            HoleKind::UnresolvedDesignBinding => "unresolved-design-binding",
-            HoleKind::EnforcementMismatch => "enforcement-mismatch",
-            HoleKind::UnbackedProof => "unbacked-proof",
-            HoleKind::ToothlessEvidence => "toothless-evidence",
-            HoleKind::DishonestTag => "dishonest-tag-judged",
-            HoleKind::DishonestRealization => "dishonest-realization",
-            HoleKind::SpecGap => "spec-gap",
-            HoleKind::StaleJudgment => "stale-judgment",
-            HoleKind::Unjudged => "unjudged",
-            HoleKind::InvariantBreach => "invariant-breach",
-            HoleKind::EnumeratorUnsoundOrUnderived => "enumerator-unsound-or-underived",
-            HoleKind::FailedEvidence => "failed-evidence",
-            HoleKind::ExpiredEvidence => "expired-evidence",
-            HoleKind::UnresolvedEvidenceBinding => "unresolved-evidence-binding",
-            HoleKind::UnresolvedDetectorBinding => "unresolved-detector-binding",
-            HoleKind::MissingSurface => "missing-surface",
-            HoleKind::UnknownSurface => "unknown-surface",
-            HoleKind::MissingRequiredRealization => "missing-required-realization",
-            HoleKind::DanglingRealizationObligation => "dangling-realization-obligation",
-            HoleKind::DanglingMechanismImplementation => "dangling-mechanism-implementation",
-            HoleKind::DanglingMechanismCover => "dangling-mechanism-cover",
-            HoleKind::DuplicateObservation => "duplicate-observation",
-            HoleKind::UnresolvedObservationBinding => "unresolved-observation-binding",
+            FindingKind::Unrealized => "unrealized",
+            FindingKind::Uncovered => "uncovered",
+            FindingKind::DanglingTag => "dangling-tag",
+            FindingKind::DanglingRealization => "dangling-realization",
+            FindingKind::DanglingPlanEntry => "dangling-plan-entry",
+            FindingKind::WrongForm => "wrong-form",
+            FindingKind::Unclassified => "unclassified",
+            FindingKind::UnacceptedWeakening => "unaccepted-weakening",
+            FindingKind::DanglingDesignEntry => "dangling-design-entry",
+            FindingKind::UndeclaredMechanism => "undeclared-mechanism",
+            FindingKind::UnresolvedDesignBinding => "unresolved-design-binding",
+            FindingKind::EnforcementMismatch => "enforcement-mismatch",
+            FindingKind::UnbackedProof => "unbacked-proof",
+            FindingKind::ToothlessEvidence => "toothless-evidence",
+            FindingKind::DishonestTag => "dishonest-tag-judged",
+            FindingKind::DishonestRealization => "dishonest-realization",
+            FindingKind::SpecGap => "spec-gap",
+            FindingKind::StaleJudgment => "stale-judgment",
+            FindingKind::Unjudged => "unjudged",
+            FindingKind::InvariantBreach => "invariant-breach",
+            FindingKind::EnumeratorUnsoundOrUnderived => "enumerator-unsound-or-underived",
+            FindingKind::FailedEvidence => "failed-evidence",
+            FindingKind::ExpiredEvidence => "expired-evidence",
+            FindingKind::UnresolvedEvidenceBinding => "unresolved-evidence-binding",
+            FindingKind::UnresolvedDetectorBinding => "unresolved-detector-binding",
+            FindingKind::MissingSurface => "missing-surface",
+            FindingKind::UnknownSurface => "unknown-surface",
+            FindingKind::MissingRequiredRealization => "missing-required-realization",
+            FindingKind::DanglingRealizationObligation => "dangling-realization-obligation",
+            FindingKind::DanglingMechanismImplementation => "dangling-mechanism-implementation",
+            FindingKind::DanglingMechanismCover => "dangling-mechanism-cover",
+            FindingKind::DuplicateObservation => "duplicate-observation",
+            FindingKind::UnresolvedObservationBinding => "unresolved-observation-binding",
+        }
+    }
+
+    pub fn category(self) -> FindingCategory {
+        match self {
+            Self::Unclassified => FindingCategory::Intent,
+            Self::Unrealized
+            | Self::DanglingRealization
+            | Self::MissingRequiredRealization
+            | Self::DanglingRealizationObligation => FindingCategory::Realization,
+            Self::Uncovered
+            | Self::DanglingTag
+            | Self::DanglingPlanEntry
+            | Self::WrongForm
+            | Self::UnacceptedWeakening
+            | Self::UnbackedProof
+            | Self::FailedEvidence
+            | Self::ExpiredEvidence
+            | Self::UnresolvedEvidenceBinding
+            | Self::UnresolvedDetectorBinding => FindingCategory::Verification,
+            Self::DanglingDesignEntry
+            | Self::UndeclaredMechanism
+            | Self::UnresolvedDesignBinding
+            | Self::EnforcementMismatch
+            | Self::DanglingMechanismImplementation
+            | Self::DanglingMechanismCover => FindingCategory::Mechanism,
+            Self::ToothlessEvidence
+            | Self::DishonestTag
+            | Self::DishonestRealization
+            | Self::SpecGap
+            | Self::StaleJudgment
+            | Self::Unjudged => FindingCategory::Judgment,
+            Self::InvariantBreach
+            | Self::EnumeratorUnsoundOrUnderived
+            | Self::MissingSurface
+            | Self::UnknownSurface => FindingCategory::Surface,
+            Self::DuplicateObservation | Self::UnresolvedObservationBinding => {
+                FindingCategory::Execution
+            }
+        }
+    }
+
+    pub fn help(self) -> &'static str {
+        match self {
+            Self::Unrealized => "Link production code that establishes the Claim predicate.",
+            Self::Uncovered => "Provide evidence that meets the Claim's verification standard.",
+            Self::DanglingTag => "Retarget or remove the evidence link to the unknown Claim.",
+            Self::DanglingRealization => {
+                "Retarget or remove the production link to the unknown Claim."
+            }
+            Self::DanglingPlanEntry => {
+                "Retarget or remove the verification plan entry for the unknown Claim."
+            }
+            Self::WrongForm => "Provide evidence with the required strength, scope, and form.",
+            Self::Unclassified => "Declare the requirement's criticality explicitly.",
+            Self::UnacceptedWeakening => {
+                "Meet the project standard or record and accept the residual explicitly."
+            }
+            Self::DanglingDesignEntry => {
+                "Retarget or remove the design entry for the unknown requirement."
+            }
+            Self::UndeclaredMechanism => {
+                "Declare how the critical requirement is enforced in the current design."
+            }
+            Self::UnresolvedDesignBinding => {
+                "Correct the design binding so an extractor resolves its artifact."
+            }
+            Self::EnforcementMismatch => {
+                "Align the declared enforcement with the artifact's derived properties."
+            }
+            Self::UnbackedProof => {
+                "Bind proof-strength evidence to a mechanism that makes violation unrepresentable."
+            }
+            Self::ToothlessEvidence => {
+                "Strengthen or replace evidence so it discriminates an incorrect implementation."
+            }
+            Self::DishonestTag => {
+                "Correct the evidence form declaration to match what the evidence establishes."
+            }
+            Self::DishonestRealization => {
+                "Move, narrow, or remove the realization link so it establishes the Claim."
+            }
+            Self::SpecGap => "Add the missing behavior to the authoritative specification.",
+            Self::StaleJudgment => "Re-evaluate the Claim against its current fingerprint.",
+            Self::Unjudged => "Record an agent judgment for the critical Claim.",
+            Self::InvariantBreach => "Discharge the invariant for the reported surface member.",
+            Self::EnumeratorUnsoundOrUnderived => {
+                "Run or repair the declared enumerator before evaluating surface members."
+            }
+            Self::FailedEvidence => "Refresh the evidence with a successful execution result.",
+            Self::ExpiredEvidence => "Refresh the evidence within its declared validity window.",
+            Self::UnresolvedEvidenceBinding => {
+                "Correct the evidence binding so an extractor resolves its detector artifact."
+            }
+            Self::UnresolvedDetectorBinding => {
+                "Correct the detector-test binding so an extractor resolves its artifact."
+            }
+            Self::MissingSurface => {
+                "Declare which independently derived surface the Claim ranges over."
+            }
+            Self::UnknownSurface => "Declare the referenced surface in the workspace model.",
+            Self::MissingRequiredRealization => {
+                "Add a realization for the required participating area."
+            }
+            Self::DanglingRealizationObligation => {
+                "Retarget or remove the realization obligation that resolves to no applicable \
+                 Claim."
+            }
+            Self::DanglingMechanismImplementation => {
+                "Retarget or remove the implementation link to the unknown mechanism."
+            }
+            Self::DanglingMechanismCover => {
+                "Retarget or remove the evidence link to the unknown mechanism."
+            }
+            Self::DuplicateObservation => {
+                "Assign every imported execution observation a unique immutable identity."
+            }
+            Self::UnresolvedObservationBinding => {
+                "Retarget the imported challenge to current realization or mechanism subjects."
+            }
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Hole {
-    pub kind: HoleKind,
+pub struct Finding {
+    pub kind: FindingKind,
     pub severity: Severity,
     pub claim: Option<String>,
     pub criticality: Option<Criticality>,
@@ -160,10 +320,11 @@ pub struct Hole {
     pub detail: String,
 }
 
-impl Hole {
+impl Finding {
     pub fn to_json(&self) -> Json {
         Json::obj(vec![
             ("kind", Json::str(self.kind.name())),
+            ("category", Json::str(self.kind.category().name())),
             ("severity", Json::str(self.severity.name())),
             (
                 "claim",
@@ -182,16 +343,17 @@ impl Hole {
             ("file", Json::str(&self.path)),
             ("line", Json::Num(self.line as f64)),
             ("detail", Json::str(&self.detail)),
+            ("help", Json::str(self.kind.help())),
         ])
     }
 }
 
-/// D9.2: severity comes from criticality, not from the check. One non-zero exit for "something
-/// failed" stops being useful at ten checks.
+/// D9.2: severity comes from criticality, not from the validation rule. One non-zero exit for
+/// "something failed" stops being useful when validation has many rules.
 ///
 /// `routine` warns rather than fails, because D6.5 gives it a spec entry and nothing else — it is
 /// the tier D9.2 means by low-criticality. `standard` fails: it requires a verification plan, so
-/// its holes are real.
+/// its findings are real.
 fn severity_for(criticality: Option<Criticality>) -> Severity {
     match criticality {
         Some(Criticality::Routine) => Severity::Warning,
@@ -199,14 +361,14 @@ fn severity_for(criticality: Option<Criticality>) -> Severity {
     }
 }
 
-pub fn rtm(model: &Model) -> Vec<Hole> {
-    let mut holes = Vec::new();
+pub fn validate(model: &Model) -> Vec<Finding> {
+    let mut findings = Vec::new();
 
     for spec in &model.specs {
         for requirement in &spec.requirements {
             if requirement.criticality.is_none() {
-                holes.push(Hole {
-                    kind: HoleKind::Unclassified,
+                findings.push(Finding {
+                    kind: FindingKind::Unclassified,
                     severity: Severity::Error,
                     claim: Some(format!("{}#{}", spec.id, requirement.id)),
                     criticality: None,
@@ -223,7 +385,7 @@ pub fn rtm(model: &Model) -> Vec<Hole> {
         let criticality = claim.requirement.criticality;
 
         // D20: a routine claim stops at intent. It makes no assertion about where production code
-        // realizes it or which tests cover it, so neither linkage facet can have a hole.
+        // realizes it or which tests cover it, so neither linkage facet can have a finding.
         if criticality == Some(Criticality::Routine) {
             continue;
         }
@@ -235,8 +397,8 @@ pub fn rtm(model: &Model) -> Vec<Hole> {
             .iter()
             .any(|s| s.spec == claim.spec.id && s.scenario == claim.scenario.id);
         if !realized {
-            holes.push(Hole {
-                kind: HoleKind::Unrealized,
+            findings.push(Finding {
+                kind: FindingKind::Unrealized,
                 severity,
                 claim: Some(id.clone()),
                 criticality,
@@ -271,8 +433,8 @@ pub fn rtm(model: &Model) -> Vec<Hole> {
             .and_then(|e| e.evidence.as_ref());
 
         if tags.is_empty() && declared.is_none() {
-            holes.push(Hole {
-                kind: HoleKind::Uncovered,
+            findings.push(Finding {
+                kind: FindingKind::Uncovered,
                 severity,
                 claim: Some(id),
                 criticality,
@@ -295,8 +457,8 @@ pub fn rtm(model: &Model) -> Vec<Hole> {
         let satisfied_by_test = tags.iter().any(|t| satisfies(t, &required));
 
         if !satisfied_by_declaration && !satisfied_by_test {
-            holes.push(Hole {
-                kind: HoleKind::WrongForm,
+            findings.push(Finding {
+                kind: FindingKind::WrongForm,
                 severity,
                 claim: Some(id),
                 criticality,
@@ -313,20 +475,20 @@ pub fn rtm(model: &Model) -> Vec<Hole> {
         }
     }
 
-    holes.extend(plan_holes(model));
-    holes.extend(design_holes(model));
-    holes.extend(judgment_holes(model));
-    holes.extend(realization_obligation_holes(model));
-    holes.extend(surface_holes(model));
-    holes.extend(receipt_holes_at(model, current_unix_seconds()));
+    findings.extend(plan_findings(model));
+    findings.extend(design_findings(model));
+    findings.extend(judgment_findings(model));
+    findings.extend(realization_obligation_findings(model));
+    findings.extend(surface_findings(model));
+    findings.extend(receipt_findings_at(model, current_unix_seconds()));
 
     for (sites, kind) in [
-        (&model.covers, HoleKind::DanglingTag),
-        (&model.realizes, HoleKind::DanglingRealization),
+        (&model.covers, FindingKind::DanglingTag),
+        (&model.realizes, FindingKind::DanglingRealization),
     ] {
         for site in sites {
             if !model.has_claim(&site.spec, &site.scenario) {
-                holes.push(Hole {
+                findings.push(Finding {
                     kind,
                     severity: Severity::Error,
                     claim: Some(format!("{}#{}", site.spec, site.scenario)),
@@ -341,8 +503,8 @@ pub fn rtm(model: &Model) -> Vec<Hole> {
 
     for implementation in &model.mechanism_implementations {
         if !has_mechanism(model, &implementation.spec, &implementation.mechanism) {
-            holes.push(Hole {
-                kind: HoleKind::DanglingMechanismImplementation,
+            findings.push(Finding {
+                kind: FindingKind::DanglingMechanismImplementation,
                 severity: Severity::Error,
                 claim: Some(format!(
                     "{}#{}",
@@ -360,8 +522,8 @@ pub fn rtm(model: &Model) -> Vec<Hole> {
     }
     for cover in &model.mechanism_covers {
         if !has_mechanism(model, &cover.spec, &cover.mechanism) {
-            holes.push(Hole {
-                kind: HoleKind::DanglingMechanismCover,
+            findings.push(Finding {
+                kind: FindingKind::DanglingMechanismCover,
                 severity: Severity::Error,
                 claim: Some(format!("{}#{}", cover.spec, cover.mechanism)),
                 criticality: None,
@@ -378,8 +540,8 @@ pub fn rtm(model: &Model) -> Vec<Hole> {
     let mut observation_ids = BTreeSet::new();
     for observation in &model.observations {
         if !observation_ids.insert(&observation.id) {
-            holes.push(Hole {
-                kind: HoleKind::DuplicateObservation,
+            findings.push(Finding {
+                kind: FindingKind::DuplicateObservation,
                 severity: Severity::Error,
                 claim: None,
                 criticality: None,
@@ -400,8 +562,8 @@ pub fn rtm(model: &Model) -> Vec<Hole> {
                 .map(|subject| format!("{}:{}", subject.relation.name(), subject.identity))
                 .collect::<Vec<_>>();
             if !model.has_claim(&binding.spec, &binding.scenario) || !unresolved.is_empty() {
-                holes.push(Hole {
-                    kind: HoleKind::UnresolvedObservationBinding,
+                findings.push(Finding {
+                    kind: FindingKind::UnresolvedObservationBinding,
                     severity: Severity::Error,
                     claim: Some(format!("{}#{}", binding.spec, binding.scenario)),
                     criticality: None,
@@ -417,10 +579,10 @@ pub fn rtm(model: &Model) -> Vec<Hole> {
         }
     }
 
-    holes.sort_by(|a, b| {
+    findings.sort_by(|a, b| {
         (a.path.clone(), a.line, a.kind.name()).cmp(&(b.path.clone(), b.line, b.kind.name()))
     });
-    holes
+    findings
 }
 
 fn observation_subject_resolves(
@@ -491,7 +653,7 @@ fn receipt_is_usable(site: &Site, now: u64) -> bool {
             && site.expires_at.is_some_and(|expiry| expiry > now))
 }
 
-pub fn receipt_holes_at(model: &Model, now: u64) -> Vec<Hole> {
+pub fn receipt_findings_at(model: &Model, now: u64) -> Vec<Finding> {
     model
         .covers
         .iter()
@@ -499,8 +661,8 @@ pub fn receipt_holes_at(model: &Model, now: u64) -> Vec<Hole> {
         .filter_map(|site| {
             let claim = model.find_claim(&site.spec, &site.scenario);
             let criticality = claim.and_then(|claim| claim.requirement.criticality);
-            let base = || Hole {
-                kind: HoleKind::FailedEvidence,
+            let base = || Finding {
+                kind: FindingKind::FailedEvidence,
                 severity: severity_for(criticality),
                 claim: Some(format!("{}#{}", site.spec, site.scenario)),
                 criticality,
@@ -509,22 +671,22 @@ pub fn receipt_holes_at(model: &Model, now: u64) -> Vec<Hole> {
                 detail: String::new(),
             };
             if site.evidence_outcome.as_deref() == Some("failed") {
-                let mut hole = base();
-                hole.detail = format!(
+                let mut finding = base();
+                finding.detail = format!(
                     "external manual result `{}` failed at {}",
                     site.site,
                     site.observed_at.as_deref().unwrap_or("an unknown instant")
                 );
-                Some(hole)
+                Some(finding)
             } else if site.expires_at.is_some_and(|expiry| expiry <= now) {
-                let mut hole = base();
-                hole.kind = HoleKind::ExpiredEvidence;
-                hole.detail = format!(
+                let mut finding = base();
+                finding.kind = FindingKind::ExpiredEvidence;
+                finding.detail = format!(
                     "external manual result `{}` expired at Unix second {}",
                     site.site,
                     site.expires_at.unwrap_or_default()
                 );
-                Some(hole)
+                Some(finding)
             } else {
                 None
             }
@@ -566,14 +728,14 @@ fn describe_evidence(tags: &[&Site], declared: Option<&EvidenceItem>) -> String 
     }
 }
 
-/// Holes about the plan itself rather than about a claim's facets.
-fn plan_holes(model: &Model) -> Vec<Hole> {
-    let mut holes = Vec::new();
+/// Findings about the plan itself rather than about a claim's facets.
+fn plan_findings(model: &Model) -> Vec<Finding> {
+    let mut findings = Vec::new();
     for plan in &model.plans {
         let spec_exists = model.specs.iter().any(|s| s.id == plan.spec);
         if !spec_exists {
-            holes.push(Hole {
-                kind: HoleKind::DanglingPlanEntry,
+            findings.push(Finding {
+                kind: FindingKind::DanglingPlanEntry,
                 severity: Severity::Error,
                 claim: Some(plan.spec.clone()),
                 criticality: None,
@@ -586,8 +748,8 @@ fn plan_holes(model: &Model) -> Vec<Hole> {
 
         for entry in &plan.entries {
             let Some(claim) = model.find_claim(&plan.spec, &entry.scenario) else {
-                holes.push(Hole {
-                    kind: HoleKind::DanglingPlanEntry,
+                findings.push(Finding {
+                    kind: FindingKind::DanglingPlanEntry,
                     severity: Severity::Error,
                     claim: Some(format!("{}#{}", plan.spec, entry.scenario)),
                     criticality: None,
@@ -602,12 +764,12 @@ fn plan_holes(model: &Model) -> Vec<Hole> {
                 for (bindings, kind, role) in [
                     (
                         &evidence.bindings,
-                        HoleKind::UnresolvedEvidenceBinding,
+                        FindingKind::UnresolvedEvidenceBinding,
                         "evidence",
                     ),
                     (
                         &evidence.detector_bindings,
-                        HoleKind::UnresolvedDetectorBinding,
+                        FindingKind::UnresolvedDetectorBinding,
                         "detector test",
                     ),
                 ] {
@@ -617,7 +779,7 @@ fn plan_holes(model: &Model) -> Vec<Hole> {
                             .iter()
                             .any(|artifact| artifact.id == *binding)
                         {
-                            holes.push(Hole {
+                            findings.push(Finding {
                                 kind,
                                 severity: severity_for(claim.requirement.criticality),
                                 claim: Some(format!("{}#{}", plan.spec, entry.scenario)),
@@ -648,8 +810,8 @@ fn plan_holes(model: &Model) -> Vec<Hole> {
                 _ => false,
             };
             if weakened && (entry.residual.is_none() || entry.accepted.is_none()) {
-                holes.push(Hole {
-                    kind: HoleKind::UnacceptedWeakening,
+                findings.push(Finding {
+                    kind: FindingKind::UnacceptedWeakening,
                     severity: Severity::Error,
                     claim: Some(format!("{}#{}", plan.spec, entry.scenario)),
                     criticality: Some(criticality),
@@ -665,17 +827,17 @@ fn plan_holes(model: &Model) -> Vec<Hole> {
             }
         }
     }
-    holes
+    findings
 }
 
-/// Holes about the mechanism facet, and the first check that needs all three artifacts.
-fn design_holes(model: &Model) -> Vec<Hole> {
-    let mut holes = Vec::new();
+/// Findings about the mechanism facet, including the rules that need all three artifacts.
+fn design_findings(model: &Model) -> Vec<Finding> {
+    let mut findings = Vec::new();
 
     for design in &model.designs {
         let Some(spec) = model.specs.iter().find(|s| s.id == design.spec) else {
-            holes.push(Hole {
-                kind: HoleKind::DanglingDesignEntry,
+            findings.push(Finding {
+                kind: FindingKind::DanglingDesignEntry,
                 severity: Severity::Error,
                 claim: Some(design.spec.clone()),
                 criticality: None,
@@ -695,8 +857,8 @@ fn design_holes(model: &Model) -> Vec<Hole> {
                     .any(|r| r.scenarios.iter().any(|s| s.id == id)),
             };
             if !exists {
-                holes.push(Hole {
-                    kind: HoleKind::DanglingDesignEntry,
+                findings.push(Finding {
+                    kind: FindingKind::DanglingDesignEntry,
                     severity: Severity::Error,
                     claim: Some(format!("{}#{}", design.spec, id)),
                     criticality: None,
@@ -709,8 +871,8 @@ fn design_holes(model: &Model) -> Vec<Hole> {
             for mechanism in &entry.mechanisms {
                 let bindings = model.mechanism_bindings(&design.spec, mechanism);
                 if bindings.len() != 1 {
-                    holes.push(Hole {
-                        kind: HoleKind::UnresolvedDesignBinding,
+                    findings.push(Finding {
+                        kind: FindingKind::UnresolvedDesignBinding,
                         severity: Severity::Error,
                         claim: Some(format!("{}#{}", design.spec, id)),
                         criticality: None,
@@ -733,8 +895,8 @@ fn design_holes(model: &Model) -> Vec<Hole> {
                 }
                 let binding = bindings[0];
                 let Some(artifact) = model.artifacts.iter().find(|a| a.id == binding) else {
-                    holes.push(Hole {
-                        kind: HoleKind::UnresolvedDesignBinding,
+                    findings.push(Finding {
+                        kind: FindingKind::UnresolvedDesignBinding,
                         severity: Severity::Error,
                         claim: Some(format!("{}#{}", design.spec, id)),
                         criticality: None,
@@ -797,8 +959,8 @@ fn design_holes(model: &Model) -> Vec<Hole> {
                     mismatches.push(detail);
                 }
                 if !mismatches.is_empty() {
-                    holes.push(Hole {
-                        kind: HoleKind::EnforcementMismatch,
+                    findings.push(Finding {
+                        kind: FindingKind::EnforcementMismatch,
                         severity: Severity::Error,
                         claim: Some(format!("{}#{}", design.spec, id)),
                         criticality: None,
@@ -812,13 +974,14 @@ fn design_holes(model: &Model) -> Vec<Hole> {
     }
 
     // D6.5: a design entry is required for `critical`, optional for `standard`, absent for
-    // `routine`. Nothing here says the mechanism is missing from the code — only that its strategy
-    // is undeclared, and therefore that no check can ever compare claim against reality.
+    // `routine`. Nothing here says the mechanism is missing from the code — only that its
+    // strategy
+    // is undeclared, and therefore that validation cannot compare the claim against reality.
     //
-    // Gated on the artifact being in use at all. D8.1 requires each mechanism to be usable alone —
-    // `rtm` without the design artifact — and a project that has not adopted it must not be told
-    // that every critical requirement is a hole. Partial adoption still reports: one design file
-    // means the artifact is in use, and the specs it omits are visible.
+    // Gated on the artifact being in use at all. D8.1 requires each mechanism to be usable alone
+    // — `validate` without the design artifact — and a project that has not adopted it must not
+    // be told that every critical requirement is a finding. Partial adoption still reports: one
+    // design file means the artifact is in use, and the specs it omits are visible.
     for spec in &model.specs {
         if model.designs.is_empty() {
             break;
@@ -836,8 +999,8 @@ fn design_holes(model: &Model) -> Vec<Hole> {
                         .any(|s| d.for_scenario(&s.id).is_some())
             });
             if !declared {
-                holes.push(Hole {
-                    kind: HoleKind::UndeclaredMechanism,
+                findings.push(Finding {
+                    kind: FindingKind::UndeclaredMechanism,
                     severity: Severity::Error,
                     claim: Some(format!("{}#{}", spec.id, requirement.id)),
                     criticality: requirement.criticality,
@@ -849,8 +1012,9 @@ fn design_holes(model: &Model) -> Vec<Hole> {
         }
     }
 
-    // The three-artifact check. A plan may cite proof-strength evidence, but proof comes from a
-    // mechanism at the top of the enforcement ladder (D7) — and the developer owns which mechanism
+    // The three-artifact rule. A plan may cite proof-strength evidence, but proof comes from a
+    // mechanism at the top of the enforcement ladder (D7) — and the developer owns which
+    // mechanism
     // that is. A plan claiming proof with no proof-capable mechanism behind it is asserting the
     // strongest available result out of thin air.
     for plan in &model.plans {
@@ -873,8 +1037,8 @@ fn design_holes(model: &Model) -> Vec<Hole> {
                     .any(|e| e.mechanisms.iter().any(|m| m.kind.is_proof_capable()))
             });
             if !backed {
-                holes.push(Hole {
-                    kind: HoleKind::UnbackedProof,
+                findings.push(Finding {
+                    kind: FindingKind::UnbackedProof,
                     severity: Severity::Error,
                     claim: Some(format!("{}#{}", plan.spec, entry.scenario)),
                     criticality: claim.requirement.criticality,
@@ -890,7 +1054,7 @@ fn design_holes(model: &Model) -> Vec<Hole> {
         }
     }
 
-    holes
+    findings
 }
 
 /// Claims whose domain is a set of sites (D13).
@@ -901,7 +1065,8 @@ fn design_holes(model: &Model) -> Vec<Hole> {
 /// already tagged, so a file carrying no tags at all can never be a member. That is the failure
 /// D13.1 names: an enumerator drawn from annotations reproduces the very bug the rule prevents and
 /// reports green. A project's extractor may therefore emit `class_members` derived from what the
-/// build produced — a route table, a container, a migration set — and those join too, whether or
+/// build produced — a route table, a container, a migration set — and those join too, whether
+/// or
 /// not anyone annotated them.
 ///
 /// Identity differs between the two, which is deliberate. A tag-derived member is a named site in a
@@ -912,11 +1077,12 @@ fn design_holes(model: &Model) -> Vec<Hole> {
 /// domain means one of everything downstream.
 ///
 /// **Limitation, stated rather than hidden.** This verifies the weakest rung of the enforcement
-/// ladder — a guard at every site. A choke point that every member routes through would show as N−1
+/// ladder — a guard at every site. A choke point that every member routes through would show as
+/// N−1
 /// breaches, which is exactly the defect D7 names in the alpha. Crediting a choke point needs
-/// call-graph analysis, which belongs to the extractor and D10.1's code-consuming check class.
-fn surface_holes(model: &Model) -> Vec<Hole> {
-    let mut holes = Vec::new();
+/// call-graph analysis, which belongs to the extractor rather than derived-model validation.
+fn surface_findings(model: &Model) -> Vec<Finding> {
+    let mut findings = Vec::new();
 
     for spec in &model.specs {
         for requirement in &spec.requirements {
@@ -925,8 +1091,8 @@ fn surface_holes(model: &Model) -> Vec<Hole> {
             }
             let claim_id = format!("{}#{}", spec.id, requirement.id);
             let Some(over) = &requirement.over else {
-                holes.push(Hole {
-                    kind: HoleKind::MissingSurface,
+                findings.push(Finding {
+                    kind: FindingKind::MissingSurface,
                     severity: severity_for(requirement.criticality),
                     claim: Some(claim_id),
                     criticality: requirement.criticality,
@@ -937,8 +1103,8 @@ fn surface_holes(model: &Model) -> Vec<Hole> {
                 continue;
             };
             let Some(surface) = model.workspace.surface(over) else {
-                holes.push(Hole {
-                    kind: HoleKind::UnknownSurface,
+                findings.push(Finding {
+                    kind: FindingKind::UnknownSurface,
                     severity: Severity::Error,
                     claim: Some(claim_id),
                     criticality: requirement.criticality,
@@ -972,8 +1138,8 @@ fn surface_holes(model: &Model) -> Vec<Hole> {
                     .map(|item| format!("{}:{} via {}", item.area, item.mount, item.enumerator))
                     .collect::<Vec<_>>()
                     .join(", ");
-                holes.push(Hole {
-                    kind: HoleKind::EnumeratorUnsoundOrUnderived,
+                findings.push(Finding {
+                    kind: FindingKind::EnumeratorUnsoundOrUnderived,
                     severity: severity_for(requirement.criticality),
                     claim: Some(claim_id),
                     criticality: requirement.criticality,
@@ -1036,8 +1202,8 @@ fn surface_holes(model: &Model) -> Vec<Hole> {
                 if discharged {
                     continue;
                 }
-                holes.push(Hole {
-                    kind: HoleKind::InvariantBreach,
+                findings.push(Finding {
+                    kind: FindingKind::InvariantBreach,
                     severity: severity_for(requirement.criticality),
                     claim: Some(format!("{}#{}", spec.id, requirement.id)),
                     criticality: requirement.criticality,
@@ -1049,15 +1215,15 @@ fn surface_holes(model: &Model) -> Vec<Hole> {
         }
     }
 
-    holes
+    findings
 }
 
-fn realization_obligation_holes(model: &Model) -> Vec<Hole> {
-    let mut holes = Vec::new();
+fn realization_obligation_findings(model: &Model) -> Vec<Finding> {
+    let mut findings = Vec::new();
     for obligation in &model.workspace.realization_obligations {
         let Some(claim) = model.find_claim(&obligation.spec, &obligation.claim) else {
-            holes.push(Hole {
-                kind: HoleKind::DanglingRealizationObligation,
+            findings.push(Finding {
+                kind: FindingKind::DanglingRealizationObligation,
                 severity: Severity::Error,
                 claim: Some(format!("{}#{}", obligation.spec, obligation.claim)),
                 criticality: None,
@@ -1073,8 +1239,8 @@ fn realization_obligation_holes(model: &Model) -> Vec<Hole> {
                 Some(Criticality::Standard | Criticality::Critical)
             )
         {
-            holes.push(Hole {
-                kind: HoleKind::DanglingRealizationObligation,
+            findings.push(Finding {
+                kind: FindingKind::DanglingRealizationObligation,
                 severity: Severity::Error,
                 claim: Some(claim.id()),
                 criticality: claim.requirement.criticality,
@@ -1103,8 +1269,8 @@ fn realization_obligation_holes(model: &Model) -> Vec<Hole> {
                         == Some(area.as_str())
             });
             if !realized {
-                holes.push(Hole {
-                    kind: HoleKind::MissingRequiredRealization,
+                findings.push(Finding {
+                    kind: FindingKind::MissingRequiredRealization,
                     severity: severity_for(claim.requirement.criticality),
                     claim: Some(claim.id()),
                     criticality: claim.requirement.criticality,
@@ -1115,20 +1281,20 @@ fn realization_obligation_holes(model: &Model) -> Vec<Hole> {
             }
         }
     }
-    holes
+    findings
 }
 
-/// Holes the machine tier cannot find on its own.
+/// Findings the machine tier cannot find on its own.
 ///
 /// The machine makes structure checkable; it does not make truth checkable. Everything here comes
 /// from a verdict the agent tier recorded, and the tool's contribution is to hold that verdict to a
 /// fingerprint so it cannot quietly outlive what it judged.
-fn judgment_holes(model: &Model) -> Vec<Hole> {
-    let mut holes = Vec::new();
+fn judgment_findings(model: &Model) -> Vec<Finding> {
+    let mut findings = Vec::new();
     if model.judgments.is_empty() {
         // D8.1: each mechanism is usable alone. A project that has not adopted the agent tier is
         // not told that every critical claim is unjudged.
-        return holes;
+        return findings;
     }
 
     for claim in model.claims() {
@@ -1139,8 +1305,8 @@ fn judgment_holes(model: &Model) -> Vec<Hole> {
 
         let Some(judgment) = judged else {
             if claim.requirement.criticality == Some(Criticality::Critical) {
-                holes.push(Hole {
-                    kind: HoleKind::Unjudged,
+                findings.push(Finding {
+                    kind: FindingKind::Unjudged,
                     severity: Severity::Error,
                     claim: Some(id),
                     criticality: claim.requirement.criticality,
@@ -1162,8 +1328,8 @@ fn judgment_holes(model: &Model) -> Vec<Hole> {
             .unwrap_or_default();
 
         if judgment.fingerprint != expected {
-            holes.push(Hole {
-                kind: HoleKind::StaleJudgment,
+            findings.push(Finding {
+                kind: FindingKind::StaleJudgment,
                 severity: severity_for(claim.requirement.criticality),
                 claim: Some(id.clone()),
                 criticality: claim.requirement.criticality,
@@ -1181,13 +1347,13 @@ fn judgment_holes(model: &Model) -> Vec<Hole> {
 
         let kind = match judgment.verdict {
             crate::judgment::Verdict::Sound => continue,
-            crate::judgment::Verdict::Toothless => HoleKind::ToothlessEvidence,
-            crate::judgment::Verdict::DishonestTag => HoleKind::DishonestTag,
-            crate::judgment::Verdict::DishonestRealization => HoleKind::DishonestRealization,
-            crate::judgment::Verdict::SpecGap => HoleKind::SpecGap,
+            crate::judgment::Verdict::Toothless => FindingKind::ToothlessEvidence,
+            crate::judgment::Verdict::DishonestTag => FindingKind::DishonestTag,
+            crate::judgment::Verdict::DishonestRealization => FindingKind::DishonestRealization,
+            crate::judgment::Verdict::SpecGap => FindingKind::SpecGap,
         };
 
-        holes.push(Hole {
+        findings.push(Finding {
             kind,
             severity: severity_for(claim.requirement.criticality),
             claim: Some(id),
@@ -1198,7 +1364,7 @@ fn judgment_holes(model: &Model) -> Vec<Hole> {
         });
     }
 
-    holes
+    findings
 }
 
 pub struct Summary {
@@ -1207,53 +1373,24 @@ pub struct Summary {
     pub warnings: usize,
 }
 
-pub fn summarize(model: &Model, holes: &[Hole]) -> Summary {
+pub fn summarize(model: &Model, findings: &[Finding]) -> Summary {
     Summary {
         claims: model.scenario_count(),
-        errors: holes
+        errors: findings
             .iter()
             .filter(|h| h.severity == Severity::Error)
             .count(),
-        warnings: holes
+        warnings: findings
             .iter()
             .filter(|h| h.severity == Severity::Warning)
             .count(),
     }
 }
 
-pub fn counts_by_kind(holes: &[Hole]) -> Vec<(&'static str, usize)> {
-    let kinds = [
-        HoleKind::DanglingPlanEntry,
-        HoleKind::DanglingDesignEntry,
-        HoleKind::UndeclaredMechanism,
-        HoleKind::UnresolvedDesignBinding,
-        HoleKind::EnforcementMismatch,
-        HoleKind::UnbackedProof,
-        HoleKind::UnacceptedWeakening,
-        HoleKind::WrongForm,
-        HoleKind::Unjudged,
-        HoleKind::StaleJudgment,
-        HoleKind::ToothlessEvidence,
-        HoleKind::DishonestTag,
-        HoleKind::DishonestRealization,
-        HoleKind::SpecGap,
-        HoleKind::InvariantBreach,
-        HoleKind::EnumeratorUnsoundOrUnderived,
-        HoleKind::MissingSurface,
-        HoleKind::UnknownSurface,
-        HoleKind::MissingRequiredRealization,
-        HoleKind::DanglingRealizationObligation,
-        HoleKind::Unclassified,
-        HoleKind::Unrealized,
-        HoleKind::Uncovered,
-        HoleKind::DanglingTag,
-        HoleKind::DanglingRealization,
-        HoleKind::DuplicateObservation,
-        HoleKind::UnresolvedObservationBinding,
-    ];
-    kinds
+pub fn counts_by_kind(findings: &[Finding]) -> Vec<(&'static str, usize)> {
+    FindingKind::ALL
         .iter()
-        .map(|k| (k.name(), holes.iter().filter(|h| h.kind == *k).count()))
+        .map(|k| (k.name(), findings.iter().filter(|h| h.kind == *k).count()))
         .filter(|(_, n)| *n > 0)
         .collect()
 }

@@ -1,6 +1,9 @@
 ---
 name: azimuth-apply
-description: Implement an approved Azimuth change, update its current facets, establish honest automated, manual, or operational evidence, and leave it ready for finalization. Use after a proposal is approved or when resuming an active change; do not archive it.
+description: >-
+  Implement an approved Azimuth change, update its current facets, establish honest automated,
+  manual, or operational evidence, and leave it ready for finalization. Use after a proposal is
+  approved or when resuming an active change; do not archive it.
 ---
 
 # Apply a change
@@ -22,7 +25,7 @@ Implement the approved target without letting the proposal become a substitute f
    addition or change, invoke `azimuth-cover` and declare the evidence's actual scope,
    quantification and oracle.
 6. Build and run the narrow evidence while iterating, then the affected component and composed
-   evidence. Emit every relevant language manifest and run `azimuth check` over their union.
+   evidence. Emit every relevant language manifest and run `azimuth validate` over their union.
 7. When the change adds or alters a surface, run its real enumerator and validate the negative
    path with a temporary representative untagged member. Expect `invariant-breach`, then remove the
    temporary member. Satisfy area realization obligations with honest production relations; do not

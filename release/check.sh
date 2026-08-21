@@ -17,7 +17,7 @@ python3 release/orchestrate.py qualify
 python3 release/publication.py qualify --out .azimuth/release
 python3 release/qualify.py --allow-dirty
 python3 release/isolate_experiments.py --experiments-executed
-cargo run --quiet --manifest-path tools/azimuth/Cargo.toml -- check \
+cargo run --quiet --manifest-path tools/azimuth/Cargo.toml -- validate \
   --model azimuth/model \
   --standards azimuth/standards/verification.md \
   --manifest .azimuth/release/linkage.json \

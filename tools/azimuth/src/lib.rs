@@ -1,14 +1,13 @@
 //! Azimuth core.
 //!
-//! Reads claims, linkage tags and (later) evidence; derives a model; runs checks over it. The
-//! model is a first-class artifact (D10): checks, dashboards, PR annotations and the agent tier
+//! Reads claims, linkage tags and (later) evidence; derives a model; validates it. The model is a
+//! first-class artifact (D10): validation, reports, dashboards, PR annotations and the agent tier
 //! are all consumers of the export, and nothing else re-parses specs.
 //!
 //! No dependencies, by decision (D17).
 
 pub mod assurance;
 pub mod change;
-pub mod check;
 pub mod design;
 pub mod diag;
 pub mod federation;
@@ -20,6 +19,8 @@ pub mod manifest;
 pub mod model;
 pub mod plan;
 pub mod spec;
+pub mod traceability;
+pub mod validation;
 pub mod workflow;
 pub mod workspace;
 

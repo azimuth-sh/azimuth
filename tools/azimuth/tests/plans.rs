@@ -1,11 +1,11 @@
 //! Verification plan and standards tests. Synthetic fixtures only (D2).
 
-use azimuth::check::{rtm, HoleKind};
 use azimuth::json;
 use azimuth::manifest;
 use azimuth::model::{Model, Oracle, Quantification, Scope, Strength};
 use azimuth::plan::{parse_plan, parse_standards};
 use azimuth::spec::parse_spec;
+use azimuth::validation::{validate, FindingKind};
 
 const STANDARDS: &str = "\
 # Verification standards
@@ -94,8 +94,8 @@ fn unknown_oracle_is_rejected_in_a_plan() {
     assert!(error.contains("unknown oracle `differential`"), "{error}");
 }
 
-fn kinds(m: &Model) -> Vec<(HoleKind, String)> {
-    rtm(m)
+fn kinds(m: &Model) -> Vec<(FindingKind, String)> {
+    validate(m)
         .into_iter()
         .map(|h| (h.kind, h.claim.unwrap_or_default()))
         .collect()
@@ -163,10 +163,10 @@ fn a_plan_entry_raises_the_required_scope() {
         RAISED_SCOPE,
         &covers("concurrent-thing", "unit", "universal"),
     );
-    let holes = kinds(&m);
+    let findings = kinds(&m);
     assert!(
-        holes.contains(&(HoleKind::WrongForm, "alpha#concurrent-thing".into())),
-        "{holes:?}"
+        findings.contains(&(FindingKind::WrongForm, "alpha#concurrent-thing".into())),
+        "{findings:?}"
     );
 }
 
@@ -176,35 +176,35 @@ fn evidence_at_the_required_form_satisfies() {
         RAISED_SCOPE,
         &covers("concurrent-thing", "component", "universal"),
     );
-    assert!(!kinds(&m).iter().any(|(k, _)| *k == HoleKind::WrongForm));
+    assert!(!kinds(&m).iter().any(|(k, _)| *k == FindingKind::WrongForm));
 }
 
 #[test]
 fn a_current_passed_manual_receipt_satisfies_the_evidence_floor() {
     let m = model("", &manual_receipt("passed", 9_999_999_999));
-    let holes = kinds(&m);
-    assert!(!holes.contains(&(HoleKind::Uncovered, "alpha#typed-thing".into())));
-    assert!(!holes.contains(&(HoleKind::WrongForm, "alpha#typed-thing".into())));
+    let findings = kinds(&m);
+    assert!(!findings.contains(&(FindingKind::Uncovered, "alpha#typed-thing".into())));
+    assert!(!findings.contains(&(FindingKind::WrongForm, "alpha#typed-thing".into())));
 }
 
 #[test]
 fn a_failed_manual_receipt_is_adverse_evidence_not_coverage() {
     let m = model("", &manual_receipt("failed", 9_999_999_999));
-    let holes = kinds(&m);
-    assert!(holes.contains(&(HoleKind::FailedEvidence, "alpha#typed-thing".into())));
-    assert!(holes.contains(&(HoleKind::Uncovered, "alpha#typed-thing".into())));
+    let findings = kinds(&m);
+    assert!(findings.contains(&(FindingKind::FailedEvidence, "alpha#typed-thing".into())));
+    assert!(findings.contains(&(FindingKind::Uncovered, "alpha#typed-thing".into())));
 }
 
 #[test]
 fn an_expired_manual_receipt_is_named_and_no_longer_covers() {
     let m = model("", &manual_receipt("passed", 100));
-    let receipt_holes = azimuth::check::receipt_holes_at(&m, 100);
-    assert_eq!(receipt_holes.len(), 1);
-    assert_eq!(receipt_holes[0].kind, HoleKind::ExpiredEvidence);
+    let receipt_findings = azimuth::validation::receipt_findings_at(&m, 100);
+    assert_eq!(receipt_findings.len(), 1);
+    assert_eq!(receipt_findings[0].kind, FindingKind::ExpiredEvidence);
 
-    let holes = kinds(&m);
-    assert!(holes.contains(&(HoleKind::ExpiredEvidence, "alpha#typed-thing".into())));
-    assert!(holes.contains(&(HoleKind::Uncovered, "alpha#typed-thing".into())));
+    let findings = kinds(&m);
+    assert!(findings.contains(&(FindingKind::ExpiredEvidence, "alpha#typed-thing".into())));
+    assert!(findings.contains(&(FindingKind::Uncovered, "alpha#typed-thing".into())));
 }
 
 #[test]
@@ -227,18 +227,18 @@ fn a_stronger_form_satisfies_a_weaker_requirement() {
         RAISED_SCOPE,
         &covers("concurrent-thing", "e2e", "universal"),
     );
-    assert!(!kinds(&m).iter().any(|(k, _)| *k == HoleKind::WrongForm));
+    assert!(!kinds(&m).iter().any(|(k, _)| *k == FindingKind::WrongForm));
 }
 
-/// A completeness rule checked by one happy-path example is a hole coverage calls green. This is
-/// the case the whole framework exists for.
+/// A completeness rule exercised by one happy-path example is a Finding coverage calls green. This
+/// is the case the whole framework exists for.
 #[test]
 fn an_example_does_not_satisfy_a_universal_requirement() {
     let m = model("", &covers("typed-thing", "unit", "example"));
-    let holes = kinds(&m);
+    let findings = kinds(&m);
     assert!(
-        holes.contains(&(HoleKind::WrongForm, "alpha#typed-thing".into())),
-        "{holes:?}"
+        findings.contains(&(FindingKind::WrongForm, "alpha#typed-thing".into())),
+        "{findings:?}"
     );
 }
 
@@ -256,17 +256,17 @@ Evidence: Money is an integer-backed type with no floating-point constructor
 Violation is unrepresentable rather than untested.
 ";
     let m = model(plan, "");
-    let holes = kinds(&m);
+    let findings = kinds(&m);
     assert!(
-        !holes.contains(&(HoleKind::Uncovered, "alpha#typed-thing".into())),
-        "{holes:?}"
+        !findings.contains(&(FindingKind::Uncovered, "alpha#typed-thing".into())),
+        "{findings:?}"
     );
     assert!(
-        !holes.contains(&(HoleKind::WrongForm, "alpha#typed-thing".into())),
-        "{holes:?}"
+        !findings.contains(&(FindingKind::WrongForm, "alpha#typed-thing".into())),
+        "{findings:?}"
     );
     // Criticality gates evidence, not implementation.
-    assert!(holes.contains(&(HoleKind::Unrealized, "alpha#typed-thing".into())));
+    assert!(findings.contains(&(FindingKind::Unrealized, "alpha#typed-thing".into())));
 }
 
 /// "We'll alert on it" is the most common way a hard requirement is quietly downgraded. Detection
@@ -288,24 +288,24 @@ Detector binding: synthetic:scan-test
 Recorded to show that a monitor is not a substitute here.
 ";
     let m = model(plan, "");
-    let holes = kinds(&m);
+    let findings = kinds(&m);
     assert!(
-        holes.contains(&(HoleKind::WrongForm, "alpha#typed-thing".into())),
-        "{holes:?}"
+        findings.contains(&(FindingKind::WrongForm, "alpha#typed-thing".into())),
+        "{findings:?}"
     );
     assert!(
-        holes.contains(&(
-            HoleKind::UnresolvedEvidenceBinding,
+        findings.contains(&(
+            FindingKind::UnresolvedEvidenceBinding,
             "alpha#typed-thing".into()
         )),
-        "{holes:?}"
+        "{findings:?}"
     );
     assert!(
-        holes.contains(&(
-            HoleKind::UnresolvedDetectorBinding,
+        findings.contains(&(
+            FindingKind::UnresolvedDetectorBinding,
             "alpha#typed-thing".into()
         )),
-        "{holes:?}"
+        "{findings:?}"
     );
 }
 
@@ -384,15 +384,15 @@ Quantification: example
 Property testing this is awkward.
 ";
     let m = model(plan, &covers("typed-thing", "unit", "example"));
-    let holes = kinds(&m);
+    let findings = kinds(&m);
     assert!(
-        holes.contains(&(HoleKind::UnacceptedWeakening, "alpha#typed-thing".into())),
-        "{holes:?}"
+        findings.contains(&(FindingKind::UnacceptedWeakening, "alpha#typed-thing".into())),
+        "{findings:?}"
     );
 }
 
 #[test]
-fn an_accepted_weakening_is_not_a_hole() {
+fn an_accepted_weakening_is_not_a_finding() {
     let plan = "\
 # Verification: alpha
 
@@ -404,7 +404,7 @@ Accepted: single-currency market until the second one launches; revisit then
     let m = model(plan, &covers("typed-thing", "unit", "example"));
     assert!(!kinds(&m)
         .iter()
-        .any(|(k, _)| *k == HoleKind::UnacceptedWeakening));
+        .any(|(k, _)| *k == FindingKind::UnacceptedWeakening));
 }
 
 #[test]
@@ -448,7 +448,7 @@ Scope: component
 A reason.
 ";
     let m = model(plan, "");
-    assert!(kinds(&m).contains(&(HoleKind::DanglingPlanEntry, "alpha#ghost".into())));
+    assert!(kinds(&m).contains(&(FindingKind::DanglingPlanEntry, "alpha#ghost".into())));
 }
 
 #[test]
@@ -466,7 +466,7 @@ fn a_plan_for_no_spec_is_dangling() {
         plans: vec![plan],
         ..Default::default()
     };
-    assert!(kinds(&m).contains(&(HoleKind::DanglingPlanEntry, "beta".into())));
+    assert!(kinds(&m).contains(&(FindingKind::DanglingPlanEntry, "beta".into())));
 }
 
 /// Values wrap: prose wraps at 100 columns everywhere in this repo, and a format that forbade
@@ -500,10 +500,10 @@ fn an_undeclared_form_is_read_as_weakest() {
         r#"{"covers":[{"spec":"alpha","scenario":"typed-thing","site":"T","file":"t.cs",
            "lang":"csharp"}]}"#,
     );
-    let holes = kinds(&m);
+    let findings = kinds(&m);
     assert!(
-        holes.contains(&(HoleKind::WrongForm, "alpha#typed-thing".into())),
-        "{holes:?}"
+        findings.contains(&(FindingKind::WrongForm, "alpha#typed-thing".into())),
+        "{findings:?}"
     );
 }
 
@@ -519,5 +519,5 @@ fn without_standards_wrong_form_cannot_fire() {
         covers: parsed.covers,
         ..Default::default()
     };
-    assert!(!kinds(&m).iter().any(|(k, _)| *k == HoleKind::WrongForm));
+    assert!(!kinds(&m).iter().any(|(k, _)| *k == FindingKind::WrongForm));
 }
