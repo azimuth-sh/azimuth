@@ -1,0 +1,15 @@
+# Plan: Define Adapter Capability Protocol
+
+- [ ] Freeze adapter configuration, launch-plan, transport and provenance authority.
+- [ ] Add the eight routine adapter-capability requirements.
+- [ ] Establish a separable Run component seam for planning and returned-bundle validation.
+- [ ] Implement strict configuration, descriptor and capability identity validation.
+- [ ] Implement complete-model Check planning and canonical launch fingerprints.
+- [ ] Host bounded execute and import adapter processes without shells or implicit retries.
+- [ ] Add adapter verification and Run plan, execute and import commands.
+- [ ] Build two synthetic adapters and their shared conformance experiment.
+- [ ] Integrate adapter conformance into the root and release-isolation gates.
+- [ ] Narrow the superseded Run command Claim to durable ingest only.
+- [ ] Update public and agent guidance without claiming challenge planning or durable state.
+- [ ] Run complete component, conformance, isolation and composed-model audits.
+- [ ] Record the accepted outcome and archive the change.
