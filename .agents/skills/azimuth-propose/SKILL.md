@@ -34,8 +34,15 @@ Create the smallest semantic transition that can be reviewed and accepted indepe
 ## Model boundary
 
 The accepted future non-routine graph is Check → Evidence Binding → Qualification, with sparse
-many-to-many Check/Claim relationships and semantic Challenge Plan selectors. Run, adapter and
-Assurance Service ledger formats remain deferred. A proposal must not invent those contracts or
+many-to-many Check/Claim relationships and semantic Challenge Plan selectors. The strict
+[Run bundle format](../../../azimuth/formats/run-bundle.md) is current:
+`azimuth run verify --bundle <file>...` checks standalone protocol and correction consistency, and
+`azimuth run inspect --bundle <file>...` presents a deterministic account with current model
+authority and Assurance State explicitly unresolved.
+
+Adapter configuration, plan generation, provider execute/import transport and native translation
+remain deferred. The Run ledger separately owns durable ingest, authorization and Assurance
+State. A proposal must not infer those authorities from a valid bundle, invent their contracts or
 restore removed alpha-era formats.
 
 ## Routine path

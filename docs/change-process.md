@@ -110,21 +110,41 @@ repository owns the content-preserving archive move. `azimuth project accept-cha
 two complete accounts and emits a snapshot; a local account cannot substitute for project
 acceptance.
 
-## Deferred execution plane
+## Run exchange and deferred execution plane
 
-D43 defines, but this change does not implement, a Run-led execution plane. A future Run will bind
-one exact Subject and may contain Check executions, Challenger executions or both. Challengers
-search for objections to Qualifications or later Claim Judgments; a clean result is not positive
-product evidence.
+D46 implements a standalone [`azimuth-run-bundle` version 1](../azimuth/formats/run-bundle.md)
+exchange. A Run binds one exact Subject and may contain Check executions, Challenger executions or
+both. Its plan and actual semantic selection are explicit, and its retries and work units reduce to
+one Observation per actually selected Check and one Challenge Result per selected Challenger
+target. Challengers search for objections to Qualifications or later Claim Judgments; a clean
+result is not positive product evidence.
+
+Use the service-free commands to verify or inspect an already normalized bundle or correction set:
+
+```text
+azimuth run verify --bundle <file> [--bundle <file> ...]
+azimuth run inspect --bundle <file> [--bundle <file> ...] [--format text|json] [--out <file>]
+```
+
+These commands validate the protocol account only. They do not establish that repository
+fingerprints remain current, apply execution results to Assurance State, call a provider or ingest
+the bundle. A protocol-consistent violated Observation, Challenge findings or partial Run remains a
+valid execution account rather than a command failure.
 
 Challenge Plans will select exact targets through stable traceability, never through paths, line
 numbers, globs or silent whole-suite fallback. Mutation testing, broad static analysis, flakiness
 repetition and qualification-oriented fault injection normally act as Challengers. Fault injection
 with a direct recovery or durability oracle may instead implement a Check.
 
-Provider adapters, normalized Run bundles, ingestion and retention are deferred to dependent
-changes. The optional Assurance Service remains isolated on its D42 v1 wire until the Run-ledger
-replacement is accepted. There is currently no Assurance Service export command.
+Generating a plan from repository authority, resolving its current decision targets, provider
+capability discovery, native selector translation, execution and report import remain dependent
+adapter and challenge-planning changes. The `plan`, `execute`, `import` and `ingest` Run operations
+remain absent. Durable ingestion, authorization, retention and Subject-specific Assurance State
+belong to the future ledger.
+
+The optional Assurance Service remains isolated on its D42 v1 wire until the Run-ledger replacement
+is accepted. It does not ingest Run bundles, and there is no compatibility bridge or Assurance
+Service export command.
 
 ## Branches and rollout
 

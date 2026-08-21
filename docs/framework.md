@@ -189,7 +189,7 @@ version 2 linkage collections. This keeps source parsing outside the core and ma
 integration an extractor concern instead of a fork of the model.
 
 Nested change and project commands retain their bounded lifecycle meanings. They do not perform
-model validation or future Check execution.
+model validation or Check execution.
 
 ## Multi-repository assembly
 
@@ -223,22 +223,49 @@ Criticality changes through the same lifecycle without changing Claim identity. 
 activates the applicable mechanism and evidence obligations. Lowering it records why those
 obligations no longer apply and what would raise it again.
 
-## Deferred execution control plane
+## Run exchange and deferred execution control plane
 
-D43 decides the semantics of Subjects, Runs, Observations, Challenge Results and dynamic Assurance
-State, but this repository cut does not implement their public formats or orchestration. Run bundle
-syntax, provider adapters, capability discovery, actual-selection validation and execution-result
-application are deferred changes. The current Challenge Plan resolves repository targets only; it
+D46 implements the provider-neutral
+[`azimuth-run-bundle` version 1](../azimuth/formats/run-bundle.md) exchange. One immutable bundle
+revision accounts for one logical Run over one exact typed Subject and semantic plan. It freezes
+planned and actual selection, physical activities, ordered attempts, one terminal Observation for
+each actually selected Check and one terminal Challenge Result for each selected Challenger target.
+Workspace, CI-candidate, artifact, deployment, service and bounded monitoring-window Subjects use
+content or deployed-state fingerprints rather than mutable locators as their exact state.
+
+Run bundles reduce retries and finite work units deterministically. Violations and challenge
+findings survive retries; missing planned units and unfinished work cannot become positive results.
+An omitted target creates no fabricated result. Full replacement corrections retain immutable
+Subject, context, plan, source-execution and start anchors and form one fingerprint-linked chain.
+
+The implemented service-free commands are:
+
+```text
+azimuth run verify --bundle <file> [--bundle <file> ...]
+azimuth run inspect --bundle <file> [--bundle <file> ...] [--format text|json] [--out <file>]
+```
+
+Verification proves strict shape, internal identity, plan/actual agreement, reduction, references
+and correction history. A protocol-consistent violation, challenge finding or partial Run is an
+execution fact and therefore exits zero. Inspection presents a deterministic account and labels
+current repository authority and Assurance State unresolved. Neither command calls a provider,
+reads an artifact locator, writes to a service or treats protocol validity as product acceptance.
+
+Generating plans from the current repository graph, resolving current decision targets for a Run,
+translating native selectors, executing providers and importing native reports remain dependent
+adapter and challenge-planning changes. `azimuth run plan`, `execute`, `import` and `ingest` are not
+commands. The current repository Challenge Plan resolves its declared Qualification targets but
 does not invoke a provider.
 
-The optional Assurance Service is likewise awaiting a Run-ledger replacement. D42's version 1
+The optional Assurance Service is likewise awaiting the Run-ledger replacement. D42's version 1
 claim-contract and project-snapshot wire remains isolated inside the existing service boundary
-until that replacement removes it. It is not the alpha 2 repository model, is not emitted by
-`azimuth export`, and receives no compatibility bridge.
+until that replacement removes it. It is not the alpha 2 repository model or Run-bundle protocol,
+is not emitted by `azimuth export`, and receives no compatibility bridge. Authorization, durable
+ingest, retention and Subject-specific Assurance State remain ledger work.
 
-The accepted future authority split is still important: repositories will own Claims, Checks,
-Evidence Bindings and reviewed decisions; execution systems will own facts about exact Subjects.
-No current command should be read as already implementing that future runtime.
+The authority split is current: repositories own Claims, Checks, Evidence Bindings and reviewed
+decisions; Run producers own execution facts about exact Subjects. A standalone valid bundle does
+not establish that its model or decision fingerprints are current.
 
 Historical consumer feedback is retained only as an
 [immutable provenance citation][historical-consumer-provenance].
@@ -249,6 +276,7 @@ The citation is documentary; no build, test, release or acceptance step reads th
 ## What is not claimed
 
 Azimuth does not prove prose predicates, infer honest linkage from source, turn a clean Challenger
-search into positive product evidence, or enroll native tests automatically. Its current output is
-a versioned, machine-checkable repository account and derived traceability. Runtime collection and
-Subject-specific assurance remain deferred rather than simulated through repository records.
+search into positive product evidence, or enroll native tests automatically. Its current outputs
+are a versioned repository account, derived traceability and a standalone internally verified Run
+exchange. Provider orchestration, durable ingestion and Subject-specific assurance remain deferred
+rather than simulated through repository records or protocol validity.

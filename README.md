@@ -3,7 +3,8 @@
 Azimuth is an evidence control plane. It keeps durable intent, implementation linkage and reviewed
 evidentiary meaning in one inspectable project account without making an execution provider or
 hosted service authoritative. The command-line tool validates local model packages, derives
-traceability and can assemble revision-bound accounts across repositories.
+traceability, assembles revision-bound accounts across repositories and verifies provider-neutral
+Run bundles without a hosted service.
 
 This is the canonical development and release repository. Framework changes, pull requests and
 version history land here, and publication derives artifacts from immutable version tags in the
@@ -21,7 +22,7 @@ development. The canonical product site is <https://azimuth.sh>.
 | `azimuth/standards/` | Qualification policies for non-routine Claims |
 | `azimuth/changes/` | active framework changes transferred from development |
 | `docs/` | framework definition, decisions, glossary and operating guidance |
-| `services/assurance/` | optional execution ledger and diagnostic web application |
+| `services/assurance/` | isolated D42 service pending the Run-ledger replacement |
 | `experiments/` | self-contained conformance and lifecycle experiments |
 | `.agents/skills/` | agent workflows for exploration and change delivery |
 
@@ -53,9 +54,15 @@ defines requirement and case Claims, sparse Check-to-Claim Evidence Bindings, on
 per binding and semantic challenge declarations. All current framework Claims are routine, so
 ordinary engineering tests are not enrolled as Azimuth Checks.
 
-D43 defines future Run, adapter and Subject boundaries. Their formats, orchestration and ledger
-ingestion remain deferred. The existing Assurance Service stays isolated on its D42 v1 wire until
-that replacement is accepted.
+D46 defines the strict [`azimuth-run-bundle`](azimuth/formats/run-bundle.md) version 1 exchange.
+`azimuth run verify` checks its shape, identities, selection, reduction and correction history;
+`azimuth run inspect` presents the same protocol account without claiming current model acceptance
+or Assurance State.
+
+Plan generation, provider execution and native report import remain adapter work. Resolving current
+decision targets into a Run plan and applying accepted Runs to Subject-specific state remain
+dependent changes. The existing Assurance Service stays isolated on its D42 v1 wire until the
+Run-ledger replacement is accepted; there is no compatibility bridge or service export command.
 
 ## Development and dogfooding
 

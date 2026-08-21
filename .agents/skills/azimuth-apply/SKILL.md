@@ -30,7 +30,12 @@ Implement the approved target without treating proposal prose as source truth.
    path with a temporary representative untagged member. Remove the temporary member afterward.
 9. Run `azimuth report traceability` when relationships change and inspect version 2 export when a
    public graph shape changes.
-10. Complete plan and work-package statuses, write `outcome.md`, and leave the proposal at
+10. For Run-bundle work, verify every relevant correction set with
+    `azimuth run verify --bundle <file>...`, then inspect the same set with
+    `azimuth run inspect --bundle <file>...`. Follow the strict
+    [Run bundle format](../../../azimuth/formats/run-bundle.md); protocol validity is not current
+    model acceptance or Assurance State.
+11. Complete plan and work-package statuses, write `outcome.md`, and leave the proposal at
     `implemented` until acceptance is genuinely established.
 
 ## Alpha-2 boundaries
@@ -39,7 +44,9 @@ Implement the approved target without treating proposal prose as source truth.
 - Future non-routine verification follows Check → Evidence Binding → Qualification.
 - Source may implement a Check but never owns its Claim relationship, form or context.
 - Challengers and Challenge Plans search for objections; a clean challenge is not product evidence.
-- Run, adapter, normalized-bundle and ledger contracts are deferred to dependent changes.
+- Provider-neutral Run bundle version 1 and local `azimuth run verify`/`inspect` are current.
+- Adapter plan generation, execute/import transport and native translation remain deferred.
+- Ledger ingest, authorization, retention and Assurance State remain deferred.
 - The D42 service wire remains isolated, and no Assurance Service export command exists.
 - Use `azimuth validate`, `azimuth report traceability` and `azimuth export` for the current model.
 - Do not archive; `azimuth-archive` owns the acceptance boundary.

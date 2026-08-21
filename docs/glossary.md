@@ -245,31 +245,44 @@ change. It gates the mechanical archive move and contains no authored risk decis
 **Rollout** — exposure of an accepted artifact across environments or user populations. It is
 normally outside the change model.
 
-## Deferred runtime concepts
+## Run protocol and deferred runtime concepts
 
-The following meanings are accepted by D43, but their public formats and orchestration are not
-implemented in the alpha 2 repository cut.
+**Subject** — the exact workspace, CI candidate, artifact, deployment, service or bounded
+monitoring window about which a Run asserts execution facts. The
+[`azimuth-run-bundle` format](../azimuth/formats/run-bundle.md) defines the closed Subject variants;
+provider locators remain provenance rather than exact state.
 
-**Subject** — the exact workspace, candidate, artifact, deployment, service or bounded monitoring
-window about which execution facts are asserted.
+**Run** — one bounded, provider-neutral logical execution over one exact Subject and semantic
+plan. Native processes, parameters, shards and retries are subordinate details. A Check executes
+inside a Run and never emits one.
 
-**Run** — a bounded, provider-neutral execution envelope over one exact Subject. It may eventually
-contain Check and Challenger executions; a Check executes inside a Run and never emits one.
+**Run bundle** — one strict immutable JSON revision accounting for a Run's Subject, context,
+planned and actual semantic selection, activities, attempts, terminal results and provenance.
+Versioned canonical fingerprints identify its semantic components and complete content.
 
-**Observation** — the future terminal `satisfied | violated | inconclusive` result for one
-`(Run, Check)`. It is an execution fact, not an Evidence Binding or Qualification.
+**Observation** — the terminal `satisfied | violated | inconclusive` result for one actually
+selected Check in one Run. It is an execution fact, not an Evidence Binding or Qualification, and
+is not copied for every binding.
 
-**Challenge Result** — the future terminal `clean | findings | inconclusive` result targeting one
-exact reviewed decision fingerprint. A clean result is negative search, not positive product
-evidence.
+**Challenge Result** — the terminal `clean | findings | inconclusive` result for one selected
+Challenger and exact Qualification or Claim Judgment target fingerprint. A clean result records a
+negative search, not positive product evidence.
+
+**Correction** — the complete next immutable revision of one Run bundle. It names its immediate
+predecessor and preserves Run, Subject, context, plan, source-execution and start anchors. It is not
+a patch or timestamp-selected winner.
+
+**Protocol-valid** — internally consistent under the Run-bundle schema, identities, selection,
+reduction, references and correction rules. It says neither that repository fingerprints are
+current nor that Assurance State is acceptable.
 
 **Assurance State** — a future dynamic conclusion for one exact Subject, derived from repository
 decisions and accepted execution facts.
 
 **Adapter** — a deferred provider-family integration that will translate core-selected semantic
-targets to native selectors and return normalized results without interpreting the repository
-model independently.
+targets to native selectors and produce Run bundles without interpreting repository meaning
+independently. Plan generation, execution and native report import are not current Run commands.
 
 **Assurance Service** — the optional future durable ledger for accepted Runs and derived Assurance
-State. D42's version 1 service wire remains isolated until the Run-ledger replacement; it is not an
-alpha 2 repository-model format.
+State. D42's version 1 service wire remains isolated until the Run-ledger replacement; it is neither
+the alpha 2 repository-model format nor the Run-bundle protocol.

@@ -31,6 +31,11 @@ overrides a decision.
 - Use `azimuth` for the tool and reserve Check for a deliberately enrolled verification method.
   Commands for the current model are `azimuth validate`, `azimuth report traceability` and
   `azimuth export`.
+- Use `azimuth run verify --bundle <file>...` for standalone Run-protocol consistency and
+  `azimuth run inspect --bundle <file>...` for a deterministic local account. These commands do
+  not establish current model authority or Assurance State.
+- Run planning, provider execution and report import remain adapter work. Durable ingest and
+  Assurance State remain Run-ledger work; no current Run command performs them.
 - Evidence precedes notation: no mechanism enters the model until two structurally different
   concerns demand it in prose.
 - Framework development, pull requests and version history are authoritative in this repository.

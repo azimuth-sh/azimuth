@@ -1,7 +1,8 @@
 # azimuth
 
 The dependency-free Rust core for Azimuth's evidence control plane. It derives repository-owned
-Claims and their graph, validates that graph, reports traceability and exports version 2 JSON.
+Claims and their graph, validates that graph, reports traceability, exports version 2 JSON and
+verifies standalone provider-neutral Run bundles.
 
 Install a checkout with `cargo install --path tools/azimuth`.
 
@@ -14,6 +15,10 @@ azimuth report traceability
 azimuth report traceability --out traceability.json
 azimuth export --out model.json
 azimuth init
+
+azimuth run verify --bundle run.json
+azimuth run inspect --bundle run.json
+azimuth run inspect --bundle run.json --format json --out inspection.json
 
 azimuth explore create <id> --title <text>
 azimuth explore list
@@ -49,6 +54,13 @@ is repeatable. Selection operates on declared ids, not paths.
 The former top-level validator alias and positional selector are absent. There is currently no
 command for Claim Judgment or Assurance Service export. Nested change and project commands retain
 their bounded lifecycle meanings.
+
+`azimuth run verify` validates one or more revisions of the strict
+[`azimuth-run-bundle` version 1](../../azimuth/formats/run-bundle.md) protocol. Protocol-consistent
+violations, challenge findings and partial Runs exit `0`; internal protocol Findings exit `1`; and
+malformed JSON, schema errors or usage exit `2`. `azimuth run inspect` emits a deterministic text or
+JSON account, including protocol Findings on exit `1`, and labels repository authority and
+Assurance State unresolved.
 
 ## Model
 
@@ -87,6 +99,7 @@ until a total-composition format is accepted.
 - `workspace.rs` derives areas, surfaces and realization obligations.
 - `validation.rs` reports categorized Findings through one exhaustive registry.
 - `traceability.rs` derives deterministic case-level traceability.
+- `run.rs` parses, fingerprints, reduces, verifies and inspects standalone Run bundles.
 - `model.rs` owns the graph and export version 2.
 - `change.rs` handles change projection, finalization and archive gates.
 - `federation.rs` assembles revision-bound repository accounts.
@@ -97,16 +110,23 @@ The strict manifest collections are `realizes`, `check_implementations`,
 have the exact lexical form `sha256:<64-lowercase-hex>`. Removed alpha-era collections are rejected;
 there is no compatibility reader.
 
-## Deferred execution plane
+## Run protocol and deferred execution plane
 
-D43 defines a future Run as a bounded envelope over one exact Subject. It may contain Check or
-Challenger executions, while an adapter translates semantic selections to provider-native work and
-reports actual selection. Those Run, adapter and normalized-bundle formats are deliberately not
-implemented by this change.
+D46 implements one immutable provider-neutral bundle revision for a bounded Run over one exact
+Subject and semantic plan. The bundle records actual selection, physical activities, ordered
+attempts, one terminal Observation per actually selected Check and one Challenge Result per
+selected Challenger target. Canonical fingerprints and full-replacement corrections make the
+standalone account deterministic without making it current repository acceptance.
+
+Only `azimuth run verify` and `azimuth run inspect` are implemented. Plan generation, current
+decision resolution for a Run, adapter discovery, native selector translation, provider execution
+and native report import remain dependent changes. `azimuth run plan`, `execute`, `import` and
+`ingest` are unknown operations.
 
 The optional Assurance Service remains isolated on its D42 v1 wire until a Run-ledger change
-replaces it. Core does not currently ingest service execution records, and the service is not model
-authority.
+replaces it. Core does not ingest Run bundles or service execution records, and the service is not
+model authority. Authorization, durable storage, retention and Subject-specific Assurance State
+remain ledger responsibilities.
 
 ## Federation
 
