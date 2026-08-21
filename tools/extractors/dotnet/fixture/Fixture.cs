@@ -21,6 +21,16 @@ namespace Azimuth.Fixture
         {
         }
 
+        [ImplementsMechanism("alpha", "guard-integer")]
+        public void Guard(int value)
+        {
+        }
+
+        [ImplementsMechanism("alpha", "guard-string")]
+        public void Guard(string value)
+        {
+        }
+
         public void Untagged()
         {
         }
@@ -30,6 +40,14 @@ namespace Azimuth.Fixture
         public async Task AsyncWork()
         {
             await Task.Yield();
+        }
+
+        public sealed class Nested
+        {
+            [ImplementsMechanism("alpha", "nested-guard")]
+            public void Guard(Guid value)
+            {
+            }
         }
     }
 

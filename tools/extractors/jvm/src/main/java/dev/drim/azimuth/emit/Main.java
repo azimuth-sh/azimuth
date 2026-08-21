@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -50,20 +51,27 @@ public final class Main {
         try (URLClassLoader loader = new URLClassLoader(urls, Main.class.getClassLoader())) {
             for (String className : classNames(options.classRoots())) {
                 Class<?> type = Class.forName(className, false, loader);
+                if (type.isSynthetic() || type.isAnonymousClass() || type.isLocalClass()) continue;
                 Path source = sourceFor(type, sources);
                 String file = options.root().toAbsolutePath().normalize()
                         .relativize(source.toAbsolutePath().normalize()).toString().replace('\\', '/');
                 String lang = source.toString().endsWith(".kt") ? "kotlin" : "java";
                 String fileFingerprint = fingerprint(source);
-                collect(type, type.getName(), file, lang, fileFingerprint, null,
+                collect(type, type.getName(), type.getName(), file, lang,
+                        fileFingerprint, fileFingerprint,
                         realizes, checks, implementations, artifacts);
                 for (Method method : type.getDeclaredMethods()) {
+                    if (method.isSynthetic() || method.isBridge()) continue;
                     String site = type.getName() + "." + method.getName();
+                    String mechanismSite = methodSite(method);
+                    boolean implementsMechanism = method
+                            .getAnnotationsByType(Azimuth.ImplementsMechanism.class).length > 0;
                     String siteFingerprint = method
-                            .getAnnotationsByType(Azimuth.ImplementsCheck.class).length == 0
-                            ? null : siteFingerprint(source, method);
-                    collect(method, site, file, lang, fileFingerprint, siteFingerprint,
-                            realizes, checks, implementations, artifacts);
+                            .getAnnotationsByType(Azimuth.ImplementsCheck.class).length > 0
+                            ? siteFingerprint(source, method)
+                            : implementsMechanism ? fileFingerprint : null;
+                    collect(method, site, mechanismSite, file, lang, fileFingerprint,
+                            siteFingerprint, realizes, checks, implementations, artifacts);
                 }
             }
         }
@@ -77,6 +85,7 @@ public final class Main {
     private static void collect(
             AnnotatedElement element,
             String site,
+            String mechanismSite,
             String file,
             String lang,
             String fileFingerprint,
@@ -98,13 +107,53 @@ public final class Main {
             checks.add(Entry.checkImplementation(
                     annotation.value(), site, file, lang, siteFingerprint));
         }
-        for (Azimuth.ImplementsMechanism annotation
-                : element.getAnnotationsByType(Azimuth.ImplementsMechanism.class)) {
-            String binding = "jvm-symbol:" + site;
-            implementations.add(Entry.implementation(annotation.spec(), annotation.mechanism(), binding,
-                    file, lang, fileFingerprint));
-            artifacts.add(Entry.artifact(binding, "jvm-symbol", file));
+        Azimuth.ImplementsMechanism[] mechanismAnnotations =
+                element.getAnnotationsByType(Azimuth.ImplementsMechanism.class);
+        validateMechanismTarget(mechanismSite, mechanismAnnotations.length);
+        for (Azimuth.ImplementsMechanism annotation : mechanismAnnotations) {
+            if (siteFingerprint == null) {
+                throw new IllegalArgumentException(
+                        mechanismSite
+                                + ": ImplementsMechanism requires an exact source fingerprint");
+            }
+            String kind = lang + "-symbol";
+            String binding = kind + ":" + mechanismSite;
+            implementations.add(Entry.implementation(annotation.spec(), annotation.mechanism(),
+                    mechanismSite, binding, file, lang, siteFingerprint));
+            artifacts.add(Entry.artifact(binding, kind, file));
         }
+    }
+
+    static void validateMechanismTarget(String site, int targetCount) {
+        if (targetCount > 1) {
+            throw new IllegalArgumentException(
+                    site + ": one qualified site cannot implement several mechanisms");
+        }
+    }
+
+    private static String methodSite(Method method) {
+        return method.getDeclaringClass().getName() + "." + method.getName()
+                + methodDescriptor(method);
+    }
+
+    private static String methodDescriptor(Method method) {
+        return "(" + String.join("", Arrays.stream(method.getParameterTypes())
+                .map(Main::typeDescriptor).toList()) + ")" + typeDescriptor(method.getReturnType());
+    }
+
+    private static String typeDescriptor(Class<?> type) {
+        if (type.isArray()) return type.getName().replace('.', '/');
+        if (!type.isPrimitive()) return "L" + type.getName().replace('.', '/') + ";";
+        if (type == void.class) return "V";
+        if (type == boolean.class) return "Z";
+        if (type == byte.class) return "B";
+        if (type == char.class) return "C";
+        if (type == short.class) return "S";
+        if (type == int.class) return "I";
+        if (type == long.class) return "J";
+        if (type == float.class) return "F";
+        if (type == double.class) return "D";
+        throw new IllegalArgumentException("unsupported JVM type " + type.getName());
     }
 
     private static Map<String, Path> sourceFiles(List<Path> roots) throws IOException {
@@ -140,7 +189,6 @@ public final class Main {
             try (var paths = Files.walk(root)) {
                 paths.filter(path -> path.toString().endsWith(".class"))
                         .filter(path -> !path.getFileName().toString().equals("module-info.class"))
-                        .filter(path -> !path.getFileName().toString().contains("$"))
                         .forEach(path -> names.add(root.relativize(path).toString()
                                 .replace('\\', '.').replace('/', '.').replaceAll("\\.class$", "")));
             }
@@ -320,10 +368,10 @@ public final class Main {
                     "source_fingerprint", fingerprint);
         }
 
-        static Entry implementation(String spec, String mechanism, String binding, String file,
-                String lang, String fingerprint) {
-            return entry("spec", spec, "mechanism", mechanism, "binding", binding, "file", file,
-                    "lang", lang, "source_fingerprint", fingerprint);
+        static Entry implementation(String spec, String mechanism, String site, String binding,
+                String file, String lang, String fingerprint) {
+            return entry("spec", spec, "mechanism", mechanism, "site", site, "binding", binding,
+                    "file", file, "lang", lang, "source_fingerprint", fingerprint);
         }
 
         static Entry artifact(String id, String kind, String file) {

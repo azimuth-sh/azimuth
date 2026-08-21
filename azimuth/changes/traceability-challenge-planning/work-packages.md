@@ -43,7 +43,7 @@ Objective: emit strict qualified path-independent mechanism sites and bindings i
 Evidence: focused extractor suites, ambiguity rejection and relocation-stability tests
 
 ## Work package: mechanism-identity-managed
-Status: pending
+Status: complete
 Depends on: mechanism-identity-authority
 Owns: tools/extractors/dotnet, tools/extractors/jvm
 Objective: emit strict qualified path-independent mechanism sites in managed extractors
