@@ -184,6 +184,63 @@ pub fn claim_judgment_fingerprint(preimage: &crate::json::Json) -> String {
     canonical_sha256(preimage)
 }
 
+pub fn mechanism_record_digest(record: &crate::json::Json) -> String {
+    use crate::json::Json;
+    canonical_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-mechanism-record-digest")),
+        ("version", Json::Num(1.0)),
+        ("mechanism", record.clone()),
+    ]))
+}
+
+pub fn artifact_property_digest(account: &crate::json::Json) -> String {
+    use crate::json::Json;
+    canonical_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-artifact-property-digest")),
+        ("version", Json::Num(1.0)),
+        ("artifact", account.clone()),
+    ]))
+}
+
+pub fn area_digest(id: &str) -> String {
+    use crate::json::Json;
+    canonical_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-area-digest")),
+        ("version", Json::Num(1.0)),
+        ("id", Json::str(id)),
+    ]))
+}
+
+pub fn realization_obligation_digest(claim: &str, areas: &[String]) -> String {
+    use crate::json::Json;
+    canonical_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-realization-obligation-digest")),
+        ("version", Json::Num(1.0)),
+        ("claim", Json::str(claim)),
+        ("areas", Json::Arr(areas.iter().map(Json::str).collect())),
+    ]))
+}
+
+pub fn surface_account_digest(account: &crate::json::Json) -> String {
+    use crate::json::Json;
+    canonical_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-surface-account-digest")),
+        ("version", Json::Num(1.0)),
+        ("surface", account.clone()),
+    ]))
+}
+
+pub fn enumerated_surface_member_digest(surface: &str, file: &str) -> String {
+    use crate::json::Json;
+    canonical_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-surface-member-digest")),
+        ("version", Json::Num(1.0)),
+        ("surface", Json::str(surface)),
+        ("kind", Json::str("enumerated")),
+        ("file", Json::str(file)),
+    ]))
+}
+
 pub fn binding_fingerprint(
     binding: &crate::verification::EvidenceBinding,
     claim_digest: &str,

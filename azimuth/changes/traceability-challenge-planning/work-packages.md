@@ -29,7 +29,7 @@ Objective: resolve all candidate dispositions and project exact decision-impact 
 Evidence: seven selectors, disposition visibility, domain gates, deduplication and impact tests
 
 ## Work package: decision-scope-integration
-Status: pending
+Status: complete
 Depends on: challenge-resolution-projection, mechanism-identity-authority
 Owns: tools/azimuth/src/fingerprint.rs, tools/azimuth/src/manifest.rs, tools/azimuth/src/model.rs, tools/azimuth/src/lib.rs, tools/azimuth/src/federation.rs, tools/azimuth/tests/decision_scope.rs, tools/azimuth/tests/spec_parse.rs, tools/azimuth/tests/packages.rs, tools/azimuth/tests/federation.rs
 Objective: expose canonical scope, strict mechanism identity, resolution export and selected closure

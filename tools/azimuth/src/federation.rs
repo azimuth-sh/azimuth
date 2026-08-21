@@ -1534,9 +1534,99 @@ fn assign_sources(
             producer,
         );
     }
-    for item in &mut manifest.mechanism_implementations {
-        let (kind, address) = split_typed_binding(&item.binding, &item.lang);
-        item.source = locate_source(areas, &item.file, kind, address, errors, producer);
+    let mut rewrites = Vec::new();
+    let mut paired_artifacts = BTreeSet::new();
+    let mut reserved_raw_ids = BTreeSet::new();
+    for (implementation_index, item) in manifest.mechanism_implementations.iter().enumerate() {
+        let Some(kind) = crate::manifest::mechanism_address_kind(&item.lang) else {
+            continue;
+        };
+        let raw_binding = format!("{kind}:{}", item.site);
+        reserved_raw_ids.insert(raw_binding.clone());
+        let matches = manifest
+            .artifacts
+            .iter()
+            .enumerate()
+            .filter(|(_, artifact)| {
+                artifact.id == raw_binding
+                    && artifact.kind == kind
+                    && artifact.file == item.file
+                    && artifact.source.is_none()
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        let [artifact_index] = matches.as_slice() else {
+            errors.push(Diag::file(
+                producer,
+                format!(
+                    "marker implementation `{}#{}` has no unique exact companion Artifact",
+                    item.spec, item.mechanism
+                ),
+            ));
+            continue;
+        };
+        if !paired_artifacts.insert(*artifact_index) {
+            errors.push(Diag::file(
+                producer,
+                format!("marker companion Artifact `{raw_binding}` has multiple targets"),
+            ));
+            continue;
+        }
+        let Some(source) =
+            locate_source(areas, &item.file, kind, item.site.clone(), errors, producer)
+        else {
+            continue;
+        };
+        rewrites.push((implementation_index, *artifact_index, source));
+    }
+    for (artifact_index, artifact) in manifest.artifacts.iter().enumerate() {
+        if !paired_artifacts.contains(&artifact_index) && reserved_raw_ids.contains(&artifact.id) {
+            errors.push(Diag::file(
+                producer,
+                format!(
+                    "marker companion Artifact `{}` collides with an ordinary Artifact",
+                    artifact.id
+                ),
+            ));
+        }
+    }
+    for (implementation_index, artifact_index, source) in rewrites {
+        let key = source.key();
+        let implementation = &mut manifest.mechanism_implementations[implementation_index];
+        implementation.binding = key.clone();
+        implementation.source = Some(source.clone());
+        let artifact = &mut manifest.artifacts[artifact_index];
+        artifact.id = key;
+        artifact.source = Some(source);
+    }
+    let mut targets = BTreeMap::new();
+    let mut sources = BTreeMap::new();
+    for item in &manifest.mechanism_implementations {
+        let target = (item.spec.clone(), item.mechanism.clone());
+        if let Some(previous_file) = targets.insert(target.clone(), item.file.clone()) {
+            errors.push(Diag::file(
+                producer,
+                format!(
+                    "multiple marker implementations for mechanism `{}#{}` (first at `{previous_file}`)",
+                    target.0, target.1
+                ),
+            ));
+        }
+        if let Some(source) = &item.source {
+            let key = source.key();
+            if let Some((previous_target, previous_file)) =
+                sources.insert(key.clone(), (target.clone(), item.file.clone()))
+            {
+                errors.push(Diag::file(
+                    producer,
+                    format!(
+                        "mechanism source identity `{key}` has multiple marker targets (first \
+                         `{}#{}` at `{previous_file}`)",
+                        previous_target.0, previous_target.1
+                    ),
+                ));
+            }
+        }
     }
     for item in &mut manifest.class_members {
         item.source = locate_source(
@@ -1559,14 +1649,16 @@ fn assign_sources(
         );
     }
     for item in &mut manifest.artifacts {
-        item.source = locate_source(
-            areas,
-            &item.file,
-            item.kind.clone(),
-            item.id.clone(),
-            errors,
-            producer,
-        );
+        if item.source.is_none() {
+            item.source = locate_source(
+                areas,
+                &item.file,
+                item.kind.clone(),
+                item.id.clone(),
+                errors,
+                producer,
+            );
+        }
     }
 }
 
@@ -1640,13 +1732,6 @@ fn address_value(language: &str, file: &str, site: &str) -> String {
         .unwrap_or(&normalized)
         .trim_end_matches("/route.ts");
     format!("{site} /{route}")
-}
-
-fn split_typed_binding(binding: &str, language: &str) -> (String, String) {
-    binding
-        .split_once(':')
-        .map(|(kind, address)| (kind.to_string(), address.to_string()))
-        .unwrap_or_else(|| (format!("{language}-symbol"), binding.to_string()))
 }
 
 fn linkage_json(manifest: &Manifest) -> Json {
@@ -2406,16 +2491,18 @@ fn source_records(manifest: &Manifest) -> Vec<SourceRecord<'_>> {
                 address: address_value(&item.lang, &item.file, &item.site),
             }),
     );
-    records.extend(manifest.mechanism_implementations.iter().map(|item| {
-        let (kind, address) = split_typed_binding(&item.binding, &item.lang);
-        SourceRecord {
-            source: item.source.as_ref(),
-            fingerprint: item.source_fingerprint.as_str(),
-            file: item.file.as_str(),
-            kind,
-            address,
-        }
-    }));
+    records.extend(
+        manifest
+            .mechanism_implementations
+            .iter()
+            .map(|item| SourceRecord {
+                source: item.source.as_ref(),
+                fingerprint: item.source_fingerprint.as_str(),
+                file: item.file.as_str(),
+                kind: crate::manifest::mechanism_address_kind(&item.lang).unwrap_or_default(),
+                address: item.site.clone(),
+            }),
+    );
     records.extend(manifest.class_members.iter().map(|item| SourceRecord {
         source: item.source.as_ref(),
         fingerprint: "",
@@ -2430,12 +2517,35 @@ fn source_records(manifest: &Manifest) -> Vec<SourceRecord<'_>> {
         kind: "enumerator".into(),
         address: format!("{}#{}", item.class, item.kind),
     }));
-    records.extend(manifest.artifacts.iter().map(|item| SourceRecord {
-        source: item.source.as_ref(),
-        fingerprint: "",
-        file: item.file.as_str(),
-        kind: item.kind.clone(),
-        address: item.id.clone(),
+    records.extend(manifest.artifacts.iter().map(|item| {
+        let marker = manifest
+            .mechanism_implementations
+            .iter()
+            .find(|implementation| {
+                implementation.binding == item.id
+                    && implementation.file == item.file
+                    && implementation.source == item.source
+            });
+        match marker {
+            Some(implementation) => SourceRecord {
+                source: item.source.as_ref(),
+                fingerprint: implementation.source_fingerprint.as_str(),
+                file: item.file.as_str(),
+                kind: item
+                    .source
+                    .as_ref()
+                    .map(|source| source.kind.clone())
+                    .unwrap_or_else(|| item.kind.clone()),
+                address: implementation.site.clone(),
+            },
+            None => SourceRecord {
+                source: item.source.as_ref(),
+                fingerprint: "",
+                file: item.file.as_str(),
+                kind: item.kind.clone(),
+                address: item.id.clone(),
+            },
+        }
     }));
     records
 }
