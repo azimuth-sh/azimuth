@@ -12,6 +12,6 @@
 - [x] Migrate the existing Run conformance fixtures to D47 provenance.
 - [ ] Integrate adapter conformance into the root and release-isolation gates.
 - [x] Narrow the superseded Run command Claim to durable ingest only.
-- [ ] Update public and agent guidance without claiming challenge planning or durable state.
+- [x] Update public and agent guidance without claiming challenge planning or durable state.
 - [ ] Run complete component, conformance, isolation and composed-model audits.
 - [ ] Record the accepted outcome and archive the change.

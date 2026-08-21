@@ -20,10 +20,12 @@ azimuth/
 │   ├── <active-exploration>/
 │   └── archive/
 └── formats/
+    ├── adapter.md
     ├── spec.md
     ├── design.md
     ├── verification.md
     ├── run-bundle.md
+    ├── run-launch-plan.md
     └── workspace.md
 ```
 
@@ -51,11 +53,21 @@ plan, actual selection, physical activities, ordered attempts, terminal Observat
 Results, provenance and canonical fingerprints. `azimuth run verify` validates that protocol and a
 correction set; `azimuth run inspect` presents its deterministic account without a service.
 
-Run bundles are exchange inputs, not accepted model-package facets. Plan generation, provider
-execution and report import remain adapter work; current decision resolution for Run plans remains
-challenge-planning work. Durable ingest and Subject-specific Assurance State remain ledger work.
-The existing service stays isolated on its D42 v1 wire until the Run-ledger replacement and receives
-no compatibility bridge.
+Run bundles are exchange inputs, not accepted model-package facets. The strict
+[`formats/adapter.md`](formats/adapter.md) contract configures short-lived provider processes in
+`azimuth/adapters.json`; [`formats/run-launch-plan.md`](formats/run-launch-plan.md) binds a reusable
+provider-neutral semantic Plan to exact configured capability routes. Core plans Checks from the
+complete unselected model, stages configured content and import inputs from the streams it hashes,
+and validates the returned bundle before atomic publication.
+
+The implemented journey is `azimuth adapter verify`, `azimuth run plan`, then either
+`azimuth run execute` or `azimuth run import`. Current planning always emits `challenges: []`.
+Hand-authored strict launch plans can exercise Challenge transport. Repository Challenge Plans
+already resolve authored Qualification targets, but the planner does not project those targets or
+their current applicability into generated Run selections. Claim Judgment target resolution remains
+later. `model.extract` is a declared capability rather than a current operation. Durable ingest and
+Subject-specific Assurance State remain ledger work. The existing service stays isolated on its
+D42 v1 wire until the Run-ledger replacement and receives no compatibility bridge.
 
 `workspace.json` uses the same area-and-mount vocabulary as federation without adding a repository
 field. It binds independently derived surfaces to enumerators and may require non-routine Claims to

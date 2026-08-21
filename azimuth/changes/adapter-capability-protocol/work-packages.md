@@ -78,7 +78,7 @@ Objective: apply routine adapter intent and narrow the superseded Run command bo
 Evidence: current-model parse, all-routine audit and absence of the superseded current Claim
 
 ## Work package: adapter-public-account
-Status: pending
+Status: complete
 Depends on: adapter-cli-surface, adapter-conformance-experiment, current-intent-transition
 Owns: README.md, docs/framework.md, docs/glossary.md, docs/change-process.md, docs/assurance-extensions.md, azimuth/README.md, tools/azimuth/README.md
 Objective: document the implemented adapter journey and its challenge-planning and ledger boundaries

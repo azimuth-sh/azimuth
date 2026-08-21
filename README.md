@@ -3,8 +3,8 @@
 Azimuth is an evidence control plane. It keeps durable intent, implementation linkage and reviewed
 evidentiary meaning in one inspectable project account without making an execution provider or
 hosted service authoritative. The command-line tool validates local model packages, derives
-traceability, assembles revision-bound accounts across repositories and verifies provider-neutral
-Run bundles without a hosted service.
+traceability, assembles revision-bound accounts across repositories, plans Check Runs and invokes
+explicitly configured short-lived adapters without requiring a hosted service.
 
 This is the canonical development and release repository. Framework changes, pull requests and
 version history land here, and publication derives artifacts from immutable version tags in the
@@ -59,10 +59,19 @@ D46 defines the strict [`azimuth-run-bundle`](azimuth/formats/run-bundle.md) ver
 `azimuth run inspect` presents the same protocol account without claiming current model acceptance
 or Assurance State.
 
-Plan generation, provider execution and native report import remain adapter work. Resolving current
-decision targets into a Run plan and applying accepted Runs to Subject-specific state remain
-dependent changes. The existing Assurance Service stays isolated on its D42 v1 wire until the
-Run-ledger replacement is accepted; there is no compatibility bridge or service export command.
+D47 adds strict [`adapter`](azimuth/formats/adapter.md) configuration and
+[`azimuth-run-launch-plan`](azimuth/formats/run-launch-plan.md) version 1. Core loads the complete
+model, derives a provider-neutral Check Plan and binds it to exact configured capability routes.
+`azimuth adapter verify`, `azimuth run plan`, `azimuth run execute` and `azimuth run import` expose
+the short-lived provider boundary. Adapter content and imports are staged from the same streams
+core hashes, and every exchange has descendant-process, timeout and output bounds.
+
+Current planning is Check-only and emits no Challenges. Repository Challenge Plans already resolve
+authored Qualification targets, but projecting their current applicability into generated Run
+selections is deferred; Claim Judgment target resolution remains later. `model.extract` execution,
+long-running adapters, event gateways, durable ingest and Assurance State are also deferred. The
+existing Assurance Service stays isolated on its D42 v1 wire until the Run-ledger replacement is
+accepted; there is no compatibility bridge or service export command.
 
 ## Development and dogfooding
 

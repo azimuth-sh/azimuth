@@ -245,7 +245,7 @@ change. It gates the mechanical archive move and contains no authored risk decis
 **Rollout** — exposure of an accepted artifact across environments or user populations. It is
 normally outside the change model.
 
-## Run protocol and deferred runtime concepts
+## Run and runtime concepts
 
 **Subject** — the exact workspace, CI candidate, artifact, deployment, service or bounded
 monitoring window about which a Run asserts execution facts. The
@@ -255,6 +255,14 @@ provider locators remain provenance rather than exact state.
 **Run** — one bounded, provider-neutral logical execution over one exact Subject and semantic
 plan. Native processes, parameters, shards and retries are subordinate details. A Check executes
 inside a Run and never emits one.
+
+**Semantic Plan** — the provider-neutral selection inside a Run bundle. It freezes complete-model
+identity, exact context, Check implementations, Challenger targets and finite work units without
+naming an adapter or native selector.
+
+**Run launch plan** — the strict provider-routing account that binds one exact Subject, planned
+time, `execute | import` operation and complete semantic Plan to one configured adapter and one
+capability route per selection. Changing a route changes launch identity and the derived Run id.
 
 **Run bundle** — one strict immutable JSON revision accounting for a Run's Subject, context,
 planned and actual semantic selection, activities, attempts, terminal results and provenance.
@@ -269,8 +277,11 @@ Challenger and exact Qualification or Claim Judgment target fingerprint. A clean
 negative search, not positive product evidence.
 
 **Correction** — the complete next immutable revision of one Run bundle. It names its immediate
-predecessor and preserves Run, Subject, context, plan, source-execution and start anchors. It is not
-a patch or timestamp-selected winner.
+predecessor and preserves Run identity, Subject, plan, required and actual context, source system
+and execution, started time, adapter identity and version, descriptor, configuration, launch,
+capability routes, complete normalizer and planned time. Import-input identities are protected per
+revision but may change when later bytes from the same native execution arrive through the frozen
+route. A correction is not a patch or timestamp-selected winner.
 
 **Protocol-valid** — internally consistent under the Run-bundle schema, identities, selection,
 reduction, references and correction rules. It says neither that repository fingerprints are
@@ -279,10 +290,30 @@ current nor that Assurance State is acceptable.
 **Assurance State** — a future dynamic conclusion for one exact Subject, derived from repository
 decisions and accepted execution facts.
 
-**Adapter** — a deferred provider-family integration that will translate core-selected semantic
-targets to native selectors and produce Run bundles without interpreting repository meaning
-independently. Plan generation, execution and native report import are not current Run commands.
+**Adapter** — an explicitly configured, short-lived provider process that translates core-selected
+semantic targets to native work or imports an exact native report. It returns a provider-neutral
+Run bundle and never interprets repository meaning independently. Core invokes it without a shell,
+`PATH` discovery or ambient environment inheritance.
+
+**Adapter configuration** — the strict `azimuth/adapters.json` account that pins adapter and
+provider identity, executable and resource content, description, exact non-secret settings and
+environment literals, process limits and capabilities. Locators do not substitute for content
+identity.
+
+**Capability class** — one of the closed semantic adapter roles `model.extract`, `check.execute`,
+`check.import`, `challenge.execute` and `challenge.import`. `model.extract` is declared but has no
+current execution command.
+
+**Configured capability address** — the open `<adapter-id>/<capability-id>` route identity for one
+configured capability. It is distinct from the open provider-family identity and from an open
+Challenge form.
+
+**Bounded adapter exchange** — one strict request and response with same-stream content staging,
+a cleared child environment, descendant-process containment, one deadline and independent standard
+output and error bounds. It is an integrity and process boundary, not a filesystem or network
+sandbox.
 
 **Assurance Service** — the optional future durable ledger for accepted Runs and derived Assurance
 State. D42's version 1 service wire remains isolated until the Run-ledger replacement; it is neither
-the alpha 2 repository-model format nor the Run-bundle protocol.
+the alpha 2 repository-model format nor the Run-bundle protocol. No current adapter is a
+long-running service or webhook bridge.
