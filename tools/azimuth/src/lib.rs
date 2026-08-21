@@ -62,8 +62,8 @@ pub fn load(
         Err(mut diagnostics) => errors.append(&mut diagnostics),
     }
     if standards_path.exists() {
-        match verification::load_policies(standards_path) {
-            Ok(policies) => model.qualification_policies = Some(policies),
+        match verification::load_standards(standards_path) {
+            Ok(standards) => model.decision_standards = Some(standards),
             Err(mut diagnostics) => errors.append(&mut diagnostics),
         }
     }
@@ -91,10 +91,10 @@ pub fn load(
         return Err(errors);
     }
 
-    if model.qualification_policies.is_none() && needs_policies(&model) {
+    if model.decision_standards.is_none() && needs_standards(&model) {
         warnings.push(Diag::file(
             &standards_path.display().to_string(),
-            "no qualification policies file; non-routine Evidence Bindings cannot be resolved",
+            "no Decision Standards file; non-routine decisions cannot be resolved",
         ));
     }
     warnings.extend(package_location_warnings(&model));
@@ -151,8 +151,8 @@ pub fn load_assembly(
         reject_retired_judgment_facets(root, &mut errors);
     }
     if let Some(path) = &assembly.standards_path {
-        match verification::load_policies(path) {
-            Ok(policies) => model.qualification_policies = Some(policies),
+        match verification::load_standards(path) {
+            Ok(standards) => model.decision_standards = Some(standards),
             Err(mut diagnostics) => errors.append(&mut diagnostics),
         }
     }
@@ -166,10 +166,10 @@ pub fn load_assembly(
         return Err(errors);
     }
 
-    if model.qualification_policies.is_none() && needs_policies(&model) {
+    if model.decision_standards.is_none() && needs_standards(&model) {
         warnings.push(Diag::file(
             "project",
-            "qualification policies are outside this assembly; non-routine bindings are incomplete",
+            "Decision Standards are outside this assembly; non-routine decisions are incomplete",
         ));
     }
     warnings.extend(package_location_warnings(&model));
@@ -237,7 +237,7 @@ fn reject_retired_judgment_facets(root: &Path, errors: &mut Vec<Diag>) {
         Diag::at(
             &path.display().to_string(),
             1,
-            "alpha 1 `judgments.md` is retired; no Claim Judgment format exists in alpha 2",
+            "alpha 1 `judgments.md` is retired; use Claim Judgment blocks in `verification.md`",
         )
     }));
 }
@@ -254,15 +254,12 @@ fn collect_named(dir: &Path, name: &str, out: &mut Vec<PathBuf>) -> std::io::Res
     Ok(())
 }
 
-fn needs_policies(model: &Model) -> bool {
-    model.evidence_bindings().any(|binding| {
-        model
-            .claims()
-            .find(|claim| claim.id() == binding.claim)
-            .and_then(|claim| claim.requirement.criticality)
-            .is_some_and(|criticality| {
-                matches!(criticality, Criticality::Standard | Criticality::Critical)
-            })
+fn needs_standards(model: &Model) -> bool {
+    model.claims().any(|claim| {
+        matches!(
+            claim.requirement.criticality,
+            Some(Criticality::Standard | Criticality::Critical)
+        )
     })
 }
 
@@ -526,6 +523,8 @@ fn apply_selection(model: &mut Model, only: &[String]) {
             .retain(|binding| selected_bindings.contains(&binding.id));
         file.qualifications
             .retain(|qualification| selected_bindings.contains(&qualification.id));
+        file.claim_judgments
+            .retain(|judgment| selected_claims.contains(&judgment.id));
         file.challengers
             .retain(|challenger| selected_challengers.contains(&challenger.id));
         file.challenge_plans
@@ -544,6 +543,7 @@ fn apply_selection(model: &mut Model, only: &[String]) {
         !file.checks.is_empty()
             || !file.bindings.is_empty()
             || !file.qualifications.is_empty()
+            || !file.claim_judgments.is_empty()
             || !file.challengers.is_empty()
             || !file.challenge_plans.is_empty()
     });
@@ -608,9 +608,12 @@ fn selected_mechanism_claims(model: &Model, identity: &str) -> BTreeSet<String> 
         .filter(|claim| claim.spec.id == spec_id)
         .filter(|claim| {
             design
-                .for_scenario(&claim.scenario.id)
-                .into_iter()
-                .chain(design.for_requirement(&claim.requirement.id))
+                .entries
+                .iter()
+                .filter(|entry| match &entry.target {
+                    crate::design::Target::Requirement(id) => id == &claim.requirement.id,
+                    crate::design::Target::Scenario(id) => id == &claim.scenario.id,
+                })
                 .any(|entry| entry.mechanisms.iter().any(|item| item.id == mechanism_id))
         })
         .map(|claim| claim.id())
@@ -802,4 +805,73 @@ fn warn_if_not_sibling(
             spec.path
         ),
     ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{needs_standards, selected_mechanism_claims};
+    use crate::design::{Design, DesignEntry, Enforcement, Mechanism, Target};
+    use crate::model::Model;
+
+    fn mechanism(id: &str) -> Mechanism {
+        Mechanism {
+            id: id.into(),
+            kind: Enforcement::Guard,
+            binding: Some(format!("{id}-artifact")),
+            expected_unique: None,
+            expected_columns: Vec::new(),
+            expected_predicate: None,
+            line: 1,
+        }
+    }
+
+    #[test]
+    fn mechanism_selection_closure_reads_every_matching_design_entry() {
+        let spec = crate::spec::parse_spec(
+            "spec.md",
+            "# Spec: example\n\n## Requirement: works\nCriticality: standard\n\nThe example \
+             SHALL work.\n\n### Scenario: succeeds\nWHEN invoked\nTHEN it succeeds\n",
+        )
+        .unwrap();
+        let model = Model {
+            specs: vec![spec],
+            designs: vec![Design {
+                spec: "example".into(),
+                path: "design.md".into(),
+                entries: vec![
+                    DesignEntry {
+                        target: Target::Scenario("succeeds".into()),
+                        mechanisms: vec![mechanism("first")],
+                        line: 1,
+                    },
+                    DesignEntry {
+                        target: Target::Scenario("succeeds".into()),
+                        mechanisms: vec![mechanism("second")],
+                        line: 2,
+                    },
+                ],
+                residue: String::new(),
+            }],
+            ..Default::default()
+        };
+
+        assert_eq!(
+            selected_mechanism_claims(&model, "example#second"),
+            ["example#succeeds".to_string()].into_iter().collect()
+        );
+    }
+
+    #[test]
+    fn every_nonroutine_claim_needs_decision_standards_even_without_declarations() {
+        let spec = crate::spec::parse_spec(
+            "spec.md",
+            "# Spec: example\n\n## Requirement: works\nCriticality: standard\n\nThe example \
+             SHALL work.\n\n### Scenario: succeeds\nWHEN invoked\nTHEN it succeeds\n",
+        )
+        .unwrap();
+        assert!(needs_standards(&Model {
+            specs: vec![spec],
+            ..Default::default()
+        }));
+    }
 }

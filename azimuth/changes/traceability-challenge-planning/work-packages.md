@@ -8,7 +8,7 @@ Objective: freeze Claim Judgment, decision-policy, scheduling, semantic-scope an
 Evidence: strict examples, canonical fingerprint vectors, 100-column and contradiction audits
 
 ## Work package: decision-model-kernel
-Status: pending
+Status: complete
 Depends on: protocol-authority
 Owns: tools/azimuth/src/verification.rs, tools/azimuth/src/fingerprint.rs, tools/azimuth/src/model.rs, tools/azimuth/src/lib.rs, tools/azimuth/tests/verification.rs, tools/azimuth/tests/spec_parse.rs
 Objective: parse, load, fingerprint, validate cardinality and export current Claim Judgments and policies

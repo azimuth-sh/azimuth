@@ -345,6 +345,45 @@ fn routine_spec_only_package_loads_without_verification_authority() {
 }
 
 #[test]
+fn bare_nonroutine_packages_load_with_missing_judgments_observable() {
+    for criticality in ["standard", "critical"] {
+        let root = package_root();
+        let model = root.join("model");
+        write_routine_spec(&model.join("simple/spec.md"), "simple", "works");
+        let spec_path = model.join("simple/spec.md");
+        fs::write(
+            &spec_path,
+            fs::read_to_string(&spec_path).unwrap().replace(
+                "Criticality: routine",
+                &format!("Criticality: {criticality}"),
+            ),
+        )
+        .unwrap();
+        let standards = root.join("standards.md");
+        fs::write(
+            &standards,
+            "# Decision policies and Challenge schedule\n\n\
+             ## Decision Policy: credible\nRequired challenge: mutation\n\nRequired objection.\n\n\
+             ## Challenge Schedule: current\nGate challenge: mutation\n\nCurrent lane.\n",
+        )
+        .unwrap();
+
+        let loaded = azimuth::load(
+            &model,
+            &standards,
+            &root.join("missing-workspace.json"),
+            &[],
+            &[],
+        )
+        .unwrap();
+        assert_eq!(loaded.model.claims().count(), 1);
+        assert_eq!(loaded.model.claim_judgments().count(), 0);
+        assert!(loaded.warnings.is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[test]
 fn sibling_spec_design_and_verification_form_one_package() {
     let root = package_root();
     let package = root.join("model/package");
@@ -477,10 +516,10 @@ fn only_selection_retains_the_verification_and_challenge_closure() {
         "# Verification: alpha\n\n## Check: shared/check\nMethod: invoke\nTerminal: works\n\n\
          Atomic.\n\n## Evidence Binding: edge/alpha\nCheck: shared/check\nClaim: alpha#works\n\
          Proposition: direct\nScope: unit\nQuantification: example\nOracle: direct\nContext: {}\n\
-         Challenge domain: [\"context\"]\nQualification policy: credible\n\nReviewable.\n\n\
+         Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n\n\
          ## Evidence Binding: edge/beta\nCheck: shared/check\nClaim: beta#works\nProposition: direct\n\
          Scope: unit\nQuantification: example\nOracle: direct\nContext: {}\n\
-         Challenge domain: [\"context\"]\nQualification policy: credible\n\nReviewable.\n\n\
+         Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n\n\
          ## Qualification: edge/alpha\nVerdict: qualified\n\
          Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
          Qualified: 2026-08-21\nQualifier: owner\n\nReviewed.\n\n\
@@ -488,7 +527,7 @@ fn only_selection_retains_the_verification_and_challenge_closure() {
          Fingerprint: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n\
          Qualified: 2026-08-21\nQualifier: owner\n\nReviewed.\n\n\
          ## Challenger: mutation/perturb\nForm: implementation-perturbation\n\
-         Searches for: an undetected change\n\nOpen objection.\n\n\
+         Searches for: an undetected change\nRequired scope: [\"context\"]\n\nOpen objection.\n\n\
          ## Challenge Plan: shared/plan\nChallenger: mutation/perturb\n\
          Select: qualification from check shared/check\n\
          Select: qualification from binding edge/beta\n\nTargets relevant decisions.\n",
@@ -682,7 +721,7 @@ fn verification_authority_requires_a_current_owning_spec() {
 }
 
 #[test]
-fn missing_policies_warn_only_for_resolved_nonroutine_binding_targets() {
+fn missing_standards_warn_for_any_nonroutine_claim() {
     let root = package_root();
     let model = root.join("model");
     write_routine_spec(&model.join("routine/spec.md"), "routine", "works");
@@ -695,7 +734,7 @@ fn missing_policies_warn_only_for_resolved_nonroutine_binding_targets() {
     assert!(!routine
         .warnings
         .iter()
-        .any(|warning| warning.message.contains("qualification policies")));
+        .any(|warning| warning.message.contains("Decision Standards")));
 
     write_routine_spec(&model.join("standard/spec.md"), "standard", "works");
     let standard_path = model.join("standard/spec.md");
@@ -708,11 +747,17 @@ fn missing_policies_warn_only_for_resolved_nonroutine_binding_targets() {
     .unwrap();
     fs::write(
         model.join("standard/verification.md"),
-        verification_binding(
-            "standard",
-            "standard/check",
-            "standard#works",
-            "edge/standard",
+        format!(
+            "{}\n## Claim Judgment: standard#works\nVerdict: accepted\nPolicy: credible\n\
+             Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
+             Judged: 2026-08-21\nJudge: owner\nBasis: the composition is sufficient\n\
+             Residual risk: none identified\n\nReviewed.\n",
+            verification_binding(
+                "standard",
+                "standard/check",
+                "standard#works",
+                "edge/standard",
+            )
         ),
     )
     .unwrap();
@@ -720,7 +765,7 @@ fn missing_policies_warn_only_for_resolved_nonroutine_binding_targets() {
     assert!(mixed
         .warnings
         .iter()
-        .any(|warning| warning.message.contains("qualification policies")));
+        .any(|warning| warning.message.contains("Decision Standards")));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -729,7 +774,7 @@ fn verification_binding(owner: &str, check: &str, claim: &str, binding: &str) ->
         "# Verification: {owner}\n\n## Check: {check}\nMethod: invoke\nTerminal: works\n\n\
          Atomic.\n\n## Evidence Binding: {binding}\nCheck: {check}\nClaim: {claim}\n\
          Proposition: direct\nScope: unit\nQuantification: example\nOracle: direct\nContext: {{}}\n\
-         Challenge domain: [\"context\"]\nQualification policy: credible\n\nReviewable.\n"
+         Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n"
     )
 }
 
@@ -741,6 +786,6 @@ fn verification_with_binding(owner: &str, binding: &str, include_check: bool) ->
         "# Verification: {owner}\n\n{check}## Evidence Binding: {binding}\n\
          Check: shared/check\nClaim: alpha#works\nProposition: direct\nScope: unit\n\
          Quantification: example\nOracle: direct\nContext: {{}}\n\
-         Challenge domain: [\"context\"]\nQualification policy: credible\n\nReviewable.\n"
+         Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n"
     )
 }

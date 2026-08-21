@@ -149,8 +149,39 @@ pub fn check_fingerprint(
     ]))
 }
 
-pub fn policy_fingerprint(policy: &crate::verification::QualificationPolicy) -> String {
+pub fn policy_fingerprint(policy: &crate::verification::DecisionPolicy) -> String {
     canonical_sha256(&crate::verification::policy_json(policy))
+}
+
+pub fn schedule_fingerprint(schedule: &crate::verification::ChallengeSchedule) -> String {
+    canonical_sha256(&crate::verification::schedule_json(schedule))
+}
+
+pub fn challenger_fingerprint(challenger: &crate::verification::Challenger) -> String {
+    use crate::json::Json;
+    let mut required_scope = challenger.required_scope.clone();
+    required_scope.sort();
+    required_scope.dedup();
+    canonical_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-challenger-fingerprint")),
+        ("version", Json::Num(1.0)),
+        ("id", Json::str(&challenger.id)),
+        ("form", Json::str(&challenger.form)),
+        ("searches_for", Json::str(&challenger.searches_for)),
+        (
+            "required_scope",
+            Json::Arr(
+                required_scope
+                    .into_iter()
+                    .map(|kind| Json::str(kind.name()))
+                    .collect(),
+            ),
+        ),
+    ]))
+}
+
+pub fn claim_judgment_fingerprint(preimage: &crate::json::Json) -> String {
+    canonical_sha256(preimage)
 }
 
 pub fn binding_fingerprint(
@@ -185,7 +216,7 @@ pub fn binding_fingerprint(
             "challenge_domain",
             Json::Arr(challenge_domain.into_iter().map(Json::str).collect()),
         ),
-        ("qualification_policy_digest", Json::str(policy_digest)),
+        ("decision_policy_digest", Json::str(policy_digest)),
     ]))
 }
 
