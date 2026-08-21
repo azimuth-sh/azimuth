@@ -642,6 +642,10 @@ are protected by each revision's bundle fingerprint but may change when a later 
 report for the same source execution is normalized through the frozen launch route. If a correction
 anchor was wrong, it is a new Run.
 
+An adapter correction request carries the complete verified terminal bundle as well as the ordered
+revision/fingerprint chain identities. This gives a stateless adapter every fixed field needed to
+construct the exact next complete revision; core still verifies the combined chain independently.
+
 ## Command boundary
 
 ```text

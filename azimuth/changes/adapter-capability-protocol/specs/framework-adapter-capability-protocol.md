@@ -140,6 +140,7 @@ AND they do not substitute for the core-computed content identity
 WHEN an import or execution supplies predecessor bundles
 THEN core validates their complete linear correction chain before adapter invocation
 AND the request binds the sorted revision and bundle-fingerprint identities
+AND it carries the complete verified terminal predecessor for exact anchor preservation
 AND the response is exactly the next revision correcting the terminal predecessor
 
 ## Add requirement: capability-classes-and-provider-identities-stay-separate

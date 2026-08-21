@@ -136,9 +136,11 @@ atomically with implementation and the limitation must remain visible in the cha
   replace them with locators or native run ids. A correction may carry later bytes from the same
   native execution while its launch route remains fixed.
 - Execute and import validate the complete ordered predecessor chain before spawning. The request
-  fingerprint binds the sorted revision and bundle-fingerprint identities. With no predecessor the
-  adapter returns revision zero; otherwise it returns exactly the terminal revision plus one,
-  corrects the terminal fingerprint and preserves all correction anchors.
+  fingerprint binds the sorted revision and bundle-fingerprint identities. The request also
+  carries the complete verified terminal predecessor so a stateless adapter can repeat exact
+  correction anchors. With no predecessor the terminal account is null and the adapter returns
+  revision zero; otherwise it returns exactly the terminal revision plus one and corrects the
+  terminal fingerprint.
 - Execute and import validate configuration, descriptor, class, launch identity, Subject, semantic
   plan, adapter provenance, routes, actual selection and the complete D46 bundle before atomic
   output.

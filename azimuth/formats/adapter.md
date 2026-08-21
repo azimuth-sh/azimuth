@@ -240,7 +240,8 @@ An execute or import request is:
       "bundle_revision": 0,
       "bundle_fingerprint": "sha256:<predecessor-bundle-fingerprint>"
     }
-  ]
+  ],
+  "terminal_predecessor": {}
 }
 ```
 
@@ -270,6 +271,13 @@ any order, verifies and deduplicates exact replay through D46 bundle-set verific
 multiple Runs, gaps, forks, changed launch identities or conflicting revisions before invoking the
 adapter.
 
+`terminal_predecessor` is always present. It is `null` exactly when `predecessors` is empty.
+Otherwise it is the complete strict terminal Run bundle, its revision and fingerprint equal the
+last predecessor identity, and it belongs to the verified chain. Core recomputes that bundle
+fingerprint and validates the full chain, identity and launch match before spawn. A stateless
+adapter uses the terminal bundle to preserve source system, source execution, started time and all
+other correction anchors while constructing the next complete revision.
+
 Resource and input locators are transport-only and do not enter request or bundle identity. An
 adapter cannot replace the supplied input identity with a native URI, display path or provider
 execution id.
@@ -277,7 +285,8 @@ execution id.
 Staging, a cleared environment and bounded streams are integrity and process controls, not a
 filesystem or network sandbox. A configured adapter is authorized project code and may retain the
 ambient operating-system access of the Azimuth process. Projects govern that authority outside
-this protocol.
+this protocol. Passing a terminal predecessor inline neither dereferences its artifact locators nor
+reduces that ambient authority.
 
 ## Responses
 
@@ -437,9 +446,11 @@ Request fingerprints use one of these exact preimages:
 
 `input-identities` contains only `id`, `digest` and `size_bytes`; locator relocation does not
 change request identity. `predecessor-identities` contains only `bundle_revision` and
-`bundle_fingerprint` in revision order. The launch fingerprint already binds the configuration
-fingerprint, so it transitively binds semantic settings and resource content while transport
-locators stay out of identity. Every supplied fingerprint equals the recomputed value.
+`bundle_fingerprint` in revision order. `terminal_predecessor` is excluded because the final
+predecessor fingerprint already commits its complete content; core must recompute and match it
+before spawn. The launch fingerprint already binds the configuration fingerprint, so it
+transitively binds semantic settings and resource content while transport locators stay out of
+identity. Every supplied fingerprint equals the recomputed value.
 
 ### Canonical vector
 

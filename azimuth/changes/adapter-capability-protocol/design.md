@@ -146,7 +146,9 @@ Execute and import accept repeatable predecessor bundles. Core validates a compl
 before spawning and binds the sorted revision and bundle-fingerprint identities into the request
 fingerprint. No predecessors require revision zero. Otherwise the response must be exactly the
 terminal revision plus one, name the terminal bundle fingerprint in `corrects` and preserve every
-correction anchor. The adapter receives verified predecessor identities, not unchecked history.
+correction anchor. The request also carries the complete verified terminal predecessor, so a
+stateless adapter can copy exact source, start-time and execution-route anchors rather than infer
+them. No predecessors use a null terminal account.
 
 The Run id binds the launch fingerprint in addition to its D46 inputs. Changing an adapter,
 configuration or capability route therefore creates a different Run rather than a correction of

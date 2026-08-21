@@ -2551,9 +2551,12 @@ publishes an output. Standard error and process exit status are diagnostics, nev
 
 Execute and import may receive repeated predecessor bundle files. Core verifies the full D46 chain,
 then sends its unique `(bundle revision, bundle fingerprint)` identities in revision order and
-binds them in request identity. With no predecessors the adapter returns revision zero. Otherwise it
-returns exactly the next complete revision, corrects the terminal predecessor and preserves every
-anchor. Core verifies the combined chain before atomic publication.
+binds them in request identity. It also sends the complete verified terminal bundle, or `null` for
+an empty chain. The terminal fingerprint already commits the full bundle, so this redundant content
+does not enter request identity. With no predecessors the adapter returns revision zero. Otherwise
+a stateless adapter uses the terminal account to preserve every anchor and returns exactly the next
+complete revision. Core verifies terminal identity and the combined chain before spawn and again
+before atomic publication.
 
 The launch and bundle adapter accounts repeat exact adapter version. The D46 `normalizer` is now
 exactly `adapter/<configured-adapter-id>`, uses that adapter version and uses the adapter

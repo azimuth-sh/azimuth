@@ -199,10 +199,12 @@ objects exactly, verifies actual selection against the semantic Plan and verifie
 bundle before atomic output.
 
 Execute and import accept repeated predecessor bundle files in any order. Core verifies their full
-D46 correction chain and sends the sorted revision/fingerprint identities in the adapter request.
-No predecessor requires revision zero. Otherwise the response is exactly the next full revision,
-names the terminal predecessor and validates with the supplied chain. The returned bundle's Run id
-includes this launch fingerprint, so a predecessor from another route cannot join the chain.
+D46 correction chain and sends the sorted revision/fingerprint identities plus the complete
+verified terminal bundle in the adapter request. With no predecessors it sends a null terminal and
+requires revision zero. Otherwise the stateless adapter uses the terminal account to preserve every
+anchor, and the response is exactly the next full revision. Core validates it with the supplied
+chain. The returned bundle's Run id includes this launch fingerprint, so a predecessor from another
+route cannot join the chain.
 
 ## Command boundary
 
