@@ -7,5 +7,5 @@
 - [x] Build the standalone synthetic Run conformance experiment.
 - [x] Integrate the conformance gate and update public and agent guidance.
 - [x] Retire stale active hosted receipts invalidated by the gate and catalog change.
-- [ ] Run complete component, experiment, release-isolation and composed-model audits.
-- [ ] Record the accepted outcome and archive the change.
+- [x] Run complete component, experiment, release-isolation and composed-model audits.
+- [x] Record the accepted outcome and archive the change.

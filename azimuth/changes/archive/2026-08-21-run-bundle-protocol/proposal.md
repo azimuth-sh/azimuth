@@ -1,6 +1,6 @@
 # Change: run-bundle-protocol
 
-Status: proposed
+Status: accepted and complete
 
 ## Problem
 
