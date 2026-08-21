@@ -43,7 +43,7 @@ Objective: export the adapter, planner and host modules before public command ro
 Evidence: module compilation and complete Rust library tests
 
 ## Work package: adapter-cli-surface
-Status: pending
+Status: complete
 Depends on: adapter-module-integration
 Owns: tools/azimuth/src/main.rs, tools/azimuth/tests/adapter_cli.rs, tools/azimuth/tests/run_cli.rs
 Objective: expose adapter verify and Run plan, execute and import with exact exit classes

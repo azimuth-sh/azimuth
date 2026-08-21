@@ -7,8 +7,13 @@ use azimuth::diag::Diag;
 use azimuth::validation;
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
+use std::fs::{self, OpenOptions};
+use std::io::Write as IoWrite;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static OUTPUT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 const USAGE: &str = "\
 azimuth — derives and validates an evidence-control-plane model
@@ -17,6 +22,12 @@ USAGE
     azimuth validate [options]
     azimuth report traceability [options]
     azimuth export [options]
+    azimuth adapter verify [--config <file>]
+    azimuth run plan --request <file> [--model <dir>] [--standards <file>]
+        [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
+    azimuth run execute --plan <file> [--predecessor <bundle>...] [--config <file>] [--out <file>]
+    azimuth run import --plan <file> --input <id>=<file>... [--predecessor <bundle>...]
+        [--config <file>] [--out <file>]
     azimuth run verify --bundle <file>...
     azimuth run inspect --bundle <file>... [--format text|json] [--out <file>]
     azimuth init [--root <azimuth-dir>]
@@ -52,8 +63,19 @@ OPTIONS
 
 const RUN_USAGE: &str = "\
 USAGE
+    azimuth run plan --request <file> [--model <dir>] [--standards <file>]
+        [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
+    azimuth run execute --plan <file> [--predecessor <bundle>...]
+        [--config <file>] [--out <file>]
+    azimuth run import --plan <file> --input <id>=<file>...
+        [--predecessor <bundle>...] [--config <file>] [--out <file>]
     azimuth run verify --bundle <file>...
     azimuth run inspect --bundle <file>... [--format text|json] [--out <file>]
+";
+
+const ADAPTER_USAGE: &str = "\
+USAGE
+    azimuth adapter verify [--config <file>]
 ";
 
 fn main() -> ExitCode {
@@ -104,6 +126,9 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
     }
     if command == "run" {
         return command_run(&args[1..]);
+    }
+    if command == "adapter" {
+        return command_adapter(&args[1..]);
     }
 
     match command.as_str() {
@@ -870,9 +895,83 @@ struct RunOptions {
     out: Option<PathBuf>,
 }
 
+struct RunPlanOptions {
+    request: PathBuf,
+    model: PathBuf,
+    standards: PathBuf,
+    workspace: PathBuf,
+    manifests: Vec<PathBuf>,
+    config: PathBuf,
+    out: Option<PathBuf>,
+}
+
+struct RunInvokeOptions {
+    plan: PathBuf,
+    predecessors: Vec<PathBuf>,
+    inputs: Vec<azimuth::adapter_host::ImportInput>,
+    config: PathBuf,
+    out: Option<PathBuf>,
+}
+
+fn command_adapter(args: &[String]) -> Result<ExitCode, String> {
+    let Some(operation) = args.first() else {
+        return Err(format!("adapter needs verify\n\n{ADAPTER_USAGE}"));
+    };
+    if operation == "-h" || operation == "--help" {
+        print!("{ADAPTER_USAGE}");
+        return Ok(ExitCode::SUCCESS);
+    }
+    if operation != "verify" {
+        return Err(format!(
+            "unknown adapter operation `{operation}`\n\n{ADAPTER_USAGE}"
+        ));
+    }
+    if args
+        .get(1)
+        .is_some_and(|value| value == "-h" || value == "--help")
+    {
+        if args.len() == 2 {
+            print!("{ADAPTER_USAGE}");
+            return Ok(ExitCode::SUCCESS);
+        }
+    }
+    let mut config = None;
+    let mut index = 1;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--config" => {
+                set_once_path(
+                    &mut config,
+                    PathBuf::from(argument_value(args, index, "--config")?),
+                    "--config",
+                )?;
+                index += 2;
+            }
+            value if value.starts_with('-') => {
+                return Err(format!("unknown adapter verify option `{value}`"));
+            }
+            value => return Err(format!("unexpected adapter positional argument `{value}`")),
+        }
+    }
+    let config = config.unwrap_or_else(default_adapter_configuration);
+    let configuration = match azimuth::adapter::load_configuration(&config) {
+        Ok(configuration) => configuration,
+        Err(errors) => return Ok(report_schema_errors(&errors)),
+    };
+    for adapter in &configuration.adapters {
+        if let Err(error) = azimuth::adapter_host::verify_adapter(adapter) {
+            report_host_error(&error);
+            return Ok(ExitCode::from(error.class.exit_code() as u8));
+        }
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
 fn command_run(args: &[String]) -> Result<ExitCode, String> {
     let Some(operation) = args.first() else {
-        return Err(format!("run needs verify or inspect\n\n{RUN_USAGE}"));
+        return Err(format!(
+            "run needs plan, execute, import, verify or inspect\n\n{RUN_USAGE}"
+        ));
     };
     if operation == "-h" || operation == "--help" {
         print!("{RUN_USAGE}");
@@ -882,15 +981,367 @@ fn command_run(args: &[String]) -> Result<ExitCode, String> {
         .get(1)
         .is_some_and(|argument| argument == "-h" || argument == "--help")
     {
-        if matches!(operation.as_str(), "verify" | "inspect") && args.len() == 2 {
+        if matches!(
+            operation.as_str(),
+            "plan" | "execute" | "import" | "verify" | "inspect"
+        ) && args.len() == 2
+        {
             print!("{RUN_USAGE}");
             return Ok(ExitCode::SUCCESS);
         }
     }
     match operation.as_str() {
+        "plan" => command_run_plan(parse_run_plan_options(&args[1..])?),
+        "execute" => command_run_invoke(parse_run_invoke_options(&args[1..], false)?, false),
+        "import" => command_run_invoke(parse_run_invoke_options(&args[1..], true)?, true),
         "verify" => command_run_verify(parse_run_options(&args[1..], false)?),
         "inspect" => command_run_inspect(parse_run_options(&args[1..], true)?),
         other => Err(format!("unknown run operation `{other}`\n\n{RUN_USAGE}")),
+    }
+}
+
+fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
+    let mut request = None;
+    let mut model = None;
+    let mut standards = None;
+    let mut workspace = None;
+    let mut manifests = Vec::new();
+    let mut config = None;
+    let mut out = None;
+    let mut index = 0;
+    while index < args.len() {
+        let option = args[index].as_str();
+        match option {
+            "--request" => set_once_path(
+                &mut request,
+                PathBuf::from(argument_value(args, index, option)?),
+                option,
+            )?,
+            "--model" => set_once_path(
+                &mut model,
+                PathBuf::from(argument_value(args, index, option)?),
+                option,
+            )?,
+            "--standards" => set_once_path(
+                &mut standards,
+                PathBuf::from(argument_value(args, index, option)?),
+                option,
+            )?,
+            "--workspace" => set_once_path(
+                &mut workspace,
+                PathBuf::from(argument_value(args, index, option)?),
+                option,
+            )?,
+            "--manifest" => manifests.push(PathBuf::from(argument_value(args, index, option)?)),
+            "--config" => set_once_path(
+                &mut config,
+                PathBuf::from(argument_value(args, index, option)?),
+                option,
+            )?,
+            "--out" => set_once_path(
+                &mut out,
+                PathBuf::from(argument_value(args, index, option)?),
+                option,
+            )?,
+            value if value.starts_with('-') => {
+                return Err(format!("unknown run plan option `{value}`"));
+            }
+            value => return Err(format!("unexpected run plan positional argument `{value}`")),
+        }
+        index += 2;
+    }
+    let request = request.ok_or("run plan needs `--request <file>`")?;
+    let model = model.unwrap_or_else(|| PathBuf::from("azimuth/model"));
+    let standards = standards.unwrap_or_else(|| PathBuf::from("azimuth/standards/verification.md"));
+    let workspace = workspace.unwrap_or_else(|| {
+        model
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join("workspace.json")
+    });
+    let config = config.unwrap_or_else(default_adapter_configuration);
+    let input_paths = std::iter::once(&request)
+        .chain(std::iter::once(&model))
+        .chain(std::iter::once(&standards))
+        .chain(std::iter::once(&workspace))
+        .chain(manifests.iter())
+        .chain(std::iter::once(&config));
+    reject_output_input_equality(out.as_ref(), input_paths, "run plan")?;
+    reject_model_output_descendant(out.as_ref(), &model)?;
+    Ok(RunPlanOptions {
+        request,
+        model,
+        standards,
+        workspace,
+        manifests,
+        config,
+        out,
+    })
+}
+
+fn parse_run_invoke_options(args: &[String], import: bool) -> Result<RunInvokeOptions, String> {
+    let operation = if import { "import" } else { "execute" };
+    let mut plan = None;
+    let mut predecessors = Vec::new();
+    let mut inputs = Vec::new();
+    let mut input_ids = BTreeSet::new();
+    let mut config = None;
+    let mut out = None;
+    let mut index = 0;
+    while index < args.len() {
+        let option = args[index].as_str();
+        match option {
+            "--plan" => set_once_path(
+                &mut plan,
+                PathBuf::from(argument_value(args, index, option)?),
+                option,
+            )?,
+            "--predecessor" => {
+                predecessors.push(PathBuf::from(argument_value(args, index, option)?));
+            }
+            "--input" if import => {
+                let value = argument_value(args, index, option)?;
+                let (id, path) = value
+                    .split_once('=')
+                    .ok_or("`--input` needs `<lower-kebab-path-id>=<file>`")?;
+                if id.is_empty() || path.is_empty() {
+                    return Err("`--input` needs `<lower-kebab-path-id>=<file>`".into());
+                }
+                if !input_ids.insert(id.to_string()) {
+                    return Err(format!("duplicate import input id `{id}`"));
+                }
+                inputs.push(azimuth::adapter_host::ImportInput {
+                    id: id.to_string(),
+                    path: PathBuf::from(path),
+                });
+            }
+            "--config" => set_once_path(
+                &mut config,
+                PathBuf::from(argument_value(args, index, option)?),
+                option,
+            )?,
+            "--out" => set_once_path(
+                &mut out,
+                PathBuf::from(argument_value(args, index, option)?),
+                option,
+            )?,
+            value if value.starts_with('-') => {
+                return Err(format!("unknown run {operation} option `{value}`"));
+            }
+            value => {
+                return Err(format!(
+                    "unexpected run {operation} positional argument `{value}`"
+                ));
+            }
+        }
+        index += 2;
+    }
+    let plan = plan.ok_or_else(|| format!("run {operation} needs `--plan <file>`"))?;
+    if import && inputs.is_empty() {
+        return Err("run import needs at least one `--input <id>=<file>`".into());
+    }
+    inputs.sort_by(|left, right| left.id.cmp(&right.id));
+    let config = config.unwrap_or_else(default_adapter_configuration);
+    let input_paths = std::iter::once(&plan)
+        .chain(predecessors.iter())
+        .chain(inputs.iter().map(|input| &input.path))
+        .chain(std::iter::once(&config));
+    reject_output_input_equality(out.as_ref(), input_paths, &format!("run {operation}"))?;
+    Ok(RunInvokeOptions {
+        plan,
+        predecessors,
+        inputs,
+        config,
+        out,
+    })
+}
+
+fn command_run_plan(options: RunPlanOptions) -> Result<ExitCode, String> {
+    let request = match azimuth::run_plan::load_plan_request(&options.request) {
+        Ok(request) => request,
+        Err(errors) => return Ok(report_schema_errors(&errors)),
+    };
+    let configuration = match azimuth::adapter::load_configuration(&options.config) {
+        Ok(configuration) => configuration,
+        Err(errors) => return Ok(report_schema_errors(&errors)),
+    };
+    let loaded = match azimuth::load(
+        &options.model,
+        &options.standards,
+        &options.workspace,
+        &options.manifests,
+        &[],
+    ) {
+        Ok(loaded) => loaded,
+        Err(diags) => {
+            report(&diags, "error");
+            return Ok(ExitCode::from(2));
+        }
+    };
+    report(&loaded.warnings, "warning");
+    let launch = match azimuth::run_plan::plan(&loaded.model, &configuration, &request) {
+        Ok(launch) => launch,
+        Err(errors) => {
+            for error in errors {
+                eprintln!("error: {error}");
+            }
+            return Ok(ExitCode::from(1));
+        }
+    };
+    publish_output(
+        azimuth::run_plan::launch_plan_to_json(&launch)
+            .to_string_pretty()
+            .as_bytes(),
+        options.out.as_ref(),
+    )?;
+    Ok(ExitCode::SUCCESS)
+}
+
+fn command_run_invoke(options: RunInvokeOptions, import: bool) -> Result<ExitCode, String> {
+    let launch = match azimuth::run_plan::load_launch_plan(&options.plan) {
+        Ok(launch) => launch,
+        Err(errors) => return Ok(report_schema_errors(&errors)),
+    };
+    let configuration = match azimuth::adapter::load_configuration(&options.config) {
+        Ok(configuration) => configuration,
+        Err(errors) => return Ok(report_schema_errors(&errors)),
+    };
+    let predecessors = match load_run_bundles(&options.predecessors) {
+        Ok(bundles) => bundles,
+        Err(code) => return Ok(code),
+    };
+    let hosted = if import {
+        azimuth::adapter_host::import(&configuration, &launch, &options.inputs, &predecessors)
+    } else {
+        azimuth::adapter_host::execute(&configuration, &launch, &predecessors)
+    };
+    let hosted = match hosted {
+        Ok(hosted) => hosted,
+        Err(error) => {
+            report_host_error(&error);
+            return Ok(ExitCode::from(error.class.exit_code() as u8));
+        }
+    };
+    publish_output(hosted.canonical_json.as_bytes(), options.out.as_ref())?;
+    Ok(ExitCode::SUCCESS)
+}
+
+fn default_adapter_configuration() -> PathBuf {
+    PathBuf::from("azimuth/adapters.json")
+}
+
+fn set_once_path(target: &mut Option<PathBuf>, value: PathBuf, option: &str) -> Result<(), String> {
+    if target.replace(value).is_some() {
+        Err(format!("`{option}` may be supplied only once"))
+    } else {
+        Ok(())
+    }
+}
+
+fn reject_output_input_equality<'a>(
+    output: Option<&PathBuf>,
+    inputs: impl Iterator<Item = &'a PathBuf>,
+    command: &str,
+) -> Result<(), String> {
+    if let Some(output) = output {
+        let output = effective_output_path(output)?;
+        for input in inputs {
+            if effective_input_path(input)? == output {
+                return Err(format!("{command} output must not overwrite an input path"));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn reject_model_output_descendant(output: Option<&PathBuf>, model: &PathBuf) -> Result<(), String> {
+    let Some(output) = output else {
+        return Ok(());
+    };
+    let model = effective_input_path(model)?;
+    let output = effective_output_path(output)?;
+    if output.starts_with(&model) {
+        return Err("run plan output must not be inside the model directory".into());
+    }
+    Ok(())
+}
+
+fn effective_input_path(path: &PathBuf) -> Result<PathBuf, String> {
+    match fs::canonicalize(path) {
+        Ok(path) => Ok(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => absolute_lexical_path(path),
+        Err(error) => Err(format!(
+            "cannot resolve input path {}: {error}",
+            path.display()
+        )),
+    }
+}
+
+fn effective_output_path(path: &PathBuf) -> Result<PathBuf, String> {
+    match fs::canonicalize(path) {
+        Ok(path) => return Ok(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(format!(
+                "cannot resolve output path {}: {error}",
+                path.display()
+            ));
+        }
+    }
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| format!("output path {} has no file name", path.display()))?;
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let parent = match fs::canonicalize(parent) {
+        Ok(parent) => parent,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            absolute_lexical_path(&parent.to_path_buf())?
+        }
+        Err(error) => {
+            return Err(format!(
+                "cannot resolve output parent {}: {error}",
+                parent.display()
+            ));
+        }
+    };
+    Ok(parent.join(file_name))
+}
+
+fn absolute_lexical_path(path: &PathBuf) -> Result<PathBuf, String> {
+    let absolute = if path.is_absolute() {
+        path.clone()
+    } else {
+        std::env::current_dir()
+            .map_err(|error| format!("cannot resolve current directory: {error}"))?
+            .join(path)
+    };
+    let mut normalized = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                normalized.pop();
+            }
+            component => normalized.push(component.as_os_str()),
+        }
+    }
+    Ok(normalized)
+}
+
+fn report_schema_errors(errors: &[impl std::fmt::Display]) -> ExitCode {
+    for error in errors {
+        eprintln!("error: {error}");
+    }
+    ExitCode::from(2)
+}
+
+fn report_host_error(error: &azimuth::adapter_host::HostError) {
+    eprintln!("error: {error}");
+    if !error.stderr.is_empty() {
+        eprintln!("adapter stderr: {}", error.stderr);
     }
 }
 
@@ -937,11 +1388,7 @@ fn parse_run_options(args: &[String], inspect: bool) -> Result<RunOptions, Strin
     if bundles.is_empty() {
         return Err("run verification needs at least one `--bundle <file>`".into());
     }
-    if let Some(output) = &out {
-        if bundles.iter().any(|bundle| bundle == output) {
-            return Err("run inspection output must not overwrite an input bundle".into());
-        }
-    }
+    reject_output_input_equality(out.as_ref(), bundles.iter(), "run inspection")?;
     Ok(RunOptions {
         bundles,
         format: format.unwrap_or(RunOutputFormat::Text),
@@ -1015,16 +1462,78 @@ fn command_run_inspect(options: RunOptions) -> Result<ExitCode, String> {
         RunOutputFormat::Text => run_inspection_text(&bundles, &findings),
         RunOutputFormat::Json => run_inspection_json(&bundles, &findings).to_string_pretty(),
     };
-    match options.out {
-        Some(path) => std::fs::write(&path, rendered)
-            .map_err(|error| format!("cannot write {}: {error}", path.display()))?,
-        None => print!("{rendered}"),
-    }
+    publish_output(rendered.as_bytes(), options.out.as_ref())?;
     Ok(if findings.is_empty() {
         ExitCode::SUCCESS
     } else {
         ExitCode::from(1)
     })
+}
+
+fn publish_output(bytes: &[u8], output: Option<&PathBuf>) -> Result<(), String> {
+    let Some(output) = output else {
+        let stdout = std::io::stdout();
+        let mut lock = stdout.lock();
+        lock.write_all(bytes)
+            .and_then(|_| lock.flush())
+            .map_err(|error| format!("cannot write standard output: {error}"))?;
+        return Ok(());
+    };
+
+    let parent = output
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let file_name = output
+        .file_name()
+        .ok_or_else(|| format!("output path {} has no file name", output.display()))?
+        .to_string_lossy();
+    let mut last_collision = None;
+    for _ in 0..128 {
+        let sequence = OUTPUT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let temporary = parent.join(format!(
+            ".{file_name}.azimuth-{}-{sequence}.tmp",
+            std::process::id()
+        ));
+        let mut file = match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                last_collision = Some(error);
+                continue;
+            }
+            Err(error) => {
+                return Err(format!(
+                    "cannot create temporary output beside {}: {error}",
+                    output.display()
+                ));
+            }
+        };
+        if let Err(error) = file.write_all(bytes).and_then(|_| file.flush()) {
+            drop(file);
+            let _ = fs::remove_file(&temporary);
+            return Err(format!("cannot write {}: {error}", output.display()));
+        }
+        drop(file);
+        if let Err(error) = fs::rename(&temporary, output) {
+            let _ = fs::remove_file(&temporary);
+            return Err(format!(
+                "cannot publish {} atomically: {error}",
+                output.display()
+            ));
+        }
+        return Ok(());
+    }
+    Err(format!(
+        "cannot reserve a unique temporary output beside {}: {}",
+        output.display(),
+        last_collision
+            .map(|error| error.to_string())
+            .unwrap_or_else(|| "name collision".into())
+    ))
 }
 
 fn unique_run_bundles(bundles: &[azimuth::run::RunBundle]) -> Vec<&azimuth::run::RunBundle> {
