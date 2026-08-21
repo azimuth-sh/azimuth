@@ -400,6 +400,16 @@ fn strict_json_handles_surrogates_and_rejects_lexical_gaps() {
     for integral_spelling in [
         source.replacen("\"version\": 1", "\"version\": 1.0", 1),
         source.replacen("\"version\": 1", "\"version\": 1e0", 1),
+        source.replacen(
+            "\"planned_at_ms\": 1",
+            "\"planned_at_ms\": 9007199254740991.0",
+            1,
+        ),
+        source.replacen(
+            "\"planned_at_ms\": 1",
+            "\"planned_at_ms\": 90071992547409910e-1",
+            1,
+        ),
     ] {
         assert!(parse("integral.json", &integral_spelling).is_ok());
     }
@@ -409,6 +419,16 @@ fn strict_json_handles_surrogates_and_rejects_lexical_gaps() {
         source.replace("ci/principal", "ci/\u{1}"),
         source.replacen("\"version\": 1", "\"version\": 01", 1),
         source.replacen("\"planned_at_ms\": 1", "\"planned_at_ms\": 1.5", 1),
+        source.replacen(
+            "\"planned_at_ms\": 1",
+            "\"planned_at_ms\": 9007199254740990.5",
+            1,
+        ),
+        source.replacen(
+            "\"planned_at_ms\": 1",
+            "\"planned_at_ms\": 90071992547409905e-1",
+            1,
+        ),
         source.replacen("\"version\": 1", "\"version\": -1", 1),
         source.replacen(
             "\"planned_at_ms\": 1",
@@ -1028,6 +1048,22 @@ fn adapter_routes_match_every_semantic_selection_in_exact_launch_order() {
     let findings = verify(&reversed);
     assert!(has(&findings, "run/non-canonical-array"));
     assert!(has(&findings, "run/provenance-route-selection"));
+}
+
+#[test]
+fn adapter_route_addresses_are_exact_two_lower_kebab_segments() {
+    let source = to_json(&valid_bundle()).to_string_pretty();
+    for address in [
+        "synthetic/check--s",
+        "synthetic--adapter/checks",
+        "synthetic/checks/extra",
+    ] {
+        let malformed = source.replacen("synthetic/checks", address, 1);
+        assert!(
+            parse("address.json", &malformed).is_err(),
+            "accepted {address}"
+        );
+    }
 }
 
 #[test]

@@ -103,6 +103,19 @@ pub fn canonical_sha256(value: &crate::json::Json) -> String {
     format!("sha256:{}", sha256(canonical_json(value).as_bytes()))
 }
 
+/// Derives the raw SHA-256 digest of the complete model account used by planning and finalization.
+///
+/// Findings are part of the exported account, so a caller must pass the findings derived from the
+/// same complete, unselected model. Keeping this derivation here prevents execution plans and
+/// accepted change records from assigning different identities to that account.
+pub fn model_digest(
+    model: &crate::model::Model,
+    findings: &[crate::validation::Finding],
+) -> String {
+    let model_json = model.to_json(findings).to_string_pretty();
+    sha256(model_json.as_bytes())
+}
+
 pub fn check_fingerprint(
     check: &crate::verification::Check,
     implementations: &[crate::model::CheckImplementation],

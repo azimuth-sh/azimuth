@@ -22,7 +22,7 @@ Objective: parse strict configuration and derive descriptor, configuration and c
 Evidence: config allowlist, drift, address, class, path and fingerprint tests
 
 ## Work package: semantic-run-planner
-Status: pending
+Status: complete
 Depends on: run-component-seam, adapter-contract-kernel
 Owns: tools/azimuth/src/run_plan.rs, tools/azimuth/src/fingerprint.rs, tools/azimuth/src/change.rs, tools/azimuth/tests/run_plan.rs
 Objective: resolve complete-model Checks and bind canonical Check-only launch plans
@@ -33,7 +33,7 @@ Status: pending
 Depends on: run-component-seam, adapter-contract-kernel, semantic-run-planner
 Owns: tools/azimuth/src/adapter_host.rs, tools/azimuth/tests/adapter_host.rs
 Objective: invoke bounded execute/import processes and validate complete returned bundles atomically
-Evidence: handshake, bounds, import digest, predecessor terminal, mismatch and no-retry tests
+Evidence: handshake, staging cleanup, bounds, import digest, predecessor terminal and no-retry tests
 
 ## Work package: adapter-module-integration
 Status: pending

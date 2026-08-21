@@ -838,10 +838,63 @@ impl StrictJson<'_> {
         }
         let text = std::str::from_utf8(&self.bytes[start..self.position])
             .map_err(|_| self.error("invalid number"))?;
-        let value = text
-            .parse::<f64>()
-            .map_err(|_| self.error("invalid number"))?;
-        Ok(Json::Num(value))
+        let value = safe_integer_lexeme(text)
+            .ok_or_else(|| self.error("number must be a non-negative safe integer"))?;
+        Ok(Json::Num(value as f64))
+    }
+}
+
+fn safe_integer_lexeme(text: &str) -> Option<u64> {
+    let (negative, unsigned) = match text.strip_prefix('-') {
+        Some(unsigned) => (true, unsigned),
+        None => (false, text),
+    };
+    let (mantissa, exponent_text) = unsigned
+        .split_once(['e', 'E'])
+        .map_or((unsigned, None), |(mantissa, exponent)| {
+            (mantissa, Some(exponent))
+        });
+    let (whole, fraction) = mantissa
+        .split_once('.')
+        .map_or((mantissa, ""), |(whole, fraction)| (whole, fraction));
+    let mut digits = String::with_capacity(whole.len() + fraction.len());
+    digits.push_str(whole);
+    digits.push_str(fraction);
+    let digits = digits.trim_start_matches('0');
+    if digits.is_empty() {
+        return Some(0);
+    }
+    if negative {
+        return None;
+    }
+    let exponent = match exponent_text {
+        Some(exponent) => exponent.parse::<i128>().ok()?,
+        None => 0,
+    };
+    let shift = exponent.checked_sub(fraction.len() as i128)?;
+    if shift >= 0 {
+        let shift = usize::try_from(shift).ok()?;
+        if digits.len().checked_add(shift)? > 16 {
+            return None;
+        }
+        let value = digits.parse::<u64>().ok()?;
+        let scale = 10_u64.checked_pow(u32::try_from(shift).ok()?)?;
+        let value = value.checked_mul(scale)?;
+        (value <= MAX_SAFE_INTEGER).then_some(value)
+    } else {
+        let discarded = usize::try_from(shift.checked_neg()?).ok()?;
+        if discarded >= digits.len() {
+            return None;
+        }
+        let split = digits.len() - discarded;
+        if !digits.as_bytes()[split..]
+            .iter()
+            .all(|digit| *digit == b'0')
+        {
+            return None;
+        }
+        let value = digits[..split].parse::<u64>().ok()?;
+        (value <= MAX_SAFE_INTEGER).then_some(value)
     }
 }
 
@@ -1899,6 +1952,9 @@ fn validate_capability_address(value: &str) -> Result<(), String> {
     let capability = parts.next().unwrap_or_default();
     if adapter.is_empty() || capability.is_empty() || parts.next().is_some() {
         return Err("must have exact `<adapter-id>/<capability-id>` form".into());
+    }
+    if adapter.contains("--") || capability.contains("--") {
+        return Err("segments must be lower kebab without consecutive hyphens".into());
     }
     validate_id(adapter, false)?;
     validate_id(capability, false)
