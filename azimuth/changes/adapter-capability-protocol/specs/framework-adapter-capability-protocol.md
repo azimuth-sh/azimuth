@@ -33,9 +33,10 @@ AND the reported value differs from configuration
 THEN Azimuth rejects the adapter before accepting a provider result
 
 ### Add scenario: capability-identity-tracks-semantics
-WHEN pinned behavior or declared capability semantics change
+WHEN adapter content, adapter identity or capability-local declarations and settings change
 THEN the capability fingerprint changes
-AND locator relocation, prose or secret values do not change that fingerprint
+AND adapter-wide environment or process-limit changes affect configuration identity instead
+AND locator relocation or prose does not change either semantic fingerprint
 
 ## Add requirement: semantic-planning-uses-the-complete-model
 Criticality: routine

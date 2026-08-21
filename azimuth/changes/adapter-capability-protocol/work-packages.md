@@ -33,7 +33,7 @@ Status: pending
 Depends on: run-component-seam, adapter-contract-kernel, semantic-run-planner
 Owns: tools/azimuth/src/adapter_host.rs, tools/azimuth/tests/adapter_host.rs
 Objective: invoke bounded execute/import processes and validate complete returned bundles atomically
-Evidence: handshake, timeout, output-bound, import-digest, mismatch and no-retry tests
+Evidence: handshake, bounds, import digest, predecessor terminal, mismatch and no-retry tests
 
 ## Work package: adapter-module-integration
 Status: pending
@@ -54,7 +54,7 @@ Status: pending
 Depends on: adapter-cli-surface
 Owns: experiments/adapter-capabilities
 Objective: exercise executing and report-importing synthetic adapters through one conformance suite
-Evidence: execute, import, drift, substitution, negative-fact and dual-role cases
+Evidence: execute, import, correction, drift, substitution, negative-fact and dual-role cases
 
 ## Work package: adapter-gate-integration
 Status: pending

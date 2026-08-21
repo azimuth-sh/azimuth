@@ -546,6 +546,86 @@ fn run_identity_binds_the_frozen_launch_route() {
 }
 
 #[test]
+fn published_launch_fingerprint_vector_stays_stable() {
+    let source = r#"
+{
+  "adapter": {
+    "adapter_fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "adapter_version": "1",
+    "configuration_fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "descriptor_fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "id": "demo"
+  },
+  "format": "azimuth-run-launch-fingerprint",
+  "operation": "execute",
+  "plan": {
+    "challenges": [],
+    "checks": [
+      {
+        "fingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "id": "demo/check",
+        "implementations": [
+          {
+            "identity": "demo|rust-symbol|demo::check",
+            "source_fingerprint": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+          }
+        ],
+        "units": [{"id": "whole", "parameters": {}}]
+      }
+    ],
+    "fingerprint": "sha256:b75606956b9c1857f8b401d9bad207253b90f6948efddb5532a769b9f488fbfb",
+    "model_fingerprint": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+    "required_context": {}
+  },
+  "planned_at_ms": 1787300000000,
+  "routes": [
+    {
+      "capability": {
+        "address": "demo/check",
+        "class": "check.execute",
+        "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "selection": {"id": "demo/check", "kind": "check"}
+    }
+  ],
+  "subject": {
+    "artifacts": [
+      {
+        "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "id": "image"
+      }
+    ],
+    "kind": "artifact"
+  },
+  "subject_fingerprint": "sha256:22478698e6731ce5984658e366386e466fe173216bc7cb721168e1638d2dee02",
+  "version": 1
+}
+"#;
+    let launch = strict_json("launch-vector.json", source).unwrap();
+    assert_eq!(
+        canonical_fingerprint(&launch).unwrap(),
+        "sha256:980dc9e544f41414e3a2735e84a6d9733aee85b2961899bb538f1f34c4347237"
+    );
+}
+
+#[test]
+fn published_run_id_vector_stays_stable() {
+    let mut bundle = valid_bundle();
+    bundle.provenance.source.system = "synthetic".into();
+    bundle.provenance.source.execution = "run-1".into();
+    bundle.subject_fingerprint =
+        "sha256:22478698e6731ce5984658e366386e466fe173216bc7cb721168e1638d2dee02".into();
+    bundle.plan.fingerprint =
+        "sha256:b75606956b9c1857f8b401d9bad207253b90f6948efddb5532a769b9f488fbfb".into();
+    bundle.provenance.adapter.launch_fingerprint =
+        "sha256:980dc9e544f41414e3a2735e84a6d9733aee85b2961899bb538f1f34c4347237".into();
+    assert_eq!(
+        run_id(&bundle),
+        "sha256:45acaf027cc7abee8a7a8ba8c0ff3ac80c6af61a16dbc904f6406e0fe11642dc"
+    );
+}
+
+#[test]
 fn lexical_fingerprints_parse_but_mismatches_are_semantic_findings() {
     let mut bundle = valid_bundle();
     bundle.subject_fingerprint = fp('7');
@@ -1057,4 +1137,36 @@ fn correction_anchors_fix_the_planned_adapter_route_but_not_import_bytes() {
     refresh(&mut different_run);
     let findings = verify_set(&[initial, different_run]);
     assert!(has(&findings, "run/history-missing-initial"));
+}
+
+#[test]
+fn correction_cannot_mutate_adapter_fingerprint() {
+    let initial = valid_bundle();
+    let mut correction = initial.clone();
+    correction.bundle_revision = 1;
+    correction.corrects = Some(initial.bundle_fingerprint.clone());
+    correction.correction_reason = Some("changed adapter fingerprint".into());
+    correction.provenance.adapter.adapter_fingerprint = fp('9');
+    refresh(&mut correction);
+
+    assert!(has(
+        &verify_set(&[initial, correction]),
+        "run/history-anchor-change"
+    ));
+}
+
+#[test]
+fn correction_cannot_mutate_normalizer_build_fingerprint() {
+    let initial = valid_bundle();
+    let mut correction = initial.clone();
+    correction.bundle_revision = 1;
+    correction.corrects = Some(initial.bundle_fingerprint.clone());
+    correction.correction_reason = Some("changed normalizer build fingerprint".into());
+    correction.provenance.normalizer.build_fingerprint = fp('9');
+    refresh(&mut correction);
+
+    assert!(has(
+        &verify_set(&[initial, correction]),
+        "run/history-anchor-change"
+    ));
 }

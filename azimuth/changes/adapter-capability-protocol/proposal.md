@@ -107,9 +107,9 @@ atomically with implementation and the limitation must remain visible in the cha
   literals. Version 1 has no ambient inheritance, secret reference or interpolation.
 - `azimuth adapter verify` performs the protocol-v1 description exchange and fails if adapter id,
   version, build, descriptor fingerprint or capability dictionary differs from configuration.
-- Capability and configuration fingerprints bind behavior-changing executable and resource
-  digests, protocol, adapter version and build, declarations, exact environment literals and
-  non-secret semantic settings while excluding locators and prose.
+- Capability fingerprints bind adapter content and identity plus capability-local declarations and
+  settings. Configuration fingerprints additionally bind adapter-wide settings, exact environment
+  literals and process limits. Both exclude locators and prose.
 - A strict plan request supplies one exact D46 Subject, planned time, operation, exact string
   context and sorted Check selections with finite explicit units and capability addresses.
 - The public surface is `azimuth adapter verify [--config <file>]`,
@@ -129,8 +129,9 @@ atomically with implementation and the limitation must remain visible in the cha
   one capability may implement several classes and one physical activity may return separate Check
   and Challenge outputs.
 - Execute and import use one request/response process, enforce configured timeout and output bounds,
-  drain bounded standard output and standard error concurrently, and treat exit status, malformed
-  response or timeout as transport failure. Execute is never retried automatically after timeout.
+  and drain bounded standard output and standard error concurrently. Nonzero child status, timeout,
+  overflow or extra response content exits one; malformed or schema-invalid response JSON exits
+  two. Execute is never retried automatically after timeout.
 - Import inputs are exact staged files whose digests and sizes core computes from the streams it
   copies before invocation. Returned bundle provenance repeats those identities; adapters cannot
   replace them with locators or native run ids. A correction may carry later bytes from the same

@@ -260,9 +260,9 @@ import request omits the `adapter` field and carries only capabilities used by i
 
 Execute requires `inputs: []`. Import requires a non-empty array sorted by unique lower-kebab path
 `id`. Core opens each source input once, copies and hashes bytes from that same handle into the
-private invocation directory, validates size and digest and marks the staged file read-only. Each
-request locator is the staged absolute regular-file path. The adapter verifies the bytes it
-consumes; a mismatch produces failure, never a bundle.
+private invocation directory, derives size and digest from that stream and marks the staged file
+read-only. Each request locator is the staged absolute regular-file path. The adapter verifies the
+bytes it consumes; a mismatch produces failure, never a bundle.
 
 `predecessors` is always present. It is empty for a new Run. Otherwise it contains the full verified
 existing correction chain, sorted by contiguous `bundle_revision` from zero, with exactly

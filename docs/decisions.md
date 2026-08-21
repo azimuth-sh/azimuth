@@ -2522,9 +2522,10 @@ execute after a timeout because native work may already have occurred.
 
 Core stages content before every invocation. It opens each configured executable, resource and
 import input exactly once, copies and hashes bytes from that same open handle into a private
-invocation directory, validates configured digest and size, makes staged content non-writable and
-uses only staged paths. Resources and inputs are read-only; the executable retains only the owner
-permissions needed to read and execute it. This closes hash-then-open substitution without
+invocation directory, validates each executable and resource against its configured digest, and
+derives each import input's digest and size from that stream. It makes staged content non-writable
+and uses only staged paths. Resources and inputs are read-only; the executable retains only the
+owner permissions needed to read and execute it. This closes hash-then-open substitution without
 pretending to sandbox authorized adapter code. The adapter retains the host filesystem and network
 authority of the Azimuth process.
 
