@@ -4,10 +4,10 @@ mod adapter;
 use adapter::{
     adapter_fingerprint, capability_fingerprint, configuration_fingerprint,
     describe_request_fingerprint, descriptor_fingerprint, parse_configuration, parse_description,
-    run_request_fingerprint, stage_content, stage_file, validate_description, AdapterConfiguration,
-    AdapterContent, AdapterEnvironment, AdapterLimits, AdapterOperation, Capability,
-    CapabilityClass, ConfiguredAdapter, ConfiguredFile, ConfiguredResource, InputIdentity,
-    PredecessorIdentity,
+    parse_response, run_request_fingerprint, stage_content, stage_file, validate_description,
+    AdapterConfiguration, AdapterContent, AdapterEnvironment, AdapterLimits, AdapterOperation,
+    Capability, CapabilityClass, ConfiguredAdapter, ConfiguredFile, ConfiguredResource,
+    InputIdentity, PredecessorIdentity, MAX_SAFE_INTEGER,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -347,9 +347,11 @@ fn matches_all_published_adapter_identity_vectors() {
         "sha256:8b554d29e9bf8cdaee20699d1d10f64493acba3f2d1466c7523c078922c4f6e1"
     );
     assert_eq!(
-        describe_request_fingerprint("demo", &format!("sha256:{}", "1".repeat(64)),),
+        describe_request_fingerprint("demo", &format!("sha256:{}", "1".repeat(64)),).unwrap(),
         "sha256:4247bd475c6d87a35d495dc1b83f0125c2072d0453db1cd6353406603df18edf"
     );
+    assert!(describe_request_fingerprint("Demo", &format!("sha256:{}", "1".repeat(64))).is_err());
+    assert!(describe_request_fingerprint("demo", "sha256:not-a-digest").is_err());
     let launch = format!("sha256:{}", "9".repeat(64));
     assert_eq!(
         run_request_fingerprint(AdapterOperation::Execute, &launch, &[], &[]).unwrap(),
@@ -656,4 +658,167 @@ fn strict_json_accepts_integral_forms_and_rejects_nonintegral_and_invalid_unicod
         )
     )
     .is_err());
+}
+
+#[test]
+fn bare_configuration_filename_resolves_against_current_directory() {
+    let source = "{\"format\":\"azimuth-adapter-configuration\",\"version\":1,\"adapters\":[]}";
+    let parsed = parse_configuration(Path::new("adapters.json"), source).unwrap();
+    assert_eq!(parsed.directory, Path::new(".").canonicalize().unwrap());
+}
+
+#[test]
+fn input_identity_size_is_the_exact_streamed_byte_count() {
+    let fixture = Fixture::new();
+    let input = fixture.directory.join("sized-input");
+    let bytes = vec![b'x'; 64 * 1024 + 17];
+    fs::write(&input, &bytes).unwrap();
+    let identity = adapter::identify_input("sized-input", &input).unwrap();
+    assert_eq!(identity.size_bytes, bytes.len() as u64);
+
+    let stage = fixture.directory.join("sized-input-stage");
+    fs::create_dir(&stage).unwrap();
+    let staged = stage_file(&input, &stage.join("input"), None, None, false).unwrap();
+    assert_eq!(identity.digest, staged.digest);
+    assert_eq!(identity.size_bytes, staged.size_bytes);
+}
+
+#[test]
+fn rejects_nested_duplicate_map_keys_before_fingerprinting() {
+    let fixture = Fixture::new();
+    let duplicate = fixture.configuration_json().replacen(
+        "\"semantic_settings\":{\"dialect\":\"v1\"}",
+        "\"semantic_settings\":{\"dialect\":\"v1\",\"dialect\":\"v2\"}",
+        1,
+    );
+    assert!(parse_error(&fixture.config_path, &duplicate).contains("duplicate field `dialect`"));
+}
+
+#[test]
+fn jcs_orders_object_keys_by_utf16_code_units() {
+    let adapter_fingerprint = format!("sha256:{}", "0".repeat(64));
+    let capability = Capability {
+        id: "check".into(),
+        classes: vec![CapabilityClass::CheckExecute],
+        challenge_forms: vec![],
+        semantic_settings: BTreeMap::from([
+            ("\u{e000}".into(), "bmp".into()),
+            ("\u{10000}".into(), "astral".into()),
+        ]),
+        fingerprint: String::new(),
+    };
+    assert_eq!(
+        capability_fingerprint(&adapter_fingerprint, &capability),
+        "sha256:daaf7ecdbcc825a9ad7fa3e105b156fa4c31071c5a753fbd5f9649469a43388b"
+    );
+}
+
+#[test]
+fn accepts_exact_max_safe_exponent_and_rejects_the_next_integer() {
+    let fixture = Fixture::new();
+    let mut maximum = fixture.adapter.clone();
+    maximum.limits.timeout_ms = MAX_SAFE_INTEGER;
+    maximum.configuration_fingerprint = configuration_fingerprint(&maximum);
+    let decimal = configuration_json(&maximum);
+    let exponent = decimal.replacen(
+        &format!("\"timeout_ms\":{MAX_SAFE_INTEGER}"),
+        "\"timeout_ms\":9.007199254740991e15",
+        1,
+    );
+    assert!(parse_configuration(&fixture.config_path, &exponent).is_ok());
+    let unsafe_number = exponent.replacen("9.007199254740991e15", "9.007199254740992e15", 1);
+    assert!(parse_error(&fixture.config_path, &unsafe_number).contains("safe-integer"));
+}
+
+#[test]
+fn parses_strict_response_envelopes_without_claiming_run_validity() {
+    let fixture = Fixture::new();
+    let request = format!("sha256:{}", "1".repeat(64));
+    let description = description_json(&fixture.adapter);
+    let describe = format!(
+        concat!(
+            "{{\"format\":\"azimuth-adapter-response\",\"version\":1,",
+            "\"request_id\":{},\"operation\":\"describe\",\"status\":\"ok\",",
+            "\"description\":{}}}"
+        ),
+        json_string(&request),
+        description
+    );
+    let parsed = parse_response(&describe).unwrap();
+    assert_eq!(parsed.operation, AdapterOperation::Describe);
+    assert!(parsed.bundle_json.is_none());
+
+    let execute = format!(
+        concat!(
+            "{{\"format\":\"azimuth-adapter-response\",\"version\":1,",
+            "\"request_id\":{},\"operation\":\"execute\",\"status\":\"ok\",",
+            "\"description\":{},\"launch_fingerprint\":{},",
+            "\"bundle\":{{\"z\":1,\"a\":2}}}}"
+        ),
+        json_string(&request),
+        description,
+        json_string(&format!("sha256:{}", "2".repeat(64)))
+    );
+    let parsed = parse_response(&execute).unwrap();
+    assert_eq!(parsed.bundle_json.as_deref(), Some("{\"a\":2,\"z\":1}"));
+    assert!(!parsed.description_json.contains("locator"));
+
+    let failed = format!(
+        concat!(
+            "{{\"format\":\"azimuth-adapter-response\",\"version\":1,",
+            "\"request_id\":{},\"operation\":\"import\",\"status\":\"failed\",",
+            "\"description\":{},\"launch_fingerprint\":{},",
+            "\"failure\":{{\"code\":\"native-report/unreadable\",",
+            "\"message\":\"unreadable\",\"details\":{{}}}}}}"
+        ),
+        json_string(&request),
+        description,
+        json_string(&format!("sha256:{}", "2".repeat(64)))
+    );
+    let parsed = parse_response(&failed).unwrap();
+    assert_eq!(parsed.failure.unwrap().code, "native-report/unreadable");
+
+    let invalid = execute.replacen("\"status\":\"ok\"", "\"status\":\"failed\"", 1);
+    assert!(parse_response(&invalid).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn staging_uses_owner_only_modes_and_contained_symlinks_resolve() {
+    use std::os::unix::fs::{symlink, PermissionsExt};
+
+    let fixture = Fixture::new();
+    let link = fixture.directory.join("contained-adapter");
+    symlink(fixture.directory.join("adapter.bin"), &link).unwrap();
+    let mut linked = fixture.adapter.clone();
+    linked.content.executable.locator = "contained-adapter".into();
+    let parsed = parse_configuration(&fixture.config_path, &configuration_json(&linked)).unwrap();
+    assert_eq!(
+        parsed.adapters[0].content.executable.resolved,
+        fixture
+            .directory
+            .join("adapter.bin")
+            .canonicalize()
+            .unwrap()
+    );
+
+    let stage = fixture.directory.join("mode-stage");
+    fs::create_dir(&stage).unwrap();
+    let staged = stage_content(&parsed.adapters[0], &stage).unwrap();
+    assert_eq!(
+        fs::metadata(staged.executable.path)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o500
+    );
+    assert_eq!(
+        fs::metadata(&staged.resources[0].path)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o400
+    );
 }

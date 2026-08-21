@@ -285,6 +285,31 @@ pub struct PredecessorIdentity {
     pub bundle_fingerprint: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdapterResponseStatus {
+    Ok,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdapterFailure {
+    pub code: String,
+    pub message: String,
+    pub details: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdapterResponse {
+    pub request_id: String,
+    pub operation: AdapterOperation,
+    pub status: AdapterResponseStatus,
+    pub description: AdapterDescription,
+    pub description_json: String,
+    pub launch_fingerprint: Option<String>,
+    pub bundle_json: Option<String>,
+    pub failure: Option<AdapterFailure>,
+}
+
 pub fn load_configuration(path: &Path) -> Result<AdapterConfiguration, Vec<SchemaError>> {
     let source = fs::read_to_string(path).map_err(|error| {
         vec![SchemaError {
@@ -314,7 +339,10 @@ fn parse_configuration_inner(path: &Path, source: &str) -> Result<AdapterConfigu
     exact_string(fields, "format", "$", CONFIGURATION_FORMAT)?;
     exact_integer(fields, "version", "$", PROTOCOL_VERSION)?;
 
-    let configured_directory = path.parent().unwrap_or_else(|| Path::new("."));
+    let configured_directory = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
     let directory = configured_directory.canonicalize().map_err(|error| {
         format!(
             "configuration directory `{}` cannot be resolved: {error}",
@@ -784,8 +812,147 @@ pub fn validate_description(
     }
 }
 
-pub fn describe_request_fingerprint(adapter_id: &str, configuration_fingerprint: &str) -> String {
-    jcs_sha256(&Json::obj(vec![
+/// Parses the strict transport envelope without interpreting provider-neutral Run semantics.
+///
+/// `bundle_json`, when present, is RFC 8785 JSON for handoff to the Run parser. The bounded host
+/// remains responsible for request/launch equality and complete bundle validation.
+pub fn parse_response(source: &str) -> Result<AdapterResponse, Vec<SchemaError>> {
+    parse_response_inner(source).map_err(|detail| {
+        vec![SchemaError {
+            path: "adapter response".into(),
+            detail,
+        }]
+    })
+}
+
+fn parse_response_inner(source: &str) -> Result<AdapterResponse, String> {
+    let root = StrictJson::parse(source)?;
+    reject_duplicate_keys(&root, "$".into())?;
+    let fields = object(
+        &root,
+        "$",
+        &[
+            "format",
+            "version",
+            "request_id",
+            "operation",
+            "status",
+            "description",
+            "launch_fingerprint",
+            "bundle",
+            "failure",
+        ],
+    )?;
+    exact_string(fields, "format", "$", "azimuth-adapter-response")?;
+    exact_integer(fields, "version", "$", PROTOCOL_VERSION)?;
+    let request_id = fingerprint(fields, "request_id", "$")?;
+    let operation = match string(fields, "operation", "$")? {
+        "describe" => AdapterOperation::Describe,
+        "execute" => AdapterOperation::Execute,
+        "import" => AdapterOperation::Import,
+        other => return Err(format!("$.operation has unsupported value `{other}`")),
+    };
+    let status = match string(fields, "status", "$")? {
+        "ok" => AdapterResponseStatus::Ok,
+        "failed" => AdapterResponseStatus::Failed,
+        other => return Err(format!("$.status has unsupported value `{other}`")),
+    };
+    let description_value = required(fields, "description", "$")?;
+    let description = parse_description_value(description_value, "$.description")?;
+    let mut description_json = String::new();
+    write_jcs(&description_json_value(&description), &mut description_json);
+
+    let launch_fingerprint = match fields.iter().find(|(key, _)| key == "launch_fingerprint") {
+        None => None,
+        Some((_, Json::Str(value))) if valid_fingerprint(value) => Some(value.clone()),
+        Some(_) => return Err("$.launch_fingerprint has invalid shape".into()),
+    };
+    if operation == AdapterOperation::Describe && launch_fingerprint.is_some() {
+        return Err("$.launch_fingerprint is forbidden for describe".into());
+    }
+    if operation != AdapterOperation::Describe && launch_fingerprint.is_none() {
+        return Err("$.launch_fingerprint is required for execute and import".into());
+    }
+
+    let bundle_value = fields
+        .iter()
+        .find(|(key, _)| key == "bundle")
+        .map(|(_, value)| value);
+    let failure_value = fields
+        .iter()
+        .find(|(key, _)| key == "failure")
+        .map(|(_, value)| value);
+    let (bundle_json, failure) = match status {
+        AdapterResponseStatus::Ok if operation == AdapterOperation::Describe => {
+            if bundle_value.is_some() || failure_value.is_some() {
+                return Err("successful describe forbids bundle and failure".into());
+            }
+            (None, None)
+        }
+        AdapterResponseStatus::Ok => {
+            if failure_value.is_some() {
+                return Err("successful execute or import forbids failure".into());
+            }
+            let bundle = bundle_value
+                .ok_or_else(|| "successful execute or import requires a bundle".to_string())?;
+            if !matches!(bundle, Json::Obj(_)) {
+                return Err("$.bundle must be an object".into());
+            }
+            let mut canonical = String::new();
+            write_jcs(bundle, &mut canonical);
+            (Some(canonical), None)
+        }
+        AdapterResponseStatus::Failed => {
+            if bundle_value.is_some() {
+                return Err("failed response forbids bundle".into());
+            }
+            let failure_value =
+                failure_value.ok_or_else(|| "failed response requires failure".to_string())?;
+            let failure_where = "$.failure";
+            let failure_fields = object(
+                failure_value,
+                failure_where,
+                &["code", "message", "details"],
+            )?;
+            let failure = AdapterFailure {
+                code: path_id(failure_fields, "code", failure_where)?,
+                message: nonempty(failure_fields, "message", failure_where)?,
+                details: string_map(
+                    required(failure_fields, "details", failure_where)?,
+                    "$.failure.details",
+                    false,
+                )?,
+            };
+            (None, Some(failure))
+        }
+    };
+    Ok(AdapterResponse {
+        request_id,
+        operation,
+        status,
+        description,
+        description_json,
+        launch_fingerprint,
+        bundle_json,
+        failure,
+    })
+}
+
+fn description_json_value(description: &AdapterDescription) -> Json {
+    description_json(description, true)
+}
+
+pub fn describe_request_fingerprint(
+    adapter_id: &str,
+    configuration_fingerprint: &str,
+) -> Result<String, String> {
+    if !valid_segment(adapter_id) {
+        return Err("adapter id is not a lower-kebab segment".into());
+    }
+    if !valid_fingerprint(configuration_fingerprint) {
+        return Err("configuration fingerprint has invalid shape".into());
+    }
+    Ok(jcs_sha256(&Json::obj(vec![
         ("format", Json::str("azimuth-adapter-request-fingerprint")),
         ("version", Json::Num(PROTOCOL_VERSION)),
         ("operation", Json::str("describe")),
@@ -799,7 +966,7 @@ pub fn describe_request_fingerprint(adapter_id: &str, configuration_fingerprint:
                 ),
             ]),
         ),
-    ]))
+    ])))
 }
 
 pub fn run_request_fingerprint(
@@ -902,13 +1069,8 @@ pub fn identify_input(id: &str, path: &Path) -> Result<InputIdentity, String> {
     if !metadata.is_file() {
         return Err(format!("input `{}` is not a regular file", path.display()));
     }
-    if metadata.len() > MAX_SAFE_INTEGER {
-        return Err(format!(
-            "input `{}` exceeds the safe-integer byte-size limit",
-            path.display()
-        ));
-    }
     let mut hasher = Sha256::new();
+    let mut size_bytes = 0u64;
     let mut buffer = [0u8; 64 * 1024];
     loop {
         let count = file
@@ -917,12 +1079,21 @@ pub fn identify_input(id: &str, path: &Path) -> Result<InputIdentity, String> {
         if count == 0 {
             break;
         }
+        size_bytes = size_bytes
+            .checked_add(count as u64)
+            .ok_or_else(|| "input byte size overflowed".to_string())?;
+        if size_bytes > MAX_SAFE_INTEGER {
+            return Err(format!(
+                "input `{}` exceeds the safe-integer byte-size limit",
+                path.display()
+            ));
+        }
         hasher.update(&buffer[..count]);
     }
     Ok(InputIdentity {
         id: id.to_string(),
         digest: format!("sha256:{}", hasher.finish()),
-        size_bytes: metadata.len(),
+        size_bytes,
     })
 }
 
