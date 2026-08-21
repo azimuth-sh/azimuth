@@ -22,7 +22,7 @@ Objective: resolve all candidate dispositions and project exact decision-impact 
 Evidence: seven selectors, disposition visibility, domain gates, deduplication and impact tests
 
 ## Work package: challenge-run-protocol
-Status: pending
+Status: complete
 Depends on: protocol-authority
 Owns: tools/azimuth/src/run.rs, tools/azimuth/tests/run.rs
 Objective: bind scheduling lane, selector anchors and semantic inputs into Challenge selections

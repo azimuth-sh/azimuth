@@ -166,7 +166,83 @@ pub struct ChallengeSelection {
     pub id: String,
     pub challenger: ChallengerRef,
     pub target: ChallengeTarget,
+    pub lane: ChallengeLane,
+    pub scope: ChallengeScope,
     pub units: Vec<WorkUnit>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChallengeLane {
+    Gate,
+    Scheduled,
+}
+
+impl ChallengeLane {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Gate => "gate",
+            Self::Scheduled => "scheduled",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChallengeScope {
+    pub anchors: Vec<ChallengeScopeItem>,
+    pub inputs: Vec<ChallengeScopeItem>,
+    pub fingerprint: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ChallengeScopeItem {
+    pub kind: ChallengeScopeKind,
+    pub id: String,
+    pub fingerprint: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ChallengeScopeKind {
+    Claim,
+    Binding,
+    Qualification,
+    ClaimJudgment,
+    Check,
+    CheckImplementation,
+    Realization,
+    Mechanism,
+    MechanismImplementation,
+    Artifact,
+    Context,
+    Policy,
+    Area,
+    RealizationObligation,
+    Surface,
+    SurfaceMember,
+    Enumeration,
+}
+
+impl ChallengeScopeKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Claim => "claim",
+            Self::Binding => "binding",
+            Self::Qualification => "qualification",
+            Self::ClaimJudgment => "claim-judgment",
+            Self::Check => "check",
+            Self::CheckImplementation => "check-implementation",
+            Self::Realization => "realization",
+            Self::Mechanism => "mechanism",
+            Self::MechanismImplementation => "mechanism-implementation",
+            Self::Artifact => "artifact",
+            Self::Context => "context",
+            Self::Policy => "policy",
+            Self::Area => "area",
+            Self::RealizationObligation => "realization-obligation",
+            Self::Surface => "surface",
+            Self::SurfaceMember => "surface-member",
+            Self::Enumeration => "enumeration",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -392,6 +468,7 @@ pub enum DiagnosticScope {
     Run,
     Activity(String),
     CheckExecution(String),
+    ChallengeSelection(String),
     ChallengerExecution {
         challenger_fingerprint: String,
         target_fingerprint: String,
@@ -1193,8 +1270,17 @@ fn parse_work_unit(value: &Json, where_: &str) -> Result<WorkUnit, String> {
 }
 
 fn parse_challenge_selection(value: &Json, where_: &str) -> Result<ChallengeSelection, String> {
-    let object = object(value, where_, &["id", "challenger", "target", "units"])?;
+    let object = object(
+        value,
+        where_,
+        &["id", "challenger", "target", "lane", "scope", "units"],
+    )?;
     let units = parse_array(object, "units", where_, parse_work_unit)?;
+    let lane = match string(object, "lane", where_)? {
+        "gate" => ChallengeLane::Gate,
+        "scheduled" => ChallengeLane::Scheduled,
+        other => return Err(format!("{where_}.lane has unsupported value `{other}`")),
+    };
     Ok(ChallengeSelection {
         id: id(object, "id", where_)?,
         challenger: parse_challenger_ref(
@@ -1205,7 +1291,50 @@ fn parse_challenge_selection(value: &Json, where_: &str) -> Result<ChallengeSele
             required(object, "target", where_)?,
             &format!("{where_}.target"),
         )?,
+        lane,
+        scope: parse_challenge_scope(
+            required(object, "scope", where_)?,
+            &format!("{where_}.scope"),
+        )?,
         units,
+    })
+}
+
+fn parse_challenge_scope(value: &Json, where_: &str) -> Result<ChallengeScope, String> {
+    let object = object(value, where_, &["anchors", "inputs", "fingerprint"])?;
+    Ok(ChallengeScope {
+        anchors: parse_array(object, "anchors", where_, parse_challenge_scope_item)?,
+        inputs: parse_array(object, "inputs", where_, parse_challenge_scope_item)?,
+        fingerprint: fingerprint(object, "fingerprint", where_)?,
+    })
+}
+
+fn parse_challenge_scope_item(value: &Json, where_: &str) -> Result<ChallengeScopeItem, String> {
+    let object = object(value, where_, &["kind", "id", "fingerprint"])?;
+    let kind = match string(object, "kind", where_)? {
+        "claim" => ChallengeScopeKind::Claim,
+        "binding" => ChallengeScopeKind::Binding,
+        "qualification" => ChallengeScopeKind::Qualification,
+        "claim-judgment" => ChallengeScopeKind::ClaimJudgment,
+        "check" => ChallengeScopeKind::Check,
+        "check-implementation" => ChallengeScopeKind::CheckImplementation,
+        "realization" => ChallengeScopeKind::Realization,
+        "mechanism" => ChallengeScopeKind::Mechanism,
+        "mechanism-implementation" => ChallengeScopeKind::MechanismImplementation,
+        "artifact" => ChallengeScopeKind::Artifact,
+        "context" => ChallengeScopeKind::Context,
+        "policy" => ChallengeScopeKind::Policy,
+        "area" => ChallengeScopeKind::Area,
+        "realization-obligation" => ChallengeScopeKind::RealizationObligation,
+        "surface" => ChallengeScopeKind::Surface,
+        "surface-member" => ChallengeScopeKind::SurfaceMember,
+        "enumeration" => ChallengeScopeKind::Enumeration,
+        other => return Err(format!("{where_}.kind has unsupported value `{other}`")),
+    };
+    Ok(ChallengeScopeItem {
+        kind,
+        id: nonempty(object, "id", where_)?,
+        fingerprint: fingerprint(object, "fingerprint", where_)?,
     })
 }
 
@@ -1500,6 +1629,12 @@ fn parse_scope(value: &Json, where_: &str) -> Result<DiagnosticScope, String> {
             let object = object(value, where_, &["kind", "check"])?;
             Ok(DiagnosticScope::CheckExecution(id(
                 object, "check", where_,
+            )?))
+        }
+        "challenge-selection" => {
+            let object = object(value, where_, &["kind", "id"])?;
+            Ok(DiagnosticScope::ChallengeSelection(id(
+                object, "id", where_,
             )?))
         }
         "challenger-execution" => {
@@ -2226,6 +2361,60 @@ pub fn plan_fingerprint(subject_fingerprint: &str, plan: &Plan) -> String {
     ]))
 }
 
+pub fn challenge_selection_id(
+    challenger_fingerprint: &str,
+    target_kind: ChallengeTargetKind,
+    target_fingerprint: &str,
+) -> String {
+    let fingerprint = jcs_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-challenge-selection-identity")),
+        ("version", Json::Num(1.0)),
+        ("challenger_fingerprint", Json::str(challenger_fingerprint)),
+        ("target_kind", Json::str(target_kind.name())),
+        ("target_fingerprint", Json::str(target_fingerprint)),
+    ]));
+    format!("challenge/{}", fingerprint.trim_start_matches("sha256:"))
+}
+
+pub fn challenge_scope_fingerprint(scope: &ChallengeScope) -> String {
+    jcs_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-challenge-scope-fingerprint")),
+        ("version", Json::Num(1.0)),
+        (
+            "anchors",
+            Json::Arr(
+                scope
+                    .anchors
+                    .iter()
+                    .map(challenge_scope_item_json)
+                    .collect(),
+            ),
+        ),
+        (
+            "inputs",
+            Json::Arr(scope.inputs.iter().map(challenge_scope_item_json).collect()),
+        ),
+    ]))
+}
+
+pub fn construct_challenge_scope(
+    anchors: Vec<ChallengeScopeItem>,
+    inputs: Vec<ChallengeScopeItem>,
+) -> Result<ChallengeScope, Vec<SchemaError>> {
+    let mut scope = ChallengeScope {
+        anchors,
+        inputs,
+        fingerprint: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            .into(),
+    };
+    let errors = challenge_scope_structure_errors(&scope, "$.scope");
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+    scope.fingerprint = challenge_scope_fingerprint(&scope);
+    Ok(scope)
+}
+
 /// Validates one typed D46 semantic Plan before it enters a launch plan or bundle.
 pub fn validate_plan_component(subject_fingerprint: &str, plan: &Plan) -> Vec<SchemaError> {
     let mut errors = Vec::new();
@@ -2340,7 +2529,103 @@ fn collect_plan_array_errors(plan: &Plan, errors: &mut Vec<SchemaError>) {
                 detail: "contains a duplicate Challenger/target semantic tuple".into(),
             });
         }
+        collect_challenge_identity_and_scope_errors(challenge, "$.challenges", errors);
     }
+}
+
+fn collect_challenge_identity_and_scope_errors(
+    challenge: &ChallengeSelection,
+    prefix: &str,
+    errors: &mut Vec<SchemaError>,
+) {
+    let path = format!("{prefix}.{}", challenge.id);
+    errors.extend(challenge_scope_structure_errors(
+        &challenge.scope,
+        &format!("{path}.scope"),
+    ));
+    let expected_id = challenge_selection_id(
+        &challenge.challenger.fingerprint,
+        challenge.target.kind,
+        &challenge.target.fingerprint,
+    );
+    if challenge.id != expected_id {
+        errors.push(SchemaError {
+            path: format!("{path}.id"),
+            detail: format!("must be `{expected_id}`"),
+        });
+    }
+    let expected_scope = challenge_scope_fingerprint(&challenge.scope);
+    if challenge.scope.fingerprint != expected_scope {
+        errors.push(SchemaError {
+            path: format!("{path}.scope.fingerprint"),
+            detail: format!("must be `{expected_scope}`"),
+        });
+    }
+}
+
+fn challenge_scope_structure_errors(scope: &ChallengeScope, path: &str) -> Vec<SchemaError> {
+    let mut errors = Vec::new();
+    for (name, items) in [
+        ("anchors", scope.anchors.as_slice()),
+        ("inputs", scope.inputs.as_slice()),
+    ] {
+        if items.is_empty() {
+            errors.push(SchemaError {
+                path: format!("{path}.{name}"),
+                detail: "must not be empty".into(),
+            });
+        }
+        if let Err(detail) = ensure_sorted_unique(items, Clone::clone, name) {
+            errors.push(SchemaError {
+                path: format!("{path}.{name}"),
+                detail,
+            });
+        }
+        for item in items {
+            if item.id.is_empty() {
+                errors.push(SchemaError {
+                    path: format!("{path}.{name}"),
+                    detail: format!("`{}` scope item id must not be empty", item.kind.name()),
+                });
+            }
+            if !valid_fingerprint(&item.fingerprint) {
+                errors.push(SchemaError {
+                    path: format!("{path}.{name}"),
+                    detail: format!(
+                        concat!(
+                            "`{}` `{}` fingerprint must be `sha256:` followed by 64 ",
+                            "lowercase hex digits"
+                        ),
+                        item.kind.name(),
+                        item.id
+                    ),
+                });
+            }
+        }
+    }
+    let mut identities = BTreeMap::<(ChallengeScopeKind, &str), &str>::new();
+    for item in scope.anchors.iter().chain(&scope.inputs) {
+        let identity = (item.kind, item.id.as_str());
+        if let Some(previous) = identities.insert(identity, item.fingerprint.as_str()) {
+            if previous != item.fingerprint {
+                errors.push(SchemaError {
+                    path: path.into(),
+                    detail: format!(
+                        "conflicting fingerprints for `{}` `{}` across semantic scope",
+                        item.kind.name(),
+                        item.id
+                    ),
+                });
+            }
+        }
+    }
+    errors.sort_by(|left, right| {
+        left.path
+            .cmp(&right.path)
+            .then_with(|| left.detail.cmp(&right.detail))
+    });
+    errors.dedup();
+    errors
 }
 
 /// Constructs and fingerprints a strict semantic Plan from already resolved selections.
@@ -2359,6 +2644,36 @@ pub fn construct_plan(
         fingerprint: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
             .into(),
     };
+    let mut scope_errors = plan
+        .challenges
+        .iter()
+        .flat_map(|challenge| {
+            challenge_scope_structure_errors(
+                &challenge.scope,
+                &format!("$.challenges.{}.scope", challenge.id),
+            )
+        })
+        .collect::<Vec<_>>();
+    if scope_errors.is_empty() {
+        for challenge in &plan.challenges {
+            let expected = challenge_scope_fingerprint(&challenge.scope);
+            if challenge.scope.fingerprint != expected {
+                scope_errors.push(SchemaError {
+                    path: format!("$.challenges.{}.scope.fingerprint", challenge.id),
+                    detail: format!("must be `{expected}`"),
+                });
+            }
+        }
+    }
+    if !scope_errors.is_empty() {
+        scope_errors.sort_by(|left, right| {
+            left.path
+                .cmp(&right.path)
+                .then_with(|| left.detail.cmp(&right.detail))
+        });
+        scope_errors.dedup();
+        return Err(scope_errors);
+    }
     if valid_fingerprint(subject_fingerprint) {
         plan.fingerprint = plan_fingerprint(subject_fingerprint, &plan);
     }
@@ -2746,10 +3061,34 @@ fn challenge_selection_json(item: &ChallengeSelection) -> Json {
         ("id", Json::str(&item.id)),
         ("challenger", challenger_ref_json(&item.challenger)),
         ("target", target_json(&item.target)),
+        ("lane", Json::str(item.lane.name())),
+        ("scope", challenge_scope_json(&item.scope)),
         (
             "units",
             Json::Arr(item.units.iter().map(work_unit_json).collect()),
         ),
+    ])
+}
+
+fn challenge_scope_json(item: &ChallengeScope) -> Json {
+    Json::obj(vec![
+        (
+            "anchors",
+            Json::Arr(item.anchors.iter().map(challenge_scope_item_json).collect()),
+        ),
+        (
+            "inputs",
+            Json::Arr(item.inputs.iter().map(challenge_scope_item_json).collect()),
+        ),
+        ("fingerprint", Json::str(&item.fingerprint)),
+    ])
+}
+
+fn challenge_scope_item_json(item: &ChallengeScopeItem) -> Json {
+    Json::obj(vec![
+        ("kind", Json::str(item.kind.name())),
+        ("id", Json::str(&item.id)),
+        ("fingerprint", Json::str(&item.fingerprint)),
     ])
 }
 
@@ -2926,6 +3265,10 @@ fn scope_json(item: &DiagnosticScope) -> Json {
         DiagnosticScope::CheckExecution(check) => Json::obj(vec![
             ("kind", Json::str("check-execution")),
             ("check", Json::str(check)),
+        ]),
+        DiagnosticScope::ChallengeSelection(id) => Json::obj(vec![
+            ("kind", Json::str("challenge-selection")),
+            ("id", Json::str(id)),
         ]),
         DiagnosticScope::ChallengerExecution {
             challenger_fingerprint,
@@ -3422,6 +3765,17 @@ fn validate_canonical_arrays(bundle: &RunBundle, add: &mut impl FnMut(&str, Stri
     ] {
         let mut semantic = BTreeSet::new();
         for challenge in challenges {
+            let expected_id = challenge_selection_id(
+                &challenge.challenger.fingerprint,
+                challenge.target.kind,
+                &challenge.target.fingerprint,
+            );
+            if challenge.id != expected_id {
+                add(
+                    "run/challenge-selection-id",
+                    format!("{label} Challenge id must be `{expected_id}`"),
+                );
+            }
             canonical(
                 &challenge.units,
                 |item| item.id.clone(),
@@ -3437,6 +3791,63 @@ fn validate_canonical_arrays(bundle: &RunBundle, add: &mut impl FnMut(&str, Stri
                 add(
                     "run/duplicate-challenge-target",
                     format!("{label} repeats one Challenger/target semantic tuple"),
+                );
+            }
+            for (scope_name, items) in [
+                ("anchors", challenge.scope.anchors.as_slice()),
+                ("inputs", challenge.scope.inputs.as_slice()),
+            ] {
+                if items.is_empty() {
+                    add(
+                        "run/challenge-scope-cardinality",
+                        format!(
+                            "{label} Challenge `{}` scope.{scope_name} must not be empty",
+                            challenge.id
+                        ),
+                    );
+                }
+                canonical(
+                    items,
+                    Clone::clone,
+                    &format!("{label}.{}.scope.{scope_name}", challenge.id),
+                    add,
+                );
+            }
+            let mut scope_identities = BTreeMap::<(ChallengeScopeKind, &str), &str>::new();
+            for item in challenge
+                .scope
+                .anchors
+                .iter()
+                .chain(&challenge.scope.inputs)
+            {
+                let identity = (item.kind, item.id.as_str());
+                if let Some(previous) = scope_identities.insert(identity, item.fingerprint.as_str())
+                {
+                    if previous != item.fingerprint {
+                        add(
+                            "run/challenge-scope-conflict",
+                            format!(
+                                concat!(
+                                    "{}.{} gives `{}` `{}` conflicting fingerprints ",
+                                    "across semantic scope"
+                                ),
+                                label,
+                                challenge.id,
+                                item.kind.name(),
+                                item.id
+                            ),
+                        );
+                    }
+                }
+            }
+            let expected_scope = challenge_scope_fingerprint(&challenge.scope);
+            if challenge.scope.fingerprint != expected_scope {
+                add(
+                    "run/challenge-scope-fingerprint",
+                    format!(
+                        "{label} Challenge `{}` scope fingerprint must be `{expected_scope}`",
+                        challenge.id
+                    ),
                 );
             }
         }
@@ -3754,11 +4165,15 @@ fn validate_selection(bundle: &RunBundle, add: &mut impl FnMut(&str, String)) {
             );
             continue;
         };
-        if actual.challenger != planned.challenger || actual.target != planned.target {
+        if actual.challenger != planned.challenger
+            || actual.target != planned.target
+            || actual.lane != planned.lane
+            || actual.scope != planned.scope
+        {
             add(
                 "run/challenge-substitution",
                 format!(
-                    "actual Challenge `{}` changes its semantic target",
+                    "actual Challenge `{}` changes its semantic identity, lane or scope",
                     actual.id
                 ),
             );
@@ -3836,6 +4251,17 @@ fn validate_references_and_results(bundle: &RunBundle, add: &mut impl FnMut(&str
                     ),
                 )
             }
+            DiagnosticScope::ChallengeSelection(id)
+                if !bundle.plan.challenges.iter().any(|item| item.id == *id) =>
+            {
+                add(
+                    "run/unresolved-diagnostic-scope",
+                    format!(
+                        "diagnostic `{}` names unknown Challenge selection `{id}`",
+                        diagnostic.id
+                    ),
+                )
+            }
             DiagnosticScope::ChallengerExecution {
                 challenger_fingerprint,
                 target_fingerprint,
@@ -3855,6 +4281,7 @@ fn validate_references_and_results(bundle: &RunBundle, add: &mut impl FnMut(&str
             _ => {}
         }
     }
+    validate_omitted_challenge_diagnostics(bundle, &bundle.diagnostics, add);
     for activity in &bundle.activities {
         if activity.started_at_ms < bundle.started_at_ms
             || activity.finished_at_ms < activity.started_at_ms
@@ -3942,6 +4369,91 @@ fn validate_refs(
             add(
                 "run/unresolved-reference",
                 format!("{kind} `{reference}` does not resolve"),
+            );
+        }
+    }
+}
+
+fn validate_omitted_challenge_diagnostics(
+    bundle: &RunBundle,
+    diagnostics: &[Diagnostic],
+    add: &mut impl FnMut(&str, String),
+) {
+    let actual = bundle
+        .actual_selection
+        .challenges
+        .iter()
+        .map(|item| item.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let omitted = bundle
+        .plan
+        .challenges
+        .iter()
+        .filter(|item| !actual.contains(item.id.as_str()))
+        .map(|item| item.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut by_selection = BTreeMap::<&str, Vec<&Diagnostic>>::new();
+    for diagnostic in diagnostics {
+        if let DiagnosticScope::ChallengeSelection(id) = &diagnostic.scope {
+            by_selection
+                .entry(id.as_str())
+                .or_default()
+                .push(diagnostic);
+        }
+    }
+    for (selection, scoped) in &by_selection {
+        if !omitted.contains(selection) || bundle.status == RunStatus::Complete {
+            add(
+                "run/unexpected-challenge-selection-diagnostic",
+                format!(
+                    concat!(
+                        "Challenge-selection diagnostics require an omitted Challenge in an ",
+                        "incomplete Run; found `{}`"
+                    ),
+                    selection
+                ),
+            );
+        }
+        if scoped.len() > 1 {
+            add(
+                "run/challenge-omission-diagnostic-cardinality",
+                format!(
+                    concat!(
+                        "omitted Challenge `{}` has {} selection diagnostics; ",
+                        "expected exactly one"
+                    ),
+                    selection,
+                    scoped.len()
+                ),
+            );
+        }
+    }
+    if bundle.status == RunStatus::Complete {
+        return;
+    }
+    for selection in omitted {
+        let scoped = by_selection
+            .get(selection)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        if scoped.len() != 1 {
+            add(
+                "run/challenge-omission-diagnostic-cardinality",
+                format!(
+                    concat!(
+                        "omitted Challenge `{}` has {} selection diagnostics; ",
+                        "expected exactly one"
+                    ),
+                    selection,
+                    scoped.len()
+                ),
+            );
+            continue;
+        }
+        if scoped[0].class != DiagnosticClass::Execution {
+            add(
+                "run/challenge-omission-diagnostic-class",
+                format!("omitted Challenge `{selection}` diagnostic must have class `execution`"),
             );
         }
     }

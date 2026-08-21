@@ -35,8 +35,21 @@ fn valid_bundle() -> RunBundle {
             parameters: BTreeMap::new(),
         }],
     };
-    let challenge = ChallengeSelection {
-        id: "recovery-credibility".into(),
+    let scope = construct_challenge_scope(
+        vec![ChallengeScopeItem {
+            kind: ChallengeScopeKind::Realization,
+            id: "payments|rust-symbol|recovery::replay".into(),
+            fingerprint: fp('c'),
+        }],
+        vec![ChallengeScopeItem {
+            kind: ChallengeScopeKind::CheckImplementation,
+            id: "payments|rust-symbol|recovery::replay".into(),
+            fingerprint: fp('c'),
+        }],
+    )
+    .unwrap();
+    let mut challenge = ChallengeSelection {
+        id: "challenge/placeholder".into(),
         challenger: ChallengerRef {
             id: "mutation/perturbation".into(),
             fingerprint: fp('d'),
@@ -46,11 +59,18 @@ fn valid_bundle() -> RunBundle {
             id: "payments/recovery-edge".into(),
             fingerprint: fp('e'),
         },
+        lane: ChallengeLane::Gate,
+        scope,
         units: vec![WorkUnit {
             id: "whole".into(),
             parameters: BTreeMap::new(),
         }],
     };
+    challenge.id = challenge_selection_id(
+        &challenge.challenger.fingerprint,
+        challenge.target.kind,
+        &challenge.target.fingerprint,
+    );
     let mut bundle = RunBundle {
         run_id: fp('0'),
         bundle_revision: 0,
@@ -112,7 +132,7 @@ fn valid_bundle() -> RunBundle {
                     LaunchRoute {
                         selection: RouteSelection {
                             kind: RouteSelectionKind::Challenge,
-                            id: "recovery-credibility".into(),
+                            id: challenge.id.clone(),
                         },
                         capability: RouteCapability {
                             address: "synthetic/challenges".into(),
@@ -183,7 +203,7 @@ fn valid_bundle() -> RunBundle {
             },
         }],
         challenger_executions: vec![ChallengerExecution {
-            challenge: "recovery-credibility".into(),
+            challenge: challenge.id.clone(),
             challenger: challenge.challenger,
             target: challenge.target,
             units: vec![ChallengeExecutionUnit {
@@ -236,7 +256,20 @@ fn terminal_without_selection(status: RunStatus) -> RunBundle {
     bundle.actual_selection.checks.clear();
     bundle.actual_selection.challenges.clear();
     bundle.artifacts.clear();
-    bundle.diagnostics.clear();
+    bundle.diagnostics = if status == RunStatus::Complete {
+        vec![]
+    } else {
+        vec![Diagnostic {
+            id: "challenge/deferred".into(),
+            class: DiagnosticClass::Execution,
+            severity: Severity::Warning,
+            code: "challenge/deferred".into(),
+            message: "The planned Challenge did not execute.".into(),
+            scope: DiagnosticScope::ChallengeSelection(bundle.plan.challenges[0].id.clone()),
+            artifacts: vec![],
+            details: BTreeMap::new(),
+        }]
+    };
     bundle.activities.clear();
     bundle.check_executions.clear();
     bundle.challenger_executions.clear();
@@ -280,6 +313,13 @@ fn remove_field(value: &mut Json, field: &str) {
     fields.remove(index);
 }
 
+fn first_mut(value: &mut Json) -> &mut Json {
+    let Json::Arr(values) = value else {
+        panic!("expected array");
+    };
+    values.first_mut().expect("expected non-empty array")
+}
+
 #[test]
 fn valid_dual_role_bundle_round_trips_and_verifies() {
     let bundle = valid_bundle();
@@ -306,6 +346,76 @@ fn subject_fingerprint_uses_the_literal_jcs_envelope() {
         subject_fingerprint(&subject),
         format!("sha256:{}", sha256(literal.as_bytes()))
     );
+}
+
+#[test]
+fn published_challenge_identity_and_scope_vectors_stay_stable() {
+    assert_eq!(
+        challenge_selection_id(&fp('a'), ChallengeTargetKind::Qualification, &fp('b')),
+        "challenge/91f69477f56b9a2ba588fb045529ddbaa7184c79f473eab50f73a0c5f70d038b"
+    );
+    let scope = ChallengeScope {
+        anchors: vec![ChallengeScopeItem {
+            kind: ChallengeScopeKind::Realization,
+            id: "demo|rust-item|demo::subject".into(),
+            fingerprint: fp('a'),
+        }],
+        inputs: vec![ChallengeScopeItem {
+            kind: ChallengeScopeKind::CheckImplementation,
+            id: "demo|rust-item|demo::check".into(),
+            fingerprint: fp('b'),
+        }],
+        fingerprint: fp('0'),
+    };
+    assert_eq!(
+        challenge_scope_fingerprint(&scope),
+        "sha256:29cdeb0c856e2172f0693eba0962d038f6916f0ed0f3dde464c1b0052326a977"
+    );
+}
+
+#[test]
+fn typed_scope_construction_rejects_invalid_inputs_before_plan_identity() {
+    let item = ChallengeScopeItem {
+        kind: ChallengeScopeKind::Realization,
+        id: "demo|rust-item|demo::subject".into(),
+        fingerprint: fp('a'),
+    };
+    let input = ChallengeScopeItem {
+        kind: ChallengeScopeKind::CheckImplementation,
+        id: "demo|rust-item|demo::check".into(),
+        fingerprint: fp('b'),
+    };
+    let scope = construct_challenge_scope(vec![item.clone()], vec![input.clone()]).unwrap();
+    assert_eq!(scope.fingerprint, challenge_scope_fingerprint(&scope));
+
+    let mut earlier = item.clone();
+    earlier.kind = ChallengeScopeKind::Claim;
+    assert!(construct_challenge_scope(vec![item.clone(), earlier], vec![input.clone()]).is_err());
+
+    let mut conflict = item.clone();
+    conflict.fingerprint = fp('b');
+    assert!(construct_challenge_scope(vec![item.clone()], vec![conflict]).is_err());
+
+    let mut invalid_fingerprint = item.clone();
+    invalid_fingerprint.fingerprint = "sha256:not-a-fingerprint".into();
+    assert!(construct_challenge_scope(vec![invalid_fingerprint], vec![input.clone()]).is_err());
+
+    let mut empty_id = item;
+    empty_id.id.clear();
+    assert!(construct_challenge_scope(vec![empty_id], vec![input]).is_err());
+    assert!(construct_challenge_scope(vec![], vec![]).is_err());
+
+    let bundle = valid_bundle();
+    let mut stale_scope = bundle.plan.challenges.clone();
+    stale_scope[0].scope.fingerprint = fp('9');
+    assert!(construct_plan(
+        &bundle.subject_fingerprint,
+        bundle.plan.model_fingerprint,
+        bundle.plan.required_context,
+        bundle.plan.checks,
+        stale_scope,
+    )
+    .is_err());
 }
 
 #[test]
@@ -452,7 +562,15 @@ fn claim_judgment_targets_and_semantic_implementation_identities_are_strict() {
     ] {
         challenge.target.kind = ChallengeTargetKind::ClaimJudgment;
         challenge.target.id = "payments/recovery#accepted-write".into();
+        challenge.id = challenge_selection_id(
+            &challenge.challenger.fingerprint,
+            challenge.target.kind,
+            &challenge.target.fingerprint,
+        );
     }
+    claim_target.provenance.adapter.routes[1].selection.id =
+        claim_target.plan.challenges[0].id.clone();
+    claim_target.challenger_executions[0].challenge = claim_target.plan.challenges[0].id.clone();
     claim_target.challenger_executions[0].target.kind = ChallengeTargetKind::ClaimJudgment;
     claim_target.challenger_executions[0].target.id = "payments/recovery#accepted-write".into();
     refresh(&mut claim_target);
@@ -481,6 +599,96 @@ fn claim_judgment_targets_and_semantic_implementation_identities_are_strict() {
         "payments|next-route|GET /orders/[id]",
     );
     assert!(parse("route.json", &route).is_ok());
+}
+
+#[test]
+fn d48_challenge_shape_has_no_compatibility_reader() {
+    let bundle = valid_bundle();
+    let mut missing_lane = to_json(&bundle);
+    let plan = object_mut(&mut missing_lane, "plan");
+    remove_field(first_mut(object_mut(plan, "challenges")), "lane");
+    assert!(parse("missing-lane.json", &missing_lane.to_string_pretty()).is_err());
+
+    let mut missing_scope = to_json(&bundle);
+    let actual = object_mut(&mut missing_scope, "actual_selection");
+    remove_field(first_mut(object_mut(actual, "challenges")), "scope");
+    assert!(parse("missing-scope.json", &missing_scope.to_string_pretty()).is_err());
+
+    let mut invalid_lane = to_json(&bundle).to_string_pretty();
+    invalid_lane = invalid_lane.replacen("\"lane\": \"gate\"", "\"lane\": \"deferred\"", 1);
+    assert!(parse("invalid-lane.json", &invalid_lane).is_err());
+
+    let deferred_result = to_json(&bundle).to_string_pretty().replacen(
+        "\"outcome\": \"findings\"",
+        "\"outcome\": \"deferred\"",
+        1,
+    );
+    assert!(parse("deferred-result.json", &deferred_result).is_err());
+}
+
+#[test]
+fn challenge_identity_scope_order_conflicts_and_fingerprints_fail_closed() {
+    let mut wrong_id = valid_bundle();
+    wrong_id.plan.challenges[0].id =
+        "challenge/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into();
+    refresh(&mut wrong_id);
+    assert!(has(&verify(&wrong_id), "run/challenge-selection-id"));
+
+    let mut unsorted = valid_bundle();
+    unsorted.plan.challenges[0]
+        .scope
+        .anchors
+        .push(ChallengeScopeItem {
+            kind: ChallengeScopeKind::Claim,
+            id: "payments/recovery#accepted-write".into(),
+            fingerprint: fp('8'),
+        });
+    unsorted.plan.challenges[0].scope.fingerprint =
+        challenge_scope_fingerprint(&unsorted.plan.challenges[0].scope);
+    refresh(&mut unsorted);
+    assert!(has(&verify(&unsorted), "run/non-canonical-array"));
+
+    let mut conflict = valid_bundle();
+    conflict.plan.challenges[0]
+        .scope
+        .inputs
+        .push(ChallengeScopeItem {
+            kind: ChallengeScopeKind::Realization,
+            id: "payments|rust-symbol|recovery::replay".into(),
+            fingerprint: fp('9'),
+        });
+    conflict.plan.challenges[0].scope.fingerprint =
+        challenge_scope_fingerprint(&conflict.plan.challenges[0].scope);
+    refresh(&mut conflict);
+    assert!(has(&verify(&conflict), "run/challenge-scope-conflict"));
+
+    let mut stale = valid_bundle();
+    stale.plan.challenges[0].scope.fingerprint = fp('9');
+    refresh(&mut stale);
+    assert!(has(&verify(&stale), "run/challenge-scope-fingerprint"));
+
+    let mut empty = valid_bundle();
+    empty.plan.challenges[0].scope.anchors.clear();
+    empty.plan.challenges[0].scope.inputs.clear();
+    empty.plan.challenges[0].scope.fingerprint =
+        challenge_scope_fingerprint(&empty.plan.challenges[0].scope);
+    refresh(&mut empty);
+    assert!(has(&verify(&empty), "run/challenge-scope-cardinality"));
+}
+
+#[test]
+fn actual_challenges_repeat_lane_and_complete_scope() {
+    let mut lane = valid_bundle();
+    lane.actual_selection.challenges[0].lane = ChallengeLane::Scheduled;
+    refresh(&mut lane);
+    assert!(has(&verify(&lane), "run/challenge-substitution"));
+
+    let mut scope = valid_bundle();
+    scope.actual_selection.challenges[0].scope.inputs[0].fingerprint = fp('9');
+    scope.actual_selection.challenges[0].scope.fingerprint =
+        challenge_scope_fingerprint(&scope.actual_selection.challenges[0].scope);
+    refresh(&mut scope);
+    assert!(has(&verify(&scope), "run/challenge-substitution"));
 }
 
 #[test]
@@ -753,6 +961,85 @@ fn partial_cancelled_and_timed_out_runs_may_report_an_empty_actual_subset() {
         let bundle = terminal_without_selection(status);
         assert!(verify(&bundle).is_empty(), "{}", status.name());
     }
+}
+
+#[test]
+fn omitted_challenges_require_one_execution_selection_diagnostic() {
+    let mut missing = terminal_without_selection(RunStatus::Partial);
+    missing.diagnostics.clear();
+    refresh(&mut missing);
+    assert!(has(
+        &verify(&missing),
+        "run/challenge-omission-diagnostic-cardinality"
+    ));
+
+    let mut duplicate = terminal_without_selection(RunStatus::Cancelled);
+    let mut second = duplicate.diagnostics[0].clone();
+    second.id = "challenge/deferred-again".into();
+    duplicate.diagnostics.push(second);
+    refresh(&mut duplicate);
+    assert!(has(
+        &verify(&duplicate),
+        "run/challenge-omission-diagnostic-cardinality"
+    ));
+
+    let mut wrong_class = terminal_without_selection(RunStatus::TimedOut);
+    wrong_class.diagnostics[0].class = DiagnosticClass::Normalization;
+    refresh(&mut wrong_class);
+    assert!(has(
+        &verify(&wrong_class),
+        "run/challenge-omission-diagnostic-class"
+    ));
+
+    let mut wrong_scope = terminal_without_selection(RunStatus::Partial);
+    wrong_scope.diagnostics[0].scope = DiagnosticScope::ChallengeSelection(
+        "challenge/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+    );
+    refresh(&mut wrong_scope);
+    let wrong_scope_findings = verify(&wrong_scope);
+    assert!(has(
+        &wrong_scope_findings,
+        "run/unresolved-diagnostic-scope"
+    ));
+    assert!(has(
+        &wrong_scope_findings,
+        "run/challenge-omission-diagnostic-cardinality"
+    ));
+
+    let mut selected = valid_bundle();
+    selected.diagnostics.insert(
+        0,
+        Diagnostic {
+            id: "challenge/deferred".into(),
+            class: DiagnosticClass::Execution,
+            severity: Severity::Warning,
+            code: "challenge/deferred".into(),
+            message: "The selection was incorrectly described as omitted.".into(),
+            scope: DiagnosticScope::ChallengeSelection(selected.plan.challenges[0].id.clone()),
+            artifacts: vec![],
+            details: BTreeMap::new(),
+        },
+    );
+    refresh(&mut selected);
+    assert!(has(
+        &verify(&selected),
+        "run/unexpected-challenge-selection-diagnostic"
+    ));
+}
+
+#[test]
+fn selected_partial_challenge_work_reduces_clean_to_inconclusive() {
+    let mut bundle = valid_bundle();
+    bundle.status = RunStatus::Partial;
+    bundle.plan.challenges[0].units.push(WorkUnit {
+        id: "whole-second".into(),
+        parameters: BTreeMap::new(),
+    });
+    bundle.challenger_executions[0].units[0].attempts[0].outcome = ChallengeOutcome::Clean;
+    bundle.challenger_executions[0].result.outcome = ChallengeOutcome::Inconclusive;
+    bundle.challenger_executions[0].result.objections.clear();
+    refresh(&mut bundle);
+    assert!(verify(&bundle).is_empty());
 }
 
 #[test]
