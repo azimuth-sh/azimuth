@@ -8,7 +8,7 @@ Objective: freeze Claim Judgment, decision-policy, scheduling, semantic-scope an
 Evidence: strict examples, canonical fingerprint vectors, 100-column and contradiction audits
 
 ## Work package: mechanism-identity-authority
-Status: pending
+Status: complete
 Depends on: protocol-authority
 Owns: docs/decisions.md, azimuth/formats/verification.md, azimuth/changes/traceability-challenge-planning/design.md, tools/extractors/README.md
 Objective: freeze path-independent qualified mechanism site, binding and artifact identity

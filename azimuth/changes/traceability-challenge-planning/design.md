@@ -228,6 +228,41 @@ SourceIdentity, source fingerprint and artifact binding id. Missing or multiple 
 artifacts or stable identities are structural Findings and prevent a current accepted Judgment;
 the fingerprint never invents a placeholder digest.
 
+Audit found that the pre-correction extractor binding derived marker SourceIdentity from
+`<file>#<site>`, contradicting D33 relocation stability. D48 now requires a semantic `site` field
+and exact `<address-kind>:<site>` binding. The site is compiler-qualified by module or package,
+declaring type or receiver and overload signature where supported. The accountable emitter derives
+that meaning and fails when its compiler or runtime account is ambiguous; core cannot prove it from
+opaque bytes and instead checks syntax, equality and assembled consistency.
+
+The raw record has exactly `spec`, `mechanism`, `site`, `binding`, `file`, `lang` and
+`source_fingerprint`. The raw companion requires id, kind and file, may retain the typed optional
+Artifact properties and matches by `(id, kind, file)`. Project assembly resolves the file's area,
+derives `<area>|<address-kind>|<site>` and atomically rewrites the implementation binding and
+companion Artifact id to that key before identity, resolution or fingerprinting. It preserves the
+optional properties, whose canonical absent values remain `null`, `[]` and `null`. The assembled
+companion id is already its SourceIdentity; it is never expanded a second time. Unrelated and
+explicit Design Artifacts keep authored kind/id semantics. Path-free excludes the workspace file,
+not language-native package separators.
+
+The raw companion is marker-only. Before rewriting, core rejects an explicit Design `Binding:`
+equal to its raw id or derived assembled key. One MechanismImplementation and companion resolve
+only the exact named `(spec, mechanism)` and never fan out by artifact id. Artifact reuse remains
+valid only for ordinary non-companion Artifacts referenced through explicit Design bindings.
+
+One `(area, address-kind, site)` identifies one compiler declaration and one marker target.
+Duplicate, cross-target or conflicting accounts within an area fail; the same kind/site in two
+areas produces distinct legal assembled ids. Local and federated assembly perform the same rewrite.
+Several distinct qualified sites for one mechanism make the expected Judgment unavailable. The
+source annotation remains the existing two-argument `ImplementsMechanism(spec, mechanism)`; all new
+fields are extractor-derived.
+
+Relocation within one area preserves semantic site, SourceIdentity, Judgment composition and scope
+when language and content are unchanged. File-bearing complete-model and launch accounts change.
+The exact preimages add no locator: site is already the SourceIdentity address, the rewritten
+binding is already the Artifact id, the raw binding is excluded, language determines address kind,
+and file remains excluded.
+
 Surface contributions and obligations are included only when the Claim declares that surface or
 the workspace names an obligation for the exact spec and Claim. A surface account pairs each
 contribution with its exact enumeration witness and distinguishes tagged source members from D13
@@ -273,4 +308,7 @@ would manufacture an execution fact for work that did not run.
 D48 replaces the current D45/D47 deferrals atomically: Claim Judgment authoring and generated
 Challenge planning become current. Hand-authored Challenge transport remains valid only in the new
 strict current shape. Durable ingest and state stay absent. Because this is unpublished alpha 2,
-formats change in place and earlier shapes are rejected without compatibility readers.
+formats change in place and earlier shapes are rejected without compatibility readers. The
+identity correction likewise rejects a MechanismImplementation without semantic `site`, an untyped
+or path-bearing raw binding, a raw prequalified area key and a mismatched companion Artifact; it
+also rejects marker/explicit dual use and supplies no transitional reader.

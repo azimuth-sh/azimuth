@@ -533,6 +533,16 @@ source identity or fingerprint, or zero or several matching artifacts makes the 
 unavailable. Moving a mechanism between the parent requirement and case changes `attachment` even
 when it remains applicable.
 
+The two routes are exclusive. An explicit Design binding that names a marker companion's raw id or
+derived assembled key is a structural error and never produces an explicit-binding mechanism
+record. Ordinary non-companion Artifacts may still be shared by several explicit Design bindings.
+
+For a marker-derived record, the manifest `site` is already represented by the assembled
+SourceIdentity address and its area-qualified `binding` is already represented by the rewritten
+resolved Artifact id. The raw typed binding never enters the preimage. Neither `site`, assembled
+`binding`, `lang` nor `file` is added as another Claim Judgment preimage field. Language determines
+the semantic address kind. File is an accountable locator only.
+
 The applicable surface account is exactly its `id`, sorted contribution
 `(area, mount, enumerator)` objects, one sorted witness per contribution and sorted member records.
 A contribution owns `area`, `mount` and `enumerator`; its nested witness has exactly enumeration
@@ -661,6 +671,161 @@ The serialized preimage has one terminal LF. Its SHA-256 value is
 
 ## Source boundary
 
+### Mechanism implementation linkage
+
+Source keeps the existing two-argument marker `ImplementsMechanism(<spec-id>, <mechanism-id>)` in
+the idiomatic ecosystem spelling. The annotation neither accepts nor owns `site`, `binding` or an
+Artifact id. A language extractor derives this strict pair:
+
+```json
+{
+  "mechanism_implementations": [
+    {
+      "spec": "payments/capture",
+      "mechanism": "completion-guard",
+      "site": "payments::capture::Capture::complete",
+      "binding": "rust-symbol:payments::capture::Capture::complete",
+      "file": "src/capture.rs",
+      "lang": "rust",
+      "source_fingerprint": "sha256:<64-lowercase-hex>"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "rust-symbol:payments::capture::Capture::complete",
+      "kind": "rust-symbol",
+      "file": "src/capture.rs"
+    }
+  ]
+}
+```
+
+These are the only fields on a raw MechanismImplementation. `spec` is a lower-kebab path id and
+`mechanism` is one lower-kebab segment. `file` is one normalized workspace-relative locator,
+`lang` is one supported extractor language and `source_fingerprint` is exact
+`sha256:<64-lowercase-hex>`.
+
+`site` is a non-empty compiler-semantic qualified identity. It contains the module or package and
+declaring type or receiver; when the language supports overloaded declarations, it also contains
+the compiler-resolved parameter signature and generic arity needed to distinguish them. For
+example, a .NET extractor may emit
+`Payments.CaptureService.CompleteAsync(Payments.CompletionId,System.Threading.CancellationToken)`.
+A short method such as `CompleteAsync`, a path-plus-symbol such as
+`src/Capture.cs#CompleteAsync`, and a source path used only to distinguish overloads are invalid.
+The accountable emitter establishes those semantic facts. Core treats `site` as opaque: it can
+require a non-empty trimmed string without control characters or `|`, but it cannot prove from
+bytes that a module, receiver or overload is genuinely compiler-qualified.
+
+The address-kind mapping for marker-derived mechanisms is closed in alpha 2:
+
+- `csharp` maps to `dotnet-symbol`; and
+- `cpp | go | java | javascript | kotlin | python | rust | typescript` maps to
+  `<lang>-symbol`.
+
+In raw extractor output, `binding` is split at its first `:` as `<address-kind>:<site>`. The prefix
+equals the mapping for `lang`; the complete remaining suffix equals `site` byte-for-byte, including
+receiver, type and overload syntax. Untyped bindings, a different prefix or suffix, a prequalified
+`<area>|<address-kind>|<site>` key and the retired `<kind>:<file>#<site>` form are rejected.
+
+The raw companion Artifact requires `id`, `kind` and `file` and permits only the existing optional
+typed properties `unique`, `columns` and `predicate`. Its `id` equals the complete raw binding,
+`kind` equals the binding prefix and `file` equals the implementation locator. The raw pairing key
+is `(id, kind, file)`. Exactly one Artifact matches each implementation and exactly one
+MechanismImplementation target owns that companion. Repeating or ambiguously matching the triple,
+sharing it with another marker target, or mixing it with an ordinary Artifact is invalid. The same
+raw id in different files is retained until area assembly only when each collision is an exact,
+separately owned marker companion.
+
+A paired raw companion is marker-only. Before the atomic rewrite, core derives its assembled key
+and rejects an explicit Design `Binding:` equal to either that key or the raw companion id. The
+MechanismImplementation resolves only the mechanism named by its exact `spec` and `mechanism`; the
+artifact id does not infer or fan out another target. Only an ordinary non-companion Artifact may be
+reused by several explicit Design bindings.
+
+For the example above, both `Binding: rust-symbol:payments::capture::Capture::complete` and
+`Binding: payments|rust-symbol|payments::capture::Capture::complete` are invalid. By contrast, two
+explicit mechanisms may both declare `Binding: postgres-index:payments.capture_key` when that id
+resolves one ordinary, non-companion Artifact.
+
+Project assembly resolves `file` to exactly one area and mount. It derives
+`<SourceIdentity> = <area>|<address-kind>|<site>` and, before any model identity, resolution or
+fingerprinting, atomically rewrites the implementation `binding` and companion Artifact `id` to
+that exact key. It also attaches `area`, `address_kind`, `address = site` and `mount` to both. For
+the raw example above in area `payments` and mount `code`, the exact assembled pair is:
+
+```json
+{
+  "mechanism_implementations": [
+    {
+      "spec": "payments/capture",
+      "mechanism": "completion-guard",
+      "site": "payments::capture::Capture::complete",
+      "binding": "payments|rust-symbol|payments::capture::Capture::complete",
+      "file": "src/capture.rs",
+      "lang": "rust",
+      "source_fingerprint": "sha256:<64-lowercase-hex>",
+      "area": "payments",
+      "address_kind": "rust-symbol",
+      "address": "payments::capture::Capture::complete",
+      "mount": "code"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "payments|rust-symbol|payments::capture::Capture::complete",
+      "kind": "rust-symbol",
+      "file": "src/capture.rs",
+      "area": "payments",
+      "address_kind": "rust-symbol",
+      "address": "payments::capture::Capture::complete",
+      "mount": "code"
+    }
+  ]
+}
+```
+
+These are the exact assembled fields for the raw example, which omitted every optional Artifact
+property. Assembly preserves any emitted `unique`, `columns` and `predicate` value and rewrites only
+the companion id before attaching source identity. The D48 canonical Artifact account always
+represents an absent property as `"unique": null`, `"columns": []` or `"predicate": null`. The
+assembled companion id is already its SourceIdentity key; it is not expanded again as
+`<area>|<kind>|<id>`.
+
+Here, path-free means that the id is not derived from or extended with the workspace-relative
+`file`. A semantic package or module identity may retain its language-native separators.
+
+Normally an Artifact's semantic address is its authored id. The marker companion is the one
+exception: assembly replaces its raw id with the area-qualified SourceIdentity key and uses that
+key directly as its identity. An explicit Design Artifact and every unrelated Artifact retain
+their authored kind/id address and are never reinterpreted or rewritten as companions.
+
+Within one `(area, address-kind)`, a qualified site denotes one compiler declaration. Records for
+different marker targets may not reuse it. Repeating one `(spec, mechanism, SourceIdentity)`, naming
+another target at that SourceIdentity or supplying a conflicting source account is invalid. The
+same kind/site in two areas is legal and produces two distinct assembled binding and Artifact ids.
+One applicable mechanism still resolves zero or one qualified implementation; several distinct
+sites make its expected Claim Judgment unavailable.
+
+An emitter fails before output when compiler or runtime metadata reports an ambiguous site in the
+compilation account for that record. Core does not reproduce that semantic proof. Local and
+federated assembly check syntax, raw binding equality, exact companion pairing, the atomic rewrite
+and uniqueness and consistency over each complete area. Both derive byte-identical assembled
+binding, Artifact id and SourceIdentity for the same area and raw record. Neither uses `file`,
+repository, revision or mount to repair an ambiguous semantic identity. Old records without `site`,
+path-bearing bindings and raw records carrying an assembled key are schema failures, not deprecated
+input. A marker companion referenced by an explicit Design binding is likewise rejected before
+rewrite, not reinterpreted as an ordinary Artifact.
+
+The source locator of a mechanism-implementation Challenge scope item repeats this exact `site`;
+it does not substitute binding, Artifact id or file.
+
+Moving unchanged source within the same area while preserving language, site and source fingerprint
+leaves the implementation, Claim Judgment and semantic Challenge scope identities unchanged. The
+new file remains visible in complete-model and launch locator accounts and changes their
+fingerprints. Moving across an area or changing language, site or source content is semantic.
+
+### Check implementation linkage
+
 Source uses `ImplementsCheck(<check-id>)`. A language extractor emits only:
 
 ```json
@@ -677,9 +842,9 @@ Source uses `ImplementsCheck(<check-id>)`. A language extractor emits only:
 }
 ```
 
-Workspace or project assembly attaches `area`, `mount`, `address_kind` and `address` from
-declared repository structure. Files and mounts remain locators; the semantic source identity is
-`<area>|<address-kind>|<address>`.
+For Check records, workspace or project assembly attaches `area`, `mount`, `address_kind` and
+`address` from declared repository structure. Files and mounts remain locators; the semantic source
+identity is `<area>|<address-kind>|<address>`.
 
 An implementation marker contains no Claim, form, context or Qualification. A native test without
 the marker emits nothing.

@@ -2668,6 +2668,69 @@ unavailable rather than inventing a placeholder. Incidental paths, lines, mounts
 accountable people and explanatory prose are excluded. D13 model-authoritative source and
 surface-member identities remain semantic even where a member identity is a file.
 
+**Adversarial identity correction, 2026-08-22.** Audit found that D48's implementation account did
+not freeze how a marker-derived mechanism obtains SourceIdentity. Existing extractors encoded
+`<file>#<site>` in `binding`; a source relocation could therefore rename the semantic mechanism
+implementation, while two same-named methods could remain ambiguous. That contradicts D33 and the
+path exclusions above.
+
+The corrected strict manifest requires `site` on every `mechanism_implementations` record. It is a
+compiler-semantic qualified identity, unique within the assembled `(area, address-kind)` namespace.
+It includes module or package, declaring type or receiver and overload signature wherever the
+language can distinguish overloads. The accountable emitter derives that meaning from its compiler
+or runtime metadata and fails when its extraction account is ambiguous. Core cannot prove semantic
+qualification by inspecting opaque site bytes. It checks the strict site syntax, exact binding and
+post-assembly uniqueness and consistency instead. A file path is never a disambiguator.
+
+In raw extractor output, `binding` is exactly `<address-kind>:<site>` when split at its first `:`.
+Its lower-kebab prefix is the address kind derived from `lang`, and its complete remaining suffix
+equals `site` byte-for-byte. The raw marker companion Artifact requires `id`, `kind` and `file` and
+permits the existing optional typed `unique`, `columns` and `predicate` properties. Id equals the
+raw binding, kind equals its prefix and file equals the implementation locator. A raw companion is
+matched by that complete triple. Reusing one raw id in different files is not an Artifact collision
+before area assembly only when every record is an exact marker companion; repeating or ambiguously
+matching the triple, or mixing an ordinary Artifact into the collision, is invalid.
+
+A paired raw companion is marker-only. Before rewriting, core rejects any explicit Design
+`Binding:` that equals either its raw id or its derived assembled key. A marker implementation may
+resolve only the exact mechanism named by its `spec` and `mechanism`; its companion cannot fan out
+to another marker target or cross into the explicit-binding route. Artifact reuse is permitted only
+for an ordinary non-companion Artifact referenced by one or more explicit Design bindings.
+
+Project assembly resolves the file to exactly one area and mount, then derives the SourceIdentity
+key `<area>|<address-kind>|<site>`. Before model identity, mechanism resolution or fingerprinting,
+it atomically rewrites both the marker implementation `binding` and its companion Artifact `id` to
+that key and attaches the same SourceIdentity account to both. The assembled companion id is
+already its SourceIdentity key; core does not derive a second `<area>|<kind>|<id>` identity from it.
+Optional Artifact properties are preserved; their D48 account canonicalizes absence to `null`, `[]`
+and `null`. General non-companion artifacts and explicit Design bindings keep their authored kind
+and id semantics. This is the only Artifact id rewrite.
+
+Path-free means that neither binding nor companion id is derived from or extended with the
+workspace-relative `file`. A semantic package or module identity may retain its language-native
+separators, including `/`, without becoming a file locator.
+
+Exactly one marker target may name one qualified source declaration and companion. A duplicate
+target, another `(spec, mechanism)` at that site or a conflicting `(area, address-kind, site)`
+account is invalid. More than one qualified site for one mechanism prevents a current Claim
+Judgment. The same kind and site in different areas produce different legal keys and may implement
+different mechanisms because their SourceIdentities differ. Local and federated assembly perform
+the identical rewrite and checks; a federated repository, revision or checkout locator never
+enters the key.
+
+Moving unchanged source within the same area while preserving language, qualified site and source
+fingerprint leaves mechanism SourceIdentity, Claim Judgment and semantic Challenge scope stable.
+The changed `file` remains visible in the complete-model account and accountable launch input, so
+complete-model and launch fingerprints change. Crossing an area or changing language, site or
+source content changes semantic identity or fingerprint.
+
+This correction adds no annotation argument: source continues to declare only
+`ImplementsMechanism(spec, mechanism)` in its ecosystem's existing spelling. The extractor owns
+qualified-site derivation, typed binding and companion Artifact emission. Manifests missing `site`,
+using untyped or path-bearing raw bindings, carrying a prequalified assembled key as raw binding,
+mismatching prefix, site or companion, or relying on file paths for semantic qualification are
+rejected in place with no compatibility reader.
+
 **Challengers and resolution.** A Challenger now declares a sorted non-empty set of required
 closed semantic scope kinds. Its identity binds id, open form, objection proposition and that set.
 Core never infers scope from the form name.
@@ -2766,6 +2829,13 @@ candidate visibility, required-form coverage, context and cap failure, scope and
 identity, mutation, dual-role fault and broad-analysis selection, partial deferral and actual
 selection mismatch. All current framework Claims remain routine and acquire no verification
 declarations.
+
+The identity correction additionally requires language-emitter tests to prove qualified
+receiver/type and overload distinction and emitter-side ambiguity failure. Core, local and
+federated tests prove strict syntax, exact raw binding and companion matching, atomic area-key
+rewriting, same-area conflict and cross-area distinction, local/federated equality, rejection of
+marker/explicit dual use, missing-site and path-bearing legacy records, and relocation stability
+for Judgment and scope alongside changed complete-model and launch locator identity.
 
 **What would falsify it.** Revisit D48 if two real providers cannot translate the closed semantic
 scope without provider syntax in the Plan, if total-composition identity causes unrelated Claims
