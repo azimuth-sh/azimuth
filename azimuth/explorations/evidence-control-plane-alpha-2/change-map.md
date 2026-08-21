@@ -311,9 +311,9 @@ Completion evidence:
 - release claims name only shipped behavior;
 - publication is reproducible from this repository alone.
 
-All Claims introduced by these changes use routine criticality. They do not acquire Azimuth
-evidence, Qualifications or Claim Judgments during this alpha. Each implementation change still
-owes ordinary engineering tests and honest command results before acceptance.
+All active Claims use routine criticality during this alpha. Existing higher-criticality Claims are
+lowered rather than carried with evidence obligations. Each implementation change still owes
+ordinary engineering tests and honest command results before acceptance.
 
 ## Cross-change falsifiers
 

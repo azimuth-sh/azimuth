@@ -12,9 +12,10 @@ If a document uses one of these words in a different sense, the document is wron
 
 ## The claim model
 
-**Claim** — a proposition about the system that is either satisfied or not, carrying a stable id.
-`claim = (domain, predicate)`. The unit of coverage: everything the framework checks is checked
-per claim.
+**Claim** — an addressable proposition about the product or its operation, carrying a stable id.
+A requirement-level Claim states the normative proposition and owns criticality. A case-level Claim
+refines one observable condition without becoming a separate kind of model object. Evidence bears
+on Claims; no single case-level result implies that it exhausts its requirement-level parent.
 
 **Predicate** — what must hold. Written in prose. *Narrowing:* not a formal predicate. It has no
 machine-checkable semantics; its truth is established by evidence, not by evaluation. This is the
@@ -31,11 +32,12 @@ information (D13). The only existential statements are marginal capability claim
 **Spec** — a named group of requirements with a declared, path-independent id. Organized by
 domain area, never by service.
 
-**Requirement** — a single normative SHALL rule, carrying criticality. Groups scenarios. The unit
-at which rigor is declared.
+**Requirement** — a requirement-level Claim expressed as one normative SHALL rule. It owns
+criticality and groups its case-level Claims.
 
-**Scenario** — a claim in GIVEN/WHEN/THEN form. The unit of coverage. Ids are unique per spec,
-not per requirement, so that splitting or merging a requirement touches no tags.
+**Scenario** — a case-level Claim in GIVEN/WHEN/THEN form. It refines an observable condition and
+remains independently addressable. Ids are unique per spec, not per requirement, so that splitting
+or merging a requirement touches no linkage.
 
 **Criticality** — `critical` | `standard` | `routine`. Declared on every requirement; absence is
 a hole, not a default. Determines which artifacts are required at all, not merely how strong the
@@ -120,55 +122,67 @@ relations across executions.)*
 test is re-established every CI run; an attestation ages out; a monitor whose query broke has
 fired zero times for six months and is worse than no monitor, because it is carried on the books.
 
-**Evidence receipt** — an attributable result imported from a system of record. A manual receipt
-names the external case and run, outcome, observation instant, expiry, evidence form and immutable
-payload fingerprint. Only a current pass contributes coverage; failure and expiry are holes.
+**Check** — a deliberately enrolled verification method that directly evaluates one or more
+product or operational Claims. It is not every native test, rule or analyzer in a repository. Its
+implementation linkage identifies executable source; that linkage does not itself say what the
+outcome means.
 
-**Assurance observation** — one immutable external execution account: producer, report,
-configuration inputs, observation time, optional expiry and payload fingerprint. It has explicit
-claim bindings and no run-level implication that every bound claim passed (D39).
+**Evidence Binding** — one repository-owned relation from a Check's atomic terminal outcome to one
+Claim aspect. It states the evidence proposition, evidence form, required context, challenge domain
+and qualification policy. One Check may have several Evidence Bindings only when the same atomic
+outcome honestly bears on every target Claim; independently variable assertions are separate
+Checks.
 
-**Evidence binding** — a claim-specific interpretation of an assurance observation. It states an
-assertion, `satisfied | violated`, scope, quantification and oracle and projects into `covers`.
+**Qualification** — the reviewed repository decision about whether one exact Evidence Binding is
+credible evidence for its Claim aspect under the required context. Its identity includes the Check
+fingerprint, binding fingerprint and required context. A Qualification neither records an
+execution nor establishes that the Claim is satisfied.
 
-**Challenge binding** — judgment context over a claim's resolved realization, evidence or
-mechanism subjects. `clean | findings | inconclusive` tells the judge what the tool reported; it
-never creates coverage. Changed results or subjects stale the affected judgment.
+**Claim Judgment** — the reviewed repository decision about the total assurance composition for
+one Claim. It considers realizations, mechanisms, guarantees, Evidence Bindings, Qualifications and
+residual risk. It is distinct from both a binding-level Qualification and Subject-specific
+Assurance State.
 
-**Evidence definition** — the stable proposition, verification form, oracle, inputs, lifecycle
-stage and required execution context that a recurring assurance execution instantiates. Its
-fingerprint excludes execution results. It is a service protocol record, not another current-model
-facet or a replacement for `verification.md` (D40).
+**Challenger** — a method that searches for a reason to distrust one Qualification or Claim
+Judgment. The proposition determines the role, not the executable brand. Mutation testing, broad
+static analysis and qualification-oriented fault injection normally act as Challengers. A
+Challenger does not recursively require a Qualification in alpha 2.
 
-**Claim contract** — the repository-derived semantic account to which a recurring evidence
-definition applies: structured claim identity and predicate, criticality, effective verification
-requirements and relevant surface or area realization obligations. Its fingerprint excludes
-realization bodies and enumerated members. Contract drift requires a new definition and
-qualification; implementation drift alone requires a new exact observation (D42).
+**Challenge Result** — one terminal `clean | findings | inconclusive` result targeting the exact
+fingerprint of one Qualification or Claim Judgment. `clean` means only that the Challenger found no
+objection in its declared search domain. A Challenge Result creates no product evidence; graph
+dependencies propagate its effect without fabricating duplicate downstream results.
 
-**Assurance project snapshot** — an immutable projection of one hole-free accepted Azimuth model.
-It names the complete model fingerprint and carries the claim contracts that an assurance service
-may accept. The CLI derives it; the service validates and stores it without re-parsing repository
-artifacts or re-running enumerators (D42).
+**Subject** — the exact thing about which execution facts are asserted. A Subject may identify a
+developer workspace, CI candidate, released artifact, deployment, or service and bounded monitoring
+window. Equality is strict enough that facts for one Subject cannot leak to another.
 
-**Qualification** — an accountable agent verdict over one exact evidence-definition fingerprint.
-`qualified` means a future applicable successful observation may open its configured lifecycle
-gate. It does not establish that the execution happened or that the product claim is satisfied
-(D40).
+**Run** — a bounded, provider-neutral execution envelope over one exact Subject. It records its
+plan, actual selection, context, provenance and outcomes, and may contain Check executions,
+Challenger executions or both. It need not correspond to one native process. A Check executes
+inside a Run; a Check never emits a Run.
 
-**Execution subject** — the exact registered assurance project snapshot and revision, with
-optional artifact digest, deployment, environment and cohort, to which an assurance observation
-applies. Equality is deliberately strict; evidence for one subject does not leak to another.
+**Observation** — the one terminal `satisfied | violated | inconclusive` result for a `(Run,
+Check)`. It is an execution fact, not an Evidence Binding, Qualification or Claim Judgment.
 
-**Lifecycle gate** — a derived decision for one evidence definition, execution subject, lifecycle
-stage and evaluation time. It is open only when current qualification and applicable successful
-execution facts agree and no current challenge blocks them. It is not repository intent or a
-product acceptance decision.
+**Assurance State** — a dynamic conclusion for one exact Subject, derived from repository-owned
+decisions and accepted execution facts. New facts may change state or reopen work; they do not
+rewrite repository rationale.
 
-**Assurance service** — the optional execution ledger that stores immutable qualifications,
-accepted-model snapshots, observations, challenges and derived gate history outside Git.
-Repositories remain authority for claim meaning and accepted judgment rationale; the standalone
-CLI remains usable without the service (D40, D42).
+**Assurance Service** — the optional durable ledger for accepted Runs, Observations, Challenge
+Results, derived Assurance State, gates and exceptional work. It receives provider-neutral facts
+and does not parse repository semantics or host provider-specific integrations. Local bundles have
+the same semantics, so using the service is not required (D43).
+
+**Adapter** — an explicitly configured provider-family integration. Core selects semantic targets
+and supplies a bounded plan; the adapter translates it to native selectors or imports an existing
+report, reports actual selection and returns normalized results with native artifact references. An
+adapter never interprets the repository model independently.
+
+**Adapter capability** — a stable `<adapter-id>/<capability-id>` identity in one of the semantic
+classes `model.extract`, `check.execute`, `check.import`, `challenge.execute` or
+`challenge.import`. Provider capability names remain open; Challenger forms are policy rather than
+hard-coded core tool kinds.
 
 **Detector test** — a test proving that a detection-strength item actually fires: that the
 reconciliation job flags an injected imbalance, that the deletion scan flags a planted record.
@@ -196,26 +210,25 @@ every site, which is the design that leaks.
 
 ## Linkage
 
-**Tag** — a machine-readable annotation on code or a test. Claim tags name
-`(spec-id, scenario-id)`; mechanism tags name `(design-spec-id, mechanism-id)`. Claim linkage is
-required only for standard and critical claims. Absence opts an artifact out of claim linkage; a
-routine claim owes no linkage.
+**Tag** — a machine-readable source annotation. Realization tags name `(spec-id, scenario-id)`;
+mechanism tags name `(design-spec-id, mechanism-id)`. Check implementation linkage identifies a
+stable Check without declaring an Evidence Binding in source. Routine Claims owe no linkage.
 
 **`realizes`** — on a production mechanism: this site is on that claim's path. A site may be
 application code or declared delivery topology when routing is part of the behavior. It carries no
-form; form is how a test checks, not a property of production mechanism.
+form; form describes how a Check evaluates a Claim, not a property of a production mechanism.
 
-**`covers`** — on a test or imported evidence binding: this evidence verifies that claim, at this
-*actual* scope and quantification. The required form lives in the verification plan; `covers`
-declares what the evidence really is, and the comparison is what produces `wrong-form`.
+**`covers`** — the transitional alpha 1 source annotation that directly links a native test to a
+Claim. D43 separates Check implementation linkage from repository-owned Evidence Bindings. The
+dependent format change removes this tag without treating it as the alpha 2 semantic relation or
+providing a compatibility reader.
 
 **`implements-mechanism`** — on production code: the enclosing compiler-resolved symbol implements
 the named design mechanism. This derives a binding; it does not replace the independent design
 declaration.
 
-**`covers-mechanism`** — on a test: evidence about a named mechanism's own contract. It carries the
-same actual evidence form as `covers`, but does not by itself cover business scenarios that use the
-mechanism.
+**`covers-mechanism`** — the corresponding transitional alpha 1 source annotation for evidence
+about a mechanism contract. It does not itself bind a Check outcome to any product Claim.
 
 **Enumerator** — what produces the member set for a claim ranging over a set of sites. Must be
 derived from the same source the system is built from — the route table, the DI container, the
@@ -281,12 +294,12 @@ domain spec and does not mean evidence `Scope: component`. A local workspace use
 mount vocabulary without a repository field (D41).
 
 **Typed source address** — an extractor-defined address such as a .NET symbol, TypeScript export,
-Next route or PostgreSQL index. `(area, address kind, address)` is stable source identity; repository,
-mount and path are locators.
+Next route or PostgreSQL index. `(area, address kind, address)` is stable source identity;
+repository, mount and path are locators.
 
-**Model source** — the authority that owns a set of intent packages. Model-source ownership follows
-intent accountability, not code placement; one source owns a spec even when its realizations span
-many repositories.
+**Model source** — the authority that owns a set of intent packages. Model-source ownership
+follows intent accountability, not code placement; one source owns a spec even when its
+realizations span many repositories.
 
 **Project reference** — a versioned repository-local locator for the singular project catalog and,
 optionally, an integration workset. It identifies the current repository so `project locate` can
@@ -303,8 +316,8 @@ records.
 archived. A change may receive work from many repositories but complete assembly permits only one
 authority for its proposal and history (D34).
 
-**Execution receipt** — a content-addressed result of composed evidence naming the exact repository
-revisions observed. It is distinct from a manual evidence receipt about a claim.
+**Execution receipt** — a content-addressed result of composed evidence naming the exact
+repository revisions observed. It is distinct from a manual Run bundle about a Subject.
 
 **Project snapshot** — a finalization record over a complete, clean assembly: catalog digest and
 area topology, repository revisions, manifest and receipt digests, and the derived model
@@ -323,8 +336,8 @@ semantic transition, not a Git branch, merge request, artifact, environment or r
 completed change updates the current facets before it is archived; a rejected or abandoned one
 updates none.
 
-**Finalization** — the derived model fingerprint and check summary for an accepted, applied change.
-It gates the mechanical archive move and contains no authored risk decision.
+**Finalization** — the derived model fingerprint and validation summary for an accepted, applied
+change. It gates the mechanical archive move and contains no authored risk decision.
 
 **Machine tier** — the deterministic checks. Finds structural holes. Cannot be argued with, and
 cannot establish truth.
@@ -338,11 +351,8 @@ the covering evidence toothy, is its declared form honest, and is a required beh
 from the spec. A judgment never establishes the claim; its negative verdicts create holes and its
 fingerprint expires when a relation or source it examined changes (D18, D28, D30).
 
-**Export** — the derived model, serialized. Checks, dashboards, PR annotations and the agent tier
-are all consumers of it; nothing re-parses specs.
-
-**Check** — one derivation over the model or over the code, with a stable public id. `rtm` is one
-check among several, not the product.
+**Export** — the derived model, serialized. Validators, execution planners, dashboards, PR
+annotations and the agent tier are all consumers of it; nothing re-parses specs.
 
 **Rollout** — exposure of an accepted artifact across environments or user populations. Normally
 outside the change model. A production observation enters change acceptance only when the proposal

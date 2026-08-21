@@ -1704,6 +1704,12 @@ relation without changing the manifest contract.
 
 ## D38 — Mutation testing qualifies evidence; it does not verify claims *(2026-08-11)*
 
+**Alpha 2 revision, 2026-08-21.** D43 retains the semantic classification but replaces the
+observation-as-judgment-input mechanism. Mutation testing is a Challenger whose result targets one
+exact Evidence Binding Qualification. It executes within a Run and produces a Challenge Result,
+not an Observation or `Covers` relation. Broad static analysis follows the same rule unless a
+claim-specific analyzer has an independent product oracle and is deliberately enrolled as a Check.
+
 **Decision.** Mutation testing is an optional, targeted agent-tier judgment method. Project policy
 lives in `azimuth/standards/judgment.md`; execution scope lives in the test project's native tool
 configuration. An importer derives assessed claims from the existing `Covers` test sites and
@@ -1745,6 +1751,12 @@ teams cannot choose targets consistently enough for absence of an assessment to 
 ---
 
 ## D39 — Assurance extensions share observations and explicit bindings *(2026-08-11)*
+
+**Superseded for alpha 2 by D43, 2026-08-21.** The provider-neutral extension boundary survives,
+but an observation is no longer both the execution envelope and the carrier of claim bindings.
+Checks and Evidence Bindings are repository declarations. A Run contains selected executions;
+Check executions produce Observations and Challenger executions produce Challenge Results. Active
+alpha 2 formats replace the D39 representation without a compatibility reader.
 
 **Decision.** One immutable assurance execution is an `observation`. It records its producer,
 report, configuration inputs, observation time, optional expiry and payload fingerprint once. One
@@ -1792,6 +1804,12 @@ fingerprinted without central coordination.
 ---
 
 ## D40 — Evidence qualification is stable; observations gate lifecycle instances *(experimental 2026-08-12)*
+
+**Alpha 2 revision, 2026-08-21.** D43 retains the qualification/execution split and makes its
+cardinality explicit. A Check plus one Evidence Binding replaces the overloaded evidence
+definition for repository semantics. One Qualification belongs to that exact binding. A Run over
+an exact Subject contains recurring Observations. Claim Judgment and derived Assurance State remain
+separate decisions.
 
 **Decision.** Separate an evidence definition, its semantic qualification and its executions.
 An agent qualifies one exact definition fingerprint: the proposition, form, oracle, inputs and
@@ -1867,6 +1885,13 @@ only to state one claim's expected fan-out.
 
 ## D42 — Claim contracts connect repositories to assurance services *(experimental 2026-08-12)*
 
+**Alpha 2 revision, 2026-08-21.** Claim contracts and project snapshots remain alpha 1 service
+protocol records until the Run-ledger change replaces them. D43 makes the repository authoritative
+for Check definitions, Evidence Bindings, Qualifications and Claim Judgments, and makes the
+optional service authoritative only for accepted execution facts and derived state. No dual
+protocol or compatibility reader is required. Routine Claims continue to create no assurance
+service obligation.
+
 **Decision.** A hole-free accepted model may be projected into an immutable assurance project
 snapshot. The snapshot identifies the complete model and carries one stable contract for every
 non-routine claim. A claim contract includes structured claim identity and predicate, criticality,
@@ -1899,6 +1924,148 @@ routinely require reinterpretation despite unchanged claim and verification sema
 changed surface or area obligation can retain the same contract. Move more validation into the
 service only if repository-produced snapshots cannot be authenticated or independently reproduced;
 do not solve provenance by installing a second spec parser there.
+
+---
+
+## D43 — Checks and Challenges share a subject-bound Run, not evidentiary meaning *(2026-08-21)*
+
+**Decision.** Position Azimuth as an evidence control plane with explicit semantic layers. The
+repository owns durable intent and reviewed meaning. Execution systems and the optional Assurance
+Service own facts about exact Subjects. A provider-neutral Run connects them without making a CI,
+analysis or monitoring provider authoritative for the Azimuth model.
+
+**Claims.** A requirement-level Claim states the normative product or operational proposition and
+owns criticality. A case-level Claim refines one observable condition while remaining an
+addressable Claim. The two levels prevent one test outcome from appearing to exhaust a broad
+requirement without introducing a separate non-Claim scenario ontology.
+
+**Checks and bindings.** A Check is a deliberately enrolled verification method, not every native
+test, rule or analyzer in a repository. Every Check has at least one Evidence Binding to a product
+or operational Claim. The binding states the evidence proposition, evidence form, required
+context, challenge domain and qualification policy.
+
+One Check may bind to several Claims only when its terminal outcome is atomic and honestly bears on
+each aspect. Each relationship is a separate Evidence Binding. Assertions that can vary
+independently are separate Checks even when one native process executes them together. Source
+extractors establish Check implementation linkage; they do not declare evidentiary coverage.
+
+**Qualification and Claim Judgment.** One Qualification judges one exact Evidence Binding: whether
+that Check implementation under the required context is credible evidence for that Claim aspect.
+Its identity includes the Check fingerprint, binding fingerprint and required context. Shared
+technical analysis may be referenced by several Qualifications, but it is not a global
+Qualification that collapses the edges.
+
+A Claim Judgment evaluates the total assurance composition for one Claim, including its
+realizations, mechanisms, guarantees, Evidence Bindings, Qualifications and residual risk.
+Assurance State is a dynamic conclusion for one exact Subject based on repository decisions and
+accepted execution facts. New facts can change state or reopen work; they do not silently rewrite
+Qualification or Claim Judgment rationale.
+
+**Qualification lifecycle.** Qualification is authored with the repository model. The machine tier
+validates structure, identities, fingerprints and applicability. The agent tier proposes a verdict
+and rationale. The evidence owner accepts it through review. CI may then challenge that candidate
+decision against the revision being accepted.
+
+A clean Challenge Result means that the configured Challenger found no objection in its declared
+search domain. It is not positive product evidence or proof of a Qualification. A finding or
+inconclusive result blocks or reopens the affected decision according to project policy.
+
+**Check and Challenger boundary.** A Check directly evaluates a product or operational Claim. A
+Challenger searches for a reason to distrust a Qualification or Claim Judgment. The proposition,
+not the executable brand, determines the role.
+
+Mutation testing, broad static analysis, flakiness repetition, oracle mutation and
+qualification-oriented fault injection normally act as Challengers. Fault injection that directly
+observes a recovery, durability, isolation or alerting Claim is a Check. A claim-specific analyzer
+with an independent oracle may also be a Check. One physical chaos execution may perform both roles
+and produce both result kinds without conflating them.
+
+Every Check must bind to a product or operational Claim. Challengers do not recursively require
+Qualifications in alpha 2: their quality remains an ordinary tool-release, conformance and review
+concern. This is not an assertion that Challengers are infallible; it is a deliberate stopping
+boundary for the assurance regress.
+
+**Challenge target.** Each Challenge Result targets one exact Qualification fingerprint or one
+exact Claim Judgment fingerprint. Selection traverses stable realization and mechanism identities
+to the relevant case-level Claim and Evidence Binding. Raw source paths alone are insufficient
+semantic selectors. A challenged Qualification affects dependent Claim Judgments and Assurance
+State through the graph; Azimuth does not fabricate duplicate Challenge Results for downstream
+nodes. A direct product failure remains a violated Observation.
+
+**Run and Subject.** A Run is a bounded execution envelope over one exact Subject. It can contain
+Check executions, Challenger executions or both. A Check execution produces one terminal
+Observation for `(Run, Check)`: `satisfied`, `violated` or `inconclusive`. A Challenger execution
+produces a Challenge Result.
+
+A Run is not necessarily one native process. It is the boundary within which Subject, plan, actual
+selection, context, provenance and outcomes can be interpreted consistently. Subjects include a
+developer workspace, CI candidate, released artifact, deployment, or service and bounded
+monitoring window. Continuous monitoring becomes bounded Runs. Alert delivery can provide negative
+evidence; silence is not success unless an enrolled Check establishes a complete and healthy
+measurement window.
+
+**Provider boundary.** Azimuth core traverses the model, selects semantic targets, emits a bounded
+plan, validates actual selection and accepts a normalized bundle. An explicitly configured adapter
+translates that plan to provider-native selectors or imports an existing report, reports what was
+actually selected, and returns Observations, Challenge Results or both with references to native
+artifacts. It never interprets the repository model independently.
+
+Provider-family packages expose stable `<adapter-id>/<capability-id>` identities. The semantic
+capability classes are `model.extract`, `check.execute`, `check.import`, `challenge.execute` and
+`challenge.import`; namespaced provider capabilities remain open. Challenge forms are policy, not
+hard-coded tool kinds in core.
+
+Inbound provider events may use an optional generic gateway that authenticates an event and invokes
+a bounded import adapter. The Assurance Service receives only normalized Runs and acquires no
+provider-specific webhook logic. Raw reports and telemetry remain in their source systems.
+
+**Authority and storage.** `verification.md` is the repository location for deliberate Check
+definitions and Evidence Bindings. The exact syntax is deferred to the format change. The optional
+Assurance Service is the built-in durable Run ledger, but local bundles have the same semantics.
+Retention and compaction are operational policy; applicability and current assurance are semantic
+policy. Gate selection must not decide which authorized facts exist.
+
+**Alpha transition.** D43 establishes the alpha 2 semantic authority before dependent formats,
+commands, adapters and ledger changes implement it. Transitional alpha 1 mechanisms are not
+evidence that the dependent behavior already exists. Alpha 2 removes old formats, aliases and
+readers instead of supporting both models.
+
+All active Claims for this fast-moving alpha remain routine. Existing standard and critical Claims
+are lowered during this change, and their current verification and judgment facets are removed.
+They receive no required Azimuth evidence, Qualifications or Claim Judgments until a later accepted
+change raises criticality after the codebase stabilizes. Ordinary engineering tests and release
+checks still establish whether implementation behaves as intended; they are not modeled as
+evidence for routine Claims.
+
+**Why.** Three structurally different concerns require the separation. Local and CI tests need one
+stable method to produce revision-bound outcomes. Monitoring needs the same method to produce
+deployment- and window-bound outcomes without turning alert silence into success. Mutation, broad
+analysis and qualification faults need to attack trust in an evidentiary edge without becoming
+product evidence. A neutral Run shares orchestration while distinct result types preserve meaning.
+
+The model also avoids a scale category error. Modern stores can retain very large execution
+volumes, but automatic enrollment would make native inventory accidental assurance authority.
+Sparse first-class Checks solve semantic scope; independent retention and compaction solve ledger
+cost.
+
+**Strongest rejected alternative.** Keep D39's observation with evidence and challenge bindings as
+the sole extension record. It is smaller, but it makes one object both an execution envelope and an
+interpretation, cannot express a reviewed Qualification per Check-to-Claim edge cleanly, and leaves
+shared check/challenge orchestration implicit. Separate `azimuth check` and `azimuth challenge`
+executors were also rejected because they would duplicate planning, Subject, provenance, adapter
+and ingestion machinery.
+
+**Validation.** Dependent changes must demonstrate at least a local-to-CI Qualification Challenge,
+a dual-role fault Run, broad-versus-claim-specific static analysis, bounded monitoring imports,
+partial native execution, actual-selection mismatch, temporal replay, high-cardinality ledger
+behavior, two structurally different adapters and a service-free cold-consumer journey. These are
+ordinary implementation checks while the Claims remain routine; they create no `Covers` relations.
+
+**What would falsify it.** Revisit the model if real Checks cannot expose atomic outcomes without
+mirroring every native case, if traceability cannot select relevant Qualifications better than a
+whole-suite Challenge, if one neutral Run loses provider facts needed for interpretation, if local
+bundles and the optional service cannot share semantics, or if the vocabulary costs more adoption
+effort than the assurance distinctions prevent.
 
 ---
 

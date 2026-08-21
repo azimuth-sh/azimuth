@@ -1,7 +1,7 @@
 # Spec: framework/assurance-deployment
 
 ## Requirement: private-network-containment
-Criticality: standard
+Criticality: routine
 
 The private assurance profile SHALL expose its unauthenticated processes only through an explicit
 operator-controlled network boundary.
@@ -22,7 +22,7 @@ THEN the trusted proxy, tunnel or VPN boundary is explicit
 AND application authentication and direct-internet readiness are explicitly denied
 
 ## Requirement: assurance-ledger-durability
-Criticality: critical
+Criticality: routine
 
 The private assurance profile SHALL preserve accepted ledger history through its documented
 service lifecycle.
@@ -39,7 +39,7 @@ THEN every repository migration is applied automatically in forward order
 AND downgrade migration is not a supported operation
 
 ## Requirement: selected-image-platforms-build
-Criticality: standard
+Criticality: routine
 
 Every assurance image and platform selected by the release contract SHALL produce a buildable OCI
 candidate before publication orchestration begins.

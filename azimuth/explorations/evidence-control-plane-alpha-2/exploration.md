@@ -47,7 +47,7 @@ slice still requires its own proposal and authority.
   complete.
 - Alpha 2 does not support alpha 1 compatibility. Old formats, aliases and readers are removed
   rather than retained as a parallel path.
-- All requirements introduced for this fast-moving alpha are routine. Implementation still owes
+- All active requirements for this fast-moving alpha are routine. Implementation still owes
   ordinary engineering tests, but the Azimuth model does not owe Covers relations, Qualifications
   or Claim Judgments until criticality is deliberately raised after the codebase stabilizes.
 - This exploration does not authorize implementation, archive an active change or publish a

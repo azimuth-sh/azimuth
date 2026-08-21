@@ -1,7 +1,7 @@
 # Spec: framework/release-artifacts
 
 ## Requirement: first-alpha-contract
-Criticality: standard
+Criticality: routine
 
 The first public alpha artifacts SHALL have one explicit and internally consistent release
 contract before publication.
@@ -35,7 +35,7 @@ WHEN experimental polyglot or generic experiment source is classified
 THEN it has no first-alpha public artifact identity or support promise
 
 ## Requirement: experimental-source-isolation
-Criticality: standard
+Criticality: routine
 
 The canonical repository's experimental source SHALL remain continuously verifiable without
 reading a domain-owned checkout.

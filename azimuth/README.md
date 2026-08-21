@@ -10,8 +10,8 @@ azimuth/
 ├── model/<spec-id>/
 │   ├── spec.md            # required
 │   ├── design.md          # required for critical intent; otherwise optional
-│   ├── verification.md    # deviations, non-test evidence and residuals only
-│   └── judgments.md       # agent-tier verdicts when required or performed
+│   ├── verification.md    # plans; alpha 2 also assigns Checks and Evidence Bindings here
+│   └── judgments.md       # reviewed decisions when required; alpha 2 placement is deferred
 ├── standards/
 │   ├── verification.md   # evidence form required by criticality
 │   └── judgment.md       # agent-tier methods such as targeted mutation testing
@@ -52,11 +52,23 @@ Neither is scanned as the accepted current model.
 field. It binds independently derived surfaces to enumerators and may require ordinary claims to
 have realizations in named areas. Areas are inferred from source paths; tags do not repeat them.
 
-The two standards have different authority. `verification.md` says what evidence must establish
-the product claim. `judgment.md` says how the agent audits whether that evidence is discriminating.
-Mutation and broad static-analysis runs are therefore configured as judgment challenges and emit
-no `Covers` relation. Load or chaos executions may instead emit evidence bindings when each binding
-declares a claim-specific assertion, outcome and form.
+The two standards have different authority. The verification standard says what evidence must
+establish for a product Claim. The judgment standard says how the agent audits whether an Evidence
+Binding and the whole Claim composition are credible. D43 assigns Check definitions and Evidence
+Bindings to the package's `verification.md`; a dependent format change owns their exact syntax.
+Mutation and broad static analysis normally act as Challengers, while load or chaos assertions with
+direct product oracles are Checks. One physical Run may contain both roles without conflating their
+results.
+
+Repository artifacts own durable intent and reviewed meaning: Claims, Check definitions, Evidence
+Bindings, Qualifications, Claim Judgments, standards and residual rationale. Runs own facts about
+exact Subjects. Check executions produce Observations; Challenger executions produce Challenge
+Results. The optional Assurance Service can retain those execution facts and derived Assurance
+State, but local bundles have the same semantics and the service never becomes model authority.
+
+Provider adapters receive semantic selections from core, translate them to native selectors or
+import reports, report actual selection and return normalized Run outcomes. They do not parse this
+model tree or independently decide which Claims a native result supports.
 
 An exploration is project-level research and decision shaping above individual changes. Its
 required anchor is `exploration.md`; optional `research.md` and `change-map.md` appear only when

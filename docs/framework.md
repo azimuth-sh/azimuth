@@ -6,9 +6,9 @@ and [`tools/azimuth/README.md`](../tools/azimuth/README.md); where it disagrees 
 they win and this file is wrong. Terminology is bounded by the glossary.
 
 It exists because those documents describe the framework by *decision* and by *facet*, and nothing
-described it as a whole. A decision log records how a design was argued into existence, not what it
-is now — several entries are marked *(revised)* or *(supersedes …)*, so reading it end to end gives
-the history rather than the current state.
+described it as a whole. A decision log records how a design was argued into existence, not what
+it is now — several entries are marked *(revised)* or *(supersedes …)*, so reading it end to end
+gives the history rather than the current state.
 
 For whether any of this is *established*, see [`status.md`](./status.md). This document says what
 the framework claims; that one says how much of it has survived contact with evidence.
@@ -29,6 +29,11 @@ than a matter of taste (D3, D20). Other finding kinds qualify incomplete facets,
 consistency and the machinery that enumerates a claim's domain; D3's stronger taxonomy claim has
 already been partially falsified.
 
+Azimuth is also an **evidence control plane** (D43). The repository owns durable intent and
+reviewed evidentiary meaning. Execution systems contribute facts about exact Subjects through a
+provider-neutral Run. That separation lets local development, CI, analysis and monitoring share
+one model without making any provider authoritative for Claims or their interpretation.
+
 ---
 
 ## Five primitives
@@ -37,15 +42,16 @@ Everything else is structure layered over these, and D8 requires each layer to b
 breaking the core (§0.1 of `decisions.md`):
 
 1. **Claims** — stable ids, criticality, the domain they range over (D13), and three facets (D3).
-2. **Tags** — claim linkage (`realizes`, `covers`) and mechanism linkage
-   (`implements-mechanism`, `covers-mechanism`).
+2. **Linkage** — realization and mechanism linkage plus Check implementation identity.
 3. **Evidence** — carrying strength and freshness (D4).
 4. **The derived model** over the above, exported (D10).
 5. **Changes** — the unit in which all of it moves (D11).
 
-A claim is `(domain, predicate)`. The predicate is prose: it has no machine-checkable semantics,
-and its truth is established by evidence rather than by evaluation. That is the largest gap between
-this vocabulary and formal methods, and it is why no mechanism here claims to establish truth.
+A requirement-level Claim states the normative proposition and owns criticality. A case-level
+Claim refines one observable condition and remains addressable by realization and evidence. The
+predicate is prose: it has no machine-checkable semantics, and its truth is established by evidence
+rather than by evaluation. That is the largest gap between this vocabulary and formal methods, and
+it is why no mechanism here claims to establish truth.
 
 Every claim is universal. There is no quantifier field, because a constant field carries no
 information (D13).
@@ -60,11 +66,11 @@ information (D13).
 | Mechanism | what makes it true, and how strongly | `design.md` | requirement |
 | Evidence | how we know, and how freshly | `verification.md` | scenario |
 
-**Intent.** A spec is a named group of requirements; a requirement is one SHALL rule carrying
-criticality; a scenario is a claim in GIVEN/WHEN/THEN form. Scenario ids are unique per spec rather
-than per requirement, which is what makes splitting or merging a requirement free — scenarios move
-between parents without touching a tag. Ids are declared in headings and never derived from paths,
-so moving a package breaks nothing (`azimuth/formats/spec.md`).
+**Intent.** A spec is a named group of Claims. A requirement-level Claim is one SHALL rule carrying
+criticality; its scenarios are case-level Claims in GIVEN/WHEN/THEN form. Scenario ids are unique
+per spec rather than per requirement, which is what makes splitting or merging a requirement free
+— scenarios move between parents without touching a tag. Ids are declared in headings and never
+derived from paths, so moving a package breaks nothing (`azimuth/formats/spec.md`).
 
 **Mechanism.** An entry declares a stable mechanism identity, enforcement kind and rationale, then
 resolves it to exactly one current artifact. A non-code artifact may be bound explicitly; a code
@@ -72,10 +78,10 @@ annotation normally lets its native extractor derive the binding. This is what m
 visible: the design identity survives while the implementation edge disappears. Entries key on the
 requirement because one index typically makes every scenario under it true at once.
 
-**Evidence.** A plan records what *would be sufficient* to believe a claim, never what currently
-exists — existing evidence is derived from `covers` tags, and hand-listing it would create a second
-copy that drifts (D4.5). A claim with no plan entry is not unplanned; it means the project standard
-applies unmodified.
+**Evidence.** A plan records what *would be sufficient* to believe a Claim, never current execution
+facts. D43 assigns deliberate Check definitions and their Evidence Bindings to `verification.md`;
+the dependent format change owns their exact syntax. A Claim with no plan entry is not unplanned;
+it means the project standard applies unmodified.
 
 **Residue** is the fourth thing in `design.md` and is deliberately outside the model: orientation,
 danger zones, deliberately broken corners, what is absent and why. It participates in no check and
@@ -96,6 +102,92 @@ anchors a package at `azimuth/model/<spec-id>/spec.md`; optional siblings are `d
 `verification.md` and `judgments.md`. Their declared spec ids remain authoritative and directory
 proximity creates no semantic edge. Exact filenames make discovery closed, while optional files
 keep routine intent and standard defaults lightweight.
+
+---
+
+## Evidence control plane
+
+The evidence control plane separates repository decisions from execution facts (D43):
+
+| Repository authority | Execution authority |
+|---|---|
+| Claims and criticality | Runs and exact Subjects |
+| Check definitions and Evidence Bindings | Observations and Challenge Results |
+| Qualifications and Claim Judgments | native artifact references |
+| standards and residual rationale | derived Assurance State, gates and work |
+
+The optional Assurance Service can retain execution authority durably. A local bundle has the same
+meaning, so the service is not required to interpret or use the repository model. Execution facts
+can change Subject-specific state or reopen work, but cannot silently rewrite reviewed meaning.
+
+### Checks, bindings and decisions
+
+A **Check** is a deliberately enrolled verification method. Ordinary untagged tests, analyzer
+rules and monitors remain outside Azimuth until their result is given explicit evidentiary meaning.
+Every Check has at least one **Evidence Binding** to a product or operational Claim. The binding
+states the proposition the result bears on, evidence form, required context, challenge domain and
+qualification policy.
+
+One Check may bind to several Claims only when its terminal outcome is atomic and honestly bears on
+every aspect. Each relationship is a separate Evidence Binding. Assertions that can vary
+independently are separate Checks even when one native process executes them together. Source
+extractors establish Check implementation linkage; they do not declare evidentiary coverage.
+
+One **Qualification** judges one exact Evidence Binding: whether that Check implementation in the
+required context is credible evidence for that Claim aspect. A **Claim Judgment** instead evaluates
+the whole assurance composition for one Claim, including realizations, mechanisms, guarantees,
+bindings, Qualifications and residual risk. Both are reviewed repository decisions. A passing
+execution establishes neither automatically.
+
+The machine tier validates a Qualification's structure, identities, fingerprints and
+applicability. The agent tier proposes its verdict and rationale, and the evidence owner accepts it
+through review. Project policy selects the Challenge forms required for an evidentiary class; a
+Qualification may strengthen or deviate from that standard only with an explicit residual. CI can
+then challenge the candidate decision for the revision being accepted.
+
+### Runs and outcomes
+
+A **Run** is a bounded execution envelope over one exact **Subject**. A Subject can be a developer
+workspace, CI candidate, released artifact, deployment, or service and bounded monitoring window.
+A Run may contain Check executions, Challenger executions or both; it is not necessarily one native
+process. A Check executes inside a Run and never emits a Run.
+
+Each `(Run, Check)` produces one terminal **Observation**: `satisfied`, `violated` or
+`inconclusive`. Independent outcomes require independent Checks. A **Challenger** searches for a
+reason to distrust a Qualification or Claim Judgment and produces a separately targeted
+**Challenge Result**. One physical fault execution can perform both roles and return both result
+kinds without conflating them.
+
+The proposition, not the tool brand, determines the role. Mutation testing, broad static analysis,
+flakiness repetition, oracle mutation and qualification-oriented fault injection normally act as
+Challengers. Fault injection that directly observes recovery, durability, isolation or alerting is
+a Check. A claim-specific analyzer with an independent product oracle may also be a Check.
+
+Each Challenge Result targets one exact Qualification or Claim Judgment fingerprint. A clean result
+means only that its Challenger found no objection in the declared search domain; it is not positive
+product evidence or proof of the target decision. Findings and inconclusive results block or reopen
+work according to policy. Dependency traversal carries the effect of a challenged Qualification to
+downstream judgments and Assurance State without inventing duplicate Challenge Results. A direct
+product failure remains a violated Observation.
+
+### Provider boundary
+
+Azimuth core traverses traceability, selects semantic targets, emits a bounded plan and validates
+what actually ran. An explicitly configured provider-family adapter translates the plan to native
+selectors or imports a native report, reports actual selection and returns normalized Observations,
+Challenge Results or both with references to native artifacts. It never parses or interprets the
+repository model independently.
+
+Adapters expose stable `<adapter-id>/<capability-id>` identities in five semantic classes:
+`model.extract`, `check.execute`, `check.import`, `challenge.execute` and `challenge.import`.
+Namespaced provider capabilities remain open, and project policy maps its Challenge forms to
+installed capabilities. Raw telemetry and native reports stay in their source systems.
+
+Continuous monitoring is represented by bounded Runs over explicit windows. Alert delivery can
+produce negative evidence, but silence is not success unless an enrolled Check establishes a
+complete and healthy measurement window. An optional generic gateway may authenticate an inbound
+provider event and invoke a bounded import adapter; the Assurance Service receives only the
+normalized Run and gains no provider-specific webhook logic.
 
 ---
 
@@ -141,35 +233,38 @@ already clear can still begin directly with a lightweight change.
 
 ## Linkage
 
-Claim linkage has two tags, both keyed on `(spec-id, scenario-id)`:
+Production linkage uses **`realizes`**, keyed on `(spec-id, scenario-id)`: the tagged site is on the
+Claim's realization path. It carries no evidence form because form describes how a Check evaluates
+a Claim, not a property of production code.
 
-- **`realizes`**, on production code: this site is on that claim's path. Carries no form, because
-  form is how a test checks and not a property of code.
-- **`covers`**, on a test: this test verifies that claim, at this *actual* scope and
-  quantification. The plan states the *required* form; comparing the two is what produces
-  `wrong-form`.
+Check implementation linkage instead identifies the source that implements a stable Check. Its
+Evidence Bindings live in `verification.md`, so an extractor cannot make a product evidence claim
+merely by finding a source annotation. The dependent format change owns the exact implementation
+link syntax. Alpha 1 `covers` tags remain transitional parser input until that change removes them;
+they do not define the alpha 2 semantic boundary or receive a compatibility reader.
 
-Both are declarations at the tagged site and required from the claim side only at `standard` and
-`critical`. A routine claim owes neither. A test with no `covers` tag is an ordinary test outside
-Azimuth's evidence model, not an exemption and not a hole (D20.1).
+Routine Claims owe neither realization nor Check linkage. Ordinary native tests without deliberate
+enrollment remain outside Azimuth, not exempt and not holes (D20.1, D43).
 
-**Fan-out** — one claim realized at several sites, across components and languages — is the reason
-specs are organized by domain area rather than by service. Mirroring services would duplicate every
-cross-component claim.
+**Fan-out** is one claim realized at several sites, across components and languages. It is the
+reason specs are organized by domain area rather than by service. Mirroring services would
+duplicate every cross-component claim.
 
-Mechanism linkage is symmetric but has a different target:
+Mechanism linkage has a different target:
 
 - **`implements-mechanism`**, on production code, binds a compiler-resolved symbol to the stable
   `(design spec, mechanism id)` declaration. The design may instead carry an explicit `Binding:`
   for an extractor-resolved non-code artifact.
-- **`covers-mechanism`**, on a test, records evidence for the mechanism's contract and actual form.
+- Alpha 1 **`covers-mechanism`** tags remain transitional until Check implementation linkage and
+  Evidence Bindings replace their evidentiary role.
 
-Mechanism evidence does not automatically fan out into claim coverage. A circuit-breaker state
-machine may need one strong test suite, while each business claim still needs an honest account of
-whether the breaker is applied over the relevant surface and whether that establishes the claim.
+A Check over a mechanism does not automatically fan out into Evidence Bindings for every Claim that
+uses it. A circuit-breaker state machine may need one strong Check, while each business Claim still
+needs an honest account of whether the breaker is applied over the relevant surface and what the
+Check's atomic outcome establishes for that aspect.
 
-**Exemption** is a deliberate, attributable, reviewable opt-out from an obligation. An untagged
-test claims no Azimuth evidence and therefore needs no exemption (D6.3, D20.1).
+**Exemption** is a deliberate, attributable, reviewable opt-out from an obligation. An unenrolled
+native test claims no Azimuth evidence and therefore needs no exemption (D6.3, D20.1).
 
 **Enumerator** — for a claim ranging over a set of sites, whatever produces the member set must be
 derived from the same source the system is built from: the route table, the DI container, the type
@@ -202,8 +297,8 @@ Evidence carries **strength**, and the ladder is `detection < demonstration < pr
 
 **Scope** is `unit | component | e2e`, defined by what must be *real* rather than by how much runs
 (D15). It applies to demonstration-strength evidence only: a static rule executes nothing and has
-no scope. Defining it this way makes the rung partly machine-checkable — a harness knows whether it
-started a database.
+no scope. Defining it this way makes the rung partly machine-checkable — a harness knows whether
+it started a database.
 
 **Quantification** is `example | universal`: whether the evidence checked one case or ranges over
 all of them. It is a property of evidence, not of the claim. The value was `invariant` until D19
@@ -231,6 +326,11 @@ once, rather than per claim:
 | `critical` | demonstration | universal | required |
 | `standard` | demonstration | example | optional |
 | `routine` | none | — | optional |
+
+During the fast-moving alpha 2 transition, every active requirement is routine. Existing
+verification and judgment facets were removed when their requirements were lowered. The three
+levels remain part of the model so a later accepted change can raise individual Claims after the
+codebase stabilizes and their consequences justify evidence obligations.
 
 Default scope is `unit` for every claim, raised per claim where the claim's truth depends on
 something real. Scope is deliberately *not* derived from criticality: an authorization rule can be
@@ -277,9 +377,9 @@ Most hole kinds are missing-facet combinations, which is D3's central structural
 | intent + evidence below the declared standard | `wrong-form` |
 
 Four are **not** missing-facet: `unclassified`, `unaccepted-weakening`, `undeclared-mechanism` and
-`unjudged` are *incomplete*-facet — the facet is present but a required part of it is missing. This
-is recorded as a partial falsifier of D3: the premise fires, the conclusion does not, since none of
-the four implies a fourth facet. D3 has not been amended.
+`unjudged` are *incomplete*-facet — the facet is present but a required part of it is missing.
+This is recorded as a partial falsifier of D3: the premise fires, the conclusion does not, since
+none of the four implies a fourth facet. D3 has not been amended.
 
 Whether *only* these four count against the falsifier is unsettled. Read strictly, several other
 kinds are also not missing-facet combinations — `unbacked-proof` is a cross-facet consistency
@@ -297,64 +397,45 @@ Two tiers produce findings:
   establishes part of the predicate, whether evidence is toothy, whether its declared form is
   honest, and whether a required behaviour is missing from the spec. Its outputs audit the
   declared account and can withdraw trust; they never cover a claim (D14, revised by D18 and D28).
-  Freshness follows
-  compiler-resolved realization and evidence sites and conservatively falls back to complete files.
-  External tools enter through one assurance-observation protocol (D39). An observation records an
-  immutable execution once, then binds it to claims as evidence or as a challenge. Evidence
-  bindings carry their own assertion and form and become ordinary `Covers` relations. Challenge
-  bindings name resolved assurance subjects, create no evidence and can only sharpen the agent's
-  review. Mutation and broad static analysis normally use the latter; explicit load and chaos
-  oracles may use the former. Changed reports, inputs or subjects stale the affected verdicts.
-  Recurring execution adds a second, optional boundary (D40): an agent qualifies the stable
-  definition of what a successful run would establish, while CI and production systems append
-  immutable observations for exact revisions, artifacts and deployments. Ordinary successful
-  repetitions renew execution state without renewing semantic judgment or committing results to
-  Git. Definition drift, failure, expiry, context or subject mismatch and current challenge
-  findings close a lifecycle gate and create focused work. The definition retains the
-  claim-specific semantics of D39's binding; the execution record references that definition
-  rather than copying the interpretation on every run.
-  A judgment whose inputs have changed is reported as
+  Freshness follows compiler-resolved realization and Check implementation sites and conservatively
+  falls back to complete files. The agent proposes a Qualification for each exact Evidence Binding
+  and a Claim Judgment for the whole composition; the evidence owner accepts those decisions
+  through review. CI can challenge the candidate decisions without turning a clean negative search
+  into product evidence. A judgment whose inputs have changed is reported as
   `stale-judgment` rather than silently trusted — which is why a refactor invalidates prior
   verification by fingerprint rather than by anyone remembering.
 
-The reference implementation under `services/assurance/` keeps that boundary optional. Its pure
-Rust evaluator is used by both the original lifecycle experiment and an Axum/PostgreSQL service.
-The service preserves idempotent immutable records, decision history, current gates, worklists and
-repository-authored accepted-model snapshots; a Next.js client renders those projections without
-evaluating them again. An accepted-model snapshot carries stable claim contracts for non-routine
-claims (D42). Each contract fingerprints the claim, effective verification form and any surface or
-area realization obligations. Implementations and enumerated members remain outside that contract:
-their change creates a new exact execution subject, while unchanged semantics can reuse the prior
-qualification. The CLI validates and projects this account; the service neither parses specs nor
-runs enumerators.
-Authentication, tenant isolation, signing, retention, report storage and production service
-objectives are deliberately outside the reference slice. Routine claims acquire no service record
-or lifecycle gate merely because the service exists.
+The optional reference service under `services/assurance/` is the built-in durable execution
+ledger. D43 assigns it accepted Runs, Observations, Challenge Results and derived state rather than
+repository decisions. Retention and compaction are operational policy; applicability and current
+assurance are semantic policy. The dependent Run-ledger change replaces the alpha 1 protocol
+without a dual reader. Routine Claims acquire no service record or gate merely because the service
+exists. Gate selection must not decide which authorized execution facts exist.
 
 ---
 
 ## The tool
 
-`azimuth` is the tool. `rtm` is one check among several, and the matrix is not the product (D9).
+`azimuth` is the tool. D43 reserves **Check** for an enrolled verification method, so deterministic
+model validation and execution orchestration are separate tool responsibilities. The dependent
+command change owns their final command names and removes the alpha 1 aliases rather than retaining
+two vocabularies.
 
 ```
-azimuth check                    # all checks
-azimuth check rtm --only '…/**'  # one check, scoped by id
 azimuth export --out model.json
-azimuth assurance export --project <id> --out assurance-snapshot.json
 ```
 
-Exit codes: `0` clean, `1` errors found, `2` the model could not be derived. Selection operates on
-ids rather than paths, so it survives a reorganization. Severity comes from criticality, not from
-the check (D9.2), and check ids are a public interface (D9.1).
+Selection operates on ids rather than paths, so it survives a reorganization. Finding severity
+comes from criticality, not from a validation rule. Check identities and adapter capability
+identities are public semantic interfaces.
 
 The core is dependency-free (D17) and reads only **manifests**, never source. One extractor per
 ecosystem finds tags in its own language and writes the same language-neutral manifest; that seam
 is why adding a language is a day's work rather than a fork of the core. Extractors exist for .NET
 and TypeScript.
 
-The export is a first-class artifact (D10): checks, dashboards, PR annotations and the agent tier
-are all consumers of it, and nothing re-parses specs.
+The export is a first-class artifact (D10): validation, execution planning, dashboards, PR
+annotations and the agent tier are all consumers of it, and nothing re-parses specs.
 
 ### Multi-repository assembly
 
@@ -363,11 +444,11 @@ A project may be assembled from independent repositories without making paths gl
 verification policy and composed receipts. A workset supplies concrete Git revisions and pins the
 content digests of repository manifests and execution receipts.
 
-Every federated source has identity `(area, typed address)`. Repository, mount and path are locators.
-Moving an unchanged area between repositories therefore preserves linkage and judgment freshness;
-splitting or merging an area is an explicit identity transition. Areas describe where source and
-evidence originate, while specs remain organized by problem domain and `Scope: component` remains
-an evidence form.
+Every federated source has identity `(area, typed address)`. Repository, mount and path are
+locators. Moving an unchanged area between repositories therefore preserves linkage and judgment
+freshness; splitting or merging an area is an explicit identity transition. Areas describe where
+source and evidence originate, while specs remain organized by problem domain and
+`Scope: component` remains an evidence form.
 
 Model sources are federated by intent authority. Code in `rider-experience` may realize a
 system-owned payments claim without copying that claim into an experience spec; experience-only
@@ -420,13 +501,13 @@ injection; independent-team and cold-agent usability remain external validation 
 surface and area-obligation declarations are machine-tested; federated surface assembly and
 additional enumerator kinds remain residual.
 
-**Open.** Five of the seven questions recorded in `decisions.md` remain open — question 2 was closed
-by D26 and question 3 by D15 — and they are open because they need evidence from the fixture, not
-more argument: id semantics under split and merge; what `realizes` means for a rule with no site;
-what is tagged when enforcement is a DB constraint; whether the six-domain set is right and should
-stay closed (D13.3); how a generated check judges a domain whose members discharge differently.
-The next mechanism experiment also asks whether cross-spec application needs reusable domain ids,
-a mechanism catalog, or neither.
+**Open.** Five of the seven questions recorded in `decisions.md` remain open — question 2 was
+closed by D26 and question 3 by D15. They are open because they need evidence from the fixture,
+not more argument: id semantics under split and merge; what `realizes` means for a rule with no
+site; what is tagged when enforcement is a DB constraint; whether the six-domain set is right and
+should stay closed (D13.3); how a generated check judges a domain whose members discharge
+differently. The next mechanism experiment also asks whether cross-spec application needs reusable
+domain ids, a mechanism catalog, or neither.
 
 **Explicit non-goals for this phase** include backward compatibility, migrations and semver;
 dashboards as deliverables (the export seam is the deliverable); and a configuration language for
@@ -438,14 +519,18 @@ rigor levels.
 
 Recorded before the evidence existed. `status.md` holds the current results; two have fired.
 
-| Falsifier | Status |
-|---|---|
-| >40% of requirements at top criticality → the level mechanism is theatre | **fired** (54%) |
-| A hole kind that is not a missing-facet combination → D3 incomplete | **fired**, four times, and possibly harder — see above |
-| The three role views over the export turn out identical → the facet split is decorative | never tested |
-| Artifact and annotation cost exceeds what the defects justify → ceremony | never measured |
-| The agent tier cannot reliably detect a dishonest tag → the core claim fails | **fired**: realization tags were absent from its worklist; D28 repairs the omission and the full pass removed fourteen unjustified relations, but self-review does not retroactively establish reliability |
-| A concern fits none of the six domains → D13 wrong | holds; two domains exercised |
+- More than 40% of requirements at top criticality would make the level mechanism theatre:
+  **fired** at 54%.
+- A hole kind outside the missing-facet combinations would make D3 incomplete: **fired** four
+  times, and possibly harder; see the Findings section.
+- Identical role views over the export would make the facet split decorative: never tested.
+- Artifact and annotation cost beyond the defects justified would make the framework ceremony:
+  never measured.
+- An agent tier unable to detect dishonest tags would fail the core claim: **fired** when
+  realization tags were absent from its worklist. D28 repaired the omission and the full pass
+  removed fourteen unjustified relations, but self-review does not retroactively establish
+  reliability.
+- A concern fitting none of the six domains would make D13 wrong: holds; two domains exercised.
 
 ---
 

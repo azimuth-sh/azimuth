@@ -1,7 +1,7 @@
 # Spec: framework/release-orchestration
 
 ## Requirement: qualification-lanes-converge
-Criticality: standard
+Criticality: routine
 
 The first-alpha release SHALL qualify independent artifact lanes before one complete candidate
 account can pass.
@@ -22,7 +22,7 @@ THEN the selected population is derived from the release catalog
 AND no missing, duplicate or unexpected candidate is accepted
 
 ## Requirement: tagged-candidates-are-verifiable
-Criticality: critical
+Criticality: routine
 
 Every retained first-alpha candidate SHALL remain attributable to one tagged source revision until
 public verification completes.
@@ -46,7 +46,7 @@ THEN GitHub build provenance identifies its exact checksum or image digest
 AND direct provenance or a retained-to-published provenance chain names the tagged source revision
 
 ## Requirement: qualified-candidates-compose
-Criticality: standard
+Criticality: routine
 
 Every selected first-alpha candidate SHALL expose its declared public entry point from the retained
 distribution shape.
@@ -66,7 +66,7 @@ THEN the image starts through its declared private-deployment entry point
 AND every catalog-selected image and platform is represented
 
 ## Requirement: partial-publication-resumes-safely
-Criticality: critical
+Criticality: routine
 
 The first-alpha publication SHALL preserve successful immutable targets and resume only targets
 that are absent from retrieved registry state.
