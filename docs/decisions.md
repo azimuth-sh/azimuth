@@ -2731,6 +2731,84 @@ using untyped or path-bearing raw bindings, carrying a prequalified assembled ke
 mismatching prefix, site or companion, or relying on file paths for semantic qualification are
 rejected in place with no compatibility reader.
 
+**Adversarial semantic-account correction, 2026-08-22.** Review found that the general
+compiler-qualified rule still overclaimed what four native extractors could establish. In
+particular, a Clang canonical type can contain a lambda source location, a Python namespace module
+can change when an input directory is mistaken for its import root, Go generic names can leak into
+an otherwise unchanged signature, and parsed Rust tokens do not prove a Cargo target or module
+graph. This revision narrows each alpha contract instead of accepting locator-derived identities.
+
+C++ accepts a mechanism marker only on a compiler-proven, program-global, external-linkage,
+non-module declaration that is neither templated nor constrained. Its site is the program-global
+qualified declaration name followed by Clang's canonical function type. An internal-linkage or
+anonymous-namespace declaration, a local type or callable, a declaration attached to a C++ module,
+any function or enclosing class template, any constrained declaration, or any canonical type that
+contains a source locator is rejected. Supporting those cases requires a later build-target and
+module identity account; file, compilation-directory and line data cannot repair them.
+
+For Python, `--root` is the one declared semantic import root. Every selected `.py` file derives
+its module from its normalized path relative to that root; `__init__.py` denotes its containing
+package. Positional input files and directories select work only and never become alternate import
+roots. An outside-root file, invalid module segment, two selected files resolving one module, or a
+file/package or namespace collision is rejected. The same root and sources therefore produce the
+same module identity regardless of input grouping.
+
+TypeScript and JavaScript use one whole compiler-configured project. Every selected source resolves
+to the same nearest unambiguous `tsconfig.json | jsconfig.json`, and that config's nearest owning
+`package.json` supplies one exact package name. Inputs select sources within the project and do not
+define projects, package roots or module names. Discovery covers exactly `.ts`, `.tsx`, `.mts`,
+`.cts`, `.js`, `.jsx`, `.mjs` and `.cjs`, excluding declaration files. Canonical real-path
+deduplication occurs before the configured Program is built.
+
+The TypeScript/JavaScript site contains package identity, one compiler-proven module specifier,
+receiver kind `static | instance | none`, qualified symbol and the complete sorted overload set.
+The module specifier is either the unique declared package export or the unique package-relative
+specifier accepted by the configured resolver. It never contains an absolute path or the
+workspace-relative raw `file`. Moving a module is semantic; relocation evidence moves the project
+root while preserving package name, config meaning and module specifier.
+
+Every overload account includes generic arity, positional generic parameters, constraints,
+parameter modifiers and compiler-canonical parameter and return types. Type aliases are recursively
+resolved to canonical target types and alias spelling is excluded. If the public checker account
+cannot prove a unique module, symbol, overload or canonical alias/type identity without a file
+locator, extraction fails.
+
+The compiler must resolve the marker call to the `@azimuth-sh/annotations` package's
+`implementsMechanism` export, including a valid import alias or namespace access. A local homonym
+is ordinary code and emits nothing. A marker-shaped call whose imported annotation symbol, literal
+arguments, enclosing callable or signature is invalid fails before output. The emitter uses the
+complete configured Program and accepts no relevant options, syntax or semantic diagnostic for a
+marked declaration or type it depends on; when diagnostic relevance cannot be proven, it fails
+closed. CLI failure is controlled, uses its declared nonzero class and leaves no output.
+
+Go continues to use the compiler package import path, receiver, function and `go/types` signature.
+Every compiler type parameter is replaced recursively by its zero-based position in the receiver
+and callable signature; source parameter names never enter the site. Receiver type parameters
+precede callable type parameters in that positional account. Constraints, parameter types,
+variadic position and result types remain semantic.
+
+Rust first resolves exactly one conventional Cargo target and crate, proves that the selected file
+is reachable through that target's conventional module graph and requires the target to compile.
+Ambiguous multi-target reachability, custom target paths, `#[path]`, generated or included source
+and files outside the reachable graph are rejected in alpha 2. Target kind, Cargo target name and
+compiler crate name qualify the module and declaration so two compilation targets cannot collide.
+
+Rust source address uses the compiler-accepted, whitespace-normalized declared signature. It
+includes callable qualifiers, receiver form, parameter types, return type, generic constraints and
+where constraints, but excludes parameter pattern names. Generic parameters are replaced by their
+zero-based declared positions. Declared type-path spelling is semantic in alpha 2: changing from an
+alias to its underlying type changes the site even when the compiler resolves both to one type.
+This explicitly retracts the stronger implication that the Rust extractor already owns exact
+resolved-type identity; such an identity requires a separately frozen compiler metadata account.
+
+Every emitter canonicalizes the raw `file` as one non-empty workspace-relative path under
+`--root`, with `/` separators and no empty, `.`, `..` or backslash segment. An outside-root or
+otherwise non-normal locator is rejected before output. None of these restrictions changes a D45,
+D46, D47 or D48 canonical preimage algorithm: `site` remains one opaque semantic string and file
+remains excluded from semantic identity. Re-emitting a previously non-canonical site can change
+downstream model and Plan fingerprints, as intended; no published canonical hash vector is
+reinterpreted.
+
 **Challengers and resolution.** A Challenger now declares a sorted non-empty set of required
 closed semantic scope kinds. Its identity binds id, open form, objection proposition and that set.
 Core never infers scope from the form name.
@@ -2836,6 +2914,16 @@ federated tests prove strict syntax, exact raw binding and companion matching, a
 rewriting, same-area conflict and cross-area distinction, local/federated equality, rejection of
 marker/explicit dual use, missing-site and path-bearing legacy records, and relocation stability
 for Judgment and scope alongside changed complete-model and launch locator identity.
+
+Native conformance also proves C++ rejects every excluded linkage, module, template, constraint
+and source-locator-bearing type; Python input grouping cannot change a root-relative module and
+module collisions fail; Go generic renaming preserves the positional site; and Rust selects one
+compiling Cargo target, follows its module graph, normalizes patterns and generics and rejects each
+unsupported target or source route. TypeScript/JavaScript conformance proves project and package
+identity, module and root relocation behavior, static/instance distinction, canonical aliases,
+overloads and generic constraints, symbol-resolved markers, all eight source extensions, canonical
+deduplication and controlled diagnostic failure. Every emitter rejects an outside-root or
+non-normal file.
 
 **What would falsify it.** Revisit D48 if two real providers cannot translate the closed semantic
 scope without provider syntax in the Plan, if total-composition identity causes unrelated Claims

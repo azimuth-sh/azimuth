@@ -32,8 +32,8 @@ The manifest has exactly six collections:
     {
       "spec": "payments/capture",
       "mechanism": "completion-guard",
-      "site": "payments::capture::Capture::complete",
-      "binding": "rust-symbol:payments::capture::Capture::complete",
+      "site": "cargo:lib:pay:pay::Capture::complete fn(&self)->bool",
+      "binding": "rust-symbol:cargo:lib:pay:pay::Capture::complete fn(&self)->bool",
       "file": "src/capture.rs",
       "lang": "rust",
       "source_fingerprint": "sha256:<64-lowercase-hex>"
@@ -43,7 +43,7 @@ The manifest has exactly six collections:
   "enumerations": [],
   "artifacts": [
     {
-      "id": "rust-symbol:payments::capture::Capture::complete",
+      "id": "rust-symbol:cargo:lib:pay:pay::Capture::complete fn(&self)->bool",
       "kind": "rust-symbol",
       "file": "src/capture.rs"
     }
@@ -62,15 +62,15 @@ address. Several implementation records may compose one Check.
 
 `mechanism_implementations` links source to a declared design mechanism. Its seven raw fields are
 all required: `spec` is a lower-kebab path id and `mechanism` is one lower-kebab segment. The old
-record without `site` is invalid. The extractor derives a compiler-semantic qualified site, exact
-typed binding and companion Artifact as one atomic account. Enumeration witnesses and class
-members establish complete site domains independently of linkage markers. Artifacts provide exact
-structural binding targets.
+record without `site` is invalid. The extractor derives a qualified site under its closed semantic
+profile, exact typed binding and companion Artifact as one atomic account. Enumeration witnesses
+and class members establish complete site domains independently of linkage markers. Artifacts
+provide exact structural binding targets.
 
 For the marker-derived pair:
 
-- `site` includes module or package, declaring type or receiver and the overload signature or
-  generic arity wherever the compiler exposes them;
+- `site` includes the ecosystem's frozen compilation, module or package account, declaring type or
+  receiver and the overload signature or generic arity where its closed profile supports them;
 - `binding`, split at its first `:`, is exactly `<address-kind>:<site>`; the raw `file` locator does
   not participate;
 - the raw companion Artifact id equals `binding`, its kind equals the binding prefix and its file
@@ -113,10 +113,14 @@ then post-assembly uniqueness and consistency. Local and federated assembly use 
 rewrite and produce identical semantic ids; neither uses file, mount, repository or revision as a
 semantic disambiguator.
 
-Moving unchanged source within one area preserves the qualified site, SourceIdentity, Claim
-Judgment and semantic Challenge scope. The new file changes complete-model and accountable launch
-locator fingerprints. Moving across areas or changing language, site or source content changes
-semantic identity or content identity.
+Every emitter resolves `--root` once. Raw `file` is a non-empty normalized path beneath it, uses
+`/` and contains no empty, `.`, `..` or backslash segment. Inputs outside that root fail. Input
+arguments select files only; they never become semantic roots or path-based disambiguators.
+
+A locator-only move within one area that preserves the ecosystem-qualified site and content
+preserves SourceIdentity, Claim Judgment and semantic Challenge scope. The new file changes
+complete-model and accountable launch locator fingerprints. Moving across areas or changing a
+semantic module, language, site or source content changes semantic identity or content identity.
 
 Unknown collections and removed alpha-era fields fail closed. There are no result-import binaries
 in the extractor packages. Run normalization and provider adapters belong to dependent execution
@@ -153,10 +157,24 @@ azimuth-emit-dotnet --output manifest.json --root . path/to/Assembly.dll
 
 ### TypeScript and JavaScript
 
-The TypeScript extractor uses the compiler API and resolves marker calls to their enclosing named
-symbol. A mechanism site uses the resolved module, declaring type or receiver, symbol and checker
-signature. The same parser accepts JavaScript extensions while retaining `lang: javascript` and
-fails when the available JavaScript semantics cannot prove that identity unique.
+The TypeScript extractor uses one complete compiler Program from the selected sources' same nearest
+unambiguous `tsconfig.json | jsconfig.json` and owning named package. Inputs select files within
+that project; they never redefine project, package or module identity. Discovery includes `.ts`,
+`.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs` and `.cjs` and excludes declaration files. Canonical
+real paths deduplicate before Program construction.
+
+A mechanism site uses package plus compiler module specifier, exact `static | instance | none`
+receiver kind, qualified symbol and sorted canonical overload set. Generic parameters are
+positional and constraints, optional/rest modifiers and canonical parameter and return types are
+included. The checker recursively expands type aliases; extraction fails if canonical identity is
+unavailable or path-bearing. A module move is semantic. Relocation stability means moving the
+whole project root while preserving package, config meaning and module specifier.
+
+Only a call resolved to `@azimuth-sh/annotations`' `implementsMechanism` export is a mechanism
+marker. Direct, aliased and namespace imports are valid; local homonyms are ordinary code. Invalid
+marker arguments, ambiguous sites and relevant compiler diagnostics fail through the controlled
+CLI path before output. JavaScript retains `lang: javascript` and `javascript-symbol`; TypeScript
+uses `lang: typescript` and `typescript-symbol`. The public two-argument API and CLI stay unchanged.
 
 ```text
 azimuth-emit-ts --output manifest.json --root . src
@@ -169,15 +187,24 @@ and rule-test artifacts; they do not create Check enrollment from provider-speci
 ### Go, JVM, Python, Rust and C++
 
 - Go resolves typed no-op calls against enclosing AST functions and uses package import identity,
-  receiver, function and `go/types` signature.
+  receiver, function and `go/types` signature. Receiver and callable generic parameters are
+  replaced recursively by zero-based `$0`, `$1`, ... positions; source parameter names are not
+  identity.
 - Java and Kotlin read repeatable runtime annotations from compiled classes and use binary class
   identity, method and JVM descriptor.
-- Python parses no-op decorators with the standard `ast` module and uses importable module plus
-  enclosing class and function identities; an unresolved import identity or collision fails.
-- Rust requires the crate to compile, binds inert attributes to enclosing functions and uses crate
-  and module path plus enclosing type or trait and item identity.
-- C++ consumes Clang's semantic AST and `clang::annotate` metadata, using the qualified declaration
-  plus canonical parameter and template signature.
+- Python parses no-op decorators with the standard `ast` module. `--root` is its one semantic
+  import root; every input derives module plus `__qualname__` relative to that root. Inputs never
+  redefine the import root, and outside-root or colliding module and namespace identities fail.
+- Rust requires one compiler-accepted conventional Cargo target and reachable conventional module
+  graph. Its site includes target kind, target and compiler crate names, module, receiver or trait
+  and a normalized declared signature. Parameter patterns are excluded, generic parameters are
+  positional and declared type-path spelling remains identity. Ambiguous or custom targets,
+  `#[path]`, generated or included source and unreachable files fail.
+- C++ consumes Clang's semantic AST and `clang::annotate` metadata. Alpha 2 accepts only
+  program-global external-linkage, non-module, non-template and unconstrained declarations, using
+  qualified name plus canonical function type. Internal linkage, anonymous namespaces, local or
+  module-attached declarations, templates, constraints and source-locator-bearing types fail until
+  a build/module identity account exists.
 
 `experiments/polyglot/check.sh` builds all seven language fixtures, runs ordinary tests, emits seven
 strict manifests, validates their union and asserts export version 2.

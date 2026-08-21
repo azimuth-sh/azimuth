@@ -683,8 +683,8 @@ Artifact id. A language extractor derives this strict pair:
     {
       "spec": "payments/capture",
       "mechanism": "completion-guard",
-      "site": "payments::capture::Capture::complete",
-      "binding": "rust-symbol:payments::capture::Capture::complete",
+      "site": "cargo:lib:pay:pay::Capture::complete fn(&self)->bool",
+      "binding": "rust-symbol:cargo:lib:pay:pay::Capture::complete fn(&self)->bool",
       "file": "src/capture.rs",
       "lang": "rust",
       "source_fingerprint": "sha256:<64-lowercase-hex>"
@@ -692,7 +692,7 @@ Artifact id. A language extractor derives this strict pair:
   ],
   "artifacts": [
     {
-      "id": "rust-symbol:payments::capture::Capture::complete",
+      "id": "rust-symbol:cargo:lib:pay:pay::Capture::complete fn(&self)->bool",
       "kind": "rust-symbol",
       "file": "src/capture.rs"
     }
@@ -705,10 +705,10 @@ These are the only fields on a raw MechanismImplementation. `spec` is a lower-ke
 `lang` is one supported extractor language and `source_fingerprint` is exact
 `sha256:<64-lowercase-hex>`.
 
-`site` is a non-empty compiler-semantic qualified identity. It contains the module or package and
-declaring type or receiver; when the language supports overloaded declarations, it also contains
-the compiler-resolved parameter signature and generic arity needed to distinguish them. For
-example, a .NET extractor may emit
+`site` is a non-empty qualified identity under the closed ecosystem profiles below. Except for the
+narrow C++ alpha profile, it contains a module, package or compilation-target identity and a
+declaring type or receiver. Where supported, it also contains the overload signature or generic
+arity needed to distinguish declarations. For example, a .NET extractor may emit
 `Payments.CaptureService.CompleteAsync(Payments.CompletionId,System.Threading.CancellationToken)`.
 A short method such as `CompleteAsync`, a path-plus-symbol such as
 `src/Capture.cs#CompleteAsync`, and a source path used only to distinguish overloads are invalid.
@@ -742,10 +742,12 @@ MechanismImplementation resolves only the mechanism named by its exact `spec` an
 artifact id does not infer or fan out another target. Only an ordinary non-companion Artifact may be
 reused by several explicit Design bindings.
 
-For the example above, both `Binding: rust-symbol:payments::capture::Capture::complete` and
-`Binding: payments|rust-symbol|payments::capture::Capture::complete` are invalid. By contrast, two
-explicit mechanisms may both declare `Binding: postgres-index:payments.capture_key` when that id
-resolves one ordinary, non-companion Artifact.
+For the example above, both
+`Binding: rust-symbol:cargo:lib:pay:pay::Capture::complete fn(&self)->bool` and
+`Binding: payments|rust-symbol|cargo:lib:pay:pay::Capture::complete fn(&self)->bool` are invalid.
+By contrast, two explicit mechanisms may both declare
+`Binding: postgres-index:payments.capture_key` when that id resolves one ordinary, non-companion
+Artifact.
 
 Project assembly resolves `file` to exactly one area and mount. It derives
 `<SourceIdentity> = <area>|<address-kind>|<site>` and, before any model identity, resolution or
@@ -759,25 +761,25 @@ the raw example above in area `payments` and mount `code`, the exact assembled p
     {
       "spec": "payments/capture",
       "mechanism": "completion-guard",
-      "site": "payments::capture::Capture::complete",
-      "binding": "payments|rust-symbol|payments::capture::Capture::complete",
+      "site": "cargo:lib:pay:pay::Capture::complete fn(&self)->bool",
+      "binding": "payments|rust-symbol|cargo:lib:pay:pay::Capture::complete fn(&self)->bool",
       "file": "src/capture.rs",
       "lang": "rust",
       "source_fingerprint": "sha256:<64-lowercase-hex>",
       "area": "payments",
       "address_kind": "rust-symbol",
-      "address": "payments::capture::Capture::complete",
+      "address": "cargo:lib:pay:pay::Capture::complete fn(&self)->bool",
       "mount": "code"
     }
   ],
   "artifacts": [
     {
-      "id": "payments|rust-symbol|payments::capture::Capture::complete",
+      "id": "payments|rust-symbol|cargo:lib:pay:pay::Capture::complete fn(&self)->bool",
       "kind": "rust-symbol",
       "file": "src/capture.rs",
       "area": "payments",
       "address_kind": "rust-symbol",
-      "address": "payments::capture::Capture::complete",
+      "address": "cargo:lib:pay:pay::Capture::complete fn(&self)->bool",
       "mount": "code"
     }
   ]
@@ -823,6 +825,111 @@ Moving unchanged source within the same area while preserving language, site and
 leaves the implementation, Claim Judgment and semantic Challenge scope identities unchanged. The
 new file remains visible in complete-model and launch locator accounts and changes their
 fingerprints. Moving across an area or changing language, site or source content is semantic.
+
+#### Ecosystem semantic-site profiles
+
+Every extractor resolves `--root` once and emits `file` as a non-empty normalized path below that
+root. The path uses `/`, contains no empty, `.` or `..` segment and contains no backslash. An input
+outside the root is invalid. Input files and directories select work; they never become semantic
+identity or alternate roots.
+
+The C++ alpha profile accepts only a Clang-proven program-global declaration with external
+linkage. It rejects internal linkage, an anonymous namespace, a local declaration, a declaration
+attached to a C++ module, any function or enclosing class template, any constrained declaration
+and any canonical type containing a source locator. The exact site is:
+
+```text
+<program-global-qualified-name> <Clang canonical function type>
+```
+
+This is the one alpha profile without a package or module prefix. It is safe only because every
+accepted declaration has one program-global external identity. Supporting modules, templates,
+constraints or internal linkage requires a later build-target and module account; the extractor
+must reject them rather than append a translation-unit path.
+
+For Python, `--root` is the declared semantic import root. The exact module is the selected `.py`
+file's normalized relative path with `/` changed to `.`, the `.py` suffix removed and a terminal
+`.__init__` removed. The site is `<module>.<__qualname__>`. Every module segment is a Python
+identifier. A file/package collision, two files resolving one module, an ambiguous namespace or an
+outside-root file is invalid. Positional input grouping does not affect the module.
+
+TypeScript and JavaScript inputs belong to one whole configured project. Every selected file finds
+the same nearest unambiguous `tsconfig.json | jsconfig.json`; the nearest owning `package.json` at
+or above that config supplies one exact package name. Both configs at the same nearest level, no
+config, no package name, a file outside the configured project or inputs spanning projects are
+invalid. Input arguments only select files. Before Program creation, inputs are canonicalized by
+real path, deduplicated and sorted.
+
+Discovery accepts exactly `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs` and `.cjs` and
+rejects declaration files. One Program loads the complete config file set and compiler options.
+Every marked declaration has no relevant options, syntax or semantic diagnostic, including any
+diagnostic in a type declaration needed by its signature. A global diagnostic is relevant. If the
+emitter cannot prove another diagnostic irrelevant to marker or type resolution, it fails closed.
+
+The exact TypeScript/JavaScript site account is:
+
+```text
+<package>::<module-specifier>::<receiver-kind>::<qualified-symbol><overload-set>
+```
+
+`receiver-kind` is exactly `static | instance | none`. `module-specifier` is the unique declared
+package export accepted by the configured resolver, or otherwise its unique package-relative
+compiler module specifier. The package-relative form keeps semantic module segments but contains
+neither an absolute path nor the workspace-relative `file`. A module move changes this value.
+Relocation evidence moves the complete project root while retaining package, config meaning and
+module specifier.
+
+The overload set is sorted and non-empty. Each overload contains generic arity, generic constraints,
+parameter optional/rest modifiers and canonical parameter and return types. Generic parameters are
+replaced by `$0`, `$1` and so on in declaration order. The checker recursively resolves aliases to
+canonical target types; alias spelling does not enter the site. A path-bearing canonical type,
+duplicate canonical overload or type whose alias/canonical identity is unavailable is invalid.
+
+A mechanism call emits only when its compiler symbol resolves to the
+`@azimuth-sh/annotations` package's `implementsMechanism` export through a direct, aliased or
+namespace import. A local homonym is ordinary source. A marker-shaped imported call with wrong
+arity or non-literal arguments, an anonymous or ambiguous enclosing declaration, an ambiguous
+symbol or any relevant diagnostic is a controlled extraction failure before output. JavaScript
+uses `javascript-symbol`; TypeScript uses `typescript-symbol`. The public two-argument marker and
+CLI syntax do not change.
+
+Go uses `<package-import-path>.<receiver><function><signature>` from `go/types`. Receiver and
+callable type parameters share one zero-based account, receiver parameters first. Every occurrence
+of a compiler type parameter in receiver, constraints, parameters and results is replaced by the
+literal token `$<index>`; its source name is excluded. Parameter names are excluded. Constraint,
+parameter and result order and variadic position remain exact. For example:
+
+```text
+example.test/service.Apply[any]($0)->($0)
+```
+
+Rust accepts only a compiler-accepted source reachable from exactly one conventional Cargo target
+through its conventional module graph. It rejects ambiguous multi-target reachability, custom
+target paths, `#[path]`, generated or included source and unreachable files. Target kind is one of
+`lib | proc-macro | bin | example | test | bench`. The compiler crate name is the Cargo target
+name with `-` changed to `_`. The exact site prefix is:
+
+```text
+cargo:<target-kind>:<Cargo-target-name>:<compiler-crate-name>::<module>::<declaration>
+```
+
+The root module omits `<module>`. Inline and conventional file modules use the compiler-proven
+module graph, never a path guessed from `src/`. The declaration is qualified by every enclosing
+module, type or trait implementation.
+
+One ASCII space separates the Rust qualified declaration from its normalized declared signature.
+The signature retains callable qualifiers, receiver form, declared parameter types, return type,
+generic constraints and where constraints. It excludes the callable name already present in the
+qualified declaration and excludes every value-parameter pattern name. Generic parameters are
+replaced in declared order by `$0`, `$1` and so on. Outside strings and lifetimes, token
+normalization removes whitespace around punctuation and uses one space only between adjacent word
+tokens. Declared type-path spelling is identity: an alias and its resolved underlying type produce
+different sites. This is intentionally weaker than resolved-type identity and is the complete
+Rust alpha contract.
+
+These profiles change no canonical fingerprint preimage. The preimages continue to carry the exact
+opaque `site` and exclude `file`. Re-emitting a site that violated a profile changes its dependent
+model and Plan fingerprints; the canonical serializer and published hash vectors do not change.
 
 ### Check implementation linkage
 

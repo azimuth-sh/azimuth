@@ -235,6 +235,32 @@ declaring type or receiver and overload signature where supported. The accountab
 that meaning and fails when its compiler or runtime account is ambiguous; core cannot prove it from
 opaque bytes and instead checks syntax, equality and assembled consistency.
 
+A second native audit narrows that general rule where no trustworthy semantic account yet exists.
+C++ alpha accepts only program-global external-linkage, non-module, non-template and unconstrained
+declarations; its qualified name plus canonical Clang function type is the one profile without a
+module prefix. Python treats `--root`, not each input directory, as its sole semantic import root.
+Go substitutes every generic type parameter by zero-based compiler position. Rust proves one
+conventional Cargo target and reachable module graph, then uses a compiler-accepted normalized
+declared signature with pattern names removed and generic parameters positional. Rust declared
+type-path spelling remains identity; the stronger resolved-type interpretation is retracted.
+
+TypeScript and JavaScript likewise require one whole nearest `tsconfig.json | jsconfig.json`
+project and owning package, not one parser invocation per selected file. The compiler resolves the
+package module specifier, static or instance receiver, qualified symbol, sorted overloads, generic
+constraints and canonical parameter and result types. It resolves marker aliases to the existing
+annotation export and excludes local homonyms. Inputs are canonical selectors within one project;
+they do not define module identity. A diagnostic, ambiguous or path-bearing type, invalid marker or
+unprovable alias identity fails through the controlled CLI path before output. Module moves are
+semantic; relocation tests move the project root while preserving the module specifier.
+
+Every ecosystem rejects an input outside `--root` or a non-normal raw `file`. C++ rejects internal
+linkage, anonymous namespaces, local declarations, module attachment, templates, constraints and
+canonical types containing source locations. Python rejects colliding module identities and
+ambiguous namespaces. Rust rejects ambiguous or custom targets, `#[path]`, generated or included
+source and unreachable files. These restrictions preserve the two-argument marker and all D48
+preimages: corrected site bytes can change dependent fingerprints, but no canonical serializer or
+published vector changes.
+
 The raw record has exactly `spec`, `mechanism`, `site`, `binding`, `file`, `lang` and
 `source_fingerprint`. The raw companion requires id, kind and file, may retain the typed optional
 Artifact properties and matches by `(id, kind, file)`. Project assembly resolves the file's area,
@@ -257,11 +283,12 @@ Several distinct qualified sites for one mechanism make the expected Judgment un
 source annotation remains the existing two-argument `ImplementsMechanism(spec, mechanism)`; all new
 fields are extractor-derived.
 
-Relocation within one area preserves semantic site, SourceIdentity, Judgment composition and scope
-when language and content are unchanged. File-bearing complete-model and launch accounts change.
-The exact preimages add no locator: site is already the SourceIdentity address, the rewritten
-binding is already the Artifact id, the raw binding is excluded, language determines address kind,
-and file remains excluded.
+A locator-only relocation within one area preserves semantic site, SourceIdentity, Judgment
+composition and scope when the ecosystem's project, package or module identity, language and
+content are unchanged. A module move is semantic. File-bearing complete-model and launch accounts
+change. The exact preimages add no locator: site is already the SourceIdentity address, the
+rewritten binding is already the Artifact id, the raw binding is excluded, language determines
+address kind, and file remains excluded.
 
 Surface contributions and obligations are included only when the Claim declares that surface or
 the workspace names an obligation for the exact spec and Claim. A surface account pairs each
