@@ -10,16 +10,23 @@ Evidence: strict examples, canonical fingerprint vectors, 100-column and contrad
 ## Work package: decision-model-kernel
 Status: complete
 Depends on: protocol-authority
-Owns: tools/azimuth/src/verification.rs, tools/azimuth/src/fingerprint.rs, tools/azimuth/src/model.rs, tools/azimuth/src/lib.rs, tools/azimuth/tests/verification.rs, tools/azimuth/tests/spec_parse.rs
-Objective: parse, load, fingerprint, validate cardinality and export current Claim Judgments and policies
-Evidence: strict grammar, global identity, staleness isolation, old-format rejection and export tests
+Owns: tools/azimuth/src/verification.rs, tools/azimuth/tests/verification.rs, tools/azimuth/tests/spec_parse.rs
+Objective: parse and validate strict current Claim Judgment, policy and schedule declarations
+Evidence: strict grammar, declaration cardinality, canonical vectors and old-format rejection tests
 
 ## Work package: challenge-resolution-projection
-Status: pending
+Status: complete
 Depends on: decision-model-kernel
 Owns: tools/azimuth/src/validation.rs, tools/azimuth/src/traceability.rs, tools/azimuth/tests/validation.rs, tools/azimuth/tests/traceability.rs
 Objective: resolve all candidate dispositions and project exact decision-impact edges
 Evidence: seven selectors, disposition visibility, domain gates, deduplication and impact tests
+
+## Work package: decision-scope-integration
+Status: pending
+Depends on: challenge-resolution-projection
+Owns: tools/azimuth/src/fingerprint.rs, tools/azimuth/src/model.rs, tools/azimuth/src/lib.rs, tools/azimuth/tests/decision_scope.rs
+Objective: expose canonical scope components, resolution export and atomic selected-view closure
+Evidence: export parity, adverse-selector retention, exact scope records and selection-closure tests
 
 ## Work package: challenge-run-protocol
 Status: complete
@@ -30,7 +37,7 @@ Evidence: parser, canonical fingerprint, reduction, partial omission and mismatc
 
 ## Work package: semantic-challenge-planner
 Status: pending
-Depends on: challenge-resolution-projection, challenge-run-protocol
+Depends on: challenge-resolution-projection, challenge-run-protocol, decision-scope-integration
 Owns: tools/azimuth/src/run_plan.rs, tools/azimuth/tests/run_plan.rs
 Objective: expand requested Challenge Plans and derive exact capability routes and launch inputs
 Evidence: complete-model, context, form, cap, dedupe, source-input and mixed-plan tests
