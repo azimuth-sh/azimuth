@@ -40,11 +40,11 @@ In scope:
 - define closed capability classes with open `<adapter-id>/<capability-id>` addresses and open
   challenge forms;
 - define canonical adapter, descriptor, configuration and capability fingerprints;
-- define `azimuth-run-launch-plan` version 1 over one exact Subject, operation, complete D46 plan
-  and sorted capability routes;
+- define `azimuth-run-launch-plan` version 1 over one exact Subject, planned time, operation,
+  complete D46 plan and sorted capability routes;
 - generate Check-only launch plans from a strict request and the complete unselected model;
 - preserve D46 semantic selection while extending returned bundle provenance with exact adapter,
-  descriptor, configuration, launch, route and import-input identities;
+  descriptor, configuration, launch, route and per-revision import-input identities;
 - invoke adapters as bounded short-lived processes with one JSON request on standard input and one
   JSON response on standard output;
 - validate protocol handshake, configured description, class support, request identity, returned
@@ -106,18 +106,19 @@ atomically with implementation and the limitation must remain visible in the cha
 - Capability and configuration fingerprints bind behavior-changing executable and resource
   digests, protocol, adapter version and build, declarations and non-secret semantic settings while
   excluding locators, prose and secret values.
-- A strict plan request supplies one exact D46 Subject, operation, exact string context and sorted
-  Check selections with finite explicit units and capability addresses.
+- A strict plan request supplies one exact D46 Subject, planned time, operation, exact string
+  context and sorted Check selections with finite explicit units and capability addresses.
 - The public surface is `azimuth adapter verify [--config <file>]`,
-  `azimuth run plan --request <file> [model options] [--out <file>]`,
+  `azimuth run plan --request <file> [model options] [--config <file>] [--out <file>]`,
   `azimuth run execute --plan <file> [--config <file>] [--out <file>]` and
   `azimuth run import --plan <file> --input <id>=<file>... [--config <file>] [--out <file>]`.
 - Planning loads and fingerprints the complete unselected model, resolves every Check fingerprint
   and complete stable implementation set, emits `challenges: []` and has no `--only` path.
 - Planning does not require a current Qualification or compare request context to an Evidence
   Binding; Change F owns decision resolution and applicability.
-- A launch plan freezes the operation, complete D46 semantic plan and one configured capability
-  route per selection. Any capability substitution changes its canonical fingerprint.
+- A launch plan freezes the Subject, planned time, operation, complete D46 semantic plan and one
+  configured capability route per selection. Any capability substitution changes its canonical
+  fingerprint.
 - Exactly one configured adapter id serves a Run, while its routes may name several capabilities;
   one capability may implement several classes and one physical activity may return separate Check
   and Challenge outputs.
@@ -126,7 +127,8 @@ atomically with implementation and the limitation must remain visible in the cha
   response or timeout as transport failure. Execute is never retried automatically after timeout.
 - Import inputs are exact files whose digests and sizes core computes before invocation. Returned
   bundle provenance repeats those identities; adapters cannot replace them with locators or native
-  run ids.
+  run ids. A correction may carry later bytes from the same native execution while its launch route
+  remains fixed.
 - Execute and import validate configuration, descriptor, class, launch identity, Subject, semantic
   plan, adapter provenance, routes, actual selection and the complete D46 bundle before atomic
   output.
@@ -136,6 +138,8 @@ atomically with implementation and the limitation must remain visible in the cha
 - `model.extract` is a declared capability class but is not a Run operation in this change.
 - `azimuth run ingest` remains unknown, while existing `run verify` and `run inspect` retain their
   standalone protocol behavior.
+- The sole current unpublished Run bundle version 1 requires D47 adapter provenance. The earlier
+  pre-D47 shape is rejected without a compatibility reader.
 - The executing and importing synthetic adapters pass one conformance suite, including
   configuration drift, capability substitution, bounded failures, honest negative facts and a
   dual-role hand-authored launch plan.

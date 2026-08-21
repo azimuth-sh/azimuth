@@ -1,6 +1,6 @@
 # Plan: Define Adapter Capability Protocol
 
-- [ ] Freeze adapter configuration, launch-plan, transport and provenance authority.
+- [x] Freeze adapter configuration, launch-plan, transport and provenance authority.
 - [ ] Add the eight routine adapter-capability requirements.
 - [ ] Establish a separable Run component seam for planning and returned-bundle validation.
 - [ ] Implement strict configuration, descriptor and capability identity validation.

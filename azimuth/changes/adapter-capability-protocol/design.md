@@ -7,10 +7,11 @@ belong to a Run, with complete Check implementation sets and finite work units. 
 adapter. Core remains authority for that plan and for validation of the returned D46 bundle.
 
 A separate `azimuth-run-launch-plan` version 1 binds the semantic plan to provider interaction. It
-contains the exact Subject, `execute | import` operation, the complete D46 Plan, one configured
-adapter identity and a sorted route for every selection. A route names a capability address and
-class but does not change the D46 semantic selection. The launch fingerprint changes when any
-route, capability fingerprint, adapter identity, operation, Subject or semantic plan changes.
+contains the exact Subject, planned time, `execute | import` operation, the complete D46 Plan, one
+configured adapter identity and a sorted route for every selection. A route names a capability
+address and class but does not change the D46 semantic selection. The launch fingerprint changes
+when any route, capability fingerprint, adapter identity, planned time, operation, Subject or
+semantic plan changes.
 
 This two-layer shape avoids either bad substitution: provider identities do not pollute reusable
 semantic plans, and an adapter choice cannot change invisibly around an unchanged execution
@@ -79,9 +80,10 @@ explicitly.
 
 ## Complete-model Check planning
 
-`azimuth run plan --request <file>` accepts a strict request containing:
+`azimuth run plan --request <file> --config <file>` accepts a strict request containing:
 
 - the exact D46 Subject;
+- the exact planned Unix-millisecond time;
 - `execute | import`;
 - the exact string-to-string Run context; and
 - a sorted non-empty list of Check ids, finite non-empty work-unit ids and explicit capability
@@ -117,6 +119,7 @@ not an E Run operation.
 The returned D46 bundle retains its semantic plan and actual-selection contract. Only its
 provenance is extended to repeat:
 
+- the exact `adapter/<configured-id>` normalizer id, adapter version and adapter fingerprint;
 - configured adapter id;
 - descriptor fingerprint;
 - configuration fingerprint;
@@ -129,6 +132,10 @@ Subject, D46 plan, launch identity, routes, adapter description, actual selectio
 complete bundle before writing. Output uses a temporary sibling and atomic replacement only after
 validation; exit 1 or 2 leaves no output.
 
+Import identities are protected by each bundle revision but are not correction anchors. A later
+or completed report from the same provider execution may change those bytes in the next correction;
+the Subject, plan, planned time, adapter, configuration and routes remain fixed.
+
 Violated Observations, Challenge findings and explicit partial, cancelled or timed-out Runs are
 honest product facts and exit zero when internally valid. A semantic, model, identity, selection or
 transport mismatch exits one. CLI, configuration, request and response schema failures exit two.
@@ -136,12 +143,16 @@ transport mismatch exits one. CLI, configuration, request and response schema fa
 The exact public surface is:
 
 - `azimuth adapter verify [--config <file>]`;
-- `azimuth run plan --request <file> [model options] [--out <file>]`;
+- `azimuth run plan --request <file> [model options] [--config <file>] [--out <file>]`;
 - `azimuth run execute --plan <file> [--config <file>] [--out <file>]`; and
 - `azimuth run import --plan <file> --input <id>=<file>... [--config <file>] [--out <file>]`.
 
 Configuration defaults to `azimuth/adapters.json`; `run verify` and `run inspect` retain their D46
 behavior. `run ingest` remains unknown.
+
+D47 deliberately replaces the unpublished pre-D47 Run bundle version 1 shape in place. There is
+one current version 1 schema, adapter provenance is required, and no compatibility reader accepts
+the earlier shape.
 
 ## Temporal intent transition
 

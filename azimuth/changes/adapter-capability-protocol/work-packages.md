@@ -1,7 +1,7 @@
 # Work packages: adapter-capability-protocol
 
 ## Work package: protocol-authority
-Status: pending
+Status: complete
 Depends on: none
 Owns: docs/decisions.md, azimuth/formats/adapter.md, azimuth/formats/run-bundle.md, azimuth/formats/run-launch-plan.md
 Objective: freeze adapter configuration, capability, launch, transport and provenance contracts
