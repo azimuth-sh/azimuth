@@ -474,8 +474,29 @@ pub fn validate_launch_plan(launch: &LaunchPlan) -> Vec<String> {
         errors.push("routes must contain exactly one entry for every Plan selection".into());
     }
     for (index, route) in launch.routes.iter().enumerate() {
+        if let Err(detail) = validate_capability_address(&route.capability.address) {
+            errors.push(format!("routes[{index}] capability address {detail}"));
+        }
+        match route.selection.kind {
+            RouteSelectionKind::Check => {
+                if route.capability.challenge_form.is_some() {
+                    errors.push(format!(
+                        "routes[{index}] challenge_form is forbidden for a Check route"
+                    ));
+                }
+            }
+            RouteSelectionKind::Challenge => match &route.capability.challenge_form {
+                Some(form) if valid_path_id(form) => {}
+                Some(_) => errors.push(format!(
+                    "routes[{index}] challenge_form must be a lower-kebab path id"
+                )),
+                None => errors.push(format!(
+                    "routes[{index}] challenge_form is required for a Challenge route"
+                )),
+            },
+        }
         let Some((kind, id, class)) = expected.get(index) else {
-            break;
+            continue;
         };
         if route.selection.kind != *kind || route.selection.id != *id {
             errors.push(format!(
@@ -769,6 +790,10 @@ fn valid_segment(value: &str) -> bool {
         && value.as_bytes()[0] != b'-'
         && value.as_bytes()[value.len() - 1] != b'-'
         && !value.contains("--")
+}
+
+fn valid_path_id(value: &str) -> bool {
+    !value.is_empty() && value.split('/').all(valid_segment)
 }
 
 fn launch_adapter_json(adapter: &LaunchAdapter) -> Json {

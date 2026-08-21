@@ -493,6 +493,44 @@ fn route_order_cardinality_and_configured_capability_identity_fail_closed() {
 }
 
 #[test]
+fn typed_routes_enforce_address_and_challenge_form_shape() {
+    let launch = plan(
+        &model(&["checks/alpha"]),
+        &configuration(),
+        &request(&["checks/alpha"], RunOperation::Execute, "demo/alpha"),
+    )
+    .unwrap();
+
+    let mut malformed_address = launch.clone();
+    malformed_address.routes[0].capability.address = "demo/alpha/extra".into();
+    malformed_address.fingerprint = launch_fingerprint(&malformed_address);
+    assert!(validate_launch_plan(&malformed_address)
+        .iter()
+        .any(|error| error.contains("exactly two lower-kebab segments")));
+
+    let mut check_form = launch.clone();
+    check_form.routes[0].capability.challenge_form = Some("mutation/perturbation".into());
+    check_form.fingerprint = launch_fingerprint(&check_form);
+    assert!(validate_launch_plan(&check_form)
+        .iter()
+        .any(|error| error.contains("forbidden for a Check route")));
+
+    let mut missing_challenge_form = launch.clone();
+    missing_challenge_form.routes[0].selection.kind = run::RouteSelectionKind::Challenge;
+    missing_challenge_form.fingerprint = launch_fingerprint(&missing_challenge_form);
+    assert!(validate_launch_plan(&missing_challenge_form)
+        .iter()
+        .any(|error| error.contains("required for a Challenge route")));
+
+    let mut invalid_challenge_form = missing_challenge_form;
+    invalid_challenge_form.routes[0].capability.challenge_form = Some("Bad/Form".into());
+    invalid_challenge_form.fingerprint = launch_fingerprint(&invalid_challenge_form);
+    assert!(validate_launch_plan(&invalid_challenge_form)
+        .iter()
+        .any(|error| error.contains("must be a lower-kebab path id")));
+}
+
+#[test]
 fn unsafe_and_fractional_request_numbers_are_schema_errors() {
     let source = plan_request_to_json(&request(
         &["checks/alpha"],
