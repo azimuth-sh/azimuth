@@ -1,7 +1,7 @@
 # Plan: Define Provider-Neutral Run Bundles
 
-- [ ] Freeze the strict Run bundle, fingerprint, aggregation and correction authority.
-- [ ] Add and apply the five routine Run-protocol requirements.
+- [x] Freeze the strict Run bundle, fingerprint, aggregation and correction authority.
+- [x] Add and apply the five routine Run-protocol requirements.
 - [ ] Implement strict parsing, normalization, fingerprints and correction-set verification.
 - [ ] Add service-free Run verification and inspection commands.
 - [ ] Build the standalone synthetic Run conformance experiment.

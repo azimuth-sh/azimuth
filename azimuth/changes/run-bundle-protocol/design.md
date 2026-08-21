@@ -23,10 +23,10 @@ The Subject is a tagged union rather than D42's flat optional field bag:
 - a monitoring window names one or more exact deployed services and a closed half-open Unix-
   millisecond interval.
 
-Absolute paths, branch names, pull-request numbers, tags and dashboards are provenance or locators,
-not Subject identity. Workspace content fingerprints cover dirty and relevant untracked state.
-Historical import is `provenance.mode = import` around the concrete original Subject; an external
-run id alone is not a Subject.
+Absolute paths, branch names, pull-request numbers, candidate refs, tags and dashboards are
+provenance or locators, not Subject identity. Workspace and CI-candidate content fingerprints cover
+dirty and relevant untracked state. Historical import is `provenance.mode = import` around the
+concrete original Subject; an external run id alone is not a Subject.
 
 One Run has one exact string-to-string context. Planned and actual context must be equal as whole
 maps. Provider metadata that is not evidentiary context belongs in provenance attributes.
@@ -43,11 +43,12 @@ Unsharded work uses one `whole` unit. Parameters and shards become explicit unit
 complete set is known before execution. Otherwise the provider selects `whole` and remains
 accountable for native completeness; the bundle does not turn every native case into a Check.
 
-Actual selection repeats the exact selected semantic entries and work units. It may be equal to or
-a subset of the plan. `complete` requires equality. `partial`, `cancelled` and `timed-out` may
-retain a subset, but never additional targets, changed fingerprints, substituted implementations
-or different context. A material mismatch keeps the file inspectable but invalidates the bundle
-for acceptance.
+Actual selection repeats the exact selected semantic entries and work units. A selected Check
+always repeats the full planned implementation set; only entries and units may be omitted.
+`complete` requires equality of Check/Challenge entries and units. `partial`, `cancelled` and
+`timed-out` may retain a subset, but never additional targets, changed fingerprints, substituted
+implementations or different context. A material mismatch keeps the file inspectable but
+invalidates the bundle for acceptance.
 
 ## Activities, attempts and reduction
 
@@ -75,11 +76,11 @@ work.
 
 ## Identity and artifacts
 
-All public identities use SHA-256 over versioned canonical JSON. Set-like arrays are sorted and
-deduplicated before hashing. The bundle carries and the verifier recomputes Subject, plan, actual
-selection, Run, Observation, Challenge Result and bundle fingerprints. Result fingerprints exclude
-artifact locators and explanatory diagnostic text; the complete immutable bundle fingerprint still
-protects them.
+All public identities use SHA-256 over exact versioned canonical JSON envelopes. Set-like arrays
+must already have their format-declared order and unique identities; hashing does not repair input.
+The bundle carries and the verifier recomputes Subject, plan, actual selection, Run, Observation,
+Challenge Result and bundle fingerprints. Result fingerprints exclude artifact locators and
+explanatory diagnostic text; the complete immutable bundle fingerprint still protects them.
 
 Artifacts require id, kind, media type, digest and byte size. A locator is either a normalized
 bundle-relative path or a URI. Verification never dereferences it. Diagnostics have closed class,
@@ -90,8 +91,9 @@ but do not determine outcomes.
 
 The initial bundle has revision zero and no predecessor. A correction increments revision by one,
 names the immediate previous bundle fingerprint and supplies a reason. It is a complete replacement,
-not a patch. Run id, Subject, context, semantic plan and native source-execution identity are
-immutable across the chain. If one of those anchors was wrong, the producer creates a new Run.
+not a patch. Run id, Subject, context, semantic plan, native source-execution identity, planned time
+and started time are immutable across the chain. If one of those anchors was wrong, the producer
+creates a new Run.
 
 Verifying several bundle files is order-independent. Exact fingerprints deduplicate. Missing
 predecessors, competing revision content, gaps, forks, cycles or changed anchors invalidate the
@@ -109,3 +111,7 @@ selection, reduction or correction Findings exit one.
 derived account and labels model authority unresolved. It performs no provider call, artifact read,
 network write or service ingestion. The later adapter change owns plan generation, execute/import
 transport and native translation; the ledger change owns ingestion and Assurance State.
+
+Inspect emits that account and exits one when a well-typed bundle set has protocol Findings. It
+exits two without an account for malformed JSON, schema or command usage. Protocol-consistent input
+exits zero.

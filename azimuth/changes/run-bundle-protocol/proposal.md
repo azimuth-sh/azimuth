@@ -79,12 +79,12 @@ tests.
   import provenance.
 - A non-empty plan pins the complete model fingerprint, exact required context, Checks and
   Challenger decision targets; each Check occurs at most once.
-- Actual context equals required context and actual targets, implementations and work units are an
-  exact subset of the plan. Completed Runs require equality; additions or substitutions invalidate
-  the bundle.
-- One execution record and terminal Observation exists for each actually selected Check, and one
-  execution record and Challenge Result exists for each selected Challenger/target pair. Omitted
-  planned work creates no synthetic result.
+- Actual context equals required context. Actual targets and work units are an exact subset of the
+  plan, while a selected Check repeats its complete planned implementation set. Completed Runs
+  require entry and unit equality; additions or substitutions invalidate the bundle.
+- One execution record and terminal Observation exists for each actually selected Check. Challenge
+  plan-local ids and semantic Challenger/target tuples are both unique, and one execution record and
+  Challenge Result exists for each selected entry. Omitted planned work creates no synthetic result.
 - Violations and findings survive retries. A later decisive attempt may recover earlier technical
   inconclusion, while missing units and unfinished selected work reduce to inconclusive.
 - A shared physical activity can yield an Observation and a separately targeted Challenge Result

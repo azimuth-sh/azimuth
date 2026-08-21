@@ -2308,6 +2308,148 @@ cannot represent credible review without duplicating the Claim account.
 
 ---
 
+## D46 — Run bundles are immutable protocol accounts over exact Subjects *(2026-08-21)*
+
+**Decision.** The provider-neutral execution boundary is one strict JSON document with format
+`azimuth-run-bundle` and version 1. One bundle revision accounts for one logical Run over one exact
+Subject and one exact semantic plan. Native processes, parameters, shards and retries remain
+subordinate execution details. The bundle contains planned and actual semantic selection,
+activities, attempts, one terminal Observation per actually selected Check and one terminal
+Challenge Result per selected Challenger target.
+
+Protocol verification is deliberately narrower than current-model acceptance. It proves strict
+shape, internal identity, plan/actual agreement, deterministic reduction and correction history.
+It does not decide whether a model fingerprint is registered, a Qualification applies, a Claim
+Judgment exists or Assurance State is acceptable. Adapter planning and durable ledger changes own
+those later joins.
+
+**Subject.** The Subject is a closed tagged union: workspace, CI candidate, artifact, deployment,
+service or monitoring window. Workspace and candidate Subjects contain non-empty sorted repository
+revision and content-fingerprint tuples, so dirty and relevant untracked inputs are exact without
+requiring a commit. Artifact, deployment and service Subjects use immutable content or deployed-
+state digests rather than tags, environment display names or dashboard URLs. A monitoring Subject
+uses exact deployed service states and a closed half-open Unix-millisecond interval.
+
+Historical import is provenance, not a vague seventh Subject. An imported report retains the
+concrete Subject on which it originally ran and records the source system, source execution and
+later normalization time. An external run id by itself cannot identify product state.
+
+Repository revisions and content, artifact, deployment and service digests are accountable opaque
+protocol values. Adapters own their byte-level derivation and provenance. Standalone protocol
+verification recomputes the typed Subject envelope identity without claiming to re-derive the
+underlying product state.
+
+One Run has one exact string-to-string context. Planned and actual context must be identical as
+whole maps. Provider facts that do not constrain evidentiary interpretation belong in provenance
+attributes.
+
+**Plan and selection.** A plan pins one complete-model fingerprint and a non-empty union of Check
+and Challenger selections. A Check selection contains one Check id and fingerprint, its sorted
+semantic implementation set and a finite non-empty set of plan-local work units. A Check occurs at
+most once per Run. A Challenge selection has one plan-local id, Challenger id and fingerprint, and
+one exact `qualification | claim-judgment` target id and fingerprint.
+
+Actual selection repeats the exact selected semantic entries and unit subsets. A selected Check
+always repeats its complete planned implementation set; a partial implementation set has no honest
+Check-level meaning. A complete Run requires equality of planned and actual Check/Challenge entries
+and units. A partial, cancelled or timed-out Run may carry a subset of entries or units. Additional
+or substituted targets, fingerprints, implementations, units or context are material mismatches
+and invalidate the bundle for acceptance. Entirely omitted planned targets create no fabricated
+Observation or Challenge Result.
+
+Units are not automatic native inventory. Unsharded work uses one `whole` unit. Parameters and
+shards become distinct units only when the complete set is known in the plan; otherwise the
+provider selects `whole` and remains accountable for native completeness.
+
+**Activities and reduction.** A physical activity records its bounded timestamps, terminal
+execution status, artifacts, diagnostics and exact attributes. Check and Challenger attempts
+reference activities. One physical fault activity may therefore yield both result kinds without
+creating an ambiguous physical-process verdict.
+
+Attempts under one unit have contiguous ordinals. A non-completed activity forces its attempt to
+be inconclusive. Check reduction preserves any violation. Otherwise a final satisfied attempt may
+recover earlier technical inconclusion; without that decisive final attempt the unit is
+inconclusive. An Observation is violated when any unit is violated, satisfied only when every
+planned unit is selected and satisfied, and inconclusive otherwise.
+
+Challenge reduction is symmetrical: findings dominate; a final clean attempt may recover earlier
+technical inconclusion; clean requires every planned unit; and everything else is inconclusive. A
+findings result references at least one objection diagnostic. A clean Challenge Result never
+creates a satisfied Observation, and a violated Observation never fabricates a Challenge finding.
+
+There is exactly one execution record and terminal Observation for every actually selected Check.
+Every Challenge has a unique plan-local id, and no two entries may repeat the semantic
+`(Challenger fingerprint, target kind, target fingerprint)` tuple. There is exactly one execution
+record and terminal Challenge Result for every actual Challenge entry. One Check Observation is not
+copied per Evidence Binding.
+
+**Identity.** Every public fingerprint is `sha256:<64-lowercase-hex>` over a format-specific,
+versioned canonical JSON envelope defined by the Run-bundle format. Object keys sort recursively.
+Every set-like input array has one declared sort key, must already be sorted and rejects duplicate
+identities; hashing never repairs malformed input by sorting or deduplicating it. The producer
+supplies and the verifier recomputes Subject, plan, actual-selection, Run, Observation, Challenge
+Result and bundle fingerprints.
+
+The Run id combines source-system and source-execution identity with Subject and plan fingerprints.
+A provider rerun is therefore a new Run. Result fingerprints contain exact semantic target,
+context, outcome and observation time. Artifact locators and explanatory diagnostic messages are
+excluded from result identity but remain protected by the complete bundle fingerprint.
+
+Artifacts require a content digest, byte size and media type. Their URI or normalized bundle-
+relative path is only a locator and is never dereferenced by protocol verification. Diagnostics
+have closed class, severity and scope variants plus an open code and exact string details; they
+explain facts but do not independently determine outcomes.
+
+**Corrections.** Bundle revision zero has no predecessor. A correction is a complete next revision,
+not a patch: it increments the revision by one, names the immediate predecessor fingerprint and
+states a reason. Run id, Subject, context, plan, source-execution identity, planned time and started
+time remain fixed. If one of those anchors was wrong, normalization creates a new Run.
+
+Verifying a bundle set is order-independent. Exact fingerprint replay is idempotent. Missing
+predecessors, conflicting content for one revision, gaps, forks, cycles and changed anchors are
+Findings. Timestamps never select a correction winner. Authorization, out-of-order durable ingest,
+revocation, retention, compaction and cross-Run current state remain ledger policy.
+
+**Command surface.** `azimuth run verify --bundle <file>...` verifies the standalone protocol and
+correction set. A protocol-consistent violated Observation, Challenge findings or explicit partial
+Run exits zero because negative facts are not protocol failures. Cross-record, selection,
+reduction and history Findings exit one; malformed JSON, schema and command usage exit two.
+
+`azimuth run inspect --bundle <file>... [--format text|json] [--out <file>]` emits a deterministic
+derived account and labels current model authority unresolved. It performs no provider call,
+artifact read, network write or service ingest. Plan, execute, import and ingest verbs remain
+unknown until dependent changes implement their authority.
+
+**Breaking boundary.** The D42 service wire remains isolated and is not translated here. Run
+bundles contain no Evidence Definition, lifecycle stage, expiry or alpha 1 observation binding.
+The adapter change owns capability addressing, plan generation, native translation, cancellation
+and report import. The challenge-planning change owns current decision resolution. The ledger
+change atomically replaces service storage and owns authorization, persistence and Assurance State.
+
+**Why.** Local workspaces, CI candidates, released artifacts and bounded monitoring windows need
+the same exact execution fact without sharing provider syntax. Retries and shards need one
+deterministic terminal result without multiplying Checks. Dual-role fault execution needs shared
+physical provenance while keeping product observation and credibility challenge distinct.
+Corrections need immutable audit history without forcing a service into local workflows.
+
+**Strongest rejected alternative.** Reuse D42's flat execution subject and Observation envelope.
+That format binds execution to Evidence Definitions, makes optional fields substitute for a typed
+Subject and cannot account for Check and Challenger roles in one Run. Provider-specific result
+schemas were also rejected because every adapter would then become semantic model authority.
+
+**Validation.** Ordinary engineering tests cover every Subject kind, strict fields, fingerprints,
+plan/actual mismatch, retry and shard reduction, partial and cancelled Runs, dual-role activities,
+artifacts, diagnostics, duplicates and correction histories. A standalone synthetic experiment
+covers local, CI, artifact, deployment, service, monitoring, imported-history and dual-role cases.
+All current Claims remain routine and create no Azimuth verification declarations.
+
+**What would falsify it.** Revisit this contract if a real provider cannot preserve a fact needed
+for interpretation without adding provider semantics to core, if exact work-unit planning makes
+ordinary first-class Checks impractical, if valid negative results cannot survive partial Runs, or
+if local and ledger validation cannot share the same parser and reducer.
+
+---
+
 ## Method
 
 **Concern catalog first, notation last.** No mechanism enters the model until **≥2 structurally

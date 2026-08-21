@@ -1,7 +1,7 @@
 # Work packages: run-bundle-protocol
 
 ## Work package: change-authority
-Status: pending
+Status: complete
 Depends on: none
 Owns: docs/decisions.md, azimuth/formats/run-bundle.md, azimuth/changes/run-bundle-protocol
 Objective: freeze the provider-neutral Run contract and accepted transition
@@ -50,7 +50,7 @@ Objective: teach current Run verification without inventing adapter or ledger wo
 Evidence: frontmatter, command, link and retired-deferral audits
 
 ## Work package: run-intent-cutover
-Status: pending
+Status: complete
 Depends on: change-authority
 Owns: azimuth/model/framework/run-bundle-protocol/spec.md
 Objective: apply the five routine Run-protocol requirements without verification facets
