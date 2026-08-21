@@ -120,7 +120,7 @@ Objective: document current decision authoring, selection, scope, outcomes and l
 Evidence: command, terminology, link, 100-column and prohibited-name audits
 
 ## Work package: challenge-agent-guidance
-Status: pending
+Status: complete
 Depends on: challenge-cli-cutover, current-intent-transition
 Owns: AGENTS.md, .agents/skills/azimuth-propose/SKILL.md, .agents/skills/azimuth-apply/SKILL.md, .agents/skills/azimuth-archive/SKILL.md
 Objective: teach Challenge planning without inventing state, cache or provider authority
