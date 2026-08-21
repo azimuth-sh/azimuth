@@ -71,6 +71,11 @@ Standard output and standard error are drained concurrently into separate capped
 full pipe cannot deadlock the process. Core enforces the configured timeout. Exit status and
 standard error never encode product outcomes.
 
+The bound covers the adapter's descendant process tree and inherited pipe handles, not only the
+direct child pid. Core establishes platform-equivalent containment before spawn and terminates the
+tree on every terminal path. If the host cannot establish that containment, invocation fails
+before spawn instead of silently weakening the contract.
+
 The protocol-v1 description operation returns adapter, version, build and capability declarations.
 `azimuth adapter verify` compares that exact description and its fingerprint with configuration.
 Execute and import responses repeat the same handshake identity, so a binary substituted after

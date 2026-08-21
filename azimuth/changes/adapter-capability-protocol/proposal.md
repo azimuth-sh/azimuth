@@ -132,6 +132,9 @@ atomically with implementation and the limitation must remain visible in the cha
   and drain bounded standard output and standard error concurrently. Nonzero child status, timeout,
   overflow or extra response content exits one; malformed or schema-invalid response JSON exits
   two. Execute is never retried automatically after timeout.
+- Core contains the adapter's descendant process tree and inherited pipe handles within the same
+  exchange deadline. A host that cannot establish equivalent containment rejects the invocation
+  before spawning rather than claiming a weaker bounded exchange.
 - Import inputs are exact staged files whose digests and sizes core computes from the streams it
   copies before invocation. Returned bundle provenance repeats those identities; adapters cannot
   replace them with locators or native run ids. A correction may carry later bytes from the same

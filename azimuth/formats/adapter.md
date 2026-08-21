@@ -103,7 +103,16 @@ interpretation belongs in the semantic Plan's exact context.
 
 Every limit is a positive safe integer. `timeout_ms` bounds the complete child lifetime.
 `stdout_bytes` and `stderr_bytes` independently bound bytes read from the two streams, including a
-final unterminated fragment. The host drains both streams concurrently.
+final unterminated fragment. These bounds cover the adapter and every descendant process, including
+pipes kept open by a descendant after the initial process exits. The host drains both streams
+concurrently, contains the complete process tree and kills and reaps that tree on timeout or stream
+overflow.
+
+Before spawning, the host must establish process-tree containment with guarantees equivalent to
+those rules on its platform. If it cannot, invocation fails as a transport failure with exit one and
+no process or output bundle is created. A platform may use process groups, job objects or another
+equivalent primitive; that mechanism is an implementation fact and does not enter configuration,
+capability, launch or Run identity.
 
 Capabilities sort lexically by unique `id`. `classes` is non-empty, lexically sorted and unique.
 Its closed values are:
@@ -530,7 +539,8 @@ sorted order; an empty valid configuration succeeds without spawning a process.
   incomplete execution facts.
 - Exit one means content, descriptor, capability, model, request, launch, provenance, selection or
   bundle-invariant mismatch, or nonzero exit, timeout, stream overflow, extra response content or
-  explicit adapter failure.
+  explicit adapter failure. Inability to establish equivalent descendant-process containment fails
+  here before spawn.
 - Exit two means CLI, local configuration, plan or request schema failure, or malformed or
   schema-invalid adapter response.
 

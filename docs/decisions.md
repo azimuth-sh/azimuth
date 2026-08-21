@@ -2520,6 +2520,13 @@ non-secret literal values, and drains standard output and standard error concurr
 independent capped buffers. It enforces the configured timeout and never automatically retries
 execute after a timeout because native work may already have occurred.
 
+Timeout and stream bounds cover the adapter's complete descendant process tree and every pipe a
+descendant retains. Core establishes platform-equivalent containment before spawn, then kills and
+reaps the contained tree on timeout or stream overflow. If equivalent containment is unavailable,
+the invocation is rejected before spawn as an exit-one transport failure and produces no output.
+Process groups, job objects and other platform mechanisms are implementation facts, not semantic
+protocol identity.
+
 Core stages content before every invocation. It opens each configured executable, resource and
 import input exactly once, copies and hashes bytes from that same open handle into a private
 invocation directory, validates each executable and resource against its configured digest, and

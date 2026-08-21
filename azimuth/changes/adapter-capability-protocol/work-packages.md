@@ -29,7 +29,7 @@ Objective: resolve complete-model Checks and bind canonical Check-only launch pl
 Evidence: complete-model, implementation-closure, route-substitution and empty-challenge tests
 
 ## Work package: bounded-adapter-host
-Status: pending
+Status: complete
 Depends on: run-component-seam, adapter-contract-kernel, semantic-run-planner
 Owns: tools/azimuth/src/adapter_host.rs, tools/azimuth/tests/adapter_host.rs
 Objective: invoke bounded execute/import processes and validate complete returned bundles atomically

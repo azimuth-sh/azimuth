@@ -5,7 +5,7 @@
 - [x] Establish a separable Run component seam for planning and returned-bundle validation.
 - [x] Implement strict configuration, descriptor and capability identity validation.
 - [x] Implement complete-model Check planning and canonical launch fingerprints.
-- [ ] Host bounded execute and import adapter processes without shells or implicit retries.
+- [x] Host bounded execute and import adapter processes without shells or implicit retries.
 - [ ] Integrate adapter, planner and host modules before public command routing.
 - [ ] Add adapter verification and Run plan, execute and import commands.
 - [ ] Build two synthetic adapters and their shared conformance experiment.
