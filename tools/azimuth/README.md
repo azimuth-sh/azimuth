@@ -2,7 +2,7 @@
 
 The dependency-free Rust core for Azimuth's evidence control plane. It derives repository-owned
 Claims and their graph, validates that graph, reports traceability, exports version 2 JSON and
-verifies standalone provider-neutral Run bundles.
+plans and hosts bounded adapter exchanges for provider-neutral Run bundles.
 
 Install a checkout with `cargo install --path tools/azimuth`.
 
@@ -16,6 +16,13 @@ azimuth report traceability --out traceability.json
 azimuth export --out model.json
 azimuth init
 
+azimuth adapter verify [--config <file>]
+azimuth run plan --request <file> [--model <dir>] [--standards <file>] \
+  [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
+azimuth run execute --plan <file> [--predecessor <bundle>...] \
+  [--config <file>] [--out <file>]
+azimuth run import --plan <file> --input <id>=<file>... \
+  [--predecessor <bundle>...] [--config <file>] [--out <file>]
 azimuth run verify --bundle run.json
 azimuth run inspect --bundle run.json
 azimuth run inspect --bundle run.json --format json --out inspection.json
@@ -62,6 +69,40 @@ malformed JSON, schema errors or usage exit `2`. `azimuth run inspect` emits a d
 JSON account, including protocol Findings on exit `1`, and labels repository authority and
 Assurance State unresolved.
 
+Adapter configuration defaults to strict
+[`azimuth/adapters.json`](../../azimuth/formats/adapter.md). `azimuth adapter verify` stages each
+configured executable and resource, performs the version 1 description handshake and fails closed
+on content, identity or capability drift. Core never searches `PATH`, invokes a shell or inherits
+the ambient environment.
+
+`azimuth run plan` loads the complete unselected model and resolves the exact fingerprint and full
+stable implementation set for every requested Check. It creates a provider-neutral semantic Plan,
+then freezes Subject, operation, configured adapter and one capability route per selection in a
+separate [launch plan](../../azimuth/formats/run-launch-plan.md). The planner is Check-only, emits
+`challenges: []` and has no partial-model or `--only` path.
+
+`azimuth run execute` invokes an execute launch. `azimuth run import` invokes an import launch and
+requires one or more exact `<id>=<file>` inputs. Executable, resource and import bytes are staged
+and hashed from the same opened streams. Both operations independently bound output bytes. On a
+supported host, core starts the adapter in a fresh process group before adapter code runs. One
+deadline bounds core request writing, response and diagnostic reads and process wait; core signals
+remaining group members on every terminal path. A host without the required primitive fails before
+spawn with exit `1`.
+
+An authorized descendant can deliberately use `setsid`, `setpgid` or an equivalent to leave the
+group. It cannot extend core's wait beyond the deadline, but core does not guarantee its
+termination. This is not non-escapable descendant containment, daemon supervision, hostile-code
+isolation or a filesystem or network sandbox.
+
+Core validates the complete response and publishes only by atomic replacement. Repeatable
+predecessors must form one exact correction chain; a response is revision zero or exactly the next
+revision with the terminal correction anchor.
+
+A valid violated Observation, Challenge finding, partial or cancelled Run, or adapter-returned
+protocol-valid `timed-out` Run fact exits `0`. A host-enforced process deadline is a transport
+timeout and exits `1`, as does a semantic, identity, content, other transport or bundle mismatch.
+CLI and schema failures exit `2`. Neither nonzero class leaves the requested output file.
+
 ## Model
 
 The intent graph has two Claim levels:
@@ -100,6 +141,9 @@ until a total-composition format is accepted.
 - `validation.rs` reports categorized Findings through one exhaustive registry.
 - `traceability.rs` derives deterministic case-level traceability.
 - `run.rs` parses, fingerprints, reduces, verifies and inspects standalone Run bundles.
+- `adapter.rs` parses strict configuration and derives adapter and capability identities.
+- `run_plan.rs` resolves complete-model Checks and builds semantic and launch plans.
+- `adapter_host.rs` stages content, hosts bounded processes and validates returned bundles.
 - `model.rs` owns the graph and export version 2.
 - `change.rs` handles change projection, finalization and archive gates.
 - `federation.rs` assembles revision-bound repository accounts.
@@ -110,7 +154,7 @@ The strict manifest collections are `realizes`, `check_implementations`,
 have the exact lexical form `sha256:<64-lowercase-hex>`. Removed alpha-era collections are rejected;
 there is no compatibility reader.
 
-## Run protocol and deferred execution plane
+## Run and adapter execution plane
 
 D46 implements one immutable provider-neutral bundle revision for a bounded Run over one exact
 Subject and semantic plan. The bundle records actual selection, physical activities, ordered
@@ -118,15 +162,26 @@ attempts, one terminal Observation per actually selected Check and one Challenge
 selected Challenger target. Canonical fingerprints and full-replacement corrections make the
 standalone account deterministic without making it current repository acceptance.
 
-Only `azimuth run verify` and `azimuth run inspect` are implemented. Plan generation, current
-decision resolution for a Run, adapter discovery, native selector translation, provider execution
-and native report import remain dependent changes. `azimuth run plan`, `execute`, `import` and
-`ingest` are unknown operations.
+The semantic Plan is provider-neutral. A separate launch plan binds it to one configured adapter
+and exact capability routes so provider substitution changes launch identity and the derived Run
+id. Adapters expose a closed semantic capability dictionary with open configured addresses:
+`model.extract`, `check.execute`, `check.import`, `challenge.execute` and `challenge.import`.
+
+Current planning selects Checks only. Repository Challenge Plans already resolve authored
+Qualification targets, but the planner does not project those targets or their current
+applicability into generated Run selections. Claim Judgment target resolution remains later. The
+planner does not require a current Qualification to execute a Check. Strict hand-authored launch
+plans may exercise Challenge execute or import transport without establishing current model
+authority. `model.extract` execution, long-running adapters and service or webhook bridges are not
+implemented.
+
+The current Run bundle version 1 requires D47 adapter provenance and rejects the unpublished
+pre-D47 shape without a compatibility reader.
 
 The optional Assurance Service remains isolated on its D42 v1 wire until a Run-ledger change
 replaces it. Core does not ingest Run bundles or service execution records, and the service is not
 model authority. Authorization, durable storage, retention and Subject-specific Assurance State
-remain ledger responsibilities.
+remain ledger responsibilities. `azimuth run ingest` is unknown.
 
 ## Federation
 

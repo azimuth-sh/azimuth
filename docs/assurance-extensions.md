@@ -1,15 +1,20 @@
 # Assurance extensions
 
-Status: **Run exchange implemented; provider and ledger protocols deferred**.
+Status: **Run and bounded adapter exchange implemented; applicability projection and ledger
+deferred**.
 
 Azimuth is an evidence control plane, not a catalog of testing and analysis products. Alpha 2
 implements the repository graph from Checks through Evidence Bindings to Qualifications, plus
 Challengers and Challenge Plans. D46 also implements a strict provider-neutral Run bundle and
-service-free verification and inspection. Provider invocation, current decision-to-Run planning
-and the replacement Assurance Service ledger remain deferred.
+service-free verification and inspection. D47 implements explicit short-lived adapter invocation,
+Check-only Run planning, native execution and exact report import. Projecting current decision
+applicability into generated Run selections and the replacement Assurance Service ledger remain
+deferred.
 
-This document records the role boundary future extension work must preserve. It is not adapter
-configuration or invocation guidance.
+This document records the role and authority boundaries extension work must preserve. Strict wire
+details remain in the [adapter](../azimuth/formats/adapter.md),
+[launch-plan](../azimuth/formats/run-launch-plan.md) and
+[Run-bundle](../azimuth/formats/run-bundle.md) formats.
 
 ## Choose the role by proposition
 
@@ -83,30 +88,87 @@ references and immutable correction chains. `azimuth run inspect` presents the d
 account and labels current repository authority and Assurance State unresolved. Neither command
 invokes a provider, reads artifact locators or writes to a service.
 
-## Deferred provider boundary
+## Current bounded adapter boundary
 
-D43 accepts a separation in which core selects semantic targets and a provider-family
-adapter translates those targets to native selectors. The adapter must report what actually ran
-and produce the provider-neutral Run account with references to native artifacts. It must not parse
-the repository model or decide evidentiary meaning independently.
+D47 implements the separation in which core owns repository loading and semantic selection while
+an adapter translates a frozen selection to provider-native work. Strict `azimuth/adapters.json`
+configuration pins provider and adapter identity, executable and resource content, description,
+semantic settings, exact non-secret environment literals, process limits and capabilities. Core
+never discovers an executable through `PATH`, invokes a shell or inherits the ambient environment.
 
-Provider packages will expose stable `<adapter-id>/<capability-id>` identities. The semantic
-capability classes are `model.extract`, `check.execute`, `check.import`, `challenge.execute` and
-`challenge.import`; provider-namespaced capabilities remain open. These names define the accepted
-dictionary, not a currently invocable adapter protocol.
+The semantic capability dictionary is closed:
 
-The adapter boundary is not a current public protocol. The following remain for dependent changes:
+- `model.extract`;
+- `check.execute`;
+- `check.import`;
+- `challenge.execute`; and
+- `challenge.import`.
 
-- adapter discovery, capability negotiation and invocation;
-- translation of selected Check and Challenger targets;
-- generation of plans from current repository and decision fingerprints;
-- provider execution and native report import;
-- inbound event authentication and bounded adapter invocation; and
-- application of runtime facts to Subject-specific Assurance State.
+Provider-family identities, configured `<adapter-id>/<capability-id>` addresses and Challenge forms
+remain open. One capability may support several classes. One Run uses one configured adapter but
+may route different selections through several capabilities without combining their semantic
+results.
 
-No long-running adapter is implied. A later adapter may be a short-lived process around a native
-command or report, while a generic gateway may eventually authenticate inbound events and invoke a
-bounded adapter. Provider-specific webhook logic must not enter the Assurance Service.
+The provider-neutral D46 Plan freezes semantic targets, implementations, context and finite units.
+A separate `azimuth-run-launch-plan` freezes the exact Subject, planned time,
+`execute | import` operation, complete Plan and one configured capability route per selection.
+Substituting a route changes launch identity and the derived Run id.
+
+The public journey is:
+
+```text
+azimuth adapter verify [--config <file>]
+azimuth run plan --request <file> [--model <dir>] [--standards <file>] \
+  [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
+azimuth run execute --plan <file> [--predecessor <bundle>...] \
+  [--config <file>] [--out <file>]
+azimuth run import --plan <file> --input <id>=<file>... \
+  [--predecessor <bundle>...] [--config <file>] [--out <file>]
+```
+
+Verification performs the configured description handshake. Planning loads the complete unselected
+model, resolves each requested Check and all its stable implementations, then emits a Check-only
+semantic Plan and exact launch routes. There is no `--only` or partial-model planning path.
+
+For every exchange, core stages executable, resource and import-input bytes from the same open
+streams it hashes and invokes only staged content with a cleared environment. On a supported host,
+the adapter starts in a fresh process group before its code runs. One configured deadline bounds
+core request writing, concurrent response and diagnostic reads and core's own wait. Core signals
+remaining group members on every terminal path and cleans inherited pipes while those processes
+remain in the group. A host without the required process-group primitive rejects the exchange
+before spawn.
+
+Authorized adapter code can deliberately call `setsid`, `setpgid` or an equivalent and leave the
+group. An escaped descendant cannot extend core's wait beyond the deadline, but Azimuth does not
+guarantee its termination. This is not non-escapable descendant containment, daemon supervision,
+hostile-code isolation or a filesystem or network sandbox.
+
+Execute and import accept one strict response. Core validates request identity, the repeated
+description, launch and route provenance, actual selection, reduction and the complete Run bundle
+before atomic publication. Import provenance retains exact core-computed input digests and sizes;
+provider paths, URIs and execution ids cannot replace them. Repeatable predecessors must form one
+verified correction chain, and a response is revision zero or exactly the next revision correcting
+the complete terminal account.
+
+Adapter, configuration, description, launch, routes and normalizer are correction anchors. Import
+inputs remain protected by each revision but may change when later bytes from the same native
+execution arrive through the frozen route. Changing the route creates another Run.
+
+A valid violated Observation, Challenge finding, partial or cancelled Run, or adapter-returned
+protocol-valid `timed-out` Run fact exits zero. A host-enforced process deadline is a transport
+timeout and exits one, as does another transport, semantic, content or identity mismatch. CLI and
+schema failures exit two. No nonzero result publishes an output bundle.
+
+Current planning emits `challenges: []`. Repository Challenge Plans already resolve authored
+Qualification targets, but the planner does not project those targets or their current
+applicability into generated Run selections. Claim Judgment target resolution remains later. The
+planner does not require a current Qualification before a Check can execute. A hand-authored strict
+launch plan may exercise Challenge transport without claiming current decision authority.
+`model.extract` is declared but has no current execution command.
+
+Adapters are short-lived processes. There is no long-running adapter, service bridge, provider
+webhook or generic event gateway. A future gateway may authenticate an inbound event and invoke a
+bounded import adapter, but provider-specific webhook logic must not enter the Assurance Service.
 
 Continuous monitoring must become bounded execution windows. Alert delivery may establish a
 negative event, but silence is not success unless an enrolled Check also establishes that the
@@ -130,7 +192,8 @@ version 2 repository model and no runtime ledger records.
 
 ## Acceptance boundary for future extensions
 
-A future provider integration is composable only if it preserves all of these properties:
+A future provider package, Challenge planner or ledger integration is composable only if it
+preserves all of these properties:
 
 - adding a provider requires no provider-specific semantic type in core;
 - unknown schemas, statuses and partial selection fail closed;
@@ -141,6 +204,5 @@ A future provider integration is composable only if it preserves all of these pr
 - monitoring silence is not interpreted as a satisfied product result; and
 - equivalent normalized bundles work locally and through the optional ledger.
 
-Until the adapter and ledger protocols exist, active guidance stops at standalone bundle
-verification and inspection rather than simulating provider execution, ingestion or dynamic
-assurance with checked-in records.
+Current adapter transport stops before Challenge decision resolution and durable ingest. Active
+guidance must not simulate those missing authorities or dynamic assurance with checked-in records.

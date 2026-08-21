@@ -223,7 +223,7 @@ Criticality changes through the same lifecycle without changing Claim identity. 
 activates the applicable mechanism and evidence obligations. Lowering it records why those
 obligations no longer apply and what would raise it again.
 
-## Run exchange and deferred execution control plane
+## Run and adapter execution control plane
 
 D46 implements the provider-neutral
 [`azimuth-run-bundle` version 1](../azimuth/formats/run-bundle.md) exchange. One immutable bundle
@@ -238,7 +238,7 @@ findings survive retries; missing planned units and unfinished work cannot becom
 An omitted target creates no fabricated result. Full replacement corrections retain immutable
 Subject, context, plan, source-execution and start anchors and form one fingerprint-linked chain.
 
-The implemented service-free commands are:
+The service-free protocol commands are:
 
 ```text
 azimuth run verify --bundle <file> [--bundle <file> ...]
@@ -251,11 +251,77 @@ execution fact and therefore exits zero. Inspection presents a deterministic acc
 current repository authority and Assurance State unresolved. Neither command calls a provider,
 reads an artifact locator, writes to a service or treats protocol validity as product acceptance.
 
-Generating plans from the current repository graph, resolving current decision targets for a Run,
-translating native selectors, executing providers and importing native reports remain dependent
-adapter and challenge-planning changes. `azimuth run plan`, `execute`, `import` and `ingest` are not
-commands. The current repository Challenge Plan resolves its declared Qualification targets but
-does not invoke a provider.
+D47 adds an explicit short-lived adapter boundary. Strict `azimuth/adapters.json` configuration
+pins protocol and provider identity, executable and resource content, the description handshake,
+exact non-secret settings and environment literals, process limits and a capability dictionary.
+Core neither searches `PATH` nor invokes a shell. Its closed semantic capability classes are
+`model.extract`, `check.execute`, `check.import`, `challenge.execute` and `challenge.import`;
+provider families, configured `<adapter-id>/<capability-id>` addresses and Challenge forms remain
+open identities.
+
+The reusable D46 semantic Plan contains no provider route. A separate strict
+[`azimuth-run-launch-plan`](../azimuth/formats/run-launch-plan.md) version 1 binds the exact
+Subject, planned time, `execute | import` operation and complete semantic Plan to one configured
+adapter and one capability route for every selection. Route or configuration substitution changes
+the launch fingerprint and therefore the derived Run id.
+
+The implemented provider journey is:
+
+```text
+azimuth adapter verify [--config <file>]
+azimuth run plan --request <file> [--model <dir>] [--standards <file>] \
+  [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
+azimuth run execute --plan <file> [--predecessor <bundle>...] \
+  [--config <file>] [--out <file>]
+azimuth run import --plan <file> --input <id>=<file>... \
+  [--predecessor <bundle>...] [--config <file>] [--out <file>]
+```
+
+Verification compares the running adapter's complete description with configuration. Planning
+loads the complete unselected model, resolves each requested Check fingerprint and its complete
+stable implementation set, creates the provider-neutral Plan, then freezes capability routing in
+the launch plan. It has no partial-model or `--only` mode. Current planning selects Checks only,
+always emits `challenges: []`, requires no current Qualification and infers no evidentiary
+applicability.
+
+Execute and import stage the configured executable, resources and import inputs from the same open
+streams core hashes. Core clears the child environment and invokes the staged executable directly.
+On a supported host, process creation places it in a fresh process group before adapter code runs.
+One configured deadline bounds request writing, concurrent response and diagnostic reads and
+core's own wait. Core signals remaining group members on every terminal path and cleans their
+inherited pipes while they retain group membership. A host without that process-group primitive
+rejects the exchange before spawn as an exit-one transport failure.
+
+This boundary is not non-escapable descendant containment. Authorized adapter code can call
+`setsid`, `setpgid` or an equivalent and leave the group. An escaped descendant cannot extend
+core's wait beyond the deadline, but core does not guarantee its termination. The stage and host
+controls provide neither daemon supervision nor hostile-code isolation and are not a filesystem or
+network sandbox.
+
+The adapter returns one strict response and complete bundle. Core validates description, request,
+launch, routes, provenance, actual selection, reduction and bundle identity before atomic output.
+Repeatable predecessors must be one verified correction chain; the adapter receives its complete
+terminal account and must return revision zero or exactly the next revision correcting that
+terminal fingerprint. A valid violated Observation, Challenge finding, partial or cancelled Run,
+or adapter-returned protocol-valid `timed-out` Run fact is honest and exits zero. A host-enforced
+process deadline is a transport timeout and exits one, as does a semantic, identity, content or
+other transport mismatch. CLI and schema failure exits two. Neither nonzero class publishes an
+output.
+
+Adapter, configuration, description, launch, capability routes, planned time and the complete
+normalizer join the correction anchors. Import-input identities remain protected in each revision
+but may change when later bytes from the same native execution arrive through the frozen route. A
+different adapter, capability or configuration therefore starts a different Run.
+
+The current Run bundle version 1 requires this D47 adapter provenance. It replaces the unpublished
+pre-D47 shape in place, and no compatibility reader accepts that earlier shape.
+
+The transport can represent Check and Challenge routes in a hand-authored strict launch plan.
+Repository Challenge Plans already resolve authored Qualification targets, but current planning
+does not project those targets or their current applicability into generated Run selections. Claim
+Judgment target resolution remains later. `model.extract` execution, long-running adapters,
+service bridges and inbound event gateways also remain absent. Durable `azimuth run ingest` is
+unknown.
 
 The optional Assurance Service is likewise awaiting the Run-ledger replacement. D42's version 1
 claim-contract and project-snapshot wire remains isolated inside the existing service boundary
@@ -277,6 +343,7 @@ The citation is documentary; no build, test, release or acceptance step reads th
 
 Azimuth does not prove prose predicates, infer honest linkage from source, turn a clean Challenger
 search into positive product evidence, or enroll native tests automatically. Its current outputs
-are a versioned repository account, derived traceability and a standalone internally verified Run
-exchange. Provider orchestration, durable ingestion and Subject-specific assurance remain deferred
-rather than simulated through repository records or protocol validity.
+are a versioned repository account, derived traceability and validated bounded adapter exchanges.
+Projecting current decision applicability into generated Run selections, Claim Judgment target
+resolution, durable ingestion and Subject-specific assurance remain deferred rather than simulated
+through repository records or protocol validity.

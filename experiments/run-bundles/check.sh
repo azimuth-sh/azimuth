@@ -42,9 +42,21 @@ for name in "${VALID[@]}"; do
 done
 
 python3 - "$BUNDLES" <<'PY'
+import hashlib
 import json
 import pathlib
 import sys
+
+
+def fingerprint(value):
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
 
 root = pathlib.Path(sys.argv[1])
 expected = {
@@ -58,8 +70,70 @@ expected = {
 for name, kind in expected.items():
     bundle = json.load(open(root / f"{name}.json", encoding="utf-8"))
     assert bundle["subject"]["kind"] == kind
+    provenance = bundle["provenance"]
+    adapter = provenance["adapter"]
+    assert set(adapter) == {
+        "id",
+        "adapter_version",
+        "adapter_fingerprint",
+        "descriptor_fingerprint",
+        "configuration_fingerprint",
+        "launch_fingerprint",
+        "routes",
+        "import_inputs",
+    }
+    assert provenance["normalizer"] == {
+        "id": f"adapter/{adapter['id']}",
+        "version": adapter["adapter_version"],
+        "build_fingerprint": adapter["adapter_fingerprint"],
+    }
+    assert [route["selection"]["kind"] for route in adapter["routes"]] == [
+        "check",
+        "challenge",
+    ]
+    launch_identity = {
+        field: adapter[field]
+        for field in [
+            "id",
+            "adapter_version",
+            "adapter_fingerprint",
+            "descriptor_fingerprint",
+            "configuration_fingerprint",
+        ]
+    }
+    assert adapter["launch_fingerprint"] == fingerprint(
+        {
+            "format": "azimuth-run-launch-fingerprint",
+            "version": 1,
+            "operation": provenance["mode"],
+            "planned_at_ms": bundle["planned_at_ms"],
+            "subject": bundle["subject"],
+            "subject_fingerprint": bundle["subject_fingerprint"],
+            "plan": bundle["plan"],
+            "adapter": launch_identity,
+            "routes": adapter["routes"],
+        }
+    )
+    assert bundle["run_id"] == fingerprint(
+        {
+            "format": "azimuth-run-identity",
+            "version": 1,
+            "source_system": provenance["source"]["system"],
+            "source_execution": provenance["source"]["execution"],
+            "subject_fingerprint": bundle["subject_fingerprint"],
+            "plan_fingerprint": bundle["plan"]["fingerprint"],
+            "launch_fingerprint": adapter["launch_fingerprint"],
+        }
+    )
 artifact = json.load(open(root / "artifact.json", encoding="utf-8"))
 assert artifact["provenance"]["mode"] == "import"
+assert artifact["provenance"]["adapter"]["import_inputs"] == [
+    {
+        "id": "native-report",
+        "digest": "sha256:" + "9" * 64,
+        "size_bytes": 37,
+    }
+]
 candidate = json.load(open(root / "ci-candidate.json", encoding="utf-8"))
 assert "candidate" not in candidate["subject"]
 assert candidate["provenance"]["attributes"]["candidate-ref"]
@@ -105,6 +179,22 @@ assert partial["check_executions"][0]["observation"]["outcome"] == "inconclusive
 assert correction["check_executions"][0]["observation"]["outcome"] == "satisfied"
 assert correction["bundle_revision"] == 1
 assert correction["corrects"] == partial["bundle_fingerprint"]
+assert correction["run_id"] == partial["run_id"]
+assert correction["subject"] == partial["subject"]
+assert correction["plan"] == partial["plan"]
+assert correction["planned_at_ms"] == partial["planned_at_ms"]
+assert correction["started_at_ms"] == partial["started_at_ms"]
+assert correction["provenance"]["normalizer"] == partial["provenance"]["normalizer"]
+for field in [
+    "id",
+    "adapter_version",
+    "adapter_fingerprint",
+    "descriptor_fingerprint",
+    "configuration_fingerprint",
+    "launch_fingerprint",
+    "routes",
+]:
+    assert correction["provenance"]["adapter"][field] == partial["provenance"]["adapter"][field]
 PY
 
 expect_status 0 "$AZIMUTH" run verify \

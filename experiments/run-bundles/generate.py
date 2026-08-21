@@ -10,6 +10,15 @@ import pathlib
 import sys
 
 
+ADAPTER_ID = "synthetic"
+ADAPTER_VERSION = "0.1.0-alpha.2"
+ADAPTER_FINGERPRINT = "sha256:" + "4" * 64
+DESCRIPTOR_FINGERPRINT = "sha256:" + "5" * 64
+CONFIGURATION_FINGERPRINT = "sha256:" + "6" * 64
+CHECK_CAPABILITY_FINGERPRINT = "sha256:" + "7" * 64
+CHALLENGE_CAPABILITY_FINGERPRINT = "sha256:" + "8" * 64
+
+
 def fingerprint(value: object) -> str:
     encoded = json.dumps(
         value,
@@ -121,6 +130,50 @@ def activity(
     }
 
 
+def routes(plan: dict[str, object], mode: str) -> list[dict[str, object]]:
+    result = []
+    for check in plan["checks"]:
+        result.append(
+            {
+                "selection": {"kind": "check", "id": check["id"]},
+                "capability": {
+                    "address": f"{ADAPTER_ID}/checks",
+                    "class": f"check.{mode}",
+                    "fingerprint": CHECK_CAPABILITY_FINGERPRINT,
+                },
+            }
+        )
+    for challenge in plan["challenges"]:
+        result.append(
+            {
+                "selection": {"kind": "challenge", "id": challenge["id"]},
+                "capability": {
+                    "address": f"{ADAPTER_ID}/challenges",
+                    "class": f"challenge.{mode}",
+                    "challenge_form": "implementation-perturbation",
+                    "fingerprint": CHALLENGE_CAPABILITY_FINGERPRINT,
+                },
+            }
+        )
+    return result
+
+
+def import_inputs(mode: str) -> list[dict[str, object]]:
+    if mode == "execute":
+        return []
+    return [{"id": "native-report", "digest": fixed("9"), "size_bytes": 37}]
+
+
+def adapter_identity() -> dict[str, object]:
+    return {
+        "id": ADAPTER_ID,
+        "adapter_version": ADAPTER_VERSION,
+        "adapter_fingerprint": ADAPTER_FINGERPRINT,
+        "descriptor_fingerprint": DESCRIPTOR_FINGERPRINT,
+        "configuration_fingerprint": CONFIGURATION_FINGERPRINT,
+    }
+
+
 def base_bundle(
     label: str,
     subject_kind: str,
@@ -162,7 +215,23 @@ def base_bundle(
                 "system": "synthetic-runner",
                 "execution": f"conformance/{label}",
             },
-            "normalizer": {"id": "azimuth/local", "version": "alpha.2"},
+            "normalizer": {
+                "id": f"adapter/{ADAPTER_ID}",
+                "version": ADAPTER_VERSION,
+                "build_fingerprint": ADAPTER_FINGERPRINT,
+            },
+            "adapter": {
+                **adapter_identity(),
+                "launch_fingerprint": fixed("0"),
+                "routes": routes(
+                    {
+                        "checks": [check],
+                        "challenges": [challenge],
+                    },
+                    provenance_mode,
+                ),
+                "import_inputs": import_inputs(provenance_mode),
+            },
             "generated_at_ms": 210,
         },
         "artifacts": [],
@@ -279,6 +348,21 @@ def refresh(bundle: dict[str, object]) -> dict[str, object]:
             "challenges": selection["challenges"],
         }
     )
+    provenance = bundle["provenance"]
+    adapter = provenance["adapter"]
+    adapter["launch_fingerprint"] = fingerprint(
+        {
+            "format": "azimuth-run-launch-fingerprint",
+            "version": 1,
+            "operation": provenance["mode"],
+            "planned_at_ms": bundle["planned_at_ms"],
+            "subject": bundle["subject"],
+            "subject_fingerprint": bundle["subject_fingerprint"],
+            "plan": plan,
+            "adapter": adapter_identity(),
+            "routes": adapter["routes"],
+        }
+    )
     source = bundle["provenance"]["source"]
     bundle["run_id"] = fingerprint(
         {
@@ -288,6 +372,7 @@ def refresh(bundle: dict[str, object]) -> dict[str, object]:
             "source_execution": source["execution"],
             "subject_fingerprint": bundle["subject_fingerprint"],
             "plan_fingerprint": plan["fingerprint"],
+            "launch_fingerprint": adapter["launch_fingerprint"],
         }
     )
     for execution in bundle["check_executions"]:

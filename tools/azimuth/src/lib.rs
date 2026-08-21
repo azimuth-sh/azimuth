@@ -1,5 +1,7 @@
 //! Azimuth core model loading and selection.
 
+pub mod adapter;
+pub mod adapter_host;
 pub mod assurance;
 pub mod change;
 pub mod design;
@@ -11,6 +13,7 @@ pub mod labels;
 pub mod manifest;
 pub mod model;
 pub mod run;
+pub mod run_plan;
 pub mod spec;
 pub mod traceability;
 pub mod validation;

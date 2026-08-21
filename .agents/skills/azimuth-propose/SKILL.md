@@ -40,10 +40,29 @@ many-to-many Check/Claim relationships and semantic Challenge Plan selectors. Th
 `azimuth run inspect --bundle <file>...` presents a deterministic account with current model
 authority and Assurance State explicitly unresolved.
 
-Adapter configuration, plan generation, provider execute/import transport and native translation
-remain deferred. The Run ledger separately owns durable ingest, authorization and Assurance
-State. A proposal must not infer those authorities from a valid bundle, invent their contracts or
-restore removed alpha-era formats.
+Strict adapter configuration, the description handshake, complete-model Check planning and bounded
+execute/import transport are current. Configuration defaults to `azimuth/adapters.json`, names exact
+capability addresses and pins content, description, semantic settings, literal environment and
+process limits. A proposal must preserve core authority over the semantic Plan: an adapter only
+translates frozen selections or imports exact content-addressed native files.
+
+The current planner emits Checks and `challenges: []`; it does not resolve Challenge Plans,
+Qualifications or Claim Judgments. Hand-authored strict launch plans may exercise Challenge
+transport without creating model authority. `model.extract` is a declared capability but has no
+current execution command. The Run ledger separately owns durable ingest, authorization, retention
+and Assurance State. A proposal must not infer those authorities from a valid bundle, invent their
+contracts or restore removed alpha-era formats.
+
+When a proposal affects adapters, make the strict
+[adapter protocol](../../../azimuth/formats/adapter.md) and
+[launch-plan format](../../../azimuth/formats/run-launch-plan.md) explicit. Preserve direct
+shell-free invocation, same-stream content staging, exact literal child environment, supported
+fresh process-group isolation before spawn, bounded streams and one bounded core exchange whose
+deadline covers request writing, concurrent stream draining and core's wait. Validate completely
+before atomic output. Core signals the group on every terminal path and cleans members and inherited
+pipes while they remain in it. Authorized descendants may escape with `setsid`, `setpgid` or
+equivalent, and their termination is not guaranteed. This is not non-escapable descendant
+containment, a sandbox, daemon supervision or hostile-code isolation.
 
 ## Routine path
 

@@ -110,7 +110,7 @@ repository owns the content-preserving archive move. `azimuth project accept-cha
 two complete accounts and emits a snapshot; a local account cannot substitute for project
 acceptance.
 
-## Run exchange and deferred execution plane
+## Run and adapter execution plane
 
 D46 implements a standalone [`azimuth-run-bundle` version 1](../azimuth/formats/run-bundle.md)
 exchange. A Run binds one exact Subject and may contain Check executions, Challenger executions or
@@ -119,7 +119,8 @@ one Observation per actually selected Check and one Challenge Result per selecte
 target. Challengers search for objections to Qualifications or later Claim Judgments; a clean
 result is not positive product evidence.
 
-Use the service-free commands to verify or inspect an already normalized bundle or correction set:
+Use the service-free protocol commands to verify or inspect an already normalized bundle or
+correction set:
 
 ```text
 azimuth run verify --bundle <file> [--bundle <file> ...]
@@ -131,15 +132,54 @@ fingerprints remain current, apply execution results to Assurance State, call a 
 the bundle. A protocol-consistent violated Observation, Challenge findings or partial Run remains a
 valid execution account rather than a command failure.
 
-Challenge Plans will select exact targets through stable traceability, never through paths, line
-numbers, globs or silent whole-suite fallback. Mutation testing, broad static analysis, flakiness
-repetition and qualification-oriented fault injection normally act as Challengers. Fault injection
-with a direct recovery or durability oracle may instead implement a Check.
+Repository Challenge Plans select exact authored Qualification targets through stable
+traceability, never through paths, line numbers, globs or silent whole-suite fallback. Claim
+Judgment targets remain later. Mutation testing, broad static analysis, flakiness repetition and
+qualification-oriented fault injection normally act as Challengers. Fault injection with a direct
+recovery or durability oracle may instead implement a Check.
 
-Generating a plan from repository authority, resolving its current decision targets, provider
-capability discovery, native selector translation, execution and report import remain dependent
-adapter and challenge-planning changes. The `plan`, `execute`, `import` and `ingest` Run operations
-remain absent. Durable ingestion, authorization, retention and Subject-specific Assurance State
+Configure provider work explicitly in strict `azimuth/adapters.json`, then use:
+
+```text
+azimuth adapter verify [--config <file>]
+azimuth run plan --request <file> [--model <dir>] [--standards <file>] \
+  [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
+azimuth run execute --plan <file> [--predecessor <bundle>...] \
+  [--config <file>] [--out <file>]
+azimuth run import --plan <file> --input <id>=<file>... \
+  [--predecessor <bundle>...] [--config <file>] [--out <file>]
+```
+
+Core loads the complete unselected model and creates a provider-neutral Check Plan before binding
+it to exact configured capability routes in a separate launch plan. Planning has no `--only` or
+partial-model path, always emits `challenges: []` and neither requires a current Qualification nor
+infers evidentiary applicability.
+
+Execute and import stage executable, resource and input content from the streams core hashes,
+clear the child environment and bound both output streams. On supported hosts, the adapter starts
+in a fresh process group before its code runs. One deadline bounds core request writing, response
+and diagnostic reads and process wait. Core signals remaining group members on every terminal path.
+An adapter descendant can deliberately use `setsid`, `setpgid` or an equivalent to leave the group;
+it cannot extend core's wait beyond the deadline, but its termination is not guaranteed. This is
+not non-escapable descendant containment, daemon supervision, hostile-code isolation or a
+filesystem or network sandbox.
+
+Core validates the strict response, exact route provenance, actual selection and complete bundle
+before atomic publication. Repeatable predecessors must form one linear correction chain; the
+response is revision zero or the exact next complete revision.
+
+A valid violated Observation, Challenge finding, partial or cancelled Run, or adapter-returned
+protocol-valid `timed-out` Run fact is an execution fact and exits zero. A host-enforced process
+deadline is a transport timeout and exits one, as does a semantic, identity, content, other
+transport or bundle mismatch. CLI and schema failures exit two. Neither nonzero class leaves an
+output file.
+
+Repository Challenge Plans already resolve authored Qualification targets through stable
+traceability. Current planning does not project those targets or their current applicability into
+generated Run selections; Claim Judgment target resolution remains later. A hand-authored strict
+launch plan may exercise Challenge transport, but it does not establish model authority.
+`model.extract` execution, long-running adapters, inbound gateways and service bridges are also
+absent. Durable `azimuth run ingest`, authorization, retention and Subject-specific Assurance State
 belong to the future ledger.
 
 The optional Assurance Service remains isolated on its D42 v1 wire until the Run-ledger replacement

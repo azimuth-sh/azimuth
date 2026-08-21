@@ -85,9 +85,30 @@ fn valid_bundle() -> RunBundle {
                 uri: None,
             },
             normalizer: Normalizer {
-                id: "azimuth/local".into(),
+                id: "adapter/synthetic".into(),
                 version: "alpha.2".into(),
-                build_fingerprint: None,
+                build_fingerprint: fp('e'),
+            },
+            adapter: AdapterProvenance {
+                id: "synthetic".into(),
+                adapter_version: "alpha.2".into(),
+                adapter_fingerprint: fp('e'),
+                descriptor_fingerprint: fp('f'),
+                configuration_fingerprint: fp('7'),
+                launch_fingerprint: fp('8'),
+                routes: vec![LaunchRoute {
+                    selection: RouteSelection {
+                        kind: RouteSelectionKind::Check,
+                        id: "payments/recovery".into(),
+                    },
+                    capability: RouteCapability {
+                        address: "synthetic/checks".into(),
+                        class: RouteCapabilityClass::CheckExecute,
+                        challenge_form: None,
+                        fingerprint: fp('9'),
+                    },
+                }],
+                import_inputs: vec![],
             },
             generated_at_ms: 5,
             principal: None,
@@ -165,9 +186,11 @@ fn help_exposes_only_current_run_operations() {
         assert!(output.status.success());
         assert!(stdout.contains("azimuth run verify --bundle <file>..."));
         assert!(stdout.contains("azimuth run inspect --bundle <file>..."));
-        for reserved in [" run plan", " run execute", " run import", " run ingest"] {
-            assert!(!stdout.contains(reserved));
-        }
+        assert!(stdout.contains("azimuth run plan --request <file>"));
+        assert!(stdout.contains("[--model <dir>] [--standards <file>]"));
+        assert!(stdout.contains("azimuth run execute --plan <file>"));
+        assert!(stdout.contains("azimuth run import --plan <file>"));
+        assert!(!stdout.contains(" run ingest"));
     }
 }
 
@@ -362,15 +385,13 @@ fn inspect_emits_findings_but_no_account_for_schema_errors() {
 }
 
 #[test]
-fn future_runtime_operations_and_unowned_options_fail_closed() {
-    for operation in ["plan", "execute", "import", "ingest"] {
-        let output = azimuth(&["run", operation]);
-        assert_eq!(output.status.code(), Some(2), "{operation}");
-        assert!(output.stdout.is_empty(), "{operation}");
-        assert!(String::from_utf8(output.stderr)
-            .unwrap()
-            .contains(&format!("unknown run operation `{operation}`")));
-    }
+fn ingest_remains_absent_and_verify_rejects_unowned_options() {
+    let output = azimuth(&["run", "ingest"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8(output.stderr)
+        .unwrap()
+        .contains("unknown run operation `ingest`"));
     let format_on_verify = azimuth(&["run", "verify", "--format", "json"]);
     assert_eq!(format_on_verify.status.code(), Some(2));
     assert!(format_on_verify.stdout.is_empty());

@@ -2450,6 +2450,185 @@ if local and ledger validation cannot share the same parser and reducer.
 
 ---
 
+## D47 — Explicit adapters bind semantic plans to bounded provider work *(2026-08-21)*
+
+**Decision.** Preserve D46's provider-neutral semantic Plan and introduce a separate strict
+`azimuth-run-launch-plan` version 1. Core owns model loading, Check selection and the D46 Plan. A
+launch plan binds that exact Plan and Subject to one configured adapter and one explicit capability
+route for every selected Check or Challenge. An adapter translates those frozen selections to
+provider work; it never loads or interprets the repository model independently.
+
+Adapter configuration is the strict `azimuth/adapters.json` format. There is no executable search,
+entry-point convention or `PATH` fallback. One configuration entry pins a project-local adapter
+id, provider family, protocol version, adapter version and build, executable and resource content,
+expected descriptor, non-secret semantic settings, child environment and process limits. A path is
+absolute or is contained beneath the configuration directory after resolution. Core stages and
+hashes content from one open handle and invokes the staged executable directly without a shell.
+
+**Capability identity.** The version 1 semantic classes are closed:
+
+- `model.extract`;
+- `check.execute`;
+- `check.import`;
+- `challenge.execute`; and
+- `challenge.import`.
+
+Provider-family identities remain open lower-kebab path ids and describe implementation families;
+they are not route addresses. A configured capability address is exactly
+`<configured-adapter-id>/<capability-id>`, where both address parts are lower-kebab segments. One
+capability may support several classes. Challenge forms are open lower-kebab path ids declared by
+challenge capabilities rather than enumerated by core. One Run uses one configured adapter id, but
+its selections may route through several capabilities of that adapter.
+
+Four identities separate concerns. The adapter fingerprint binds protocol, adapter identity,
+provider family, version, build and executable and resource digests. A capability fingerprint adds
+its id, classes, challenge forms and exact non-secret semantic settings. The descriptor fingerprint
+binds the complete reported adapter and capability dictionary. The configuration fingerprint also
+binds adapter-wide semantic settings, the complete exact literal environment and timeout and stream
+limits. Locators and prose enter none of these fingerprints. Alpha 2 has no inherited environment,
+secret value, secret reference or interpolation notation.
+
+**Static description handshake.** `azimuth adapter verify` launches the configured executable with
+one `describe` request. The returned description must equal the configured description, including
+adapter, build, content, capability and fingerprint fields. Execute and import responses repeat the
+same description, so replacing a binary after a successful verification still fails closed. Core
+stages and hashes configured content for every invocation; a prior verify is not a lease.
+
+**Launch identity.** A launch plan contains one exact D46 Subject and Subject fingerprint, planned
+time, one `execute | import` operation, the complete D46 Plan, configured adapter identity and
+sorted routes. There is exactly one route for every semantic selection and no other route. Check
+routes require `check.execute` or `check.import` according to the operation. Challenge routes
+require the matching Challenge class and repeat the open Challenger form supported by the
+capability. `model.extract` is a configuration capability, not a Run operation in this change. Any
+planned time, Subject, semantic Plan, operation, adapter or route substitution changes the launch
+fingerprint. The D47 Run-id preimage adds that launch fingerprint to D46's source, Subject and Plan
+identity, so route or configuration substitution creates a different Run id directly.
+
+The current planner accepts explicit Check ids, finite non-empty work-unit sets and capability
+addresses. It loads and fingerprints the complete unselected model, resolves the current Check
+fingerprint and every stable implementation, and emits `challenges: []`. It neither requires a
+Qualification nor compares Run context with an Evidence Binding. Challenge Plan resolution and
+decision applicability belong to the next change; hand-authored launch plans may exercise the
+Challenge transport boundary without pretending that resolution exists. Their declared form is
+provider-accountable and capability-checked, but current Challenger/form validation waits for that
+change.
+
+**Process protocol.** Every adapter interaction is one bounded short-lived process with one strict
+versioned JSON request on standard input and exactly one strict versioned JSON response on standard
+output. Core closes input after the request, clears the child environment, supplies only configured
+non-secret literal values, and drains standard output and standard error concurrently into
+independent capped buffers. It enforces the configured timeout and never automatically retries
+execute after a timeout because native work may already have occurred.
+
+One deadline derived from the configured timeout bounds request writing, concurrent response and
+diagnostic reading, and core's own wait. On a supported host, process creation places the adapter in
+a fresh process group before adapter code begins. Core signals the group on every terminal path and
+cleans members and inherited pipes while they retain group membership. If the host cannot provide
+the required process-group primitive, invocation is rejected before spawn as an exit-one transport
+failure and produces no output. The host mechanism is not semantic protocol identity.
+
+This is not non-escapable descendant containment. Authorized adapter code may call `setsid`,
+`setpgid` or equivalent facilities and leave the group. Such an escaped descendant cannot make core
+read or wait past the deadline, but core does not guarantee its termination. Version 1 is not a
+filesystem or network sandbox, daemon supervisor or hostile-code isolation boundary.
+
+**Adversarial correction, 2026-08-21.** An earlier D47 draft claimed that platform-equivalent
+process-tree containment could guarantee termination of every descendant and inherited pipe.
+Adversarial review falsified that claim because an authorized descendant can escape a Unix process
+group. The deadline and best-effort group-cleanup contract above replaces that stronger draft.
+
+Core stages content before every invocation. It opens each configured executable, resource and
+import input exactly once, copies and hashes bytes from that same open handle into a private
+invocation directory, validates each executable and resource against its configured digest, and
+derives each import input's digest and size from that stream. It makes staged content non-writable
+and uses only staged paths. Resources and inputs are read-only; the executable retains only the
+owner permissions needed to read and execute it. This closes hash-then-open substitution without
+pretending to sandbox authorized adapter code. The adapter retains the host filesystem and network
+authority of the Azimuth process.
+
+A description request fingerprint binds the targeted adapter and configuration. An execute or
+import request fingerprint binds the operation, launch identity and sorted core-computed input
+content identities. The request carries adapter-wide and selected-capability semantic settings and
+resolved resource locators. Resource and input paths are transport locators and do not enter
+identity; their content does. The adapter must read each supplied input, verify its digest and size,
+and repeat the stable identity in bundle provenance. Mutable paths, URIs and provider execution ids
+cannot substitute for content identity.
+
+A successful execute or import response contains the exact request identity, launch identity,
+configured description and one complete D46 bundle. The bundle repeats adapter, descriptor,
+configuration, launch, route and import-input identities in provenance, and its planned time equals
+the launch. Core validates all of those values, actual selection, reduction and the complete bundle
+before atomic publication. A valid violated Observation, Challenge finding, partial Run,
+cancellation or timeout is an honest fact and exits zero.
+
+Nonzero adapter exit, timeout, stream overflow, extra response content or an explicit adapter
+failure is a transport failure and exits one. Model, content, descriptor, capability, request,
+launch, provenance, selection or bundle-invariant mismatch also exits one. CLI and local input
+schema errors, and malformed or schema-invalid adapter responses, exit two. Neither nonzero class
+publishes an output. Standard error and process exit status are diagnostics, never product facts.
+
+Execute and import may receive repeated predecessor bundle files. Core verifies the full D46 chain,
+then sends its unique `(bundle revision, bundle fingerprint)` identities in revision order and
+binds them in request identity. It also sends the complete verified terminal bundle, or `null` for
+an empty chain. The terminal fingerprint already commits the full bundle, so this redundant content
+does not enter request identity. With no predecessors the adapter returns revision zero. Otherwise
+a stateless adapter uses the terminal account to preserve every anchor and returns exactly the next
+complete revision. Core verifies terminal identity and the combined chain before spawn and again
+before atomic publication.
+
+The launch and bundle adapter accounts repeat exact adapter version. The D46 `normalizer` is now
+exactly `adapter/<configured-adapter-id>`, uses that adapter version and uses the adapter
+fingerprint as its build fingerprint. The complete normalizer is a correction anchor. This removes
+two competing producer identities while the separate source object continues to identify
+provider-native execution.
+
+**Corrections.** D47 adapter provenance is part of the fixed execution route. Adapter,
+configuration, descriptor, launch and capability routes are correction anchors in addition to
+D46's anchors. Import-input identities are protected per bundle revision but are not anchors: a
+later or completed native report for the same source execution may change bytes in the next
+correction. A different adapter, capability or configuration creates a new Run rather than
+rewriting how the existing Run occurred.
+
+**Pre-release replacement.** D47 replaces the unpublished D46 version 1 bundle shape in place.
+Package versions remain alpha 1, so no published Run protocol v1 has acquired a second meaning. The
+single current alpha 2 v1 schema requires adapter provenance and rejects the prior shape; no
+compatibility reader or alternate interpretation remains.
+
+**Command boundary.** The public surface is `azimuth adapter verify [--config <file>]`,
+`azimuth run plan --request <file> [--model <dir>] [--standards <file>] [--workspace <file>]`
+` [--manifest <file>...] [--config <file>] [--out <file>]`,
+`azimuth run execute --plan <file> [--predecessor <bundle>...] [--config <file>] [--out <file>]`
+and `azimuth run import --plan <file> --input <id>=<file>...`
+` [--predecessor <bundle>...] [--config <file>] [--out <file>]`.
+Configuration defaults to `azimuth/adapters.json`. Existing standalone `run verify` and
+`run inspect` retain their protocol-only meaning. Durable `run ingest` remains absent.
+
+**Why.** A reusable semantic Plan must survive capability changes without acquiring provider
+syntax, while a Run account must still reveal which exact executable route produced it. Local Check
+execution and native report import require the same identity checks but different capability
+classes. A bounded process also gives provider packages a language-neutral extension boundary
+without embedding arbitrary tools or long-running webhooks in core.
+
+**Strongest rejected alternative.** Put capability addresses directly in the D46 Plan. That makes
+provider installation part of semantic selection and prevents the same Plan from being routed in a
+developer workspace and CI. In-process plugins were also rejected: they weaken isolation, make one
+language ABI authoritative and cannot apply the same executable, environment and stream bounds.
+
+**Validation.** Ordinary engineering tests must cover strict configuration and description shape,
+same-handle staging, literal environment clearing, all five classes, capability substitution,
+canonical fingerprints, complete route cardinality, description drift, timeout, both stream bounds,
+malformed and extra response content, import relocation with stable content identity, predecessor
+chains, returned provenance, atomic output and valid adverse facts. One executing and one importing
+synthetic adapter must share the conformance suite. All current Claims remain routine and create no
+Qualifications.
+
+**What would falsify it.** Revisit the boundary if two structurally different providers require
+provider syntax in the D46 Plan, if one-request processes cannot safely represent bounded native
+execution, if content-addressed import cannot avoid mutable provider identity, or if configuration
+fingerprints churn on relocation without a behavior change.
+
+---
+
 ## Method
 
 **Concern catalog first, notation last.** No mechanism enters the model until **≥2 structurally
