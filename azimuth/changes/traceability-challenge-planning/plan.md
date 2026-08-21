@@ -1,6 +1,6 @@
 # Plan: Plan exact decision challenges from traceability
 
-- [ ] Freeze Claim Judgment, policy, resolution, scope and planning authority.
+- [x] Freeze Claim Judgment, policy, resolution, scope and planning authority.
 - [ ] Add the seven routine Challenge-planning requirements.
 - [ ] Implement Claim Judgment parsing, identity and currentness.
 - [ ] Generalize selector resolution and traceability impact projection.

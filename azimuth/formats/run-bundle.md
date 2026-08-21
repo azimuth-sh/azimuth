@@ -198,15 +198,33 @@ and never claims to have re-derived repository, artifact or deployment content.
   ],
   "challenges": [
     {
-      "id": "recovery-credibility",
+      "id": "challenge/91f69477f56b9a2ba588fb045529ddbaa7184c79f473eab50f73a0c5f70d038b",
       "challenger": {
         "id": "mutation/implementation-perturbation",
-        "fingerprint": "sha256:<challenger-fingerprint>"
+        "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "target": {
         "kind": "qualification",
         "id": "payments/recovery-replay-edge",
-        "fingerprint": "sha256:<qualification-fingerprint>"
+        "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "lane": "gate",
+      "scope": {
+        "anchors": [
+          {
+            "kind": "realization",
+            "id": "payments|rust-item|recovery::replay",
+            "fingerprint": "sha256:<source-fingerprint>"
+          }
+        ],
+        "inputs": [
+          {
+            "kind": "check-implementation",
+            "id": "payments|rust-item|recovery::replay-after-loss",
+            "fingerprint": "sha256:<source-fingerprint>"
+          }
+        ],
+        "fingerprint": "sha256:<scope-fingerprint>"
       },
       "units": [
         {
@@ -232,15 +250,45 @@ Implementation `identity` is the D45 stable semantic SourceIdentity
 glob-free semantic identity rather than a file, path, numeric line, or path-plus-line locator; it
 uses the realization-selector boundary from [verification.md](verification.md).
 
-Challenges sort by their plan-local id, which is unique. The semantic tuple of Challenger
-fingerprint, target kind and target fingerprint is also unique within the plan. Target kind is
-exactly `qualification | claim-judgment`. Qualification target ids are Evidence Binding ids; Claim
-Judgment target ids have exact case-level Claim form `<spec-id>#<case-id>`. The fingerprint, not the
-display id, is the exact decision target.
+Challenges sort by their plan-local id, which is unique. `lane` is exactly `gate | scheduled` and
+is derived from the current Challenge Schedule. Scope is the strict semantic Challenge scope from
+[verification.md](verification.md); its arrays and fingerprint are validated independently.
+
+The semantic tuple of Challenger fingerprint, target kind and target fingerprint is also unique
+within the plan. Target kind is exactly `qualification | claim-judgment`. Qualification target ids
+are Evidence Binding ids; Claim Judgment target ids have exact case-level Claim form
+`<spec-id>#<case-id>`. The fingerprint, not the display id, is the exact decision target.
+
+Generated Challenge ids are `challenge/<64-lowercase-hex>`, where the suffix is the raw SHA-256 of
+RFC 8785 canonical UTF-8 for:
+
+```json
+{
+  "format": "azimuth-challenge-selection-identity",
+  "version": 1,
+  "challenger_fingerprint": <challenger-fingerprint>,
+  "target_kind": <target-kind>,
+  "target_fingerprint": <target-fingerprint>
+}
+```
+
+The id is independent of selector order, authored Plan id, capability, work units, lane and scope.
+Selections with the same exact tuple union their anchors and inputs. Conflicting capabilities or
+work units fail planning; neither arrival order nor one lexically smaller Plan wins.
+
+For Challenger fingerprint `sha256:` followed by 64 `a` characters, Qualification fingerprint
+`sha256:` followed by 64 `b` characters and target kind `qualification`, the canonical preimage is:
+
+```json
+{"challenger_fingerprint":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","format":"azimuth-challenge-selection-identity","target_fingerprint":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","target_kind":"qualification","version":1}
+```
+
+The generated id is
+`challenge/91f69477f56b9a2ba588fb045529ddbaa7184c79f473eab50f73a0c5f70d038b`.
 
 The standalone verifier recomputes plan identity and lexical exactness. It does not assert that
-the named model, Check, Challenger or decision is current. Dependent planning and ledger changes
-perform that join.
+the named model, Check, Challenger or decision is current. Model-aware generated planning performs
+the current-authority join; the ledger later joins accepted facts.
 
 ## Actual selection
 
@@ -259,15 +307,15 @@ perform that join.
 
 Actual Check and Challenge entries have the same exact shapes as plan entries. A selected Check
 repeats its complete planned implementation array and only its units may be a non-empty subset. A
-selected Challenge repeats its semantic identity and only its units may be a non-empty subset.
-Context equals `plan.required_context` exactly, and `plan_fingerprint` equals the recomputed plan
-fingerprint.
+selected Challenge repeats its semantic identity, lane and complete scope, and only its units may
+be a non-empty subset. Context equals `plan.required_context` exactly, and `plan_fingerprint` equals
+the recomputed plan fingerprint.
 
 Every actual entry resolves to the plan entry with the same identity. Units are a non-empty subset
-of that entry. Additional or changed entries, fingerprints, implementations, unit parameters or
-context are material mismatches. Status `complete` requires actual `checks` and `challenges` to
-equal the plan arrays and actual context to equal required context; other terminal statuses may
-carry a subset of entries or units.
+of that entry. Additional or changed entries, fingerprints, implementations, target, lane, scope,
+unit parameters or context are material mismatches. Status `complete` requires actual `checks` and
+`challenges` to equal the plan arrays and actual context to equal required context; other terminal
+statuses may carry a subset of entries or units.
 
 ## Provenance
 
@@ -378,8 +426,8 @@ start with `/`. Artifact arrays sort by unique id. Verification never reads a lo
   "message": "The recovery implementation mutation survived.",
   "scope": {
     "kind": "challenger-execution",
-    "challenger_fingerprint": "sha256:<64-lowercase-hex>",
-    "target_fingerprint": "sha256:<64-lowercase-hex>"
+    "challenger_fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "target_fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   },
   "artifacts": ["native-report"],
   "details": {
@@ -397,14 +445,24 @@ one of:
 {"kind":"activity","id":"fault-probe/attempt-1"}
 {"kind":"check-execution","check":"payments/recovery-under-broker-loss"}
 {
+  "kind": "challenge-selection",
+  "id": "challenge/91f69477f56b9a2ba588fb045529ddbaa7184c79f473eab50f73a0c5f70d038b"
+}
+{
   "kind": "challenger-execution",
-  "challenger_fingerprint": "sha256:<64-lowercase-hex>",
-  "target_fingerprint": "sha256:<64-lowercase-hex>"
+  "challenger_fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "target_fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 }
 ```
 
 Artifact references sort and are unique. Details are an exact string map. Diagnostics explain
 facts but do not determine outcomes.
+
+For status `partial | cancelled | timed-out`, every planned Challenge omitted from actual
+selection has exactly one diagnostic whose class is `execution`, whose scope is that
+`challenge-selection` id and whose non-empty message states the reason. No Challenger execution or
+Challenge Result exists for the omission. No such omission is valid for `complete`. A diagnostic
+does not turn deferred work into a result and does not make the outstanding selection disappear.
 
 ## Activities
 
@@ -477,15 +535,15 @@ not repeated here. There is no lifecycle stage or expiry.
 
 ```json
 {
-  "challenge": "recovery-credibility",
+  "challenge": "challenge/91f69477f56b9a2ba588fb045529ddbaa7184c79f473eab50f73a0c5f70d038b",
   "challenger": {
     "id": "mutation/implementation-perturbation",
-    "fingerprint": "sha256:<challenger-fingerprint>"
+    "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   },
   "target": {
     "kind": "qualification",
     "id": "payments/recovery-replay-edge",
-    "fingerprint": "sha256:<qualification-fingerprint>"
+    "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   },
   "units": [
     {
@@ -677,3 +735,8 @@ locator, contact the D42 service or translate an alpha 1 record.
 D47 deliberately replaces the earlier unpublished pre-release version 1 shape that lacked adapter
 provenance. A bundle without the required D47 adapter account is rejected; there is no compatibility
 reader and no second interpretation of the current version 1 schema.
+
+D48 likewise replaces the unpublished Challenge shape in place. Every Challenge selection now has
+`lane` and `scope`, actual selection repeats both, and an omitted Challenge uses the strict
+selection-scoped diagnostic. A prior Challenge entry without those fields is rejected rather than
+upgraded or interpreted twice.

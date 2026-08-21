@@ -20,8 +20,8 @@ The canonical Claim Judgment fingerprint binds:
 
 - Claim semantic identity, proposition, case steps, criticality and applicable obligations;
 - stable realization identities and source fingerprints;
-- applicable design mechanisms, enforcement declarations, structural bindings and resolved source
-  or artifact fingerprints;
+- applicable design mechanisms, attachment, enforcement declarations, structural bindings, exact
+  resolved artifacts and optional marker-derived source identity and fingerprint;
 - relevant surface and area-obligation identities;
 - Evidence Binding fingerprints;
 - recomputed expected Qualification fingerprints and authored verdicts;
@@ -53,7 +53,8 @@ F replaces the pre-F `Qualification Policy` name in place with one project-globa
 namespace. In `verification.md`, Evidence Bindings and Claim Judgments both use `Policy: <id>`.
 In `azimuth/standards/verification.md`, a strict `## Decision Policy: <id>` block contains distinct
 repeatable `Required challenge: <form>` lines. The policy digest binds its id and sorted forms only.
-There is no reader for the earlier heading or binding field.
+The Evidence Binding preimage uses literal `decision_policy_digest`; there is no reader for the
+earlier heading, binding label or `qualification_policy_digest` field.
 
 Validation requires at least one current Challenger and authored Challenge Plan of each required
 form to resolve every accepted decision with all of that Challenger's required scope kinds.
@@ -62,7 +63,8 @@ returned clean.
 
 Scheduling is deliberately separate. The same standards file contains exactly one strict
 `## Challenge Schedule: current` block with distinct `Gate challenge: <form>` and
-`Scheduled challenge: <form>` lines. Every form declared by a Challenger appears exactly once.
+`Scheduled challenge: <form>` lines. Either lane may be empty, but their union is non-empty and
+every form required by a policy or declared by a Challenger appears exactly once.
 Gate forms are expected in the current acceptance lane; scheduled forms may be deferred because
 they are expensive. The scheduling account participates in complete-model, semantic Plan and
 Challenge-selection identity, but not in Qualification, Claim Judgment or policy digests. F
@@ -105,14 +107,15 @@ The candidate universe is exact:
 - `claim-judgment from realization | mechanism` reaches every related case Claim, independent of
   binding challenge domains, or one unresolved relation when no relation exists.
 
-When a realization or mechanism relation exists but one related Claim has no binding, resolution
-creates one unresolved-relation record for that Claim. For a reached decision candidate, routine
-criticality is `inapplicable`, no authored decision is `missing-decision`, a fingerprint mismatch
-is `stale-decision`, a current negative verdict is `rejected-decision`, and an expected fingerprint
-that cannot be computed because its policy, source or composition is structurally invalid is
-`invalid-decision`. Only a current positive verdict is `selected`. An unresolved-relation record
-retains the canonical selector and has no invented target id. Underlying structural Findings remain
-independently visible.
+When a realization or mechanism relation exists but one related Claim has no binding,
+Qualification traversal creates one unresolved-relation record for that Claim. Claim Judgment
+traversal still creates the related Claim's decision candidate. For a reached candidate, routine
+criticality is `inapplicable`, no authored decision is `missing-decision`, an unavailable expected
+fingerprint is `invalid-decision`, a fingerprint mismatch is `stale-decision` and a current negative
+verdict is `rejected-decision`, in that precedence order. Only a current positive verdict is
+`selected`. A malformed authored fingerprint is a parse error rather than a candidate.
+An unresolved-relation record retains the canonical selector and has no invented target id.
+Underlying structural Findings remain independently visible.
 
 Qualification selectors from binding and Check resolve directly. Realization and mechanism
 selectors traverse Claims and Evidence Bindings only when the binding authorizes the relation in
@@ -148,16 +151,15 @@ Anchor and input arrays are sorted and unique by `(kind, id, fingerprint)`. Thei
 canonical JSON over both arrays. Overlapping selectors union their anchors and inputs; conflicting
 fingerprints for one `(kind, id)` fail rather than deduplicate.
 
-Core applies one total mapping for all selector forms:
-
-- binding anchors add the binding, Qualification, Claim, Check, Check implementations and context;
-- Check anchors add the selected binding-specific decision inputs plus that Check;
-- realization anchors add the exact realization and its binding-specific decision inputs;
-- mechanism anchors add the exact mechanism, its resolved implementation or artifact inputs and
-  the binding-specific decision inputs;
-- Claim Judgment Claim anchors add the Claim Judgment and its complete composition; and
-- Claim Judgment realization or mechanism anchors add that exact relation plus the same complete
-  Judgment composition.
+Core applies one total mapping for all seven selector forms. Each selector contributes only its
+exact binding, Check, realization, mechanism or Claim origin to `anchors`. Every Qualification
+selection contributes the Qualification, binding, Claim, Check, complete Check implementations,
+context and policy to `inputs`; mechanism-origin selection always contributes the exact artifact
+and contributes a mechanism implementation only for a marker-derived route. Every Claim Judgment
+selection expands the Judgment composition item by item: Claim, realizations, mechanisms,
+artifacts, optional marker implementations, bindings, Qualifications and each binding's Check,
+implementations, context and policy, plus applicable surface, members, enumerations, areas and
+obligation and the Judgment's own policy. Overlapping selectors union both arrays.
 
 Core never branches on the open Challenger form. Mutation, fault injection and static analysis see
 the same typed semantic vocabulary; the configured adapter interprets form plus scope.
@@ -168,11 +170,15 @@ realization, and a non-mechanism selector cannot satisfy a fault Challenger that
 mechanism. Missing required scope is a model Finding and a planning failure.
 
 The scope contains no provider selector syntax. The D47 launch route carries a sorted, unique
-`inputs` array for every source or artifact scope item. A source launch input repeats semantic kind,
-id and fingerprint plus file, language and site locators. Artifact, enumeration and surface-member
-launch inputs repeat their accountable source locators and derived metadata. Scope participates in
-the semantic Plan fingerprint; locator projection participates in the launch fingerprint and
-returned adapter provenance. Missing, extra or substituted items are mismatches.
+`inputs` array for every source-backed item in the union of scope anchors and inputs. An item that
+occurs in both scope arrays projects to one launch input. A source launch input repeats semantic
+kind, id and fingerprint plus file, language and site locators. Artifact and enumeration inputs
+repeat stable SourceIdentity, accountable source locators and derived metadata. A tagged
+surface-member input also repeats stable SourceIdentity. An enumerated surface member instead
+repeats its D13 authoritative file identity and derived locator metadata. Scope participates in the
+semantic Plan fingerprint; the complete route, including locator projection, participates in the
+existing D47 launch-fingerprint preimage and returned provenance. Missing, extra or substituted
+items are mismatches.
 
 Mutation from a realization therefore receives that realization plus the bound Check and its
 implementations. Mechanism-oriented fault injection receives the selected mechanism plus the bound
@@ -203,26 +209,32 @@ adapter run in separate Runs.
 
 ## Exact composition algorithm
 
-The Claim Judgment preimage is one versioned canonical object. It contains the Claim id, semantic
-Claim digest, criticality, applicable surface identity and contributions, realization obligation
-areas, sorted realization `(SourceIdentity, source fingerprint)` pairs, sorted applicable mechanism
-records, sorted Evidence Binding fingerprints, sorted recomputed expected Qualification
-`(fingerprint, verdict)` pairs, resolved decision-policy digest, Judgment verdict, ordered basis and
-ordered residual risk.
+The Claim Judgment preimage is one versioned D45 canonical object. It contains the Claim id,
+semantic Claim digest, criticality, applicable surface account, exact realization-obligation areas,
+sorted exact case realization `(SourceIdentity, source fingerprint)` pairs, sorted applicable
+mechanism records, sorted Evidence Binding `(id, fingerprint)` records, sorted recomputed expected
+Qualification `(id, expected fingerprint, verdict)` records, resolved decision-policy digest,
+Judgment verdict, ordered basis and ordered residual risk.
 
-An applicable mechanism record contains its design id, enforcement, explicit structural
-expectations and exactly one resolved implementation account: either sorted semantic source
-identity/source-fingerprint pairs or the canonical derived artifact properties named by its
-explicit binding. A missing, duplicate or unstable mechanism implementation is a structural Finding
-and prevents a current accepted Judgment; the fingerprint never invents a placeholder digest.
+Realizations are unique by SourceIdentity. A repeated identity is a duplicate when its fingerprint
+agrees and makes composition unavailable when the fingerprint conflicts; neither case becomes two
+realizations.
+
+An applicable mechanism is attached to the case or its parent requirement. Its record includes
+that attachment, design id, enforcement, explicit expectations and exactly one resolved Artifact
+with stable SourceIdentity and canonical derived properties. An explicit Design binding has no
+marker implementation. A marker-derived binding additionally includes exactly one stable
+SourceIdentity, source fingerprint and artifact binding id. Missing or multiple marker relations,
+artifacts or stable identities are structural Findings and prevent a current accepted Judgment;
+the fingerprint never invents a placeholder digest.
 
 Surface contributions and obligations are included only when the Claim declares that surface or
-the workspace names an obligation for the Claim. Enumeration witnesses and applicable member
-identities participate for a surface Claim. D13 currently defines a class member's
-model-authoritative identity as its file; that identity participates even though incidental
-declaration and source locators elsewhere do not. Unrelated areas, surfaces, mechanisms, bindings,
-Qualifications and source records are excluded. Canonical formats freeze the literal field names,
-array ordering and fingerprint envelope before implementation.
+the workspace names an obligation for the exact spec and Claim. A surface account pairs each
+contribution with its exact enumeration witness and distinguishes tagged source members from D13
+enumerated file-identity members. Unrelated areas, surfaces, mechanisms, bindings, Qualifications
+and source records are excluded. Repository decision digests retain D45's expanded canonical
+serializer; D46 semantic scope, selection and D47 launch identity use RFC 8785. The formats freeze
+literal fields, array ordering, preimages and vectors before implementation.
 
 ## Outcomes, deferral and propagation
 

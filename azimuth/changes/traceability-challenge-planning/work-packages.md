@@ -1,7 +1,7 @@
 # Work packages: traceability-challenge-planning
 
 ## Work package: protocol-authority
-Status: pending
+Status: complete
 Depends on: none
 Owns: docs/decisions.md, azimuth/formats/verification.md, azimuth/formats/run-bundle.md, azimuth/formats/run-launch-plan.md, azimuth/standards/verification.md, azimuth/changes/traceability-challenge-planning/design.md
 Objective: freeze Claim Judgment, decision-policy, scheduling, semantic-scope and launch-input contracts

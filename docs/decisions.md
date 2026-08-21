@@ -2629,6 +2629,151 @@ fingerprints churn on relocation without a behavior change.
 
 ---
 
+## D48 — Traceability freezes decision Challenges before provider translation *(2026-08-21)*
+
+**Decision authority.** Add one strict Claim Judgment to `verification.md` for every standard or
+critical case Claim. The Judgment is the repository-owned, total-composition decision for that
+Claim; it is not a Run result or Subject-specific Assurance State. Its id is the Claim id, its
+verdict is `accepted | rejected`, and only a fingerprint-current accepted decision is executable.
+Routine Claims reject Judgments. The alpha 1 plural judgment facet remains invalid.
+
+One `Decision Policy` namespace replaces D45's Qualification Policy name in place. Evidence
+Bindings and Claim Judgments both use `Policy:`. Policies require open Challenge forms and their
+digest contains only policy id and sorted forms. A separate strict `Challenge Schedule: current`
+assigns every required or declared form exactly once to `gate | scheduled`. Schedule identity
+affects the complete model, semantic Plan and Challenge selection, but never a Qualification,
+Claim Judgment, policy or Challenger fingerprint. Alpha 2 defines no cache, cadence, TTL,
+historical applicability, Subject equivalence or time-based deferral.
+
+Either schedule lane may be empty, but their union is non-empty. The D48 Evidence Binding preimage
+uses literal `decision_policy_digest`; it rejects D45's unpublished
+`qualification_policy_digest` field rather than preserving two identities.
+
+**Total composition.** Claim Judgment identity binds the semantic Claim and criticality; exact
+case realizations; mechanisms attached to the case or parent requirement; each mechanism's
+attachment, enforcement, expectations, exact resolved artifact and optional single marker
+implementation; applicable surface contributions, witnesses and member identities; the exact
+Claim realization obligation; Evidence Binding fingerprints; recomputed expected Qualification
+fingerprints and authored verdicts; policy digest; Judgment verdict; and ordered basis and residual
+risk statements.
+
+Realizations are unique by SourceIdentity. Repeating one identity with a different source
+fingerprint makes the expected composition unavailable rather than treating two versions of one
+site as two realizations.
+
+The expected fingerprint never trusts a stale authored Qualification fingerprint. A missing
+required realization or a duplicate or unstable realization identity, mechanism implementation,
+artifact, enumeration witness, binding, Qualification or policy makes the expected composition
+unavailable rather than inventing a placeholder. Incidental paths, lines, mounts, dates,
+accountable people and explanatory prose are excluded. D13 model-authoritative source and
+surface-member identities remain semantic even where a member identity is a file.
+
+**Challengers and resolution.** A Challenger now declares a sorted non-empty set of required
+closed semantic scope kinds. Its identity binds id, open form, objection proposition and that set.
+Core never infers scope from the form name.
+
+All seven D45 selector forms are current. Resolution retains every candidate as `selected |
+missing-decision | stale-decision | rejected-decision | invalid-decision | inapplicable |
+unresolved-relation`. Binding and Check selectors reach Qualifications directly. Realization and
+mechanism Qualification selectors honor each binding's challenge domain. Claim Judgment selectors
+from Claim, realization or mechanism reach related Claims without consulting binding challenge
+domains. One successful sibling cannot hide an adverse candidate, and zero selection never widens
+to a suite, path or glob.
+
+Each candidate retains its selector and one exact relation object. Qualification targets reached
+through bindings, Checks or related Claims use the binding relation; a related Claim without a
+binding uses the Claim relation. Claim Judgment targets always use the related Claim relation.
+Only an absent direct binding, Check or Claim or a relation with no related Claim uses that exact
+unresolved anchor as the relation object.
+
+Only a current `qualified` Qualification or `accepted` Claim Judgment is selected. Candidate caps
+count every unique reached record before cross-Plan selection deduplication. Executable selections
+deduplicate by exact `(Challenger fingerprint, target kind, target fingerprint)`. A Qualification
+Challenge projects a dependency edge to its owning Claim and current Claim Judgment; it never
+manufactures a second direct Judgment Challenge Result.
+
+Candidate disposition precedence is routine `inapplicable`, absent declaration
+`missing-decision`, unavailable expected fingerprint `invalid-decision`, fingerprint mismatch
+`stale-decision`, current negative verdict `rejected-decision`, then current positive `selected`.
+
+**Semantic scope.** Every selected Challenge carries sorted selector anchors, complete semantic
+decision inputs and a canonical scope fingerprint. The closed vocabulary is `claim | binding |
+qualification | claim-judgment | check | check-implementation | realization | mechanism |
+mechanism-implementation | artifact | context | policy | area | realization-obligation | surface |
+surface-member | enumeration`. Overlapping selectors union scope; conflicting fingerprints for
+one typed identity fail. A selection covers a required Challenger kind only when the kind occurs
+in its anchors or inputs.
+
+A context scope item uses its Evidence Binding id and the exact D45 context fingerprint; it never
+uses a context display string or a second digest.
+
+The seven projections preserve their exact authored origin. Qualification inputs always include
+the decision, binding, Claim, Check, complete Check implementations, context and policy;
+mechanism-origin selection always includes the exact artifact and includes a mechanism
+implementation only for a marker-derived route. Claim Judgment inputs expand the complete
+composition item by item, including each binding's Check implementations, context and policy and
+the Judgment's own policy, plus every applicable surface, member, enumeration, area and obligation.
+Mutation can therefore receive one selected realization and its bound Check implementations,
+mechanism fault injection the exact mechanism and bound Check, and broad analysis the exact Claim
+composition without a provider path map.
+
+**Planning and launch.** The planning request contains required `checks` and `challenges` arrays,
+either of which may be empty while their union is non-empty. Every Challenge request names one
+authored Plan, one explicit configured capability, finite work units and a nonzero
+`max_candidates`. Core loads the complete unselected model, resolves the fixed requested Plan
+union, requires exact Qualification context equality and validates the operation class, exact
+Challenger form and D47 one-adapter boundary. It neither trusts caller-supplied semantic fields nor
+chooses or adds capabilities.
+
+For every selected decision, that request union supplies a runnable selection for every form its
+policy requires. Additional forms strengthen the search. Missing coverage, any adverse candidate,
+mixed contexts, cap overflow and conflicting duplicate capability or units fail before launch.
+Check-only, Challenge-only and mixed plans remain valid.
+
+D46 Challenge selections gain exact `gate | scheduled` lane and semantic scope. Target-derived
+selection ids depend only on Challenger fingerprint, target kind and target fingerprint, so Plan
+or selector order cannot rename them. Actual selection repeats lane and complete scope. For a
+partial, cancelled or timed-out Run, each omitted planned Challenge has exactly one execution
+diagnostic scoped to that selection id and no Result. Complete omission or any added, substituted
+or changed target, context, scope or unit is a mismatch.
+
+D47 Challenge routes gain sorted accountable launch inputs for every source-backed scope item.
+They repeat semantic kind, id and fingerprint and carry strict source, artifact, enumeration or
+surface-member locator accounts. Locator projection participates in the launch fingerprint and
+returned provenance but never semantic Plan identity. Adapters receive frozen form, semantic scope
+and source inputs; they do not load the Azimuth model or receive provider selectors from core.
+
+**Outcome meaning.** D46 retains exactly `clean | findings | inconclusive` Challenge Results.
+`deferred` is not a result. A clean result is a negative search fact, not product evidence or a
+repository decision. One fault activity may still produce a direct Check Observation and a
+distinct Qualification Challenge Result without deriving either from the other.
+
+**Breaking transition.** D48 atomically replaces D45's reserved Claim Judgment selectors and
+D47's Check-only generated planning. It replaces `Qualification Policy` grammar and the unpublished
+D46/D47 Challenge and launch-route shapes in place. There is no compatibility reader, alias or
+second interpretation. Durable ingest, authorization, retention, corrections policy and Assurance
+State remain the Run-ledger change; `azimuth run ingest` remains absent.
+
+**Why.** A decision fingerprint alone cannot tell mutation, fault or analysis providers what to
+perturb. Passing paths or asking each adapter to traverse the model would create a second authority.
+Typed semantic scope preserves reviewed meaning while accountable launch inputs let each provider
+translate the same frozen selection. Separate scheduling preserves expensive work without making
+cost or deferral part of decision truth.
+
+**Validation.** Ordinary engineering tests use synthetic non-routine models to prove strict
+Judgment and policy grammar, total-composition staleness isolation, all seven selector mappings,
+candidate visibility, required-form coverage, context and cap failure, scope and launch-input
+identity, mutation, dual-role fault and broad-analysis selection, partial deferral and actual
+selection mismatch. All current framework Claims remain routine and acquire no verification
+declarations.
+
+**What would falsify it.** Revisit D48 if two real providers cannot translate the closed semantic
+scope without provider syntax in the Plan, if total-composition identity causes unrelated Claims
+to stale, if candidate accounts cannot expose adverse siblings deterministically, or if the strict
+gate/scheduled split cannot represent expensive work without inventing cache semantics.
+
+---
+
 ## Method
 
 **Concern catalog first, notation last.** No mechanism enters the model until **≥2 structurally
