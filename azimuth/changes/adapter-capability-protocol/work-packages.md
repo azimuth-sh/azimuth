@@ -64,7 +64,7 @@ Objective: include adapter conformance before release qualification
 Evidence: shell syntax, release-isolation discovery and canonical root gate
 
 ## Work package: current-intent-transition
-Status: pending
+Status: complete
 Depends on: protocol-authority, adapter-cli-surface
 Owns: azimuth/model/framework/adapter-capability-protocol, azimuth/model/framework/run-bundle-protocol/spec.md
 Objective: apply routine adapter intent and narrow the superseded Run command boundary to ingest
