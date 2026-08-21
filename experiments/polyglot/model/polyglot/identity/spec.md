@@ -1,7 +1,7 @@
 # Spec: polyglot/identity
 
 ## Requirement: service-identifies-implementation-language
-Criticality: standard
+Criticality: routine
 
 Each reference service SHALL identify its implementation language through its identity capability.
 

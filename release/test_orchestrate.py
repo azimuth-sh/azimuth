@@ -1,5 +1,6 @@
 import copy
 import json
+import re
 import subprocess
 import tempfile
 import unittest
@@ -21,6 +22,7 @@ from release.orchestrate import (
     validate_release_receipt,
     verify,
     verify_tag,
+    write_linkage,
     workflow_account,
 )
 from release.candidates import CandidateError, published_port
@@ -318,6 +320,29 @@ class ReleaseOrchestrationTests(unittest.TestCase):
         account = workflow_account(self.root)
         self.assertFalse(account["releaseImagesInOrdinaryGate"])
         self.assertEqual(account["releaseLanes"], ["packages", "native", "images", "account"])
+
+    def test_linkage_uses_only_v2_collections_and_fingerprints(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            write_linkage(self.root, output)
+            linkage = json.loads((output / "orchestration-linkage.json").read_text())
+        self.assertEqual(
+            set(linkage),
+            {
+                "realizes",
+                "check_implementations",
+                "mechanism_implementations",
+                "class_members",
+                "enumerations",
+                "artifacts",
+            },
+        )
+        self.assertTrue(
+            all(
+                re.fullmatch(r"sha256:[0-9a-f]{64}", entry["source_fingerprint"])
+                for entry in linkage["realizes"]
+            )
+        )
 
     def test_pull_request_rehearsal_isolates_its_synthetic_tag(self):
         release = (self.root / ".github/workflows/release.yml").read_text()

@@ -1,252 +1,137 @@
-# Change delivery and assurance
+# Change delivery in the evidence control plane
 
-Status: **operating guidance**. This document composes decisions already made about changes,
-evidence and optional ownership into one end-to-end protocol. It is not a parser contract, a Git
-workflow or a deployment system. `azimuth/changes/README.md`, the three format contracts and
-`docs/decisions.md` remain authoritative where this guide disagrees with them.
+Status: **operating guidance**. Parser contracts and accepted decisions remain authoritative.
 
-The example is an automatic-refunds feature because it requires all three evidence strengths:
-storage constraints can make duplicate refunds unrepresentable, executions can demonstrate the
-user and provider paths, and production detectors can reveal settlement that stops making
-progress. The same sequence applies to another domain; the named claims and evidence do not.
+Azimuth separates repository-owned intent and reviewed meaning from execution facts. During the
+fast-moving alpha every current framework Claim is routine. Changes therefore use ordinary
+engineering tests and release gates without enrolling those tests as Azimuth evidence.
 
----
+## Accountabilities
 
-## Accountabilities, not job boundaries
-
-The three facets create three loci of accountability (D3, D3.1). They do not require three job
-titles or grant any role exclusive authorship of an artifact.
-
-| Accountability | Decides | Typical capability |
-|---|---|---|
-| Intent owner | what must be true and how much it matters | analysis or product |
-| Mechanism owner | what makes it true and how strongly | software development |
-| Evidence owner | what would justify belief and how freshness is maintained | quality engineering |
-
-An SRE may operate an alert whose adequacy is owned by the evidence owner. A developer may
-implement a component test whose required scope and oracle were chosen by the evidence owner. A
-quality engineer may direct an agent to write that test and a developer may review its concurrency
-and fixture mechanics. Ownership answers who must notice insufficiency; it does not answer who is
-allowed to type code.
-
-An agent is an authoring and review instrument, never a fourth accountability. Whoever accepts its
-output must be able to inspect the result at the level the delegated work requires.
-
----
-
-## Example claims
-
-The intent owner first separates consequences that would otherwise be hidden inside one feature:
-
-| Claim | Criticality | Consequence |
-|---|---|---|
-| total refunded never exceeds total captured | critical | financial loss |
-| one refund identity is applied at most once | critical | duplicate provider operation |
-| an accepted refund eventually becomes completed or failed | critical | unresolved money |
-| the receipt explains pending, completed and failed states | standard | user confusion |
-| a malformed provider event does not block later events | standard | stalled processing |
-| the receipt heading changes to `Refund` | routine | presentation only |
-
-The routine claim stops at intent. It may have an ordinary test, but it acquires no Azimuth tags,
-mechanism declaration or judgment merely because critical claims exist in the same change (D20).
-
----
-
-## Sequence
-
-### 1. Propose the transition
-
-The intent owner writes the problem, scope, affected claim ids, exclusions and completion
-conditions in `azimuth/changes/<id>/proposal.md`. Completion conditions distinguish engineering
-acceptance from rollout goals. “Alert rules exist and their detectors fire under injected
-violations” is an engineering condition. “Enable the feature for every user” is normally a
-rollout condition and belongs to the delivery system.
-
-If a production observation really is needed to accept the solution, the proposal says so before
-implementation. Examples include a provider with no representative sandbox or a latency predicate
-that cannot be sampled under representative pre-production load.
-
-A framework mechanism or operating document may change without changing accepted intent. Such a
-proposal declares adjacent metadata lines `Intent delta: none` and `Because: <rationale>`. The
-declaration replaces only the parsed-delta completion requirement. It is dishonest when a consumer
-obligation changes, and it is contradictory when the change also contains a supported intent
-delta. Absence of a `specs/` directory is never enough to infer this mode.
-
-### 2. Write and classify intent
-
-The intent owner authors the intent delta. The mechanism and evidence owners challenge ambiguous
-predicates, missing failure states and criticality, but neither silently changes the business
-meaning while designing a solution or a test.
-
-Criticality is classified by consequence, not implementation complexity. A one-line authorization
-guard can be critical; a multi-component preference can be routine.
-
-### 3. Decide the mechanism
-
-The mechanism owner writes `design.md` only when alternatives, boundaries or failure modes make a
-decision worth preserving. For refunds this might compare a synchronous provider call with a
-transactional intent, outbox and worker, then name the selected uniqueness, authorization,
-idempotency and delivery mechanisms.
-
-The evidence owner participates early because an unobservable or uninjectable mechanism cannot be
-rescued by downstream test cases. The design includes the telemetry and failure seams required to
-observe it, while `verification.md` owns the claim that those observations are sufficient.
-
-### 4. Plan evidence before it exists
-
-The evidence owner records only deviations from the project standard, non-test evidence and
-residual risk (D4.5). The plan is not a test inventory.
-
-For the example it may require:
-
-- generated or model-based demonstrations of the captured/refunded arithmetic;
-- concurrent component evidence through the real HTTP boundary and database;
-- provider decline, timeout and retry evidence through a controllable provider harness;
-- one composed receipt journey;
-- a manual charter for comprehension, keyboard use, screen-reader output and non-colour state;
-- oldest-intent-age, dead-letter, worker-heartbeat and reconciliation detectors;
-- detector tests using an injected clock, planted imbalance and synthetic alert time series.
-
-A monitor is detection evidence: it says the team should learn about a violation, not that the
-property holds. It cannot silently replace a demonstration floor (D4.1, D4.3).
-
-### 5. Split work without splitting meaning
-
-`plan.md` orders dependencies and bounded work packages. Several developers or agents may work in
-parallel after shared contracts are frozen: persistence and provider authority, broker delivery,
-receipt composition, detector configuration and evidence harnesses are plausible packages.
-
-Each package states what it owns, what it consumes and what it produces. The change remains one
-semantic transition even when its work uses several branches, merge requests or repositories.
-
-### 6. Implement the mechanism and evidence
-
-The mechanism owner implements production behaviour, telemetry and testability seams. Evidence
-implementation is allocated by capability:
-
-| Evidence form | Normal division |
+| Accountability | Decides |
 |---|---|
-| unit evidence | developer authors; evidence owner challenges cases |
-| component and contract evidence | shared; developer owns harness, evidence owner owns adequacy |
-| e2e evidence | evidence owner often leads; developers keep service boundaries testable |
-| manual charter | evidence owner authors and executes or delegates to a named specialist |
-| metrics and rules | developer or SRE implements; evidence owner judges detector adequacy |
-| detector test | shared; evidence owner defines failure, implementer builds the detector |
+| Intent owner | what must be true and its consequence |
+| Mechanism owner | what makes it true and which boundaries matter |
+| Evidence owner | what would justify belief if the Claim later becomes non-routine |
 
-Automated test code is software and receives ordinary engineering review. A passing generated test
-is not accepted until somebody can say which plausible wrong implementation it rejects.
+These are accountabilities, not job titles. An agent is an authoring and review instrument; the
+person accepting its output remains accountable for the result.
 
-### 7. Establish pre-production evidence
+## Current alpha sequence
 
-CI extracts linkage and runs the machine tier. It can find missing facets, insufficient forms,
-unresolved bindings, absent detector tests and stale or failed receipts. It cannot decide whether
-the predicate is true or the test discriminates.
+### 1. Explore uncertainty
 
-An immutable release candidate is then identified by source commit, artifact digest, configuration
-and schema version. Manual work is performed against that candidate, never against an unnamed
-“current staging.”
+Use an exploration before commitment when a topic spans several changes, crosses an unfamiliar
+boundary or still has unresolved product choices. Persist only shared decisions and a bounded
+change map. Research does not silently become current framework authority.
 
-A manual charter is still not evidence. The linked execution record names the candidate,
-environment, executor and observations. Its imported receipt carries the provider, external case
-and run, URL, instant, outcome, evidence form, expiry and source fingerprint. Only a passed,
-unexpired imported receipt contributes demonstration evidence (D23).
+### 2. Propose one transition
 
-### 8. Judge the complete account
+Create one change id with singular authority. State the problem, outcome, in-scope and out-of-scope
+work, affected Claim ids and completion conditions. Carry explicit exploration decisions when
+applicable.
 
-Import manual receipts before the final judgment; a new receipt is a new fingerprint input and
-correctly makes an older judgment stale. For every required critical judgment, the judge reads the
-claim, realization sites, mechanism bindings, automated evidence, relevant manual record,
-operational rules and detector tests.
+All new or changed framework Claims remain routine until a later accepted change deliberately
+raises criticality after the codebase stabilizes. Criticality follows consequence rather than
+implementation size, but this repository currently chooses the routine boundary to avoid
+manufacturing immature assurance decisions.
 
-The judge asks whether each site establishes part of the predicate, whether each evidence item
-rejects a plausible wrong implementation, whether its declared form is honest and whether the spec
-omits behaviour a reader would need. The judgment can withdraw trust; it cannot supply evidence
-that is absent (D18, D28).
+Add a change `design.md` only when alternatives, failure modes, migration order or boundaries need
+review. Add `work-packages.md` when work can be delegated safely. `plan.md` remains an
+implementation sequence for the change; it is not a verification artifact or test inventory.
 
-### 9. Accept and archive the codebase transition
+### 3. Freeze shared contracts
 
-Accepted intent is applied to package `spec.md` files; mechanisms that actually exist are distilled
-into sibling `design.md`; lasting evidence deviations and residuals enter sibling
-`verification.md`; departures and framework-evaluation observations enter `outcome.md`. The change
-is finalized and archived only after the accepted current model is hole-free.
+Before parallel work, freeze public formats, identities and ownership boundaries. Validate
+`work-packages.md`; every package declares dependencies, non-overlapping owned paths, objective and
+engineering checks. Workers do not finalize, archive or edit shared change state.
 
-Archiving records semantic acceptance of the codebase, not universal production exposure. The
-archive remains immutable if production later teaches the team something new; a fix, rollback or
-changed claim is another change.
+### 4. Implement observable behavior
 
-For a federated project, integration retains the complete accepted-active workset, commits the
-archive-only move in the singular authority repository, reruns composed evidence for that new tuple
-and passes both worksets to `azimuth project accept-change`. The command verifies completion,
-singular authority, unchanged archive content, no unrelated revision movement and no source/model
-edits in the archive commit before it emits the post-archive project snapshot. Azimuth does not make
-the Git commit or mint the external execution receipt.
+Implement product behavior, structural mechanisms, telemetry and testability seams inside the
+approved boundary. Add Realizes only where a production site genuinely establishes part of a
+non-routine case-level Claim. Routine Claims do not require source linkage.
 
-The optional `Measurements` section used by this repository measures Azimuth itself. It is not a
-field for ordinary production changes. Product and operational metrics belong to their product and
-delivery systems unless a result changes an accepted assurance decision.
+Ordinary unit, component, integration and release tests remain normal software. A passing test is
+useful engineering feedback, but it is not an Azimuth Check merely because it executes in CI.
 
-### 10. Roll out the accepted artifact
+### 5. Update current facets
 
-The normal deployment source is an immutable artifact built from a protected mainline or the
-team's established release-candidate commit. The same artifact is promoted through staging,
-limited production exposure and wider rollout. A mutable developer branch is suitable for a
-preview environment, not production.
+Apply accepted intent deltas to package `spec.md`. Distil only mechanisms that now exist into
+current `design.md`. Because every current Claim is routine, do not create package
+`verification.md` files, Checks, Evidence Bindings or Qualifications for this alpha transition.
 
-Feature flags, configuration or traffic routing select the initial population. Before exposure,
-the delivery owner confirms metrics are scraped, rules evaluate, a notification-path test reaches
-its destination, dashboards have a baseline and an on-call owner has a response procedure.
+A future non-routine change will use the D45 graph:
 
-If limited exposure succeeds, rollout expands. If it fails, the flag is disabled or the artifact
-is rolled back and a corrective change records the new knowledge. The archived change is not
-rewritten.
+```text
+Check -> Evidence Binding -> Qualification
+```
 
-### 11. Keep evidence alive
+A Check has one atomic terminal proposition. Each binding relates that Check to exactly one
+case-level Claim and owns form, exact required context, challenge domain and policy. The binding id
+is also its sole Qualification id. One Check may bind to several Claims and one Claim may receive
+several Checks.
 
-Archival ends authoring of the transition, not assurance of its claims:
+Source then uses `ImplementsCheck(<project-global-check-id>)`. It never declares Claim identity,
+form, context or Qualification. Unmarked tests remain outside the graph.
 
-- test evidence is re-established by CI;
-- a manual receipt expires at its declared boundary;
-- editing an examined implementation, evidence site, plan or binding stales its judgment;
-- a removed detector or detector test becomes a machine hole;
-- alert and reconciliation outcomes feed incidents and later changes.
+### 6. Validate the repository account
 
-The current machine tier establishes repository-owned rules, bindings and synthetic detector
-behaviour. It does not yet establish that a live metrics backend is scraping or that notification
-routing is healthy. A mature integration can import expiring operational receipts for rule
-evaluation, scrape health, dead-man heartbeats, notification-path tests or canary results without
-making the core vendor-specific.
+Emit fresh language manifests and run:
 
----
+```text
+azimuth validate --manifest <manifest>...
+azimuth report traceability
+azimuth export --out model.json
+```
 
-## Branches and changes
+Validation reports categorized Findings. Traceability is a derived, deterministic view over
+case-level Claims and stable graph relations. Export writes model version 2. None of these commands
+executes native tests or creates an execution fact.
 
-The default relationship is many-to-many:
+Run focused engineering tests while iterating, then affected component and composed suites.
+Enumerated surfaces must also exercise their real enumerator and a temporary untagged negative
+member before acceptance.
 
-- one small change commonly fits one short-lived branch and merge request;
-- one large change may use several work-package branches and repositories;
-- one release branch may carry several already accepted changes.
+### 7. Record the outcome
 
-The invariants are that every branch refers to the semantic change it contributes to, mainline
-remains safe to build, and production receives a reviewed reproducible artifact. Azimuth does not
-gain truth by prescribing Git topology.
+Complete plan and work-package statuses. Write `outcome.md` with departures and residual decisions.
+Framework experiments may record measurements of Azimuth itself; ordinary product changes do not
+owe that section.
 
-Long-lived integration branches are a local exception, not framework guidance. They delay the
-machine and agent feedback whose freshness model assumes small, inspectable transitions.
+### 8. Finalize and archive
 
----
+Confirm completion conditions, current facet updates, fresh manifests and all required engineering
+checks. Run `azimuth change finalize`, then archive only after the finalization fingerprint is
+current. These commands do not create Git commits, provider executions or deployment records.
 
-## When production observation gates acceptance
+For federation, retain complete accepted-active and tested-archive worksets. The singular authority
+repository owns the content-preserving archive move. `azimuth project accept-change` verifies the
+two complete accounts and emits a snapshot; a local account cannot substitute for project
+acceptance.
 
-The default is archive before limited production exposure. Reverse the order only when the
-proposal states that a production observation is necessary evidence and names its acceptance
-window, oracle, artifact identity and failure action.
+## Deferred execution plane
 
-In that exceptional flow the implementation may already be integrated safely behind a disabled
-flag while the change remains `implemented, rollout acceptance pending`. The exact mainline
-artifact is exposed to the limited population. A successful observation supplies the final receipt
-and stales any judgment that did not inspect it; finalization and archive follow a refreshed
-judgment. Failure disables exposure and keeps the change active or archives it as rejected.
+D43 defines, but this change does not implement, a Run-led execution plane. A future Run will bind
+one exact Subject and may contain Check executions, Challenger executions or both. Challengers
+search for objections to Qualifications or later Claim Judgments; a clean result is not positive
+product evidence.
 
-If active-but-applied changes become common, this separation has failed: the archive has become a
-release tracker rather than a semantic record. That observation would falsify the default boundary
-and require explicit rollout state in the change model rather than more prose.
+Challenge Plans will select exact targets through stable traceability, never through paths, line
+numbers, globs or silent whole-suite fallback. Mutation testing, broad static analysis, flakiness
+repetition and qualification-oriented fault injection normally act as Challengers. Fault injection
+with a direct recovery or durability oracle may instead implement a Check.
+
+Provider adapters, normalized Run bundles, ingestion and retention are deferred to dependent
+changes. The optional Assurance Service remains isolated on its D42 v1 wire until the Run-ledger
+replacement is accepted. There is currently no Assurance Service export command.
+
+## Branches and rollout
+
+Azimuth does not prescribe Git topology. One change may use several branches or repositories, and
+one branch may carry several accepted changes, provided authority and revision accounts remain
+explicit.
+
+Archiving accepts a codebase transition; it does not assert universal production exposure. Deploy
+immutable artifacts through the team's delivery system. Incidents, live measurements and rollout
+results may motivate a later change, but they do not silently rewrite the archived account.

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { nextRoutes, scanText } from './emitter';
+import { emit, nextRoutes, scanText } from './emitter';
 
 // Synthetic sources only (D2). A silently wrong emitter produces a green matrix, which is the exact
 // failure the framework exists to prevent — so these assert on the shape of what is emitted, not
@@ -17,7 +17,11 @@ test('resolves a site to its enclosing function', () => {
   );
   assert.equal(result.realizes.length, 1);
   assert.deepEqual(
-    { spec: result.realizes[0].spec, scenario: result.realizes[0].scenario, site: result.realizes[0].site },
+    {
+      spec: result.realizes[0].spec,
+      scenario: result.realizes[0].scenario,
+      site: result.realizes[0].site,
+    },
     { spec: 'alpha', scenario: 'route-thing', site: 'handler' },
   );
   assert.equal(result.realizes[0].lang, 'typescript');
@@ -51,41 +55,53 @@ test('a site may realize several claims', () => {
   assert.deepEqual(new Set(result.realizes.map((r) => r.site)), new Set(['f']));
 });
 
-// A covers inside test('…') names the test, which is what a human would look for.
-test('a covers inside a test names the test', () => {
+test('a Check implementation carries only its enclosing source facts', () => {
   const result = scanText(
-    `test('the route answers', () => { covers('alpha', 'route-thing', 'component', 'universal'); });`,
+    `test('the route answers', () => { implementsCheck('alpha/route-answer'); });`,
     'a.test.ts',
   );
-  assert.equal(result.covers[0].site, 'the route answers');
-  assert.equal(result.covers[0].scope, 'component');
-  assert.equal(result.covers[0].quantification, 'universal');
-  assert.equal(result.covers[0].oracle, undefined);
-  assert.match(result.covers[0].source_fingerprint, /^[0-9a-f]{64}$/);
+  assert.deepEqual(result.checkImplementations[0], {
+    check: 'alpha/route-answer',
+    site: 'the route answers',
+    file: 'a.test.ts',
+    lang: 'typescript',
+    source_fingerprint: result.checkImplementations[0].source_fingerprint,
+  });
+  assert.match(result.checkImplementations[0].source_fingerprint, /^sha256:[0-9a-f]{64}$/);
 });
 
 test('a site fingerprint changes only when that site changes', () => {
   const before = scanText(
-    `test('first', () => { covers('a', 'first', 'unit', 'example'); assert(1); });
-     test('second', () => { covers('a', 'second', 'unit', 'example'); assert(2); });`,
+    `test('first', () => { implementsCheck('alpha/shared'); assert(1); });
+     test('second', () => { implementsCheck('alpha/shared'); assert(2); });`,
     'a.test.ts',
   );
   const after = scanText(
-    `test('first', () => { covers('a', 'first', 'unit', 'example'); assert(1); });
-     test('second', () => { covers('a', 'second', 'unit', 'example'); assert(3); });`,
+    `test('first', () => { implementsCheck('alpha/shared'); assert(1); });
+     test('second', () => { implementsCheck('alpha/shared'); assert(3); });`,
     'a.test.ts',
   );
 
-  assert.equal(before.covers[0].source_fingerprint, after.covers[0].source_fingerprint);
-  assert.notEqual(before.covers[1].source_fingerprint, after.covers[1].source_fingerprint);
+  assert.equal(
+    before.checkImplementations[0].source_fingerprint,
+    after.checkImplementations[0].source_fingerprint,
+  );
+  assert.notEqual(
+    before.checkImplementations[1].source_fingerprint,
+    after.checkImplementations[1].source_fingerprint,
+  );
 });
 
-test('a relational oracle is carried when given', () => {
+test('several source sites may implement one Check', () => {
   const result = scanText(
-    `test('t', () => { covers('a', 's', 'e2e', 'example', 'relational'); });`,
+    `function first() { implementsCheck('alpha/shared'); }
+     function second() { implementsCheck('alpha/shared'); }`,
     'a.test.ts',
   );
-  assert.equal(result.covers[0].oracle, 'relational');
+  assert.deepEqual(
+    result.checkImplementations.map((entry) => [entry.check, entry.site]),
+    [['alpha/shared', 'first'], ['alpha/shared', 'second']],
+  );
 });
 
 test('a mechanism implementation derives a symbol binding', () => {
@@ -101,33 +117,63 @@ test('a mechanism implementation derives a symbol binding', () => {
     lang: 'typescript',
     source_fingerprint: result.mechanismImplementations[0].source_fingerprint,
   });
+  assert.match(
+    result.mechanismImplementations[0].source_fingerprint,
+    /^sha256:[0-9a-f]{64}$/,
+  );
 });
 
-test('mechanism evidence carries the checking form', () => {
+test('a complete manifest uses the exact fingerprint lexical contract', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'azimuth-emitter-'));
+  fs.writeFileSync(
+    path.join(dir, 'fixture.ts'),
+    `export function behavior() { realizes('alpha', 'behavior'); }
+     export function mechanism() { implementsMechanism('alpha', 'guard'); }
+     test('check', () => { implementsCheck('alpha/check'); });`,
+  );
+
+  const parsed = JSON.parse(JSON.stringify(emit([dir], dir).manifest)) as Record<string, unknown>;
+  for (const key of ['realizes', 'check_implementations', 'mechanism_implementations']) {
+    const entries = parsed[key] as Array<{ source_fingerprint: string }>;
+    assert.ok(entries.length > 0, `${key} is empty`);
+    assert.ok(
+      entries.every((entry) => /^sha256:[0-9a-f]{64}$/.test(entry.source_fingerprint)),
+      `${key} contains a non-canonical source fingerprint`,
+    );
+  }
+  assert.equal('covers' in parsed, false);
+  assert.equal('mechanism_covers' in parsed, false);
+  assert.equal('observations' in parsed, false);
+});
+
+test('retired evidence markers fail instead of disappearing', () => {
+  for (const marker of ['covers', 'coversMechanism']) {
+    assert.throws(
+      () => scanText(`${marker}('alpha', 'branch-selection');`, 'src/branch.test.ts'),
+      new RegExp('retired alpha 1 marker `' + marker + '` is not supported'),
+    );
+  }
+
+  assert.throws(
+    () => scanText(
+      `import { covers as oldCover } from '@azimuth-sh/annotations';
+       oldCover('alpha', 'branch-selection');`,
+      'src/branch.test.ts',
+    ),
+    /retired alpha 1 marker `covers` is not supported/,
+  );
+});
+
+test('unrelated object methods named covers remain ordinary source', () => {
   const result = scanText(
-    `test('all branches', () => {
-       coversMechanism('alpha', 'branch-selection', 'unit', 'universal', 'model-based');
-     });`,
-    'src/branch.test.ts',
+    `const assertion = { covers() { return true; } };
+     assertion.covers();
+     function covers(value: string) { return value; }
+     covers('ordinary');`,
+    'src/assertion.ts',
   );
-  assert.deepEqual(
-    {
-      spec: result.mechanismCovers[0].spec,
-      mechanism: result.mechanismCovers[0].mechanism,
-      site: result.mechanismCovers[0].site,
-      scope: result.mechanismCovers[0].scope,
-      quantification: result.mechanismCovers[0].quantification,
-      oracle: result.mechanismCovers[0].oracle,
-    },
-    {
-      spec: 'alpha',
-      mechanism: 'branch-selection',
-      site: 'all branches',
-      scope: 'unit',
-      quantification: 'universal',
-      oracle: 'model-based',
-    },
-  );
+  assert.deepEqual(result.checkImplementations, []);
+  assert.deepEqual(result.warnings, []);
 });
 
 // Form is how a test checks, not a property of code — so realizes never carries one, and the
@@ -138,53 +184,42 @@ test('realizes carries no form', () => {
   assert.equal('quantification' in result.realizes[0], false);
 });
 
-test('an unknown scope is a warning, not a silent entry', () => {
+test('a Check implementation needs exactly one literal id', () => {
   const result = scanText(
-    `test('t', () => { covers('a', 's', 'integration', 'example'); });`,
+    `test('missing', () => { implementsCheck(); });
+     test('dynamic', () => { implementsCheck(checkId); });
+     test('extra', () => { implementsCheck('alpha/check', 'extra'); });`,
     'a.test.ts',
   );
-  assert.equal(result.covers.length, 0);
-  assert.equal(result.warnings.length, 1);
-  assert.match(result.warnings[0].message, /unknown scope `integration`/);
-});
-
-test('an unknown quantification is a warning', () => {
-  const result = scanText(
-    `test('t', () => { covers('a', 's', 'unit', 'property'); });`,
-    'a.test.ts',
+  assert.equal(result.checkImplementations.length, 0);
+  assert.equal(result.warnings.length, 3);
+  assert.ok(
+    result.warnings.every((warning) => /exactly one string Check id/.test(warning.message)),
   );
-  assert.equal(result.covers.length, 0);
-  assert.match(result.warnings[0].message, /unknown quantification/);
-});
-
-test('a covers missing its form is a warning', () => {
-  const result = scanText(`test('t', () => { covers('a', 's'); });`, 'a.test.ts');
-  assert.equal(result.covers.length, 0);
-  assert.match(result.warnings[0].message, /needs a spec, a scenario id, a scope/);
 });
 
 test('warnings carry a line number', () => {
   const result = scanText(
-    `\n\ntest('t', () => { covers('a', 's'); });`,
+    `\n\ntest('t', () => { implementsCheck(); });`,
     'a.test.ts',
   );
   assert.equal(result.warnings[0].line, 3);
   assert.equal(result.warnings[0].file, 'a.test.ts');
 });
 
-test('an untagged test is outside the evidence model', () => {
+test('an unmarked test is outside the Check model', () => {
   const result = scanText(
-    `test('covered', () => { covers('a', 's', 'unit', 'example'); });
+    `test('enrolled', () => { implementsCheck('alpha/enrolled'); });
      test('bare', () => { const x = 1; });`,
     'a.test.ts',
   );
   assert.deepEqual(Object.keys(result).sort(), [
-    'covers',
-    'mechanismCovers',
+    'checkImplementations',
     'mechanismImplementations',
     'realizes',
     'warnings',
   ]);
+  assert.equal(result.checkImplementations.length, 1);
 });
 
 test('tsx parses', () => {

@@ -21,10 +21,9 @@ internal static class Collector
 {
     private const string Lang = "csharp";
     private const string RealizesName = "Azimuth.Annotations.RealizesAttribute";
-    private const string CoversName = "Azimuth.Annotations.CoversAttribute";
+    private const string ImplementsCheckName = "Azimuth.Annotations.ImplementsCheckAttribute";
     private const string ImplementsMechanismName =
         "Azimuth.Annotations.ImplementsMechanismAttribute";
-    private const string CoversMechanismName = "Azimuth.Annotations.CoversMechanismAttribute";
     private const BindingFlags Members = BindingFlags.Public
         | BindingFlags.NonPublic
         | BindingFlags.Instance
@@ -56,21 +55,16 @@ internal static class Collector
         string File,
         string SourceFingerprint);
 
-    public sealed record MechanismCoverEntry(
-        string Spec,
-        string Mechanism,
+    public sealed record CheckImplementationEntry(
+        string Check,
         string Site,
         string File,
-        string SourceFingerprint,
-        string? Scope,
-        string? Quantification = null,
-        string? Oracle = null);
+        string SourceFingerprint);
 
     public sealed record Result(
         List<Entry> Realizes,
-        List<Entry> Covers,
+        List<CheckImplementationEntry> CheckImplementations,
         List<MechanismImplementationEntry> MechanismImplementations,
-        List<MechanismCoverEntry> MechanismCovers,
         List<Artifact> Artifacts,
         List<string> Warnings);
 
@@ -78,7 +72,7 @@ internal static class Collector
         IEnumerable<Assembly> assemblies,
         string root)
     {
-        var result = new Result([], [], [], [], [], []);
+        var result = new Result([], [], [], [], []);
 
         foreach (var assembly in assemblies)
         {
@@ -97,9 +91,8 @@ internal static class Collector
         }
 
         result.Realizes.Sort(Compare);
-        result.Covers.Sort(Compare);
+        result.CheckImplementations.Sort(CompareCheckImplementation);
         result.MechanismImplementations.Sort(CompareMechanismImplementation);
-        result.MechanismCovers.Sort(CompareMechanismCover);
         result.Artifacts.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));
         for (var index = result.Artifacts.Count - 1; index > 0; index--)
         {
@@ -154,7 +147,7 @@ internal static class Collector
                         scenario,
                         type.FullName ?? type.Name,
                         files.PathOf(type),
-                        files.FingerprintOf(type),
+                        ManifestFingerprint(files.FingerprintOf(type)),
                         null,
                         null,
                         null));
@@ -168,7 +161,7 @@ internal static class Collector
                         mechanism,
                         $"dotnet-symbol:{typeName}",
                         files.PathOf(type),
-                        files.FingerprintOf(type)));
+                        ManifestFingerprint(files.FingerprintOf(type))));
             }
         }
 
@@ -180,7 +173,7 @@ internal static class Collector
             }
             var site = $"{typeName}.{method.Name}";
             var file = files.PathOf(method);
-            var sourceFingerprint = files.FingerprintOf(method);
+            var sourceFingerprint = ManifestFingerprint(files.FingerprintOf(method));
             result.Artifacts.Add(
                 new Artifact($"dotnet-symbol:{site}", "dotnet-method", file));
             var data = method.GetCustomAttributesData();
@@ -193,9 +186,19 @@ internal static class Collector
                     result.Realizes.Add(
                         new Entry(spec, scenario, site, file, sourceFingerprint, null, null, null));
                 }
-                else if (name == CoversName)
+                else if (name == ImplementsCheckName)
                 {
-                    result.Covers.Add(Covers(attribute, site, file, sourceFingerprint));
+                    if (sourceFingerprint.Length == 0)
+                    {
+                        throw new InvalidOperationException(
+                            $"{site}: ImplementsCheck requires an exact source fingerprint");
+                    }
+                    result.CheckImplementations.Add(
+                        new CheckImplementationEntry(
+                            FirstArgument(attribute),
+                            site,
+                            file,
+                            sourceFingerprint));
                 }
                 else if (name == ImplementsMechanismName)
                 {
@@ -207,11 +210,6 @@ internal static class Collector
                             $"dotnet-symbol:{site}",
                             file,
                             sourceFingerprint));
-                }
-                else if (name == CoversMechanismName)
-                {
-                    result.MechanismCovers.Add(
-                        CoversMechanism(attribute, site, file, sourceFingerprint));
                 }
             }
         }
@@ -299,89 +297,13 @@ internal static class Collector
         return (spec, scenario);
     }
 
-    private static Entry Covers(
-        CustomAttributeData attribute,
-        string site,
-        string file,
-        string sourceFingerprint)
-    {
-        var args = attribute.ConstructorArguments;
-        var (spec, scenario) = Pair(attribute);
-        return new Entry(
-            spec,
-            scenario,
-            site,
-            file,
-            sourceFingerprint,
-            args.Count > 2 ? EnumName(args[2]) : null,
-            args.Count > 3 ? EnumName(args[3]) : null,
-            args.Count > 4 ? EnumName(args[4]) : null);
-    }
+    private static string FirstArgument(CustomAttributeData attribute) =>
+        attribute.ConstructorArguments.Count > 0
+            ? attribute.ConstructorArguments[0].Value as string ?? string.Empty
+            : string.Empty;
 
-    private static MechanismCoverEntry CoversMechanism(
-        CustomAttributeData attribute,
-        string site,
-        string file,
-        string sourceFingerprint)
-    {
-        var args = attribute.ConstructorArguments;
-        var (spec, mechanism) = Pair(attribute);
-        return new MechanismCoverEntry(
-            spec,
-            mechanism,
-            site,
-            file,
-            sourceFingerprint,
-            args.Count > 2 ? EnumName(args[2]) : null,
-            args.Count > 3 ? EnumName(args[3]) : null,
-            args.Count > 4 ? EnumName(args[4]) : null);
-    }
-
-    /// <summary>
-    /// Enum arguments arrive through <c>CustomAttributeData</c> as their boxed underlying integer,
-    /// so the name is resolved against the declared argument type rather than read off the value.
-    /// </summary>
-    private static string? EnumName(CustomAttributeTypedArgument argument)
-    {
-        if (argument.Value is null)
-        {
-            return null;
-        }
-
-        var type = argument.ArgumentType;
-        if (!type.IsEnum)
-        {
-            return Kebab(argument.Value.ToString());
-        }
-
-        var name = Enum.GetName(type, argument.Value);
-        return name is null ? null : Kebab(name);
-    }
-
-    /// <summary>
-    /// The manifest speaks kebab-case because the specs do. A format that spoke two casings would
-    /// invite exactly one bug, at the boundary, in the field nobody re-reads.
-    /// </summary>
-    private static string? Kebab(string? value)
-    {
-        if (value is null)
-        {
-            return null;
-        }
-
-        var builder = new StringBuilder();
-        foreach (var (c, index) in value.Select((c, i) => (c, i)))
-        {
-            if (char.IsUpper(c) && index > 0)
-            {
-                builder.Append('-');
-            }
-
-            builder.Append(char.ToLowerInvariant(c));
-        }
-
-        return builder.ToString();
-    }
+    private static string ManifestFingerprint(string fingerprint) =>
+        fingerprint.Length == 0 ? string.Empty : $"sha256:{fingerprint}";
 
     private static int Compare(Entry a, Entry b)
     {
@@ -409,16 +331,17 @@ internal static class Collector
         return byMechanism != 0 ? byMechanism : string.CompareOrdinal(a.Binding, b.Binding);
     }
 
-    private static int CompareMechanismCover(MechanismCoverEntry a, MechanismCoverEntry b)
+    private static int CompareCheckImplementation(
+        CheckImplementationEntry a,
+        CheckImplementationEntry b)
     {
-        var bySpec = string.CompareOrdinal(a.Spec, b.Spec);
-        if (bySpec != 0)
+        var byCheck = string.CompareOrdinal(a.Check, b.Check);
+        if (byCheck != 0)
         {
-            return bySpec;
+            return byCheck;
         }
 
-        var byMechanism = string.CompareOrdinal(a.Mechanism, b.Mechanism);
-        return byMechanism != 0 ? byMechanism : string.CompareOrdinal(a.Site, b.Site);
+        return string.CompareOrdinal(a.Site, b.Site);
     }
 
     public static string ToJson(Result result)
@@ -429,9 +352,8 @@ internal static class Collector
         {
             writer.WriteStartObject();
             WriteEntries(writer, "realizes", result.Realizes, form: false);
-            WriteEntries(writer, "covers", result.Covers, form: true);
+            WriteCheckImplementations(writer, result.CheckImplementations);
             WriteMechanismImplementations(writer, result.MechanismImplementations);
-            WriteMechanismCovers(writer, result.MechanismCovers);
             WriteArtifacts(writer, result.Artifacts);
             writer.WriteEndObject();
         }
@@ -535,35 +457,19 @@ internal static class Collector
         writer.WriteEndArray();
     }
 
-    private static void WriteMechanismCovers(
+    private static void WriteCheckImplementations(
         Utf8JsonWriter writer,
-        List<MechanismCoverEntry> entries)
+        List<CheckImplementationEntry> entries)
     {
-        writer.WriteStartArray("mechanism_covers");
+        writer.WriteStartArray("check_implementations");
         foreach (var entry in entries)
         {
             writer.WriteStartObject();
-            writer.WriteString("spec", entry.Spec);
-            writer.WriteString("mechanism", entry.Mechanism);
+            writer.WriteString("check", entry.Check);
             writer.WriteString("site", entry.Site);
             writer.WriteString("file", entry.File);
             writer.WriteString("lang", Lang);
-            if (entry.SourceFingerprint.Length > 0)
-            {
-                writer.WriteString("source_fingerprint", entry.SourceFingerprint);
-            }
-            if (entry.Scope is not null)
-            {
-                writer.WriteString("scope", entry.Scope);
-            }
-            if (entry.Quantification is not null)
-            {
-                writer.WriteString("quantification", entry.Quantification);
-            }
-            if (entry.Oracle is not null)
-            {
-                writer.WriteString("oracle", entry.Oracle);
-            }
+            writer.WriteString("source_fingerprint", entry.SourceFingerprint);
             writer.WriteEndObject();
         }
         writer.WriteEndArray();

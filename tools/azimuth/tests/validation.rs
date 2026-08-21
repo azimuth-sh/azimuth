@@ -1,967 +1,449 @@
-//! Model, manifest and validation tests. Synthetic fixtures only (D2).
-
-use azimuth::json;
-use azimuth::judgment::{fingerprint, Judgment, Judgments, Verdict};
-use azimuth::manifest;
-use azimuth::model::Model;
-use azimuth::selects;
+use azimuth::design::parse_design;
+use azimuth::model::{Artifact, CheckImplementation, Model, Site, SourceIdentity};
 use azimuth::spec::parse_spec;
-use azimuth::validation::{
-    counts_by_kind, validate, Finding, FindingCategory, FindingKind, Severity,
+use azimuth::validation::{resolve_challenge_plan, validate, FindingKind};
+use azimuth::verification::{
+    parse_policies, parse_verification, ChallengeDomain, QualificationVerdict, Selector,
+    Verification,
 };
-use azimuth::workspace::{
-    Area, Mount, RealizationObligation, Surface, SurfaceContribution, Workspace,
-};
+use std::collections::BTreeSet;
 
-const SPEC: &str = "\
-# Spec: alpha
+const SHA: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const SPEC: &str = "# Spec: alpha\n\n\
+## Requirement: behavior\n\
+Criticality: standard\n\n\
+The system SHALL work.\n\n\
+### Scenario: works\n\
+WHEN invoked\n\
+THEN it works\n";
+const POLICIES: &str = "# Qualification policies\n\n\
+## Policy: credible\n\
+Required challenge: implementation-perturbation\n\n\
+The implementation must be challenged.\n";
+const VERIFICATION: &str = "# Verification: alpha\n\n\
+## Check: alpha/works\n\
+Method: invoke the behavior\n\
+Terminal: the behavior works\n\n\
+This is one atomic terminal result.\n\n\
+## Evidence Binding: alpha/works-edge\n\
+Check: alpha/works\n\
+Claim: alpha#works\n\
+Proposition: the result directly exercises the Claim\n\
+Scope: unit\n\
+Quantification: example\n\
+Oracle: direct\n\
+Context: {}\n\
+Challenge domain: [\"realization\",\"mechanism\"]\n\
+Qualification policy: credible\n\n\
+The edge is independently reviewable.\n\n\
+## Qualification: alpha/works-edge\n\
+Verdict: qualified\n\
+Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
+Qualified: 2026-08-21\n\
+Qualifier: owner@example\n\n\
+The Check and oracle are credible.\n\n\
+## Challenger: mutation/perturb\n\
+Form: implementation-perturbation\n\
+Searches for: a change the Check cannot detect\n\n\
+Survivors are objections.\n\n\
+## Challenge Plan: alpha/credibility\n\
+Challenger: mutation/perturb\n\
+Select: qualification from binding alpha/works-edge\n\n\
+The plan targets the reviewed edge.\n";
 
-## Requirement: matters
-Criticality: critical
-
-A SHALL.
-
-### Scenario: guarded
-WHEN a thing happens
-THEN another thing happens
-
-## Requirement: cosmetic
-Criticality: routine
-
-A lesser SHALL.
-
-### Scenario: decorative
-WHEN a thing happens
-THEN it looks right
-";
-
-/// A class claim and one behavioural claim in the same spec, so a site can be a member by tag.
-const CLASS_SPEC: &str = "\
-# Spec: beta
-
-## Invariant: confined
-Criticality: critical
-Over: beta
-
-Nothing SHALL leak at any site in the class.
-
-## Requirement: shown
-Criticality: standard
-
-A lesser SHALL.
-
-### Scenario: rendered
-WHEN a thing is rendered
-THEN it looks right
-";
-
-fn class_model(manifest_json: &str) -> Model {
-    let spec = parse_spec("beta.md", CLASS_SPEC).expect("spec parses");
+fn model(criticality: &str, with_verification: bool) -> Model {
+    let spec = parse_spec("spec.md", &SPEC.replace("standard", criticality)).unwrap();
     let mut model = Model {
         specs: vec![spec],
-        workspace: Workspace {
-            path: "workspace.json".into(),
-            areas: vec![Area {
-                id: "web".into(),
-                mounts: vec![Mount {
-                    id: "code".into(),
-                    path: "app/web".into(),
-                }],
-            }],
-            surfaces: vec![Surface {
-                id: "beta".into(),
-                contributions: vec![SurfaceContribution {
-                    area: "web".into(),
-                    mount: "code".into(),
-                    enumerator: "routes".into(),
-                }],
-            }],
-            realization_obligations: Vec::new(),
-        },
+        realizes: vec![Site {
+            spec: "alpha".into(),
+            scenario: "works".into(),
+            site: "alpha::works".into(),
+            file: "src/alpha.rs".into(),
+            lang: "rust".into(),
+            source: Some(SourceIdentity {
+                area: "core".into(),
+                kind: "rust-item".into(),
+                address: "alpha::works".into(),
+                mount: "code".into(),
+            }),
+            source_fingerprint: SHA.into(),
+        }],
+        check_implementations: vec![CheckImplementation {
+            check: "alpha/works".into(),
+            site: "tests::works".into(),
+            file: "tests/works.rs".into(),
+            lang: "rust".into(),
+            source: Some(SourceIdentity {
+                area: "core".into(),
+                kind: "rust-item".into(),
+                address: "tests::works".into(),
+                mount: "tests".into(),
+            }),
+            source_fingerprint: SHA.into(),
+        }],
+        qualification_policies: Some(parse_policies("standards.md", POLICIES).unwrap()),
+        verifications: with_verification
+            .then(|| parse_verification("verification.md", VERIFICATION).unwrap())
+            .into_iter()
+            .collect(),
         ..Default::default()
     };
-    let root = json::parse(manifest_json).expect("manifest is valid json");
-    let m = manifest::parse("m.json", &root).expect("manifest parses");
-    model.realizes = m.realizes;
-    model.covers = m.covers;
-    model.class_members = m.class_members;
-    model.enumerations = m.enumerations;
-    model
-}
-
-fn model_with(manifest_json: &str) -> Model {
-    let spec = parse_spec("alpha.md", SPEC).expect("spec parses");
-    let mut model = Model {
-        specs: vec![spec],
-        ..Default::default()
-    };
-    if !manifest_json.is_empty() {
-        let root = json::parse(manifest_json).expect("manifest is valid json");
-        let m = manifest::parse("m.json", &root).expect("manifest parses");
-        model.realizes = m.realizes;
-        model.covers = m.covers;
-        model.class_members = m.class_members;
-        model.enumerations = m.enumerations;
-        model
-            .covers
-            .extend(m.observations.iter().flat_map(|item| item.evidence_sites()));
-        model.observations = m.observations;
+    if with_verification {
+        let expected = model
+            .expected_qualification_fingerprint(&model.verifications[0].bindings[0])
+            .unwrap();
+        model.verifications[0].qualifications[0].fingerprint = expected;
     }
     model
 }
 
-fn kinds(model: &Model) -> Vec<(FindingKind, String)> {
+fn kinds(model: &Model) -> Vec<FindingKind> {
     validate(model)
         .into_iter()
-        .map(|h| (h.kind, h.claim.unwrap_or_default()))
+        .map(|finding| finding.kind)
         .collect()
 }
 
 #[test]
-fn every_finding_kind_has_one_category_and_corrective_help() {
-    let expected = [
-        (FindingKind::Unrealized, FindingCategory::Realization),
-        (FindingKind::Uncovered, FindingCategory::Verification),
-        (FindingKind::DanglingTag, FindingCategory::Verification),
-        (
-            FindingKind::DanglingRealization,
-            FindingCategory::Realization,
-        ),
-        (
-            FindingKind::DanglingPlanEntry,
-            FindingCategory::Verification,
-        ),
-        (FindingKind::WrongForm, FindingCategory::Verification),
-        (FindingKind::Unclassified, FindingCategory::Intent),
-        (
-            FindingKind::UnacceptedWeakening,
-            FindingCategory::Verification,
-        ),
-        (FindingKind::DanglingDesignEntry, FindingCategory::Mechanism),
-        (FindingKind::UndeclaredMechanism, FindingCategory::Mechanism),
-        (
-            FindingKind::UnresolvedDesignBinding,
-            FindingCategory::Mechanism,
-        ),
-        (FindingKind::EnforcementMismatch, FindingCategory::Mechanism),
-        (FindingKind::UnbackedProof, FindingCategory::Verification),
-        (FindingKind::ToothlessEvidence, FindingCategory::Judgment),
-        (FindingKind::DishonestTag, FindingCategory::Judgment),
-        (FindingKind::DishonestRealization, FindingCategory::Judgment),
-        (FindingKind::SpecGap, FindingCategory::Judgment),
-        (FindingKind::StaleJudgment, FindingCategory::Judgment),
-        (FindingKind::Unjudged, FindingCategory::Judgment),
-        (FindingKind::InvariantBreach, FindingCategory::Surface),
-        (
-            FindingKind::EnumeratorUnsoundOrUnderived,
-            FindingCategory::Surface,
-        ),
-        (FindingKind::FailedEvidence, FindingCategory::Verification),
-        (FindingKind::ExpiredEvidence, FindingCategory::Verification),
-        (
-            FindingKind::UnresolvedEvidenceBinding,
-            FindingCategory::Verification,
-        ),
-        (
-            FindingKind::UnresolvedDetectorBinding,
-            FindingCategory::Verification,
-        ),
-        (FindingKind::MissingSurface, FindingCategory::Surface),
-        (FindingKind::UnknownSurface, FindingCategory::Surface),
-        (
-            FindingKind::MissingRequiredRealization,
-            FindingCategory::Realization,
-        ),
-        (
-            FindingKind::DanglingRealizationObligation,
-            FindingCategory::Realization,
-        ),
-        (
-            FindingKind::DanglingMechanismImplementation,
-            FindingCategory::Mechanism,
-        ),
-        (
-            FindingKind::DanglingMechanismCover,
-            FindingCategory::Mechanism,
-        ),
-        (
-            FindingKind::DuplicateObservation,
-            FindingCategory::Execution,
-        ),
-        (
-            FindingKind::UnresolvedObservationBinding,
-            FindingCategory::Execution,
-        ),
+fn complete_non_routine_graph_is_clean_and_routine_without_verification_is_valid() {
+    assert!(validate(&model("standard", true)).is_empty());
+    let mut routine = model("routine", false);
+    routine.realizes.clear();
+    routine.check_implementations.clear();
+    assert!(validate(&routine).is_empty());
+}
+
+#[test]
+fn reports_binding_check_and_qualification_failures() {
+    let mut value = model("standard", false);
+    assert!(kinds(&value).contains(&FindingKind::UnboundClaim));
+
+    value = model("standard", true);
+    value.verifications[0].bindings.clear();
+    value.verifications[0].qualifications.clear();
+    let found = kinds(&value);
+    assert!(found.contains(&FindingKind::CheckWithoutBinding));
+
+    value = model("standard", true);
+    value.verifications[0].bindings[0].check = "missing/check".into();
+    assert!(kinds(&value).contains(&FindingKind::BindingMissingCheck));
+
+    value = model("standard", true);
+    value.verifications[0].bindings[0].claim = "alpha#missing".into();
+    assert!(kinds(&value).contains(&FindingKind::BindingMissingClaim));
+
+    value = model("standard", true);
+    value.verifications[0].bindings[0].qualification_policy = "missing".into();
+    assert!(kinds(&value).contains(&FindingKind::BindingMissingPolicy));
+
+    value = model("standard", true);
+    value.verifications[0].qualifications.clear();
+    assert!(kinds(&value).contains(&FindingKind::MissingQualification));
+
+    value = model("standard", true);
+    value.verifications[0].bindings.clear();
+    assert!(kinds(&value).contains(&FindingKind::DanglingQualification));
+
+    value = model("standard", true);
+    value.verifications[0].qualifications[0].verdict = QualificationVerdict::Rejected;
+    assert!(kinds(&value).contains(&FindingKind::RejectedQualification));
+
+    value = model("standard", true);
+    value.verifications[0].bindings[0]
+        .proposition
+        .push_str(" changed");
+    assert!(kinds(&value).contains(&FindingKind::StaleQualification));
+}
+
+#[test]
+fn resolves_relationships_across_verification_authorities() {
+    let mut value = model("standard", true);
+    let declaration = value.verifications.remove(0);
+    value.verifications = vec![
+        Verification {
+            owner: "checks".into(),
+            path: "checks/verification.md".into(),
+            checks: declaration.checks,
+            bindings: Vec::new(),
+            qualifications: Vec::new(),
+            challengers: Vec::new(),
+            challenge_plans: Vec::new(),
+        },
+        Verification {
+            owner: "bindings".into(),
+            path: "bindings/verification.md".into(),
+            checks: Vec::new(),
+            bindings: declaration.bindings,
+            qualifications: Vec::new(),
+            challengers: Vec::new(),
+            challenge_plans: Vec::new(),
+        },
+        Verification {
+            owner: "decisions".into(),
+            path: "decisions/verification.md".into(),
+            checks: Vec::new(),
+            bindings: Vec::new(),
+            qualifications: declaration.qualifications,
+            challengers: declaration.challengers,
+            challenge_plans: declaration.challenge_plans,
+        },
     ];
 
-    assert_eq!(FindingKind::ALL.len(), 33);
-    assert_eq!(FindingKind::ALL, expected.map(|(kind, _)| kind));
-    for (kind, category) in expected {
-        assert_eq!(kind.category(), category, "{} category", kind.name());
-        assert!(!kind.help().trim().is_empty(), "{} help", kind.name());
-    }
+    assert!(validate(&value).is_empty());
 }
 
 #[test]
-fn kind_counts_are_driven_by_the_exhaustive_registry() {
-    let findings = FindingKind::ALL
-        .iter()
-        .map(|kind| Finding {
-            kind: *kind,
-            severity: Severity::Error,
-            claim: None,
-            criticality: None,
-            path: "model.md".into(),
-            line: 1,
-            detail: "synthetic".into(),
-        })
-        .collect::<Vec<_>>();
-
-    let counts = counts_by_kind(&findings);
-    assert_eq!(counts.len(), FindingKind::ALL.len());
-    assert!(counts.iter().all(|(_, count)| *count == 1));
-}
-
-#[test]
-fn an_untagged_claim_is_both_unrealized_and_uncovered() {
-    let findings = kinds(&model_with(""));
-    assert!(findings.contains(&(FindingKind::Unrealized, "alpha#guarded".into())));
-    assert!(findings.contains(&(FindingKind::Uncovered, "alpha#guarded".into())));
-}
-
-/// D20: `routine` stops at intent, so neither linkage facet exists to have a finding.
-#[test]
-fn a_routine_claim_has_no_linkage_findings() {
-    let findings = kinds(&model_with(""));
-    assert!(!findings.contains(&(FindingKind::Uncovered, "alpha#decorative".into())));
-    assert!(!findings.contains(&(FindingKind::Unrealized, "alpha#decorative".into())));
-}
-
-/// D9.2: severity comes from criticality, not from the validation rule. Routine has no linkage
-/// Finding to classify under D20.
-#[test]
-fn severity_follows_criticality() {
-    let findings = validate(&model_with(""));
-    let critical = findings
-        .iter()
-        .find(|h| h.claim.as_deref() == Some("alpha#guarded"))
-        .unwrap();
-    assert_eq!(critical.severity, Severity::Error);
-}
-
-#[test]
-fn tags_close_findings() {
-    let model = model_with(
-        r#"{
-          "realizes": [
-            {"spec":"alpha","scenario":"guarded","site":"Trip.Do","file":"a.cs","lang":"csharp"},
-            {"spec":"alpha","scenario":"decorative","site":"Ui.Show","file":"b.ts","lang":"ts"}
-          ],
-          "covers": [
-            {"spec":"alpha","scenario":"guarded","site":"Tests.Guarded","file":"t.cs",
-             "lang":"csharp","scope":"component","quantification":"universal"}
-          ]
-        }"#,
-    );
-    assert!(validate(&model).is_empty(), "{:?}", validate(&model));
-}
-
-#[test]
-fn a_tag_naming_no_claim_is_dangling() {
-    let model = model_with(
-        r#"{
-          "covers": [
-            {"spec":"alpha","scenario":"ghost","site":"Tests.Ghost","file":"t.cs","lang":"csharp"}
-          ],
-          "realizes": [
-            {"spec":"beta","scenario":"guarded","site":"X.Y","file":"a.cs","lang":"csharp"}
-          ]
-        }"#,
-    );
-    let findings = kinds(&model);
-    assert!(findings.contains(&(FindingKind::DanglingTag, "alpha#ghost".into())));
-    assert!(findings.contains(&(FindingKind::DanglingRealization, "beta#guarded".into())));
-}
-
-/// D6.2: a requirement without a declared criticality is a finding, and the parse still succeeds.
-#[test]
-fn an_unclassified_requirement_is_a_finding() {
-    let source = SPEC.replace("Criticality: critical\n", "");
-    let spec = parse_spec("alpha.md", &source).expect("parses");
-    let model = Model {
-        specs: vec![spec],
-        ..Default::default()
-    };
-    let findings = validate(&model);
-    let finding = findings
-        .iter()
-        .find(|h| h.kind == FindingKind::Unclassified)
-        .expect("unclassified");
-    assert_eq!(finding.severity, Severity::Error);
-    assert_eq!(finding.claim.as_deref(), Some("alpha#matters"));
-}
-
-/// D2.2: the manifest key is the pair, not the alpha's triple. Silently ignoring `req` would leave
-/// a stale emitter producing tags that look fine and are not.
-#[test]
-fn the_triple_key_is_rejected_with_an_explanation() {
-    let root = json::parse(
-        r#"{"realizes":[{"spec":"alpha","req":"matters","scenario":"guarded",
-            "site":"X","file":"a.cs","lang":"csharp"}]}"#,
-    )
-    .unwrap();
-    let errors = manifest::parse("m.json", &root).unwrap_err();
-    let text = errors
-        .iter()
-        .map(|d| d.to_string())
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(text.contains("the pair (spec, scenario)"), "{text}");
-}
-
-/// Form is how a test checks, not a property of code.
-#[test]
-fn realizes_cannot_carry_a_form() {
-    let root = json::parse(
-        r#"{"realizes":[{"spec":"alpha","scenario":"guarded","site":"X","file":"a.cs",
-            "lang":"csharp","scope":"unit"}]}"#,
-    )
-    .unwrap();
-    let errors = manifest::parse("m.json", &root).unwrap_err();
-    let text = errors
-        .iter()
-        .map(|d| d.to_string())
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(text.contains("not a property of code"), "{text}");
-}
-
-#[test]
-fn mechanism_relations_parse_in_the_normalized_manifest() {
-    let root = json::parse(
-        r#"{
-          "mechanism_implementations": [{
-            "spec":"alpha","mechanism":"guard","binding":"dotnet-symbol:Alpha.Guard",
-            "file":"a.cs","lang":"csharp","source_fingerprint":"abc"
-          }],
-          "mechanism_covers": [{
-            "spec":"alpha","mechanism":"guard","site":"Tests.Guard","file":"t.cs",
-            "lang":"csharp","source_fingerprint":"def","scope":"component",
-            "quantification":"universal","oracle":"relational"
-          }]
-        }"#,
-    )
-    .unwrap();
-    let manifest = manifest::parse("m.json", &root).expect("manifest parses");
-    assert_eq!(manifest.mechanism_implementations[0].mechanism, "guard");
-    assert_eq!(
-        manifest.mechanism_implementations[0].binding,
-        "dotnet-symbol:Alpha.Guard"
-    );
-    assert_eq!(
-        manifest.mechanism_covers[0].quantification.unwrap().name(),
-        "universal"
-    );
-    assert_eq!(
-        manifest.mechanism_covers[0].oracle.unwrap().name(),
-        "relational"
-    );
-}
-
-#[test]
-fn a_mechanism_cover_may_omit_its_oracle() {
-    let root = json::parse(
-        r#"{
-          "mechanism_covers": [{
-            "spec":"alpha","mechanism":"guard","site":"Tests.Guard","file":"t.cs",
-            "lang":"csharp","source_fingerprint":"def","scope":"component",
-            "quantification":"universal"
-          }]
-        }"#,
-    )
-    .unwrap();
-
-    let manifest = manifest::parse("m.json", &root).expect("manifest parses");
-    assert_eq!(manifest.mechanism_covers[0].oracle, None);
-}
-
-#[test]
-fn unknown_form_values_are_rejected() {
-    let root = json::parse(
-        r#"{"covers":[{"spec":"alpha","scenario":"guarded","site":"X","file":"t.cs",
-            "lang":"csharp","scope":"integration"}]}"#,
-    )
-    .unwrap();
-    let errors = manifest::parse("m.json", &root).unwrap_err();
-    let text = errors
-        .iter()
-        .map(|d| d.to_string())
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(text.contains("unknown scope `integration`"), "{text}");
-    assert!(text.contains("unit, component or e2e"), "{text}");
-}
-
-#[test]
-fn unknown_oracle_values_are_rejected() {
-    let root = json::parse(
-        r#"{"covers":[{"spec":"alpha","scenario":"guarded","site":"X","file":"t.cs",
-            "lang":"csharp","scope":"unit","quantification":"example",
-            "oracle":"differential"}]}"#,
-    )
-    .unwrap();
-    let errors = manifest::parse("m.json", &root).unwrap_err();
-    let text = errors
-        .iter()
-        .map(|d| d.to_string())
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(text.contains("unknown oracle `differential`"), "{text}");
-    assert!(text.contains("relational"), "{text}");
-}
-
-/// D19 renamed the quantification value `invariant` → `universal` with no alias (D2.3). The
-/// retired
-/// word must fail as an unknown value rather than be quietly accepted, because a manifest emitted
-/// by a stale extractor would otherwise report a form the model no longer defines.
-#[test]
-fn the_retired_quantification_value_is_rejected() {
-    let root = json::parse(
-        r#"{"covers":[{"spec":"alpha","scenario":"guarded","site":"X","file":"t.cs",
-            "lang":"csharp","scope":"unit","quantification":"invariant"}]}"#,
-    )
-    .unwrap();
-    let errors = manifest::parse("m.json", &root).unwrap_err();
-    let text = errors
-        .iter()
-        .map(|d| d.to_string())
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(
-        text.contains("unknown quantification `invariant`"),
-        "{text}"
-    );
-    assert!(text.contains("example or universal"), "{text}");
-}
-
-/// Selection operates on ids, not paths, so it survives a reorganization of the tree.
-#[test]
-fn selection_matches_id_prefixes() {
-    assert!(selects("trip/**", "trip/dispatch"));
-    assert!(selects("trip/**", "trip/a/b"));
-    assert!(selects("trip/**", "trip"));
-    assert!(!selects("trip/**", "trips/dispatch"));
-    assert!(!selects("trip/**", "driver/dispatch"));
-    assert!(selects("trip/dispatch", "trip/dispatch"));
-    assert!(!selects("trip/dispatch", "trip/dispatching"));
-}
-
-#[test]
-fn the_export_carries_claims_tags_and_findings() {
-    let model = model_with(
-        r#"{"covers":[{"spec":"alpha","scenario":"guarded","site":"T.A","file":"t.cs",
-            "lang":"csharp","scope":"unit","quantification":"example"}]}"#,
-    );
-    let findings = validate(&model);
-    let text = model.to_json(&findings).to_string_pretty();
-    let round_tripped = json::parse(&text).expect("export is valid json");
-
-    assert!(round_tripped.get("specs").is_some());
-    assert!(round_tripped.get("covers").is_some());
-    assert!(round_tripped.get("findings").is_some());
-    assert!(round_tripped.get("holes").is_none());
-    assert_eq!(
-        round_tripped
-            .get("findings")
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .len(),
-        findings.len()
-    );
-    let first = round_tripped
-        .get("findings")
-        .unwrap()
-        .as_array()
-        .unwrap()
-        .first()
-        .expect("fixture produces a Finding");
-    assert!(first.get("category").is_some());
-    assert!(first.get("help").is_some());
-}
-
-#[test]
-fn json_round_trips_escapes_and_unicode() {
-    let original = r#"{"a":"quote \" backslash \\ newline \n tab \t unicode é é"}"#;
-    let parsed = json::parse(original).unwrap();
-    let text = parsed.to_string_pretty();
-    assert_eq!(json::parse(&text).unwrap(), parsed);
-}
-
-/// The pre-existing membership rule: a site joins by realizing a behavioural claim in the class
-/// spec, and must then discharge the invariant separately. Two different tags, so this can fail.
-#[test]
-fn a_tagged_site_that_does_not_discharge_breaches() {
-    let model = class_model(
-        r#"{"realizes":[{"spec":"beta","scenario":"rendered","site":"Page","file":"page.tsx",
-            "lang":"typescript"}],"enumerations":[{"class":"beta","kind":"routes",
-            "source":"routes.json","source_fingerprint":"abc","area":"web",
-            "address_kind":"route-manifest","address":"beta","mount":"code"}]}"#,
-    );
-    let findings = kinds(&model);
-    assert!(
-        findings.contains(&(FindingKind::InvariantBreach, "beta#confined".into())),
-        "{findings:?}"
-    );
-}
-
-/// The case tags cannot reach, and the reason `class_members` exists: a file carrying no tag at all
-/// is invisible to a tag-derived enumerator, so the surface the claim ranges over silently stops at
-/// whatever somebody remembered to annotate (D13.1).
-#[test]
-fn an_emitted_member_with_no_tags_at_all_breaches() {
-    let model = class_model(
-        r#"{"realizes":[{"spec":"beta","scenario":"rendered","site":"Page","file":"page.tsx",
-            "lang":"typescript"},{"spec":"beta","scenario":"confined","site":"Page",
-            "file":"page.tsx","lang":"typescript"}],
-            "class_members":[{"class":"beta","site":"/untouched","file":"untouched.ts",
-            "lang":"typescript"}],"enumerations":[{"class":"beta","kind":"routes",
-            "source":"routes.json","source_fingerprint":"abc","area":"web",
-            "address_kind":"route-manifest","address":"beta","mount":"code"}]}"#,
-    );
-    let findings = kinds(&model);
-    assert!(
-        findings.contains(&(FindingKind::InvariantBreach, "beta#confined".into())),
-        "{findings:?}"
-    );
-    assert_eq!(
-        findings
-            .iter()
-            .filter(|(k, _)| *k == FindingKind::InvariantBreach)
-            .count(),
-        1,
-        "the tagged-and-discharged site must not also breach: {findings:?}"
-    );
-}
-
-/// An emitted member *is* its file — the enumerator names files, not symbols inside them — so a
-/// discharge anywhere in the file discharges the member, whatever the site is called.
-#[test]
-fn an_emitted_member_discharges_from_anywhere_in_its_file() {
-    let model = class_model(
-        r#"{"realizes":[{"spec":"beta","scenario":"confined","site":"GET",
-            "file":"route.ts","lang":"typescript"}],
-            "class_members":[{"class":"beta","site":"/thing","file":"route.ts",
-            "lang":"typescript"}],"enumerations":[{"class":"beta","kind":"routes",
-            "source":"routes.json","source_fingerprint":"abc","area":"web",
-            "address_kind":"route-manifest","address":"beta","mount":"code"}]}"#,
-    );
-    let findings = kinds(&model);
-    assert!(
-        !findings
-            .iter()
-            .any(|(k, _)| *k == FindingKind::InvariantBreach),
-        "discharge in the same file should clear the member: {findings:?}"
-    );
-}
-
-#[test]
-fn a_site_domain_without_a_derived_enumerator_fails_closed() {
-    let model = class_model(
-        r#"{"realizes":[{"spec":"beta","scenario":"rendered","site":"Page",
-            "file":"page.tsx","lang":"typescript"}]}"#,
-    );
-    let findings = kinds(&model);
-    assert!(
-        findings.contains(&(
-            FindingKind::EnumeratorUnsoundOrUnderived,
-            "beta#confined".into()
-        )),
-        "{findings:?}"
-    );
-    assert!(
-        !findings
-            .iter()
-            .any(|(kind, _)| *kind == FindingKind::InvariantBreach),
-        "a partial domain must not produce authoritative member findings: {findings:?}"
-    );
-}
-
-#[test]
-fn a_site_domain_without_over_is_a_machine_finding() {
-    let source = CLASS_SPEC.replace("Over: beta\n", "");
-    let mut model = class_model(
-        r#"{"enumerations":[{"class":"beta","kind":"routes","source":"routes.json",
-          "source_fingerprint":"abc","area":"web","address_kind":"route-manifest",
-          "address":"beta","mount":"code"}]}"#,
-    );
-    model.specs = vec![parse_spec("beta.md", &source).expect("missing declaration still parses")];
-
-    assert!(kinds(&model).contains(&(FindingKind::MissingSurface, "beta#confined".into())));
-}
-
-#[test]
-fn a_site_domain_naming_no_declared_surface_fails_closed() {
-    let mut model = class_model(
-        r#"{"enumerations":[{"class":"beta","kind":"routes","source":"routes.json",
-          "source_fingerprint":"abc","area":"web","address_kind":"route-manifest",
-          "address":"beta","mount":"code"}]}"#,
-    );
-    model.workspace.surfaces.clear();
-
-    assert!(kinds(&model).contains(&(FindingKind::UnknownSurface, "beta#confined".into())));
-}
-
-#[test]
-fn every_declared_surface_contribution_requires_its_own_witness() {
-    let model = class_model(
-        r#"{"enumerations":[{"class":"beta","kind":"routes","source":"routes.json",
-          "source_fingerprint":"abc","area":"other-web","address_kind":"route-manifest",
-          "address":"beta","mount":"code"}]}"#,
-    );
-
-    assert!(kinds(&model).contains(&(
-        FindingKind::EnumeratorUnsoundOrUnderived,
-        "beta#confined".into()
-    )));
-}
-
-#[test]
-fn a_backend_only_realization_does_not_satisfy_a_web_area_obligation() {
-    let mut model = model_with(
-        r#"{"realizes":[{"spec":"alpha","scenario":"guarded","site":"Handle",
-          "file":"app/services/Trips/Handle.cs","lang":"csharp"}]}"#,
-    );
-    model.workspace = Workspace {
-        path: "workspace.json".into(),
-        areas: vec![
-            Area {
-                id: "trips".into(),
-                mounts: vec![Mount {
-                    id: "code".into(),
-                    path: "app/services/Trips".into(),
-                }],
-            },
-            Area {
-                id: "rider-experience".into(),
-                mounts: vec![Mount {
-                    id: "code".into(),
-                    path: "app/web/rider".into(),
-                }],
-            },
-        ],
-        surfaces: Vec::new(),
-        realization_obligations: vec![RealizationObligation {
-            spec: "alpha".into(),
-            claim: "guarded".into(),
-            areas: vec!["trips".into(), "rider-experience".into()],
-        }],
-    };
-
-    let missing = validate(&model)
-        .into_iter()
-        .filter(|finding| finding.kind == FindingKind::MissingRequiredRealization)
-        .collect::<Vec<_>>();
-    assert_eq!(missing.len(), 1, "{missing:?}");
-    assert!(missing[0].detail.contains("rider-experience"));
-}
-
-#[test]
-fn a_routine_claim_cannot_gain_an_area_obligation() {
-    let mut model = model_with("");
-    model.workspace = Workspace {
-        path: "workspace.json".into(),
-        areas: vec![Area {
-            id: "web".into(),
-            mounts: vec![Mount {
-                id: "code".into(),
-                path: "app/web".into(),
-            }],
-        }],
-        surfaces: Vec::new(),
-        realization_obligations: vec![RealizationObligation {
-            spec: "alpha".into(),
-            claim: "decorative".into(),
-            areas: vec!["web".into()],
-        }],
-    };
-
-    let findings = kinds(&model);
-    assert!(findings.contains(&(
-        FindingKind::DanglingRealizationObligation,
-        "alpha#decorative".into()
-    )));
-    assert!(!findings
-        .iter()
-        .any(|(kind, _)| *kind == FindingKind::MissingRequiredRealization));
-}
-
-#[test]
-fn obligation_and_surface_inputs_expire_judgment_fingerprints() {
-    let mut model = model_with(
-        r#"{"realizes":[{"spec":"alpha","scenario":"guarded","site":"Handle",
-          "file":"app/services/Trips/Handle.cs","lang":"csharp","source_fingerprint":"v1"}]}"#,
-    );
-    model.workspace = Workspace {
-        path: "workspace.json".into(),
-        areas: vec![Area {
-            id: "trips".into(),
-            mounts: vec![Mount {
-                id: "code".into(),
-                path: "app/services/Trips".into(),
-            }],
-        }],
-        surfaces: Vec::new(),
-        realization_obligations: vec![RealizationObligation {
-            spec: "alpha".into(),
-            claim: "guarded".into(),
-            areas: vec!["trips".into()],
-        }],
-    };
-    let claim = model.find_claim("alpha", "guarded").unwrap();
-    let before = fingerprint(
-        &model.claim_text(&claim),
-        model.judgment_inputs("alpha", "guarded"),
-    );
-
-    model.workspace.areas[0].mounts[0].path = "src/Trips".into();
-    let claim = model.find_claim("alpha", "guarded").unwrap();
-    let after = fingerprint(
-        &model.claim_text(&claim),
-        model.judgment_inputs("alpha", "guarded"),
-    );
-    assert_ne!(before, after);
-}
-
-#[test]
-fn surface_assignment_changes_expire_the_site_domain_judgment() {
-    let mut model = class_model(
-        r#"{"realizes":[{"spec":"beta","scenario":"confined","site":"GET",
-          "file":"app/web/route.ts","lang":"typescript","source_fingerprint":"v1"}],
-          "enumerations":[{"class":"beta","kind":"routes","source":"routes.json",
-          "source_fingerprint":"routes-v1","area":"web","address_kind":"route-manifest",
-          "address":"beta","mount":"code"}]}"#,
-    );
-    let claim = model.find_claim("beta", "confined").unwrap();
-    let before = fingerprint(
-        &model.claim_text(&claim),
-        model.judgment_inputs("beta", "confined"),
-    );
-
-    model.workspace.areas[0].mounts[0].path = "src/web".into();
-    let claim = model.find_claim("beta", "confined").unwrap();
-    let after = fingerprint(
-        &model.claim_text(&claim),
-        model.judgment_inputs("beta", "confined"),
-    );
-    assert_ne!(before, after);
-}
-
-#[test]
-fn judgments_name_realization_sources_as_realizations() {
-    let model = model_with(
-        r#"{
-          "realizes": [{"spec":"alpha","scenario":"guarded","site":"Production.Guard",
-            "file":"a.cs","lang":"csharp","source_fingerprint":"production-v1"}],
-          "covers": [{"spec":"alpha","scenario":"guarded","site":"Tests.Guard",
-            "file":"t.cs","lang":"csharp","source_fingerprint":"test-v1",
-            "scope":"component","quantification":"universal"}]
-        }"#,
-    );
-
-    let inputs = model.judgment_inputs("alpha", "guarded");
-    assert!(inputs.iter().any(|input| {
-        input.role() == "realization" && input.display().contains("Production.Guard")
-    }));
-    assert!(inputs
-        .iter()
-        .any(|input| input.role() == "evidence" && input.display().contains("Tests.Guard")));
-}
-
-#[test]
-fn challenge_observations_are_judgment_inputs_and_expire_with_the_report() {
-    let mut model = model_with(
-        r#"{
-          "realizes": [{"spec":"alpha","scenario":"guarded","site":"Production.Guard",
-            "file":"a.cs","lang":"csharp","source_fingerprint":"production-v1"}],
-          "covers": [{"spec":"alpha","scenario":"guarded","site":"Tests.Guard",
-            "file":"t.cs","lang":"csharp","source_fingerprint":"test-v1",
-            "scope":"component","quantification":"universal"}],
-          "observations": [{"id":"mutation-alpha","kind":"mutation-test",
-            "tool":"Stryker.NET","tool_version":"4.16.0","report":"mutation.json",
-            "inputs":["stryker-config.json"],"source_fingerprint":"mutation-v1",
-            "bindings":[{"role":"challenge","spec":"alpha","scenario":"guarded",
-              "assertion":"tests reject generated changes","outcome":"findings",
-              "subjects":[
-                {"relation":"realization","identity":"a.cs#Production.Guard|csharp"},
-                {"relation":"evidence","identity":"t.cs#Tests.Guard|csharp"}]}],
-            "payload":{"survived":1}}]
-        }"#,
-    );
-
-    let claim = model.find_claim("alpha", "guarded").unwrap();
-    let claim_text = model.claim_text(&claim);
-    let inputs = model.judgment_inputs("alpha", "guarded");
-    assert!(inputs
-        .iter()
-        .any(|input| input.role() == "challenge" && input.display().contains("mutation-alpha")));
-    let original = fingerprint(&claim_text, inputs);
-    model.observations[0].source_fingerprint = "mutation-v2".into();
-    let changed = fingerprint(&claim_text, model.judgment_inputs("alpha", "guarded"));
-    assert_ne!(changed, original);
-}
-
-#[test]
-fn challenge_observation_subjects_must_still_resolve() {
-    let model = model_with(
-        r#"{
-          "realizes": [{"spec":"alpha","scenario":"guarded","site":"Production.Guard",
-            "file":"a.cs","lang":"csharp","source_fingerprint":"production-v1"}],
-          "covers": [{"spec":"alpha","scenario":"guarded","site":"Tests.Guard",
-            "file":"t.cs","lang":"csharp","source_fingerprint":"test-v1",
-            "scope":"component","quantification":"universal"}],
-          "observations": [{"id":"static-alpha","kind":"static-analysis",
-            "tool":"analyzer","tool_version":"1","report":"scan.sarif",
-            "inputs":[],"source_fingerprint":"scan-v1",
-            "bindings":[{"role":"challenge","spec":"alpha","scenario":"guarded",
-              "assertion":"linked realization has no adverse finding","outcome":"findings",
-              "subjects":[
-                {"relation":"realization","identity":"renamed.cs#Production.Renamed|csharp"}]}],
-            "payload":{}}]
-        }"#,
-    );
-
-    assert!(kinds(&model).contains(&(
-        FindingKind::UnresolvedObservationBinding,
-        "alpha#guarded".into()
-    )));
-}
-
-#[test]
-fn one_observation_covers_several_claims_with_independent_assertions() {
-    let mut model = model_with(
-        r#"{
-          "realizes": [
-            {"spec":"alpha","scenario":"guarded","site":"Production.Guard",
-             "file":"a.cs","lang":"csharp","source_fingerprint":"production-v1"},
-            {"spec":"alpha","scenario":"decorative","site":"Production.View",
-             "file":"view.cs","lang":"csharp","source_fingerprint":"view-v1"}],
-          "observations": [{"id":"load-42","kind":"load-test","tool":"k6",
-            "tool_version":"1.0","report":"load.json","inputs":["load.js"],
-            "observed_at":"2026-08-11T12:00:00Z","expires_at":4102444800,
-            "source_fingerprint":"load-v1","bindings":[
-              {"role":"evidence","spec":"alpha","scenario":"guarded",
-               "assertion":"p95 latency is below 300 ms","outcome":"satisfied","subjects":[],
-               "scope":"e2e","quantification":"example","oracle":"direct"},
-              {"role":"evidence","spec":"alpha","scenario":"decorative",
-               "assertion":"error rate is below 0.5 percent","outcome":"satisfied","subjects":[],
-               "scope":"e2e","quantification":"example","oracle":"direct"}],"payload":{}}]
-        }"#,
-    );
-
-    assert_eq!(model.observations.len(), 1);
-    assert_eq!(model.covers.len(), 2);
-    assert!(
-        model
-            .covers
-            .iter()
-            .all(|site| site.file == "load.json"
-                && site.evidence_kind.as_deref() == Some("load-test"))
-    );
-    let claim = model.find_claim("alpha", "guarded").unwrap();
-    let claim_text = model.claim_text(&claim);
-    let original = fingerprint(&claim_text, model.judgment_inputs("alpha", "guarded"));
-    model.observations[0].bindings[0].assertion = "p95 latency is below 500 ms".into();
-    let changed = fingerprint(&claim_text, model.judgment_inputs("alpha", "guarded"));
-    assert_ne!(changed, original);
-}
-
-#[test]
-fn duplicate_observation_identity_fails_closed() {
-    let model = model_with(
-        r#"{
-          "observations": [
-            {"id":"scan-1","kind":"static-analysis","tool":"scan","tool_version":"1",
-             "report":"one.sarif","inputs":[],"source_fingerprint":"one",
-             "bindings":[{"role":"challenge","spec":"alpha","scenario":"guarded",
-               "assertion":"scan one","outcome":"clean","subjects":[{"relation":"realization",
-                 "identity":"a.cs#Production.Guard|csharp"}]}],"payload":{}},
-            {"id":"scan-1","kind":"static-analysis","tool":"scan","tool_version":"1",
-             "report":"two.sarif","inputs":[],"source_fingerprint":"two",
-             "bindings":[{"role":"challenge","spec":"alpha","scenario":"guarded",
-               "assertion":"scan two","outcome":"clean","subjects":[{"relation":"realization",
-                 "identity":"a.cs#Production.Guard|csharp"}]}],"payload":{}}],
-          "realizes": [{"spec":"alpha","scenario":"guarded","site":"Production.Guard",
-            "file":"a.cs","lang":"csharp","source_fingerprint":"production-v1"}]
-        }"#,
-    );
-
-    assert!(kinds(&model).contains(&(FindingKind::DuplicateObservation, String::new())));
-}
-
-#[test]
-fn realization_relation_and_source_changes_expire_a_judgment() {
-    let mut model = model_with(
-        r#"{
-          "realizes": [{"spec":"alpha","scenario":"guarded","site":"Production.Guard",
-            "file":"a.cs","lang":"csharp","source_fingerprint":"production-v1"}],
-          "covers": [{"spec":"alpha","scenario":"guarded","site":"Tests.Guard",
-            "file":"t.cs","lang":"csharp","source_fingerprint":"test-v1",
-            "scope":"component","quantification":"universal"}]
-        }"#,
-    );
-    let claim = model.find_claim("alpha", "guarded").unwrap();
-    let claim_text = model.claim_text(&claim);
-    let original = fingerprint(&claim_text, model.judgment_inputs("alpha", "guarded"));
-    let realization = model.realizes[0].clone();
-
-    model.realizes[0].source_fingerprint = "production-v2".into();
-    let source_changed = fingerprint(&claim_text, model.judgment_inputs("alpha", "guarded"));
-    assert_ne!(source_changed, original);
-
-    model.realizes[0].source_fingerprint = "production-v1".into();
-    model.realizes[0].site = "Production.OtherGuard".into();
-    let moved = fingerprint(&claim_text, model.judgment_inputs("alpha", "guarded"));
-    assert_ne!(moved, original);
-
-    model.realizes.clear();
-    let removed = fingerprint(&claim_text, model.judgment_inputs("alpha", "guarded"));
-    assert_ne!(removed, original);
-
-    model.realizes.push(realization);
-    let added = fingerprint(&claim_text, model.judgment_inputs("alpha", "guarded"));
-    assert_eq!(added, original);
-}
-
-#[test]
-fn a_dishonest_realization_verdict_is_a_distinct_finding() {
-    let mut model = model_with(
-        r#"{
-          "realizes": [{"spec":"alpha","scenario":"guarded","site":"Production.Guard",
-            "file":"a.cs","lang":"csharp","source_fingerprint":"production-v1"}],
-          "covers": [{"spec":"alpha","scenario":"guarded","site":"Tests.Guard",
-            "file":"t.cs","lang":"csharp","source_fingerprint":"test-v1",
-            "scope":"component","quantification":"universal"}]
-        }"#,
-    );
-    let claim = model.find_claim("alpha", "guarded").unwrap();
-    let current = fingerprint(
-        &model.claim_text(&claim),
-        model.judgment_inputs("alpha", "guarded"),
-    );
-    model.judgments.push(Judgments {
-        spec: "alpha".into(),
-        path: "judgments.md".into(),
-        entries: vec![Judgment {
-            scenario: "guarded".into(),
-            verdict: Verdict::DishonestRealization,
-            fingerprint: current,
-            judged: "2026-08-10".into(),
-            judge: "agent".into(),
-            reason: "the named site does not establish the predicate".into(),
-            line: 3,
-        }],
+fn duplicate_authorities_are_derivation_errors_not_findings() {
+    let mut value = model("standard", true);
+    let duplicate = value.verifications[0].checks[0].clone();
+    value.verifications.push(Verification {
+        owner: "other".into(),
+        path: "other/verification.md".into(),
+        checks: vec![duplicate],
+        bindings: Vec::new(),
+        qualifications: Vec::new(),
+        challengers: Vec::new(),
+        challenge_plans: Vec::new(),
     });
 
-    assert!(kinds(&model).contains(&(FindingKind::DishonestRealization, "alpha#guarded".into())));
+    assert!(!value.verification_declaration_issues().is_empty());
+    assert!(validate(&value).is_empty());
+}
+
+#[test]
+fn reports_implementation_and_routine_applicability_failures() {
+    let mut value = model("standard", true);
+    value.check_implementations.clear();
+    assert!(kinds(&value).contains(&FindingKind::UnimplementedCheck));
+
+    value = model("standard", true);
+    value.check_implementations[0].check = "missing/check".into();
+    assert!(kinds(&value).contains(&FindingKind::DanglingCheckImplementation));
+
+    value = model("standard", true);
+    value.check_implementations[0].source = None;
+    assert!(kinds(&value).contains(&FindingKind::UnstableCheckImplementation));
+
+    value = model("standard", true);
+    value.check_implementations[0].source_fingerprint = "not-a-fingerprint".into();
+    assert!(kinds(&value).contains(&FindingKind::UnstableCheckImplementation));
+
+    value = model("routine", true);
+    assert!(kinds(&value).contains(&FindingKind::InapplicableVerification));
+}
+
+#[test]
+fn routine_bindings_suppress_qualification_cascades_but_plans_still_resolve_zero() {
+    let expected = [
+        FindingKind::InapplicableVerification,
+        FindingKind::UnresolvedChallengePlan,
+        FindingKind::UnresolvedChallengeSelector,
+    ];
+    let mut value = model("routine", true);
+    value.check_implementations.clear();
+    value.verifications[0].qualifications.clear();
+    assert_eq!(kinds(&value), expected);
+
+    value = model("routine", true);
+    value.verifications[0].qualifications[0].verdict = QualificationVerdict::Rejected;
+    assert_eq!(kinds(&value), expected);
+
+    value = model("routine", true);
+    value.verifications[0].bindings[0]
+        .proposition
+        .push_str(" changed");
+    assert_eq!(kinds(&value), expected);
+
+    let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
+    assert!(resolution.qualifications.is_empty());
+    assert_eq!(
+        resolution.unresolved_selectors,
+        ["qualification from binding alpha/works-edge"]
+    );
+}
+
+#[test]
+fn a_check_shared_with_an_applicable_binding_still_requires_an_implementation() {
+    let mut value = model("standard", true);
+    value.specs.push(
+        parse_spec(
+            "routine.md",
+            "# Spec: routine\n\n## Requirement: behavior\nCriticality: routine\n\n\
+             The system SHALL work.\n\n### Scenario: works\nWHEN invoked\nTHEN it works\n",
+        )
+        .unwrap(),
+    );
+    let mut routine_binding = value.verifications[0].bindings[0].clone();
+    routine_binding.id = "alpha/routine-edge".into();
+    routine_binding.claim = "routine#works".into();
+    value.verifications[0].bindings.push(routine_binding);
+    value.check_implementations.clear();
+
+    let found = kinds(&value);
+    assert!(found.contains(&FindingKind::InapplicableVerification));
+    assert!(found.contains(&FindingKind::UnimplementedCheck));
+    assert!(!found.contains(&FindingKind::MissingQualification));
+}
+
+#[test]
+fn reports_missing_challenger_and_zero_resolution() {
+    let mut value = model("standard", true);
+    value.verifications[0].challenge_plans[0].challenger = "missing/challenger".into();
+    assert!(kinds(&value).contains(&FindingKind::MissingChallenger));
+
+    value = model("standard", true);
+    value.verifications[0].challenge_plans[0].selectors = vec![
+        Selector::ClaimJudgmentFromClaim("alpha#works".into()),
+        Selector::ClaimJudgmentFromRealization("core|rust-item|alpha::works".into()),
+        Selector::ClaimJudgmentFromMechanism("alpha#guard".into()),
+    ];
+    let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
+    assert!(resolution.qualifications.is_empty());
+    assert_eq!(resolution.unresolved_selectors.len(), 3);
+    let found = kinds(&value);
+    assert!(found.contains(&FindingKind::UnresolvedChallengeSelector));
+    assert!(found.contains(&FindingKind::UnresolvedChallengePlan));
+}
+
+#[test]
+fn challenge_resolution_unions_sorts_and_deduplicates_exact_qualifications() {
+    let mut value = model("standard", true);
+    value.verifications[0].challenge_plans[0].selectors = vec![
+        Selector::QualificationFromCheck("alpha/works".into()),
+        Selector::QualificationFromBinding("alpha/works-edge".into()),
+        Selector::QualificationFromRealization("core|rust-item|alpha::works".into()),
+    ];
+    let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
+    assert_eq!(resolution.qualifications.len(), 1);
+    assert!(resolution.unresolved_selectors.is_empty());
+
+    value.verifications[0].bindings[0].challenge_domain = vec![ChallengeDomain::Mechanism];
+    value.verifications[0].challenge_plans[0].selectors =
+        vec![Selector::QualificationFromRealization(
+            "core|rust-item|alpha::works".into(),
+        )];
+    let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
+    assert!(resolution.qualifications.is_empty());
+    assert_eq!(resolution.unresolved_selectors.len(), 1);
+}
+
+#[test]
+fn many_to_many_bindings_resolve_as_independent_qualifications() {
+    let mut value = model("standard", true);
+    let second = parse_spec(
+        "second.md",
+        "# Spec: second\n\n## Requirement: behavior\nCriticality: standard\n\n\
+         The system SHALL work.\n\n### Scenario: also-works\nWHEN invoked again\n\
+         THEN it also works\n",
+    )
+    .unwrap();
+    value.specs[0].requirements[0]
+        .scenarios
+        .push(second.requirements[0].scenarios[0].clone());
+    let mut second_site = value.realizes[0].clone();
+    second_site.scenario = "also-works".into();
+    second_site.site = "alpha::also_works".into();
+    second_site.source.as_mut().unwrap().address = "alpha::also_works".into();
+    value.realizes.push(second_site);
+
+    let mut second_claim_binding = value.verifications[0].bindings[0].clone();
+    second_claim_binding.id = "alpha/also-works-edge".into();
+    second_claim_binding.claim = "alpha#also-works".into();
+    let mut second_claim_qualification = value.verifications[0].qualifications[0].clone();
+    second_claim_qualification.id = second_claim_binding.id.clone();
+
+    let mut second_check = value.verifications[0].checks[0].clone();
+    second_check.id = "alpha/alternate".into();
+    let mut second_check_binding = value.verifications[0].bindings[0].clone();
+    second_check_binding.id = "alpha/alternate-edge".into();
+    second_check_binding.check = second_check.id.clone();
+    let mut second_check_qualification = value.verifications[0].qualifications[0].clone();
+    second_check_qualification.id = second_check_binding.id.clone();
+    let mut second_implementation = value.check_implementations[0].clone();
+    second_implementation.check = second_check.id.clone();
+    second_implementation.site = "tests::alternate".into();
+    second_implementation.source.as_mut().unwrap().address = "tests::alternate".into();
+
+    value.verifications[0].checks.push(second_check);
+    value.verifications[0]
+        .bindings
+        .extend([second_claim_binding, second_check_binding]);
+    value.verifications[0]
+        .qualifications
+        .extend([second_claim_qualification, second_check_qualification]);
+    value.check_implementations.push(second_implementation);
+    for index in 0..value.verifications[0].bindings.len() {
+        let expected = value
+            .expected_qualification_fingerprint(&value.verifications[0].bindings[index])
+            .unwrap();
+        value.verifications[0].qualifications[index].fingerprint = expected;
+    }
+
+    assert!(validate(&value).is_empty());
+    value.verifications[0].challenge_plans[0].selectors = vec![
+        Selector::QualificationFromCheck("alpha/works".into()),
+        Selector::QualificationFromBinding("alpha/alternate-edge".into()),
+        Selector::QualificationFromBinding("alpha/works-edge".into()),
+    ];
+    let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
+    assert_eq!(resolution.qualifications.len(), 3);
+    assert!(resolution
+        .qualifications
+        .windows(2)
+        .all(|pair| pair[0].fingerprint < pair[1].fingerprint));
+}
+
+#[test]
+fn mechanism_traversal_requires_the_binding_domain() {
+    let mut value = model("standard", true);
+    value.designs.push(
+        parse_design(
+            "design.md",
+            "# Design: alpha\n\n## Claim: works\nMechanism: guard\n\
+             Enforcement: guard\nBinding: artifact:guard\n\nA reason.\n",
+        )
+        .unwrap(),
+    );
+    value.artifacts.push(Artifact {
+        id: "artifact:guard".into(),
+        kind: "rust-method".into(),
+        file: "src/alpha.rs".into(),
+        unique: None,
+        columns: Vec::new(),
+        predicate: None,
+        source: None,
+    });
+    value.verifications[0].challenge_plans[0].selectors =
+        vec![Selector::QualificationFromMechanism("alpha#guard".into())];
+    let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
+    assert_eq!(resolution.qualifications.len(), 1);
+
+    value.verifications[0].bindings[0].challenge_domain = vec![ChallengeDomain::Realization];
+    let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
+    assert!(resolution.qualifications.is_empty());
+}
+
+#[test]
+fn finding_registry_is_exhaustive_and_has_guidance() {
+    assert_eq!(FindingKind::ALL.len(), 30);
+    let mut names = BTreeSet::new();
+    for kind in FindingKind::ALL {
+        assert!(!kind.name().is_empty());
+        assert!(
+            names.insert(kind.name()),
+            "duplicate kind `{}`",
+            kind.name()
+        );
+        assert!(!kind.category().name().is_empty());
+        assert!(!kind.help().is_empty());
+    }
+    assert_eq!(
+        FindingKind::MissingQualification.category().name(),
+        "judgment"
+    );
+    assert_eq!(
+        FindingKind::UnresolvedChallengeSelector.category().name(),
+        "verification"
+    );
 }

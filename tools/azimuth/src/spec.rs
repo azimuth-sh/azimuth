@@ -7,7 +7,7 @@
 //! Two failure modes are kept apart on purpose:
 //!
 //! - an unrecognized **construct** fails the parse (D11 — fail loudly);
-//! - a missing **declaration** becomes a hole (D6.2 — a requirement without `Criticality:` parses
+//! - a missing **declaration** becomes a Finding (D6.2 — a requirement without `Criticality:` parses
 //!   and is reported as `unclassified`).
 //!
 //! Conflating them would either let syntax errors through as findings, or turn a semantic gap
@@ -208,9 +208,8 @@ impl<'a> SpecParser<'a> {
     /// A claim whose domain is a set of sites (D13).
     ///
     /// It carries no scenarios: there is no WHEN, because the claim does not range over executions.
-    /// One implicit scenario is synthesized so that tags, plans and judgments key on it exactly as
-    /// they do for a behavioural claim — one claim type, parameterized by domain, means one of
-    /// everything downstream.
+    /// One implicit scenario is synthesized so every derived relation keys it exactly as it does a
+    /// behavioural Claim — one Claim type, parameterized by domain, means one identity downstream.
     fn invariant(&mut self, rest: &str, line_no: usize, lines: &[&str], start: usize) -> usize {
         let id = rest.trim().to_string();
         if let Err(why) = validate_id(&id, false) {
@@ -455,7 +454,7 @@ impl<'a> SpecParser<'a> {
                 self.path,
                 line_no,
                 format!("requirement `{id}` has no scenarios"),
-                "at least one `### Scenario:` — the scenario is the unit of coverage",
+                "at least one `### Scenario:` — the scenario is the case-level Claim identity",
             ));
         }
 

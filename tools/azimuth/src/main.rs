@@ -15,8 +15,6 @@ USAGE
     azimuth validate [options]
     azimuth report traceability [options]
     azimuth export [options]
-    azimuth judge [options]
-    azimuth assurance export --project <id> --out <snapshot.json> [options]
     azimuth init [--root <azimuth-dir>]
     azimuth explore create <id> [--title <text>] [--explorations <dir>]
     azimuth explore list|show [<id>] [--explorations <dir>]
@@ -37,12 +35,9 @@ USAGE
     azimuth change finalize <dir> [options]
     azimuth change archive <dir> --date <YYYY-MM-DD> [options]
 
-The judge command lists every claim with the fingerprint a judgment must carry, so the
-agent tier can record verdicts that expire when what they judged changes.
-
 OPTIONS
     --model <dir>          current model packages (default: azimuth/model)
-    --standards <file>     evidence standards (default: azimuth/standards/verification.md)
+    --standards <file>     qualification policies (default: azimuth/standards/verification.md)
     --workspace <file>     areas, surfaces and obligations (default: workspace.json beside model/)
     --manifest <file>      a linkage manifest; repeatable
     --only <pattern>       restrict to spec ids; `billing/**` or an exact id; repeatable
@@ -94,9 +89,6 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
     if command == "project" {
         return command_project(&args[1..]);
     }
-    if command == "assurance" {
-        return command_assurance(&args[1..]);
-    }
     if command == "report" {
         return command_report(&args[1..]);
     }
@@ -104,76 +96,8 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
     match command.as_str() {
         "validate" => command_validate(parse_options(&args[1..])?),
         "export" => command_export(parse_options(&args[1..])?),
-        "judge" => command_judge(parse_options(&args[1..])?),
         other => Err(format!("unknown command `{other}`\n\n{USAGE}")),
     }
-}
-
-fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
-    let Some(operation) = args.first() else {
-        return Err("assurance needs export".into());
-    };
-    if operation != "export" {
-        return Err(format!("unknown assurance operation `{operation}`"));
-    }
-    let mut project = None;
-    let mut option_args = Vec::new();
-    let mut index = 1;
-    while index < args.len() {
-        if args[index] == "--project" {
-            project = Some(argument_value(args, index, "--project")?);
-            index += 2;
-        } else {
-            option_args.push(args[index].clone());
-            index += 1;
-        }
-    }
-    let project = project.ok_or("assurance export needs `--project <id>`")?;
-    azimuth::diag::validate_id(&project, false)
-        .map_err(|error| format!("invalid assurance project id: {error}"))?;
-    let options = parse_options(&option_args)?;
-    if !options.only.is_empty() {
-        return Err(
-            "assurance export requires the complete accepted model; `--only` is unsupported".into(),
-        );
-    }
-    let output = options
-        .out
-        .clone()
-        .ok_or("assurance export needs `--out <snapshot.json>`")?;
-    let loaded = match azimuth::load(
-        &options.model,
-        &options.standards,
-        &options.workspace,
-        &options.manifests,
-        &options.only,
-    ) {
-        Ok(loaded) => loaded,
-        Err(diags) => {
-            report(&diags, "error");
-            return Ok(ExitCode::from(2));
-        }
-    };
-    report(&loaded.warnings, "warning");
-    let findings = validation::validate(&loaded.model);
-    let summary = validation::summarize(&loaded.model, &findings);
-    if summary.errors > 0 || summary.warnings > 0 || !loaded.warnings.is_empty() {
-        eprintln!(
-            "error: accepted model has {} error(s), {} warning(s)",
-            summary.errors,
-            summary.warnings + loaded.warnings.len()
-        );
-        return Ok(ExitCode::from(1));
-    }
-    let snapshot = azimuth::assurance::snapshot(&loaded.model, &findings, &project);
-    std::fs::write(&output, snapshot.to_json().to_string_pretty())
-        .map_err(|error| format!("cannot write {}: {error}", output.display()))?;
-    println!(
-        "exported assurance snapshot `{}` with {} claim contract(s)",
-        snapshot.id,
-        snapshot.claims.len()
-    );
-    Ok(ExitCode::SUCCESS)
 }
 
 fn command_init(args: &[String]) -> Result<ExitCode, String> {
@@ -906,10 +830,8 @@ fn one_position<'a>(values: &'a [String], error: &str) -> Result<&'a str, String
 fn change_obligations(criticality: azimuth::model::Criticality) -> &'static str {
     match criticality {
         azimuth::model::Criticality::Routine => "intent only",
-        azimuth::model::Criticality::Standard => "realization + evidence",
-        azimuth::model::Criticality::Critical => {
-            "realization + design + critical evidence + judgment"
-        }
+        azimuth::model::Criticality::Standard => "realization + qualified verification",
+        azimuth::model::Criticality::Critical => "realization + design + qualified verification",
     }
 }
 
@@ -1081,53 +1003,6 @@ fn command_report(args: &[String]) -> Result<ExitCode, String> {
         Some(path) => std::fs::write(&path, json)
             .map_err(|error| format!("cannot write {}: {error}", path.display()))?,
         None => print!("{json}"),
-    }
-    Ok(ExitCode::SUCCESS)
-}
-
-/// Lists claims and their current fingerprints — the agent tier's worklist.
-fn command_judge(options: Options) -> Result<ExitCode, String> {
-    let loaded = match azimuth::load(
-        &options.model,
-        &options.standards,
-        &options.workspace,
-        &options.manifests,
-        &options.only,
-    ) {
-        Ok(l) => l,
-        Err(diags) => {
-            report(&diags, "error");
-            return Ok(ExitCode::from(2));
-        }
-    };
-    let model = &loaded.model;
-
-    for claim in model.claims() {
-        let inputs = model.judgment_inputs(&claim.spec.id, &claim.scenario.id);
-        let fingerprint = azimuth::judgment::fingerprint(&model.claim_text(&claim), inputs.clone());
-        let existing = model
-            .judgments_for(&claim.spec.id)
-            .and_then(|j| j.entry(&claim.scenario.id));
-        let state = match existing {
-            Some(j) if j.fingerprint == fingerprint => format!("judged {}", j.verdict.name()),
-            Some(j) => format!("stale ({})", j.verdict.name()),
-            None => "unjudged".to_string(),
-        };
-        println!(
-            "{}\t{}\t{}\t{}\t{}",
-            claim.spec.id,
-            claim.scenario.id,
-            claim
-                .requirement
-                .criticality
-                .map(|c| c.name())
-                .unwrap_or("-"),
-            fingerprint,
-            state
-        );
-        for input in inputs {
-            println!("\t{}\t{}", input.role(), input.display());
-        }
     }
     Ok(ExitCode::SUCCESS)
 }

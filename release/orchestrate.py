@@ -531,16 +531,7 @@ def source_entry(scenario, site, file, fingerprint):
         "site": site,
         "file": file,
         "lang": language,
-        "source_fingerprint": fingerprint,
-    }
-
-
-def cover_entry(scenario, site, file, fingerprint, scope):
-    return {
-        **source_entry(scenario, site, file, fingerprint),
-        "scope": scope,
-        "quantification": "universal",
-        "oracle": "direct",
+        "source_fingerprint": f"sha256:{fingerprint}",
     }
 
 
@@ -548,12 +539,10 @@ def write_linkage(root, output_root, ordinary_receipt=None, release_receipt=None
     root = Path(root)
     orchestrator = root / "release/orchestrate.py"
     candidates = root / "release/candidates.py"
-    tests = root / "release/test_orchestrate.py"
     workflow = root / ".github/workflows/release.yml"
     orchestrator_fingerprint = digest(orchestrator)
     candidates_fingerprint = digest(candidates)
     workflow_fingerprint = digest(workflow)
-    test_fingerprint = combined_digest([tests, orchestrator])
     realization_sites = {
         "ordinary-ci-excludes-release-only-matrix":
             ("workflow_account", "release/orchestrate.py", orchestrator_fingerprint),
@@ -582,67 +571,13 @@ def write_linkage(root, output_root, ordinary_receipt=None, release_receipt=None
         "completion-needs-public-retrieval":
             ("validate_completion", "release/orchestrate.py", orchestrator_fingerprint),
     }
-    test_covers = {
-        "selected-lanes-are-independent":
-            "test_each_release_lane_is_required_by_the_workflow_account",
-        "complete-account-needs-every-lane":
-            "test_each_missing_and_duplicate_candidate_and_an_unexpected_candidate_fail",
-        "tag-catalog-and-revision-agree":
-            "test_annotated_tag_must_name_the_candidate_revision",
-        "retained-downloads-have-checksums":
-            "test_tag_revision_and_each_candidate_byte_set_fail_independently",
-        "exact-existing-target-is-preserved":
-            "test_exact_targets_are_preserved_and_conflicts_fail_closed",
-        "absent-target-is-selected":
-            "test_each_absent_target_is_the_only_selected_publication",
-        "conflicting-target-fails":
-            "test_exact_targets_are_preserved_and_conflicts_fail_closed",
-        "completion-needs-public-retrieval":
-            "test_completion_needs_every_target_and_provenance",
-    }
-    covers = [
-        cover_entry(scenario, site, "release/test_orchestrate.py", test_fingerprint, "component")
-        for scenario, site in test_covers.items()
-    ]
-    if ordinary_receipt is not None:
-        receipt = output_root / ORDINARY_RECEIPT.name
-        covers.append(
-            cover_entry(
-                "ordinary-ci-excludes-release-only-matrix",
-                "hosted_ordinary_gate",
-                f".azimuth/release/{receipt.name}",
-                combined_digest(
-                    [receipt, root / ".github/workflows/ci.yml", root / "scripts/check.sh"]
-                ),
-                "e2e",
-            )
-        )
-    if release_receipt is not None:
-        receipt = output_root / RELEASE_RECEIPT.name
-        receipt_fingerprint = combined_digest([receipt, workflow, orchestrator, candidates])
-        for scenario in (
-            "executable-subjects-have-provenance",
-            "packed-packages-install",
-            "native-binaries-run",
-            "selected-image-platforms-start",
-        ):
-            covers.append(
-                cover_entry(
-                    scenario,
-                    "hosted_release_rehearsal",
-                    f".azimuth/release/{receipt.name}",
-                    receipt_fingerprint,
-                    "e2e",
-                )
-            )
     linkage = {
         "realizes": [
             source_entry(scenario, site, file, fingerprint)
             for scenario, (site, file, fingerprint) in realization_sites.items()
         ],
-        "covers": covers,
+        "check_implementations": [],
         "mechanism_implementations": [],
-        "mechanism_covers": [],
         "class_members": [],
         "enumerations": [],
         "artifacts": [
@@ -667,7 +602,6 @@ def write_linkage(root, output_root, ordinary_receipt=None, release_receipt=None
                 "file": "release/orchestrate.py",
             },
         ],
-        "observations": [],
     }
     (output_root / "orchestration-linkage.json").write_text(
         json.dumps(linkage, indent=2) + "\n"

@@ -11,7 +11,8 @@ import { emit, nextRoutes } from './emitter';
 import { prometheusLinkage } from './prometheus';
 import { surfaceTargets } from './workspace';
 
-const USAGE = `usage: azimuth-emit-ts --output <path> [--root <dir>] [--workspace <file>] [--prometheus <rules>,<tests>] <dir-or-file>...
+const USAGE = `usage: azimuth-emit-ts --output <path> [--root <dir>] [--workspace <file>]
+  [--prometheus <rules>,<tests>] <dir-or-file>...
   --output    where the manifest is written
   --root      paths in the manifest are made relative to this (default: cwd)
   --workspace enumerate declared Next.js surface contributions from area mounts.
@@ -37,7 +38,9 @@ function main(argv: string[]): number {
       const value = argv[++i] ?? '';
       const split = value.indexOf(',');
       if (split <= 0 || split === value.length - 1) {
-        console.error(`azimuth-emit: --prometheus wants <rules>,<tests>, got \`${value}\`\n${USAGE}`);
+        console.error(
+          `azimuth-emit: --prometheus wants <rules>,<tests>, got \`${value}\`\n${USAGE}`,
+        );
         return 2;
       }
       prometheus.push({
@@ -87,12 +90,17 @@ function main(argv: string[]): number {
       const linkage = prometheusLinkage(pair.rules, pair.tests, root);
       manifest.artifacts.push(...linkage.artifacts);
       manifest.realizes.push(...linkage.realizes);
-      manifest.covers.push(...linkage.covers);
+      manifest.check_implementations.push(...linkage.check_implementations);
     }
   } catch (error) {
     console.error(`azimuth-emit: ${(error as Error).message}`);
     return 2;
   }
+
+  manifest.check_implementations.sort((left, right) =>
+    left.check.localeCompare(right.check) ||
+      left.file.localeCompare(right.file) ||
+      left.site.localeCompare(right.site));
 
   for (const warning of warnings) {
     console.error(`warning: ${warning.file}:${warning.line}: ${warning.message}`);
@@ -106,9 +114,9 @@ function main(argv: string[]): number {
   fs.mkdirSync(path.dirname(path.resolve(output)), { recursive: true });
   fs.writeFileSync(output, `${JSON.stringify(manifest, null, 2)}\n`);
   console.error(
-    `${manifest.realizes.length} realizes, ${manifest.covers.length} covers, ` +
-      `${manifest.mechanism_implementations.length} mechanism implementations, ` +
-      `${manifest.mechanism_covers.length} mechanism covers → ${output}`,
+    `${manifest.realizes.length} realizes, ` +
+      `${manifest.check_implementations.length} Check implementations, ` +
+      `${manifest.mechanism_implementations.length} mechanism implementations → ${output}`,
   );
   return 0;
 }

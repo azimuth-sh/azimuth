@@ -5,6 +5,43 @@
 
 use azimuth::model::{Criticality, StepKind};
 use azimuth::spec::parse_spec;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_ROOT: AtomicU64 = AtomicU64::new(0);
+
+fn package_root() -> PathBuf {
+    let root = std::env::temp_dir().join(format!(
+        "azimuth-package-{}-{}",
+        std::process::id(),
+        NEXT_ROOT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir_all(&root).unwrap();
+    root
+}
+
+fn write_routine_spec(path: &Path, id: &str, scenario: &str) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        path,
+        format!(
+            "# Spec: {id}\n\n## Requirement: works\nCriticality: routine\n\n\
+             The system SHALL work.\n\n### Scenario: {scenario}\nWHEN invoked\nTHEN it works\n"
+        ),
+    )
+    .unwrap();
+}
+
+fn load_packages(model: &Path) -> Result<azimuth::Loaded, Vec<azimuth::diag::Diag>> {
+    azimuth::load(
+        model,
+        &model.join("missing-standards.md"),
+        &model.join("missing-workspace.json"),
+        &[],
+        &[],
+    )
+}
 
 fn err(source: &str) -> String {
     match parse_spec("t.md", source) {
@@ -61,7 +98,7 @@ fn prose_before_the_first_requirement_is_not_a_statement() {
     assert!(!spec.requirements[0].statement.contains("claims nothing"));
 }
 
-/// D6.2 vs D11: a missing *declaration* is a hole, an unrecognized *construct* is a parse error.
+/// D6.2 vs D11: a missing declaration is a Finding; an unknown construct is a parse error.
 /// Conflating them would either let syntax through as findings or hide a semantic gap.
 #[test]
 fn missing_criticality_parses_and_becomes_a_finding_not_an_error() {
@@ -139,7 +176,7 @@ The system SHALL do something unfalsifiable.
 ";
     let message = err(source);
     assert!(message.contains("has no scenarios"), "{message}");
-    assert!(message.contains("unit of coverage"), "{message}");
+    assert!(message.contains("case-level Claim identity"), "{message}");
 }
 
 #[test]
@@ -188,8 +225,8 @@ fn unknown_labels_fail_loudly() {
     assert!(message.contains("unknown label `Scope:`"), "{message}");
 }
 
-/// Scope and quantification are evidence judgments and live in the verification plan (D5). A spec
-/// that carries them is a spec doing the plan's job, and the parser says so.
+/// Scope and quantification belong to an Evidence Binding. A spec carrying them usurps that
+/// separate authority, and the parser says so.
 #[test]
 fn a_spec_cannot_carry_a_required_form() {
     let source = MINIMAL.replace(
@@ -291,4 +328,419 @@ THEN an outcome with no trigger
     assert!(message.contains("invalid requirement id"), "{message}");
     assert!(message.contains("unknown criticality"), "{message}");
     assert!(message.contains("has no WHEN"), "{message}");
+}
+
+#[test]
+fn routine_spec_only_package_loads_without_verification_authority() {
+    let root = package_root();
+    let model = root.join("model");
+    write_routine_spec(&model.join("simple/spec.md"), "simple", "works");
+
+    let loaded = load_packages(&model).unwrap();
+    assert_eq!(loaded.model.specs.len(), 1);
+    assert!(loaded.model.designs.is_empty());
+    assert!(loaded.model.verifications.is_empty());
+    assert!(loaded.warnings.is_empty());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn sibling_spec_design_and_verification_form_one_package() {
+    let root = package_root();
+    let package = root.join("model/package");
+    write_routine_spec(&package.join("spec.md"), "package", "works");
+    fs::write(package.join("design.md"), "# Design: package\n").unwrap();
+    fs::write(
+        package.join("verification.md"),
+        "# Verification: package\n\n## Check: package/works\nMethod: invoke it\n\
+         Terminal: it works\n\nOne terminal outcome.\n",
+    )
+    .unwrap();
+
+    let loaded = load_packages(&root.join("model")).unwrap();
+    assert_eq!(loaded.model.specs.len(), 1);
+    assert_eq!(loaded.model.designs.len(), 1);
+    assert_eq!(loaded.model.verifications.len(), 1);
+    assert!(loaded.warnings.is_empty());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn declared_spec_id_beats_path_and_emits_a_navigation_warning() {
+    let root = package_root();
+    let model = root.join("model");
+    write_routine_spec(&model.join("wrong/path/spec.md"), "declared/id", "works");
+
+    let loaded = load_packages(&model).unwrap();
+    assert_eq!(loaded.model.specs[0].id, "declared/id");
+    assert!(loaded
+        .warnings
+        .iter()
+        .any(|warning| warning.message.contains("declared id `declared/id`")));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn misplaced_facets_remain_loaded_and_visible_as_navigation_warnings() {
+    let root = package_root();
+    let model = root.join("model");
+    write_routine_spec(&model.join("declared/spec.md"), "declared", "works");
+    fs::create_dir_all(model.join("misplaced")).unwrap();
+    fs::write(model.join("misplaced/design.md"), "# Design: declared\n").unwrap();
+    fs::write(
+        model.join("misplaced/verification.md"),
+        "# Verification: declared\n\n## Check: declared/works\nMethod: invoke it\n\
+         Terminal: it works\n\nOne terminal outcome.\n",
+    )
+    .unwrap();
+
+    let loaded = load_packages(&model).unwrap();
+    assert_eq!(loaded.model.designs.len(), 1);
+    assert_eq!(loaded.model.verifications.len(), 1);
+    assert!(loaded.warnings.iter().any(|warning| warning
+        .message
+        .contains("design for `declared` is not beside")));
+    assert!(loaded.warnings.iter().any(|warning| warning
+        .message
+        .contains("verification authority for `declared` is not beside")));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn complete_verification_authority_is_checked_before_only_selection() {
+    let root = package_root();
+    let model = root.join("model");
+    write_routine_spec(&model.join("alpha/spec.md"), "alpha", "works");
+    write_routine_spec(&model.join("beta/spec.md"), "beta", "works");
+    for (owner, terminal) in [("alpha", "first"), ("beta", "second")] {
+        fs::write(
+            model.join(owner).join("verification.md"),
+            format!(
+                "# Verification: {owner}\n\n## Check: shared/check\nMethod: invoke it\n\
+                 Terminal: {terminal}\n\nOne terminal outcome.\n"
+            ),
+        )
+        .unwrap();
+    }
+
+    let errors = azimuth::load(
+        &model,
+        &model.join("missing-standards.md"),
+        &model.join("missing-workspace.json"),
+        &[],
+        &["alpha".into()],
+    )
+    .unwrap_err();
+    assert!(errors.iter().any(|error| error
+        .message
+        .contains("Check `shared/check` is already declared")));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn cross_file_duplicate_check_claim_pairs_are_derivation_errors() {
+    let root = package_root();
+    let model = root.join("model");
+    write_routine_spec(&model.join("alpha/spec.md"), "alpha", "works");
+    write_routine_spec(&model.join("beta/spec.md"), "beta", "works");
+    fs::write(
+        model.join("alpha/verification.md"),
+        verification_with_binding("alpha", "edge/one", true),
+    )
+    .unwrap();
+    fs::write(
+        model.join("beta/verification.md"),
+        "# Verification: beta\n\n## Check: beta/unused\nMethod: invoke\nTerminal: works\n\nAtomic.\n",
+    )
+    .unwrap();
+    fs::write(
+        model.join("beta/verification.md"),
+        verification_with_binding("beta", "edge/two", false),
+    )
+    .unwrap();
+
+    let errors = load_packages(&model).unwrap_err();
+    assert!(errors.iter().any(|error| error
+        .message
+        .contains("Check `shared/check` is already bound to Claim `alpha#works`")));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn only_selection_retains_the_verification_and_challenge_closure() {
+    let root = package_root();
+    let model = root.join("model");
+    write_routine_spec(&model.join("alpha/spec.md"), "alpha", "works");
+    write_routine_spec(&model.join("beta/spec.md"), "beta", "works");
+    fs::write(
+        model.join("alpha/verification.md"),
+        "# Verification: alpha\n\n## Check: shared/check\nMethod: invoke\nTerminal: works\n\n\
+         Atomic.\n\n## Evidence Binding: edge/alpha\nCheck: shared/check\nClaim: alpha#works\n\
+         Proposition: direct\nScope: unit\nQuantification: example\nOracle: direct\nContext: {}\n\
+         Challenge domain: [\"context\"]\nQualification policy: credible\n\nReviewable.\n\n\
+         ## Evidence Binding: edge/beta\nCheck: shared/check\nClaim: beta#works\nProposition: direct\n\
+         Scope: unit\nQuantification: example\nOracle: direct\nContext: {}\n\
+         Challenge domain: [\"context\"]\nQualification policy: credible\n\nReviewable.\n\n\
+         ## Qualification: edge/alpha\nVerdict: qualified\n\
+         Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
+         Qualified: 2026-08-21\nQualifier: owner\n\nReviewed.\n\n\
+         ## Qualification: edge/beta\nVerdict: qualified\n\
+         Fingerprint: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n\
+         Qualified: 2026-08-21\nQualifier: owner\n\nReviewed.\n\n\
+         ## Challenger: mutation/perturb\nForm: implementation-perturbation\n\
+         Searches for: an undetected change\n\nOpen objection.\n\n\
+         ## Challenge Plan: shared/plan\nChallenger: mutation/perturb\n\
+         Select: qualification from check shared/check\n\
+         Select: qualification from binding edge/beta\n\nTargets relevant decisions.\n",
+    )
+    .unwrap();
+
+    let loaded = azimuth::load(
+        &model,
+        &model.join("missing-standards.md"),
+        &model.join("missing-workspace.json"),
+        &[],
+        &["alpha".into()],
+    )
+    .unwrap();
+    assert_eq!(loaded.model.specs.len(), 1);
+    assert_eq!(loaded.model.checks().count(), 1);
+    assert_eq!(loaded.model.evidence_bindings().count(), 1);
+    assert_eq!(loaded.model.qualifications().count(), 1);
+    assert_eq!(loaded.model.challengers().count(), 1);
+    assert_eq!(loaded.model.verifications.len(), 1);
+    let plan = loaded.model.challenge_plans().next().unwrap();
+    assert_eq!(plan.selectors.len(), 1);
+    assert_eq!(
+        plan.selectors[0].canonical(),
+        "qualification from check shared/check"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn local_check_identity_is_normalized_before_fingerprinting() {
+    let root = package_root();
+    let model = root.join("model");
+    write_routine_spec(&model.join("alpha/spec.md"), "alpha", "works");
+    fs::write(
+        model.join("alpha/verification.md"),
+        "# Verification: alpha\n\n## Check: alpha/works\nMethod: invoke\nTerminal: works\n\n\
+         Atomic.\n",
+    )
+    .unwrap();
+    let manifest = root.join("manifest.json");
+    fs::write(
+        &manifest,
+        "{\"check_implementations\":[{\"check\":\"alpha/works\",\
+         \"site\":\"tests::works\",\"file\":\"src/tests.rs\",\"lang\":\"rust\",\
+         \"source_fingerprint\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\
+         \"area\":\"forged\",\"address_kind\":\"forged-kind\",\
+         \"address\":\"forged-address\",\"mount\":\"forged-mount\"}]}"
+    )
+    .unwrap();
+    let first_workspace = root.join("first-workspace.json");
+    let second_workspace = root.join("second-workspace.json");
+    for (path, area) in [(&first_workspace, "core"), (&second_workspace, "alternate")] {
+        fs::write(
+            path,
+            format!(
+                "{{\"format\":\"azimuth-workspace\",\"version\":1,\
+                 \"areas\":[{{\"id\":\"{area}\",\"mounts\":[{{\"id\":\"code\",\
+                 \"path\":\"src\"}}]}}],\"surfaces\":[],\"realization_obligations\":[]}}"
+            ),
+        )
+        .unwrap();
+    }
+    let first = azimuth::load(
+        &model,
+        &root.join("missing-standards.md"),
+        &first_workspace,
+        std::slice::from_ref(&manifest),
+        &[],
+    )
+    .unwrap();
+    let second = azimuth::load(
+        &model,
+        &root.join("missing-standards.md"),
+        &second_workspace,
+        std::slice::from_ref(&manifest),
+        &[],
+    )
+    .unwrap();
+    assert_eq!(
+        first.model.check_implementations[0]
+            .source
+            .as_ref()
+            .unwrap()
+            .key(),
+        "core|rust-symbol|tests::works"
+    );
+    let first_fingerprint = azimuth::fingerprint::check_fingerprint(
+        first.model.checks().next().unwrap(),
+        &first.model.check_implementations,
+    );
+    let second_fingerprint = azimuth::fingerprint::check_fingerprint(
+        second.model.checks().next().unwrap(),
+        &second.model.check_implementations,
+    );
+    assert_ne!(first_fingerprint, second_fingerprint);
+
+    fs::write(
+        &manifest,
+        "{\"check_implementations\":[{\"check\":\"alpha/works\",\
+         \"site\":\"tests::outside\",\"file\":\"outside/tests.rs\",\"lang\":\"rust\",\
+         \"source_fingerprint\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\
+         \"area\":\"forged\",\"address_kind\":\"forged-kind\",\
+         \"address\":\"forged-address\",\"mount\":\"forged-mount\"}]}"
+    )
+    .unwrap();
+    let outside = azimuth::load(
+        &model,
+        &root.join("missing-standards.md"),
+        &first_workspace,
+        std::slice::from_ref(&manifest),
+        &[],
+    )
+    .unwrap();
+    assert!(outside.model.check_implementations[0].source.is_none());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn merged_manifest_conflicts_are_rejected_before_only_selection() {
+    let root = package_root();
+    let model = root.join("model");
+    write_routine_spec(&model.join("alpha/spec.md"), "alpha", "works");
+    write_routine_spec(&model.join("beta/spec.md"), "beta", "works");
+    fs::write(
+        model.join("beta/verification.md"),
+        "# Verification: beta\n\n## Check: beta/works\nMethod: invoke\nTerminal: works\n\nAtomic.\n",
+    )
+    .unwrap();
+    let workspace = root.join("workspace.json");
+    fs::write(
+        &workspace,
+        "{\"format\":\"azimuth-workspace\",\"version\":1,\
+         \"areas\":[{\"id\":\"core\",\"mounts\":[{\"id\":\"code\",\"path\":\"src\"}]}],\
+         \"surfaces\":[],\"realization_obligations\":[]}",
+    )
+    .unwrap();
+    let first = root.join("first.json");
+    let second = root.join("second.json");
+    let linkage = |fingerprint: char| {
+        format!(
+            "{{\"check_implementations\":[{{\"check\":\"beta/works\",\
+             \"site\":\"tests::works\",\"file\":\"src/tests.rs\",\"lang\":\"rust\",\
+             \"source_fingerprint\":\"sha256:{}\"}}],\
+             \"artifacts\":[{{\"id\":\"beta-artifact\",\"kind\":\"schema\",\
+             \"file\":\"src/schema.sql\"}}]}}",
+            fingerprint.to_string().repeat(64)
+        )
+    };
+    fs::write(&first, linkage('a')).unwrap();
+    fs::write(&second, linkage('b')).unwrap();
+
+    let errors = azimuth::load(
+        &model,
+        &root.join("missing-standards.md"),
+        &workspace,
+        &[first, second],
+        &["alpha".into()],
+    )
+    .unwrap_err();
+    let messages = errors
+        .iter()
+        .map(|error| error.message.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        messages.contains("duplicate Check implementation"),
+        "{messages}"
+    );
+    assert!(messages.contains("duplicate artifact id"), "{messages}");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn verification_authority_requires_a_current_owning_spec() {
+    let root = package_root();
+    let model = root.join("model");
+    write_routine_spec(&model.join("alpha/spec.md"), "alpha", "works");
+    fs::create_dir_all(model.join("retired")).unwrap();
+    fs::write(
+        model.join("retired/verification.md"),
+        "# Verification: retired\n\n## Check: retired/check\nMethod: invoke\nTerminal: works\n\nAtomic.\n",
+    )
+    .unwrap();
+
+    let errors = load_packages(&model).unwrap_err();
+    assert!(errors.iter().any(|error| error
+        .message
+        .contains("verification authority `retired` has no current owning spec")));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn missing_policies_warn_only_for_resolved_nonroutine_binding_targets() {
+    let root = package_root();
+    let model = root.join("model");
+    write_routine_spec(&model.join("routine/spec.md"), "routine", "works");
+    fs::write(
+        model.join("routine/verification.md"),
+        verification_binding("routine", "routine/check", "routine#works", "edge/routine"),
+    )
+    .unwrap();
+    let routine = load_packages(&model).unwrap();
+    assert!(!routine
+        .warnings
+        .iter()
+        .any(|warning| warning.message.contains("qualification policies")));
+
+    write_routine_spec(&model.join("standard/spec.md"), "standard", "works");
+    let standard_path = model.join("standard/spec.md");
+    fs::write(
+        &standard_path,
+        fs::read_to_string(&standard_path)
+            .unwrap()
+            .replace("Criticality: routine", "Criticality: standard"),
+    )
+    .unwrap();
+    fs::write(
+        model.join("standard/verification.md"),
+        verification_binding(
+            "standard",
+            "standard/check",
+            "standard#works",
+            "edge/standard",
+        ),
+    )
+    .unwrap();
+    let mixed = load_packages(&model).unwrap();
+    assert!(mixed
+        .warnings
+        .iter()
+        .any(|warning| warning.message.contains("qualification policies")));
+    fs::remove_dir_all(root).unwrap();
+}
+
+fn verification_binding(owner: &str, check: &str, claim: &str, binding: &str) -> String {
+    format!(
+        "# Verification: {owner}\n\n## Check: {check}\nMethod: invoke\nTerminal: works\n\n\
+         Atomic.\n\n## Evidence Binding: {binding}\nCheck: {check}\nClaim: {claim}\n\
+         Proposition: direct\nScope: unit\nQuantification: example\nOracle: direct\nContext: {{}}\n\
+         Challenge domain: [\"context\"]\nQualification policy: credible\n\nReviewable.\n"
+    )
+}
+
+fn verification_with_binding(owner: &str, binding: &str, include_check: bool) -> String {
+    let check = include_check
+        .then_some("## Check: shared/check\nMethod: invoke\nTerminal: works\n\nAtomic.\n\n")
+        .unwrap_or_default();
+    format!(
+        "# Verification: {owner}\n\n{check}## Evidence Binding: {binding}\n\
+         Check: shared/check\nClaim: alpha#works\nProposition: direct\nScope: unit\n\
+         Quantification: example\nOracle: direct\nContext: {{}}\n\
+         Challenge domain: [\"context\"]\nQualification policy: credible\n\nReviewable.\n"
+    )
 }

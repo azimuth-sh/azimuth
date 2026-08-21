@@ -1,13 +1,7 @@
-# Assurance extension conformance
+# Neutral analyzer fixture
 
-This synthetic experiment tests the provider-neutral observation boundary without depending on the
-ride-hailing claims or requiring k6, a Kubernetes cluster or CodeQL on the host.
+This directory remains in the root experiment sequence as a neutral isolation fixture. It checks
+that a well-formed, empty SARIF report can be read without a domain checkout or analyzer install.
+The report is ordinary test data; it is not an Azimuth manifest and declares no framework entity.
 
-- one k6-shaped load export covers two performance claims;
-- one Chaos Mesh-shaped experiment covers degradation, recovery and alerting separately;
-- one SARIF 2.1.0 report challenges every claim realized in its analyzed artifact;
-- no adapter adds a tool-specific collection to the Rust model.
-
-Run `./experiments/assurance-extensions/check.sh`. The native tools remain replaceable producers;
-their checked-in result shapes are inputs to the protocol test, not claims that those tools ran in
-this repository's CI environment.
+Run `./experiments/assurance-extensions/check.sh` to validate the fixture's basic SARIF shape.

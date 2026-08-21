@@ -422,12 +422,7 @@ def qualify_packages(catalog, root, allow_dirty):
 def write_linkage(root, output_root):
     qualifier = root / "release/qualify.py"
     acceptance = root / "release/acceptance.py"
-    tests = root / "release/test_qualify.py"
-    qualification_path = output_root / "qualification.json"
-    qualifier_fingerprint = combined_digest([qualifier, acceptance])
-    test_fingerprint = combined_digest([tests, acceptance])
-    qualification_fingerprint = combined_digest([qualification_path, qualifier, acceptance])
-    component_claims = set(SCENARIOS[:3])
+    qualifier_fingerprint = f"sha256:{combined_digest([qualifier, acceptance])}"
     linkage = {
         "realizes": [
             {
@@ -441,32 +436,8 @@ def write_linkage(root, output_root):
             for scenario in SCENARIOS
             for site in ["qualify"]
         ],
-        "covers": [
-            {
-                "spec": SPEC,
-                "scenario": scenario,
-                "site": (
-                    "qualify_packages"
-                    if scenario in component_claims
-                    else "test_catalog_matches_approved_contract"
-                ),
-                "file": (
-                    ".azimuth/release/qualification.json"
-                    if scenario in component_claims
-                    else "release/test_qualify.py"
-                ),
-                "lang": "release-qualification" if scenario in component_claims else "python",
-                "source_fingerprint": (
-                    qualification_fingerprint if scenario in component_claims else test_fingerprint
-                ),
-                "scope": "component" if scenario in component_claims else "unit",
-                "quantification": "universal",
-                "oracle": "direct",
-            }
-            for scenario in SCENARIOS
-        ],
+        "check_implementations": [],
         "mechanism_implementations": [],
-        "mechanism_covers": [],
         "class_members": [],
         "enumerations": [],
         "artifacts": [
@@ -476,7 +447,6 @@ def write_linkage(root, output_root):
                 "file": "release/artifacts.json",
             }
         ],
-        "observations": [],
     }
     (output_root / "linkage.json").write_text(json.dumps(linkage, indent=2) + "\n")
 

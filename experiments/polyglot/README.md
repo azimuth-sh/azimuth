@@ -3,10 +3,10 @@
 This experiment asks one narrow question: can independently built services in materially different
 language ecosystems emit one Azimuth model without the core learning any language?
 
-Seven small HTTP services expose `/identity`. Their unit-level identity capabilities realize and
-cover seven standard claims in one synthetic spec. `check.sh` compiles or syntax-checks each
-service, runs its test, emits seven manifests through six extractor paths, and feeds their union to
-the unchanged Rust core.
+Seven small HTTP services expose `/identity`. Their identity capabilities realize seven routine
+Claims in one synthetic spec. `check.sh` compiles or syntax-checks each service, runs ordinary
+engineering tests, emits seven manifests through six extractor paths, and feeds their union to the
+Rust core.
 
 | Language | Marker shape | Extractor authority | Fingerprint boundary |
 |---|---|---|---|
@@ -14,7 +14,7 @@ the unchanged Rust core.
 | Java | runtime annotations | compiled JVM reflection | source file fallback |
 | Kotlin | runtime annotations | compiled JVM reflection | source file fallback |
 | Python | no-op decorators | Python `ast` | decorated symbol |
-| JavaScript | no-op calls | TypeScript compiler parser in JS mode | enclosing symbol/test |
+| JavaScript | no-op calls | TypeScript compiler parser in JS mode | enclosing symbol |
 | Rust | inert attribute macros | compile gate plus Rust attribute parser | enclosing function |
 | C++ | Clang annotations | Clang AST dump after semantic analysis | source file fallback |
 
@@ -33,8 +33,8 @@ task-specific paths under `/tmp` so the experiment does not depend on a develope
 
 ## Result boundary
 
-A green run establishes compiler-compatible annotation packages, extraction of claim identity,
-site, language, actual evidence form and source freshness, plus composition through the existing
-manifest contract. It does not establish framework adoption ergonomics in seven production
-codebases. The C++ and JVM extractors conservatively fingerprint a complete source file; unrelated
-edits can therefore expire judgments until their compiler APIs expose a stable source span.
+A green run establishes compiler-compatible annotation packages, extraction of Claim identity,
+site, language and source freshness, plus composition through the current manifest contract. The
+tests remain ordinary engineering tests because routine Claims cannot enroll Checks. The run does
+not establish framework adoption ergonomics in seven production codebases. The C++ and JVM
+extractors conservatively fingerprint a complete source file.

@@ -1,4 +1,4 @@
-//! Pure, derived Claim-and-realization traceability projection (D44).
+//! Pure derived Claim, realization, and verification traceability projection.
 
 use crate::json::Json;
 use crate::model::{Criticality, Model, Site, StepKind};
@@ -17,6 +17,7 @@ pub struct TraceabilityClaim {
     pub statement: String,
     pub steps: Vec<TraceabilityStep>,
     pub realizations: Vec<String>,
+    pub verification: Vec<TraceabilityVerification>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,48 +26,103 @@ pub struct TraceabilityStep {
     pub text: String,
 }
 
-/// Derives traceability from the Claims already selected into `model`.
-///
-/// Loading owns selection. Keeping selection out of this projection prevents a report-only
-/// selector language from becoming a second source of model authority. Claims and realization
-/// identities are ordered and deduplicated so extractor and model traversal order cannot affect
-/// the result.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TraceabilityVerification {
+    pub check: String,
+    pub binding: String,
+    pub applicable: bool,
+    pub current: bool,
+    pub qualification: Option<String>,
+    pub verdict: Option<String>,
+}
+
 pub fn project(model: &Model) -> TraceabilityReport {
     let mut realizations = BTreeMap::<(String, String), BTreeSet<String>>::new();
     for site in &model.realizes {
         realizations
             .entry((site.spec.clone(), site.scenario.clone()))
             .or_default()
-            .insert(realization_identity(site));
+            .extend(realization_identity(site));
     }
 
     let mut claims = BTreeMap::<String, TraceabilityClaim>::new();
     for claim in model.claims() {
         let id = claim.id();
         let relation_key = (claim.spec.id.clone(), claim.scenario.id.clone());
-        let item = TraceabilityClaim {
-            id: id.clone(),
-            parent_requirement: claim.requirement.id.clone(),
-            criticality: claim.requirement.criticality,
-            statement: claim.requirement.statement.clone(),
-            steps: claim
-                .scenario
-                .steps
-                .iter()
-                .map(|step| TraceabilityStep {
-                    kind: step.kind,
-                    text: step.text.clone(),
-                })
-                .collect(),
-            realizations: realizations
-                .remove(&relation_key)
-                .unwrap_or_default()
-                .into_iter()
-                .collect(),
-        };
-        claims.entry(id).or_insert(item);
+        let mut verification = model
+            .evidence_bindings()
+            .filter(|binding| binding.claim == id)
+            .map(|binding| {
+                let applicable = matches!(
+                    claim.requirement.criticality,
+                    Some(Criticality::Standard | Criticality::Critical)
+                );
+                let qualification = model
+                    .qualifications()
+                    .find(|qualification| qualification.id == binding.id);
+                let current_qualification = qualification.filter(|qualification| {
+                    applicable
+                        && model
+                            .expected_qualification_fingerprint(binding)
+                            .is_some_and(|expected| qualification.fingerprint == expected)
+                });
+                let current = current_qualification.is_some();
+                TraceabilityVerification {
+                    check: binding.check.clone(),
+                    binding: binding.id.clone(),
+                    applicable,
+                    current,
+                    qualification: current_qualification
+                        .map(|qualification| qualification.fingerprint.clone()),
+                    verdict: current_qualification
+                        .map(|qualification| qualification.verdict.name().to_string()),
+                }
+            })
+            .collect::<Vec<_>>();
+        verification.sort_by(|left, right| {
+            (
+                &left.binding,
+                &left.check,
+                left.applicable,
+                left.current,
+                &left.qualification,
+                &left.verdict,
+            )
+                .cmp(&(
+                    &right.binding,
+                    &right.check,
+                    right.applicable,
+                    right.current,
+                    &right.qualification,
+                    &right.verdict,
+                ))
+        });
+        verification.dedup();
+        claims.insert(
+            id.clone(),
+            TraceabilityClaim {
+                id,
+                parent_requirement: claim.requirement.id.clone(),
+                criticality: claim.requirement.criticality,
+                statement: claim.requirement.statement.clone(),
+                steps: claim
+                    .scenario
+                    .steps
+                    .iter()
+                    .map(|step| TraceabilityStep {
+                        kind: step.kind,
+                        text: step.text.clone(),
+                    })
+                    .collect(),
+                realizations: realizations
+                    .remove(&relation_key)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect(),
+                verification,
+            },
+        );
     }
-
     TraceabilityReport {
         claims: claims.into_values().collect(),
     }
@@ -75,7 +131,7 @@ pub fn project(model: &Model) -> TraceabilityReport {
 impl TraceabilityReport {
     pub fn to_json(&self) -> Json {
         Json::obj(vec![
-            ("version", Json::Num(1.0)),
+            ("version", Json::Num(2.0)),
             (
                 "claims",
                 Json::Arr(self.claims.iter().map(TraceabilityClaim::to_json).collect()),
@@ -104,6 +160,15 @@ impl TraceabilityClaim {
                 "realizations",
                 Json::Arr(self.realizations.iter().map(Json::str).collect()),
             ),
+            (
+                "verification",
+                Json::Arr(
+                    self.verification
+                        .iter()
+                        .map(TraceabilityVerification::to_json)
+                        .collect(),
+                ),
+            ),
         ])
     }
 }
@@ -117,9 +182,28 @@ impl TraceabilityStep {
     }
 }
 
-fn realization_identity(site: &Site) -> String {
-    site.source
-        .as_ref()
-        .map(|source| source.key())
-        .unwrap_or_else(|| format!("{}#{}|{}", site.file, site.site, site.lang))
+impl TraceabilityVerification {
+    fn to_json(&self) -> Json {
+        Json::obj(vec![
+            ("check", Json::str(&self.check)),
+            ("binding", Json::str(&self.binding)),
+            ("applicable", Json::Bool(self.applicable)),
+            ("current", Json::Bool(self.current)),
+            (
+                "qualification",
+                self.qualification
+                    .as_ref()
+                    .map(Json::str)
+                    .unwrap_or(Json::Null),
+            ),
+            (
+                "verdict",
+                self.verdict.as_ref().map(Json::str).unwrap_or(Json::Null),
+            ),
+        ])
+    }
+}
+
+fn realization_identity(site: &Site) -> Option<String> {
+    site.source.as_ref().map(|source| source.key())
 }

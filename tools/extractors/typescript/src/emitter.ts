@@ -15,18 +15,8 @@ import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import * as ts from 'typescript';
 
-const SCOPES = ['unit', 'component', 'e2e'] as const;
-const QUANTIFICATIONS = ['example', 'universal'] as const;
-const ORACLES = [
-  'direct',
-  'golden',
-  'relational',
-  'metamorphic',
-  'model-based',
-  'contract',
-] as const;
-
 const TEST_CALLS = new Set(['test', 'it']);
+const RETIRED_MARKERS = new Set(['covers', 'coversMechanism']);
 
 export interface Entry {
   spec: string;
@@ -39,13 +29,14 @@ export interface Entry {
   address_kind?: string;
   address?: string;
   mount?: string;
-  evidence_kind?: string;
-  evidence_outcome?: string;
-  observed_at?: string;
-  expires_at?: number;
-  scope?: string;
-  quantification?: string;
-  oracle?: string;
+}
+
+export interface CheckImplementation {
+  check: string;
+  site: string;
+  file: string;
+  lang: string;
+  source_fingerprint: string;
 }
 
 export interface ClassMember {
@@ -85,58 +76,13 @@ export interface MechanismImplementation {
   source_fingerprint: string;
 }
 
-export interface MechanismCover {
-  spec: string;
-  mechanism: string;
-  site: string;
-  file: string;
-  lang: string;
-  source_fingerprint: string;
-  scope: string;
-  quantification: string;
-  oracle?: string;
-}
-
-export interface ObservationSubject {
-  relation: 'realization' | 'evidence' | 'mechanism';
-  identity: string;
-}
-
-export interface ObservationBinding {
-  role: 'evidence' | 'challenge';
-  spec: string;
-  scenario: string;
-  assertion: string;
-  outcome: 'satisfied' | 'violated' | 'clean' | 'findings' | 'inconclusive';
-  subjects: ObservationSubject[];
-  scope?: string;
-  quantification?: string;
-  oracle?: string;
-}
-
-export interface Observation {
-  id: string;
-  kind: string;
-  tool: string;
-  tool_version: string;
-  report: string;
-  inputs: string[];
-  observed_at?: string;
-  expires_at?: number;
-  source_fingerprint: string;
-  bindings: ObservationBinding[];
-  payload: unknown;
-}
-
 export interface Manifest {
   realizes: Entry[];
-  covers: Entry[];
+  check_implementations: CheckImplementation[];
   mechanism_implementations: MechanismImplementation[];
-  mechanism_covers: MechanismCover[];
   class_members: ClassMember[];
   enumerations: Enumeration[];
   artifacts: Artifact[];
-  observations?: Observation[];
 }
 
 export interface Warning {
@@ -147,9 +93,8 @@ export interface Warning {
 
 export interface ScanResult {
   realizes: Entry[];
-  covers: Entry[];
+  checkImplementations: CheckImplementation[];
   mechanismImplementations: MechanismImplementation[];
-  mechanismCovers: MechanismCover[];
   warnings: Warning[];
 }
 
@@ -157,14 +102,22 @@ export function scanText(text: string, file: string): ScanResult {
   const lang = languageOf(file);
   const result: ScanResult = {
     realizes: [],
-    covers: [],
+    checkImplementations: [],
     mechanismImplementations: [],
-    mechanismCovers: [],
     warnings: [],
   };
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, scriptKind(file));
+  const retiredImports = retiredMarkerImports(source);
 
   visit(source, (node) => {
+    const retired = retiredMarkerCall(node, retiredImports);
+    if (retired) {
+      const location = warn(node, source, file, '');
+      throw new Error(
+        `${file}:${location.line}: retired alpha 1 marker \`${retired}\` is not supported`,
+      );
+    }
+
     if (isMarkerCall(node, 'realizes')) {
       const args = stringArgs(node);
       if (args.length < 2) {
@@ -183,40 +136,21 @@ export function scanText(text: string, file: string): ScanResult {
       return;
     }
 
-    if (isMarkerCall(node, 'covers')) {
+    if (isMarkerCall(node, 'implementsCheck')) {
       const args = stringArgs(node);
-      if (args.length < 4) {
+      if (args.length !== 1 || node.arguments.length !== 1) {
         result.warnings.push(
-          warn(node, source, file, 'covers needs a spec, a scenario id, a scope and a quantification'),
+          warn(node, source, file, 'implementsCheck needs exactly one string Check id'),
         );
-        return;
-      }
-      const [spec, scenario, scope, quantification, oracle] = args;
-      if (!member(scope, SCOPES)) {
-        result.warnings.push(warn(node, source, file, `unknown scope \`${scope}\``));
-        return;
-      }
-      if (!member(quantification, QUANTIFICATIONS)) {
-        result.warnings.push(
-          warn(node, source, file, `unknown quantification \`${quantification}\``),
-        );
-        return;
-      }
-      if (oracle !== undefined && !member(oracle, ORACLES)) {
-        result.warnings.push(warn(node, source, file, `unknown oracle \`${oracle}\``));
         return;
       }
       const site = resolveSite(node, source);
-      result.covers.push({
-        spec,
-        scenario,
+      result.checkImplementations.push({
+        check: args[0],
         site: site.name,
         file,
         lang,
         source_fingerprint: site.fingerprint,
-        scope,
-        quantification,
-        ...(oracle === undefined ? {} : { oracle }),
       });
       return;
     }
@@ -241,50 +175,74 @@ export function scanText(text: string, file: string): ScanResult {
       return;
     }
 
-    if (isMarkerCall(node, 'coversMechanism')) {
-      const args = stringArgs(node);
-      if (args.length < 4) {
-        result.warnings.push(
-          warn(
-            node,
-            source,
-            file,
-            'coversMechanism needs a spec, a mechanism id, a scope and a quantification',
-          ),
-        );
-        return;
-      }
-      const [spec, mechanism, scope, quantification, oracle] = args;
-      if (!member(scope, SCOPES)) {
-        result.warnings.push(warn(node, source, file, `unknown scope \`${scope}\``));
-        return;
-      }
-      if (!member(quantification, QUANTIFICATIONS)) {
-        result.warnings.push(
-          warn(node, source, file, `unknown quantification \`${quantification}\``),
-        );
-        return;
-      }
-      if (oracle !== undefined && !member(oracle, ORACLES)) {
-        result.warnings.push(warn(node, source, file, `unknown oracle \`${oracle}\``));
-        return;
-      }
-      const site = resolveSite(node, source);
-      result.mechanismCovers.push({
-        spec,
-        mechanism,
-        site: site.name,
-        file,
-        lang,
-        source_fingerprint: site.fingerprint,
-        scope,
-        quantification,
-        ...(oracle === undefined ? {} : { oracle }),
-      });
-    }
   });
 
   return result;
+}
+
+interface RetiredMarkerImports {
+  calls: Map<string, string>;
+  namespaces: Set<string>;
+}
+
+function retiredMarkerImports(source: ts.SourceFile): RetiredMarkerImports {
+  // Bare calls are recognizable because the alpha 1 extractor treated these exact names as its
+  // public marker surface. Imports add aliases and namespace calls without claiming unrelated
+  // object methods such as `assertion.covers()`.
+  const calls = new Map<string, string>([
+    ['covers', 'covers'],
+    ['coversMechanism', 'coversMechanism'],
+  ]);
+  const namespaces = new Set<string>();
+  visit(source, (node) => {
+    const name = declaredIdentifier(node);
+    if (name && RETIRED_MARKERS.has(name)) calls.delete(name);
+  });
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement)
+      || !ts.isStringLiteral(statement.moduleSpecifier)
+      || statement.moduleSpecifier.text !== '@azimuth-sh/annotations') {
+      continue;
+    }
+    const bindings = statement.importClause?.namedBindings;
+    if (bindings && ts.isNamespaceImport(bindings)) {
+      namespaces.add(bindings.name.text);
+    } else if (bindings && ts.isNamedImports(bindings)) {
+      for (const element of bindings.elements) {
+        const imported = element.propertyName?.text ?? element.name.text;
+        if (RETIRED_MARKERS.has(imported)) calls.set(element.name.text, imported);
+      }
+    }
+  }
+  return { calls, namespaces };
+}
+
+function declaredIdentifier(node: ts.Node): string | undefined {
+  if ((ts.isFunctionDeclaration(node)
+      || ts.isClassDeclaration(node)
+      || ts.isVariableDeclaration(node)
+      || ts.isParameter(node))
+    && node.name
+    && ts.isIdentifier(node.name)) {
+    return node.name.text;
+  }
+  if (ts.isImportSpecifier(node)) return node.name.text;
+  return undefined;
+}
+
+function retiredMarkerCall(
+  node: ts.Node,
+  imports: RetiredMarkerImports,
+): string | undefined {
+  if (!ts.isCallExpression(node)) return undefined;
+  if (ts.isIdentifier(node.expression)) return imports.calls.get(node.expression.text);
+  if (!ts.isPropertyAccessExpression(node.expression)
+    || !ts.isIdentifier(node.expression.expression)
+    || !imports.namespaces.has(node.expression.expression.text)
+    || !RETIRED_MARKERS.has(node.expression.name.text)) {
+    return undefined;
+  }
+  return node.expression.name.text;
 }
 
 function symbolBinding(lang: string, file: string, site: string): string {
@@ -329,9 +287,9 @@ function stringArgs(call: ts.CallExpression): string[] {
 
 /**
  * Walks outward to the nearest thing a human would name: a test's own title, then a named
- * function or method, then a named binding an arrow was assigned to. A `covers` inside
- * `test('…', () => …)` therefore names the test, while a `realizes` in `export function GET` names
- * the handler.
+ * function or method, then a named binding an arrow was assigned to. An `implementsCheck` inside
+ * `test('…', () => …)` therefore names the test, while a `realizes` in `export function GET`
+ * names the handler.
  */
 function resolveSite(call: ts.CallExpression, source: ts.SourceFile): {
   name: string;
@@ -362,8 +320,12 @@ function namedSite(name: string, node: ts.Node, source: ts.SourceFile): {
 } {
   return {
     name,
-    fingerprint: createHash('sha256').update(node.getText(source)).digest('hex'),
+    fingerprint: sha256Fingerprint(node.getText(source)),
   };
+}
+
+function sha256Fingerprint(input: string | Buffer): string {
+  return `sha256:${createHash('sha256').update(input).digest('hex')}`;
 }
 
 function testName(call: ts.CallExpression): string {
@@ -376,14 +338,12 @@ function warn(node: ts.Node, source: ts.SourceFile, file: string, message: strin
   return { file, line: line + 1, message };
 }
 
-function member<T extends string>(value: string | undefined, values: readonly T[]): value is T {
-  return value !== undefined && (values as readonly string[]).includes(value);
-}
-
 function scriptKind(file: string): ts.ScriptKind {
   if (file.endsWith('.tsx')) return ts.ScriptKind.TSX;
   if (file.endsWith('.jsx')) return ts.ScriptKind.JSX;
-  if (file.endsWith('.js') || file.endsWith('.mjs') || file.endsWith('.cjs')) return ts.ScriptKind.JS;
+  if (file.endsWith('.js') || file.endsWith('.mjs') || file.endsWith('.cjs')) {
+    return ts.ScriptKind.JS;
+  }
   return ts.ScriptKind.TS;
 }
 
@@ -400,12 +360,14 @@ export function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-export function emit(roots: string[], repoRoot: string): { manifest: Manifest; warnings: Warning[] } {
+export function emit(
+  roots: string[],
+  repoRoot: string,
+): { manifest: Manifest; warnings: Warning[] } {
   const manifest: Manifest = {
     realizes: [],
-    covers: [],
+    check_implementations: [],
     mechanism_implementations: [],
-    mechanism_covers: [],
     class_members: [],
     enumerations: [],
     artifacts: [],
@@ -424,9 +386,8 @@ export function emit(roots: string[], repoRoot: string): { manifest: Manifest; w
     const relative = path.relative(repoRoot, file).split(path.sep).join('/');
     const result = scanText(fs.readFileSync(file, 'utf8'), relative);
     manifest.realizes.push(...result.realizes);
-    manifest.covers.push(...result.covers);
+    manifest.check_implementations.push(...result.checkImplementations);
     manifest.mechanism_implementations.push(...result.mechanismImplementations);
-    manifest.mechanism_covers.push(...result.mechanismCovers);
     manifest.artifacts.push(
       ...result.mechanismImplementations.map((entry) => ({
         id: entry.binding,
@@ -438,14 +399,21 @@ export function emit(roots: string[], repoRoot: string): { manifest: Manifest; w
   }
 
   manifest.realizes.sort(compare);
-  manifest.covers.sort(compare);
+  manifest.check_implementations.sort(compareCheckImplementation);
   manifest.mechanism_implementations.sort(compareMechanism);
-  manifest.mechanism_covers.sort(compareMechanism);
   manifest.artifacts.sort((a, b) => a.id.localeCompare(b.id));
   manifest.artifacts = manifest.artifacts.filter(
     (artifact, index, all) => index === 0 || artifact.id !== all[index - 1].id,
   );
   return { manifest, warnings };
+}
+
+function compareCheckImplementation(a: CheckImplementation, b: CheckImplementation): number {
+  return (
+    a.check.localeCompare(b.check) ||
+    a.file.localeCompare(b.file) ||
+    a.site.localeCompare(b.site)
+  );
 }
 
 function compare(a: Entry, b: Entry): number {
@@ -456,16 +424,11 @@ function compare(a: Entry, b: Entry): number {
   );
 }
 
-function compareMechanism(
-  a: MechanismImplementation | MechanismCover,
-  b: MechanismImplementation | MechanismCover,
-): number {
-  const aSite = 'binding' in a ? a.binding : a.site;
-  const bSite = 'binding' in b ? b.binding : b.site;
+function compareMechanism(a: MechanismImplementation, b: MechanismImplementation): number {
   return (
     a.spec.localeCompare(b.spec) ||
     a.mechanism.localeCompare(b.mechanism) ||
-    aSite.localeCompare(bSite)
+    a.binding.localeCompare(b.binding)
   );
 }
 
@@ -477,8 +440,9 @@ function compareMechanism(
  * exists is a member whether or not anyone remembered to tag it. Membership derived from tags can
  * only ever reach files somebody already annotated, which is the enumerator failure D13.1 names.
  *
- * A member is identified by its file, because that is the unit the router names. Framework-generated
- * pages (`/_not-found`, `/_global-error`) are excluded: they are not sites the project wrote.
+ * A member is identified by its file, because that is the unit the router names.
+ * Framework-generated pages (`/_not-found`, `/_global-error`) are excluded: they are not sites
+ * the project wrote.
  */
 export function nextRoutes(
   classId: string,
@@ -541,7 +505,7 @@ export function nextRoutes(
       class: classId,
       kind: 'next-routes',
       source: path.relative(repoRoot, manifestPath).split(path.sep).join('/'),
-      source_fingerprint: createHash('sha256').update(fs.readFileSync(manifestPath)).digest('hex'),
+      source_fingerprint: sha256Fingerprint(fs.readFileSync(manifestPath)),
       ...(origin ? {
         area: origin.area,
         address_kind: 'next-route-manifest',

@@ -1,9 +1,9 @@
 //! The design artifact.
 //!
 //! The mechanism facet (D3): what makes a claim true, and how strongly. Nothing structural is
-//! written here — that is derivable from the code and the `realizes` tags — so an entry is a
-//! **falsifiable assertion about a named artifact**. When the code stops matching, that is a hole
-//! rather than stale prose, which is what design documents have never had.
+//! written here — that is derivable from production realization linkage — so an entry is a
+//! **falsifiable assertion about a named artifact**. When the code stops matching, that is a
+//! Finding rather than stale prose, which is what design documents have never had.
 //!
 //! Required for `critical` requirements, optional for `standard`, absent for `routine` (D6.5).
 
@@ -66,8 +66,8 @@ impl Enforcement {
     }
 
     /// D7: the top two rungs **are** proof-strength evidence — strong enforcement is
-    /// self-evidencing. It does not follow that they discharge any particular claim; whether a
-    /// mechanism covers what a claim asserts is an evidence judgment, and stays in the plan.
+    /// self-evidencing. It does not follow that they establish any particular Claim; that belongs
+    /// to total Claim Judgment rather than a fictitious executable Check.
     pub fn is_proof_capable(self) -> bool {
         self.rung() <= 2
     }
@@ -75,8 +75,8 @@ impl Enforcement {
 
 #[derive(Debug, Clone)]
 pub struct Mechanism {
-    /// Stable identity owned by the design. Implementation and evidence tags refer to this id;
-    /// neither a symbol rename nor a test name becomes the conceptual identity by accident.
+    /// Stable identity owned by the design. Implementation markers refer to this id; neither a
+    /// symbol rename nor a source address becomes the conceptual identity by accident.
     pub id: String,
     pub kind: Enforcement,
     /// Explicit for non-code artifacts. Code extractors normally derive this from an

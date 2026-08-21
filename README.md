@@ -1,8 +1,9 @@
 # Azimuth
 
-Azimuth keeps intent, implementation linkage, evidence and agent judgment in one inspectable
-project account. The command-line tool validates local model packages and can assemble
-revision-bound accounts across repositories without making a hosted service authoritative.
+Azimuth is an evidence control plane. It keeps durable intent, implementation linkage and reviewed
+evidentiary meaning in one inspectable project account without making an execution provider or
+hosted service authoritative. The command-line tool validates local model packages, derives
+traceability and can assemble revision-bound accounts across repositories.
 
 This is the canonical development and release repository. Framework changes, pull requests and
 version history land here, and publication derives artifacts from immutable version tags in the
@@ -14,23 +15,25 @@ development. The canonical product site is <https://azimuth.sh>.
 | Path | Holds |
 |---|---|
 | `tools/azimuth/` | dependency-free Rust CLI and core, including federation |
-| `tools/extractors/` | language extractors and external-evidence importers |
+| `tools/extractors/` | language and structural extractors |
 | `packages/` | annotation packages; only .NET and TypeScript are selected for the first release |
 | `azimuth/formats/` | parser contracts for model and project artifacts |
-| `azimuth/standards/` | verification and judgment standards |
+| `azimuth/standards/` | Qualification policies for non-routine Claims |
 | `azimuth/changes/` | active framework changes transferred from development |
 | `docs/` | framework definition, decisions, glossary and operating guidance |
 | `services/assurance/` | optional execution ledger and diagnostic web application |
 | `experiments/` | self-contained conformance and lifecycle experiments |
-| `.agents/skills/` | agent workflows for exploration, change delivery and verification |
+| `.agents/skills/` | agent workflows for exploration and change delivery |
 
 The implementations for Go, JVM, Python, Rust annotations and C++ remain experiments. Their
 presence in source is not a publication or compatibility promise.
 
-## First-alpha support contract
+## Published alpha 1 support contract
 
-The supported alpha surface comprises the Rust CLI and core (including federation), the .NET and
-TypeScript annotations and extractors, and the optional assurance API and diagnostic web images.
+The immutable alpha 1 tag supports the Rust CLI and core (including federation), the .NET and
+TypeScript annotations and extractors, and the assurance API and diagnostic web images defined at
+that tag. Main is making an incompatible alpha 2 transition and does not preserve old readers or
+command aliases.
 Formats, standards, skills and documentation are supported as repository artifacts at the same Git
 tag. Alpha contracts may change incompatibly in a later prerelease.
 
@@ -41,6 +44,18 @@ qualified binary or image claim.
 The Go, JVM, Python, Rust-annotation and C++ integrations and every tree under `experiments/` are
 experimental source. CI exercises them, but version `0.1.0-alpha.1` assigns them no public package
 identity or support promise.
+
+## Alpha 2 model
+
+Main positions Azimuth as an evidence control plane. `azimuth validate`,
+`azimuth report traceability` and `azimuth export` are the active model commands. The repository
+defines requirement and case Claims, sparse Check-to-Claim Evidence Bindings, one Qualification
+per binding and semantic challenge declarations. All current framework Claims are routine, so
+ordinary engineering tests are not enrolled as Azimuth Checks.
+
+D43 defines future Run, adapter and Subject boundaries. Their formats, orchestration and ledger
+ingestion remain deferred. The existing Assurance Service stays isolated on its D42 v1 wire until
+that replacement is accepted.
 
 ## Development and dogfooding
 
@@ -65,7 +80,7 @@ Run the domain-independent repository checks with:
 ```
 
 Some assurance integration tests require Docker. The script reports that boundary rather than
-silently treating an unavailable Docker daemon as passing evidence.
+silently treating an unavailable Docker daemon as a passing engineering check.
 
 ## License
 

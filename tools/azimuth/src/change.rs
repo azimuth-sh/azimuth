@@ -800,19 +800,6 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
-    #[test]
-    fn criticality_is_part_of_judgment_freshness() {
-        let routine = model_at(Criticality::Routine);
-        let standard = model_at(Criticality::Standard);
-        let routine_claim = routine.claims().next().unwrap();
-        let standard_claim = standard.claims().next().unwrap();
-
-        assert_ne!(
-            routine.claim_text(&routine_claim),
-            standard.claim_text(&standard_claim)
-        );
-    }
-
     fn transition_change(delta: &str) -> PathBuf {
         let root = temp_change();
         fs::create_dir_all(root.join("specs")).unwrap();

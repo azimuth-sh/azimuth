@@ -7,18 +7,7 @@
   "files": [
     "dist/cli.js",
     "dist/emitter.js",
-    "dist/manual-cli.js",
-    "dist/manual-results.js",
-    "dist/mutation-cli.js",
-    "dist/mutation-results.js",
-    "dist/observation-cli.js",
-    "dist/observations.js",
-    "dist/pit-cli.js",
-    "dist/pit-results.js",
-    "dist/pit-xml.js",
     "dist/prometheus.js",
-    "dist/sarif-cli.js",
-    "dist/sarif-results.js",
     "dist/workspace.js"
   ],
   "repository": {
@@ -29,12 +18,7 @@
   "homepage": "https://azimuth.sh",
   "publishConfig": { "access": "public" },
   "bin": {
-    "azimuth-emit-ts": "dist/cli.js",
-    "azimuth-import-manual": "dist/manual-cli.js",
-    "azimuth-import-mutation": "dist/mutation-cli.js",
-    "azimuth-import-observation": "dist/observation-cli.js",
-    "azimuth-import-pit": "dist/pit-cli.js",
-    "azimuth-import-sarif": "dist/sarif-cli.js"
+    "azimuth-emit-ts": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

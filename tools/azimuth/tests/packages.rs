@@ -1,125 +1,134 @@
-//! Model-package discovery tests.
+//! Strict source-linkage manifest tests. Synthetic fixtures only.
 
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use azimuth::json;
+use azimuth::manifest;
 
-static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+const SHA: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-struct TemporaryModel {
-    root: PathBuf,
-}
-
-impl TemporaryModel {
-    fn new() -> Self {
-        let root = std::env::temp_dir().join(format!(
-            "azimuth-packages-{}-{}",
-            std::process::id(),
-            NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir_all(&root).unwrap();
-        Self { root }
-    }
-
-    fn write(&self, relative: &str, source: &str) {
-        let path = self.root.join(relative);
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, source).unwrap();
-    }
-
-    fn model(&self) -> PathBuf {
-        self.root.join("model")
-    }
-
-    fn missing_standards(&self) -> PathBuf {
-        self.root.join("standards/verification.md")
-    }
-}
-
-impl Drop for TemporaryModel {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
-    }
-}
-
-const SPEC: &str = "\
-# Spec: alpha/beta
-
-## Requirement: thing-holds
-Criticality: routine
-
-The system SHALL hold the thing.
-
-### Scenario: thing-held
-WHEN the thing is examined
-THEN it is held
-";
-
-fn load(root: &Path, standards: &Path) -> azimuth::Loaded {
-    azimuth::load(root, standards, &root.join("../workspace.json"), &[], &[])
-        .expect("model packages load")
+fn parse(source: &str) -> Result<manifest::Manifest, String> {
+    let root = json::parse(source).unwrap();
+    manifest::parse("manifest.json", &root).map_err(|errors| {
+        errors
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n")
+    })
 }
 
 #[test]
-fn a_routine_package_needs_only_a_spec() {
-    let fixture = TemporaryModel::new();
-    fixture.write("model/alpha/beta/spec.md", SPEC);
-    fixture.write("model/alpha/beta/notes.md", "# Not an Azimuth artifact");
-
-    let loaded = load(&fixture.model(), &fixture.missing_standards());
-
-    assert_eq!(loaded.model.specs.len(), 1);
-    assert!(loaded.model.designs.is_empty());
-    assert!(loaded.model.plans.is_empty());
-    assert!(loaded.model.judgments.is_empty());
-}
-
-#[test]
-fn sibling_facets_form_one_package() {
-    let fixture = TemporaryModel::new();
-    fixture.write("model/alpha/beta/spec.md", SPEC);
-    fixture.write("model/alpha/beta/design.md", "# Design: alpha/beta\n");
-    fixture.write(
-        "model/alpha/beta/verification.md",
-        "# Verification: alpha/beta\n",
+fn parses_stable_check_implementation_linkage() {
+    let source = format!(
+        r#"{{"check_implementations":[{{
+          "check":"payments/recovery-under-loss",
+          "site":"recovery::replay_after_loss",
+          "file":"src/recovery.rs",
+          "lang":"rust",
+          "source_fingerprint":"{SHA}",
+          "area":"payments",
+          "address_kind":"rust-item",
+          "address":"recovery::replay_after_loss",
+          "mount":"code"
+        }}]}}"#
     );
-    fixture.write("model/alpha/beta/judgments.md", "# Judgments: alpha/beta\n");
-
-    let loaded = load(&fixture.model(), &fixture.missing_standards());
-
-    assert_eq!(loaded.model.designs.len(), 1);
-    assert_eq!(loaded.model.plans.len(), 1);
-    assert_eq!(loaded.model.judgments.len(), 1);
-    assert!(!loaded
-        .warnings
-        .iter()
-        .any(|warning| warning.to_string().contains("not beside")));
+    let manifest = parse(&source).unwrap();
+    let implementation = &manifest.check_implementations[0];
+    assert_eq!(implementation.check, "payments/recovery-under-loss");
+    assert_eq!(
+        implementation.semantic_identity(),
+        "payments|rust-item|recovery::replay_after_loss"
+    );
+    assert_eq!(implementation.source_fingerprint, SHA);
 }
 
 #[test]
-fn declared_identity_wins_over_package_location() {
-    let fixture = TemporaryModel::new();
-    fixture.write("model/wrong/location/spec.md", SPEC);
-
-    let loaded = load(&fixture.model(), &fixture.missing_standards());
-
-    assert_eq!(loaded.model.specs[0].id, "alpha/beta");
-    assert!(loaded
-        .warnings
-        .iter()
-        .any(|warning| warning.to_string().contains("does not match its location")));
+fn rejects_every_alpha_one_evidence_collection() {
+    for key in ["covers", "mechanism_covers", "observations"] {
+        let error = parse(&format!(r#"{{"{key}":[]}}"#)).unwrap_err();
+        assert!(error.contains("legacy manifest key"), "{key}: {error}");
+    }
 }
 
 #[test]
-fn a_non_sibling_facet_is_visible_as_a_navigation_warning() {
-    let fixture = TemporaryModel::new();
-    fixture.write("model/alpha/beta/spec.md", SPEC);
-    fixture.write("model/misplaced/design.md", "# Design: alpha/beta\n");
+fn rejects_unknown_and_missing_check_implementation_fields() {
+    let error = parse(&format!(
+        r#"{{"check_implementations":[{{
+          "check":"payments/recovery-under-loss",
+          "site":"recovery::replay_after_loss",
+          "file":"src/recovery.rs",
+          "lang":"rust",
+          "source_fingerprint":"{SHA}",
+          "claim":"payments/recovery#accepted-write-replayed"
+        }}]}}"#
+    ))
+    .unwrap_err();
+    assert!(error.contains("unknown field `claim`"), "{error}");
 
-    let loaded = load(&fixture.model(), &fixture.missing_standards());
+    let missing = parse(
+        r#"{"check_implementations":[{
+          "check":"payments/recovery-under-loss",
+          "site":"recovery::replay_after_loss",
+          "file":"src/recovery.rs",
+          "lang":"rust"
+        }]}"#,
+    )
+    .unwrap_err();
+    assert!(missing.contains("source_fingerprint"), "{missing}");
+}
 
-    assert_eq!(loaded.model.designs[0].spec, "alpha/beta");
-    assert!(loaded.warnings.iter().any(|warning| warning
-        .to_string()
-        .contains("design for `alpha/beta` is not beside")));
+#[test]
+fn rejects_invalid_fingerprints_partial_identity_and_duplicates() {
+    let invalid = parse(
+        r#"{"check_implementations":[{
+          "check":"payments/recovery-under-loss",
+          "site":"recovery::replay_after_loss",
+          "file":"src/recovery.rs",
+          "lang":"rust",
+          "source_fingerprint":"abc",
+          "area":"payments"
+        }]}"#,
+    )
+    .unwrap_err();
+    assert!(invalid.contains("SHA-256"), "{invalid}");
+    assert!(invalid.contains("partial source identity"), "{invalid}");
+
+    let implementation = format!(
+        r#"{{"check":"payments/recovery-under-loss","site":"recovery::replay_after_loss",
+        "file":"src/recovery.rs","lang":"rust","source_fingerprint":"{SHA}"}}"#
+    );
+    let duplicate = parse(&format!(
+        "{{\"check_implementations\":[{implementation},{implementation}]}}"
+    ))
+    .unwrap_err();
+    assert!(
+        duplicate.contains("duplicate Check implementation"),
+        "{duplicate}"
+    );
+}
+
+#[test]
+fn accepts_all_six_current_collections_and_rejects_unknown_top_level_keys() {
+    let source = format!(
+        r#"{{
+          "realizes":[{{"spec":"alpha","scenario":"works","site":"A","file":"a.rs","lang":"rust"}}],
+          "check_implementations":[{{"check":"alpha/works","site":"T","file":"t.rs",
+            "lang":"rust","source_fingerprint":"{SHA}"}}],
+          "mechanism_implementations":[{{"spec":"alpha","mechanism":"guard",
+            "binding":"rust:A","file":"a.rs","lang":"rust"}}],
+          "class_members":[{{"class":"routes","site":"A","file":"a.rs","lang":"rust"}}],
+          "enumerations":[{{"class":"routes","kind":"routes","source":"routes.json",
+            "source_fingerprint":"{SHA}"}}],
+          "artifacts":[{{"id":"schema:users","kind":"unique-index","file":"schema.sql"}}]
+        }}"#
+    );
+    let parsed = parse(&source).unwrap();
+    assert_eq!(parsed.realizes.len(), 1);
+    assert_eq!(parsed.check_implementations.len(), 1);
+    assert_eq!(parsed.mechanism_implementations.len(), 1);
+    assert_eq!(parsed.class_members.len(), 1);
+    assert_eq!(parsed.enumerations.len(), 1);
+    assert_eq!(parsed.artifacts.len(), 1);
+
+    let error = parse(r#"{"realizes":[],"extra":[]}"#).unwrap_err();
+    assert!(error.contains("unknown manifest key `extra`"), "{error}");
 }

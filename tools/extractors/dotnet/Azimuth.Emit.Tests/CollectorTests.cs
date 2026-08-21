@@ -89,38 +89,54 @@ public sealed class CollectorTests
         });
     }
 
-    /// <summary>
-    /// Enum arguments arrive boxed as their underlying integer, so an emitter that reads the value
-    /// rather than resolving it against the declared type emits "1" instead of "component". The
-    /// manifest speaks kebab-case because the specs do.
-    /// </summary>
     [Fact]
-    public void Covers_carries_its_form_in_kebab_case()
+    public void Several_sites_can_implement_one_check_deterministically()
     {
-        var entry = Assert.Single(
-            Collect().Covers,
-            c => c.Site.EndsWith(".Covered", StringComparison.Ordinal));
-        Assert.Equal("component", entry.Scope);
-        Assert.Equal("universal", entry.Quantification);
+        var entries = Collect().CheckImplementations
+            .Where(entry => entry.Check == "fixture/component-behavior")
+            .ToList();
+
+        Assert.Equal(2, entries.Count);
+        Assert.Equal(
+            entries.OrderBy(entry => entry.Site, StringComparer.Ordinal),
+            entries);
+        Assert.Equal(
+            [
+                "Azimuth.Fixture.Traced.Tests.Covered",
+                "Azimuth.Fixture.Traced.Tests.CoveredRelationally",
+            ],
+            entries.Select(entry => entry.Site));
     }
 
     [Fact]
-    public void A_multi_word_oracle_becomes_kebab_case()
+    public void An_unmarked_test_emits_no_check_implementation()
     {
-        var entry = Assert.Single(
-            Collect().Covers,
-            c => c.Site.EndsWith(".CoveredWithOracle", StringComparison.Ordinal));
-        Assert.Equal("e2e", entry.Scope);
-        Assert.Equal("model-based", entry.Oracle);
+        Assert.DoesNotContain(
+            Collect().CheckImplementations,
+            entry => entry.Site.EndsWith(".Bare", StringComparison.Ordinal)
+                || entry.Site.EndsWith(".SmokeCheck", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void A_relational_oracle_is_emitted()
+    public void Check_implementations_carry_deterministic_exact_site_fingerprints()
     {
-        var entry = Assert.Single(
-            Collect().Covers,
-            c => c.Scenario == "relational-thing");
-        Assert.Equal("relational", entry.Oracle);
+        var first = Collect().CheckImplementations;
+        var second = Collect().CheckImplementations;
+
+        Assert.Equal(first, second);
+        Assert.All(
+            first,
+            entry => Assert.Matches("^sha256:[0-9a-f]{64}$", entry.SourceFingerprint));
+        Assert.NotEqual(first[0].SourceFingerprint, first[1].SourceFingerprint);
+    }
+
+    [Fact]
+    public void Alpha_one_marker_types_are_absent()
+    {
+        var annotations = typeof(Azimuth.Annotations.RealizesAttribute).Assembly;
+
+        Assert.Null(annotations.GetType("Azimuth.Annotations.CoversAttribute"));
+        Assert.Null(annotations.GetType("Azimuth.Annotations.CoversMechanismAttribute"));
     }
 
     [Fact]
@@ -141,27 +157,7 @@ public sealed class CollectorTests
             item => item.Scenario == "constructor-only-thing");
 
         Assert.EndsWith("tools/extractors/dotnet/fixture/Fixture.cs", entry.File);
-        Assert.Matches("^[0-9a-f]{64}$", entry.SourceFingerprint);
-    }
-
-    [Fact]
-    public void Mechanism_evidence_carries_its_actual_form()
-    {
-        var entry = Assert.Single(
-            Collect().MechanismCovers,
-            item => item.Mechanism == "branch-selection");
-        Assert.Equal("component", entry.Scope);
-        Assert.Equal("universal", entry.Quantification);
-        Assert.Equal("model-based", entry.Oracle);
-    }
-
-    [Fact]
-    public void An_omitted_oracle_takes_its_default()
-    {
-        var entry = Assert.Single(
-            Collect().Covers,
-            c => c.Site.EndsWith(".Covered", StringComparison.Ordinal));
-        Assert.Equal("direct", entry.Oracle);
+        Assert.Matches("^sha256:[0-9a-f]{64}$", entry.SourceFingerprint);
     }
 
     /// <summary>
@@ -177,8 +173,8 @@ public sealed class CollectorTests
     public void Sites_carry_a_compiler_resolved_source_fingerprint()
     {
         Assert.All(
-            Collect().Covers,
-            entry => Assert.Matches("^[0-9a-f]{64}$", entry.SourceFingerprint));
+            Collect().CheckImplementations,
+            entry => Assert.Matches("^sha256:[0-9a-f]{64}$", entry.SourceFingerprint));
     }
 
     /// <summary>
@@ -215,14 +211,30 @@ public sealed class CollectorTests
         Assert.False(realizes.TryGetProperty("req", out _));
         Assert.Equal("csharp", realizes.GetProperty("lang").GetString());
         Assert.Matches(
-            "^[0-9a-f]{64}$",
+            "^sha256:[0-9a-f]{64}$",
             realizes.GetProperty("source_fingerprint").GetString()!);
         Assert.False(realizes.TryGetProperty("scope", out _));
 
-        Assert.NotEmpty(root.GetProperty("covers").EnumerateArray());
+        Assert.NotEmpty(root.GetProperty("check_implementations").EnumerateArray());
         Assert.NotEmpty(root.GetProperty("mechanism_implementations").EnumerateArray());
-        Assert.NotEmpty(root.GetProperty("mechanism_covers").EnumerateArray());
         Assert.NotEmpty(root.GetProperty("artifacts").EnumerateArray());
+        Assert.False(root.TryGetProperty("covers", out _));
+        Assert.False(root.TryGetProperty("mechanism_covers", out _));
         Assert.False(root.TryGetProperty("untraced_tests", out _));
+
+        foreach (var collection in new[]
+                 {
+                     "realizes",
+                     "check_implementations",
+                     "mechanism_implementations",
+                 })
+        {
+            Assert.All(
+                root.GetProperty(collection).EnumerateArray(),
+                entry => Assert.Matches(
+                    "^sha256:[0-9a-f]{64}$",
+                    entry.GetProperty("source_fingerprint").GetString()!));
+        }
+        Assert.False(root.TryGetProperty("observations", out _));
     }
 }

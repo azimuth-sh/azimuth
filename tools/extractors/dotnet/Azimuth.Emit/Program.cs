@@ -59,9 +59,9 @@ if (!string.IsNullOrEmpty(directory))
 
 File.WriteAllText(options.Output, Collector.ToJson(result));
 Console.Error.WriteLine(
-    $"{result.Realizes.Count} realizes, {result.Covers.Count} covers, "
-    + $"{result.MechanismImplementations.Count} mechanism implementations, "
-    + $"{result.MechanismCovers.Count} mechanism covers → {options.Output}");
+    $"{result.Realizes.Count} realizes, "
+    + $"{result.CheckImplementations.Count} check implementations, "
+    + $"{result.MechanismImplementations.Count} mechanism implementations → {options.Output}");
 return 0;
 
 internal readonly record struct Options(

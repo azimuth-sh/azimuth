@@ -72,141 +72,21 @@ namespace Azimuth.Annotations
         public string Mechanism { get; }
     }
 
-    /// <summary>
-    /// Declares that a test verifies a claim, at the form the test <em>actually</em> has.
-    /// </summary>
+    /// <summary>Identifies a source method that implements a project-global Check.</summary>
     /// <remarks>
-    /// What the form must <em>be</em> lives in the verification plan; this declares what it is, and
-    /// the comparison between the two is <c>wrong-form</c>. Declaring it here rather than inferring
-    /// it keeps the seam between generating a test and judging its sufficiency visible.
-    /// <para>
-    /// <see cref="Oracle"/> records how the expected result was obtained. Descriptive, never gated.
-    /// </para>
+    /// The marker declares implementation identity only. The repository-owned verification file
+    /// declares the Check's Claim bindings, evidence form, context and Qualification.
     /// </remarks>
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
-    public sealed class CoversAttribute : Attribute
+    public sealed class ImplementsCheckAttribute : Attribute
     {
-        /// <summary>Tags a test as verifying <paramref name="scenario"/> at the given form.</summary>
-        public CoversAttribute(
-            string spec,
-            string scenario,
-            Scope scope,
-            Quantification quantification,
-            Oracle oracle = Oracle.Direct)
+        /// <summary>Marks this method as one implementation site of <paramref name="check"/>.</summary>
+        public ImplementsCheckAttribute(string check)
         {
-            Spec = spec;
-            Scenario = scenario;
-            Scope = scope;
-            Quantification = quantification;
-            Oracle = oracle;
+            Check = check;
         }
 
-        /// <summary>Stable spec id.</summary>
-        public string Spec { get; }
-
-        /// <summary>Stable scenario id, unique within the spec.</summary>
-        public string Scenario { get; }
-
-        /// <summary>How much of the real system this test actually runs against.</summary>
-        public Scope Scope { get; }
-
-        /// <summary>Whether this test checks one case or ranges over all of them.</summary>
-        public Quantification Quantification { get; }
-
-        /// <summary>How the expected result was obtained. Descriptive, never gated.</summary>
-        public Oracle Oracle { get; }
-    }
-
-    /// <summary>Declares evidence about a named design mechanism's contract.</summary>
-    /// <remarks>
-    /// Mechanism evidence is reusable evidence about the control itself. It does not cover every
-    /// claim that depends on the mechanism; application enumeration and semantic sufficiency remain
-    /// separate obligations.
-    /// </remarks>
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
-    public sealed class CoversMechanismAttribute : Attribute
-    {
-        /// <summary>Tags a test as verifying a mechanism at the given actual form.</summary>
-        public CoversMechanismAttribute(
-            string spec,
-            string mechanism,
-            Scope scope,
-            Quantification quantification,
-            Oracle oracle = Oracle.Direct)
-        {
-            Spec = spec;
-            Mechanism = mechanism;
-            Scope = scope;
-            Quantification = quantification;
-            Oracle = oracle;
-        }
-
-        /// <summary>Stable id of the design's spec.</summary>
-        public string Spec { get; }
-
-        /// <summary>Stable mechanism id within the design.</summary>
-        public string Mechanism { get; }
-
-        /// <summary>How much of the real system this test actually runs against.</summary>
-        public Scope Scope { get; }
-
-        /// <summary>Whether this test checks one case or ranges over all of them.</summary>
-        public Quantification Quantification { get; }
-
-        /// <summary>How the expected result was obtained. Descriptive, never gated.</summary>
-        public Oracle Oracle { get; }
-    }
-
-    /// <summary>
-    /// How much of the real system a check runs against — defined by what must be <em>real</em>,
-    /// not by how much runs.
-    /// </summary>
-    /// <remarks>
-    /// Defined this way the rungs are partly machine-checkable rather than purely self-declared: a
-    /// harness knows whether it started a real database, so a test using an in-memory repository
-    /// cannot honestly claim <see cref="Component"/>.
-    /// </remarks>
-    public enum Scope
-    {
-        /// <summary>Nothing external; all collaborators substituted.</summary>
-        Unit,
-
-        /// <summary>Real persistence and real serialization; external services substituted.</summary>
-        Component,
-
-        /// <summary>Real process boundaries and real transport between the components under test.</summary>
-        E2e,
-    }
-
-    /// <summary>How thoroughly the evidence ranges: one case, or all of them.</summary>
-    public enum Quantification
-    {
-        /// <summary>One case. A wider sample is still a sample.</summary>
-        Example,
-
-        /// <summary>A property over all cases in the domain.</summary>
-        Universal,
-    }
-
-    /// <summary>How the expected result was obtained. Descriptive, never gated.</summary>
-    public enum Oracle
-    {
-        /// <summary>The expected result was written out directly.</summary>
-        Direct,
-
-        /// <summary>Compared against a recorded previous output.</summary>
-        Golden,
-
-        /// <summary>Checked by a relation among values observed for one case.</summary>
-        Relational,
-
-        /// <summary>Checked across executions connected by an intentional transformation.</summary>
-        Metamorphic,
-
-        /// <summary>Compared against an exact result computed by an independent model.</summary>
-        ModelBased,
-
-        /// <summary>Checked against an agreed interface contract.</summary>
-        Contract,
+        /// <summary>Stable project-global Check id.</summary>
+        public string Check { get; }
     }
 }

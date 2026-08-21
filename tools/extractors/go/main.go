@@ -24,9 +24,14 @@ type relation struct {
 	File              string `json:"file"`
 	Lang              string `json:"lang"`
 	SourceFingerprint string `json:"source_fingerprint"`
-	Scope             string `json:"scope,omitempty"`
-	Quantification    string `json:"quantification,omitempty"`
-	Oracle            string `json:"oracle,omitempty"`
+}
+
+type checkImplementation struct {
+	Check             string `json:"check"`
+	Site              string `json:"site"`
+	File              string `json:"file"`
+	Lang              string `json:"lang"`
+	SourceFingerprint string `json:"source_fingerprint"`
 }
 
 type mechanismImplementation struct {
@@ -38,18 +43,6 @@ type mechanismImplementation struct {
 	SourceFingerprint string `json:"source_fingerprint"`
 }
 
-type mechanismCover struct {
-	Spec              string `json:"spec"`
-	Mechanism         string `json:"mechanism"`
-	Site              string `json:"site"`
-	File              string `json:"file"`
-	Lang              string `json:"lang"`
-	SourceFingerprint string `json:"source_fingerprint"`
-	Scope             string `json:"scope"`
-	Quantification    string `json:"quantification"`
-	Oracle            string `json:"oracle,omitempty"`
-}
-
 type artifact struct {
 	ID   string `json:"id"`
 	Kind string `json:"kind"`
@@ -58,9 +51,8 @@ type artifact struct {
 
 type manifest struct {
 	Realizes                 []relation                `json:"realizes"`
-	Covers                   []relation                `json:"covers"`
+	CheckImplementations     []checkImplementation     `json:"check_implementations"`
 	MechanismImplementations []mechanismImplementation `json:"mechanism_implementations"`
-	MechanismCovers          []mechanismCover          `json:"mechanism_covers"`
 	ClassMembers             []any                     `json:"class_members"`
 	Enumerations             []any                     `json:"enumerations"`
 	Artifacts                []artifact                `json:"artifacts"`
@@ -69,9 +61,8 @@ type manifest struct {
 func newManifest() manifest {
 	return manifest{
 		Realizes:                 []relation{},
-		Covers:                   []relation{},
+		CheckImplementations:     []checkImplementation{},
 		MechanismImplementations: []mechanismImplementation{},
-		MechanismCovers:          []mechanismCover{},
 		ClassMembers:             []any{},
 		Enumerations:             []any{},
 		Artifacts:                []artifact{},
@@ -137,6 +128,11 @@ func emit(inputs []string, root string) (manifest, error) {
 			return result, err
 		}
 	}
+	sort.Slice(result.CheckImplementations, func(left, right int) bool {
+		first := result.CheckImplementations[left]
+		second := result.CheckImplementations[right]
+		return first.Check+first.File+first.Site < second.Check+second.File+second.Site
+	})
 	return result, nil
 }
 
@@ -172,6 +168,7 @@ func scanFile(path string, root string, result *manifest) error {
 		start := set.Position(function.Pos()).Offset
 		end := set.Position(function.End()).Offset
 		fingerprint := sha256.Sum256(source[start:end])
+		encodedFingerprint := "sha256:" + hex.EncodeToString(fingerprint[:])
 		site := function.Name.Name
 		ast.Inspect(function.Body, func(node ast.Node) bool {
 			call, ok := node.(*ast.CallExpr)
@@ -179,7 +176,16 @@ func scanFile(path string, root string, result *manifest) error {
 				return true
 			}
 			name := callName(call.Fun, aliases, dotImport)
-			if !member(name, []string{"Realizes", "Covers", "ImplementsMechanism", "CoversMechanism"}) {
+			if name == "Covers" || name == "CoversMechanism" {
+				err = fmt.Errorf(
+					"%s:%d: retired alpha 1 marker %s is not supported",
+					relative,
+					set.Position(call.Pos()).Line,
+					name,
+				)
+				return false
+			}
+			if name != "Realizes" && name != "ImplementsCheck" && name != "ImplementsMechanism" {
 				return true
 			}
 			values, valueErr := stringArguments(call.Args)
@@ -187,7 +193,7 @@ func scanFile(path string, root string, result *manifest) error {
 				err = fmt.Errorf("%s:%d: %s", relative, set.Position(call.Pos()).Line, valueErr)
 				return false
 			}
-			valueErr = appendMarker(result, name, values, site, relative, hex.EncodeToString(fingerprint[:]))
+			valueErr = appendMarker(result, name, values, site, relative, encodedFingerprint)
 			if valueErr != nil {
 				err = fmt.Errorf("%s:%d: %s", relative, set.Position(call.Pos()).Line, valueErr)
 				return false
@@ -253,60 +259,23 @@ func stringArguments(arguments []ast.Expr) ([]string, error) {
 }
 
 func appendMarker(result *manifest, name string, values []string, site string, file string, fingerprint string) error {
-	minimum := map[string]int{"Realizes": 2, "Covers": 4, "ImplementsMechanism": 2, "CoversMechanism": 4}
-	required, marker := minimum[name]
+	requiredArguments := map[string]int{"Realizes": 2, "ImplementsCheck": 1, "ImplementsMechanism": 2}
+	required, marker := requiredArguments[name]
 	if !marker {
 		return nil
 	}
-	if len(values) < required {
-		return fmt.Errorf("%s needs at least %d arguments", name, required)
-	}
-	if name == "Covers" || name == "CoversMechanism" {
-		if err := validForm(values); err != nil {
-			return err
-		}
+	if len(values) != required {
+		return fmt.Errorf("%s needs exactly %d arguments", name, required)
 	}
 	switch name {
 	case "Realizes":
 		result.Realizes = append(result.Realizes, relation{Spec: values[0], Scenario: values[1], Site: site, File: file, Lang: "go", SourceFingerprint: fingerprint})
-	case "Covers":
-		item := relation{Spec: values[0], Scenario: values[1], Site: site, File: file, Lang: "go", SourceFingerprint: fingerprint, Scope: values[2], Quantification: values[3]}
-		if len(values) > 4 {
-			item.Oracle = values[4]
-		}
-		result.Covers = append(result.Covers, item)
+	case "ImplementsCheck":
+		result.CheckImplementations = append(result.CheckImplementations, checkImplementation{Check: values[0], Site: site, File: file, Lang: "go", SourceFingerprint: fingerprint})
 	case "ImplementsMechanism":
 		binding := fmt.Sprintf("go-symbol:%s#%s", file, site)
 		result.MechanismImplementations = append(result.MechanismImplementations, mechanismImplementation{Spec: values[0], Mechanism: values[1], Binding: binding, File: file, Lang: "go", SourceFingerprint: fingerprint})
 		result.Artifacts = append(result.Artifacts, artifact{ID: binding, Kind: "go-symbol", File: file})
-	case "CoversMechanism":
-		item := mechanismCover{Spec: values[0], Mechanism: values[1], Site: site, File: file, Lang: "go", SourceFingerprint: fingerprint, Scope: values[2], Quantification: values[3]}
-		if len(values) > 4 {
-			item.Oracle = values[4]
-		}
-		result.MechanismCovers = append(result.MechanismCovers, item)
 	}
 	return nil
-}
-
-func validForm(values []string) error {
-	if !member(values[2], []string{"unit", "component", "e2e"}) {
-		return fmt.Errorf("unknown scope `%s`", values[2])
-	}
-	if !member(values[3], []string{"example", "universal"}) {
-		return fmt.Errorf("unknown quantification `%s`", values[3])
-	}
-	if len(values) > 4 && !member(values[4], []string{"direct", "golden", "relational", "metamorphic", "model-based", "contract"}) {
-		return fmt.Errorf("unknown oracle `%s`", values[4])
-	}
-	return nil
-}
-
-func member(value string, values []string) bool {
-	for _, candidate := range values {
-		if candidate == value {
-			return true
-		}
-	}
-	return false
 }

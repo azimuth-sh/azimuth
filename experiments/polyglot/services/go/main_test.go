@@ -1,13 +1,8 @@
 package main
 
-import (
-	"testing"
-
-	azimuth "github.com/azimuth-sh/azimuth-go/azimuth"
-)
+import "testing"
 
 func TestIdentity(t *testing.T) {
-	azimuth.Covers("polyglot/identity", "go-identifies", "unit", "example", "direct")
 	if identity() != "go" {
 		t.Fatalf("expected go, got %s", identity())
 	}

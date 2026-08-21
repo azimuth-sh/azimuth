@@ -1497,15 +1497,15 @@ pub fn observe_repository(
 
 fn merge_manifest(target: &mut Manifest, source: Manifest) {
     target.realizes.extend(source.realizes);
-    target.covers.extend(source.covers);
+    target
+        .check_implementations
+        .extend(source.check_implementations);
     target
         .mechanism_implementations
         .extend(source.mechanism_implementations);
-    target.mechanism_covers.extend(source.mechanism_covers);
     target.class_members.extend(source.class_members);
     target.enumerations.extend(source.enumerations);
     target.artifacts.extend(source.artifacts);
-    target.observations.extend(source.observations);
 }
 
 fn assign_sources(
@@ -1514,7 +1514,17 @@ fn assign_sources(
     errors: &mut Vec<Diag>,
     producer: &str,
 ) {
-    for item in manifest.realizes.iter_mut().chain(&mut manifest.covers) {
+    for item in &mut manifest.realizes {
+        item.source = locate_source(
+            areas,
+            &item.file,
+            address_kind(&item.lang, &item.file, &item.site),
+            address_value(&item.lang, &item.file, &item.site),
+            errors,
+            producer,
+        );
+    }
+    for item in &mut manifest.check_implementations {
         item.source = locate_source(
             areas,
             &item.file,
@@ -1527,16 +1537,6 @@ fn assign_sources(
     for item in &mut manifest.mechanism_implementations {
         let (kind, address) = split_typed_binding(&item.binding, &item.lang);
         item.source = locate_source(areas, &item.file, kind, address, errors, producer);
-    }
-    for item in &mut manifest.mechanism_covers {
-        item.source = locate_source(
-            areas,
-            &item.file,
-            address_kind(&item.lang, &item.file, &item.site),
-            address_value(&item.lang, &item.file, &item.site),
-            errors,
-            producer,
-        );
     }
     for item in &mut manifest.class_members {
         item.source = locate_source(
@@ -1563,17 +1563,6 @@ fn assign_sources(
             areas,
             &item.file,
             item.kind.clone(),
-            item.id.clone(),
-            errors,
-            producer,
-        );
-    }
-    for item in &mut manifest.observations {
-        let locator = item.inputs.first().unwrap_or(&item.report);
-        item.source = locate_source(
-            areas,
-            locator,
-            "assurance-observation".into(),
             item.id.clone(),
             errors,
             producer,
@@ -1663,26 +1652,22 @@ fn split_typed_binding(binding: &str, language: &str) -> (String, String) {
 fn linkage_json(manifest: &Manifest) -> Json {
     let model = crate::model::Model {
         realizes: manifest.realizes.clone(),
-        covers: manifest.covers.clone(),
+        check_implementations: manifest.check_implementations.clone(),
         mechanism_implementations: manifest.mechanism_implementations.clone(),
-        mechanism_covers: manifest.mechanism_covers.clone(),
         class_members: manifest.class_members.clone(),
         enumerations: manifest.enumerations.clone(),
         artifacts: manifest.artifacts.clone(),
-        observations: manifest.observations.clone(),
         ..Default::default()
     };
     let export = model.to_json(&[]);
     Json::Obj(
         [
             "realizes",
-            "covers",
+            "check_implementations",
             "mechanism_implementations",
-            "mechanism_covers",
             "class_members",
             "enumerations",
             "artifacts",
-            "observations",
         ]
         .into_iter()
         .map(|key| {
@@ -2197,7 +2182,10 @@ fn validate_source_identities(
                 BTreeSet::new()
             }
         };
-        for (source, fingerprint, file) in source_records(&manifest.linkage) {
+        for record in source_records(&manifest.linkage) {
+            let source = record.source;
+            let fingerprint = record.fingerprint;
+            let file = record.file;
             let Some(source) = source else {
                 errors.push(Diag::file(
                     &path,
@@ -2215,12 +2203,23 @@ fn validate_source_identities(
                 ));
             }
             match best_mount(project, &manifest.repository, file) {
-                Ok((area, mount)) if area.id == source.area && mount.id == source.mount => {}
+                Ok((area, mount))
+                    if area.id == source.area
+                        && mount.id == source.mount
+                        && record.kind == source.kind
+                        && record.address == source.address => {}
                 Ok((area, mount)) => errors.push(Diag::file(
                     &path,
                     format!(
-                        "source locator `{file}` resolves to area `{}` mount `{}`, not claimed area `{}` mount `{}`",
-                        area.id, mount.id, source.area, source.mount
+                        "source locator `{file}` resolves to area `{}` mount `{}` kind `{}` address `{}`, not claimed area `{}` mount `{}` kind `{}` address `{}`",
+                        area.id,
+                        mount.id,
+                        record.kind,
+                        record.address,
+                        source.area,
+                        source.mount,
+                        source.kind,
+                        source.address
                     ),
                 )),
                 Err(message) => errors.push(Diag::file(&path, message)),
@@ -2378,61 +2377,65 @@ fn tracked_paths(root: &Path) -> Result<BTreeSet<String>, String> {
         .collect())
 }
 
-fn source_records(manifest: &Manifest) -> Vec<(Option<&SourceIdentity>, &str, &str)> {
+struct SourceRecord<'a> {
+    source: Option<&'a SourceIdentity>,
+    fingerprint: &'a str,
+    file: &'a str,
+    kind: String,
+    address: String,
+}
+
+fn source_records(manifest: &Manifest) -> Vec<SourceRecord<'_>> {
     let mut records = Vec::new();
+    records.extend(manifest.realizes.iter().map(|item| SourceRecord {
+        source: item.source.as_ref(),
+        fingerprint: item.source_fingerprint.as_str(),
+        file: item.file.as_str(),
+        kind: address_kind(&item.lang, &item.file, &item.site),
+        address: address_value(&item.lang, &item.file, &item.site),
+    }));
     records.extend(
         manifest
-            .realizes
+            .check_implementations
             .iter()
-            .chain(&manifest.covers)
-            .map(|item| {
-                (
-                    item.source.as_ref(),
-                    item.source_fingerprint.as_str(),
-                    item.file.as_str(),
-                )
+            .map(|item| SourceRecord {
+                source: item.source.as_ref(),
+                fingerprint: item.source_fingerprint.as_str(),
+                file: item.file.as_str(),
+                kind: address_kind(&item.lang, &item.file, &item.site),
+                address: address_value(&item.lang, &item.file, &item.site),
             }),
     );
     records.extend(manifest.mechanism_implementations.iter().map(|item| {
-        (
-            item.source.as_ref(),
-            item.source_fingerprint.as_str(),
-            item.file.as_str(),
-        )
+        let (kind, address) = split_typed_binding(&item.binding, &item.lang);
+        SourceRecord {
+            source: item.source.as_ref(),
+            fingerprint: item.source_fingerprint.as_str(),
+            file: item.file.as_str(),
+            kind,
+            address,
+        }
     }));
-    records.extend(manifest.mechanism_covers.iter().map(|item| {
-        (
-            item.source.as_ref(),
-            item.source_fingerprint.as_str(),
-            item.file.as_str(),
-        )
+    records.extend(manifest.class_members.iter().map(|item| SourceRecord {
+        source: item.source.as_ref(),
+        fingerprint: "",
+        file: item.file.as_str(),
+        kind: "class-member".into(),
+        address: format!("{}#{}", item.class, item.site),
     }));
-    records.extend(
-        manifest
-            .class_members
-            .iter()
-            .map(|item| (item.source.as_ref(), "", item.file.as_str())),
-    );
-    records.extend(manifest.enumerations.iter().map(|item| {
-        (
-            item.identity.as_ref(),
-            item.source_fingerprint.as_str(),
-            item.source.as_str(),
-        )
+    records.extend(manifest.enumerations.iter().map(|item| SourceRecord {
+        source: item.identity.as_ref(),
+        fingerprint: item.source_fingerprint.as_str(),
+        file: item.source.as_str(),
+        kind: "enumerator".into(),
+        address: format!("{}#{}", item.class, item.kind),
     }));
-    records.extend(
-        manifest
-            .artifacts
-            .iter()
-            .map(|item| (item.source.as_ref(), "", item.file.as_str())),
-    );
-    records.extend(manifest.observations.iter().map(|item| {
-        let locator = item.inputs.first().unwrap_or(&item.report);
-        (
-            item.source.as_ref(),
-            item.source_fingerprint.as_str(),
-            locator.as_str(),
-        )
+    records.extend(manifest.artifacts.iter().map(|item| SourceRecord {
+        source: item.source.as_ref(),
+        fingerprint: "",
+        file: item.file.as_str(),
+        kind: item.kind.clone(),
+        address: item.id.clone(),
     }));
     records
 }

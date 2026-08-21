@@ -1,11 +1,11 @@
-# Release evidence
+# Release qualification
 
 The rehearsal workflow produces candidates and GitHub attestations but does not publish them. Its
-tracked receipts are external evidence records, not files that local code can derive without
-observing GitHub. Refresh a receipt only after the changed executable inputs are committed and the
-corresponding pull-request workflow succeeds.
+tracked receipts record hosted execution, not files that local code can derive without GitHub.
+Refresh a receipt only after the changed executable inputs are committed and the corresponding
+pull-request workflow succeeds.
 
-Use `gh` for every hosted observation:
+Use `gh` for every hosted execution account:
 
 ```sh
 gh run list --workflow "release rehearsal" --branch "$(git branch --show-current)" \
@@ -36,7 +36,9 @@ copy beside its outcome. Then validate the records with:
 ./release/check.sh --experiments-executed
 ```
 
-A failed run is diagnostic evidence only. It cannot replace either successful receipt.
+A failed run is diagnostic information only. It cannot replace either successful receipt. These
+release gates are ordinary engineering checks for routine framework Claims, not enrolled Azimuth
+Checks or repository Qualifications.
 
 ## Public alpha publication
 
@@ -57,7 +59,7 @@ account, create the annotated catalog tag at that same main revision and push th
 dispatch the no-write preflight against the tag:
 
 ```sh
-gh workflow run publish.yml --ref v0.1.0-alpha.1 \
+gh workflow run publish.yml --ref v0.1.0-alpha.2 \
   -f rehearsal_run_id=RUN_ID -f dry_run=true
 gh run watch PUBLICATION_RUN_ID --exit-status
 ```

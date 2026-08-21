@@ -84,9 +84,7 @@ java -cp "$BUILD_ROOT/jvm/azimuth-annotations:$BUILD_ROOT/jvm/extractor" \
   --classes experiments/polyglot/services/kotlin/build/classes/kotlin/main \
   --classes experiments/polyglot/services/kotlin/build/classes/kotlin/test
 
-cargo run --quiet --manifest-path tools/azimuth/Cargo.toml -- validate \
-  --model experiments/polyglot/model \
-  --standards experiments/polyglot/standards/verification.md \
+MANIFESTS=(
   --manifest "$OUTPUT_ROOT/go.json" \
   --manifest "$OUTPUT_ROOT/java.json" \
   --manifest "$OUTPUT_ROOT/kotlin.json" \
@@ -94,3 +92,11 @@ cargo run --quiet --manifest-path tools/azimuth/Cargo.toml -- validate \
   --manifest "$OUTPUT_ROOT/javascript.json" \
   --manifest "$OUTPUT_ROOT/rust.json" \
   --manifest "$OUTPUT_ROOT/cpp.json"
+)
+cargo run --quiet --manifest-path tools/azimuth/Cargo.toml -- validate \
+  --model experiments/polyglot/model "${MANIFESTS[@]}"
+cargo run --quiet --manifest-path tools/azimuth/Cargo.toml -- export \
+  --model experiments/polyglot/model "${MANIFESTS[@]}" --out "$OUTPUT_ROOT/model.json"
+python3 -c \
+  'import json, sys; model=json.load(open(sys.argv[1])); assert model["version"] == 2; retired={"co"+"vers", "mechanism_"+"co"+"vers", "obser"+"vations", "judg"+"ments"}; assert not retired.intersection(model)' \
+  "$OUTPUT_ROOT/model.json"

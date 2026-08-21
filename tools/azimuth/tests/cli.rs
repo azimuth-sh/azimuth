@@ -67,11 +67,239 @@ fn removed_commands_and_positional_validator_ids_fail_closed() {
         &["check", "rtm"][..],
         &["validate", "rtm"][..],
         &["export", "rtm"][..],
+        &["judge"][..],
         &["judge", "rtm"][..],
     ] {
         let output = azimuth(arguments);
         assert_eq!(output.status.code(), Some(2), "{arguments:?}");
         assert!(output.stdout.is_empty(), "{arguments:?}");
+    }
+}
+
+#[test]
+fn export_is_recursively_v2_without_retired_evidence_keys() {
+    let root = root();
+    let model = write_model(&root, "routine");
+    let output = azimuth(&["export", "--model", model.to_str().unwrap()]);
+    assert!(output.status.success());
+    let rendered = String::from_utf8(output.stdout).unwrap();
+    let json = azimuth::json::parse(&rendered).unwrap();
+    assert_eq!(
+        json.get("version").and_then(azimuth::json::Json::as_num),
+        Some(2.0)
+    );
+    assert_no_retired_keys(&json);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn only_export_is_a_populated_two_spec_graph_closure() {
+    let root = root();
+    let model = root.join("model");
+    for name in ["alpha", "beta"] {
+        let package = model.join(name);
+        fs::create_dir_all(&package).unwrap();
+        fs::write(
+            package.join("spec.md"),
+            format!(
+                "# Spec: {name}\n\n## Invariant: {name}-holds\nCriticality: routine\n\
+                 Over: {name}/surface\n\nThe {name} surface SHALL hold.\n"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            package.join("design.md"),
+            format!(
+                "# Design: {name}\n\n## Requirement: {name}-holds\n\
+                 Mechanism: {name}-mechanism\nEnforcement: schema\nBinding: {name}-artifact\n\n\
+                 The artifact makes the invariant structural.\n"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            package.join("verification.md"),
+            format!(
+                "# Verification: {name}\n\n## Check: {name}/check\nMethod: inspect\n\
+                 Terminal: complete\n\nAtomic.\n\n## Evidence Binding: edge/{name}\n\
+                 Check: {name}/check\nClaim: {name}#{name}-holds\nProposition: direct\n\
+                 Scope: unit\nQuantification: example\nOracle: direct\nContext: {{}}\n\
+                 Challenge domain: [\"context\"]\nQualification policy: credible\n\nReviewable.\n"
+            ),
+        )
+        .unwrap();
+    }
+    let workspace = root.join("workspace.json");
+    fs::write(
+        &workspace,
+        "{\"format\":\"azimuth-workspace\",\"version\":1,\"areas\":[\
+         {\"id\":\"alpha-area\",\"mounts\":[{\"id\":\"code\",\"path\":\"alpha-src\"}]},\
+         {\"id\":\"beta-area\",\"mounts\":[{\"id\":\"code\",\"path\":\"beta-src\"}]},\
+         {\"id\":\"unused-area\",\"mounts\":[{\"id\":\"code\",\"path\":\"unused-src\"}]}],\
+         \"surfaces\":[\
+         {\"id\":\"alpha/surface\",\"contributions\":[{\"area\":\"alpha-area\",\"mount\":\"code\",\"enumerator\":\"routes\"}]},\
+         {\"id\":\"beta/surface\",\"contributions\":[{\"area\":\"beta-area\",\"mount\":\"code\",\"enumerator\":\"routes\"}]}],\
+         \"realization_obligations\":[]}",
+    )
+    .unwrap();
+    let manifest = root.join("manifest.json");
+    let mut checks = Vec::new();
+    let mut members = Vec::new();
+    let mut enumerations = Vec::new();
+    let mut artifacts = Vec::new();
+    for (name, fingerprint) in [('a', 'a'), ('b', 'b')] {
+        let id = if name == 'a' { "alpha" } else { "beta" };
+        checks.push(format!(
+            "{{\"check\":\"{id}/check\",\"site\":\"{id}::check\",\"file\":\"{id}-src/check.rs\",\"lang\":\"rust\",\"source_fingerprint\":\"sha256:{}\"}}",
+            fingerprint.to_string().repeat(64)
+        ));
+        members.push(format!(
+            "{{\"class\":\"{id}/surface\",\"site\":\"{id}::member\",\"file\":\"{id}-src/member.rs\",\"lang\":\"rust\"}}"
+        ));
+        enumerations.push(format!(
+            "{{\"class\":\"{id}/surface\",\"kind\":\"routes\",\"source\":\"{id}-src/routes.json\",\"source_fingerprint\":\"sha256:{}\"}}",
+            fingerprint.to_string().repeat(64)
+        ));
+        artifacts.push(format!(
+            "{{\"id\":\"{id}-artifact\",\"kind\":\"schema\",\"file\":\"{id}-src/schema.sql\"}}"
+        ));
+    }
+    fs::write(
+        &manifest,
+        format!(
+            "{{\"check_implementations\":[{}],\"class_members\":[{}],\
+             \"enumerations\":[{}],\"artifacts\":[{}]}}",
+            checks.join(","),
+            members.join(","),
+            enumerations.join(","),
+            artifacts.join(",")
+        ),
+    )
+    .unwrap();
+
+    let output = azimuth(&[
+        "export",
+        "--model",
+        model.to_str().unwrap(),
+        "--workspace",
+        workspace.to_str().unwrap(),
+        "--manifest",
+        manifest.to_str().unwrap(),
+        "--only",
+        "alpha",
+    ]);
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(output.status.success(), "{stderr}");
+    let rendered = String::from_utf8(output.stdout).unwrap();
+    assert!(rendered.contains("alpha-artifact"));
+    assert!(rendered.contains("alpha/surface"));
+    assert!(rendered.contains("alpha-area"));
+    assert!(!rendered.contains("beta"), "{rendered}");
+    assert!(!rendered.contains("unused-area"), "{rendered}");
+    let json = azimuth::json::parse(&rendered).unwrap();
+    assert_no_retired_keys(&json);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn strict_manifest_ingestion_accepts_check_linkage_and_rejects_alpha_one_keys() {
+    let root = root();
+    let model = write_model(&root, "routine");
+    let manifest = root.join("manifest.json");
+    fs::write(
+        &manifest,
+        "{\"check_implementations\":[{\"check\":\"sample/check\",\
+         \"site\":\"tests::works\",\"file\":\"tests/works.rs\",\"lang\":\"rust\",\
+         \"source_fingerprint\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\
+         \"area\":\"tests\",\"address_kind\":\"rust-symbol\",\
+         \"address\":\"tests::works\",\"mount\":\"source\"}]}"
+    )
+    .unwrap();
+    let accepted = azimuth(&[
+        "export",
+        "--model",
+        model.to_str().unwrap(),
+        "--manifest",
+        manifest.to_str().unwrap(),
+    ]);
+    assert!(accepted.status.success());
+    assert!(String::from_utf8(accepted.stdout)
+        .unwrap()
+        .contains("\"check_implementations\""));
+
+    fs::write(
+        &manifest,
+        "{\"covers\":[{\"spec\":\"sample\",\"scenario\":\"state-is-visible\"}]}",
+    )
+    .unwrap();
+    let rejected = azimuth(&[
+        "export",
+        "--model",
+        model.to_str().unwrap(),
+        "--manifest",
+        manifest.to_str().unwrap(),
+    ]);
+    assert_eq!(rejected.status.code(), Some(2));
+    assert!(String::from_utf8(rejected.stderr)
+        .unwrap()
+        .contains("legacy manifest key `covers` is not supported"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn retired_verification_and_judgment_facets_fail_explicitly() {
+    let root = root();
+    let model = write_model(&root, "routine");
+    let package = model.join("sample");
+    fs::write(
+        package.join("verification.md"),
+        "# Verification: sample\n\n## Claim: state-is-visible\nScope: unit\n",
+    )
+    .unwrap();
+    let old_verification = azimuth(&["validate", "--model", model.to_str().unwrap()]);
+    assert_eq!(old_verification.status.code(), Some(2));
+    assert!(String::from_utf8(old_verification.stderr)
+        .unwrap()
+        .contains("unrecognized heading `## Claim:"));
+
+    fs::remove_file(package.join("verification.md")).unwrap();
+    fs::write(
+        package.join("judgments.md"),
+        "# Judgments: sample\n\n## Claim: state-is-visible\nVerdict: toothy\n",
+    )
+    .unwrap();
+    let old_judgment = azimuth(&["validate", "--model", model.to_str().unwrap()]);
+    assert_eq!(old_judgment.status.code(), Some(2));
+    assert!(String::from_utf8(old_judgment.stderr)
+        .unwrap()
+        .contains("alpha 1 `judgments.md` is retired"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+fn assert_no_retired_keys(value: &azimuth::json::Json) {
+    match value {
+        azimuth::json::Json::Obj(fields) => {
+            for (key, value) in fields {
+                assert!(
+                    ![
+                        "holes",
+                        "covers",
+                        "mechanism_covers",
+                        "observations",
+                        "plans",
+                        "judgments",
+                    ]
+                    .contains(&key.as_str()),
+                    "retired key `{key}` in export"
+                );
+                assert_no_retired_keys(value);
+            }
+        }
+        azimuth::json::Json::Arr(items) => {
+            for item in items {
+                assert_no_retired_keys(item);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -202,24 +430,12 @@ fn package_instructions_are_emitted_only_for_the_eligible_frontier() {
 }
 
 #[test]
-fn assurance_export_refuses_a_partial_model() {
-    let root = root();
-    let output = azimuth(&[
-        "assurance",
-        "export",
-        "--project",
-        "synthetic",
-        "--out",
-        root.join("snapshot.json").to_str().unwrap(),
-        "--only",
-        "alpha",
-    ]);
-
+fn assurance_export_is_removed_until_the_run_ledger_replacement() {
+    let output = azimuth(&["assurance", "export"]);
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8(output.stderr)
         .unwrap()
-        .contains("requires the complete accepted model"));
-    fs::remove_dir_all(root).unwrap();
+        .contains("unknown command `assurance`"));
 }
 
 #[test]

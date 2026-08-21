@@ -59,12 +59,10 @@ a discharge produces `invariant-breach`.
 
 ## Realization obligations
 
-An optional realization obligation applies to one standard or critical behavioral claim. Every
+An optional realization obligation applies to one non-routine case-level Claim. Every
 named area must contain at least one `Realizes` site for the claim. The site's area is derived from
-its source locator. The declaration has no role vocabulary: prose and agent judgment determine how
-each realization contributes.
+its source locator. The declaration has no role vocabulary and does not assign evidentiary meaning.
 
-An area obligation is not an evidence obligation. Evidence follows the verification plan's scope,
-quantification and oracle. One end-to-end test may exercise several obligated areas, while a risky
-mechanism may deserve separate component evidence. Test-file location does not establish evidence
-scope.
+An area obligation is not an evidence obligation. Evidence follows explicit Evidence Bindings.
+One Check may bear on several areas when each Check-to-Claim edge is declared separately. Test-file
+location does not establish evidence scope, and ordinary tests emit no Check linkage.

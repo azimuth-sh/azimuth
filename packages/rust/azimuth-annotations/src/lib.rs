@@ -6,16 +6,11 @@ pub fn realizes(_arguments: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn covers(_arguments: TokenStream, item: TokenStream) -> TokenStream {
+pub fn implements_check(_arguments: TokenStream, item: TokenStream) -> TokenStream {
     item
 }
 
 #[proc_macro_attribute]
 pub fn implements_mechanism(_arguments: TokenStream, item: TokenStream) -> TokenStream {
-    item
-}
-
-#[proc_macro_attribute]
-pub fn covers_mechanism(_arguments: TokenStream, item: TokenStream) -> TokenStream {
     item
 }

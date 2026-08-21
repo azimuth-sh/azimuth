@@ -1,13 +1,10 @@
-//! Repository-authored contracts for recurring assurance executions.
+//! Stable alpha 1 wire types used by the optional Assurance Service.
 //!
-//! The service must know whether a qualified definition still applies to a claim, but it must not
-//! become a second spec parser or enumerator. This projection keeps that authority in the accepted
-//! model and transfers only canonical claim contracts plus one exact model identity.
+//! Repository-to-service projection is deliberately absent. The Run-ledger change replaces this
+//! protocol atomically rather than making the verification-binding change a compatibility reader.
 
 use crate::fingerprint::sha256;
 use crate::json::Json;
-use crate::model::{Criticality, Model};
-use crate::validation::Finding;
 
 pub const FORMAT: &str = "azimuth-assurance-project-snapshot";
 pub const VERSION: u64 = 1;
@@ -114,8 +111,7 @@ pub struct ProjectSnapshot {
 }
 
 impl ProjectSnapshot {
-    pub fn derive(project: &str, model_fingerprint: &str, claims: Vec<ClaimContract>) -> Self {
-        let mut claims = claims;
+    pub fn derive(project: &str, model_fingerprint: &str, mut claims: Vec<ClaimContract>) -> Self {
         claims.sort_by_key(ClaimContract::identity);
         let mut snapshot = Self {
             id: String::new(),
@@ -142,135 +138,6 @@ impl ProjectSnapshot {
         canonical.claims.sort_by_key(ClaimContract::identity);
         snapshot_json(&canonical, true)
     }
-}
-
-pub fn snapshot(model: &Model, findings: &[Finding], project: &str) -> ProjectSnapshot {
-    let (model_fingerprint, _) = crate::change::finalization(model, findings);
-    ProjectSnapshot::derive(project, &model_fingerprint, contracts(model))
-}
-
-pub fn contracts(model: &Model) -> Vec<ClaimContract> {
-    let mut contracts = model
-        .claims()
-        .filter_map(|claim| {
-            let criticality = claim.requirement.criticality?;
-            if criticality == Criticality::Routine {
-                return None;
-            }
-            let required = model.required_for(&claim)?;
-            let entry = model
-                .plan_for(&claim.spec.id)
-                .and_then(|plan| plan.entry(&claim.scenario.id));
-            let surface = claim
-                .requirement
-                .over
-                .as_deref()
-                .and_then(|id| model.workspace.surface(id))
-                .map(|surface| {
-                    let mut contributions = surface
-                        .contributions
-                        .iter()
-                        .map(|contribution| ContractContribution {
-                            area: contribution.area.clone(),
-                            mount: contribution.mount.clone(),
-                            path: model
-                                .workspace
-                                .areas
-                                .iter()
-                                .find(|area| area.id == contribution.area)
-                                .and_then(|area| {
-                                    area.mounts
-                                        .iter()
-                                        .find(|mount| mount.id == contribution.mount)
-                                })
-                                .map(|mount| mount.path.clone())
-                                .unwrap_or_default(),
-                            enumerator: contribution.enumerator.clone(),
-                        })
-                        .collect::<Vec<_>>();
-                    contributions.sort_by(|left, right| {
-                        (&left.area, &left.mount, &left.enumerator, &left.path).cmp(&(
-                            &right.area,
-                            &right.mount,
-                            &right.enumerator,
-                            &right.path,
-                        ))
-                    });
-                    ContractSurface {
-                        id: surface.id.clone(),
-                        contributions,
-                    }
-                });
-            let mut obligated_areas = model
-                .workspace
-                .obligation(&claim.spec.id, &claim.scenario.id)
-                .map(|obligation| {
-                    obligation
-                        .areas
-                        .iter()
-                        .filter_map(|id| model.workspace.areas.iter().find(|area| &area.id == id))
-                        .map(|area| {
-                            let mut mounts = area
-                                .mounts
-                                .iter()
-                                .map(|mount| ContractMount {
-                                    id: mount.id.clone(),
-                                    path: mount.path.clone(),
-                                })
-                                .collect::<Vec<_>>();
-                            mounts.sort_by(|left, right| {
-                                (&left.id, &left.path).cmp(&(&right.id, &right.path))
-                            });
-                            ContractArea {
-                                id: area.id.clone(),
-                                mounts,
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            obligated_areas.sort_by(|left, right| left.id.cmp(&right.id));
-
-            Some(ClaimContract {
-                spec: claim.spec.id.clone(),
-                claim: claim.scenario.id.clone(),
-                requirement: claim.requirement.id.clone(),
-                criticality: criticality.name().to_string(),
-                statement: claim.requirement.statement.clone(),
-                steps: claim
-                    .scenario
-                    .steps
-                    .iter()
-                    .map(|step| ContractStep {
-                        kind: step.kind.name().to_string(),
-                        text: step.text.clone(),
-                    })
-                    .collect(),
-                domain: claim.requirement.domain.name().to_string(),
-                verification: ContractVerification {
-                    strength: required.strength.map(|value| value.name().to_string()),
-                    scope: required.scope.name().to_string(),
-                    quantification: required
-                        .quantification
-                        .map(|value| value.name().to_string()),
-                    oracle: entry
-                        .and_then(|value| value.oracle)
-                        .map(|value| value.name().to_string()),
-                    residual_required: model
-                        .standards
-                        .as_ref()
-                        .and_then(|standards| standards.for_level(criticality))
-                        .is_some_and(|level| level.residual_required),
-                    residual: entry.and_then(|value| value.residual.clone()),
-                    residual_acceptance: entry.and_then(|value| value.accepted.clone()),
-                },
-                surface,
-                obligated_areas,
-            })
-        })
-        .collect::<Vec<_>>();
-    contracts.sort_by(|left, right| left.identity().cmp(&right.identity()));
-    contracts
 }
 
 fn snapshot_json(snapshot: &ProjectSnapshot, include_id: bool) -> Json {
@@ -302,7 +169,7 @@ fn snapshot_json(snapshot: &ProjectSnapshot, include_id: bool) -> Json {
 }
 
 fn contract_json(contract: &ClaimContract, include_fingerprint: bool) -> Json {
-    let mut fields = vec![];
+    let mut fields = Vec::new();
     if include_fingerprint {
         fields.push((
             "contractFingerprint".to_string(),

@@ -1,186 +1,200 @@
-# Verification plans
+# Verification declarations
 
-The evidence facet (D3). A plan records **what would be sufficient to believe a claim** — never
-what currently exists. The evidence that exists is derived from `covers` tags or imported external
-evidence receipts and appears in the export; hand-listing it would create a second copy that drifts
-(D4.5).
+The repository-owned evidence facet for alpha 2 (D43, D45). This file declares what a Check means,
+how its terminal result bears on a case-level Claim, and whether that exact edge is credible in its
+required context. It never records an execution result.
 
-Only standard and critical claims owe evidence. Routine claims stop at intent and need no
-`covers` tags (D20). A test without `covers` is an ordinary test outside Azimuth's evidence model,
-not an untraced evidence item and not an exemption (D20.1).
+Only standard and critical Claims may receive verification declarations. Routine Claims stop at
+intent. An ordinary native test without deliberate Check enrollment remains outside Azimuth.
 
-## What a plan contains
-
-Only what is not derivable:
-
-1. **Deviations from the project standard** — a claim needing stronger or different evidence than
-   its criticality implies.
-2. **Non-test evidence** — proof by construction, monitors, manual passes, attestations. Nothing
-   in the code says "this unique index is the evidence for that claim".
-3. **Residual risk** — what is knowingly not covered, and why that is acceptable.
-
-**A claim with no entry is not unplanned.** It means the project standard applies unmodified.
-Most claims should have no entry; if most have one, either the standard is wrong or the plan is
-being used as an inventory.
-
-Imported load, chaos, recovery and similar executions use D39's assurance-observation protocol.
-Each evidence binding declares its actual form and becomes ordinary `covers`; one execution may
-bind to several claims, but no run-level pass supplies blanket coverage. Mutation and broad static
-analysis normally bind as judgment challenges instead and therefore do not appear as evidence.
-
-## Evidence ownership and authorship
-
-The evidence owner is accountable for what would justify belief and how it stays fresh (D30). That
-does not require one QA role to write every test. A developer may implement unit or component
-evidence, a quality engineer may implement it directly or direct an agent, and an SRE may implement
-and operate an alert. Test code receives ordinary engineering review; the evidence owner remains
-accountable for whether the result rejects a plausible wrong implementation and honestly declares
-its scope, quantification and oracle.
-
-The converse handoff is also invalid: mechanism authors cannot treat a downstream evidence owner
-as solely responsible for quality. They provide testability, telemetry, controllable failure seams
-and implementation expertise. `docs/change-process.md` gives the normal division by evidence form.
-
-## File
+## File and identity
 
 ```markdown
-# Verification: <spec-id>
+# Verification: <owning-spec-id>
 ```
 
-At most one `verification.md` sits beside a package's `spec.md` and declares the same spec id. A
-spec needing no deviations, carrying no non-test evidence and accepting no residual needs **no
-plan file at all**.
+At most one `verification.md` sits beside an owning `spec.md`. The header identifies repository
+authority and location; it is not a namespace.
 
-## Entries
+Check, Evidence Binding, Challenger and Challenge Plan ids are project-global, path-independent
+lower kebab path ids. Claim ids are `<spec-id>#<case-id>`. Mechanism ids are
+`<spec-id>#<mechanism-id>`. Moving this file or its package changes no identity.
+
+Declarations may appear in any order. Every id and referenced identity is validated over the
+complete project account before `--only` selection retains the closure for selected Claims.
+
+## Check
 
 ```markdown
-## Claim: <scenario-id>
-Scope: unit | component | e2e
-Quantification: example | universal
-Oracle: direct | golden | relational | metamorphic | model-based | contract
+## Check: payments/recovery-under-broker-loss
+Method: inject broker loss after the accepted write
+Method: observe replay after broker recovery
+Terminal: the accepted write is replayed exactly once after recovery
 
-Prose stating why this claim needs what it needs. Required — an entry without a reason is a
-number nobody can review.
+The two method lines describe one atomic observable result.
 ```
 
-Labels first, then a blank line, then prose. Values may wrap: inside the label block, a line that
-begins no known label continues the previous one. Every field is optional; an entry states only
-what it changes. `Oracle` is descriptive and never gated.
+A Check has one project-global id, one or more `Method:` lines and exactly one `Terminal:`
+proposition. The terminal proposition must describe one satisfied-or-violated result. If outcomes
+can vary independently, declare separate Checks.
 
-Oracle names are distinguished by the source that can make the assertion fail:
+Prose after the label block is required review rationale and does not enter the fingerprint. Every
+Check must have at least one Evidence Binding. A Check may have several source implementations;
+their semantic identities compose one implementation set.
 
-| Oracle | Meaning | Typical shape |
-|---|---|---|
-| `direct` | The expected value is written in the evidence | `status == 404` |
-| `golden` | The expected value is a recorded prior output | snapshot comparison |
-| `relational` | Values observed for one case must satisfy a stated relation | total = sum(parts) |
-| `metamorphic` | A relation holds across transformed executions | mutate token → rejection |
-| `model-based` | An independent model computes the exact result | transition table vs subject |
-| `contract` | An agreed interface or protocol supplies the expectation | schema or wire contract |
-
-One test may contain more than one shape; its tag names the oracle doing the discriminating work
-for this claim. The parser rejects unknown names, while adequacy remains an agent judgment. Oracle
-kinds are categories, not a ladder, and the machine does not compare one as stronger than another.
-
-**Two field groups that are easy to confuse, and are therefore kept apart:**
-
-- `Scope`, `Quantification` and `Oracle` state the **required** form, overriding the standard.
-- `Evidence` and its `Strength` declare a **provided** non-test evidence item.
-
-`Strength` without `Evidence` is an error, because on its own it reads as either.
-
-### Ladders
-
-`Scope` and `Quantification` are ladders: `unit < component < e2e`, `example < universal`.
-Strength is a ladder too: `detection < demonstration < proof`. **A stronger form on any axis
-satisfies a requirement for a weaker one.** A required form is a floor, not a target.
-
-Scope is defined by what must be *real* (D15) and applies to demonstration-strength evidence
-only. Proof has no scope; detection has a target.
-
-### Non-test evidence
+## Evidence Binding
 
 ```markdown
-## Claim: <scenario-id>
-Strength: proof
-Evidence: partial unique index `ux_capture_trip` on `captures(trip_id)`
-Binding: postgres-index:captures.ux_capture_trip
-
-Violation is unrepresentable at the storage layer, so no execution can exhibit it.
-```
-
-For detection-strength items, two further fields are required (D4.3):
-
-```markdown
-Re-established: continuously | every release | quarterly
-Dies silently: <how this stops being evidence without anyone noticing>
-Detector test: <the test proving it fires on an injected violation>
-Binding: <artifact id for the detector>
-Detector binding: <artifact id for the detector test>
-```
-
-A detection item without its freshness account, detector test, detector binding or evidence
-binding fails parsing. A named binding that no extractor emits is a hole. This establishes that the
-rule and test exist; whether they detect the right condition remains an agent judgment. A monitor
-that can no longer fire is worse than no monitor, because it is carried on the books as evidence.
-
-The current machine tier checks repository-owned detector definitions, bindings and synthetic
-detector behaviour. It does not query a live metrics backend to establish scrape health, rule
-evaluation or notification routing. `Re-established:` and `Dies silently:` therefore expose an
-operating obligation rather than pretending the repository proves it. A provider adapter may
-later import expiring operational receipts through the same language-neutral seam as manual
-results.
-
-### Judging manual and operational evidence
-
-The agent judgment is per claim, not a separate verdict per test, receipt or monitor. Those items
-are fingerprinted inputs to the claim's complete assurance account. A new receipt, detector, plan
-or bound source makes an older judgment stale.
-
-For a manual receipt, the judge needs the linked procedure and observations, not only the external
-system's `passed` status. The procedure must reject a plausible wrong behaviour and its declared
-scope and quantification must match what the person executed. If the linked record is inaccessible,
-the machine can establish attribution and freshness but the agent cannot responsibly call the
-evidence toothy.
-
-For operational evidence, the judge reads the metric producer, rule expression, threshold,
-detector test and stated silent-death modes. It asks whether the injected failure is the claimed
-violation and whether a broken producer could leave the detector quietly green. Detection remains
-evidence about learning of a violation; it never becomes proof that the production property holds.
-
-### Lowering a requirement
-
-A plan may require *less* than the project standard, but only with an accepted residual:
-
-```markdown
-## Claim: <scenario-id>
+## Evidence Binding: payments/recovery-replay-edge
+Check: payments/recovery-under-broker-loss
+Claim: payments/recovery#accepted-write-is-replayed
+Proposition: replay after injected broker loss directly exercises the recovery predicate
+Scope: component
 Quantification: example
-Residual: not checked across all currencies
-Accepted: single-currency market until the second market launches; revisit then
+Oracle: relational
+Context: {"platform":"linux-x86_64","storage":"postgres-17"}
+Challenge domain: ["realization","mechanism","check-implementation","oracle","context"]
+Qualification policy: credible-executable
+
+This edge is narrower than the whole recovery suite and can be challenged independently.
 ```
 
-Silent weakening is not available. This is D6.3's exemption principle applied to evidence: a
-deliberate, attributable, reviewable opt-out is fine anywhere; an unrecorded absence is not.
+A binding names exactly one Check and one case-level Claim. One Check may bind to several Claims,
+and one Claim may receive several Checks. The pair `(Check, Claim)` is unique.
 
-### Spec-level residual
+`Proposition:` explains why the Check's one terminal result bears on this Claim. The form is the
+actual evidence form for this edge:
+
+- `Scope:` is `unit | component | e2e`;
+- `Quantification:` is `example | universal`; and
+- `Oracle:` is `direct | golden | relational | metamorphic | model-based | contract`.
+
+There is no Strength field. Executable Checks demonstrate sampled behavior. Structural proof
+remains in design mechanisms and contributes to Claim Judgment rather than becoming a fictitious
+Observation.
+
+`Context:` is a required JSON object from string keys to uninterpreted string values. `{}` is
+explicit and valid. Equality is exact in alpha 2: values have no range, wildcard or
+provider-expression semantics.
+
+`Challenge domain:` is a non-empty JSON array drawn from the closed set
+`realization | mechanism | check-implementation | oracle | context`. Values are sorted and
+deduplicated semantically. It constrains relation-based challenge traversal; it is not a list of
+tools.
+
+`Qualification policy:` names one project policy from
+`azimuth/standards/verification.md`. Prose after the labels is required rationale and is excluded
+from fingerprints.
+
+The policy's required forms enter this binding's fingerprint. Capability coverage and actual
+challenge execution are validated by the dependent adapter and Run-planning contracts, not inferred
+from the presence of repository prose.
+
+## Qualification
 
 ```markdown
-## Residual: <short-id>
-Accepted: <why, and under what condition it is revisited>
+## Qualification: payments/recovery-replay-edge
+Verdict: qualified
+Fingerprint: sha256:<64-lowercase-hex>
+Qualified: 2026-08-21
+Qualifier: evidence-owner@example
 
-<what is not covered>
+The Check implementation, oracle and exact platform context make this edge credible.
 ```
 
-For risks that belong to no single claim — typically a cross-cutting concern held as prose while
-the steel thread runs. Labels come first here too: the grammar is uniform, so prose above a label
-is a parse error rather than something silently swallowed.
+The Qualification id is exactly the Evidence Binding id. Every applicable binding has exactly one
+Qualification. Duplicate blocks are parse errors; missing, rejected or stale Qualifications are
+Findings.
 
-## What never appears here
+`Verdict:` is `qualified | rejected`. `Qualified:` is an ISO date and `Qualifier:` is a
+non-empty accountable identity. Rationale is required and never changes the expected fingerprint.
 
-- **Test names as evidence for a claim.** Derived from `covers` tags.
-- **The actual scope or quantification of an existing test.** Declared by the tag; the plan states
-  what is *required*. `wrong-form` is the comparison.
-- **A manual charter as if it were a result.** Only an imported, passed, unexpired execution receipt
-  contributes evidence. Failed and expired receipts remain visible as holes.
-- **Restatement of the claim.** The spec owns the predicate.
-- **Anything true of every claim.** That belongs in `standards.md`.
+## Challenger
+
+```markdown
+## Challenger: mutation/implementation-perturbation
+Form: implementation-perturbation
+Searches for: an implementation change that leaves the bound Check satisfied
+
+Surviving changes are objections to credibility, not product outcomes.
+```
+
+`Form:` is an open lower kebab path id interpreted by qualification policy and later adapter
+capabilities. `Searches for:` is the objection proposition. A Challenger never directly evaluates
+a product Claim and is not recursively qualified in alpha 2.
+
+## Challenge Plan
+
+```markdown
+## Challenge Plan: payments/recovery-credibility
+Challenger: mutation/implementation-perturbation
+Select: qualification from binding payments/recovery-replay-edge
+Select: qualification from check payments/recovery-under-broker-loss
+Select: qualification from realization payments|rust-item|recovery::replay
+Select: qualification from mechanism payments/recovery#transactional-outbox
+Select: claim-judgment from claim payments/recovery#accepted-write-is-replayed
+Select: claim-judgment from realization payments|rust-item|recovery::replay
+Select: claim-judgment from mechanism payments/recovery#transactional-outbox
+
+The plan states semantic reach; a Run freezes the exact resolved fingerprints.
+```
+
+A plan names one Challenger and one or more repeatable `Select:` lines using only the seven forms
+shown above. Resolution unions, sorts and deduplicates current decision fingerprints.
+
+Qualification traversal from realizations or mechanisms reaches case-level Claims and their
+Evidence Bindings only when each binding's Challenge domain authorizes that relation. Claim
+Judgment selectors are reserved and resolve only after a current Claim Judgment format exists.
+Zero resolution is a Finding. Source paths, line numbers, globs and whole-suite fallback are
+invalid.
+
+The selector retains the complete semantic source address after the relation token, including
+spaces. An assembly-derived address such as `web|next-route|GET /payments/[id]` is semantic; a
+source-file locator remains invalid even when placed in the address field.
+
+## Canonical fingerprints
+
+All fingerprints use SHA-256 over versioned canonical JSON with sorted object keys and set-like
+collections. There is no legacy fingerprint reader.
+
+- Check fingerprint: format version, Check id, ordered methods, terminal proposition, and sorted
+  implementation semantic identities plus source fingerprints.
+- Binding fingerprint: format version, binding id, Check id, semantic Claim digest, Proposition,
+  form tuple, sorted challenge domain and qualification-policy digest.
+- Context fingerprint: format and version plus the canonical required-context object.
+- Qualification fingerprint: Check, Binding and Context fingerprints.
+
+Paths, lines, mounts, criticality and explanatory prose are excluded. A source, Claim, binding,
+policy or context change stales the decision it actually affects.
+
+## Source boundary
+
+Source uses `ImplementsCheck(<check-id>)`. A language extractor emits only:
+
+```json
+{
+  "check_implementations": [
+    {
+      "check": "payments/recovery-under-broker-loss",
+      "site": "recovery::replay_after_loss",
+      "file": "src/recovery.rs",
+      "lang": "rust",
+      "source_fingerprint": "sha256:<64-lowercase-hex>"
+    }
+  ]
+}
+```
+
+Workspace or project assembly attaches `area`, `mount`, `address_kind` and `address` from
+declared repository structure. Files and mounts remain locators; the semantic source identity is
+`<area>|<address-kind>|<address>`.
+
+An implementation marker contains no Claim, form, context or Qualification. A native test without
+the marker emits nothing.
+
+## Rejected alpha 1 input
+
+The parser rejects old `## Claim` and residual headings, evidence floors, non-test evidence,
+Strength, detector fields and old judgment blocks. Manifests reject `covers`,
+`mechanism_covers` and `observations`. Annotations reject Covers and CoversMechanism. Nothing is
+translated, deprecated or exported twice.

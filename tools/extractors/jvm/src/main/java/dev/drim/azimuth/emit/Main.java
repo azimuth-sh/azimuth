@@ -1,8 +1,12 @@
 package dev.drim.azimuth.emit;
 
+import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.MethodTree;
+import com.sun.source.util.JavacTask;
+import com.sun.source.util.TreePathScanner;
+import com.sun.source.util.Trees;
 import dev.drim.azimuth.Azimuth;
 import java.io.IOException;
-import java.lang.annotation.Annotation;
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
 import java.net.URL;
@@ -17,6 +21,9 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import javax.tools.JavaCompiler;
+import javax.tools.StandardJavaFileManager;
+import javax.tools.ToolProvider;
 
 public final class Main {
     private Main() {}
@@ -36,9 +43,8 @@ public final class Main {
             throws IOException, ReflectiveOperationException {
         Map<String, Path> sources = sourceFiles(options.sourceRoots());
         List<Entry> realizes = new ArrayList<>();
-        List<Entry> covers = new ArrayList<>();
+        List<Entry> checks = new ArrayList<>();
         List<Entry> implementations = new ArrayList<>();
-        List<Entry> mechanismCovers = new ArrayList<>();
         List<Entry> artifacts = new ArrayList<>();
         URL[] urls = options.classRoots().stream().map(Main::url).toArray(URL[]::new);
         try (URLClassLoader loader = new URLClassLoader(urls, Main.class.getClassLoader())) {
@@ -48,21 +54,24 @@ public final class Main {
                 String file = options.root().toAbsolutePath().normalize()
                         .relativize(source.toAbsolutePath().normalize()).toString().replace('\\', '/');
                 String lang = source.toString().endsWith(".kt") ? "kotlin" : "java";
-                String fingerprint = fingerprint(source);
-                collect(type, type.getName(), file, lang, fingerprint,
-                        realizes, covers, implementations, mechanismCovers, artifacts);
+                String fileFingerprint = fingerprint(source);
+                collect(type, type.getName(), file, lang, fileFingerprint, null,
+                        realizes, checks, implementations, artifacts);
                 for (Method method : type.getDeclaredMethods()) {
-                    collect(method, type.getName() + "." + method.getName(), file, lang, fingerprint,
-                            realizes, covers, implementations, mechanismCovers, artifacts);
+                    String site = type.getName() + "." + method.getName();
+                    String siteFingerprint = method
+                            .getAnnotationsByType(Azimuth.ImplementsCheck.class).length == 0
+                            ? null : siteFingerprint(source, method);
+                    collect(method, site, file, lang, fileFingerprint, siteFingerprint,
+                            realizes, checks, implementations, artifacts);
                 }
             }
         }
         realizes.sort(Entry.ORDER);
-        covers.sort(Entry.ORDER);
+        checks.sort(Entry.ORDER);
         implementations.sort(Entry.ORDER);
-        mechanismCovers.sort(Entry.ORDER);
         artifacts.sort(Entry.ORDER);
-        return manifest(realizes, covers, implementations, mechanismCovers, artifacts);
+        return manifest(realizes, checks, implementations, artifacts);
     }
 
     private static void collect(
@@ -70,36 +79,32 @@ public final class Main {
             String site,
             String file,
             String lang,
-            String fingerprint,
+            String fileFingerprint,
+            String siteFingerprint,
             List<Entry> realizes,
-            List<Entry> covers,
+            List<Entry> checks,
             List<Entry> implementations,
-            List<Entry> mechanismCovers,
             List<Entry> artifacts) {
         for (Azimuth.Realizes annotation : element.getAnnotationsByType(Azimuth.Realizes.class)) {
-            realizes.add(Entry.relation(annotation.spec(), annotation.scenario(), site, file, lang, fingerprint));
+            realizes.add(Entry.relation(
+                    annotation.spec(), annotation.scenario(), site, file, lang, fileFingerprint));
         }
-        for (Azimuth.Covers annotation : element.getAnnotationsByType(Azimuth.Covers.class)) {
-            covers.add(Entry.cover(annotation.spec(), annotation.scenario(), site, file, lang,
-                    fingerprint, annotation.scope().name(), annotation.quantification().name(), oracle(annotation.oracle())));
+        for (Azimuth.ImplementsCheck annotation
+                : element.getAnnotationsByType(Azimuth.ImplementsCheck.class)) {
+            if (siteFingerprint == null) {
+                throw new IllegalArgumentException(
+                        site + ": ImplementsCheck requires an exact source fingerprint");
+            }
+            checks.add(Entry.checkImplementation(
+                    annotation.value(), site, file, lang, siteFingerprint));
         }
         for (Azimuth.ImplementsMechanism annotation
                 : element.getAnnotationsByType(Azimuth.ImplementsMechanism.class)) {
             String binding = "jvm-symbol:" + site;
             implementations.add(Entry.implementation(annotation.spec(), annotation.mechanism(), binding,
-                    file, lang, fingerprint));
+                    file, lang, fileFingerprint));
             artifacts.add(Entry.artifact(binding, "jvm-symbol", file));
         }
-        for (Azimuth.CoversMechanism annotation
-                : element.getAnnotationsByType(Azimuth.CoversMechanism.class)) {
-            mechanismCovers.add(Entry.mechanismCover(annotation.spec(), annotation.mechanism(), site,
-                    file, lang, fingerprint, annotation.scope().name(),
-                    annotation.quantification().name(), oracle(annotation.oracle())));
-        }
-    }
-
-    private static String oracle(Azimuth.Oracle value) {
-        return value == Azimuth.Oracle.model_based ? "model-based" : value.name();
     }
 
     private static Map<String, Path> sourceFiles(List<Path> roots) throws IOException {
@@ -153,25 +158,115 @@ public final class Main {
     }
 
     private static String fingerprint(Path path) throws IOException {
+        return sha256Fingerprint(Files.readString(path, StandardCharsets.UTF_8));
+    }
+
+    private static String hash(String source) {
         try {
             return java.util.HexFormat.of().formatHex(
-                    MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path)));
+                    MessageDigest.getInstance("SHA-256")
+                            .digest(source.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException error) {
             throw new IllegalStateException(error);
         }
     }
 
+    private static String siteFingerprint(Path source, Method method) throws IOException {
+        String content = Files.readString(source, StandardCharsets.UTF_8);
+        String siteSource = source.toString().endsWith(".java")
+                ? javaMethodSource(source, content, method)
+                : kotlinMethodSource(content, method);
+        return sha256Fingerprint(siteSource);
+    }
+
+    private static String sha256Fingerprint(String source) {
+        return "sha256:" + hash(source);
+    }
+
+    private static String javaMethodSource(Path source, String content, Method method)
+            throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        if (compiler == null) {
+            throw new IllegalArgumentException("a JDK is required to fingerprint " + source);
+        }
+        List<String> matches = new ArrayList<>();
+        try (StandardJavaFileManager files = compiler.getStandardFileManager(null, null,
+                StandardCharsets.UTF_8)) {
+            JavacTask task = (JavacTask) compiler.getTask(
+                    null, files, null, List.of("-proc:none"), null,
+                    files.getJavaFileObjects(source));
+            for (CompilationUnitTree unit : task.parse()) {
+                Trees trees = Trees.instance(task);
+                new TreePathScanner<Void, Void>() {
+                    @Override
+                    public Void visitMethod(MethodTree tree, Void unused) {
+                        if (tree.getName().contentEquals(method.getName())
+                                && tree.getParameters().size() == method.getParameterCount()) {
+                            long start = trees.getSourcePositions().getStartPosition(unit, tree);
+                            long end = trees.getSourcePositions().getEndPosition(unit, tree);
+                            if (start >= 0 && end > start && end <= content.length()) {
+                                matches.add(content.substring((int) start, (int) end));
+                            }
+                        }
+                        return super.visitMethod(tree, unused);
+                    }
+                }.scan(unit, null);
+            }
+        }
+        if (matches.size() != 1) {
+            throw new IllegalArgumentException(
+                    "no unique enclosing source site for "
+                            + method.getDeclaringClass().getName() + "." + method.getName());
+        }
+        return matches.get(0);
+    }
+
+    private static String kotlinMethodSource(String content, Method method) {
+        String marker = "fun " + method.getName();
+        int name = content.indexOf(marker);
+        if (name < 0 || content.indexOf(marker, name + marker.length()) >= 0) {
+            throw new IllegalArgumentException(
+                    "no unique enclosing Kotlin source site for "
+                            + method.getDeclaringClass().getName() + "." + method.getName());
+        }
+        int start = content.lastIndexOf('\n', name);
+        start = start < 0 ? 0 : start + 1;
+        while (start > 0) {
+            int previousEnd = start - 1;
+            int previousStart = content.lastIndexOf('\n', previousEnd - 1) + 1;
+            String previous = content.substring(previousStart, previousEnd).stripLeading();
+            if (!previous.startsWith("@")) break;
+            start = previousStart;
+        }
+        int body = content.indexOf('{', name + marker.length());
+        int expression = content.indexOf('=', name + marker.length());
+        if (expression >= 0 && (body < 0 || expression < body)) {
+            int end = content.indexOf('\n', expression);
+            return content.substring(start, end < 0 ? content.length() : end);
+        }
+        if (body < 0) {
+            throw new IllegalArgumentException("no method body for " + method.getName());
+        }
+        int depth = 0;
+        for (int index = body; index < content.length(); index++) {
+            char character = content.charAt(index);
+            if (character == '{') depth++;
+            if (character == '}' && --depth == 0) {
+                return content.substring(start, index + 1);
+            }
+        }
+        throw new IllegalArgumentException("unterminated method body for " + method.getName());
+    }
+
     private static String manifest(
             List<Entry> realizes,
-            List<Entry> covers,
+            List<Entry> checks,
             List<Entry> implementations,
-            List<Entry> mechanismCovers,
             List<Entry> artifacts) {
         return "{\n"
                 + "  \"realizes\": " + array(realizes) + ",\n"
-                + "  \"covers\": " + array(covers) + ",\n"
+                + "  \"check_implementations\": " + array(checks) + ",\n"
                 + "  \"mechanism_implementations\": " + array(implementations) + ",\n"
-                + "  \"mechanism_covers\": " + array(mechanismCovers) + ",\n"
                 + "  \"class_members\": [],\n"
                 + "  \"enumerations\": [],\n"
                 + "  \"artifacts\": " + array(artifacts) + "\n"
@@ -219,24 +314,16 @@ public final class Main {
                     "lang", lang, "source_fingerprint", fingerprint);
         }
 
-        static Entry cover(String spec, String scenario, String site, String file, String lang,
-                String fingerprint, String scope, String quantification, String oracle) {
-            return entry("spec", spec, "scenario", scenario, "site", site, "file", file,
-                    "lang", lang, "source_fingerprint", fingerprint, "scope", scope,
-                    "quantification", quantification, "oracle", oracle);
+        static Entry checkImplementation(
+                String check, String site, String file, String lang, String fingerprint) {
+            return entry("check", check, "site", site, "file", file, "lang", lang,
+                    "source_fingerprint", fingerprint);
         }
 
         static Entry implementation(String spec, String mechanism, String binding, String file,
                 String lang, String fingerprint) {
             return entry("spec", spec, "mechanism", mechanism, "binding", binding, "file", file,
                     "lang", lang, "source_fingerprint", fingerprint);
-        }
-
-        static Entry mechanismCover(String spec, String mechanism, String site, String file,
-                String lang, String fingerprint, String scope, String quantification, String oracle) {
-            return entry("spec", spec, "mechanism", mechanism, "site", site, "file", file,
-                    "lang", lang, "source_fingerprint", fingerprint, "scope", scope,
-                    "quantification", quantification, "oracle", oracle);
         }
 
         static Entry artifact(String id, String kind, String file) {

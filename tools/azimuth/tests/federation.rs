@@ -3,7 +3,6 @@
 
 use azimuth::federation::{self, Assembly};
 use azimuth::fingerprint::sha256;
-use azimuth::judgment;
 use azimuth::validation;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -13,28 +12,18 @@ use std::time::Instant;
 
 static NEXT_LAB: AtomicU64 = AtomicU64::new(0);
 
-const STANDARDS: &str = "# Verification standards
-Default scope: unit
+const STANDARDS: &str = "# Qualification policies
 
-## Level: critical
-Strength: demonstration
-Quantification: universal
-Residual: required
+## Policy: credible-executable
+Required challenge: implementation-perturbation
 
-## Level: standard
-Strength: demonstration
-Quantification: example
-Residual: optional
-
-## Level: routine
-Strength: none
-Residual: optional
+The policy requires an implementation challenge.
 ";
 
 const SYSTEM_SPEC: &str = "# Spec: payments/receipt
 
 ## Requirement: capture-identifier-is-returned
-Criticality: critical
+Criticality: routine
 
 The receipt SHALL carry the capture identifier.
 
@@ -46,7 +35,7 @@ THEN its capture identifier is returned
 const EXPERIENCE_SPEC: &str = "# Spec: experience/receipt
 
 ## Requirement: capture-identifier-is-shown
-Criticality: standard
+Criticality: routine
 
 The rider receipt SHALL show the capture identifier.
 
@@ -90,7 +79,7 @@ WHEN an operator opens the dashboard
 THEN its title identifies the ride system
 
 ## Requirement: delivery-backlog-is-alerted
-Criticality: standard
+Criticality: routine
 
 The monitoring system SHALL alert on a persistent delivery backlog.
 
@@ -726,6 +715,15 @@ fn split_and_monorepo_controls_derive_the_same_assurance_relations() {
         &lab.backend.root.join("azimuth/standards"),
         &control.join("azimuth/standards"),
     );
+    write(
+        &control.join("azimuth/workspace.json"),
+        "{\"format\":\"azimuth-workspace\",\"version\":1,\"areas\":[\
+         {\"id\":\"payments\",\"mounts\":[{\"id\":\"code\",\"path\":\"app/services/Payments\"},{\"id\":\"tests\",\"path\":\"app/services/Payments.Tests\"}]},\
+         {\"id\":\"rider-experience\",\"mounts\":[{\"id\":\"code\",\"path\":\"app/web/rider/src\"}]},\
+         {\"id\":\"monitoring\",\"mounts\":[{\"id\":\"rules\",\"path\":\"monitoring\"}]},\
+         {\"id\":\"system-e2e\",\"mounts\":[{\"id\":\"tests\",\"path\":\"app/e2e/src\"}]}],\
+         \"surfaces\":[],\"realization_obligations\":[]}",
+    );
     let manifests = [
         ("backend.json", BACKEND_LINKAGE),
         ("experience.json", EXPERIENCE_LINKAGE),
@@ -761,30 +759,96 @@ fn split_and_monorepo_controls_derive_the_same_assurance_relations() {
 }
 
 #[test]
-fn ordinary_extractor_output_can_be_observed_as_a_repository_manifest() {
+fn repository_envelope_normalizes_check_linkage_and_exports_only_v2_keys() {
     let lab = Lab::new();
-    let legacy = lab.root.join("artifacts/backend-flat.json");
-    write(&legacy, LEGACY_BACKEND_LINKAGE);
+    let flat = lab.root.join("artifacts/backend-flat.json");
+    write(&flat, FLAT_BACKEND_LINKAGE);
     let observed = federation::observe_repository(
         &lab.project,
         "backend",
         &lab.backend.root,
         "azimuth-emit-dotnet/test",
-        &[legacy],
+        &[flat],
     )
     .unwrap();
     assert!(observed.contains("\"area\": \"payments\""));
     assert!(observed.contains("\"address_kind\": \"dotnet-symbol\""));
+    assert!(observed.contains("\"check_implementations\""));
+    assert!(!observed.contains("\"covers\""));
+    assert!(!observed.contains("\"mechanism_covers\""));
+    assert!(!observed.contains("\"observations\""));
     assert!(observed.contains(&lab.backend.revision));
     assert!(observed.contains("\"changes\": []"));
     write(&lab.backend.manifest, &observed);
     lab.write_workset(&["backend", "experience", "operations", "assurance"], true);
-    lab.assemble(None)
+    let assembly = lab
+        .assemble(None)
         .expect("observed flat extractor output is consumable");
+    let loaded = azimuth::load_assembly(&assembly, &[]).expect("federated model loads");
+    let implementation = loaded
+        .model
+        .check_implementations
+        .iter()
+        .find(|item| item.check == "payments/capture-identifier")
+        .expect("Check implementation survives federation");
+    let source = implementation
+        .source
+        .as_ref()
+        .expect("federation assigns a semantic source identity");
+    assert_eq!(source.area, "payments");
+    assert_eq!(source.kind, "dotnet-symbol");
+    assert_eq!(
+        source.address,
+        "Payments.Tests.CaptureTests.ReturnsIdentifier"
+    );
+    assert_eq!(source.mount, "tests");
+
+    let export = loaded.model.to_json(&[]).to_string_pretty();
+    assert!(export.contains("\"version\": 2"));
+    assert!(export.contains("\"check_implementations\""));
+    assert!(!export.contains("\"covers\""));
+    assert!(!export.contains("\"mechanism_covers\""));
+    assert!(!export.contains("\"observations\""));
 }
 
 #[test]
-fn operational_realization_and_evidence_may_originate_in_the_operations_repository() {
+fn federated_check_and_realization_source_kinds_and_addresses_are_rederived() {
+    for target in ["realization", "check"] {
+        let lab = Lab::new();
+        let source = if target == "realization" {
+            fs::read_to_string(&lab.backend.manifest).unwrap().replace(
+                "\"address_kind\":\"dotnet-symbol\",\"address\":\"Handle\"",
+                "\"address_kind\":\"forged-kind\",\"address\":\"forged-address\"",
+            )
+        } else {
+            let flat = lab.root.join("artifacts/backend-flat.json");
+            write(&flat, FLAT_BACKEND_LINKAGE);
+            federation::observe_repository(
+                &lab.project,
+                "backend",
+                &lab.backend.root,
+                "azimuth-emit-dotnet/test",
+                &[flat],
+            )
+            .unwrap()
+            .replace(
+                "\"address\": \"Payments.Tests.CaptureTests.ReturnsIdentifier\"",
+                "\"address\": \"forged-address\"",
+            )
+        };
+        write(&lab.backend.manifest, &source);
+        lab.write_workset(&["backend", "experience", "operations", "assurance"], true);
+        let error = lab.assemble(None).unwrap_err();
+        assert!(
+            error.contains("kind") && error.contains("address"),
+            "{error}"
+        );
+        assert!(error.contains("forged"), "{error}");
+    }
+}
+
+#[test]
+fn operational_realization_may_originate_in_the_operations_repository() {
     let lab = Lab::new();
     let assembly = lab.assemble(None).expect("complete project assembles");
     let loaded = azimuth::load_assembly(&assembly, &[]).expect("assembled model loads");
@@ -794,54 +858,24 @@ fn operational_realization_and_evidence_may_originate_in_the_operations_reposito
         .iter()
         .find(|site| site.spec == "operations/dashboard" && site.scenario == "backlog-alert-fires")
         .expect("operations rule realizes the alert claim");
-    let evidence = loaded
-        .model
-        .covers
-        .iter()
-        .find(|site| site.spec == "operations/dashboard" && site.scenario == "backlog-alert-fires")
-        .expect("operations rule test covers the alert claim");
-
     assert_eq!(realization.source.as_ref().unwrap().area, "monitoring");
-    assert_eq!(evidence.source.as_ref().unwrap().area, "monitoring");
     assert!(validation::validate(&loaded.model).is_empty());
 }
 
 #[test]
-fn assurance_observations_survive_repository_enveloping() {
+fn retired_evidence_keys_fail_strict_repository_ingestion() {
     let lab = Lab::new();
-    let linkage = lab.root.join("artifacts/operations-flat.json");
-    let observation = lab.root.join("artifacts/operations-observation.json");
-    write(&linkage, OPERATIONS_LINKAGE);
-    write(
-        &observation,
-        r#"{
-          "observations":[{"id":"rule-lint-1","kind":"static-analysis","tool":"promtool",
-            "tool_version":"test","report":"monitoring/delivery.rules.test.yml",
-            "inputs":["monitoring/delivery.rules.yml"],"source_fingerprint":"lint-v1",
-            "bindings":[{"role":"challenge","spec":"operations/dashboard",
-              "scenario":"backlog-alert-fires","assertion":"rule lint reports no adverse result",
-              "outcome":"clean","subjects":[{"relation":"realization",
-                "identity":"monitoring/delivery.rules.yml#DeliveryBacklog|prometheus"}]}],
-            "payload":{}}]
-        }"#,
-    );
-    let observed = federation::observe_repository(
-        &lab.project,
-        "operations",
-        &lab.operations.root,
-        "azimuth-observation/test",
-        &[linkage, observation],
-    )
-    .expect("operations observation is enveloped");
-
-    assert!(observed.contains("\"observations\""));
-    assert!(observed.contains("\"area\": \"monitoring\""));
-    write(&lab.operations.manifest, &observed);
-    lab.write_workset(&["backend", "experience", "operations", "assurance"], true);
-    let assembly = lab.assemble(None).expect("observed project assembles");
-    let loaded = azimuth::load_assembly(&assembly, &[]).expect("observed model loads");
-    assert_eq!(loaded.model.observations.len(), 1);
-    assert!(validation::validate(&loaded.model).is_empty());
+    let current = fs::read_to_string(&lab.operations.manifest).unwrap();
+    for key in ["covers", "mechanism_covers", "observations"] {
+        let retired = current.replace("\"linkage\":{", &format!("\"linkage\":{{\"{key}\":[],"));
+        write(&lab.operations.manifest, &retired);
+        lab.write_workset(&["backend", "experience", "operations", "assurance"], true);
+        let error = lab.assemble(None).unwrap_err();
+        assert!(
+            error.contains(&format!("legacy manifest key `{key}`")),
+            "{error}"
+        );
+    }
 }
 
 #[test]
@@ -860,7 +894,7 @@ fn local_routine_work_is_clean_but_explicitly_incomplete() {
     assert!(loaded.warnings.is_empty());
     assert_eq!(loaded.model.scenario_count(), 1);
     assert!(loaded.model.realizes.is_empty());
-    assert!(loaded.model.covers.is_empty());
+    assert!(loaded.model.check_implementations.is_empty());
     assert!(validation::validate(&loaded.model).is_empty());
     assert!(assembly.snapshot_json().is_err());
 }
@@ -1177,17 +1211,20 @@ fn same_typed_address_in_different_areas_does_not_collide() {
 }
 
 #[test]
-fn inconsistent_resolution_of_one_area_address_fails_closed() {
+fn tampered_artifact_address_fails_closed() {
     let lab = Lab::new();
     let source = fs::read_to_string(&lab.backend.manifest).unwrap();
-    let conflicting = "{\"id\":\"duplicate\",\"kind\":\"dotnet-method\",\"file\":\"other.cs\",\"area\":\"payments\",\"address_kind\":\"dotnet-symbol\",\"address\":\"Payments.Capture.Handle\",\"mount\":\"code\"},";
     write(
         &lab.backend.manifest,
-        &source.replace("\"artifacts\":[", &format!("\"artifacts\":[{conflicting}")),
+        &source.replace(
+            "\"address\":\"capture-identifier-projection\"",
+            "\"address\":\"forged-artifact-address\"",
+        ),
     );
     lab.write_workset(&["backend", "experience", "operations", "assurance"], true);
     let error = lab.assemble(None).unwrap_err();
-    assert!(error.contains("source-identity-conflict"), "{error}");
+    assert!(error.contains("forged-artifact-address"), "{error}");
+    assert!(error.contains("capture-identifier-projection"), "{error}");
 }
 
 #[test]
@@ -1271,17 +1308,94 @@ fn two_model_sources_cannot_own_the_same_spec() {
 }
 
 #[test]
-fn whole_area_relocation_preserves_judgment_source_identity() {
+fn assembled_verification_authority_requires_a_current_owning_spec() {
+    let mut lab = Lab::new();
+    write(
+        &lab.backend
+            .root
+            .join("azimuth/model/retired/verification.md"),
+        "# Verification: retired\n\n## Check: retired/check\nMethod: invoke\nTerminal: works\n\nAtomic.\n",
+    );
+    output(
+        &lab.backend.root,
+        &["add", "azimuth/model/retired/verification.md"],
+    );
+    output(
+        &lab.backend.root,
+        &["commit", "--quiet", "-m", "add retired authority"],
+    );
+    lab.backend.revision = output(&lab.backend.root, &["rev-parse", "HEAD"]);
+    write(
+        &lab.backend.manifest,
+        &repository_manifest(
+            "backend",
+            &lab.backend.revision,
+            &["payments"],
+            &[(
+                "system-intent",
+                federation::tree_digest(&lab.backend.root.join("azimuth/model")).unwrap(),
+            )],
+            Some(sha256(STANDARDS.as_bytes())),
+            BACKEND_LINKAGE,
+        ),
+    );
+    write(
+        &lab.receipt,
+        &execution_receipt(&[
+            ("backend", &lab.backend.revision),
+            ("experience", &lab.experience.revision),
+            ("operations", &lab.operations.revision),
+            ("assurance", &lab.assurance.revision),
+        ]),
+    );
+    lab.write_workset(&["backend", "experience", "operations", "assurance"], true);
+
+    let assembly = lab
+        .assemble(None)
+        .expect("assembly is structurally complete");
+    let error = azimuth::load_assembly(&assembly, &[])
+        .unwrap_err()
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        error.contains("verification authority `retired` has no current owning spec"),
+        "{error}"
+    );
+}
+
+#[test]
+fn whole_area_relocation_preserves_check_implementation_identity() {
     let lab = Lab::new();
+    let linkage = EXPERIENCE_LINKAGE.replace(
+        "\"artifacts\":[",
+        "\"check_implementations\":[{\"check\":\"experience/receipt-rendering\",\"site\":\"receipt shows identifier\",\"file\":\"app/web/rider/src/receipt.test.ts\",\"lang\":\"typescript\",\"source_fingerprint\":\"sha256:5555555555555555555555555555555555555555555555555555555555555555\",\"area\":\"rider-experience\",\"address_kind\":\"typescript-symbol\",\"address\":\"receipt shows identifier\",\"mount\":\"code\"}],\n  \"artifacts\":[",
+    );
+    write(
+        &lab.experience.manifest,
+        &repository_manifest(
+            "experience",
+            &lab.experience.revision,
+            &["rider-experience"],
+            &[(
+                "experience-intent",
+                federation::tree_digest(&lab.experience.root.join("azimuth/model")).unwrap(),
+            )],
+            None,
+            &linkage,
+        ),
+    );
+    lab.write_workset(&["backend", "experience", "operations", "assurance"], true);
     let assembly = lab.assemble(None).unwrap();
     let model = azimuth::load_assembly(&assembly, &[]).unwrap().model;
-    let claim = model
-        .find_claim("experience/receipt", "identifier-shown")
+    let before = model
+        .check_implementations
+        .iter()
+        .find(|item| item.check == "experience/receipt-rendering")
         .unwrap();
-    let before = judgment::fingerprint(
-        &model.claim_text(&claim),
-        model.judgment_inputs("experience/receipt", "identifier-shown"),
-    );
+    let before_identity = before.source.as_ref().unwrap().key();
+    let before_fingerprint = before.source_fingerprint.clone();
 
     let moved_root = lab.root.join("rides-rider");
     copy_tree(&lab.experience.root, &moved_root);
@@ -1331,14 +1445,13 @@ fn whole_area_relocation_preserves_judgment_source_identity() {
     );
     let moved = federation::assemble(&moved_project, &moved_workset, None).unwrap();
     let moved_model = azimuth::load_assembly(&moved, &[]).unwrap().model;
-    let moved_claim = moved_model
-        .find_claim("experience/receipt", "identifier-shown")
+    let after = moved_model
+        .check_implementations
+        .iter()
+        .find(|item| item.check == "experience/receipt-rendering")
         .unwrap();
-    let after = judgment::fingerprint(
-        &moved_model.claim_text(&moved_claim),
-        moved_model.judgment_inputs("experience/receipt", "identifier-shown"),
-    );
-    assert_eq!(before, after);
+    assert_eq!(before_identity, after.source.as_ref().unwrap().key());
+    assert_eq!(before_fingerprint, after.source_fingerprint);
 }
 
 #[test]
@@ -1474,7 +1587,7 @@ fn assembly_scales_to_fifty_real_repositories_and_five_thousand_sources() {
         let artifacts = (0..100)
             .map(|site| {
                 format!(
-                    "{{\"id\":\"artifact-{index}-{site}\",\"kind\":\"synthetic-symbol\",\"file\":\"src/sites.txt\",\"area\":\"{area}\",\"address_kind\":\"synthetic-symbol\",\"address\":\"Site.{site}\",\"mount\":\"code\"}}"
+                    "{{\"id\":\"artifact-{index}-{site}\",\"kind\":\"synthetic-symbol\",\"file\":\"src/sites.txt\",\"area\":\"{area}\",\"address_kind\":\"synthetic-symbol\",\"address\":\"artifact-{index}-{site}\",\"mount\":\"code\"}}"
                 )
             })
             .collect::<Vec<_>>()
@@ -1566,31 +1679,28 @@ const PROJECT: &str = r#"{
 }"#;
 
 const BACKEND_LINKAGE: &str = r#"{
-  "realizes":[{"spec":"payments/receipt","scenario":"identifier-returned","site":"Handle","file":"app/services/Payments/Capture.cs","lang":"csharp","source_fingerprint":"backend-code-v1","area":"payments","address_kind":"dotnet-symbol","address":"Payments.Capture.Handle","mount":"code"}],
-  "covers":[{"spec":"payments/receipt","scenario":"identifier-returned","site":"returns identifier","file":"app/services/Payments.Tests/CaptureTests.cs","lang":"csharp","source_fingerprint":"backend-test-v1","scope":"unit","quantification":"universal","oracle":"direct","area":"payments","address_kind":"dotnet-symbol","address":"Payments.Tests.CaptureTests.ReturnsIdentifier","mount":"tests"}],
-  "artifacts":[{"id":"capture-identifier-projection","kind":"dotnet-method","file":"app/services/Payments/Capture.cs","area":"payments","address_kind":"dotnet-symbol","address":"Payments.Capture.ProjectIdentifier","mount":"code"}]
+  "realizes":[{"spec":"payments/receipt","scenario":"identifier-returned","site":"Handle","file":"app/services/Payments/Capture.cs","lang":"csharp","source_fingerprint":"sha256:1111111111111111111111111111111111111111111111111111111111111111","area":"payments","address_kind":"dotnet-symbol","address":"Handle","mount":"code"}],
+  "artifacts":[{"id":"capture-identifier-projection","kind":"dotnet-method","file":"app/services/Payments/Capture.cs","area":"payments","address_kind":"dotnet-method","address":"capture-identifier-projection","mount":"code"}]
 }"#;
 
-const LEGACY_BACKEND_LINKAGE: &str = r#"{
-  "realizes":[{"spec":"payments/receipt","scenario":"identifier-returned","site":"Payments.Capture.Handle","file":"app/services/Payments/Capture.cs","lang":"csharp","source_fingerprint":"backend-code-v1"}],
-  "covers":[{"spec":"payments/receipt","scenario":"identifier-returned","site":"Payments.Tests.CaptureTests.ReturnsIdentifier","file":"app/services/Payments.Tests/CaptureTests.cs","lang":"csharp","source_fingerprint":"backend-test-v1","scope":"unit","quantification":"universal","oracle":"direct"}],
+const FLAT_BACKEND_LINKAGE: &str = r#"{
+  "realizes":[{"spec":"payments/receipt","scenario":"identifier-returned","site":"Payments.Capture.Handle","file":"app/services/Payments/Capture.cs","lang":"csharp","source_fingerprint":"sha256:1111111111111111111111111111111111111111111111111111111111111111"}],
+  "check_implementations":[{"check":"payments/capture-identifier","site":"Payments.Tests.CaptureTests.ReturnsIdentifier","file":"app/services/Payments.Tests/CaptureTests.cs","lang":"csharp","source_fingerprint":"sha256:2222222222222222222222222222222222222222222222222222222222222222"}],
   "artifacts":[{"id":"capture-identifier-projection","kind":"dotnet-method","file":"app/services/Payments/Capture.cs"}]
 }"#;
 
 const EXPERIENCE_LINKAGE: &str = r#"{
-  "realizes":[{"spec":"experience/receipt","scenario":"identifier-shown","site":"Receipt","file":"app/web/rider/src/receipt.tsx","lang":"typescript","source_fingerprint":"experience-code-v1","area":"rider-experience","address_kind":"typescript-export","address":"Receipt","mount":"code"},{"spec":"payments/receipt","scenario":"identifier-returned","site":"Receipt","file":"app/web/rider/src/receipt.tsx","lang":"typescript","source_fingerprint":"experience-code-v1","area":"rider-experience","address_kind":"typescript-export","address":"Receipt","mount":"code"}],
-  "covers":[{"spec":"experience/receipt","scenario":"identifier-shown","site":"shows identifier","file":"app/web/rider/src/receipt.test.ts","lang":"typescript","source_fingerprint":"experience-test-v1","scope":"unit","quantification":"example","oracle":"direct","area":"rider-experience","address_kind":"typescript-test","address":"receipt shows identifier","mount":"code"}],
-  "artifacts":[{"id":"display-density-control","kind":"typescript-export","file":"app/web/rider/src/display-density.tsx","area":"rider-experience","address_kind":"typescript-export","address":"DisplayDensity","mount":"code"}]
+  "realizes":[{"spec":"experience/receipt","scenario":"identifier-shown","site":"Receipt","file":"app/web/rider/src/receipt.tsx","lang":"typescript","source_fingerprint":"sha256:3333333333333333333333333333333333333333333333333333333333333333","area":"rider-experience","address_kind":"typescript-symbol","address":"Receipt","mount":"code"},{"spec":"payments/receipt","scenario":"identifier-returned","site":"Receipt","file":"app/web/rider/src/receipt.tsx","lang":"typescript","source_fingerprint":"sha256:3333333333333333333333333333333333333333333333333333333333333333","area":"rider-experience","address_kind":"typescript-symbol","address":"Receipt","mount":"code"}],
+  "artifacts":[{"id":"display-density-control","kind":"typescript-export","file":"app/web/rider/src/display-density.tsx","area":"rider-experience","address_kind":"typescript-export","address":"display-density-control","mount":"code"}]
 }"#;
 
 const OPERATIONS_LINKAGE: &str = r#"{
-  "realizes":[{"spec":"operations/dashboard","scenario":"backlog-alert-fires","site":"DeliveryBacklog","file":"monitoring/delivery.rules.yml","lang":"prometheus","source_fingerprint":"rule-v1","area":"monitoring","address_kind":"prometheus-alert","address":"DeliveryBacklog","mount":"rules"}],
-  "covers":[{"spec":"operations/dashboard","scenario":"backlog-alert-fires","site":"DeliveryBacklog","file":"monitoring/delivery.rules.test.yml","lang":"prometheus","source_fingerprint":"rule-test-v1","scope":"unit","quantification":"example","oracle":"direct","area":"monitoring","address_kind":"prometheus-rule-test","address":"DeliveryBacklog","mount":"rules"}],
-  "artifacts":[{"id":"ride-dashboard","kind":"dashboard","file":"monitoring/dashboard.json","area":"monitoring","address_kind":"dashboard-object","address":"dashboard-title","mount":"rules"}]
+  "realizes":[{"spec":"operations/dashboard","scenario":"backlog-alert-fires","site":"DeliveryBacklog","file":"monitoring/delivery.rules.yml","lang":"prometheus","source_fingerprint":"sha256:4444444444444444444444444444444444444444444444444444444444444444","area":"monitoring","address_kind":"prometheus-alert","address":"DeliveryBacklog","mount":"rules"}],
+  "artifacts":[{"id":"ride-dashboard","kind":"dashboard","file":"monitoring/dashboard.json","area":"monitoring","address_kind":"dashboard","address":"ride-dashboard","mount":"rules"}]
 }"#;
 
 const ASSURANCE_LINKAGE: &str = r#"{
-  "covers":[{"spec":"experience/receipt","scenario":"identifier-shown","site":"composed receipt","file":"app/e2e/src/receipt.test.ts","lang":"typescript","source_fingerprint":"e2e-v1","scope":"e2e","quantification":"example","oracle":"direct","area":"system-e2e","address_kind":"typescript-test","address":"receipt composes capture identifier","mount":"tests"},{"spec":"payments/receipt","scenario":"identifier-returned","site":"composed receipt","file":"app/e2e/src/receipt.test.ts","lang":"typescript","source_fingerprint":"e2e-v1","scope":"e2e","quantification":"universal","oracle":"direct","area":"system-e2e","address_kind":"typescript-test","address":"receipt composes capture identifier","mount":"tests"}]
+  "check_implementations":[]
 }"#;
 
 fn repository_manifest(
@@ -1776,18 +1886,16 @@ fn relation_projection(model: &azimuth::model::Model) -> Vec<String> {
                     .unwrap_or_else(|| relation.site.clone())
             )
         })
-        .chain(model.covers.iter().map(|relation| {
+        .chain(model.check_implementations.iter().map(|implementation| {
             format!(
-                "covers:{}#{}:{}:{:?}:{:?}",
-                relation.spec,
-                relation.scenario,
-                relation
+                "implements-check:{}:{}:{}",
+                implementation.check,
+                implementation
                     .source
                     .as_ref()
                     .map(|source| source.key())
-                    .unwrap_or_else(|| relation.site.clone()),
-                relation.scope,
-                relation.quantification
+                    .unwrap_or_else(|| implementation.site.clone()),
+                implementation.source_fingerprint
             )
         }))
         .collect::<Vec<_>>();

@@ -10,17 +10,11 @@ import json
 from pathlib import Path
 import sys
 
-SCOPES = {"unit", "component", "e2e"}
-QUANTIFICATIONS = {"example", "universal"}
-ORACLES = {"direct", "golden", "relational", "metamorphic", "model-based", "contract"}
-
-
 def empty_manifest() -> dict[str, list[dict[str, object]]]:
     return {
         "realizes": [],
-        "covers": [],
+        "check_implementations": [],
         "mechanism_implementations": [],
-        "mechanism_covers": [],
         "class_members": [],
         "enumerations": [],
         "artifacts": [],
@@ -33,8 +27,8 @@ def strings(call: ast.Call, count: int, label: str, file: str) -> list[str]:
         if not isinstance(argument, ast.Constant) or not isinstance(argument.value, str):
             raise ValueError(f"{file}:{call.lineno}: {label} arguments must be string literals")
         values.append(argument.value)
-    if len(values) < count:
-        raise ValueError(f"{file}:{call.lineno}: {label} needs at least {count} arguments")
+    if len(values) != count:
+        raise ValueError(f"{file}:{call.lineno}: {label} needs exactly {count} arguments")
     return values
 
 
@@ -42,7 +36,13 @@ def marker(decorator: ast.expr) -> tuple[str, ast.Call] | None:
     if not isinstance(decorator, ast.Call):
         return None
     name = decorator.func.id if isinstance(decorator.func, ast.Name) else None
-    if name in {"realizes", "covers", "implements_mechanism", "covers_mechanism"}:
+    if name in {
+        "realizes",
+        "implements_check",
+        "implements_mechanism",
+        "covers",
+        "covers_mechanism",
+    }:
         return name, decorator
     return None
 
@@ -51,6 +51,12 @@ def scan(path: Path, relative: str) -> dict[str, list[dict[str, object]]]:
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=relative)
     manifest = empty_manifest()
+    ordinary_retired_names = {
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name in {"covers", "covers_mechanism"}
+    }
 
     class Visitor(ast.NodeVisitor):
         def __init__(self) -> None:
@@ -70,21 +76,32 @@ def scan(path: Path, relative: str) -> dict[str, list[dict[str, object]]]:
         ) -> None:
             site = ".".join([*self.parents, node.name])
             segment = ast.get_source_segment(source, node) or source
-            fingerprint = hashlib.sha256(segment.encode()).hexdigest()
+            fingerprint = "sha256:" + hashlib.sha256(segment.encode()).hexdigest()
             for decorator in node.decorator_list:
                 found = marker(decorator)
                 if found is None:
                     continue
                 name, call = found
+                if name in ordinary_retired_names:
+                    continue
+                if name in {"covers", "covers_mechanism"}:
+                    raise ValueError(
+                        f"{relative}:{call.lineno}: retired alpha 1 marker {name} is not supported"
+                    )
                 if name == "realizes":
                     spec, scenario, *_ = strings(call, 2, name, relative)
                     manifest["realizes"].append(entry(spec, scenario, site, relative, fingerprint))
-                elif name == "covers":
-                    values = strings(call, 4, name, relative)
-                    validate_form(values, call, relative)
-                    item = entry(values[0], values[1], site, relative, fingerprint)
-                    item.update(form(values))
-                    manifest["covers"].append(item)
+                elif name == "implements_check":
+                    check, = strings(call, 1, name, relative)
+                    manifest["check_implementations"].append(
+                        {
+                            "check": check,
+                            "site": site,
+                            "file": relative,
+                            "lang": "python",
+                            "source_fingerprint": fingerprint,
+                        }
+                    )
                 elif name == "implements_mechanism":
                     spec, mechanism, *_ = strings(call, 2, name, relative)
                     binding = f"python-symbol:{relative}#{site}"
@@ -101,19 +118,6 @@ def scan(path: Path, relative: str) -> dict[str, list[dict[str, object]]]:
                     manifest["artifacts"].append(
                         {"id": binding, "kind": "python-symbol", "file": relative}
                     )
-                else:
-                    values = strings(call, 4, name, relative)
-                    validate_form(values, call, relative)
-                    item: dict[str, object] = {
-                        "spec": values[0],
-                        "mechanism": values[1],
-                        "site": site,
-                        "file": relative,
-                        "lang": "python",
-                        "source_fingerprint": fingerprint,
-                    }
-                    item.update(form(values))
-                    manifest["mechanism_covers"].append(item)
             self.parents.append(node.name)
             self.generic_visit(node)
             self.parents.pop()
@@ -131,22 +135,6 @@ def entry(spec: str, scenario: str, site: str, file: str, fingerprint: str) -> d
         "lang": "python",
         "source_fingerprint": fingerprint,
     }
-
-
-def form(values: list[str]) -> dict[str, str]:
-    result = {"scope": values[2], "quantification": values[3]}
-    if len(values) > 4:
-        result["oracle"] = values[4]
-    return result
-
-
-def validate_form(values: list[str], call: ast.Call, file: str) -> None:
-    if values[2] not in SCOPES:
-        raise ValueError(f"{file}:{call.lineno}: unknown scope `{values[2]}`")
-    if values[3] not in QUANTIFICATIONS:
-        raise ValueError(f"{file}:{call.lineno}: unknown quantification `{values[3]}`")
-    if len(values) > 4 and values[4] not in ORACLES:
-        raise ValueError(f"{file}:{call.lineno}: unknown oracle `{values[4]}`")
 
 
 def emit(inputs: list[Path], root: Path) -> dict[str, list[dict[str, object]]]:

@@ -52,7 +52,7 @@ else:
 
 ROOT = Path(__file__).resolve().parent.parent
 REPOSITORY = "azimuth-sh/azimuth"
-USER_AGENT = "azimuth-release/0.1.0-alpha.1 (https://github.com/azimuth-sh/azimuth)"
+USER_AGENT = "azimuth-release/0.1.0-alpha.2 (https://github.com/azimuth-sh/azimuth)"
 SUPPORT_ASSETS = ("candidates.json", "SHA256SUMS")
 PUBLICATION_WORKFLOW = ROOT / ".github/workflows/publish.yml"
 UNSET = object()
@@ -1051,13 +1051,11 @@ def qualify(arguments):
                 source_entry(scenario, site, file, fingerprint)
                 for scenario, (site, file, fingerprint) in sites.items()
             ],
-            "covers": [],
+            "check_implementations": [],
             "mechanism_implementations": [],
-            "mechanism_covers": [],
             "class_members": [],
             "enumerations": [],
             "artifacts": [],
-            "observations": [],
         },
     )
     print("qualified owner-dispatched public publication with operational evidence pending")

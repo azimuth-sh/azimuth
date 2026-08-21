@@ -15,6 +15,5 @@ def _marker(*_values: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
 
 
 realizes = _marker
-covers = _marker
+implements_check = _marker
 implements_mechanism = _marker
-covers_mechanism = _marker

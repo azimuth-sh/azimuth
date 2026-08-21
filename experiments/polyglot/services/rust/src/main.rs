@@ -33,10 +33,8 @@ fn main() -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use azimuth_annotations::covers;
 
     #[test]
-    #[covers("polyglot/identity", "rust-identifies", "unit", "example", "direct")]
     fn identity_is_rust() {
         assert_eq!(identity(), "rust");
     }

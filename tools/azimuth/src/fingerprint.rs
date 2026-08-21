@@ -77,6 +77,124 @@ pub fn sha256(input: &[u8]) -> String {
     state.iter().map(|word| format!("{word:08x}")).collect()
 }
 
+/// SHA-256 over canonical JSON. Object keys are sorted recursively; callers sort collections whose
+/// semantics are set-like before constructing the value.
+pub fn canonical_json(value: &crate::json::Json) -> String {
+    fn canonical(value: &crate::json::Json) -> crate::json::Json {
+        use crate::json::Json;
+        match value {
+            Json::Arr(items) => Json::Arr(items.iter().map(canonical).collect()),
+            Json::Obj(fields) => {
+                let mut fields = fields
+                    .iter()
+                    .map(|(key, value)| (key.clone(), canonical(value)))
+                    .collect::<Vec<_>>();
+                fields.sort_by(|left, right| left.0.cmp(&right.0));
+                Json::Obj(fields)
+            }
+            value => value.clone(),
+        }
+    }
+
+    canonical(value).to_string_pretty()
+}
+
+pub fn canonical_sha256(value: &crate::json::Json) -> String {
+    format!("sha256:{}", sha256(canonical_json(value).as_bytes()))
+}
+
+pub fn check_fingerprint(
+    check: &crate::verification::Check,
+    implementations: &[crate::model::CheckImplementation],
+) -> String {
+    use crate::json::Json;
+    let mut implementations = implementations
+        .iter()
+        .filter(|implementation| implementation.check == check.id)
+        .map(|implementation| {
+            Json::obj(vec![
+                ("identity", Json::str(implementation.semantic_identity())),
+                (
+                    "source_fingerprint",
+                    Json::str(&implementation.source_fingerprint),
+                ),
+            ])
+        })
+        .collect::<Vec<_>>();
+    implementations.sort_by_key(canonical_json);
+    implementations.dedup();
+    canonical_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-check-fingerprint")),
+        ("version", Json::Num(1.0)),
+        ("id", Json::str(&check.id)),
+        (
+            "methods",
+            Json::Arr(check.methods.iter().map(Json::str).collect()),
+        ),
+        ("terminal", Json::str(&check.terminal)),
+        ("implementations", Json::Arr(implementations)),
+    ]))
+}
+
+pub fn policy_fingerprint(policy: &crate::verification::QualificationPolicy) -> String {
+    canonical_sha256(&crate::verification::policy_json(policy))
+}
+
+pub fn binding_fingerprint(
+    binding: &crate::verification::EvidenceBinding,
+    claim_digest: &str,
+    policy_digest: &str,
+) -> String {
+    use crate::json::Json;
+    let mut challenge_domain = binding
+        .challenge_domain
+        .iter()
+        .map(|domain| domain.name())
+        .collect::<Vec<_>>();
+    challenge_domain.sort();
+    challenge_domain.dedup();
+    canonical_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-evidence-binding-fingerprint")),
+        ("version", Json::Num(1.0)),
+        ("id", Json::str(&binding.id)),
+        ("check", Json::str(&binding.check)),
+        ("claim_digest", Json::str(claim_digest)),
+        ("proposition", Json::str(&binding.proposition)),
+        (
+            "form",
+            Json::obj(vec![
+                ("scope", Json::str(binding.scope.name())),
+                ("quantification", Json::str(binding.quantification.name())),
+                ("oracle", Json::str(binding.oracle.name())),
+            ]),
+        ),
+        (
+            "challenge_domain",
+            Json::Arr(challenge_domain.into_iter().map(Json::str).collect()),
+        ),
+        ("qualification_policy_digest", Json::str(policy_digest)),
+    ]))
+}
+
+pub fn context_fingerprint(binding: &crate::verification::EvidenceBinding) -> String {
+    canonical_sha256(&crate::verification::context_json(&binding.context))
+}
+
+pub fn qualification_fingerprint(
+    check_fingerprint: &str,
+    binding_fingerprint: &str,
+    context_fingerprint: &str,
+) -> String {
+    use crate::json::Json;
+    canonical_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-qualification-fingerprint")),
+        ("version", Json::Num(1.0)),
+        ("check_fingerprint", Json::str(check_fingerprint)),
+        ("binding_fingerprint", Json::str(binding_fingerprint)),
+        ("context_fingerprint", Json::str(context_fingerprint)),
+    ]))
+}
+
 #[cfg(test)]
 mod tests {
     use super::sha256;

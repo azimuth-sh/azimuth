@@ -1,12 +1,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
-import { Artifact, Entry } from './emitter';
+import { Artifact, CheckImplementation, Entry } from './emitter';
 
 export interface PrometheusLinkage {
   artifacts: Artifact[];
   realizes: Entry[];
-  covers: Entry[];
+  check_implementations: CheckImplementation[];
 }
 
 /**
@@ -28,6 +28,8 @@ export function prometheusLinkage(
 ): PrometheusLinkage {
   const rulesSource = fs.readFileSync(rulesFile, 'utf8');
   const testsSource = fs.readFileSync(testsFile, 'utf8');
+  rejectRetiredMarkers(rulesSource, rulesFile);
+  rejectRetiredMarkers(testsSource, testsFile);
   const alerts = names(rulesSource, /^\s*-\s+alert:\s+([A-Za-z][A-Za-z0-9_]*)\s*$/gm);
   const tests = names(
     testsSource,
@@ -48,7 +50,7 @@ export function prometheusLinkage(
       file: relative(repoRoot, testsFile),
     }))],
     realizes: taggedRules(rulesSource, relative(repoRoot, rulesFile)),
-    covers: taggedTests(testsSource, relative(repoRoot, testsFile)),
+    check_implementations: taggedChecks(testsSource, relative(repoRoot, testsFile)),
   };
 }
 
@@ -57,21 +59,42 @@ function taggedRules(source: string, file: string): Entry[] {
   return [...source.matchAll(pattern)].map((match) => entry(match[1], match[2], match[3], file, source));
 }
 
-function taggedTests(source: string, file: string): Entry[] {
-  const pattern = /^\s*#\s*azimuth-covers:\s+(\S+)\s+(\S+)\s+(unit|component|e2e)\s+(example|universal)\s+(direct|golden|relational|metamorphic|model-based|contract)\s*\n\s*(?:-\s+)?alertname:\s+([A-Za-z][A-Za-z0-9_]*)\s*$/gm;
-  return [...source.matchAll(pattern)].map((match) => ({
-    ...entry(match[1], match[2], match[6], file, source),
-    scope: match[3],
-    quantification: match[4],
-    oracle: match[5],
-  }));
+function taggedChecks(source: string, file: string): CheckImplementation[] {
+  const pattern = /^\s*#\s*azimuth-implements-check:\s+(\S+)\s*\n\s*(?:-\s+)?alertname:\s+([A-Za-z][A-Za-z0-9_]*)\s*$/gm;
+  const matches = [...source.matchAll(pattern)];
+  const implementations = matches.map((match, index) => {
+    const start = match.index ?? 0;
+    const end = matches[index + 1]?.index ?? source.length;
+    return {
+      check: match[1],
+      site: match[2],
+      file,
+      lang: 'prometheus',
+      source_fingerprint: fingerprint(source.slice(start, end)),
+    };
+  });
+  return implementations.sort((left, right) =>
+    left.check.localeCompare(right.check) || left.site.localeCompare(right.site));
 }
 
 function entry(spec: string, scenario: string, site: string, file: string, source: string): Entry {
   return {
     spec, scenario, site, file, lang: 'prometheus',
-    source_fingerprint: createHash('sha256').update(source).digest('hex'),
+    source_fingerprint: fingerprint(source),
   };
+}
+
+function rejectRetiredMarkers(source: string, file: string): void {
+  const match = /^\s*#\s*(azimuth-(?:covers|covers-mechanism))\s*:/m.exec(source);
+  if (!match) return;
+  const line = source.slice(0, match.index).split('\n').length;
+  throw new Error(
+    `${file}:${line}: retired alpha 1 marker \`${match[1]}\` is not supported`,
+  );
+}
+
+function fingerprint(source: string): string {
+  return `sha256:${createHash('sha256').update(source).digest('hex')}`;
 }
 
 function names(source: string, pattern: RegExp): string[] {

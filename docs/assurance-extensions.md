@@ -1,116 +1,126 @@
 # Assurance extensions
 
-Azimuth is an evidence control plane, not a catalog of test and analysis products. Core owns model
-interpretation, semantic target selection and normalized outcomes. Provider-family adapters own
-native schemas, selectors, commands and report import (D43).
+Status: **semantic boundary decided; runtime extension protocol deferred**.
+
+Azimuth is an evidence control plane, not a catalog of testing and analysis products. Alpha 2
+implements the repository graph from Checks through Evidence Bindings to Qualifications, plus
+Challengers and Challenge Plans. It does not yet implement Runs, provider adapters, normalized
+runtime outcomes or the replacement Assurance Service ledger (D43, D45).
+
+This document records the role boundary future extension work must preserve. It is not adapter
+configuration or invocation guidance.
 
 ## Choose the role by proposition
 
-The executable does not determine whether an activity is a Check or a Challenger. Ask what its
-terminal result establishes.
+The executable brand does not decide whether an activity is a Check or a Challenger. Ask what one
+atomic terminal result would establish.
 
-- A load threshold over a declared workload is a Check when workload, threshold and outcome form a
-  product oracle.
-- A chaos recovery or alert assertion is a Check when it directly observes a product or operational
-  Claim.
-- Qualification-oriented fault injection is a Challenger because it searches for weakness in an
-  evidentiary edge.
-- A broad SAST or SARIF scan is a Challenger because a clean search does not establish product
-  behaviour.
-- Mutation testing is a Challenger because it attacks Check sensitivity rather than the product
-  predicate.
-- A claim-specific static rule with an independent oracle is a Check because it directly evaluates
-  one declared product proposition.
-- Flakiness repetition or test-order randomization is a Challenger because it searches for a reason
-  to distrust a Qualification.
-- A contract or schema compatibility assertion is a Check when the accepted or rejected interaction
-  is the product predicate.
-- A backup restoration or rollback drill is a Check when it directly observes recovery Claims for
-  an exact Subject.
+- A load threshold over a declared workload is a Check when the workload, threshold and result
+  directly evaluate a product Claim.
+- A recovery or alert assertion under fault injection is a Check when it directly observes a
+  recovery, durability, isolation or alerting Claim.
+- Fault injection aimed at whether an existing Check notices a defect is a Challenger.
+- Mutation testing is normally a Challenger because it attacks Check sensitivity rather than the
+  product predicate.
+- Broad static analysis is normally a Challenger because a clean search does not establish product
+  behavior.
+- A claim-specific static rule with an independent product oracle can be a Check.
+- Flakiness repetition, test-order randomization and oracle mutation are Challengers because they
+  search for reasons to distrust a Qualification.
+- A contract or schema assertion is a Check when the accepted or rejected interaction is itself the
+  product predicate.
+- A backup restoration or rollback drill is a Check when it directly evaluates a recovery Claim
+  for an exact artifact or deployment.
 - A penetration or exploratory session is a Challenger by default because negative search does not
   imply product satisfaction.
 
-One physical execution can contain both roles. A broker-loss experiment might directly evaluate a
-recovery Check while also challenging whether another Check detects the injected fault. The Run
-then contains an Observation and a separately targeted Challenge Result. It does not collapse them
-into one generic pass.
+One physical execution may eventually perform both roles. A broker-loss exercise could directly
+evaluate a recovery Check while challenging whether another Check detects the injected fault. The
+runtime model must preserve the product outcome and the separately targeted challenge outcome
+rather than collapsing them into one generic success.
 
-Every Check must have at least one Evidence Binding to a product or operational Claim. One Check
-may bind to several Claims only when its terminal outcome is atomic and honestly bears on each
-aspect. If latency and error rate can vary independently, they are separate Checks even when one
-load process evaluates both.
+Every Check has at least one Evidence Binding to a product or operational case-level Claim. One
+Check may bind to several Claims only when its terminal outcome is atomic and honestly bears on
+each. Independently variable results require separate Checks even when one native process produces
+them.
 
-## Provider-neutral boundary
+## Current repository boundary
 
-Azimuth core traverses stable realization and mechanism identities to choose Checks,
-Qualifications and Claim Judgments. It emits a bounded plan over one exact Subject and later
-verifies the provider's reported actual selection. Raw source paths alone are not semantic
-selectors.
+The implemented alpha 2 extension seam is repository-owned:
 
-An explicitly configured adapter then performs one or more bounded capabilities:
+- `verification.md` declares Checks, Evidence Bindings, Qualifications, Challengers and Challenge
+  Plans;
+- source uses sparse `ImplementsCheck(<check-id>)` linkage;
+- extractors emit implementation identity and source fingerprints, never evidentiary meaning;
+- Challenge Plans select exact current Qualification fingerprints through model relations; and
+- `azimuth export` version 2 exposes the derived repository graph and Findings.
 
-- `model.extract` emits provider-neutral model linkage;
-- `check.execute` translates selected Checks and runs the provider;
-- `check.import` normalizes existing provider results into Observations;
-- `challenge.execute` translates exact decision targets and runs a Challenger; and
-- `challenge.import` normalizes existing provider results into Challenge Results.
+Ordinary tests, analyzer rules and monitors remain outside Azimuth until deliberately enrolled.
+This prevents thousands of native test cases from becoming accidental assurance authority. It is
+independent of storage capacity: a future ledger may retain very large execution volumes while the
+semantic Check graph remains sparse.
 
-A provider-family package exposes stable `<adapter-id>/<capability-id>` identities. Namespaced
-capabilities remain open, while the five semantic classes stay small and closed. Project policy
-describes Challenge forms such as mutation or fault injection and maps them to installed
-capabilities; core does not hard-code a list of products.
+All active Claims in this repository are routine. They therefore have no current Checks, Evidence
+Bindings or Qualifications. The parser, extractor and release suites are ordinary engineering
+tests, not Azimuth evidence.
 
-Adapters report native version, context, actual selection and artifact references. They fail closed
-on unknown schemas, statuses and partial selection. They never parse `verification.md`, traverse
-the Claim graph or decide that a native success covers a Claim. Those remain core and
-repository-owned responsibilities.
+## Deferred provider boundary
 
-## Runs and imports
+D43 accepts a future separation in which core selects semantic targets and a provider-family
+adapter translates those targets to native selectors. The adapter must report what actually ran
+and return provider-neutral results with references to native artifacts. It must not parse the
+repository model or decide evidentiary meaning independently.
 
-A Run is one bounded envelope over a developer workspace, CI candidate, artifact, deployment, or
-service and monitoring window. It may coordinate several native processes as long as Subject,
-context, plan, actual selection and outcomes can be interpreted consistently.
+Provider packages will expose stable `<adapter-id>/<capability-id>` identities. The semantic
+capability classes are `model.extract`, `check.execute`, `check.import`, `challenge.execute` and
+`challenge.import`; provider-namespaced capabilities remain open. These names define the accepted
+dictionary, not a currently invocable adapter protocol.
 
-Each selected Check produces exactly one terminal Observation: `satisfied`, `violated` or
-`inconclusive`. Each Challenger execution produces a `clean`, `findings` or `inconclusive`
-Challenge Result targeting one exact Qualification or Claim Judgment fingerprint. A clean
-Challenge Result is negative search, never a `satisfied` Observation.
+That boundary is not a current public protocol. The following remain for dependent changes:
 
-Continuous sources are divided into bounded windows. An Alertmanager webhook can report a negative
-event for such a window, but silence is not positive evidence unless a separate enrolled Check
-establishes that the measurement and delivery path was complete and healthy. An optional generic
-gateway can authenticate a native event and invoke a short-lived import adapter. The Assurance
-Service receives only the normalized Run and contains no provider-specific webhook logic.
+- Subject and Run bundle syntax;
+- adapter discovery, capability negotiation and invocation;
+- translation of selected Check and Challenger targets;
+- validation of actual selection and partial execution;
+- normalized Observation and Challenge Result formats;
+- bounded monitoring-window semantics and inbound event handling; and
+- application of runtime facts to Subject-specific Assurance State.
 
-Raw reports and telemetry remain in their systems of record. Normalized results retain immutable
-references and enough provenance to reproduce their interpretation. The optional Assurance Service
-can persist Runs durably; a local bundle has identical semantics.
+No long-running adapter is implied. A later adapter may be a short-lived process around a native
+command or report, while a generic gateway may eventually authenticate inbound events and invoke a
+bounded adapter. Provider-specific webhook logic must not enter the Assurance Service.
 
-## Repository placement
+Continuous monitoring must become bounded execution windows. Alert delivery may establish a
+negative event, but silence is not success unless an enrolled Check also establishes that the
+measurement and delivery path was complete and healthy for the exact window.
 
-Repository authority owns Check definitions, Evidence Bindings, Qualifications, Claim Judgments,
-standards and residual rationale. A Check implementation may live in a different repository from
-the Claim it supports. Extractors report that implementation linkage; they do not declare evidence
-coverage.
+Raw reports and telemetry should remain in their systems of record. Future normalized results need
+immutable references and enough provenance to reproduce their interpretation.
 
-Execution authority owns Runs, exact Subjects, Observations, Challenge Results and native artifact
-references. Checked-in monitoring configuration establishes only the declared configuration. It
-does not establish that a deployment loaded the rule, scraped the metric or delivered a
-notification; direct Claims about those boundaries need Check Observations for the deployed
-Subject.
+## Service and wire boundary
 
-## Extension acceptance test
+The replacement Assurance Service is deferred with the Run ledger. The intended service authority
+is accepted execution facts and derived Subject-specific state, not repository semantics or
+provider integrations. A service-free local bundle must eventually have the same meaning as a
+durably stored Run.
 
-A provider integration is composable when it satisfies all of the following:
+D42's version 1 claim-contract and project-snapshot wire remains isolated inside the existing
+service boundary until the replacement is implemented. It receives no bridge into the alpha 2
+repository graph. There is no assurance-specific export command: `azimuth export` emits only the
+version 2 repository model and no runtime ledger records.
 
-- adding it requires no provider-specific Rust type in core;
-- native schemas, statuses and partial selection fail closed;
-- the adapter executes or imports only the semantic targets supplied by core;
-- broad analysis creates Challenge Results and no implicit product evidence;
-- one dual-role fault Run preserves distinct Observation and Challenge Result meanings;
-- actual-selection mismatch is visible rather than reported as a successful Run;
-- bounded monitoring imports do not interpret alert silence as success; and
-- normalized bundles work both locally and through the optional ledger.
+## Acceptance boundary for future extensions
 
-The alpha 2 adapter protocol and its conformance fixtures belong to the dependent adapter change.
-Alpha 1 observation import formats and tool-specific commands receive no compatibility reader.
+A future provider integration is composable only if it preserves all of these properties:
+
+- adding a provider requires no provider-specific semantic type in core;
+- unknown schemas, statuses and partial selection fail closed;
+- execution is limited to targets selected by core;
+- broad analysis creates no implicit product evidence;
+- a dual-role fault exercise preserves its two distinct meanings;
+- actual-selection mismatch is visible rather than reported as success;
+- monitoring silence is not interpreted as a satisfied product result; and
+- equivalent normalized bundles work locally and through the optional ledger.
+
+Until those protocols and conformance fixtures exist, active guidance must stop at the repository
+graph rather than simulate runtime assurance with checked-in records.

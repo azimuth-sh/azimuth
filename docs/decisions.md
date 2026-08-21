@@ -328,6 +328,13 @@ structural.
 
 ## D4 — The verification plan covers all means of assurance, not only tests
 
+**Alpha 2 revision, 2026-08-21.** D43 and D45 replace the generic verification plan with explicit
+Evidence Bindings. An executable Check contributes demonstration evidence through one binding;
+structural proof remains a design mechanism; execution facts arrive later in subject-bound Runs.
+These inputs compose at Claim Judgment rather than sharing one Strength field. D4.1 through D4.5
+below preserve the alpha 1 reasoning that exposed the concerns, but no longer define the current
+format.
+
 **Decision.** The verification plan records evidence of every kind — tests, static and
 architectural rules, type and schema constraints, DB constraints, model checking, fault
 injection and load, canary with guardrail metrics, production monitors and reconciliation,
@@ -390,6 +397,13 @@ hand-maintained surface is the defence. Same discipline as D3.
 ---
 
 ## D5 — Required form moves from the spec to the verification plan
+
+**Alpha 2 revision, 2026-08-21.** Scope, quantification and oracle now describe the actual form of
+one Check-to-Claim Evidence Binding. A Qualification decides whether that exact form, Check
+implementation and required context are credible for the edge. Criticality still owns whether the
+evidence facet exists at all, but a generic floor and per-Claim deviation plan no longer mediate the
+relationship. The original move out of the intent facet remains correct; its alpha 1 destination
+does not.
 
 **Decision.** `scope × quantification` moves off the scenario and into the verification plan,
 keyed by scenario id.
@@ -482,6 +496,12 @@ mechanism and would make D6 theatre. Cheap to add now, painful once a spec exist
 ---
 
 ## D7 — Enforcement strength is recorded and ranked
+
+**Alpha 2 revision, 2026-08-21.** The enforcement ladder remains current design authority. Its top
+rungs contribute structural assurance directly to later Claim Judgment; they are not represented
+as executable Checks or given pretend Observations. D45 therefore removes Strength from Evidence
+Bindings while preserving the distinction between enforcement and the reviewed sufficiency of the
+complete Claim account.
 
 **Decision.** The design artifact records *how* a rule is enforced, on a ranked ladder:
 
@@ -2071,7 +2091,8 @@ and ingestion machinery.
 a dual-role fault Run, broad-versus-claim-specific static analysis, bounded monitoring imports,
 partial native execution, actual-selection mismatch, temporal replay, high-cardinality ledger
 behavior, two structurally different adapters and a service-free cold-consumer journey. These are
-ordinary implementation checks while the Claims remain routine; they create no `Covers` relations.
+ordinary implementation checks while the Claims remain routine; they create no `Covers`
+relations.
 
 **What would falsify it.** Revisit the model if real Checks cannot expose atomic outcomes without
 mirroring every native case, if traceability cannot select relevant Qualifications better than a
@@ -2138,8 +2159,9 @@ collision alpha 2 is intended to remove. A custom error may explain that a comma
 must not execute or redirect to the new behavior.
 
 **Validation.** CLI tests must cover help, option preservation, all exit classes, removed-command
-rejection, positional rejection and initialization guidance. Type tests must prove all 33 kinds
-have exactly one category and help string and that counts are exhaustive. Report tests must prove
+rejection, positional rejection and initialization guidance. D45 removes obsolete evidence and
+judgment kinds; type tests must prove all 30 remaining kinds have exactly one category and help
+string and that counts are exhaustive. Report tests must prove
 stable ordering, id selection, identical stdout/file JSON and absence of writes without `--out`.
 Current scripts and active guidance must contain no top-level Check command or active `rtm`
 validator after the atomic cutover.
@@ -2148,6 +2170,141 @@ validator after the atomic cutover.
 Check execution, if a Finding kind can again escape summaries, if the report requires a second
 authored traceability map, or if the narrow report cannot be enriched with Evidence Bindings
 without breaking its derived identity.
+
+---
+
+## D45 — Evidence meaning belongs to explicit Check-to-Claim bindings *(2026-08-21)*
+
+**Decision.** `verification.md` owns first-class Checks, Evidence Bindings, Qualifications,
+Challengers and Challenge Plans. A Check defines one atomic satisfied-or-violated proposition. An
+Evidence Binding explains why that terminal result bears on exactly one case-level Claim. The graph
+is sparse and many-to-many: one Check may bind to several Claims and one Claim may receive several
+Checks.
+
+A source marker implements a Check; it never declares Claim coverage, evidence form or
+Qualification. This separates native inventory from reviewed evidentiary meaning.
+
+**Identity.** Check, binding, Challenger and Challenge Plan ids are project-global,
+path-independent lower kebab path ids. A verification file's header identifies owning repository
+authority, not an implicit namespace. Claim ids remain `<spec>#<case>`, mechanism ids remain
+`<spec>#<mechanism>`, and source identity remains
+`<area>|<address-kind>|<address>`.
+
+Every Check has at least one binding. A binding names one Check and one case-level Claim, and each
+`(Check, Claim)` pair is unique. The binding id is also its Qualification id, so every applicable
+edge has exactly one current decision rather than a second independently drifting identity.
+
+**Binding form and context.** Each binding declares a proposition, actual scope, quantification,
+oracle, exact required-context string map, closed challenge domain and qualification policy. The
+same Check can therefore bear differently on different Claims without duplicating its
+implementation.
+
+Scope, quantification and oracle retain their alpha 1 value sets. Strength does not. An executable
+Check demonstrates behavior over sampled executions. Structural proof remains a design mechanism
+and contributes to total Claim Judgment; encoding it as a Check would require a fictitious
+Observation.
+
+Required context is canonical JSON from string keys to exact string values. Alpha 2 has no ranges,
+wildcards or provider expressions. The challenge-domain values are `realization`, `mechanism`,
+`check-implementation`, `oracle` and `context`.
+
+**Qualification.** Qualification is a reviewed decision about one binding. Its verdict is
+`qualified` or `rejected` and it records a date, qualifier, rationale and expected fingerprint.
+Rationale and accountable metadata do not affect the expected value.
+
+All fingerprints are SHA-256 over versioned canonical JSON:
+
+- Check fingerprint includes id, ordered methods, terminal proposition, and the sorted semantic
+  identities and source fingerprints of every implementation;
+- binding fingerprint includes id, Check id, semantic Claim digest, proposition, form, challenge
+  domain and resolved policy digest;
+- context fingerprint includes the sorted exact required-context object; and
+- Qualification fingerprint combines the Check, binding and context fingerprints.
+
+Paths, lines, mounts, criticality and explanatory prose are excluded. A source, Claim, binding,
+policy or context change stales the precise decision it should. A criticality change alters
+obligation without rewriting credibility.
+
+**Qualification policy.** Project standards name one or more required open challenge-form ids.
+Policy content participates in dependent binding fingerprints. A policy says which objections must
+be searched for; it neither invokes a provider nor interprets a clean Challenge Result as positive
+product evidence.
+
+This change parses and fingerprints required forms. The dependent adapter and challenge-planning
+changes validate configured capability coverage and actual execution; repository validation does
+not pretend a declared plan proves that an objection was searched.
+
+**Challenge planning.** A Challenger names an open form and the objection it searches for.
+Challenge Plans contain repeatable semantic selectors for:
+
+- Qualifications from a binding, Check, realization or mechanism; and
+- Claim Judgments from a Claim, realization or mechanism.
+
+Resolution traverses stable model relations, unions matches, sorts and deduplicates exact current
+decision fingerprints. Traversal from a realization or mechanism reaches a binding only when its
+challenge domain authorizes that relation. Zero resolution is a Finding, never implicit
+whole-suite selection. Paths, lines and globs are not semantic selectors.
+
+Claim Judgment selectors are reserved by this format but cannot resolve until a dependent change
+defines current total-composition Claim Judgments. No transitional reinterpretation of alpha 1
+judgments is allowed.
+
+**Implementation linkage.** All supported languages expose
+`ImplementsCheck(<project-global-check-id>)`. Extractors emit only Check id, resolved site, file
+locator, language and exact enclosing-site source fingerprint. Workspace and federated assembly
+derive area, mount, address kind and address as they do for realizations. Several source records may
+compose one Check and are fingerprinted as a sorted set. Unmarked native tests remain ordinary
+engineering tests outside Azimuth.
+
+**Routine applicability.** D20 remains authoritative. A routine Claim owes no Check, binding or
+Qualification. An explicit verification declaration against one is an
+`inapplicable-verification` Finding rather than optional evidence. Because every active framework
+Claim is routine during the fast-moving alpha, the canonical model has no current verification
+files; synthetic fixtures exercise the contract.
+
+**Breaking transition.** The alpha 1 `Covers` and `CoversMechanism` annotations, plan headings,
+non-test evidence fields, imported observation records, judgment parser, evidence-related Finding
+kinds and result-import CLIs are deleted. Manifests reject `covers`, `mechanism_covers` and
+`observations`. Export version 2 contains Checks, bindings, Qualifications, Challengers, Challenge
+Plans and Check implementations, with none of the removed keys.
+
+`azimuth judge` is removed until a total Claim Judgment format is accepted. It is not retained as
+an alias and is not redirected to Qualification work.
+
+D39's Assurance Service storage remains a separate replacement change. This cut removes repository
+and extractor ingress for its old records; it does not give the service a compatibility adapter.
+
+**Why.** Three different cases require an explicit edge. One parameterized component test may bear
+on several recovery Claims but needs independent credibility decisions per proposition. Several
+Checks may bear on one Claim through different oracles and contexts without becoming one native
+suite. Mutation, fault injection and static analysis need stable traceability to challenge the
+exact edge or Judgment they attack without becoming product evidence themselves.
+
+The split also repairs authority. Source code owns implementation identity, the repository owns
+evidentiary meaning, reviewed Qualification owns credibility, and a later Run owns execution fact.
+No layer needs to infer another layer's decision.
+
+**Strongest rejected alternative.** Put Claim ids and evidence form back on
+`ImplementsCheck`. This keeps extraction small but recreates Covers under another name, makes one
+physical method the authority for every edge and forces source edits for evidence-policy changes.
+A generic plan with test names was also rejected because it duplicates source inventory and cannot
+express one Qualification per edge without another identity.
+
+**Validation.** Parser tests must cover strict grammar, global identities, cardinalities, exact
+context and old-format rejection. Fingerprint tests must isolate every semantic input and prove
+path, line, prose and criticality independence. Extractor tests must cover all seven ecosystems,
+multiple implementations and unmarked native tests. Graph tests must cover multi-Claim Checks,
+multi-Check Claims, challenge traversal, domain restrictions, deduplication, zero resolution,
+selection closure and format-version-2 export.
+
+All are ordinary engineering tests while the framework Claims remain routine; they create no
+Qualifications for the framework itself.
+
+**What would falsify it.** Revisit the binding if real Checks routinely need several independently
+varying terminal outcomes, if project-global ids cannot survive federated ownership, if exact
+context cannot express two structurally different providers without provider syntax, if
+traceability selectors still degrade to whole-suite Challenges, or if one Qualification per edge
+cannot represent credible review without duplicating the Claim account.
 
 ---
 

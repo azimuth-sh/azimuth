@@ -66,26 +66,19 @@ namespace Azimuth.Fixture.Traced
     public sealed class Tests
     {
         [Fact]
-        [Covers("alpha", "method-level-thing", Scope.Component, Quantification.Universal)]
+        [ImplementsCheck("fixture/component-behavior")]
         public void Covered()
         {
         }
 
         [Fact]
-        [Covers("alpha", "relational-thing", Scope.Component, Quantification.Universal,
-            Oracle.Relational)]
+        [ImplementsCheck("fixture/component-behavior")]
         public void CoveredRelationally()
         {
         }
 
         [Fact]
-        [Covers("alpha", "first-branch", Scope.E2e, Quantification.Example, Oracle.ModelBased)]
-        [CoversMechanism(
-            "alpha",
-            "branch-selection",
-            Scope.Component,
-            Quantification.Universal,
-            Oracle.ModelBased)]
+        [ImplementsCheck("fixture/model-behavior")]
         public void CoveredWithOracle()
         {
         }

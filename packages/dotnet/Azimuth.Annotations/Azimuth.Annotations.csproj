@@ -9,7 +9,7 @@
     <PackageId>Azimuth.Annotations</PackageId>
     <Version>0.1.0-alpha.1</Version>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <Description>Azimuth linkage tags: realizes on production code, covers on tests.</Description>
+    <Description>Azimuth source linkage for Claims, mechanisms and enrolled Checks.</Description>
     <PackageProjectUrl>https://azimuth.sh</PackageProjectUrl>
     <RepositoryUrl>https://github.com/azimuth-sh/azimuth</RepositoryUrl>
     <RepositoryType>git</RepositoryType>

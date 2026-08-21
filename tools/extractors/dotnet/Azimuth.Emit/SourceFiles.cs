@@ -91,7 +91,7 @@ internal sealed class SourceFiles : IDisposable
 
     public string FingerprintOf(MethodBase method)
     {
-        var direct = Fingerprint(method);
+        var direct = Fingerprint(method, method.Name);
         if (direct.Length > 0)
         {
             return direct;
@@ -101,7 +101,7 @@ internal sealed class SourceFiles : IDisposable
         var moveNext = stateMachine?.GetMethod(
             "MoveNext",
             BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-        return moveNext is null ? string.Empty : Fingerprint(moveNext);
+        return moveNext is null ? string.Empty : Fingerprint(moveNext, method.Name);
     }
 
     public string FingerprintOf(Type type)
@@ -145,7 +145,7 @@ internal sealed class SourceFiles : IDisposable
         }
     }
 
-    private string Fingerprint(MethodBase method)
+    private string Fingerprint(MethodBase method, string sourceMethodName)
     {
         if (_reader is null)
         {
@@ -184,8 +184,21 @@ internal sealed class SourceFiles : IDisposable
             {
                 return string.Empty;
             }
-            var count = Math.Min(endLine, lines.Length) - startLine + 1;
-            return Hash(string.Join("\n", lines.Skip(startLine - 1).Take(count)));
+            var firstLine = startLine - 1;
+            for (var index = firstLine; index >= 0; index--)
+            {
+                if (lines[index].Contains(sourceMethodName + "(", StringComparison.Ordinal))
+                {
+                    firstLine = index;
+                    break;
+                }
+            }
+            while (firstLine > 0 && lines[firstLine - 1].TrimStart().StartsWith("["))
+            {
+                firstLine--;
+            }
+            var lastLine = Math.Min(endLine, lines.Length);
+            return Hash(string.Join("\n", lines.Skip(firstLine).Take(lastLine - firstLine)));
         }
         catch (Exception)
         {

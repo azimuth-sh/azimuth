@@ -1,6 +1,9 @@
 ---
 name: azimuth-propose
-description: Create or revise one bounded Azimuth change proposal from a clear request or an approved exploration. Use when defining target intent, scope, criticality, solution decisions, verification obligations, work packages, or completion conditions before implementation.
+description: >-
+  Create or revise one bounded Azimuth change proposal from a clear request or approved
+  exploration. Use to define intent, scope, routine criticality, solution decisions, work packages
+  and completion conditions before implementation.
 ---
 
 # Propose one change
@@ -10,34 +13,35 @@ Create the smallest semantic transition that can be reviewed and accepted indepe
 ## Workflow
 
 1. Read `AGENTS.md`, `azimuth/changes/README.md`, affected model packages and any originating
-   exploration. In a federated project, locate the singular change authority first.
-2. Check active changes with `azimuth change list`. Do not create a competing proposal for an id
-   already owned elsewhere.
+   exploration. In a federated project, locate singular change authority first.
+2. Check active changes with `azimuth change list`. Do not create competing authority for one id.
 3. Run `azimuth change create <id> --title <title>` to obtain the lightweight shape.
-4. Write the problem, outcome, in/out scope, affected claims and completion conditions. If an
-   exploration supplied the direction, record `Exploration:` and the carried decision ids.
-5. Add intent deltas only where observable obligations change. Assign criticality from consequence,
-   not implementation size.
-6. Add `design.md` only when alternatives, boundaries, failure modes or migration order make a
-   solution decision reviewable. Add `verification.md` only for deviations, non-test evidence,
-   operational evidence or residuals not derived from the project standard.
-7. For a site-domain invariant, identify the semantic population before implementation. Reuse a
-   declared surface when its membership is exact; otherwise propose area-mount enumerator
-   contributions and name what could remain outside them. For an ordinary cross-area claim, add
-   area realization obligations only when accepted architecture requires participation there.
-   Do not invent roles or mirror the areas into test obligations.
-8. If independent execution is useful, write `work-packages.md`. Each package declares Status,
-   Depends on, non-overlapping Owns paths, Objective and Evidence. Coordinator-owned shared
-   contracts must be a predecessor rather than jointly owned.
+4. Write the problem, outcome, in/out scope, affected Claim ids and completion conditions. Record
+   originating exploration decisions when applicable.
+5. Add intent deltas only where observable obligations change. Keep every current framework Claim
+   routine during the fast-moving alpha.
+6. Add change `design.md` only when alternatives, boundaries, failure modes or migration order make
+   a solution decision reviewable. Do not add package verification declarations for routine Claims.
+7. For a site-domain invariant, identify the semantic population before implementation. Reuse an
+   exact declared surface or propose area-mount enumerator contributions.
+8. If independent execution is useful, write `work-packages.md`. Each package declares status,
+   dependencies, non-overlapping owned paths, objective and ordinary engineering checks.
 9. Run `azimuth change check <id>` and `azimuth change work-packages <id>` when applicable. Resolve
-   parser and DAG errors before presenting the proposal.
-10. Present the proposal and ask for approval. Do not implement as part of this skill unless the
-   user's request already explicitly authorized both proposal and implementation.
+   parser and dependency errors before presenting the proposal.
+10. Present the proposal and ask for approval. Do not implement unless the request explicitly
+    authorizes both proposal and implementation.
+
+## Model boundary
+
+The accepted future non-routine graph is Check → Evidence Binding → Qualification, with sparse
+many-to-many Check/Claim relationships and semantic Challenge Plan selectors. Run, adapter and
+Assurance Service ledger formats remain deferred. A proposal must not invent those contracts or
+restore removed alpha-era formats.
 
 ## Routine path
 
-A routine change normally needs only `proposal.md`, one intent delta and `plan.md`. Do not add
-design, verification, tags or judgments merely because the templates permit them.
+A routine change normally needs `proposal.md`, any actual intent delta and `plan.md`. It uses
+ordinary engineering tests and adds no Check, binding or Qualification.
 
 ## Work-package format
 
@@ -49,5 +53,5 @@ Status: pending
 Depends on: none
 Owns: path/one, path/two
 Objective: one bounded result
-Evidence: exact commands or evidence obligation
+Evidence: exact engineering commands
 ```

@@ -1,5 +1,6 @@
 import copy
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path, PurePosixPath
@@ -19,6 +20,7 @@ from release.isolate_experiments import (
     validate_root_sequence,
     validate_workflow,
     validate_workflow_receipt,
+    write_linkage,
 )
 from release.qualify import catalog_at
 
@@ -39,6 +41,31 @@ class ExperimentalIsolationTests(unittest.TestCase):
             sorted(self.catalog["experimentalSource"]),
         )
         self.assertTrue(all(item["gates"] for item in account))
+
+    def test_linkage_uses_only_v2_collections_and_fingerprints(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            write_linkage(self.root, output)
+            linkage = json.loads(
+                (output / "experimental-isolation-linkage.json").read_text()
+            )
+        self.assertEqual(
+            set(linkage),
+            {
+                "realizes",
+                "check_implementations",
+                "mechanism_implementations",
+                "class_members",
+                "enumerations",
+                "artifacts",
+            },
+        )
+        self.assertTrue(
+            all(
+                re.fullmatch(r"sha256:[0-9a-f]{64}", entry["source_fingerprint"])
+                for entry in linkage["realizes"]
+            )
+        )
 
     def test_an_unaccounted_root_fails_with_its_name(self):
         changed = copy.deepcopy(self.catalog)

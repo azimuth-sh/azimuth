@@ -1,21 +1,11 @@
 /**
  * Azimuth linkage tags for TypeScript.
  *
- * The front end is functions — route handlers, server components, hooks — not classes, so the tags
- * are typed no-op *function calls* rather than decorators, which are class-member-only. They exist
- * to be type-checked at author time and found statically by the emitter, which resolves each call's
- * enclosing named symbol as the site. At runtime they do nothing.
+ * The front end is functions — route handlers, server components, hooks — not classes, so the
+ * tags are typed no-op *function calls* rather than decorators, which are class-member-only. They
+ * exist to be type-checked at author time and found statically by the emitter, which resolves each
+ * call's enclosing named symbol as the site. At runtime they do nothing.
  */
-
-export type Scope = 'unit' | 'component' | 'e2e';
-export type Quantification = 'example' | 'universal';
-export type Oracle =
-  | 'direct'
-  | 'golden'
-  | 'relational'
-  | 'metamorphic'
-  | 'model-based'
-  | 'contract';
 
 /**
  * Marks a production-code site as being on a claim's path, keyed by the stable
@@ -32,23 +22,13 @@ export function realizes(spec: string, scenario: string): void {
 }
 
 /**
- * Marks a test as verifying a claim, at the form the test *actually* has.
+ * Marks a source site as an implementation of one project-global Check identity.
  *
- * What the form must *be* lives in the verification plan; this declares what it is, and the
- * comparison between the two is `wrong-form`.
+ * Claim linkage, evidence form and Qualification meaning remain repository declarations. The
+ * marker supplies implementation identity only.
  */
-export function covers(
-  spec: string,
-  scenario: string,
-  scope: Scope,
-  quantification: Quantification,
-  oracle?: Oracle,
-): void {
-  void spec;
-  void scenario;
-  void scope;
-  void quantification;
-  void oracle;
+export function implementsCheck(check: string): void {
+  void check;
 }
 
 /**
@@ -60,24 +40,4 @@ export function covers(
 export function implementsMechanism(spec: string, mechanism: string): void {
   void spec;
   void mechanism;
-}
-
-/**
- * Marks a test as evidence for a mechanism's own contract.
- *
- * This does not automatically cover every business claim that depends on the mechanism; that
- * composition needs an explicit, reviewable relation.
- */
-export function coversMechanism(
-  spec: string,
-  mechanism: string,
-  scope: Scope,
-  quantification: Quantification,
-  oracle?: Oracle,
-): void {
-  void spec;
-  void mechanism;
-  void scope;
-  void quantification;
-  void oracle;
 }

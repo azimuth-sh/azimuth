@@ -1,13 +1,13 @@
-import { covers } from '@azimuth-sh/annotations';
+import { implementsCheck } from '@azimuth-sh/annotations';
 
 declare function test(name: string, body: () => void): void;
 
 test('the route answers', () => {
-  covers('alpha', 'route-thing', 'component', 'universal');
+  implementsCheck('alpha/route-answer');
 });
 
 test('the projection redacts', () => {
-  covers('alpha', 'projection-thing', 'e2e', 'example', 'model-based');
+  implementsCheck('alpha/projection-redaction');
 });
 
 test('the harness boots', () => {

@@ -13,17 +13,11 @@ import sys
 
 FUNCTION = re.compile(r"\bFunctionDecl\b.*?\b([A-Za-z_][A-Za-z0-9_]*)\s+'")
 ANNOTATION = re.compile(r'AnnotateAttr.*"(azimuth\|[^"\\]+)"')
-SCOPES = {"unit", "component", "e2e"}
-QUANTIFICATIONS = {"example", "universal"}
-ORACLES = {"direct", "golden", "relational", "metamorphic", "model-based", "contract"}
-
-
 def empty_manifest() -> dict[str, list[dict[str, object]]]:
     return {
         "realizes": [],
-        "covers": [],
+        "check_implementations": [],
         "mechanism_implementations": [],
-        "mechanism_covers": [],
         "class_members": [],
         "enumerations": [],
         "artifacts": [],
@@ -52,12 +46,28 @@ def compiler_annotations(path: Path, compiler: str, includes: list[Path]) -> lis
 
 def scan(path: Path, root: Path, compiler: str, includes: list[Path]) -> dict[str, list[dict[str, object]]]:
     relative = path.resolve().relative_to(root.resolve()).as_posix()
-    fingerprint = hashlib.sha256(path.read_bytes()).hexdigest()
+    source = path.read_text(encoding="utf-8")
     manifest = empty_manifest()
     for site, parts in compiler_annotations(path, compiler, includes):
-        if len(parts) < 4 or parts[0] != "azimuth":
+        if len(parts) < 3 or parts[0] != "azimuth":
             raise ValueError(f"{relative}: malformed Azimuth annotation")
         kind = parts[1]
+        fingerprint = "sha256:" + hashlib.sha256(function_source(source, site).encode()).hexdigest()
+        if kind == "implements-check":
+            if len(parts) != 3:
+                raise ValueError(f"{relative}: implements-check needs exactly one argument")
+            manifest["check_implementations"].append(
+                {
+                    "check": parts[2],
+                    "site": site,
+                    "file": relative,
+                    "lang": "cpp",
+                    "source_fingerprint": fingerprint,
+                }
+            )
+            continue
+        if len(parts) != 4:
+            raise ValueError(f"{relative}: {kind} needs exactly two arguments")
         common = {
             "spec": parts[2],
             "site": site,
@@ -67,17 +77,6 @@ def scan(path: Path, root: Path, compiler: str, includes: list[Path]) -> dict[st
         }
         if kind == "realizes":
             manifest["realizes"].append({**common, "scenario": parts[3]})
-        elif kind == "covers":
-            validate_form(parts, relative)
-            manifest["covers"].append(
-                {
-                    **common,
-                    "scenario": parts[3],
-                    "scope": parts[4],
-                    "quantification": parts[5],
-                    "oracle": parts[6],
-                }
-            )
         elif kind == "implements-mechanism":
             binding = f"cpp-symbol:{relative}#{site}"
             manifest["mechanism_implementations"].append(
@@ -86,31 +85,27 @@ def scan(path: Path, root: Path, compiler: str, includes: list[Path]) -> dict[st
             manifest["artifacts"].append(
                 {"id": binding, "kind": "cpp-symbol", "file": relative}
             )
-        elif kind == "covers-mechanism":
-            validate_form(parts, relative)
-            manifest["mechanism_covers"].append(
-                {
-                    **common,
-                    "mechanism": parts[3],
-                    "scope": parts[4],
-                    "quantification": parts[5],
-                    "oracle": parts[6],
-                }
-            )
         else:
             raise ValueError(f"{relative}: unknown annotation kind `{kind}`")
     return manifest
 
 
-def validate_form(parts: list[str], file: str) -> None:
-    if len(parts) != 7:
-        raise ValueError(f"{file}: evidence annotation needs scope, quantification and oracle")
-    if parts[4] not in SCOPES:
-        raise ValueError(f"{file}: unknown scope `{parts[4]}`")
-    if parts[5] not in QUANTIFICATIONS:
-        raise ValueError(f"{file}: unknown quantification `{parts[5]}`")
-    if parts[6] not in ORACLES:
-        raise ValueError(f"{file}: unknown oracle `{parts[6]}`")
+def function_source(source: str, site: str) -> str:
+    signature = re.compile(rf"\b{re.escape(site)}\s*\([^;{{}}]*\)[^;{{}}]*\{{")
+    found = signature.search(source)
+    if found is None:
+        raise ValueError(f"cannot resolve source for C++ function `{site}`")
+    start = source.rfind("\n", 0, found.start()) + 1
+    opening = source.find("{", found.start(), found.end())
+    depth = 0
+    for index in range(opening, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start : index + 1]
+    raise ValueError(f"cannot resolve end of C++ function `{site}`")
 
 
 def emit(inputs: list[Path], root: Path, compiler: str, includes: list[Path]) -> dict[str, list[dict[str, object]]]:
@@ -122,6 +117,8 @@ def emit(inputs: list[Path], root: Path, compiler: str, includes: list[Path]) ->
         partial = scan(path, root, compiler, includes)
         for key, values in partial.items():
             manifest[key].extend(values)
+    for values in manifest.values():
+        values.sort(key=lambda item: json.dumps(item, sort_keys=True))
     return manifest
 
 

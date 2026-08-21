@@ -192,12 +192,16 @@ def smoke_typescript(annotations, emitter):
                 "node",
                 "-e",
                 "const a=require('@azimuth-sh/annotations');"
-                "a.realizes('consumer','starts');console.log(typeof a.covers)",
+                "a.realizes('consumer','starts');"
+                "console.log(typeof a.realizes,typeof a.implementsCheck,typeof a['co'+'vers'])",
             ],
             cwd=consumer,
             capture=True,
         )
-        require(annotation_result.stdout.strip() == "function", "npm annotation entry point failed")
+        require(
+            annotation_result.stdout.strip() == "function function undefined",
+            "npm annotation entry point failed",
+        )
         source = consumer / "sample.ts"
         source.write_text(
             "import { realizes } from '@azimuth-sh/annotations';\n"

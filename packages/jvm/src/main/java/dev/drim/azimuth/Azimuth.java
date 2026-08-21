@@ -9,12 +9,6 @@ import java.lang.annotation.Target;
 public final class Azimuth {
     private Azimuth() {}
 
-    public enum Scope { unit, component, e2e }
-
-    public enum Quantification { example, universal }
-
-    public enum Oracle { direct, golden, relational, metamorphic, model_based, contract }
-
     @Retention(RetentionPolicy.RUNTIME)
     @Target({ElementType.TYPE, ElementType.METHOD})
     @Repeatable(Realizations.class)
@@ -28,19 +22,13 @@ public final class Azimuth {
     public @interface Realizations { Realizes[] value(); }
 
     @Retention(RetentionPolicy.RUNTIME)
-    @Target({ElementType.TYPE, ElementType.METHOD})
-    @Repeatable(Coverage.class)
-    public @interface Covers {
-        String spec();
-        String scenario();
-        Scope scope();
-        Quantification quantification();
-        Oracle oracle() default Oracle.direct;
-    }
+    @Target(ElementType.METHOD)
+    @Repeatable(CheckImplementations.class)
+    public @interface ImplementsCheck { String value(); }
 
     @Retention(RetentionPolicy.RUNTIME)
-    @Target({ElementType.TYPE, ElementType.METHOD})
-    public @interface Coverage { Covers[] value(); }
+    @Target(ElementType.METHOD)
+    public @interface CheckImplementations { ImplementsCheck[] value(); }
 
     @Retention(RetentionPolicy.RUNTIME)
     @Target({ElementType.TYPE, ElementType.METHOD})
@@ -54,18 +42,4 @@ public final class Azimuth {
     @Target({ElementType.TYPE, ElementType.METHOD})
     public @interface MechanismImplementations { ImplementsMechanism[] value(); }
 
-    @Retention(RetentionPolicy.RUNTIME)
-    @Target({ElementType.TYPE, ElementType.METHOD})
-    @Repeatable(MechanismCoverage.class)
-    public @interface CoversMechanism {
-        String spec();
-        String mechanism();
-        Scope scope();
-        Quantification quantification();
-        Oracle oracle() default Oracle.direct;
-    }
-
-    @Retention(RetentionPolicy.RUNTIME)
-    @Target({ElementType.TYPE, ElementType.METHOD})
-    public @interface MechanismCoverage { CoversMechanism[] value(); }
 }

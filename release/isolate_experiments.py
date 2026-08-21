@@ -451,11 +451,7 @@ def validate_domain_references(sources):
 
 def write_linkage(root, output_root):
     qualifier = root / "release/isolate_experiments.py"
-    tests = root / "release/test_isolate_experiments.py"
-    result = output_root / "experimental-isolation.json"
-    qualification_fingerprint = combined_digest([result, qualifier])
-    test_fingerprint = combined_digest([tests, qualifier])
-    component_claims = set(SCENARIOS[:2])
+    qualifier_fingerprint = f"sha256:{combined_digest([qualifier])}"
     linkage = {
         "realizes": [
             {
@@ -464,36 +460,12 @@ def write_linkage(root, output_root):
                 "site": "qualify_experimental_isolation",
                 "file": "release/isolate_experiments.py",
                 "lang": "python",
-                "source_fingerprint": combined_digest([qualifier]),
+                "source_fingerprint": qualifier_fingerprint,
             }
             for scenario in SCENARIOS
         ],
-        "covers": [
-            {
-                "spec": SPEC,
-                "scenario": scenario,
-                "site": (
-                    "qualify_experimental_isolation"
-                    if scenario in component_claims
-                    else "test_domain_citations_must_be_commit_pinned"
-                ),
-                "file": (
-                    ".azimuth/release/experimental-isolation.json"
-                    if scenario in component_claims
-                    else "release/test_isolate_experiments.py"
-                ),
-                "lang": "experimental-isolation" if scenario in component_claims else "python",
-                "source_fingerprint": (
-                    qualification_fingerprint if scenario in component_claims else test_fingerprint
-                ),
-                "scope": "component" if scenario in component_claims else "unit",
-                "quantification": "universal",
-                "oracle": "direct",
-            }
-            for scenario in SCENARIOS
-        ],
+        "check_implementations": [],
         "mechanism_implementations": [],
-        "mechanism_covers": [],
         "class_members": [],
         "enumerations": [],
         "artifacts": [
@@ -503,7 +475,6 @@ def write_linkage(root, output_root):
                 "file": "release/isolate_experiments.py",
             }
         ],
-        "observations": [],
     }
     (output_root / "experimental-isolation-linkage.json").write_text(
         json.dumps(linkage, indent=2) + "\n"

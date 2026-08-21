@@ -1,4 +1,7 @@
 import copy
+import json
+import re
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -12,6 +15,7 @@ from release.qualify import (
     validate_catalog,
     validate_file_set,
     validate_source_metadata,
+    write_linkage,
 )
 
 
@@ -26,6 +30,29 @@ class ReleaseQualificationTests(unittest.TestCase):
         self.assertEqual(approved_contract_differences(self.catalog, APPROVED_CONTRACT), [])
         validate_catalog(self.catalog, ROOT)
         validate_source_metadata(self.catalog, ROOT)
+
+    def test_linkage_uses_only_v2_collections_and_fingerprints(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            write_linkage(ROOT, output)
+            linkage = json.loads((output / "linkage.json").read_text())
+        self.assertEqual(
+            set(linkage),
+            {
+                "realizes",
+                "check_implementations",
+                "mechanism_implementations",
+                "class_members",
+                "enumerations",
+                "artifacts",
+            },
+        )
+        self.assertTrue(
+            all(
+                re.fullmatch(r"sha256:[0-9a-f]{64}", entry["source_fingerprint"])
+                for entry in linkage["realizes"]
+            )
+        )
 
     def test_each_contract_dimension_drifts_independently(self):
         mutations = {

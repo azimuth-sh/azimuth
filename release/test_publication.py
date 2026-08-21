@@ -2,6 +2,7 @@ import argparse
 import hashlib
 import io
 import json
+import re
 import struct
 import tarfile
 import tempfile
@@ -109,24 +110,24 @@ class PublicAlphaPublicationTests(unittest.TestCase):
         with patch("release.publication.request", return_value=(404, {}, b"missing")):
             for ecosystem in ("cargo", "nuget"):
                 with self.subTest(ecosystem=ecosystem):
-                    content, _ = package_bytes(subjects[ecosystem], "0.1.0-alpha.1")
+                    content, _ = package_bytes(subjects[ecosystem], "0.1.0-alpha.2")
                     self.assertIsNone(content)
 
-        cargo_index = json.dumps({"name": "azimuth", "vers": "0.1.0-alpha.1"}).encode()
+        cargo_index = json.dumps({"name": "azimuth", "vers": "0.1.0-alpha.2"}).encode()
         with patch(
             "release.publication.request",
             side_effect=[(200, {}, cargo_index), (200, {}, b"retained-crate-bytes")],
         ):
-            content, url = package_bytes(subjects["cargo"], "0.1.0-alpha.1")
+            content, url = package_bytes(subjects["cargo"], "0.1.0-alpha.2")
         self.assertEqual(content, b"retained-crate-bytes")
         self.assertEqual(
             url,
-            "https://static.crates.io/crates/azimuth/azimuth-0.1.0-alpha.1.crate",
+            "https://static.crates.io/crates/azimuth/azimuth-0.1.0-alpha.2.crate",
         )
 
         npm_metadata = {
             "versions": {
-                "0.1.0-alpha.1": {
+                "0.1.0-alpha.2": {
                     "dist": {"tarball": "https://registry.npmjs.org/package.tgz"}
                 }
             }
@@ -136,7 +137,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             (200, {}, b"retained-npm-bytes"),
         ]
         with patch("release.publication.request", side_effect=responses):
-            content, url = package_bytes(subjects["npm"], "0.1.0-alpha.1")
+            content, url = package_bytes(subjects["npm"], "0.1.0-alpha.2")
         self.assertEqual(content, b"retained-npm-bytes")
         self.assertEqual(url, "https://registry.npmjs.org/package.tgz")
 
@@ -148,14 +149,14 @@ class PublicAlphaPublicationTests(unittest.TestCase):
         )
         for url in ("file:///tmp/package.tgz", "https://registry.example/package.tgz"):
             metadata = {
-                "versions": {"0.1.0-alpha.1": {"dist": {"tarball": url}}}
+                "versions": {"0.1.0-alpha.2": {"dist": {"tarball": url}}}
             }
             with self.subTest(url=url), patch(
                 "release.publication.request",
                 return_value=(200, {}, json.dumps(metadata).encode()),
             ) as registry_request:
                 with self.assertRaisesRegex(PublicationError, "npm registry HTTPS URL"):
-                    package_bytes(subject, "0.1.0-alpha.1")
+                    package_bytes(subject, "0.1.0-alpha.2")
                 registry_request.assert_called_once()
 
     def test_tag_lookup_uses_the_requested_checkout(self):
@@ -165,7 +166,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             SimpleNamespace(stdout=f"{REVISION}\n".encode()),
         ]
         with patch("release.publication.run", side_effect=results) as git:
-            self.assertEqual(annotated_tag_revision(root, "v0.1.0-alpha.1"), REVISION)
+            self.assertEqual(annotated_tag_revision(root, "v0.1.0-alpha.2"), REVISION)
         self.assertEqual([call.kwargs["cwd"] for call in git.call_args_list], [root, root])
 
     def test_public_account_binds_each_image_index_digest_to_its_retained_archive(self):
@@ -242,7 +243,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 "release.publication.request", return_value=(status, {}, b"failure")
             ):
                 with self.assertRaisesRegex(PublicationError, f"HTTP {status}"):
-                    package_bytes(subject, "0.1.0-alpha.1")
+                    package_bytes(subject, "0.1.0-alpha.2")
 
     def test_malformed_provider_state_and_image_command_failures_are_unknown(self):
         subjects = {
@@ -255,22 +256,22 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 "release.publication.request", return_value=(200, {}, b"{")
             ):
                 with self.assertRaisesRegex(PublicationError, "malformed"):
-                    package_bytes(subjects[ecosystem], "0.1.0-alpha.1")
+                    package_bytes(subjects[ecosystem], "0.1.0-alpha.2")
 
         image = {"key": "image:api", "identity": "ghcr.io/example/api"}
         malformed = SimpleNamespace(returncode=0, stdout=b"{", stderr=b"")
         with patch("release.publication.run", return_value=malformed):
             with self.assertRaisesRegex(PublicationError, "manifest is malformed"):
-                image_manifest(image, "0.1.0-alpha.1")
+                image_manifest(image, "0.1.0-alpha.2")
         failed = SimpleNamespace(returncode=1, stdout=b"", stderr=b"unauthorized")
         with patch("release.publication.run", return_value=failed):
             with self.assertRaisesRegex(PublicationError, "image state failed"):
-                image_manifest(image, "0.1.0-alpha.1")
+                image_manifest(image, "0.1.0-alpha.2")
 
         malformed = SimpleNamespace(returncode=0, stdout=b"{", stderr=b"")
         with patch("release.publication.run", return_value=malformed):
             with self.assertRaisesRegex(PublicationError, "malformed JSON"):
-                github_release("v0.1.0-alpha.1")
+                github_release("v0.1.0-alpha.2")
 
     def test_npm_scope_requires_an_administrative_role(self):
         for role, expected in (("owner", True), ("admin", True), ("developer", False)):
@@ -313,7 +314,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
         self.assertIsNone(account["github"]["repositoryWrite"])
         self.assertTrue(account["ready"])
 
-    def test_public_state_covers_every_exact_registry_target(self):
+    def test_public_state_accounts_for_every_exact_registry_target(self):
         with tempfile.TemporaryDirectory() as temporary:
             retained, candidates, account_path, sums_path = self.retained_account(Path(temporary))
             account = public_account(retained, candidates)
@@ -377,7 +378,6 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                     for key, value in exact_registry_state(account)["targets"].items()
                 },
             )
-
     def test_conflicting_release_support_asset_fails_before_planning(self):
         with tempfile.TemporaryDirectory() as temporary:
             retained, candidates, account_path, sums_path = self.retained_account(Path(temporary))
@@ -470,15 +470,15 @@ class PublicAlphaPublicationTests(unittest.TestCase):
 
     def test_crates_upload_body_contains_the_exact_retained_archive(self):
         with tempfile.TemporaryDirectory() as temporary:
-            archive = Path(temporary) / "azimuth-0.1.0-alpha.1.crate"
+            archive = Path(temporary) / "azimuth-0.1.0-alpha.2.crate"
             manifest = (
-                "[package]\nname='azimuth'\nversion='0.1.0-alpha.1'\n"
+                "[package]\nname='azimuth'\nversion='0.1.0-alpha.2'\n"
                 "description='test'\nlicense='Apache-2.0'\nreadme='README.md'\n"
             ).encode()
             with tarfile.open(archive, "w:gz") as package:
                 for name, content in (
-                    ("azimuth-0.1.0-alpha.1/Cargo.toml", manifest),
-                    ("azimuth-0.1.0-alpha.1/README.md", b"readme"),
+                    ("azimuth-0.1.0-alpha.2/Cargo.toml", manifest),
+                    ("azimuth-0.1.0-alpha.2/README.md", b"readme"),
                 ):
                     member = tarfile.TarInfo(name)
                     member.size = len(content)
@@ -505,9 +505,9 @@ class PublicAlphaPublicationTests(unittest.TestCase):
 
     def test_npm_publication_uses_the_release_channel_as_its_dist_tag(self):
         subject = {"kind": "package", "ecosystem": "npm"}
-        archive = Path("azimuth-sh-annotations-0.1.0-alpha.1.tgz")
+        archive = Path("azimuth-sh-annotations-0.1.0-alpha.2.tgz")
         for version, tag in (
-            ("0.1.0-alpha.1", "alpha"),
+            ("0.1.0-alpha.2", "alpha"),
             ("0.2.0-rc.2", "rc"),
             ("1.0.0", "latest"),
         ):
@@ -564,7 +564,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             "key": "package:typescript-annotations",
             "identity": "@azimuth-sh/annotations",
         }
-        version = "0.1.0-alpha.1"
+        version = "0.1.0-alpha.2"
         results = [
             SimpleNamespace(stdout=f"alpha: {version}\nlatest: {version}\n".encode()),
             SimpleNamespace(stdout=f"alpha: {version}\nlatest: {version}\n".encode()),
@@ -583,7 +583,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             "key": "package:typescript-annotations",
             "identity": "@azimuth-sh/annotations",
         }
-        version = "0.1.0-alpha.1"
+        version = "0.1.0-alpha.2"
         result = SimpleNamespace(stdout=f"alpha: {version}\nlatest: {version}\n".encode())
         with patch.dict("os.environ", {"NPM_TOKEN": "secret"}, clear=True), patch(
             "release.publication.run", return_value=result
@@ -605,7 +605,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
         subject = {"key": "image:api", "identity": "ghcr.io/example/api"}
         result = type("Result", (), {"returncode": 0, "stdout": raw, "stderr": b""})()
         with patch("release.publication.run", return_value=result) as inspect:
-            checksum, platforms = image_manifest(subject, "0.1.0-alpha.1")
+            checksum, platforms = image_manifest(subject, "0.1.0-alpha.2")
         self.assertEqual(checksum, hashlib.sha256(raw).hexdigest())
         self.assertEqual(platforms, ["linux/amd64", "linux/arm64"])
         self.assertEqual(
@@ -615,16 +615,16 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 "inspect",
                 "--no-creds",
                 "--raw",
-                "docker://ghcr.io/example/api:0.1.0-alpha.1",
+                "docker://ghcr.io/example/api:0.1.0-alpha.2",
             ],
         )
 
     def test_image_state_verifies_the_complete_retained_account(self):
         root = Path("/requested/checkout")
         candidates = Path("/retained/candidates")
-        retained = {"version": "0.1.0-alpha.1"}
+        retained = {"version": "0.1.0-alpha.2"}
         account = {
-            "version": "0.1.0-alpha.1",
+            "version": "0.1.0-alpha.2",
             "subjects": [
                 {
                     "kind": "image",
@@ -752,7 +752,23 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             linkage = json.loads((output / "publication-linkage.json").read_text())
             qualification = json.loads((output / "publication.json").read_text())
             self.assertEqual(len(linkage["realizes"]), 7)
-            self.assertEqual(linkage["covers"], [])
+            self.assertEqual(
+                set(linkage),
+                {
+                    "realizes",
+                    "check_implementations",
+                    "mechanism_implementations",
+                    "class_members",
+                    "enumerations",
+                    "artifacts",
+                },
+            )
+            self.assertTrue(
+                all(
+                    re.fullmatch(r"sha256:[0-9a-f]{64}", entry["source_fingerprint"])
+                    for entry in linkage["realizes"]
+                )
+            )
             self.assertEqual(qualification["operationalEvidence"], "pending")
 
 

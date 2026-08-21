@@ -15,11 +15,11 @@ executable or acceptance dependencies may not.
 | `docs/glossary.md` | bounded terminology |
 | `docs/change-process.md` | change delivery, evidence and rollout guidance |
 | `azimuth/formats/` | parser contracts |
-| `azimuth/standards/` | verification and judgment standards |
+| `azimuth/standards/` | Qualification policies for non-routine Claims |
 | `azimuth/changes/` | active changes; one identifier has one authority |
 | `tools/azimuth/` | Rust CLI and core |
-| `tools/extractors/` | language and assurance extractors |
-| `services/assurance/` | optional execution ledger and diagnostic client |
+| `tools/extractors/` | language and structural extractors |
+| `services/assurance/` | isolated D42 service pending the Run-ledger change |
 | `experiments/` | synthetic, self-contained conformance evidence |
 
 Read `docs/decisions.md` before structural work. The framework document is derived and never
@@ -41,7 +41,7 @@ overrides a decision.
   dogfood findings may motivate changes here but do not become executable repository dependencies.
 - Specs are organized by domain area, identifiers are declared rather than path-derived, and
   derivable artifacts are not maintained by hand.
-- A federated local project check is incomplete when required workset inputs are missing. Never
+- A federated local project account is incomplete when required workset inputs are missing. Never
   finalize a project account from `--local` output.
 - Model authority follows intent. Change authority is singular in a complete project account.
 - Exploration precedes commitment for uncertain multi-change work.
