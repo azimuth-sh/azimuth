@@ -41,8 +41,8 @@ AND locator relocation or prose does not change either semantic fingerprint
 ## Requirement: semantic-planning-uses-the-complete-model
 Criticality: routine
 
-Azimuth SHALL derive Check execution plans from one complete unselected current model without
-delegating semantic resolution to an adapter.
+Azimuth SHALL derive Check and Challenge execution plans from one complete unselected current
+model without delegating semantic resolution to an adapter.
 
 ### Scenario: planning-resolves-complete-check-identity
 GIVEN a request names sorted Checks, finite work units and capability addresses
@@ -55,10 +55,11 @@ WHEN a selected Check has no current Qualification or its request context differ
 THEN Azimuth may still plan that Check execution
 AND it does not infer evidentiary applicability
 
-### Scenario: challenge-planning-remains-unresolved
-WHEN the E planner receives a Check planning request
-THEN it emits an empty Challenge selection
-AND it does not resolve Challenge Plans, Qualifications or Claim Judgments
+### Scenario: challenge-planning-resolves-current-decisions
+GIVEN a request names Challenge Plans, finite work units and explicit capability addresses
+WHEN Azimuth plans the Run
+THEN it resolves exact current accepted Qualification or Claim Judgment targets
+AND it freezes traceability-derived semantic scope before adapter translation
 
 ## Requirement: launch-plans-bind-capability-routing
 Criticality: routine

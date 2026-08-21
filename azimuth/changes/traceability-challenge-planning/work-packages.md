@@ -106,7 +106,7 @@ Objective: add Challenge-planning conformance before service and release qualifi
 Evidence: shell syntax, isolation discovery and canonical root gate
 
 ## Work package: current-intent-transition
-Status: pending
+Status: complete
 Depends on: protocol-authority, mechanism-identity-authority, challenge-cli-cutover
 Owns: azimuth/model/framework/traceability-challenge-planning, azimuth/model/framework/adapter-capability-protocol/spec.md, azimuth/changes/traceability-challenge-planning/specs/framework-traceability-challenge-planning.md
 Objective: apply routine intent and replace obsolete Check-only Challenge-planning deferral
