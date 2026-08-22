@@ -1,6 +1,6 @@
 # Outcome: traceability-challenge-planning
 
-Status: implemented
+Status: accepted
 
 ## Result
 
@@ -105,6 +105,23 @@ scheduled omission and selection drift without inventing execution facts.
   root gate, composed validation/export/traceability and the hosted workflow must pass against that
   exact revision. Until then, proposal acceptance, finalization and archive would manufacture an
   execution account, so `finalization.json` is intentionally absent.
+
+*(revised)* Every condition above is now discharged. The complete content is committed and pushed;
+the canonical root gate passes from the repository root, including the Docker-gated assurance
+lifecycle test, so the MSBuild named-pipe failure was environmental rather than a defect. The
+tracked release-isolation account now reaches both new experiment gates, reporting 11 experimental
+roots and 58 executable inputs. Both hosted workflows succeed at source revision
+`cb5c2feefdf8a896d59bd53124c84c1cf29b14fa` and execution revision
+`d3cad8b0b53a5407aa4735a183770b1a16b41ff6`, and their receipts are retained beside this outcome.
+All ten release subjects carry signed provenance naming that workflow and execution revision.
+
+*(revised)* The first hosted rehearsal after this change failed. The stricter ecosystem-semantic
+TypeScript site identity broke the disposable npm consumer in `release/candidates.py`, which had no
+TypeScript project and an anonymous package manifest. This was invisible to a complete local root
+gate because `release/check.sh` packs candidates through `release/qualify.py` but never runs
+`release/candidates.py`, whose consumer smoke tests execute only in the hosted rehearsal. The
+consumer now carries a real project and package name. Closing that local-gate hole is deliberately
+deferred to a later change rather than folded into this one.
 
 ## Measurements
 

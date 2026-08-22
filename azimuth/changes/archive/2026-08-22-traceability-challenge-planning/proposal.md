@@ -1,6 +1,6 @@
 # Change: traceability-challenge-planning
 
-Status: implemented
+Status: accepted and complete
 
 Exploration: evidence-control-plane-alpha-2
 Carries decisions: E5, E6, E8, E9

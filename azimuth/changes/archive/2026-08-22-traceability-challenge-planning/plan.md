@@ -11,6 +11,6 @@
 - [x] Integrate the conformance gate into release isolation.
 - [x] Apply current intent and replace obsolete planning deferrals.
 - [x] Update public and agent guidance.
-- [ ] Run complete component, conformance, isolation and composed-model audits.
+- [x] Run complete component, conformance, isolation and composed-model audits.
 - [x] Record the implemented outcome and leave the change ready for acceptance.
-- [ ] Finalize and archive after commit-bound engineering and workflow evidence passes.
+- [x] Finalize and archive after commit-bound engineering and workflow evidence passes.
