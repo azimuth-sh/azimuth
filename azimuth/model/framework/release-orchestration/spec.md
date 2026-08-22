@@ -96,3 +96,4 @@ AND each image index is retrieved without registry credentials
 AND each retrieved target matches the retained tag, identity, checksum, provenance and platforms
 AND each npm prerelease channel selects its version
 AND `latest` does not select that prerelease when the package has any stable version
+AND *(revised)* `latest` selects that prerelease while the package has no stable version

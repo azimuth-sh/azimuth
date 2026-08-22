@@ -99,6 +99,6 @@ WHEN `azimuth run inspect` reads the same bundle set repeatedly
 THEN text and JSON accounts remain deterministic
 AND neither account claims current repository acceptance or Assurance State
 
-### Scenario: future-runtime-verbs-remain-absent
-WHEN a user requests plan, execute, import or ingest from `azimuth run`
-THEN the command fails until a dependent change implements that authority
+### Scenario: ingest-remains-absent
+WHEN a user requests `azimuth run ingest`
+THEN the command remains unknown until the Run-ledger change implements that authority

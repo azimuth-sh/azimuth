@@ -1,10 +1,13 @@
 use azimuth::design::parse_design;
 use azimuth::model::{Artifact, CheckImplementation, Model, Site, SourceIdentity};
 use azimuth::spec::parse_spec;
-use azimuth::validation::{resolve_challenge_plan, validate, FindingKind};
+use azimuth::validation::{
+    challenge_plan_relevant_to_selection, resolve_challenge_plan, validate, CandidateDisposition,
+    DecisionKind, FindingKind, RelationKind,
+};
 use azimuth::verification::{
-    parse_policies, parse_verification, ChallengeDomain, QualificationVerdict, Selector,
-    Verification,
+    parse_standards, parse_verification, ChallengeDomain, ClaimJudgmentVerdict,
+    QualificationVerdict, Selector,
 };
 use std::collections::BTreeSet;
 
@@ -16,10 +19,13 @@ The system SHALL work.\n\n\
 ### Scenario: works\n\
 WHEN invoked\n\
 THEN it works\n";
-const POLICIES: &str = "# Qualification policies\n\n\
-## Policy: credible\n\
-Required challenge: implementation-perturbation\n\n\
-The implementation must be challenged.\n";
+const STANDARDS: &str = "# Decision policies and Challenge schedule\n\n\
+## Decision Policy: credible\n\
+Required challenge: mutation\n\n\
+The implementation must be challenged.\n\n\
+## Challenge Schedule: current\n\
+Gate challenge: mutation\n\n\
+Mutation is required at the gate.\n";
 const VERIFICATION: &str = "# Verification: alpha\n\n\
 ## Check: alpha/works\n\
 Method: invoke the behavior\n\
@@ -34,7 +40,7 @@ Quantification: example\n\
 Oracle: direct\n\
 Context: {}\n\
 Challenge domain: [\"realization\",\"mechanism\"]\n\
-Qualification policy: credible\n\n\
+Policy: credible\n\n\
 The edge is independently reviewable.\n\n\
 ## Qualification: alpha/works-edge\n\
 Verdict: qualified\n\
@@ -42,16 +48,36 @@ Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 Qualified: 2026-08-21\n\
 Qualifier: owner@example\n\n\
 The Check and oracle are credible.\n\n\
+## Claim Judgment: alpha#works\n\
+Verdict: accepted\n\
+Policy: credible\n\
+Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
+Judged: 2026-08-21\n\
+Judge: owner@example\n\
+Basis: the qualified Check directly exercises the case\n\
+Residual risk: none identified\n\n\
+The total composition is acceptable.\n\n\
 ## Challenger: mutation/perturb\n\
-Form: implementation-perturbation\n\
-Searches for: a change the Check cannot detect\n\n\
+Form: mutation\n\
+Searches for: a change the Check cannot detect\n\
+Required scope: [\"binding\"]\n\n\
 Survivors are objections.\n\n\
 ## Challenge Plan: alpha/credibility\n\
 Challenger: mutation/perturb\n\
-Select: qualification from binding alpha/works-edge\n\n\
-The plan targets the reviewed edge.\n";
+Select: qualification from binding alpha/works-edge\n\
+Select: claim-judgment from claim alpha#works\n\n\
+The plan targets both reviewed decisions.\n";
 
-fn model(criticality: &str, with_verification: bool) -> Model {
+fn source(address: &str) -> SourceIdentity {
+    SourceIdentity {
+        area: "core".into(),
+        kind: "rust-item".into(),
+        address: address.into(),
+        mount: "code".into(),
+    }
+}
+
+fn model(criticality: &str) -> Model {
     let spec = parse_spec("spec.md", &SPEC.replace("standard", criticality)).unwrap();
     let mut model = Model {
         specs: vec![spec],
@@ -61,12 +87,7 @@ fn model(criticality: &str, with_verification: bool) -> Model {
             site: "alpha::works".into(),
             file: "src/alpha.rs".into(),
             lang: "rust".into(),
-            source: Some(SourceIdentity {
-                area: "core".into(),
-                kind: "rust-item".into(),
-                address: "alpha::works".into(),
-                mount: "code".into(),
-            }),
+            source: Some(source("alpha::works")),
             source_fingerprint: SHA.into(),
         }],
         check_implementations: vec![CheckImplementation {
@@ -74,28 +95,37 @@ fn model(criticality: &str, with_verification: bool) -> Model {
             site: "tests::works".into(),
             file: "tests/works.rs".into(),
             lang: "rust".into(),
-            source: Some(SourceIdentity {
-                area: "core".into(),
-                kind: "rust-item".into(),
-                address: "tests::works".into(),
-                mount: "tests".into(),
-            }),
+            source: Some(source("tests::works")),
             source_fingerprint: SHA.into(),
         }],
-        qualification_policies: Some(parse_policies("standards.md", POLICIES).unwrap()),
-        verifications: with_verification
-            .then(|| parse_verification("verification.md", VERIFICATION).unwrap())
-            .into_iter()
-            .collect(),
+        decision_standards: Some(parse_standards("standards.md", STANDARDS).unwrap()),
+        verifications: vec![parse_verification("verification.md", VERIFICATION).unwrap()],
         ..Default::default()
     };
-    if with_verification {
-        let expected = model
-            .expected_qualification_fingerprint(&model.verifications[0].bindings[0])
-            .unwrap();
-        model.verifications[0].qualifications[0].fingerprint = expected;
-    }
+    refresh_decisions(&mut model);
     model
+}
+
+fn refresh_decisions(model: &mut Model) {
+    for index in 0..model.verifications[0].bindings.len() {
+        let expected = model
+            .expected_qualification_fingerprint(&model.verifications[0].bindings[index])
+            .unwrap();
+        let id = model.verifications[0].bindings[index].id.clone();
+        model.verifications[0]
+            .qualifications
+            .iter_mut()
+            .find(|qualification| qualification.id == id)
+            .unwrap()
+            .fingerprint = expected;
+    }
+    for index in 0..model.verifications[0].claim_judgments.len() {
+        if let Some(expected) = model
+            .expected_claim_judgment_fingerprint(&model.verifications[0].claim_judgments[index])
+        {
+            model.verifications[0].claim_judgments[index].fingerprint = expected;
+        }
+    }
 }
 
 fn kinds(model: &Model) -> Vec<FindingKind> {
@@ -105,298 +135,93 @@ fn kinds(model: &Model) -> Vec<FindingKind> {
         .collect()
 }
 
+fn disposition(model: &Model, target: DecisionKind) -> CandidateDisposition {
+    resolve_challenge_plan(model, &model.verifications[0].challenge_plans[0])
+        .candidates
+        .into_iter()
+        .find(|candidate| candidate.selector.target == target)
+        .unwrap()
+        .disposition
+}
+
 #[test]
 fn complete_non_routine_graph_is_clean_and_routine_without_verification_is_valid() {
-    assert!(validate(&model("standard", true)).is_empty());
-    let mut routine = model("routine", false);
+    assert!(validate(&model("standard")).is_empty());
+    let mut routine = model("routine");
+    routine.verifications.clear();
     routine.realizes.clear();
     routine.check_implementations.clear();
     assert!(validate(&routine).is_empty());
 }
 
 #[test]
-fn reports_binding_check_and_qualification_failures() {
-    let mut value = model("standard", false);
-    assert!(kinds(&value).contains(&FindingKind::UnboundClaim));
-
-    value = model("standard", true);
-    value.verifications[0].bindings.clear();
+fn reports_qualification_and_judgment_precedence_without_double_reporting() {
+    let mut value = model("standard");
     value.verifications[0].qualifications.clear();
     let found = kinds(&value);
-    assert!(found.contains(&FindingKind::CheckWithoutBinding));
-
-    value = model("standard", true);
-    value.verifications[0].bindings[0].check = "missing/check".into();
-    assert!(kinds(&value).contains(&FindingKind::BindingMissingCheck));
-
-    value = model("standard", true);
-    value.verifications[0].bindings[0].claim = "alpha#missing".into();
-    assert!(kinds(&value).contains(&FindingKind::BindingMissingClaim));
-
-    value = model("standard", true);
-    value.verifications[0].bindings[0].qualification_policy = "missing".into();
-    assert!(kinds(&value).contains(&FindingKind::BindingMissingPolicy));
-
-    value = model("standard", true);
-    value.verifications[0].qualifications.clear();
-    assert!(kinds(&value).contains(&FindingKind::MissingQualification));
-
-    value = model("standard", true);
-    value.verifications[0].bindings.clear();
-    assert!(kinds(&value).contains(&FindingKind::DanglingQualification));
-
-    value = model("standard", true);
-    value.verifications[0].qualifications[0].verdict = QualificationVerdict::Rejected;
-    assert!(kinds(&value).contains(&FindingKind::RejectedQualification));
-
-    value = model("standard", true);
-    value.verifications[0].bindings[0]
-        .proposition
-        .push_str(" changed");
-    assert!(kinds(&value).contains(&FindingKind::StaleQualification));
-}
-
-#[test]
-fn resolves_relationships_across_verification_authorities() {
-    let mut value = model("standard", true);
-    let declaration = value.verifications.remove(0);
-    value.verifications = vec![
-        Verification {
-            owner: "checks".into(),
-            path: "checks/verification.md".into(),
-            checks: declaration.checks,
-            bindings: Vec::new(),
-            qualifications: Vec::new(),
-            challengers: Vec::new(),
-            challenge_plans: Vec::new(),
-        },
-        Verification {
-            owner: "bindings".into(),
-            path: "bindings/verification.md".into(),
-            checks: Vec::new(),
-            bindings: declaration.bindings,
-            qualifications: Vec::new(),
-            challengers: Vec::new(),
-            challenge_plans: Vec::new(),
-        },
-        Verification {
-            owner: "decisions".into(),
-            path: "decisions/verification.md".into(),
-            checks: Vec::new(),
-            bindings: Vec::new(),
-            qualifications: declaration.qualifications,
-            challengers: declaration.challengers,
-            challenge_plans: declaration.challenge_plans,
-        },
-    ];
-
-    assert!(validate(&value).is_empty());
-}
-
-#[test]
-fn duplicate_authorities_are_derivation_errors_not_findings() {
-    let mut value = model("standard", true);
-    let duplicate = value.verifications[0].checks[0].clone();
-    value.verifications.push(Verification {
-        owner: "other".into(),
-        path: "other/verification.md".into(),
-        checks: vec![duplicate],
-        bindings: Vec::new(),
-        qualifications: Vec::new(),
-        challengers: Vec::new(),
-        challenge_plans: Vec::new(),
-    });
-
-    assert!(!value.verification_declaration_issues().is_empty());
-    assert!(validate(&value).is_empty());
-}
-
-#[test]
-fn reports_implementation_and_routine_applicability_failures() {
-    let mut value = model("standard", true);
-    value.check_implementations.clear();
-    assert!(kinds(&value).contains(&FindingKind::UnimplementedCheck));
-
-    value = model("standard", true);
-    value.check_implementations[0].check = "missing/check".into();
-    assert!(kinds(&value).contains(&FindingKind::DanglingCheckImplementation));
-
-    value = model("standard", true);
-    value.check_implementations[0].source = None;
-    assert!(kinds(&value).contains(&FindingKind::UnstableCheckImplementation));
-
-    value = model("standard", true);
-    value.check_implementations[0].source_fingerprint = "not-a-fingerprint".into();
-    assert!(kinds(&value).contains(&FindingKind::UnstableCheckImplementation));
-
-    value = model("routine", true);
-    assert!(kinds(&value).contains(&FindingKind::InapplicableVerification));
-}
-
-#[test]
-fn routine_bindings_suppress_qualification_cascades_but_plans_still_resolve_zero() {
-    let expected = [
-        FindingKind::InapplicableVerification,
-        FindingKind::UnresolvedChallengePlan,
-        FindingKind::UnresolvedChallengeSelector,
-    ];
-    let mut value = model("routine", true);
-    value.check_implementations.clear();
-    value.verifications[0].qualifications.clear();
-    assert_eq!(kinds(&value), expected);
-
-    value = model("routine", true);
-    value.verifications[0].qualifications[0].verdict = QualificationVerdict::Rejected;
-    assert_eq!(kinds(&value), expected);
-
-    value = model("routine", true);
-    value.verifications[0].bindings[0]
-        .proposition
-        .push_str(" changed");
-    assert_eq!(kinds(&value), expected);
-
-    let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
-    assert!(resolution.qualifications.is_empty());
+    assert!(found.contains(&FindingKind::MissingQualification));
+    assert!(found.contains(&FindingKind::InvalidClaimJudgment));
     assert_eq!(
-        resolution.unresolved_selectors,
-        ["qualification from binding alpha/works-edge"]
+        disposition(&value, DecisionKind::Qualification),
+        CandidateDisposition::MissingDecision
+    );
+
+    value = model("standard");
+    value.verifications[0].bindings[0].check = "missing/check".into();
+    assert_eq!(
+        disposition(&value, DecisionKind::Qualification),
+        CandidateDisposition::InvalidDecision
+    );
+
+    value = model("standard");
+    value.verifications[0].bindings[0]
+        .proposition
+        .push_str(" changed");
+    let found = kinds(&value);
+    assert!(found.contains(&FindingKind::StaleQualification));
+    assert!(!found.contains(&FindingKind::RejectedQualification));
+    assert_eq!(
+        disposition(&value, DecisionKind::Qualification),
+        CandidateDisposition::StaleDecision
+    );
+
+    value = model("standard");
+    value.verifications[0].qualifications[0].verdict = QualificationVerdict::Rejected;
+    refresh_decisions(&mut value);
+    assert!(kinds(&value).contains(&FindingKind::RejectedQualification));
+    assert_eq!(
+        disposition(&value, DecisionKind::Qualification),
+        CandidateDisposition::RejectedDecision
+    );
+
+    value = model("standard");
+    value.verifications[0].claim_judgments[0].verdict = ClaimJudgmentVerdict::Rejected;
+    refresh_decisions(&mut value);
+    assert!(kinds(&value).contains(&FindingKind::RejectedClaimJudgment));
+    assert_eq!(
+        disposition(&value, DecisionKind::ClaimJudgment),
+        CandidateDisposition::RejectedDecision
     );
 }
 
 #[test]
-fn a_check_shared_with_an_applicable_binding_still_requires_an_implementation() {
-    let mut value = model("standard", true);
-    value.specs.push(
-        parse_spec(
-            "routine.md",
-            "# Spec: routine\n\n## Requirement: behavior\nCriticality: routine\n\n\
-             The system SHALL work.\n\n### Scenario: works\nWHEN invoked\nTHEN it works\n",
-        )
-        .unwrap(),
-    );
-    let mut routine_binding = value.verifications[0].bindings[0].clone();
-    routine_binding.id = "alpha/routine-edge".into();
-    routine_binding.claim = "routine#works".into();
-    value.verifications[0].bindings.push(routine_binding);
-    value.check_implementations.clear();
+fn missing_stale_and_invalid_judgments_are_findings() {
+    let mut value = model("standard");
+    value.verifications[0].claim_judgments.clear();
+    assert!(kinds(&value).contains(&FindingKind::MissingClaimJudgment));
 
-    let found = kinds(&value);
-    assert!(found.contains(&FindingKind::InapplicableVerification));
-    assert!(found.contains(&FindingKind::UnimplementedCheck));
-    assert!(!found.contains(&FindingKind::MissingQualification));
+    value = model("standard");
+    value.verifications[0].claim_judgments[0].basis[0].push_str(" changed");
+    assert!(kinds(&value).contains(&FindingKind::StaleClaimJudgment));
+
+    value = model("standard");
+    value.verifications[0].claim_judgments[0].policy = "missing".into();
+    assert!(kinds(&value).contains(&FindingKind::InvalidClaimJudgment));
 }
 
 #[test]
-fn reports_missing_challenger_and_zero_resolution() {
-    let mut value = model("standard", true);
-    value.verifications[0].challenge_plans[0].challenger = "missing/challenger".into();
-    assert!(kinds(&value).contains(&FindingKind::MissingChallenger));
-
-    value = model("standard", true);
-    value.verifications[0].challenge_plans[0].selectors = vec![
-        Selector::ClaimJudgmentFromClaim("alpha#works".into()),
-        Selector::ClaimJudgmentFromRealization("core|rust-item|alpha::works".into()),
-        Selector::ClaimJudgmentFromMechanism("alpha#guard".into()),
-    ];
-    let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
-    assert!(resolution.qualifications.is_empty());
-    assert_eq!(resolution.unresolved_selectors.len(), 3);
-    let found = kinds(&value);
-    assert!(found.contains(&FindingKind::UnresolvedChallengeSelector));
-    assert!(found.contains(&FindingKind::UnresolvedChallengePlan));
-}
-
-#[test]
-fn challenge_resolution_unions_sorts_and_deduplicates_exact_qualifications() {
-    let mut value = model("standard", true);
-    value.verifications[0].challenge_plans[0].selectors = vec![
-        Selector::QualificationFromCheck("alpha/works".into()),
-        Selector::QualificationFromBinding("alpha/works-edge".into()),
-        Selector::QualificationFromRealization("core|rust-item|alpha::works".into()),
-    ];
-    let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
-    assert_eq!(resolution.qualifications.len(), 1);
-    assert!(resolution.unresolved_selectors.is_empty());
-
-    value.verifications[0].bindings[0].challenge_domain = vec![ChallengeDomain::Mechanism];
-    value.verifications[0].challenge_plans[0].selectors =
-        vec![Selector::QualificationFromRealization(
-            "core|rust-item|alpha::works".into(),
-        )];
-    let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
-    assert!(resolution.qualifications.is_empty());
-    assert_eq!(resolution.unresolved_selectors.len(), 1);
-}
-
-#[test]
-fn many_to_many_bindings_resolve_as_independent_qualifications() {
-    let mut value = model("standard", true);
-    let second = parse_spec(
-        "second.md",
-        "# Spec: second\n\n## Requirement: behavior\nCriticality: standard\n\n\
-         The system SHALL work.\n\n### Scenario: also-works\nWHEN invoked again\n\
-         THEN it also works\n",
-    )
-    .unwrap();
-    value.specs[0].requirements[0]
-        .scenarios
-        .push(second.requirements[0].scenarios[0].clone());
-    let mut second_site = value.realizes[0].clone();
-    second_site.scenario = "also-works".into();
-    second_site.site = "alpha::also_works".into();
-    second_site.source.as_mut().unwrap().address = "alpha::also_works".into();
-    value.realizes.push(second_site);
-
-    let mut second_claim_binding = value.verifications[0].bindings[0].clone();
-    second_claim_binding.id = "alpha/also-works-edge".into();
-    second_claim_binding.claim = "alpha#also-works".into();
-    let mut second_claim_qualification = value.verifications[0].qualifications[0].clone();
-    second_claim_qualification.id = second_claim_binding.id.clone();
-
-    let mut second_check = value.verifications[0].checks[0].clone();
-    second_check.id = "alpha/alternate".into();
-    let mut second_check_binding = value.verifications[0].bindings[0].clone();
-    second_check_binding.id = "alpha/alternate-edge".into();
-    second_check_binding.check = second_check.id.clone();
-    let mut second_check_qualification = value.verifications[0].qualifications[0].clone();
-    second_check_qualification.id = second_check_binding.id.clone();
-    let mut second_implementation = value.check_implementations[0].clone();
-    second_implementation.check = second_check.id.clone();
-    second_implementation.site = "tests::alternate".into();
-    second_implementation.source.as_mut().unwrap().address = "tests::alternate".into();
-
-    value.verifications[0].checks.push(second_check);
-    value.verifications[0]
-        .bindings
-        .extend([second_claim_binding, second_check_binding]);
-    value.verifications[0]
-        .qualifications
-        .extend([second_claim_qualification, second_check_qualification]);
-    value.check_implementations.push(second_implementation);
-    for index in 0..value.verifications[0].bindings.len() {
-        let expected = value
-            .expected_qualification_fingerprint(&value.verifications[0].bindings[index])
-            .unwrap();
-        value.verifications[0].qualifications[index].fingerprint = expected;
-    }
-
-    assert!(validate(&value).is_empty());
-    value.verifications[0].challenge_plans[0].selectors = vec![
-        Selector::QualificationFromCheck("alpha/works".into()),
-        Selector::QualificationFromBinding("alpha/alternate-edge".into()),
-        Selector::QualificationFromBinding("alpha/works-edge".into()),
-    ];
-    let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
-    assert_eq!(resolution.qualifications.len(), 3);
-    assert!(resolution
-        .qualifications
-        .windows(2)
-        .all(|pair| pair[0].fingerprint < pair[1].fingerprint));
-}
-
-#[test]
-fn mechanism_traversal_requires_the_binding_domain() {
-    let mut value = model("standard", true);
+fn all_seven_selectors_preserve_exact_relations_and_deduplicate_only_identical_records() {
+    let mut value = model("standard");
     value.designs.push(
         parse_design(
             "design.md",
@@ -412,21 +237,264 @@ fn mechanism_traversal_requires_the_binding_domain() {
         unique: None,
         columns: Vec::new(),
         predicate: None,
-        source: None,
+        source: Some(source("alpha::guard")),
     });
+    refresh_decisions(&mut value);
+    value.verifications[0].challenge_plans[0].selectors = vec![
+        Selector::QualificationFromBinding("alpha/works-edge".into()),
+        Selector::QualificationFromCheck("alpha/works".into()),
+        Selector::QualificationFromRealization("core|rust-item|alpha::works".into()),
+        Selector::QualificationFromMechanism("alpha#guard".into()),
+        Selector::ClaimJudgmentFromClaim("alpha#works".into()),
+        Selector::ClaimJudgmentFromRealization("core|rust-item|alpha::works".into()),
+        Selector::ClaimJudgmentFromMechanism("alpha#guard".into()),
+        Selector::QualificationFromBinding("alpha/works-edge".into()),
+    ];
+
+    let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
+    assert_eq!(resolution.candidates.len(), 7);
+    assert!(resolution
+        .candidates
+        .iter()
+        .all(|candidate| candidate.disposition == CandidateDisposition::Selected));
+    assert_eq!(
+        resolution
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.selector.target == DecisionKind::Qualification)
+            .map(|candidate| candidate.relation.kind)
+            .collect::<Vec<_>>(),
+        [
+            RelationKind::Binding,
+            RelationKind::Binding,
+            RelationKind::Binding,
+            RelationKind::Binding,
+        ]
+    );
+    let json = resolution.to_json().to_string_pretty();
+    assert!(json.contains("\"format\": \"azimuth-challenge-resolution\""));
+    assert!(json.contains("\"version\": 1"));
+    assert!(json.contains("\"candidates\""));
+}
+
+#[test]
+fn successful_sibling_does_not_hide_missing_or_domain_excluded_binding() {
+    let mut value = model("standard");
+    let mut second_check = value.verifications[0].checks[0].clone();
+    second_check.id = "alpha/alternate".into();
+    let mut second_binding = value.verifications[0].bindings[0].clone();
+    second_binding.id = "alpha/alternate-edge".into();
+    second_binding.check = second_check.id.clone();
+    second_binding.challenge_domain = vec![ChallengeDomain::Mechanism];
+    let mut second_impl = value.check_implementations[0].clone();
+    second_impl.check = second_check.id.clone();
+    second_impl.source.as_mut().unwrap().address = "tests::alternate".into();
+    value.verifications[0].checks.push(second_check);
+    value.verifications[0].bindings.push(second_binding);
+    value.check_implementations.push(second_impl);
+    value.verifications[0].challenge_plans[0].selectors =
+        vec![Selector::QualificationFromRealization(
+            "core|rust-item|alpha::works".into(),
+        )];
+
+    let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
+    assert_eq!(resolution.candidates.len(), 2);
+    assert!(resolution
+        .candidates
+        .iter()
+        .any(|candidate| candidate.disposition == CandidateDisposition::Selected));
+    assert!(resolution
+        .candidates
+        .iter()
+        .any(|candidate| candidate.disposition == CandidateDisposition::Inapplicable));
+}
+
+#[test]
+fn unresolved_relations_retain_the_exact_direct_or_traversal_anchor() {
+    let mut value = model("standard");
+    value.verifications[0].challenge_plans[0].selectors = vec![
+        Selector::QualificationFromBinding("missing/binding".into()),
+        Selector::QualificationFromCheck("missing/check".into()),
+        Selector::QualificationFromRealization("core|rust-item|missing".into()),
+        Selector::QualificationFromMechanism("alpha#missing".into()),
+        Selector::ClaimJudgmentFromClaim("alpha#missing".into()),
+    ];
+    let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
+    assert_eq!(resolution.candidates.len(), 5);
+    assert!(resolution.candidates.iter().all(|candidate| {
+        candidate.disposition == CandidateDisposition::UnresolvedRelation
+            && candidate.target.is_none()
+            && candidate.relation.id == candidate.selector.id
+    }));
+}
+
+#[test]
+fn dangling_realization_does_not_invent_a_claim_relation() {
+    let mut value = model("standard");
+    value.realizes.push(Site {
+        spec: "alpha".into(),
+        scenario: "missing".into(),
+        site: "alpha::dangling".into(),
+        file: "src/dangling.rs".into(),
+        lang: "rust".into(),
+        source: Some(source("alpha::dangling")),
+        source_fingerprint: SHA.into(),
+    });
+    value.verifications[0].challenge_plans[0].selectors = vec![
+        Selector::QualificationFromRealization("core|rust-item|alpha::dangling".into()),
+        Selector::ClaimJudgmentFromRealization("core|rust-item|alpha::dangling".into()),
+    ];
+    let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
+    assert!(resolution.candidates.iter().all(|candidate| {
+        candidate.disposition == CandidateDisposition::UnresolvedRelation
+            && candidate.relation.kind == RelationKind::Realization
+            && candidate.relation.id == "core|rust-item|alpha::dangling"
+    }));
+}
+
+#[test]
+fn qualification_unbound_claim_is_unresolved_but_judgment_traversal_reaches_the_claim() {
+    let mut value = model("standard");
+    value.verifications[0].bindings.clear();
+    value.verifications[0].qualifications.clear();
+    value.verifications[0].challenge_plans[0].selectors = vec![
+        Selector::QualificationFromRealization("core|rust-item|alpha::works".into()),
+        Selector::ClaimJudgmentFromRealization("core|rust-item|alpha::works".into()),
+    ];
+    let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
+    let qualification = resolution
+        .candidates
+        .iter()
+        .find(|candidate| candidate.selector.target == DecisionKind::Qualification)
+        .unwrap();
+    assert_eq!(qualification.relation.kind, RelationKind::Claim);
+    assert_eq!(
+        qualification.disposition,
+        CandidateDisposition::UnresolvedRelation
+    );
+    let judgment = resolution
+        .candidates
+        .iter()
+        .find(|candidate| candidate.selector.target == DecisionKind::ClaimJudgment)
+        .unwrap();
+    assert!(judgment.target.is_some());
+    assert_eq!(judgment.disposition, CandidateDisposition::InvalidDecision);
+}
+
+#[test]
+fn routine_precedes_missing_and_invalid_decisions() {
+    let mut value = model("routine");
+    value.verifications[0].qualifications.clear();
+    let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
+    assert!(resolution
+        .candidates
+        .iter()
+        .all(|candidate| candidate.disposition == CandidateDisposition::Inapplicable));
+}
+
+#[test]
+fn required_form_coverage_checks_declared_scope_per_plan_and_target() {
+    let mut value = model("standard");
+    value.verifications[0].challengers[0].required_scope = vec![
+        azimuth::verification::SemanticScopeKind::Binding,
+        azimuth::verification::SemanticScopeKind::Realization,
+    ];
+    assert!(kinds(&value).contains(&FindingKind::InsufficientChallengeScope));
+
+    value.verifications[0].challenge_plans[0].selectors.push(
+        Selector::QualificationFromRealization("core|rust-item|alpha::works".into()),
+    );
+    assert!(!kinds(&value).contains(&FindingKind::InsufficientChallengeScope));
+
+    value.decision_standards.as_mut().unwrap().policies[0]
+        .required_challenges
+        .push("static-analysis".into());
+    value
+        .decision_standards
+        .as_mut()
+        .unwrap()
+        .schedule
+        .gate_challenges
+        .push("static-analysis".into());
+    refresh_decisions(&mut value);
+    assert!(kinds(&value).contains(&FindingKind::MissingRequiredChallenge));
+}
+
+#[test]
+fn adverse_sibling_makes_a_plan_unrunnable_for_policy_coverage() {
+    let mut value = model("standard");
+    value.verifications[0].challenge_plans[0]
+        .selectors
+        .push(Selector::QualificationFromBinding("missing/binding".into()));
+    let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
+    assert!(!resolution.is_runnable());
+    assert!(kinds(&value).contains(&FindingKind::MissingRequiredChallenge));
+}
+
+#[test]
+fn unstable_inputs_and_unprojectable_mechanisms_cannot_fake_scope_coverage() {
+    let mut value = model("standard");
+    value.verifications[0].challengers[0].required_scope =
+        vec![azimuth::verification::SemanticScopeKind::CheckImplementation];
+    value.check_implementations[0].source = None;
+    refresh_decisions(&mut value);
+    assert!(kinds(&value).contains(&FindingKind::InsufficientChallengeScope));
+
+    value = model("standard");
+    value.designs.push(
+        parse_design(
+            "design.md",
+            "# Design: alpha\n\n## Claim: works\nMechanism: guard\n\
+             Enforcement: guard\nBinding: artifact:missing\n\nA reason.\n",
+        )
+        .unwrap(),
+    );
+    value.verifications[0].challengers[0].required_scope =
+        vec![azimuth::verification::SemanticScopeKind::Mechanism];
     value.verifications[0].challenge_plans[0].selectors =
         vec![Selector::QualificationFromMechanism("alpha#guard".into())];
-    let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
-    assert_eq!(resolution.qualifications.len(), 1);
+    assert_eq!(
+        disposition(&value, DecisionKind::Qualification),
+        CandidateDisposition::Selected
+    );
+    assert!(kinds(&value).contains(&FindingKind::InsufficientChallengeScope));
+}
 
-    value.verifications[0].bindings[0].challenge_domain = vec![ChallengeDomain::Realization];
+#[test]
+fn duplicate_candidate_identity_is_an_explicit_resolution_failure() {
+    let mut value = model("standard");
+    let duplicate = value.verifications[0].bindings[0].clone();
+    value.verifications[0].bindings.push(duplicate);
+    value.verifications[0].challenge_plans[0].selectors =
+        vec![Selector::QualificationFromCheck("alpha/works".into())];
     let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
-    assert!(resolution.qualifications.is_empty());
+    assert_eq!(resolution.issues.len(), 1);
+    assert!(!resolution.is_runnable());
+    assert!(kinds(&value).contains(&FindingKind::InvalidChallengeResolution));
+}
+
+#[test]
+fn relevant_plans_are_retained_atomically_without_success_filtering() {
+    let mut value = model("standard");
+    value.verifications[0].challenge_plans[0]
+        .selectors
+        .push(Selector::QualificationFromBinding("missing/binding".into()));
+    let claims = BTreeSet::from(["alpha#works".to_string()]);
+    let bindings = BTreeSet::from(["alpha/works-edge".to_string()]);
+    let checks = BTreeSet::from(["alpha/works".to_string()]);
+    assert!(challenge_plan_relevant_to_selection(
+        &value,
+        &value.verifications[0].challenge_plans[0],
+        &claims,
+        &bindings,
+        &checks,
+    ));
+    assert_eq!(value.verifications[0].challenge_plans[0].selectors.len(), 3);
 }
 
 #[test]
 fn finding_registry_is_exhaustive_and_has_guidance() {
-    assert_eq!(FindingKind::ALL.len(), 30);
+    assert_eq!(FindingKind::ALL.len(), 42);
     let mut names = BTreeSet::new();
     for kind in FindingKind::ALL {
         assert!(!kind.name().is_empty());
@@ -439,11 +507,11 @@ fn finding_registry_is_exhaustive_and_has_guidance() {
         assert!(!kind.help().is_empty());
     }
     assert_eq!(
-        FindingKind::MissingQualification.category().name(),
+        FindingKind::MissingClaimJudgment.category().name(),
         "judgment"
     );
     assert_eq!(
-        FindingKind::UnresolvedChallengeSelector.category().name(),
+        FindingKind::UnresolvedChallengeRelation.category().name(),
         "verification"
     );
 }

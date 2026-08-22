@@ -5,11 +5,13 @@
 
 use azimuth::model::{Criticality, StepKind};
 use azimuth::spec::parse_spec;
+use azimuth::validation::resolve_challenge_plan;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_ROOT: AtomicU64 = AtomicU64::new(0);
+const SHA: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 fn package_root() -> PathBuf {
     let root = std::env::temp_dir().join(format!(
@@ -345,6 +347,45 @@ fn routine_spec_only_package_loads_without_verification_authority() {
 }
 
 #[test]
+fn bare_nonroutine_packages_load_with_missing_judgments_observable() {
+    for criticality in ["standard", "critical"] {
+        let root = package_root();
+        let model = root.join("model");
+        write_routine_spec(&model.join("simple/spec.md"), "simple", "works");
+        let spec_path = model.join("simple/spec.md");
+        fs::write(
+            &spec_path,
+            fs::read_to_string(&spec_path).unwrap().replace(
+                "Criticality: routine",
+                &format!("Criticality: {criticality}"),
+            ),
+        )
+        .unwrap();
+        let standards = root.join("standards.md");
+        fs::write(
+            &standards,
+            "# Decision policies and Challenge schedule\n\n\
+             ## Decision Policy: credible\nRequired challenge: mutation\n\nRequired objection.\n\n\
+             ## Challenge Schedule: current\nGate challenge: mutation\n\nCurrent lane.\n",
+        )
+        .unwrap();
+
+        let loaded = azimuth::load(
+            &model,
+            &standards,
+            &root.join("missing-workspace.json"),
+            &[],
+            &[],
+        )
+        .unwrap();
+        assert_eq!(loaded.model.claims().count(), 1);
+        assert_eq!(loaded.model.claim_judgments().count(), 0);
+        assert!(loaded.warnings.is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[test]
 fn sibling_spec_design_and_verification_form_one_package() {
     let root = package_root();
     let package = root.join("model/package");
@@ -467,7 +508,7 @@ fn cross_file_duplicate_check_claim_pairs_are_derivation_errors() {
 }
 
 #[test]
-fn only_selection_retains_the_verification_and_challenge_closure() {
+fn only_selection_retains_relevant_challenge_plans_atomically() {
     let root = package_root();
     let model = root.join("model");
     write_routine_spec(&model.join("alpha/spec.md"), "alpha", "works");
@@ -477,10 +518,10 @@ fn only_selection_retains_the_verification_and_challenge_closure() {
         "# Verification: alpha\n\n## Check: shared/check\nMethod: invoke\nTerminal: works\n\n\
          Atomic.\n\n## Evidence Binding: edge/alpha\nCheck: shared/check\nClaim: alpha#works\n\
          Proposition: direct\nScope: unit\nQuantification: example\nOracle: direct\nContext: {}\n\
-         Challenge domain: [\"context\"]\nQualification policy: credible\n\nReviewable.\n\n\
+         Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n\n\
          ## Evidence Binding: edge/beta\nCheck: shared/check\nClaim: beta#works\nProposition: direct\n\
          Scope: unit\nQuantification: example\nOracle: direct\nContext: {}\n\
-         Challenge domain: [\"context\"]\nQualification policy: credible\n\nReviewable.\n\n\
+         Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n\n\
          ## Qualification: edge/alpha\nVerdict: qualified\n\
          Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
          Qualified: 2026-08-21\nQualifier: owner\n\nReviewed.\n\n\
@@ -488,12 +529,25 @@ fn only_selection_retains_the_verification_and_challenge_closure() {
          Fingerprint: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n\
          Qualified: 2026-08-21\nQualifier: owner\n\nReviewed.\n\n\
          ## Challenger: mutation/perturb\nForm: implementation-perturbation\n\
-         Searches for: an undetected change\n\nOpen objection.\n\n\
+         Searches for: an undetected change\nRequired scope: [\"context\"]\n\nOpen objection.\n\n\
          ## Challenge Plan: shared/plan\nChallenger: mutation/perturb\n\
          Select: qualification from check shared/check\n\
          Select: qualification from binding edge/beta\n\nTargets relevant decisions.\n",
     )
     .unwrap();
+
+    let complete = azimuth::load(
+        &model,
+        &model.join("missing-standards.md"),
+        &model.join("missing-workspace.json"),
+        &[],
+        &[],
+    )
+    .unwrap();
+    let complete_plan = complete.model.challenge_plans().next().unwrap();
+    let complete_resolution = resolve_challenge_plan(&complete.model, complete_plan)
+        .to_json()
+        .to_string_pretty();
 
     let loaded = azimuth::load(
         &model,
@@ -503,17 +557,27 @@ fn only_selection_retains_the_verification_and_challenge_closure() {
         &["alpha".into()],
     )
     .unwrap();
-    assert_eq!(loaded.model.specs.len(), 1);
+    assert_eq!(loaded.model.specs.len(), 2);
     assert_eq!(loaded.model.checks().count(), 1);
-    assert_eq!(loaded.model.evidence_bindings().count(), 1);
-    assert_eq!(loaded.model.qualifications().count(), 1);
+    assert_eq!(loaded.model.evidence_bindings().count(), 2);
+    assert_eq!(loaded.model.qualifications().count(), 2);
     assert_eq!(loaded.model.challengers().count(), 1);
     assert_eq!(loaded.model.verifications.len(), 1);
     let plan = loaded.model.challenge_plans().next().unwrap();
-    assert_eq!(plan.selectors.len(), 1);
+    assert_eq!(plan.selectors.len(), 2);
     assert_eq!(
         plan.selectors[0].canonical(),
         "qualification from check shared/check"
+    );
+    assert_eq!(
+        plan.selectors[1].canonical(),
+        "qualification from binding edge/beta"
+    );
+    assert_eq!(
+        resolve_challenge_plan(&loaded.model, plan)
+            .to_json()
+            .to_string_pretty(),
+        complete_resolution
     );
     fs::remove_dir_all(root).unwrap();
 }
@@ -623,23 +687,43 @@ fn merged_manifest_conflicts_are_rejected_before_only_selection() {
         &workspace,
         "{\"format\":\"azimuth-workspace\",\"version\":1,\
          \"areas\":[{\"id\":\"core\",\"mounts\":[{\"id\":\"code\",\"path\":\"src\"}]}],\
-         \"surfaces\":[],\"realization_obligations\":[]}",
+         \"surfaces\":[{\"id\":\"beta\",\"contributions\":[{\"area\":\"core\",\
+         \"mount\":\"code\",\"enumerator\":\"routes\"}]}],\
+         \"realization_obligations\":[]}",
     )
     .unwrap();
     let first = root.join("first.json");
     let second = root.join("second.json");
-    let linkage = |fingerprint: char| {
+    let linkage = |fingerprint: char, suffix: &str| {
         format!(
-            "{{\"check_implementations\":[{{\"check\":\"beta/works\",\
+            "{{\"realizes\":[{{\"spec\":\"beta\",\"scenario\":\"works\",\
+             \"site\":\"beta::works\",\"file\":\"src/beta.rs\",\"lang\":\"rust\",\
+             \"source_fingerprint\":\"sha256:{}\"}}],\
+             \"check_implementations\":[{{\"check\":\"beta/works\",\
              \"site\":\"tests::works\",\"file\":\"src/tests.rs\",\"lang\":\"rust\",\
              \"source_fingerprint\":\"sha256:{}\"}}],\
+             \"mechanism_implementations\":[{{\"spec\":\"beta\",\"mechanism\":\"guard\",\
+             \"site\":\"beta::guard::{suffix}\",\
+             \"binding\":\"rust-symbol:beta::guard::{suffix}\",\
+             \"file\":\"src/guard-{suffix}.rs\",\"lang\":\"rust\",\
+             \"source_fingerprint\":\"sha256:{}\"}}],\
+             \"class_members\":[{{\"class\":\"beta\",\"site\":\"GET /{suffix}\",\
+             \"file\":\"src/routes.rs\",\"lang\":\"rust\"}}],\
+             \"enumerations\":[{{\"class\":\"beta\",\"kind\":\"routes\",\
+             \"source\":\"src/routes-{suffix}.json\",\
+             \"source_fingerprint\":\"sha256:{}\"}}],\
              \"artifacts\":[{{\"id\":\"beta-artifact\",\"kind\":\"schema\",\
-             \"file\":\"src/schema.sql\"}}]}}",
+             \"file\":\"src/schema.sql\"}},\
+             {{\"id\":\"rust-symbol:beta::guard::{suffix}\",\"kind\":\"rust-symbol\",\
+             \"file\":\"src/guard-{suffix}.rs\"}}]}}",
+            fingerprint.to_string().repeat(64),
+            fingerprint.to_string().repeat(64),
+            fingerprint.to_string().repeat(64),
             fingerprint.to_string().repeat(64)
         )
     };
-    fs::write(&first, linkage('a')).unwrap();
-    fs::write(&second, linkage('b')).unwrap();
+    fs::write(&first, linkage('a', "one")).unwrap();
+    fs::write(&second, linkage('b', "two")).unwrap();
 
     let errors = azimuth::load(
         &model,
@@ -658,7 +742,123 @@ fn merged_manifest_conflicts_are_rejected_before_only_selection() {
         messages.contains("duplicate Check implementation"),
         "{messages}"
     );
+    assert!(messages.contains("duplicate realization"), "{messages}");
+    assert!(
+        messages.contains("multiple marker implementations"),
+        "{messages}"
+    );
+    assert!(
+        messages.contains("multiple enumeration witnesses"),
+        "{messages}"
+    );
+    assert!(messages.contains("duplicate surface member"), "{messages}");
     assert!(messages.contains("duplicate artifact id"), "{messages}");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn marker_sites_are_distinct_across_areas_and_conflict_within_one_area_before_only() {
+    let root = package_root();
+    let model = root.join("model");
+    write_routine_spec(&model.join("alpha/spec.md"), "alpha", "works");
+    write_routine_spec(&model.join("beta/spec.md"), "beta", "works");
+    fs::write(
+        model.join("alpha/design.md"),
+        "# Design: alpha\n\n## Claim: works\nMechanism: guard\nEnforcement: guard\n\nExact.\n",
+    )
+    .unwrap();
+    fs::write(
+        model.join("beta/design.md"),
+        "# Design: beta\n\n## Claim: works\nMechanism: guard\nEnforcement: guard\n\nExact.\n",
+    )
+    .unwrap();
+    let manifest = root.join("markers.json");
+    fs::write(
+        &manifest,
+        format!(
+            "{{\"mechanism_implementations\":[\
+             {{\"spec\":\"alpha\",\"mechanism\":\"guard\",\"site\":\"pkg::Guard::apply\",\
+             \"binding\":\"rust-symbol:pkg::Guard::apply\",\"file\":\"src/a/guard.rs\",\
+             \"lang\":\"rust\",\"source_fingerprint\":\"{SHA}\"}},\
+             {{\"spec\":\"beta\",\"mechanism\":\"guard\",\"site\":\"pkg::Guard::apply\",\
+             \"binding\":\"rust-symbol:pkg::Guard::apply\",\"file\":\"src/b/guard.rs\",\
+             \"lang\":\"rust\",\"source_fingerprint\":\"{SHA}\"}}],\
+             \"artifacts\":[\
+             {{\"id\":\"rust-symbol:pkg::Guard::apply\",\"kind\":\"rust-symbol\",\
+             \"file\":\"src/a/guard.rs\"}},\
+             {{\"id\":\"rust-symbol:pkg::Guard::apply\",\"kind\":\"rust-symbol\",\
+             \"file\":\"src/b/guard.rs\"}}]}}"
+        ),
+    )
+    .unwrap();
+    let workspace = root.join("workspace.json");
+    fs::write(
+        &workspace,
+        "{\"format\":\"azimuth-workspace\",\"version\":1,\"areas\":[\
+         {\"id\":\"one\",\"mounts\":[{\"id\":\"code\",\"path\":\"src/a\"}]},\
+         {\"id\":\"two\",\"mounts\":[{\"id\":\"code\",\"path\":\"src/b\"}]}],\
+         \"surfaces\":[],\"realization_obligations\":[]}",
+    )
+    .unwrap();
+    let loaded = azimuth::load(
+        &model,
+        &root.join("standards.md"),
+        &workspace,
+        &[manifest.clone()],
+        &[],
+    )
+    .unwrap()
+    .model;
+    assert_eq!(
+        loaded
+            .mechanism_implementations
+            .iter()
+            .map(|item| item.binding.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "one|rust-symbol|pkg::Guard::apply",
+            "two|rust-symbol|pkg::Guard::apply"
+        ]
+    );
+
+    let ordinary = root.join("ordinary.json");
+    fs::write(
+        &ordinary,
+        "{\"artifacts\":[{\"id\":\"rust-symbol:pkg::Guard::apply\",\
+         \"kind\":\"schema\",\"file\":\"src/ordinary.sql\"}]}",
+    )
+    .unwrap();
+    let errors = azimuth::load(
+        &model,
+        &root.join("standards.md"),
+        &workspace,
+        &[manifest.clone(), ordinary],
+        &["alpha".into()],
+    )
+    .unwrap_err();
+    assert!(errors
+        .iter()
+        .any(|error| error.message.contains("collides with an ordinary Artifact")));
+
+    fs::write(
+        &workspace,
+        "{\"format\":\"azimuth-workspace\",\"version\":1,\"areas\":[\
+         {\"id\":\"shared\",\"mounts\":[{\"id\":\"a\",\"path\":\"src/a\"},\
+         {\"id\":\"b\",\"path\":\"src/b\"}]}],\"surfaces\":[],\
+         \"realization_obligations\":[]}",
+    )
+    .unwrap();
+    let errors = azimuth::load(
+        &model,
+        &root.join("standards.md"),
+        &workspace,
+        &[manifest],
+        &["alpha".into()],
+    )
+    .unwrap_err();
+    assert!(errors
+        .iter()
+        .any(|error| error.message.contains("has multiple marker targets")));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -682,7 +882,7 @@ fn verification_authority_requires_a_current_owning_spec() {
 }
 
 #[test]
-fn missing_policies_warn_only_for_resolved_nonroutine_binding_targets() {
+fn missing_standards_warn_for_any_nonroutine_claim() {
     let root = package_root();
     let model = root.join("model");
     write_routine_spec(&model.join("routine/spec.md"), "routine", "works");
@@ -695,7 +895,7 @@ fn missing_policies_warn_only_for_resolved_nonroutine_binding_targets() {
     assert!(!routine
         .warnings
         .iter()
-        .any(|warning| warning.message.contains("qualification policies")));
+        .any(|warning| warning.message.contains("Decision Standards")));
 
     write_routine_spec(&model.join("standard/spec.md"), "standard", "works");
     let standard_path = model.join("standard/spec.md");
@@ -708,11 +908,17 @@ fn missing_policies_warn_only_for_resolved_nonroutine_binding_targets() {
     .unwrap();
     fs::write(
         model.join("standard/verification.md"),
-        verification_binding(
-            "standard",
-            "standard/check",
-            "standard#works",
-            "edge/standard",
+        format!(
+            "{}\n## Claim Judgment: standard#works\nVerdict: accepted\nPolicy: credible\n\
+             Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
+             Judged: 2026-08-21\nJudge: owner\nBasis: the composition is sufficient\n\
+             Residual risk: none identified\n\nReviewed.\n",
+            verification_binding(
+                "standard",
+                "standard/check",
+                "standard#works",
+                "edge/standard",
+            )
         ),
     )
     .unwrap();
@@ -720,7 +926,7 @@ fn missing_policies_warn_only_for_resolved_nonroutine_binding_targets() {
     assert!(mixed
         .warnings
         .iter()
-        .any(|warning| warning.message.contains("qualification policies")));
+        .any(|warning| warning.message.contains("Decision Standards")));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -729,7 +935,7 @@ fn verification_binding(owner: &str, check: &str, claim: &str, binding: &str) ->
         "# Verification: {owner}\n\n## Check: {check}\nMethod: invoke\nTerminal: works\n\n\
          Atomic.\n\n## Evidence Binding: {binding}\nCheck: {check}\nClaim: {claim}\n\
          Proposition: direct\nScope: unit\nQuantification: example\nOracle: direct\nContext: {{}}\n\
-         Challenge domain: [\"context\"]\nQualification policy: credible\n\nReviewable.\n"
+         Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n"
     )
 }
 
@@ -741,6 +947,6 @@ fn verification_with_binding(owner: &str, binding: &str, include_check: bool) ->
         "# Verification: {owner}\n\n{check}## Evidence Binding: {binding}\n\
          Check: shared/check\nClaim: alpha#works\nProposition: direct\nScope: unit\n\
          Quantification: example\nOracle: direct\nContext: {{}}\n\
-         Challenge domain: [\"context\"]\nQualification policy: credible\n\nReviewable.\n"
+         Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n"
     )
 }

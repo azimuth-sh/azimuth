@@ -8,7 +8,7 @@ use crate::model::{
 };
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path};
 
 const TOP_LEVEL: &[&str] = &[
     "realizes",
@@ -209,6 +209,7 @@ pub fn parse(path: &str, root: &Json) -> Result<Manifest, Vec<Diag>> {
                 &with_source(&[
                     "spec",
                     "mechanism",
+                    "site",
                     "binding",
                     "file",
                     "lang",
@@ -219,22 +220,22 @@ pub fn parse(path: &str, root: &Json) -> Result<Manifest, Vec<Diag>> {
             let value = MechanismImplementation {
                 spec: required_string(path, where_, item, "spec", errors),
                 mechanism: required_string(path, where_, item, "mechanism", errors),
+                site: required_string(path, where_, item, "site", errors),
                 binding: required_string(path, where_, item, "binding", errors),
                 file: required_string(path, where_, item, "file", errors),
                 lang: required_string(path, where_, item, "lang", errors),
                 source: source_identity(path, where_, item, errors),
-                source_fingerprint: optional_fingerprint(
+                source_fingerprint: required_fingerprint(
                     path,
                     where_,
                     item,
                     "source_fingerprint",
                     errors,
-                )
-                .unwrap_or_default(),
+                ),
             };
             let identity = format!(
-                "{}|{}|{}|{}|{}",
-                value.spec, value.mechanism, value.binding, value.file, value.lang
+                "{}|{}|{}|{}|{}|{}",
+                value.spec, value.mechanism, value.site, value.binding, value.file, value.lang
             );
             if mechanisms.insert(identity.clone()) {
                 out.mechanism_implementations.push(value);
@@ -349,18 +350,195 @@ pub fn parse(path: &str, root: &Json) -> Result<Manifest, Vec<Diag>> {
                 predicate: optional_string(path, where_, item, "predicate", errors),
                 source: source_identity(path, where_, item, errors),
             };
-            if artifacts.insert(id.clone()) {
+            let identity = (id.clone(), value.kind.clone(), value.file.clone());
+            if artifacts.insert(identity.clone()) {
                 out.artifacts.push(value);
             } else {
-                errors.push(Diag::at(path, 0, format!("duplicate artifact `{id}`")));
+                errors.push(Diag::at(
+                    path,
+                    0,
+                    format!(
+                        "duplicate artifact companion `{}|{}|{}`",
+                        identity.0, identity.1, identity.2
+                    ),
+                ));
             }
         },
     );
+
+    validate_mechanism_accounts(path, &out, &mut errors);
 
     if errors.is_empty() {
         Ok(out)
     } else {
         Err(errors)
+    }
+}
+
+fn validate_mechanism_accounts(path: &str, manifest: &Manifest, errors: &mut Vec<Diag>) {
+    let mut owned_artifacts = BTreeSet::new();
+    let mut reserved_raw_ids = BTreeSet::new();
+    let mut targets = BTreeSet::new();
+    for implementation in &manifest.mechanism_implementations {
+        if let Err(reason) = validate_id(&implementation.spec, true) {
+            errors.push(Diag::file(
+                path,
+                format!("mechanism implementation has invalid spec id: {reason}"),
+            ));
+        }
+        if let Err(reason) = validate_id(&implementation.mechanism, false) {
+            errors.push(Diag::file(
+                path,
+                format!("mechanism implementation has invalid mechanism id: {reason}"),
+            ));
+        }
+        if !normalized_relative_path(&implementation.file) {
+            errors.push(Diag::file(
+                path,
+                "mechanism implementation `file` must be a normalized workspace-relative path",
+            ));
+        }
+        if !targets.insert((
+            implementation.spec.clone(),
+            implementation.mechanism.clone(),
+        )) {
+            errors.push(Diag::file(
+                path,
+                format!(
+                    "multiple marker implementations for mechanism `#{}`",
+                    implementation.mechanism
+                ),
+            ));
+        }
+        if implementation.site.trim() != implementation.site
+            || implementation.site.is_empty()
+            || implementation.site.contains('|')
+            || implementation.site.chars().any(char::is_control)
+        {
+            errors.push(Diag::file(
+                path,
+                "mechanism implementation `site` must be one trimmed path-free semantic identity",
+            ));
+        }
+        let Some(expected_kind) = mechanism_address_kind(&implementation.lang) else {
+            errors.push(Diag::file(
+                path,
+                format!(
+                    "mechanism implementation has unsupported language `{}`",
+                    implementation.lang
+                ),
+            ));
+            continue;
+        };
+        reserved_raw_ids.insert(format!("{expected_kind}:{}", implementation.site));
+        let (binding, companion_id) = if let Some(source) = &implementation.source {
+            if source.kind != expected_kind || source.address != implementation.site {
+                errors.push(Diag::file(
+                    path,
+                    "assembled mechanism source identity disagrees with `lang` or `site`",
+                ));
+            }
+            let key = source.key();
+            (key.clone(), key)
+        } else {
+            let expected = format!("{expected_kind}:{}", implementation.site);
+            if implementation.binding != expected
+                || implementation.binding.contains('|')
+                || implementation.binding.split_once(':').is_none()
+                || implementation.site.contains('#')
+            {
+                errors.push(Diag::file(
+                    path,
+                    format!(
+                        "mechanism implementation binding must be exact typed `{expected_kind}:<site>` with suffix equal to `site`"
+                    ),
+                ));
+            }
+            (expected.clone(), expected)
+        };
+        if implementation.binding != binding {
+            errors.push(Diag::file(
+                path,
+                "mechanism implementation binding disagrees with its semantic source identity",
+            ));
+        }
+        let matches = manifest
+            .artifacts
+            .iter()
+            .enumerate()
+            .filter(|(_, artifact)| {
+                artifact.id == companion_id
+                    && artifact.kind == expected_kind
+                    && artifact.file == implementation.file
+                    && match (&implementation.source, &artifact.source) {
+                        (Some(left), Some(right)) => left == right,
+                        (None, None) => true,
+                        _ => false,
+                    }
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        let [artifact_index] = matches.as_slice() else {
+            errors.push(Diag::file(
+                path,
+                format!(
+                    "mechanism implementation `{}` requires exactly one companion Artifact `{companion_id}|{expected_kind}|{}`",
+                    implementation.mechanism, implementation.file
+                ),
+            ));
+            continue;
+        };
+        if !owned_artifacts.insert(*artifact_index) {
+            errors.push(Diag::file(
+                path,
+                format!("marker companion Artifact `{companion_id}` has multiple targets"),
+            ));
+        }
+    }
+
+    let owned_ids = owned_artifacts
+        .iter()
+        .map(|index| manifest.artifacts[*index].id.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut ordinary_ids = BTreeSet::new();
+    for (index, artifact) in manifest.artifacts.iter().enumerate() {
+        if !owned_artifacts.contains(&index) {
+            if owned_ids.contains(artifact.id.as_str())
+                || reserved_raw_ids.contains(artifact.id.as_str())
+            {
+                errors.push(Diag::file(
+                    path,
+                    format!(
+                        "marker companion Artifact `{}` collides with an ordinary Artifact",
+                        artifact.id
+                    ),
+                ));
+            } else if !ordinary_ids.insert(&artifact.id) {
+                errors.push(Diag::file(
+                    path,
+                    format!("duplicate ordinary artifact id `{}`", artifact.id),
+                ));
+            }
+        }
+    }
+}
+
+fn normalized_relative_path(value: &str) -> bool {
+    !value.is_empty()
+        && !Path::new(value).is_absolute()
+        && Path::new(value)
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
+        && !value.contains('\\')
+}
+
+pub(crate) fn mechanism_address_kind(language: &str) -> Option<String> {
+    match language {
+        "csharp" => Some("dotnet-symbol".into()),
+        "cpp" | "go" | "java" | "javascript" | "kotlin" | "python" | "rust" | "typescript" => {
+            Some(format!("{language}-symbol"))
+        }
+        _ => None,
     }
 }
 

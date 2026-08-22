@@ -12,12 +12,17 @@ use std::time::Instant;
 
 static NEXT_LAB: AtomicU64 = AtomicU64::new(0);
 
-const STANDARDS: &str = "# Qualification policies
+const STANDARDS: &str = "# Decision policies and Challenge schedule
 
-## Policy: credible-executable
+## Decision Policy: credible-executable
 Required challenge: implementation-perturbation
 
 The policy requires an implementation challenge.
+
+## Challenge Schedule: current
+Gate challenge: implementation-perturbation
+
+The implementation challenge runs in the gate lane.
 ";
 
 const SYSTEM_SPEC: &str = "# Spec: payments/receipt
@@ -1452,6 +1457,122 @@ fn whole_area_relocation_preserves_check_implementation_identity() {
         .unwrap();
     assert_eq!(before_identity, after.source.as_ref().unwrap().key());
     assert_eq!(before_fingerprint, after.source_fingerprint);
+}
+
+#[test]
+fn federated_marker_relocation_rewrites_one_path_free_identity_pair() {
+    let lab = Lab::new();
+    let raw = lab.root.join("raw-marker.json");
+    let observe_at = |file: &str| {
+        write(
+            &raw,
+            &format!(
+                "{{\"mechanism_implementations\":[{{\"spec\":\"payments/receipt\",\
+                 \"mechanism\":\"projection\",\"site\":\"Payments.Capture.Project()\",\
+                 \"binding\":\"dotnet-symbol:Payments.Capture.Project()\",\"file\":\"{file}\",\
+                 \"lang\":\"csharp\",\"source_fingerprint\":\
+                 \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}],\
+                 \"artifacts\":[{{\"id\":\"dotnet-symbol:Payments.Capture.Project()\",\
+                 \"kind\":\"dotnet-symbol\",\"file\":\"{file}\",\"columns\":[\"id\"]}}]}}"
+            ),
+        );
+        federation::observe_repository(
+            &lab.project,
+            "backend",
+            &lab.backend.root,
+            "test-extractor/1",
+            std::slice::from_ref(&raw),
+        )
+        .unwrap()
+    };
+    let before_observation = observe_at("app/services/Payments/Capture.cs");
+    let after_observation = observe_at("app/services/Payments/Moved/Capture.cs");
+    let account = |source: &str| {
+        let root = azimuth::json::parse(source).unwrap();
+        let linkage = root.get("linkage").unwrap();
+        let implementation = &linkage
+            .get("mechanism_implementations")
+            .unwrap()
+            .as_array()
+            .unwrap()[0];
+        let artifact = &linkage.get("artifacts").unwrap().as_array().unwrap()[0];
+        (
+            implementation
+                .get("binding")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string(),
+            implementation
+                .get("site")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string(),
+            implementation
+                .get("file")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string(),
+            artifact.get("id").unwrap().as_str().unwrap().to_string(),
+            artifact.get("columns").unwrap().clone(),
+        )
+    };
+    let before = account(&before_observation);
+    let after = account(&after_observation);
+    assert_eq!(
+        before.0,
+        "payments|dotnet-symbol|Payments.Capture.Project()"
+    );
+    assert_eq!(before.0, before.3);
+    assert_eq!(before.0, after.0);
+    assert_eq!(before.1, after.1);
+    assert_ne!(before.2, after.2);
+    assert_eq!(before.4, after.4);
+
+    write(&lab.backend.manifest, &before_observation);
+    lab.write_workset(&["backend", "experience", "operations", "assurance"], true);
+    let mut assembly = lab.assemble(None).expect("marker observation assembles");
+    // This linkage test isolates assembly while the shared federation fixture still carries the
+    // pre-F standards grammar owned by the later fixture-migration package.
+    assembly.standards_path = None;
+    let loaded = azimuth::load_assembly(&assembly, &[]).expect("assembled marker model loads");
+    let implementation = loaded
+        .model
+        .mechanism_implementations
+        .iter()
+        .find(|item| item.mechanism == "projection")
+        .expect("marker implementation remains in the assembled model");
+    let companion = loaded
+        .model
+        .artifacts
+        .iter()
+        .find(|item| item.id == implementation.binding)
+        .expect("assembled companion remains paired");
+    assert_eq!(implementation.binding, before.0);
+    assert_eq!(implementation.source, companion.source);
+    assert_eq!(companion.source.as_ref().unwrap().address, before.1);
+
+    observe_at("app/services/Payments/Capture.cs");
+    let ordinary = lab.root.join("ordinary-marker-collision.json");
+    write(
+        &ordinary,
+        "{\"artifacts\":[{\"id\":\"dotnet-symbol:Payments.Capture.Project()\",\
+         \"kind\":\"schema\",\
+         \"file\":\"app/services/Payments.Tests/CaptureTests.cs\"}]}",
+    );
+    let errors = federation::observe_repository(
+        &lab.project,
+        "backend",
+        &lab.backend.root,
+        "test-extractor/1",
+        &[raw, ordinary],
+    )
+    .unwrap_err();
+    assert!(errors
+        .iter()
+        .any(|error| error.message.contains("collides with an ordinary Artifact")));
 }
 
 #[test]

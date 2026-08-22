@@ -8,7 +8,7 @@ contract before publication.
 
 ### Scenario: one-source-version
 WHEN a selected first-alpha artifact exposes a version or source tag
-THEN it matches version `0.1.0-alpha.1` and tag `v0.1.0-alpha.1`
+THEN it matches version `0.1.0-alpha.2` and tag `v0.1.0-alpha.2`
 
 ### Scenario: registry-identities-match-contract
 WHEN a selected artifact is packed for its public registry

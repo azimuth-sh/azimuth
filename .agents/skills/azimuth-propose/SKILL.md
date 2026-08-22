@@ -33,10 +33,54 @@ Create the smallest semantic transition that can be reviewed and accepted indepe
 
 ## Model boundary
 
-The accepted future non-routine graph is Check → Evidence Binding → Qualification, with sparse
-many-to-many Check/Claim relationships and semantic Challenge Plan selectors. Run, adapter and
-Assurance Service ledger formats remain deferred. A proposal must not invent those contracts or
-restore removed alpha-era formats.
+The current non-routine decision graph is Check → Evidence Binding → Qualification, with sparse
+many-to-many Check/Claim relationships, plus one total-composition Claim Judgment per applicable
+case Claim. Evidence Bindings and Claim Judgments name a current Decision Policy; each policy
+declares required open Challenge forms, and the project Challenge Schedule assigns every required
+or declared form to exactly one `gate | scheduled` lane. The strict
+[Run bundle format](../../../azimuth/formats/run-bundle.md) is current:
+`azimuth run verify --bundle <file>...` checks standalone protocol and correction consistency, and
+`azimuth run inspect --bundle <file>...` presents a deterministic account with current model
+authority and Assurance State explicitly unresolved.
+
+Strict adapter configuration, the description handshake, complete-model Check and Challenge
+planning and bounded execute/import transport are current. Configuration defaults to
+`azimuth/adapters.json`, names exact capability addresses and pins content, description, semantic
+settings, literal environment and process limits. A proposal must preserve core authority over the
+semantic Plan: an adapter only translates frozen selections or imports exact content-addressed
+native files.
+
+The planning request may be Check-only, Challenge-only or mixed, while its combined semantic
+selection is non-empty. Core resolves every Challenge candidate disposition, accepted current
+decision, required policy form, schedule lane, semantic scope and accountable launch input from the
+complete model. Every requested Plan names an explicit configured capability, finite units and a
+nonzero target cap. Core neither auto-selects capabilities nor widens unresolved work to provider
+selectors, paths, globs or suites.
+
+A clean Challenge Result is only a negative search fact. An allowed incomplete scheduled omission
+has one exact `challenge-selection` diagnostic and no result; `deferred` is not a result. Valid
+adverse or incomplete protocol facts are not transport failures. `model.extract` is a declared
+capability but has no current execution command. The Run ledger separately owns durable ingest,
+authorization, retention and Assurance State; current planning defines no cache-validity,
+cross-Subject reuse or historical applicability inference. A proposal must not invent those
+authorities, long-running adapters or removed alpha-era formats.
+
+When a proposal changes mechanism extractors, preserve the existing two-argument source marker.
+The extractor derives an ecosystem-semantic qualified `site`, exact path-free typed binding and
+companion Artifact, and fails closed when it cannot prove uniqueness or a normalized locator under
+the declared root. A file path is never semantic disambiguation.
+
+When a proposal affects adapters, make the strict
+[adapter protocol](../../../azimuth/formats/adapter.md) and
+[launch-plan format](../../../azimuth/formats/run-launch-plan.md) explicit. Preserve direct
+shell-free invocation, same-stream content staging, exact literal child environment, supported
+fresh process-group isolation before spawn, bounded streams and one bounded core exchange whose
+deadline covers request writing, concurrent stream draining and core's wait. Validate completely
+before atomic output. Core signals the group on every terminal path and cleans members and inherited
+pipes while they remain in it. Authorized descendants may escape with `setsid`, `setpgid` or
+equivalent, and their termination is not guaranteed. This is not non-escapable descendant
+containment, a sandbox, daemon supervision or hostile-code isolation. Adapters remain short-lived;
+the protocol does not authorize daemons, webhook hosts or long-running supervisors.
 
 ## Routine path
 

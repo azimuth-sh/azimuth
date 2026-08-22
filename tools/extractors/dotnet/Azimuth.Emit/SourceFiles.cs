@@ -39,6 +39,11 @@ internal sealed class SourceFiles : IDisposable
 
     public static SourceFiles ForAssembly(Assembly assembly, string root)
     {
+        if (assembly.IsDynamic)
+        {
+            return new SourceFiles(null, null, root);
+        }
+
         var location = assembly.Location;
         if (string.IsNullOrEmpty(location))
         {

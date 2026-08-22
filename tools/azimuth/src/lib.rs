@@ -1,5 +1,7 @@
 //! Azimuth core model loading and selection.
 
+pub mod adapter;
+pub mod adapter_host;
 pub mod assurance;
 pub mod change;
 pub mod design;
@@ -11,6 +13,7 @@ pub mod labels;
 pub mod manifest;
 pub mod model;
 pub mod run;
+pub mod run_plan;
 pub mod spec;
 pub mod traceability;
 pub mod validation;
@@ -20,7 +23,7 @@ pub mod workspace;
 
 use crate::diag::Diag;
 use crate::model::{Criticality, Model, SourceIdentity};
-use crate::verification::{ChallengeDomain, Selector, Verification};
+use crate::verification::{Selector, Verification};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -59,8 +62,8 @@ pub fn load(
         Err(mut diagnostics) => errors.append(&mut diagnostics),
     }
     if standards_path.exists() {
-        match verification::load_policies(standards_path) {
-            Ok(policies) => model.qualification_policies = Some(policies),
+        match verification::load_standards(standards_path) {
+            Ok(standards) => model.decision_standards = Some(standards),
             Err(mut diagnostics) => errors.append(&mut diagnostics),
         }
     }
@@ -80,18 +83,19 @@ pub fn load(
             Err(mut diagnostics) => errors.append(&mut diagnostics),
         }
     }
-    normalize_local_sources(&mut model);
+    normalize_local_sources(&mut model, &mut errors);
     errors.extend(verification_owner_issues(&model));
     errors.extend(model.verification_declaration_issues());
     errors.extend(merged_manifest_issues(&model));
+    errors.extend(mechanism_route_issues(&model));
     if !errors.is_empty() {
         return Err(errors);
     }
 
-    if model.qualification_policies.is_none() && needs_policies(&model) {
+    if model.decision_standards.is_none() && needs_standards(&model) {
         warnings.push(Diag::file(
             &standards_path.display().to_string(),
-            "no qualification policies file; non-routine Evidence Bindings cannot be resolved",
+            "no Decision Standards file; non-routine decisions cannot be resolved",
         ));
     }
     warnings.extend(package_location_warnings(&model));
@@ -148,8 +152,8 @@ pub fn load_assembly(
         reject_retired_judgment_facets(root, &mut errors);
     }
     if let Some(path) = &assembly.standards_path {
-        match verification::load_policies(path) {
-            Ok(policies) => model.qualification_policies = Some(policies),
+        match verification::load_standards(path) {
+            Ok(standards) => model.decision_standards = Some(standards),
             Err(mut diagnostics) => errors.append(&mut diagnostics),
         }
     }
@@ -159,14 +163,15 @@ pub fn load_assembly(
     errors.extend(verification_owner_issues(&model));
     errors.extend(model.verification_declaration_issues());
     errors.extend(merged_manifest_issues(&model));
+    errors.extend(mechanism_route_issues(&model));
     if !errors.is_empty() {
         return Err(errors);
     }
 
-    if model.qualification_policies.is_none() && needs_policies(&model) {
+    if model.decision_standards.is_none() && needs_standards(&model) {
         warnings.push(Diag::file(
             "project",
-            "qualification policies are outside this assembly; non-routine bindings are incomplete",
+            "Decision Standards are outside this assembly; non-routine decisions are incomplete",
         ));
     }
     warnings.extend(package_location_warnings(&model));
@@ -234,7 +239,7 @@ fn reject_retired_judgment_facets(root: &Path, errors: &mut Vec<Diag>) {
         Diag::at(
             &path.display().to_string(),
             1,
-            "alpha 1 `judgments.md` is retired; no Claim Judgment format exists in alpha 2",
+            "alpha 1 `judgments.md` is retired; use Claim Judgment blocks in `verification.md`",
         )
     }));
 }
@@ -251,15 +256,12 @@ fn collect_named(dir: &Path, name: &str, out: &mut Vec<PathBuf>) -> std::io::Res
     Ok(())
 }
 
-fn needs_policies(model: &Model) -> bool {
-    model.evidence_bindings().any(|binding| {
-        model
-            .claims()
-            .find(|claim| claim.id() == binding.claim)
-            .and_then(|claim| claim.requirement.criticality)
-            .is_some_and(|criticality| {
-                matches!(criticality, Criticality::Standard | Criticality::Critical)
-            })
+fn needs_standards(model: &Model) -> bool {
+    model.claims().any(|claim| {
+        matches!(
+            claim.requirement.criticality,
+            Some(Criticality::Standard | Criticality::Critical)
+        )
     })
 }
 
@@ -288,6 +290,29 @@ fn verification_owner_issues(model: &Model) -> Vec<Diag> {
 
 fn merged_manifest_issues(model: &Model) -> Vec<Diag> {
     let mut issues = Vec::new();
+    let mut realizations = BTreeMap::<(String, String), (&str, &str)>::new();
+    for realization in &model.realizes {
+        let Some(source) = realization.source.as_ref() else {
+            continue;
+        };
+        let key = (
+            format!("{}#{}", realization.spec, realization.scenario),
+            source.key(),
+        );
+        if let Some((previous_file, previous_fingerprint)) = realizations.get(&key) {
+            issues.push(Diag::file(
+                &realization.file,
+                format!(
+                    "duplicate realization `{}|{}` across manifests (first at `{previous_file}` \
+                     with fingerprint `{previous_fingerprint}`)",
+                    key.0, key.1
+                ),
+            ));
+        } else {
+            realizations.insert(key, (&realization.file, &realization.source_fingerprint));
+        }
+    }
+
     let mut implementations = BTreeMap::<(String, String), (&str, &str)>::new();
     for implementation in &model.check_implementations {
         let Some(source) = implementation.source.as_ref() else {
@@ -310,8 +335,107 @@ fn merged_manifest_issues(model: &Model) -> Vec<Diag> {
         }
     }
 
+    let mut mechanism_implementations = BTreeMap::<(String, String), (&str, &str)>::new();
+    let mut mechanism_sources = BTreeMap::<String, ((String, String), &str)>::new();
+    for implementation in &model.mechanism_implementations {
+        let key = (
+            implementation.spec.clone(),
+            implementation.mechanism.clone(),
+        );
+        if let Some((previous_file, previous_binding)) = mechanism_implementations.get(&key) {
+            issues.push(Diag::file(
+                &implementation.file,
+                format!(
+                    "multiple marker implementations for mechanism `{}#{}` across manifests \
+                     (first at `{previous_file}` bound to `{previous_binding}`)",
+                    key.0, key.1
+                ),
+            ));
+        } else {
+            mechanism_implementations
+                .insert(key.clone(), (&implementation.file, &implementation.binding));
+        }
+        if let Some(source) = &implementation.source {
+            let source_key = source.key();
+            if let Some((previous_target, previous_file)) = mechanism_sources.get(&source_key) {
+                issues.push(Diag::file(
+                    &implementation.file,
+                    format!(
+                        "mechanism source identity `{source_key}` has multiple marker targets \
+                         (first `{}#{}` at `{previous_file}`)",
+                        previous_target.0, previous_target.1
+                    ),
+                ));
+            } else {
+                mechanism_sources.insert(source_key, (key, &implementation.file));
+            }
+        }
+    }
+
+    let mut enumeration_witnesses =
+        BTreeMap::<(String, String, String, String), (&str, &str)>::new();
+    for enumeration in &model.enumerations {
+        let Some(identity) = enumeration.identity.as_ref() else {
+            continue;
+        };
+        let key = (
+            enumeration.class.clone(),
+            identity.area.clone(),
+            identity.mount.clone(),
+            enumeration.kind.clone(),
+        );
+        if let Some((previous_source, previous_fingerprint)) = enumeration_witnesses.get(&key) {
+            issues.push(Diag::file(
+                &enumeration.source,
+                format!(
+                    "multiple enumeration witnesses for contribution `{}|{}|{}|{}` across \
+                     manifests (first at `{previous_source}` with fingerprint \
+                     `{previous_fingerprint}`)",
+                    key.0, key.1, key.2, key.3
+                ),
+            ));
+        } else {
+            enumeration_witnesses
+                .insert(key, (&enumeration.source, &enumeration.source_fingerprint));
+        }
+    }
+
+    let mut surface_members = BTreeMap::<(String, String), (&str, &str)>::new();
+    for member in &model.class_members {
+        let key = (member.class.clone(), member.file.clone());
+        if let Some((previous_site, previous_language)) = surface_members.get(&key) {
+            issues.push(Diag::file(
+                &member.file,
+                format!(
+                    "duplicate surface member `{}|{}` across manifests (first site \
+                     `{previous_site}` in `{previous_language}`)",
+                    key.0, key.1
+                ),
+            ));
+        } else {
+            surface_members.insert(key, (&member.site, &member.lang));
+        }
+    }
+
     let mut artifacts = BTreeMap::<&str, &str>::new();
+    let reserved_marker_ids = model
+        .mechanism_implementations
+        .iter()
+        .filter_map(|implementation| {
+            manifest::mechanism_address_kind(&implementation.lang)
+                .map(|kind| format!("{kind}:{}", implementation.site))
+        })
+        .collect::<BTreeSet<_>>();
     for artifact in &model.artifacts {
+        if reserved_marker_ids.contains(&artifact.id) {
+            issues.push(Diag::file(
+                &artifact.file,
+                format!(
+                    "marker companion Artifact `{}` collides with an ordinary Artifact",
+                    artifact.id
+                ),
+            ));
+        }
         if let Some(previous_file) = artifacts.insert(&artifact.id, &artifact.file) {
             issues.push(Diag::file(
                 &artifact.file,
@@ -342,65 +466,118 @@ fn apply_selection(model: &mut Model, only: &[String]) {
     if only.is_empty() {
         return;
     }
-    let selected_claims = model
+    let mut selected_claims = model
         .claims()
         .filter(|claim| only.iter().any(|pattern| selects(pattern, &claim.spec.id)))
         .map(|claim| claim.id())
         .collect::<BTreeSet<_>>();
+    let initial_bindings = model
+        .evidence_bindings()
+        .filter(|binding| selected_claims.contains(&binding.claim))
+        .map(|binding| binding.id.clone())
+        .collect::<BTreeSet<_>>();
+    let initial_checks = model
+        .evidence_bindings()
+        .filter(|binding| initial_bindings.contains(&binding.id))
+        .map(|binding| binding.check.clone())
+        .collect::<BTreeSet<_>>();
+    let selected_plan_ids = model
+        .challenge_plans()
+        .filter(|plan| {
+            crate::validation::challenge_plan_relevant_to_selection(
+                model,
+                plan,
+                &selected_claims,
+                &initial_bindings,
+                &initial_checks,
+            )
+        })
+        .map(|plan| plan.id.clone())
+        .collect::<BTreeSet<_>>();
+    let selected_plans = model
+        .challenge_plans()
+        .filter(|plan| selected_plan_ids.contains(&plan.id))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut directly_selected_checks = BTreeSet::new();
+    let mut anchored_realizations = BTreeSet::new();
+    let mut anchored_mechanisms = BTreeSet::new();
+    for plan in &selected_plans {
+        for selector in &plan.selectors {
+            selected_claims.extend(selector_claims(model, selector));
+            match selector {
+                Selector::QualificationFromCheck(id) => {
+                    directly_selected_checks.insert(id.clone());
+                }
+                Selector::QualificationFromRealization(identity)
+                | Selector::ClaimJudgmentFromRealization(identity) => {
+                    anchored_realizations.insert(identity.clone());
+                }
+                Selector::QualificationFromMechanism(identity)
+                | Selector::ClaimJudgmentFromMechanism(identity) => {
+                    anchored_mechanisms.insert(identity.clone());
+                }
+                Selector::QualificationFromBinding(_) | Selector::ClaimJudgmentFromClaim(_) => {}
+            }
+        }
+    }
     let selected_bindings = model
         .evidence_bindings()
         .filter(|binding| selected_claims.contains(&binding.claim))
         .map(|binding| binding.id.clone())
         .collect::<BTreeSet<_>>();
-    let selected_checks = model
+    let mut selected_checks = model
         .evidence_bindings()
         .filter(|binding| selected_bindings.contains(&binding.id))
         .map(|binding| binding.check.clone())
+        .collect::<BTreeSet<_>>();
+    selected_checks.extend(directly_selected_checks);
+    let selected_specs = model
+        .claims()
+        .filter(|claim| selected_claims.contains(&claim.id()))
+        .map(|claim| claim.spec.id.clone())
         .collect::<BTreeSet<_>>();
     let selected_surfaces = model
         .claims()
         .filter(|claim| selected_claims.contains(&claim.id()))
         .filter_map(|claim| claim.requirement.over.clone())
         .collect::<BTreeSet<_>>();
-    let mut selected_artifacts = BTreeSet::new();
-    for design in model
-        .designs
-        .iter()
-        .filter(|design| only.iter().any(|pattern| selects(pattern, &design.spec)))
+    let mut retained_mechanisms = anchored_mechanisms;
+    for claim in model
+        .claims()
+        .filter(|claim| selected_claims.contains(&claim.id()))
     {
-        for mechanism in design.entries.iter().flat_map(|entry| &entry.mechanisms) {
-            selected_artifacts.extend(
-                model
-                    .mechanism_bindings(&design.spec, mechanism)
-                    .into_iter()
-                    .map(str::to_string),
-            );
+        if let Some(design) = model.design_for(&claim.spec.id) {
+            for entry in &design.entries {
+                let attached = match &entry.target {
+                    crate::design::Target::Requirement(id) => id == &claim.requirement.id,
+                    crate::design::Target::Scenario(id) => id == &claim.scenario.id,
+                };
+                if attached {
+                    retained_mechanisms.extend(
+                        entry
+                            .mechanisms
+                            .iter()
+                            .map(|mechanism| format!("{}#{}", design.spec, mechanism.id)),
+                    );
+                }
+            }
         }
     }
-    let selected_plans = model
-        .challenge_plans()
-        .filter_map(|plan| {
-            let selectors = plan
-                .selectors
-                .iter()
-                .filter(|selector| {
-                    selector_relevant(
-                        model,
-                        selector,
-                        &selected_claims,
-                        &selected_bindings,
-                        &selected_checks,
-                    )
-                })
-                .map(Selector::canonical)
-                .collect::<BTreeSet<_>>();
-            (!selectors.is_empty()).then(|| (plan.id.clone(), selectors))
-        })
-        .collect::<Vec<_>>();
-    let selected_plan_ids = selected_plans
-        .iter()
-        .map(|(id, _)| id.clone())
-        .collect::<BTreeSet<_>>();
+    let mut selected_artifacts = BTreeSet::new();
+    for design in &model.designs {
+        for mechanism in design.entries.iter().flat_map(|entry| &entry.mechanisms) {
+            let identity = format!("{}#{}", design.spec, mechanism.id);
+            if retained_mechanisms.contains(&identity) {
+                selected_artifacts.extend(
+                    model
+                        .mechanism_bindings(&design.spec, mechanism)
+                        .into_iter()
+                        .map(str::to_string),
+                );
+            }
+        }
+    }
     let selected_challengers = model
         .challenge_plans()
         .filter(|plan| selected_plan_ids.contains(&plan.id))
@@ -409,13 +586,22 @@ fn apply_selection(model: &mut Model, only: &[String]) {
     let retained_sources = model
         .realizes
         .iter()
-        .filter(|site| only.iter().any(|pattern| selects(pattern, &site.spec)))
+        .filter(|site| {
+            selected_claims.contains(&format!("{}#{}", site.spec, site.scenario))
+                || selected_surfaces.contains(&site.spec)
+                || site
+                    .source
+                    .as_ref()
+                    .is_some_and(|source| anchored_realizations.contains(&source.key()))
+        })
         .filter_map(|item| item.source.as_ref())
         .chain(
             model
                 .mechanism_implementations
                 .iter()
-                .filter(|item| only.iter().any(|pattern| selects(pattern, &item.spec)))
+                .filter(|item| {
+                    retained_mechanisms.contains(&format!("{}#{}", item.spec, item.mechanism))
+                })
                 .filter_map(|item| item.source.as_ref()),
         )
         .chain(
@@ -453,8 +639,7 @@ fn apply_selection(model: &mut Model, only: &[String]) {
         .realization_obligations
         .iter()
         .filter(|obligation| {
-            only.iter()
-                .any(|pattern| selects(pattern, &obligation.spec))
+            selected_claims.contains(&format!("{}#{}", obligation.spec, obligation.claim))
         })
         .flat_map(|obligation| obligation.areas.iter().cloned())
         .collect::<BTreeSet<_>>();
@@ -471,25 +656,49 @@ fn apply_selection(model: &mut Model, only: &[String]) {
         })
         .collect::<BTreeSet<_>>();
 
-    model
-        .specs
-        .retain(|spec| only.iter().any(|pattern| selects(pattern, &spec.id)));
-    model
-        .designs
-        .retain(|design| only.iter().any(|pattern| selects(pattern, &design.spec)));
-    model
-        .realizes
-        .retain(|site| only.iter().any(|pattern| selects(pattern, &site.spec)));
+    model.specs.retain_mut(|spec| {
+        if selected_surfaces.contains(&spec.id) {
+            return true;
+        }
+        if !selected_specs.contains(&spec.id) {
+            return false;
+        }
+        spec.requirements.retain_mut(|requirement| {
+            requirement.scenarios.retain(|scenario| {
+                selected_claims.contains(&format!("{}#{}", spec.id, scenario.id))
+            });
+            !requirement.scenarios.is_empty()
+        });
+        !spec.requirements.is_empty()
+    });
+    model.designs.retain_mut(|design| {
+        design.entries.retain_mut(|entry| {
+            entry.mechanisms.retain(|mechanism| {
+                retained_mechanisms.contains(&format!("{}#{}", design.spec, mechanism.id))
+            });
+            !entry.mechanisms.is_empty()
+        });
+        !design.entries.is_empty()
+    });
+    model.realizes.retain(|site| {
+        selected_claims.contains(&format!("{}#{}", site.spec, site.scenario))
+            || selected_surfaces.contains(&site.spec)
+            || site
+                .source
+                .as_ref()
+                .is_some_and(|source| anchored_realizations.contains(&source.key()))
+    });
     model.mechanism_implementations.retain(|implementation| {
-        only.iter()
-            .any(|pattern| selects(pattern, &implementation.spec))
+        retained_mechanisms.contains(&format!(
+            "{}#{}",
+            implementation.spec, implementation.mechanism
+        ))
     });
     model
         .workspace
         .realization_obligations
         .retain(|obligation| {
-            only.iter()
-                .any(|pattern| selects(pattern, &obligation.spec))
+            selected_claims.contains(&format!("{}#{}", obligation.spec, obligation.claim))
         });
     model
         .check_implementations
@@ -523,73 +732,56 @@ fn apply_selection(model: &mut Model, only: &[String]) {
             .retain(|binding| selected_bindings.contains(&binding.id));
         file.qualifications
             .retain(|qualification| selected_bindings.contains(&qualification.id));
+        file.claim_judgments
+            .retain(|judgment| selected_claims.contains(&judgment.id));
         file.challengers
             .retain(|challenger| selected_challengers.contains(&challenger.id));
         file.challenge_plans
             .retain(|plan| selected_plan_ids.contains(&plan.id));
-        for plan in &mut file.challenge_plans {
-            let retained = selected_plans
-                .iter()
-                .find(|(id, _)| id == &plan.id)
-                .map(|(_, selectors)| selectors)
-                .expect("selected plan has retained selectors");
-            plan.selectors
-                .retain(|selector| retained.contains(&selector.canonical()));
-        }
     }
     model.verifications.retain(|file| {
         !file.checks.is_empty()
             || !file.bindings.is_empty()
             || !file.qualifications.is_empty()
+            || !file.claim_judgments.is_empty()
             || !file.challengers.is_empty()
             || !file.challenge_plans.is_empty()
     });
 }
 
-fn selector_relevant(
-    model: &Model,
-    selector: &Selector,
-    claims: &BTreeSet<String>,
-    bindings: &BTreeSet<String>,
-    checks: &BTreeSet<String>,
-) -> bool {
+fn selector_claims(model: &Model, selector: &Selector) -> BTreeSet<String> {
     match selector {
-        Selector::QualificationFromBinding(id) => bindings.contains(id),
-        Selector::QualificationFromCheck(id) => checks.contains(id),
-        Selector::QualificationFromRealization(identity) => model.realizes.iter().any(|site| {
-            site.source
-                .as_ref()
-                .is_some_and(|source| source.key() == *identity)
-                && claims.contains(&format!("{}#{}", site.spec, site.scenario))
-                && model.evidence_bindings().any(|binding| {
-                    binding.claim == format!("{}#{}", site.spec, site.scenario)
-                        && binding
-                            .challenge_domain
-                            .contains(&ChallengeDomain::Realization)
-                })
-        }),
-        Selector::QualificationFromMechanism(identity) => {
-            let mechanism_claims = selected_mechanism_claims(model, identity);
-            model.evidence_bindings().any(|binding| {
-                bindings.contains(&binding.id)
-                    && mechanism_claims.contains(&binding.claim)
-                    && binding
-                        .challenge_domain
-                        .contains(&ChallengeDomain::Mechanism)
+        Selector::QualificationFromBinding(id) => model
+            .evidence_bindings()
+            .filter(|binding| binding.id == *id)
+            .map(|binding| binding.claim.clone())
+            .collect(),
+        Selector::QualificationFromCheck(id) => model
+            .evidence_bindings()
+            .filter(|binding| binding.check == *id)
+            .map(|binding| binding.claim.clone())
+            .collect(),
+        Selector::QualificationFromRealization(identity)
+        | Selector::ClaimJudgmentFromRealization(identity) => model
+            .realizes
+            .iter()
+            .filter(|site| {
+                site.source
+                    .as_ref()
+                    .is_some_and(|source| source.key() == *identity)
             })
-        }
-        Selector::ClaimJudgmentFromClaim(id) => claims.contains(id),
-        Selector::ClaimJudgmentFromRealization(identity) => model.realizes.iter().any(|site| {
-            site.source
-                .as_ref()
-                .is_some_and(|source| source.key() == *identity)
-                && claims.contains(&format!("{}#{}", site.spec, site.scenario))
-        }),
-        Selector::ClaimJudgmentFromMechanism(identity) => {
+            .filter(|site| model.has_claim(&site.spec, &site.scenario))
+            .map(|site| format!("{}#{}", site.spec, site.scenario))
+            .collect(),
+        Selector::QualificationFromMechanism(identity)
+        | Selector::ClaimJudgmentFromMechanism(identity) => {
             selected_mechanism_claims(model, identity)
-                .iter()
-                .any(|claim| claims.contains(claim))
         }
+        Selector::ClaimJudgmentFromClaim(id) => model
+            .claims()
+            .filter(|claim| claim.id() == *id)
+            .map(|claim| claim.id())
+            .collect(),
     }
 }
 
@@ -605,20 +797,23 @@ fn selected_mechanism_claims(model: &Model, identity: &str) -> BTreeSet<String> 
         .filter(|claim| claim.spec.id == spec_id)
         .filter(|claim| {
             design
-                .for_scenario(&claim.scenario.id)
-                .into_iter()
-                .chain(design.for_requirement(&claim.requirement.id))
+                .entries
+                .iter()
+                .filter(|entry| match &entry.target {
+                    crate::design::Target::Requirement(id) => id == &claim.requirement.id,
+                    crate::design::Target::Scenario(id) => id == &claim.scenario.id,
+                })
                 .any(|entry| entry.mechanisms.iter().any(|item| item.id == mechanism_id))
         })
         .map(|claim| claim.id())
         .collect()
 }
 
-fn normalize_local_sources(model: &mut Model) {
-    let workspace = &model.workspace;
+fn normalize_local_sources(model: &mut Model, errors: &mut Vec<Diag>) {
+    let workspace = model.workspace.clone();
     for item in &mut model.realizes {
         item.source = local_source(
-            workspace,
+            &workspace,
             &item.file,
             address_kind(&item.lang, &item.file, &item.site),
             address_value(&item.lang, &item.file, &item.site),
@@ -626,19 +821,82 @@ fn normalize_local_sources(model: &mut Model) {
     }
     for item in &mut model.check_implementations {
         item.source = local_source(
-            workspace,
+            &workspace,
             &item.file,
             address_kind(&item.lang, &item.file, &item.site),
             address_value(&item.lang, &item.file, &item.site),
         );
     }
-    for item in &mut model.mechanism_implementations {
-        let (kind, address) = split_typed_binding(&item.binding, &item.lang);
-        item.source = local_source(workspace, &item.file, kind, address);
+    let mut rewrites = Vec::new();
+    let mut paired_artifacts = BTreeSet::new();
+    let mut reserved_raw_ids = BTreeSet::new();
+    for (implementation_index, item) in model.mechanism_implementations.iter().enumerate() {
+        let Some(kind) = manifest::mechanism_address_kind(&item.lang) else {
+            continue;
+        };
+        let raw_binding = format!("{kind}:{}", item.site);
+        reserved_raw_ids.insert(raw_binding.clone());
+        let matches = model
+            .artifacts
+            .iter()
+            .enumerate()
+            .filter(|(_, artifact)| {
+                artifact.id == raw_binding
+                    && artifact.kind == kind
+                    && artifact.file == item.file
+                    && artifact.source.is_none()
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        let [artifact_index] = matches.as_slice() else {
+            errors.push(Diag::file(
+                &item.file,
+                format!(
+                    "marker implementation `{}#{}` has no unique exact companion Artifact",
+                    item.spec, item.mechanism
+                ),
+            ));
+            continue;
+        };
+        if !paired_artifacts.insert(*artifact_index) {
+            errors.push(Diag::file(
+                &item.file,
+                format!("marker companion Artifact `{raw_binding}` has multiple targets"),
+            ));
+            continue;
+        }
+        let Some(source) = local_source(&workspace, &item.file, kind, item.site.clone()) else {
+            errors.push(Diag::file(
+                &item.file,
+                "marker implementation belongs to no declared area mount",
+            ));
+            continue;
+        };
+        rewrites.push((implementation_index, *artifact_index, source));
+    }
+    for (artifact_index, artifact) in model.artifacts.iter().enumerate() {
+        if !paired_artifacts.contains(&artifact_index) && reserved_raw_ids.contains(&artifact.id) {
+            errors.push(Diag::file(
+                &artifact.file,
+                format!(
+                    "marker companion Artifact `{}` collides with an ordinary Artifact",
+                    artifact.id
+                ),
+            ));
+        }
+    }
+    for (implementation_index, artifact_index, source) in rewrites {
+        let key = source.key();
+        let implementation = &mut model.mechanism_implementations[implementation_index];
+        implementation.binding = key.clone();
+        implementation.source = Some(source.clone());
+        let artifact = &mut model.artifacts[artifact_index];
+        artifact.id = key;
+        artifact.source = Some(source);
     }
     for item in &mut model.class_members {
         item.source = local_source(
-            workspace,
+            &workspace,
             &item.file,
             "class-member".into(),
             format!("{}#{}", item.class, item.site),
@@ -646,14 +904,58 @@ fn normalize_local_sources(model: &mut Model) {
     }
     for item in &mut model.enumerations {
         item.identity = local_source(
-            workspace,
+            &workspace,
             &item.source,
             "enumerator".into(),
             format!("{}#{}", item.class, item.kind),
         );
     }
     for item in &mut model.artifacts {
-        item.source = local_source(workspace, &item.file, item.kind.clone(), item.id.clone());
+        if item.source.is_none() {
+            item.source = local_source(&workspace, &item.file, item.kind.clone(), item.id.clone());
+        }
+    }
+}
+
+fn mechanism_route_issues(model: &Model) -> Vec<Diag> {
+    let mut issues = Vec::new();
+    for implementation in &model.mechanism_implementations {
+        let Some(source) = &implementation.source else {
+            continue;
+        };
+        let raw = format!("{}:{}", source.kind, implementation.site);
+        let assembled = source.key();
+        for design in &model.designs {
+            for mechanism in design.entries.iter().flat_map(|entry| &entry.mechanisms) {
+                if mechanism
+                    .binding
+                    .as_ref()
+                    .is_some_and(|binding| binding == &raw || binding == &assembled)
+                {
+                    issues.push(Diag::file(
+                        &design.path,
+                        format!(
+                            "explicit mechanism `{}#{}` may not bind marker-only Artifact `{}`",
+                            design.spec,
+                            mechanism.id,
+                            binding_label(&raw, &assembled, mechanism)
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+    issues
+}
+
+fn binding_label<'a>(
+    raw: &'a str,
+    assembled: &'a str,
+    mechanism: &'a crate::design::Mechanism,
+) -> &'a str {
+    match mechanism.binding.as_deref() {
+        Some(binding) if binding == raw => raw,
+        _ => assembled,
     }
 }
 
@@ -728,13 +1030,6 @@ fn address_value(language: &str, file: &str, site: &str) -> String {
     format!("{site} /{route}")
 }
 
-fn split_typed_binding(binding: &str, language: &str) -> (String, String) {
-    binding
-        .split_once(':')
-        .map(|(kind, address)| (kind.to_string(), address.to_string()))
-        .unwrap_or_else(|| (format!("{language}-symbol"), binding.to_string()))
-}
-
 fn extend_unique_facets<T>(
     target: &mut Vec<T>,
     incoming: Vec<T>,
@@ -799,4 +1094,73 @@ fn warn_if_not_sibling(
             spec.path
         ),
     ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{needs_standards, selected_mechanism_claims};
+    use crate::design::{Design, DesignEntry, Enforcement, Mechanism, Target};
+    use crate::model::Model;
+
+    fn mechanism(id: &str) -> Mechanism {
+        Mechanism {
+            id: id.into(),
+            kind: Enforcement::Guard,
+            binding: Some(format!("{id}-artifact")),
+            expected_unique: None,
+            expected_columns: Vec::new(),
+            expected_predicate: None,
+            line: 1,
+        }
+    }
+
+    #[test]
+    fn mechanism_selection_closure_reads_every_matching_design_entry() {
+        let spec = crate::spec::parse_spec(
+            "spec.md",
+            "# Spec: example\n\n## Requirement: works\nCriticality: standard\n\nThe example \
+             SHALL work.\n\n### Scenario: succeeds\nWHEN invoked\nTHEN it succeeds\n",
+        )
+        .unwrap();
+        let model = Model {
+            specs: vec![spec],
+            designs: vec![Design {
+                spec: "example".into(),
+                path: "design.md".into(),
+                entries: vec![
+                    DesignEntry {
+                        target: Target::Scenario("succeeds".into()),
+                        mechanisms: vec![mechanism("first")],
+                        line: 1,
+                    },
+                    DesignEntry {
+                        target: Target::Scenario("succeeds".into()),
+                        mechanisms: vec![mechanism("second")],
+                        line: 2,
+                    },
+                ],
+                residue: String::new(),
+            }],
+            ..Default::default()
+        };
+
+        assert_eq!(
+            selected_mechanism_claims(&model, "example#second"),
+            ["example#succeeds".to_string()].into_iter().collect()
+        );
+    }
+
+    #[test]
+    fn every_nonroutine_claim_needs_decision_standards_even_without_declarations() {
+        let spec = crate::spec::parse_spec(
+            "spec.md",
+            "# Spec: example\n\n## Requirement: works\nCriticality: standard\n\nThe example \
+             SHALL work.\n\n### Scenario: succeeds\nWHEN invoked\nTHEN it succeeds\n",
+        )
+        .unwrap();
+        assert!(needs_standards(&Model {
+            specs: vec![spec],
+            ..Default::default()
+        }));
+    }
 }

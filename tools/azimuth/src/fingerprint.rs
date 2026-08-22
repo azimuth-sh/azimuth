@@ -103,6 +103,19 @@ pub fn canonical_sha256(value: &crate::json::Json) -> String {
     format!("sha256:{}", sha256(canonical_json(value).as_bytes()))
 }
 
+/// Derives the raw SHA-256 digest of the complete model account used by planning and finalization.
+///
+/// Findings are part of the exported account, so a caller must pass the findings derived from the
+/// same complete, unselected model. Keeping this derivation here prevents execution plans and
+/// accepted change records from assigning different identities to that account.
+pub fn model_digest(
+    model: &crate::model::Model,
+    findings: &[crate::validation::Finding],
+) -> String {
+    let model_json = model.to_json(findings).to_string_pretty();
+    sha256(model_json.as_bytes())
+}
+
 pub fn check_fingerprint(
     check: &crate::verification::Check,
     implementations: &[crate::model::CheckImplementation],
@@ -136,8 +149,96 @@ pub fn check_fingerprint(
     ]))
 }
 
-pub fn policy_fingerprint(policy: &crate::verification::QualificationPolicy) -> String {
+pub fn policy_fingerprint(policy: &crate::verification::DecisionPolicy) -> String {
     canonical_sha256(&crate::verification::policy_json(policy))
+}
+
+pub fn schedule_fingerprint(schedule: &crate::verification::ChallengeSchedule) -> String {
+    canonical_sha256(&crate::verification::schedule_json(schedule))
+}
+
+pub fn challenger_fingerprint(challenger: &crate::verification::Challenger) -> String {
+    use crate::json::Json;
+    let mut required_scope = challenger.required_scope.clone();
+    required_scope.sort();
+    required_scope.dedup();
+    canonical_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-challenger-fingerprint")),
+        ("version", Json::Num(1.0)),
+        ("id", Json::str(&challenger.id)),
+        ("form", Json::str(&challenger.form)),
+        ("searches_for", Json::str(&challenger.searches_for)),
+        (
+            "required_scope",
+            Json::Arr(
+                required_scope
+                    .into_iter()
+                    .map(|kind| Json::str(kind.name()))
+                    .collect(),
+            ),
+        ),
+    ]))
+}
+
+pub fn claim_judgment_fingerprint(preimage: &crate::json::Json) -> String {
+    canonical_sha256(preimage)
+}
+
+pub fn mechanism_record_digest(record: &crate::json::Json) -> String {
+    use crate::json::Json;
+    canonical_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-mechanism-record-digest")),
+        ("version", Json::Num(1.0)),
+        ("mechanism", record.clone()),
+    ]))
+}
+
+pub fn artifact_property_digest(account: &crate::json::Json) -> String {
+    use crate::json::Json;
+    canonical_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-artifact-property-digest")),
+        ("version", Json::Num(1.0)),
+        ("artifact", account.clone()),
+    ]))
+}
+
+pub fn area_digest(id: &str) -> String {
+    use crate::json::Json;
+    canonical_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-area-digest")),
+        ("version", Json::Num(1.0)),
+        ("id", Json::str(id)),
+    ]))
+}
+
+pub fn realization_obligation_digest(claim: &str, areas: &[String]) -> String {
+    use crate::json::Json;
+    canonical_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-realization-obligation-digest")),
+        ("version", Json::Num(1.0)),
+        ("claim", Json::str(claim)),
+        ("areas", Json::Arr(areas.iter().map(Json::str).collect())),
+    ]))
+}
+
+pub fn surface_account_digest(account: &crate::json::Json) -> String {
+    use crate::json::Json;
+    canonical_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-surface-account-digest")),
+        ("version", Json::Num(1.0)),
+        ("surface", account.clone()),
+    ]))
+}
+
+pub fn enumerated_surface_member_digest(surface: &str, file: &str) -> String {
+    use crate::json::Json;
+    canonical_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-surface-member-digest")),
+        ("version", Json::Num(1.0)),
+        ("surface", Json::str(surface)),
+        ("kind", Json::str("enumerated")),
+        ("file", Json::str(file)),
+    ]))
 }
 
 pub fn binding_fingerprint(
@@ -172,7 +273,7 @@ pub fn binding_fingerprint(
             "challenge_domain",
             Json::Arr(challenge_domain.into_iter().map(Json::str).collect()),
         ),
-        ("qualification_policy_digest", Json::str(policy_digest)),
+        ("decision_policy_digest", Json::str(policy_digest)),
     ]))
 }
 

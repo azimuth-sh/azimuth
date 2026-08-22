@@ -95,8 +95,11 @@ class PublicAlphaPublicationTests(unittest.TestCase):
         state = exact_registry_state(account)
         for subject in account["subjects"]:
             if subject.get("ecosystem") == "npm":
+                # With no stable version, an exact state also has `latest` on this prerelease:
+                # npm requires `latest` to resolve and there is no better target.
                 state["targets"][subject["key"]]["distTags"] = {
-                    "alpha": account["version"]
+                    "alpha": account["version"],
+                    "latest": account["version"],
                 }
                 state["targets"][subject["key"]]["stableVersions"] = []
         return state
@@ -534,6 +537,57 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             self.assertEqual(plan["publish"], [])
             self.assertEqual(plan["normalizeNpmTags"], [])
             validate_registry_completion(account, state)
+
+    def test_stale_latest_on_an_earlier_prerelease_is_normalized_forward(self):
+        # The alpha.1 -> alpha.2 case: publishing a second prerelease leaves `latest` behind on the
+        # first, so a plain `npm install` would keep resolving the older alpha.
+        with tempfile.TemporaryDirectory() as temporary:
+            retained, candidates, _, _ = self.retained_account(Path(temporary))
+            account = public_account(retained, candidates)
+            state = self.exact_public_state(account)
+            npm_subjects = [
+                item for item in account["subjects"] if item.get("ecosystem") == "npm"
+            ]
+            self.assertTrue(npm_subjects)
+            for subject in npm_subjects:
+                state["targets"][subject["key"]]["distTags"]["latest"] = "0.1.0-alpha.1"
+
+            plan = registry_publication_plan(account, state)
+            self.assertEqual(plan["publish"], [])
+            self.assertEqual(
+                plan["normalizeNpmTags"], sorted(item["key"] for item in npm_subjects)
+            )
+            with self.assertRaisesRegex(PublicationError, "npm dist-tag drift"):
+                validate_registry_completion(account, state)
+
+    def test_normalization_moves_latest_forward_when_no_stable_version_exists(self):
+        subject = {
+            "key": "package:typescript-annotations",
+            "identity": "@azimuth-sh/annotations",
+        }
+        version = "0.1.0-alpha.2"
+        results = [
+            SimpleNamespace(stdout=b"alpha: 0.1.0-alpha.1\nlatest: 0.1.0-alpha.1\n"),
+            SimpleNamespace(stdout=b""),
+            SimpleNamespace(stdout=b""),
+            SimpleNamespace(stdout=f"alpha: {version}\nlatest: {version}\n".encode()),
+        ]
+        with patch.dict("os.environ", {"NPM_TOKEN": "secret"}, clear=True), patch(
+            "release.publication.run", side_effect=results
+        ) as npm:
+            normalize_npm_dist_tags(subject, version, [])
+        moved = [
+            call.args[0]
+            for call in npm.call_args_list
+            if call.args[0][:3] == ["npm", "dist-tag", "add"]
+        ]
+        self.assertEqual(
+            moved,
+            [
+                ["npm", "dist-tag", "add", f"@azimuth-sh/annotations@{version}", "alpha"],
+                ["npm", "dist-tag", "add", f"@azimuth-sh/annotations@{version}", "latest"],
+            ],
+        )
 
     def test_npm_latest_prerelease_with_a_stable_version_blocks_completion(self):
         with tempfile.TemporaryDirectory() as temporary:

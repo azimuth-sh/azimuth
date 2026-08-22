@@ -15,7 +15,7 @@ executable or acceptance dependencies may not.
 | `docs/glossary.md` | bounded terminology |
 | `docs/change-process.md` | change delivery, evidence and rollout guidance |
 | `azimuth/formats/` | parser contracts |
-| `azimuth/standards/` | Qualification policies for non-routine Claims |
+| `azimuth/standards/` | Decision Policies and Challenge Schedule for non-routine decisions |
 | `azimuth/changes/` | active changes; one identifier has one authority |
 | `tools/azimuth/` | Rust CLI and core |
 | `tools/extractors/` | language and structural extractors |
@@ -28,9 +28,48 @@ overrides a decision.
 ## Working rules
 
 - State claims as falsifiable propositions and distinguish decided, proposed and open work.
+- For a non-routine case Claim, `verification.md` owns Checks, Evidence Bindings, Qualifications,
+  Claim Judgments, Challengers and Challenge Plans. `azimuth/standards/verification.md` owns current
+  `Decision Policy` blocks and the one `Challenge Schedule: current`; routine Claims reject Checks,
+  bindings, Qualifications and Claim Judgments targeted to them.
 - Use `azimuth` for the tool and reserve Check for a deliberately enrolled verification method.
   Commands for the current model are `azimuth validate`, `azimuth report traceability` and
   `azimuth export`.
+- Configure short-lived provider adapters explicitly in strict `azimuth/adapters.json`; core never
+  discovers executables through `PATH`, invokes a shell or inherits the ambient environment.
+  Adapters are not daemons, webhook hosts or long-running supervisors.
+- Use `azimuth adapter verify [--config <file>]` for the configured description handshake. Use
+  `azimuth run plan --request <file>` to resolve Check-only, Challenge-only or mixed requests from
+  the complete unselected model, then `azimuth run execute --plan <file>` or
+  `azimuth run import --plan <file> --input <id>=<file>` for one bounded provider exchange.
+  Planning has no partial-model or `--only` mode.
+- Adapter content and import inputs are staged and hashed from the same opened streams. Every
+  invocation requires supported fresh process-group isolation before spawn, one bounded core
+  exchange whose deadline covers request writing, concurrent capped-stream draining and core's
+  wait, and complete response validation before atomic output.
+- Core signals the process group on every terminal path and cleans members and inherited pipes
+  while they remain in the group. Authorized descendants may escape with `setsid`, `setpgid` or
+  equivalent; core does not guarantee their termination. This is not non-escapable descendant
+  containment, a filesystem or network sandbox, daemon supervision or hostile-code isolation.
+- Use `azimuth run verify --bundle <file>...` for standalone Run-protocol consistency and
+  `azimuth run inspect --bundle <file>...` for a deterministic local account. These commands do
+  not establish current model authority or Assurance State.
+- Challenge planning preserves `selected | missing-decision | stale-decision | rejected-decision |
+  invalid-decision | inapplicable | unresolved-relation` candidates and resolves current accepted
+  Qualifications or Claim Judgments, required Decision Policy forms, `gate | scheduled` lanes,
+  semantic scope and accountable launch inputs. Each request names an explicit configured
+  capability, finite units and target cap; core never auto-selects a capability, form, provider
+  selector or broader fallback.
+- Execute and import preserve protocol-valid adverse facts. A clean Challenge Result is only a
+  negative search fact. An allowed incomplete scheduled omission has an exact
+  `challenge-selection` diagnostic and no fabricated result; `deferred` is not a result.
+- Durable ingest, authorization, retention and Assurance State remain Run-ledger work;
+  `azimuth run ingest` is not a current command. Current planning defines no cache-validity,
+  cross-Subject reuse or historical applicability inference.
+- A marker-derived mechanism uses the existing two-argument annotation and an extractor-derived,
+  ecosystem-semantic qualified `site`, exact path-free typed binding and companion Artifact.
+  Extractors fail closed on ambiguity, unsupported semantic identity or non-normal/outside-root
+  locators; a source path never disambiguates the site.
 - Evidence precedes notation: no mechanism enters the model until two structurally different
   concerns demand it in prose.
 - Framework development, pull requests and version history are authoritative in this repository.
@@ -49,6 +88,24 @@ overrides a decision.
   paths and never finalize or archive.
 - There is no backward-compatibility obligation during the alpha design phase unless an accepted
   change states one explicitly.
+
+## Adapter command boundary
+
+```text
+azimuth adapter verify [--config <file>]
+azimuth run plan --request <file> [--model <dir>] [--standards <file>] \
+  [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
+azimuth run execute --plan <file> [--predecessor <bundle>...] \
+  [--config <file>] [--out <file>]
+azimuth run import --plan <file> --input <id>=<file>... \
+  [--predecessor <bundle>...] [--config <file>] [--out <file>]
+```
+
+`--manifest`, `--predecessor` and `--input` are repeatable where shown. Execute accepts only an
+execute launch; import accepts only an import launch and at least one exact input. A successful
+plan or provider exchange writes only after complete validation and atomic replacement. Exit one
+reports semantic, identity, content, transport or bundle mismatch; exit two reports command or
+schema failure. Neither nonzero class leaves the requested output file.
 
 ## Writing and commits
 

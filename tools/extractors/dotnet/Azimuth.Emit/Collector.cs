@@ -51,6 +51,7 @@ internal static class Collector
     public sealed record MechanismImplementationEntry(
         string Spec,
         string Mechanism,
+        string Site,
         string Binding,
         string File,
         string SourceFingerprint);
@@ -93,10 +94,10 @@ internal static class Collector
         result.Realizes.Sort(Compare);
         result.CheckImplementations.Sort(CompareCheckImplementation);
         result.MechanismImplementations.Sort(CompareMechanismImplementation);
-        result.Artifacts.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));
+        result.Artifacts.Sort(CompareArtifact);
         for (var index = result.Artifacts.Count - 1; index > 0; index--)
         {
-            if (result.Artifacts[index].Id == result.Artifacts[index - 1].Id)
+            if (result.Artifacts[index] == result.Artifacts[index - 1])
             {
                 result.Artifacts.RemoveAt(index);
             }
@@ -132,8 +133,18 @@ internal static class Collector
         }
 
         var typeName = SiteName(type);
-        result.Artifacts.Add(
-            new Artifact($"dotnet-symbol:{typeName}", "dotnet-type", files.PathOf(type)));
+        var mechanismTypeSite = MetadataTypeName(type);
+        var typeFile = files.PathOf(type);
+        var typeFingerprint = ManifestFingerprint(files.FingerprintOf(type));
+        var typeMechanisms = type.GetCustomAttributesData()
+            .Where(attribute => FullName(attribute) == ImplementsMechanismName)
+            .ToArray();
+        EnsureOneMechanismTarget(mechanismTypeSite, typeMechanisms.Length);
+        if (typeMechanisms.Length == 0)
+        {
+            result.Artifacts.Add(
+                new Artifact($"dotnet-symbol:{typeName}", "dotnet-type", typeFile));
+        }
 
         foreach (var attribute in type.GetCustomAttributesData())
         {
@@ -146,22 +157,26 @@ internal static class Collector
                         spec,
                         scenario,
                         type.FullName ?? type.Name,
-                        files.PathOf(type),
-                        ManifestFingerprint(files.FingerprintOf(type)),
+                        typeFile,
+                        typeFingerprint,
                         null,
                         null,
                         null));
             }
             else if (name == ImplementsMechanismName)
             {
+                EnsureMechanismFingerprint(mechanismTypeSite, typeFingerprint);
                 var (spec, mechanism) = Pair(attribute);
+                var binding = $"dotnet-symbol:{mechanismTypeSite}";
                 result.MechanismImplementations.Add(
                     new MechanismImplementationEntry(
                         spec,
                         mechanism,
-                        $"dotnet-symbol:{typeName}",
-                        files.PathOf(type),
-                        ManifestFingerprint(files.FingerprintOf(type))));
+                        mechanismTypeSite,
+                        binding,
+                        typeFile,
+                        typeFingerprint));
+                result.Artifacts.Add(new Artifact(binding, "dotnet-symbol", typeFile));
             }
         }
 
@@ -172,11 +187,19 @@ internal static class Collector
                 continue;
             }
             var site = $"{typeName}.{method.Name}";
+            var mechanismSite = MethodSite(method);
             var file = files.PathOf(method);
             var sourceFingerprint = ManifestFingerprint(files.FingerprintOf(method));
-            result.Artifacts.Add(
-                new Artifact($"dotnet-symbol:{site}", "dotnet-method", file));
             var data = method.GetCustomAttributesData();
+            var mechanismAttributes = data
+                .Where(attribute => FullName(attribute) == ImplementsMechanismName)
+                .ToArray();
+            EnsureOneMechanismTarget(mechanismSite, mechanismAttributes.Length);
+            if (mechanismAttributes.Length == 0)
+            {
+                result.Artifacts.Add(
+                    new Artifact($"dotnet-symbol:{site}", "dotnet-method", file));
+            }
             foreach (var attribute in data)
             {
                 var name = FullName(attribute);
@@ -202,14 +225,18 @@ internal static class Collector
                 }
                 else if (name == ImplementsMechanismName)
                 {
+                    EnsureMechanismFingerprint(mechanismSite, sourceFingerprint);
                     var (spec, mechanism) = Pair(attribute);
+                    var binding = $"dotnet-symbol:{mechanismSite}";
                     result.MechanismImplementations.Add(
                         new MechanismImplementationEntry(
                             spec,
                             mechanism,
-                            $"dotnet-symbol:{site}",
+                            mechanismSite,
+                            binding,
                             file,
                             sourceFingerprint));
+                    result.Artifacts.Add(new Artifact(binding, "dotnet-symbol", file));
                 }
             }
         }
@@ -219,6 +246,67 @@ internal static class Collector
 
     private static string SiteName(Type type) =>
         (type.FullName ?? type.Name).Replace('+', '.');
+
+    private static string MethodSite(MethodInfo method)
+    {
+        var genericArity = method.IsGenericMethodDefinition
+            ? $"``{method.GetGenericArguments().Length}"
+            : string.Empty;
+        var parameters = string.Join(
+            ",",
+            method.GetParameters().Select(parameter => MetadataTypeName(parameter.ParameterType)));
+        return $"{MetadataTypeName(method.DeclaringType!)}.{method.Name}{genericArity}({parameters})";
+    }
+
+    private static string MetadataTypeName(Type type)
+    {
+        if (type.IsByRef)
+        {
+            return $"{MetadataTypeName(type.GetElementType()!)}&";
+        }
+        if (type.IsPointer)
+        {
+            return $"{MetadataTypeName(type.GetElementType()!)}*";
+        }
+        if (type.IsArray)
+        {
+            return MetadataTypeName(type.GetElementType()!)
+                + "["
+                + new string(',', type.GetArrayRank() - 1)
+                + "]";
+        }
+        if (type.IsGenericParameter)
+        {
+            return $"{(type.DeclaringMethod is null ? "!" : "!!")}{type.GenericParameterPosition}";
+        }
+        if (type.IsConstructedGenericType)
+        {
+            var definition = MetadataTypeName(type.GetGenericTypeDefinition());
+            var arguments = string.Join(
+                ",",
+                type.GetGenericArguments().Select(MetadataTypeName));
+            return $"{definition}[{arguments}]";
+        }
+        return type.FullName ?? type.Name;
+    }
+
+    private static void EnsureOneMechanismTarget(string site, int targetCount)
+    {
+        if (targetCount > 1)
+        {
+            throw new InvalidOperationException(
+                $"{site}: one qualified site cannot implement several mechanisms");
+        }
+    }
+
+    private static void EnsureMechanismFingerprint(string site, string fingerprint)
+    {
+        if (fingerprint.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"{site}: ImplementsMechanism requires an exact source fingerprint");
+        }
+    }
 
     private static void CollectIndexes(Type type, SourceFiles files, Result result)
     {
@@ -329,6 +417,17 @@ internal static class Collector
 
         var byMechanism = string.CompareOrdinal(a.Mechanism, b.Mechanism);
         return byMechanism != 0 ? byMechanism : string.CompareOrdinal(a.Binding, b.Binding);
+    }
+
+    private static int CompareArtifact(Artifact a, Artifact b)
+    {
+        var byId = string.CompareOrdinal(a.Id, b.Id);
+        if (byId != 0)
+        {
+            return byId;
+        }
+        var byKind = string.CompareOrdinal(a.Kind, b.Kind);
+        return byKind != 0 ? byKind : string.CompareOrdinal(a.File, b.File);
     }
 
     private static int CompareCheckImplementation(
@@ -445,6 +544,7 @@ internal static class Collector
             writer.WriteStartObject();
             writer.WriteString("spec", entry.Spec);
             writer.WriteString("mechanism", entry.Mechanism);
+            writer.WriteString("site", entry.Site);
             writer.WriteString("binding", entry.Binding);
             writer.WriteString("file", entry.File);
             writer.WriteString("lang", Lang);

@@ -146,7 +146,74 @@ public sealed class CollectorTests
             Collect().MechanismImplementations,
             item => item.Mechanism == "branch-selection");
         Assert.Equal("alpha", entry.Spec);
-        Assert.Equal("dotnet-symbol:Azimuth.Fixture.Production.Branching", entry.Binding);
+        Assert.Equal("Azimuth.Fixture.Production.Branching()", entry.Site);
+        Assert.Equal($"dotnet-symbol:{entry.Site}", entry.Binding);
+        Assert.DoesNotContain(entry.File, entry.Binding, StringComparison.Ordinal);
+        Assert.Matches("^sha256:[0-9a-f]{64}$", entry.SourceFingerprint);
+        var artifact = Assert.Single(Collect().Artifacts, item => item.Id == entry.Binding);
+        Assert.Equal("dotnet-symbol", artifact.Kind);
+        Assert.Equal(entry.File, artifact.File);
+    }
+
+    [Fact]
+    public void Mechanism_sites_include_overload_descriptors_and_nested_types()
+    {
+        var entries = Collect().MechanismImplementations;
+        Assert.Contains(entries, item =>
+            item.Site == "Azimuth.Fixture.Production.Guard(System.Int32)");
+        Assert.Contains(entries, item =>
+            item.Site == "Azimuth.Fixture.Production.Guard(System.String)");
+        Assert.Contains(entries, item =>
+            item.Site == "Azimuth.Fixture.Production+Nested.Guard(System.Guid)");
+        Assert.Equal(entries.Count, entries.Select(item => item.Site).Distinct().Count());
+    }
+
+    [Fact]
+    public void Mechanism_identity_survives_locator_root_changes()
+    {
+        var baseline = Collect().MechanismImplementations.Single(
+            item => item.Mechanism == "branch-selection");
+        var normalizedFile = baseline.File.Replace('\\', '/');
+        var markerIndex = normalizedFile.IndexOf("/tools/extractors/", StringComparison.Ordinal);
+        Assert.True(markerIndex > 0);
+        var relocated = Collector.Collect(
+                [typeof(Azimuth.Fixture.Production).Assembly],
+                normalizedFile[..markerIndex])
+            .MechanismImplementations.Single(item => item.Mechanism == "branch-selection");
+
+        Assert.Equal(baseline.Site, relocated.Site);
+        Assert.Equal(baseline.Binding, relocated.Binding);
+        Assert.Equal(baseline.SourceFingerprint, relocated.SourceFingerprint);
+        Assert.NotEqual(baseline.File, relocated.File);
+    }
+
+    [Fact]
+    public void One_qualified_site_cannot_name_several_mechanisms()
+    {
+        var assembly = System.Reflection.Emit.AssemblyBuilder.DefineDynamicAssembly(
+            new System.Reflection.AssemblyName("Azimuth.Collision"),
+            System.Reflection.Emit.AssemblyBuilderAccess.Run);
+        var module = assembly.DefineDynamicModule("main");
+        var type = module.DefineType("Collision.Site", System.Reflection.TypeAttributes.Public);
+        var method = type.DefineMethod(
+            "Guard",
+            System.Reflection.MethodAttributes.Public | System.Reflection.MethodAttributes.Static,
+            typeof(void),
+            Type.EmptyTypes);
+        method.GetILGenerator().Emit(System.Reflection.Emit.OpCodes.Ret);
+        var constructor = typeof(Azimuth.Annotations.ImplementsMechanismAttribute)
+            .GetConstructor([typeof(string), typeof(string)])!;
+        method.SetCustomAttribute(new System.Reflection.Emit.CustomAttributeBuilder(
+            constructor,
+            ["alpha", "first"]));
+        method.SetCustomAttribute(new System.Reflection.Emit.CustomAttributeBuilder(
+            constructor,
+            ["alpha", "second"]));
+        type.CreateType();
+
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            Collector.Collect([assembly], Directory.GetCurrentDirectory()));
+        Assert.Contains("cannot implement several mechanisms", error.Message);
     }
 
     [Fact]
@@ -216,7 +283,26 @@ public sealed class CollectorTests
         Assert.False(realizes.TryGetProperty("scope", out _));
 
         Assert.NotEmpty(root.GetProperty("check_implementations").EnumerateArray());
-        Assert.NotEmpty(root.GetProperty("mechanism_implementations").EnumerateArray());
+        var mechanismImplementation = root.GetProperty("mechanism_implementations")[0];
+        Assert.Equal(
+            new[]
+            {
+                "spec",
+                "mechanism",
+                "site",
+                "binding",
+                "file",
+                "lang",
+                "source_fingerprint",
+            },
+            mechanismImplementation.EnumerateObject().Select(property => property.Name));
+        Assert.StartsWith(
+            "dotnet-symbol:",
+            mechanismImplementation.GetProperty("binding").GetString());
+        Assert.DoesNotContain(
+            mechanismImplementation.GetProperty("file").GetString()!,
+            mechanismImplementation.GetProperty("binding").GetString()!,
+            StringComparison.Ordinal);
         Assert.NotEmpty(root.GetProperty("artifacts").EnumerateArray());
         Assert.False(root.TryGetProperty("covers", out _));
         Assert.False(root.TryGetProperty("mechanism_covers", out _));

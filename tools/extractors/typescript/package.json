@@ -1,6 +1,6 @@
 {
   "name": "@azimuth-sh/emit",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "Static-scan emitter: TypeScript linkage tags to the Azimuth manifest.",
   "license": "Apache-2.0",
   "type": "commonjs",
@@ -21,9 +21,10 @@
     "azimuth-emit-ts": "dist/cli.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
     "prepack": "npm run build",
-    "test": "node --test dist/*.test.js"
+    "test": "npm run build && node --test dist/*.test.js"
   },
   "dependencies": { "typescript": "^5.9.3" },
   "devDependencies": { "@types/node": "^22.10.0" }

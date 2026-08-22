@@ -51,7 +51,8 @@ facets are applicable depends on criticality.
 
 **Evidence facet** — the repository-owned account of which deliberately enrolled methods bear on
 which case-level Claims and why they are credible. Recorded through Checks, Evidence Bindings and
-Qualifications in `verification.md`. It contains no execution result.
+Qualifications plus total-composition Claim Judgments in `verification.md`. It contains no
+execution result.
 
 **Residue** — knowledge that belongs to no Claim, such as orientation, danger zones and
 deliberately absent behavior. It is outside the model and creates no assurance relation.
@@ -62,7 +63,7 @@ authorship rights.
 
 **Repository authority** — durable model meaning owned and reviewed with source: Claims,
 criticality, mechanisms, Checks, Evidence Bindings, Qualifications, Challengers, Challenge Plans,
-standards and rationale.
+Claim Judgments, Decision Policies, the Challenge Schedule, standards and rationale.
 
 ## Verification graph
 
@@ -76,7 +77,7 @@ but declares no Claim relation or evidence form. Several sites may compose one C
 
 **Evidence Binding** — one repository-owned relation from a Check's atomic terminal proposition to
 one case-level Claim. It states the edge proposition, evidence form, exact required context,
-challenge domain and Qualification policy. Each `(Check, Claim)` pair is unique.
+challenge domain and Decision Policy. Each `(Check, Claim)` pair is unique.
 
 **Scope** — `unit | component | e2e`, defined by what must be real for the Check rather than by
 how many processes happen to execute.
@@ -104,22 +105,37 @@ neither records an execution nor establishes that the Claim is satisfied.
 exact-context fingerprints. Semantic source and Claim changes stale it; paths, line numbers,
 mounts, criticality and explanatory prose do not.
 
-**Qualification policy** — a project standard naming the Challenger forms required for an
-evidentiary class. Its content participates in dependent binding fingerprints. Declaring a policy
-does not execute a Challenger.
+**Decision Policy** — a project standard naming the open Challenger forms required for an Evidence
+Binding or Claim Judgment. Its id and sorted forms participate in dependent decision identity.
+Declaring coverage does not execute a Challenger or make a decision credible.
 
-**Challenger** — a method that searches for a reason to distrust a Qualification. The proposition,
-not the executable brand, determines the role. Challengers are not recursively qualified in alpha
+**Challenge Schedule** — the one project account assigning every required or declared Challenge
+form exactly once to `gate | scheduled`. The lane affects model, semantic Plan and selection
+identity but never Qualification, Claim Judgment, policy or Challenger identity.
+
+**Challenger** — a method that searches for a reason to distrust a Qualification or Claim
+Judgment. The proposition, not the executable brand, determines the role. It declares one open
+form and required closed semantic scope kinds. Challengers are not recursively qualified in alpha
 2.
 
 **Challenge Plan** — a repository declaration that pairs one Challenger with semantic selectors
-for exact current decision fingerprints. Current selectors can traverse bindings, Checks,
-realizations and mechanisms to Qualifications. Resolution is sorted and deduplicated; zero matches
-are a Finding, never an implicit whole-suite fallback.
+for exact current decision fingerprints. Its seven forms select Qualifications from bindings,
+Checks, realizations or mechanisms and Claim Judgments from Claims, realizations or mechanisms.
+Resolution retains every candidate disposition; zero selection is a Finding, never an implicit
+whole-suite fallback.
 
-**Claim Judgment** — the future reviewed decision about the total assurance composition for one
-Claim. It is distinct from a binding-level Qualification. Alpha 2 reserves Challenge Plan selector
-syntax for it but has no current authoring format or command.
+**Challenge candidate disposition** — exactly `selected | missing-decision | stale-decision |
+rejected-decision | invalid-decision | inapplicable | unresolved-relation`. Only a current positive
+decision is selected. Adverse siblings remain visible.
+
+**Claim Judgment** — the repository-owned `accepted | rejected` decision about one standard or
+critical case Claim's total applicable composition. Its id is the Claim id. Only a structurally
+valid, fingerprint-current accepted Judgment is executable. It is distinct from a binding-level
+Qualification, a Challenge Result and Subject-specific Assurance State.
+
+**Decision impact edge** — the pure projection from a challenged Qualification fingerprint through
+its binding and Claim to the current Claim Judgment, or from a direct Judgment target to its Claim.
+It never creates a second direct Judgment Challenge Result.
 
 **Ordinary engineering test** — an unenrolled native test used to build confidence in the
 implementation. It creates no Azimuth evidence relation and needs no exemption. All tests for the
@@ -145,13 +161,30 @@ implementation or Check implementation only. They do not assign evidence meaning
 realization path. It is keyed by `(spec-id, case-id)` and carries no evidence form.
 
 **`implements-mechanism`** — a production relation binding a compiler-resolved symbol to one
-declared design mechanism.
+declared design mechanism. Its source annotation retains exactly the spec and mechanism arguments;
+the extractor derives qualified identity.
+
+**Mechanism implementation site** — the ecosystem-semantic qualified `site` emitted with one
+marker-derived mechanism implementation. .NET uses namespace/type/method/metadata signature; JVM
+uses binary class/method/descriptor; TypeScript and JavaScript use package/module/receiver/symbol
+and canonical overloads; Go uses import path/receiver/function/typed signature with positional
+generics; Python uses the one root-relative module and `__qualname__`; Rust uses a conventional
+Cargo target, reachable module and normalized declared signature whose type-path spelling remains
+semantic; C++ accepts only an external-linkage, non-module, non-template, unconstrained
+program-global declaration and uses its qualified name and canonical function type. Ambiguity
+fails rather than consulting a file.
+
+**Marker companion** — the exact Artifact paired with one raw mechanism implementation by
+`(id, kind, file)`. The raw implementation has exactly seven fields and binding
+`<address-kind>:<site>`; companion id equals that binding. Assembly atomically rewrites both ids to
+`<area>|<address-kind>|<site>`. It is marker-only and cannot also satisfy an explicit Design
+binding.
 
 **`ImplementsCheck`** — source linkage from one resolved implementation site to one project-global
 Check id. The Evidence Binding remains repository-owned.
 
 **Design binding** — the single machine-addressable artifact resolved for a design mechanism. It
-may be explicit for a non-code artifact or derived from one implementation tag.
+may be explicit for a non-code artifact or derived with one implementation tag and its companion.
 
 **Delivery topology** — the exchange, bindings, queues and failure routes that connect a brokered
 producer to consumers. It is a realization site when correct routing is part of the Claim.
@@ -190,12 +223,12 @@ registry drives detailed output and counts.
 reports Findings without executing Checks.
 
 **Traceability report** — a pure derived view of selected case-level Claims, ordered realization
-identities and Check relationships. `azimuth report traceability` creates no authored authority or
-execution fact.
+identities, Check relationships, Challenge resolutions and decision-impact edges. `azimuth report
+traceability` creates no authored authority, direct Judgment Result or execution fact.
 
 **Export** — the complete derived repository model serialized as format version 2 by
-`azimuth export`. It includes Findings and verification graph declarations, but no runtime ledger
-data. Alpha 2 has no assurance-specific export.
+`azimuth export`. It includes Findings, decisions, Challenge resolutions and verification graph
+declarations, but no runtime ledger data. Alpha 2 has no assurance-specific export.
 
 **Machine tier** — deterministic model validation. It reports structural Findings and cannot
 establish truth.
@@ -245,31 +278,94 @@ change. It gates the mechanical archive move and contains no authored risk decis
 **Rollout** — exposure of an accepted artifact across environments or user populations. It is
 normally outside the change model.
 
-## Deferred runtime concepts
+## Run and runtime concepts
 
-The following meanings are accepted by D43, but their public formats and orchestration are not
-implemented in the alpha 2 repository cut.
+**Subject** — the exact workspace, CI candidate, artifact, deployment, service or bounded
+monitoring window about which a Run asserts execution facts. The
+[`azimuth-run-bundle` format](../azimuth/formats/run-bundle.md) defines the closed Subject variants;
+provider locators remain provenance rather than exact state.
 
-**Subject** — the exact workspace, candidate, artifact, deployment, service or bounded monitoring
-window about which execution facts are asserted.
+**Run** — one bounded, provider-neutral logical execution over one exact Subject and semantic
+plan. Native processes, parameters, shards and retries are subordinate details. A Check executes
+inside a Run and never emits one.
 
-**Run** — a bounded, provider-neutral execution envelope over one exact Subject. It may eventually
-contain Check and Challenger executions; a Check executes inside a Run and never emits one.
+**Semantic Plan** — the provider-neutral selection inside a Run bundle. It freezes complete-model
+identity, exact context, Check implementations, Challenger targets, schedule lanes, semantic scope
+and finite work units without naming an adapter or native selector.
 
-**Observation** — the future terminal `satisfied | violated | inconclusive` result for one
-`(Run, Check)`. It is an execution fact, not an Evidence Binding or Qualification.
+**Semantic Challenge scope** — the sorted, unique provider-neutral account of selector anchors and
+complete decision inputs for one Challenge selection. Every item has a closed kind, stable id and
+canonical fingerprint. Overlapping selectors union scope; conflicting fingerprints fail.
 
-**Challenge Result** — the future terminal `clean | findings | inconclusive` result targeting one
-exact reviewed decision fingerprint. A clean result is negative search, not positive product
-evidence.
+**Accountable launch input** — the exact route-local projection of one source-backed semantic
+scope item. It repeats kind, id and fingerprint plus a strict source, Artifact, enumeration or
+surface-member locator account. Locators affect launch identity, never semantic Plan identity.
+
+**Run launch plan** — the strict provider-routing account that binds one exact Subject, planned
+time, `execute | import` operation and complete semantic Plan to one configured adapter and one
+capability route per selection. Changing a route changes launch identity and the derived Run id.
+
+**Run bundle** — one strict immutable JSON revision accounting for a Run's Subject, context,
+planned and actual semantic selection, activities, attempts, terminal results and provenance.
+Versioned canonical fingerprints identify its semantic components and complete content.
+
+**Observation** — the terminal `satisfied | violated | inconclusive` result for one actually
+selected Check in one Run. It is an execution fact, not an Evidence Binding or Qualification, and
+is not copied for every binding.
+
+**Challenge Result** — the terminal `clean | findings | inconclusive` result for one selected
+Challenger and exact Qualification or Claim Judgment target fingerprint. A clean result records a
+negative search, not positive product evidence.
+
+**Scheduled omission** — absence of one planned `scheduled` Challenge from an incomplete Run. It
+has exactly one execution diagnostic scoped to the Challenge-selection id and no Challenge Result.
+It is not a fourth result and does not make the selection disappear from the Plan.
+
+**Correction** — the complete next immutable revision of one Run bundle. It names its immediate
+predecessor and preserves Run identity, Subject, plan, required and actual context, source system
+and execution, started time, adapter identity and version, descriptor, configuration, launch,
+capability routes, complete normalizer and planned time. Import-input identities are protected per
+revision but may change when later bytes from the same native execution arrive through the frozen
+route. A correction is not a patch or timestamp-selected winner.
+
+**Protocol-valid** — internally consistent under the Run-bundle schema, identities, selection,
+reduction, references and correction rules. It says neither that repository fingerprints are
+current nor that Assurance State is acceptable.
 
 **Assurance State** — a future dynamic conclusion for one exact Subject, derived from repository
 decisions and accepted execution facts.
 
-**Adapter** — a deferred provider-family integration that will translate core-selected semantic
-targets to native selectors and return normalized results without interpreting the repository
-model independently.
+**Adapter** — an explicitly configured, short-lived provider process that translates core-selected
+semantic targets to native work or imports an exact native report. It returns a provider-neutral
+Run bundle and never interprets repository meaning independently. Core invokes it without a shell,
+`PATH` discovery or ambient environment inheritance.
+
+**Adapter configuration** — the strict `azimuth/adapters.json` account that pins adapter and
+provider identity, executable and resource content, description, exact non-secret settings and
+environment literals, process limits and capabilities. Locators do not substitute for content
+identity.
+
+**Capability class** — one of the closed semantic adapter roles `model.extract`, `check.execute`,
+`check.import`, `challenge.execute` and `challenge.import`. `model.extract` is declared but has no
+current execution command.
+
+**Configured capability address** — the open `<adapter-id>/<capability-id>` route identity for one
+configured capability. It is distinct from the open provider-family identity and from an open
+Challenge form.
+
+**Bounded adapter exchange** — one strict request and response with same-stream content staging, a
+cleared child environment, independent output bounds and one deadline for core request writing,
+response and diagnostic reads and process wait. On supported hosts, the adapter starts in a fresh
+process group and core signals remaining group members on every terminal path. Authorized code may
+use `setsid`, `setpgid` or an equivalent to leave the group; it cannot extend core's wait beyond the
+deadline, but its termination is not guaranteed. This is not non-escapable descendant containment,
+daemon supervision, hostile-code isolation or a filesystem or network sandbox.
+
+A protocol-valid adapter-returned `timed-out` Run is an execution fact and exits zero only when its
+complete response arrives within that deadline. A host-enforced deadline is a transport timeout,
+exits one and publishes no bundle.
 
 **Assurance Service** — the optional future durable ledger for accepted Runs and derived Assurance
-State. D42's version 1 service wire remains isolated until the Run-ledger replacement; it is not an
-alpha 2 repository-model format.
+State. D42's version 1 service wire remains isolated until the Run-ledger replacement; it is neither
+the alpha 2 repository-model format nor the Run-bundle protocol. No current adapter is a
+long-running service or webhook bridge.

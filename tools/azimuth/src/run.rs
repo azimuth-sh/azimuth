@@ -1,4 +1,4 @@
-//! Strict provider-neutral Run bundle protocol (D46).
+//! Strict provider-neutral Run bundle and accountable launch-route protocol (D46 through D48).
 
 use crate::diag::validate_id;
 use crate::fingerprint::sha256;
@@ -166,7 +166,83 @@ pub struct ChallengeSelection {
     pub id: String,
     pub challenger: ChallengerRef,
     pub target: ChallengeTarget,
+    pub lane: ChallengeLane,
+    pub scope: ChallengeScope,
     pub units: Vec<WorkUnit>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChallengeLane {
+    Gate,
+    Scheduled,
+}
+
+impl ChallengeLane {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Gate => "gate",
+            Self::Scheduled => "scheduled",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChallengeScope {
+    pub anchors: Vec<ChallengeScopeItem>,
+    pub inputs: Vec<ChallengeScopeItem>,
+    pub fingerprint: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ChallengeScopeItem {
+    pub kind: ChallengeScopeKind,
+    pub id: String,
+    pub fingerprint: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ChallengeScopeKind {
+    Claim,
+    Binding,
+    Qualification,
+    ClaimJudgment,
+    Check,
+    CheckImplementation,
+    Realization,
+    Mechanism,
+    MechanismImplementation,
+    Artifact,
+    Context,
+    Policy,
+    Area,
+    RealizationObligation,
+    Surface,
+    SurfaceMember,
+    Enumeration,
+}
+
+impl ChallengeScopeKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Claim => "claim",
+            Self::Binding => "binding",
+            Self::Qualification => "qualification",
+            Self::ClaimJudgment => "claim-judgment",
+            Self::Check => "check",
+            Self::CheckImplementation => "check-implementation",
+            Self::Realization => "realization",
+            Self::Mechanism => "mechanism",
+            Self::MechanismImplementation => "mechanism-implementation",
+            Self::Artifact => "artifact",
+            Self::Context => "context",
+            Self::Policy => "policy",
+            Self::Area => "area",
+            Self::RealizationObligation => "realization-obligation",
+            Self::Surface => "surface",
+            Self::SurfaceMember => "surface-member",
+            Self::Enumeration => "enumeration",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -202,6 +278,7 @@ pub struct Provenance {
     pub mode: ProvenanceMode,
     pub source: SourceProvenance,
     pub normalizer: Normalizer,
+    pub adapter: AdapterProvenance,
     pub generated_at_ms: u64,
     pub principal: Option<String>,
     pub attributes: Option<BTreeMap<String, String>>,
@@ -233,7 +310,160 @@ pub struct SourceProvenance {
 pub struct Normalizer {
     pub id: String,
     pub version: String,
-    pub build_fingerprint: Option<String>,
+    pub build_fingerprint: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdapterProvenance {
+    pub id: String,
+    pub adapter_version: String,
+    pub adapter_fingerprint: String,
+    pub descriptor_fingerprint: String,
+    pub configuration_fingerprint: String,
+    pub launch_fingerprint: String,
+    pub routes: Vec<LaunchRoute>,
+    pub import_inputs: Vec<ImportInputIdentity>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchAdapterIdentity {
+    pub id: String,
+    pub adapter_version: String,
+    pub adapter_fingerprint: String,
+    pub descriptor_fingerprint: String,
+    pub configuration_fingerprint: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchRoute {
+    pub selection: RouteSelection,
+    pub capability: RouteCapability,
+    pub inputs: Vec<LaunchInput>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RouteSelection {
+    pub kind: RouteSelectionKind,
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RouteSelectionKind {
+    Check,
+    Challenge,
+}
+
+impl RouteSelectionKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Check => "check",
+            Self::Challenge => "challenge",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RouteCapability {
+    pub address: String,
+    pub class: RouteCapabilityClass,
+    pub challenge_form: Option<String>,
+    pub fingerprint: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RouteCapabilityClass {
+    CheckExecute,
+    CheckImport,
+    ChallengeExecute,
+    ChallengeImport,
+}
+
+impl RouteCapabilityClass {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::CheckExecute => "check.execute",
+            Self::CheckImport => "check.import",
+            Self::ChallengeExecute => "challenge.execute",
+            Self::ChallengeImport => "challenge.import",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct LaunchInput {
+    pub kind: LaunchInputKind,
+    pub id: String,
+    pub fingerprint: String,
+    pub source: LaunchInputSource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum LaunchInputKind {
+    CheckImplementation,
+    Realization,
+    MechanismImplementation,
+    Artifact,
+    SurfaceMember,
+    Enumeration,
+}
+
+impl LaunchInputKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::CheckImplementation => "check-implementation",
+            Self::Realization => "realization",
+            Self::MechanismImplementation => "mechanism-implementation",
+            Self::Artifact => "artifact",
+            Self::SurfaceMember => "surface-member",
+            Self::Enumeration => "enumeration",
+        }
+    }
+
+    fn from_scope_kind(kind: ChallengeScopeKind) -> Option<Self> {
+        match kind {
+            ChallengeScopeKind::CheckImplementation => Some(Self::CheckImplementation),
+            ChallengeScopeKind::Realization => Some(Self::Realization),
+            ChallengeScopeKind::MechanismImplementation => Some(Self::MechanismImplementation),
+            ChallengeScopeKind::Artifact => Some(Self::Artifact),
+            ChallengeScopeKind::SurfaceMember => Some(Self::SurfaceMember),
+            ChallengeScopeKind::Enumeration => Some(Self::Enumeration),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum LaunchInputSource {
+    Source {
+        file: String,
+        language: String,
+        site: String,
+    },
+    Artifact {
+        file: String,
+        artifact_kind: String,
+        identity: String,
+        unique: Option<bool>,
+        columns: Vec<String>,
+        predicate: Option<String>,
+    },
+    Enumeration {
+        file: String,
+        enumerator_kind: String,
+        identity: String,
+    },
+    SurfaceMember {
+        file: String,
+        language: String,
+        site: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ImportInputIdentity {
+    pub id: String,
+    pub digest: String,
+    pub size_bytes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -318,6 +548,7 @@ pub enum DiagnosticScope {
     Run,
     Activity(String),
     CheckExecution(String),
+    ChallengeSelection(String),
     ChallengerExecution {
         challenger_fingerprint: String,
         target_fingerprint: String,
@@ -467,24 +698,26 @@ pub fn load(path: &Path) -> Result<RunBundle, Vec<SchemaError>> {
 }
 
 pub fn parse(path: &str, source: &str) -> Result<RunBundle, Vec<SchemaError>> {
-    let root = strict_json_parse(source).map_err(|detail| {
-        vec![SchemaError {
-            path: path.to_string(),
-            detail: format!("malformed JSON: {detail}"),
-        }]
-    })?;
-    if let Err(detail) = reject_duplicate_keys(&root, "$".into()) {
-        return Err(vec![SchemaError {
-            path: path.to_string(),
-            detail,
-        }]);
-    }
+    let root = strict_json(path, source).map_err(|error| vec![error])?;
     parse_root(&root).map_err(|detail| {
         vec![SchemaError {
             path: path.to_string(),
             detail,
         }]
     })
+}
+
+/// Parses one strict JSON document while preserving object fields for duplicate detection.
+pub fn strict_json(path: &str, source: &str) -> Result<Json, SchemaError> {
+    let root = strict_json_parse(source).map_err(|detail| SchemaError {
+        path: path.to_string(),
+        detail: format!("malformed JSON: {detail}"),
+    })?;
+    reject_duplicate_keys(&root, "$".into()).map_err(|detail| SchemaError {
+        path: path.to_string(),
+        detail,
+    })?;
+    Ok(root)
 }
 
 fn strict_json_parse(source: &str) -> Result<Json, String> {
@@ -499,6 +732,39 @@ fn strict_json_parse(source: &str) -> Result<Json, String> {
         return Err(parser.error("trailing content"));
     }
     Ok(value)
+}
+
+/// Parses one strict D46 Subject value without deriving product-state content.
+pub fn subject_from_json(value: &Json) -> Result<Subject, String> {
+    reject_duplicate_keys(value, "$".into())?;
+    parse_subject(value, "$")
+}
+
+/// Parses one strict D46 semantic Plan value.
+pub fn plan_from_json(value: &Json) -> Result<Plan, String> {
+    reject_duplicate_keys(value, "$".into())?;
+    parse_plan(value, "$")
+}
+
+/// Parses one strict D47 provenance value.
+pub fn provenance_from_json(value: &Json) -> Result<Provenance, String> {
+    reject_duplicate_keys(value, "$".into())?;
+    parse_provenance(value, "$")
+}
+
+pub fn adapter_provenance_from_json(value: &Json) -> Result<AdapterProvenance, String> {
+    reject_duplicate_keys(value, "$".into())?;
+    parse_adapter_provenance(value, "$")
+}
+
+pub fn launch_route_from_json(value: &Json) -> Result<LaunchRoute, String> {
+    reject_duplicate_keys(value, "$".into())?;
+    parse_launch_route(value, "$")
+}
+
+pub fn import_input_from_json(value: &Json) -> Result<ImportInputIdentity, String> {
+    reject_duplicate_keys(value, "$".into())?;
+    parse_import_input(value, "$")
 }
 
 struct StrictJson<'a> {
@@ -729,10 +995,63 @@ impl StrictJson<'_> {
         }
         let text = std::str::from_utf8(&self.bytes[start..self.position])
             .map_err(|_| self.error("invalid number"))?;
-        let value = text
-            .parse::<f64>()
-            .map_err(|_| self.error("invalid number"))?;
-        Ok(Json::Num(value))
+        let value = safe_integer_lexeme(text)
+            .ok_or_else(|| self.error("number must be a non-negative safe integer"))?;
+        Ok(Json::Num(value as f64))
+    }
+}
+
+fn safe_integer_lexeme(text: &str) -> Option<u64> {
+    let (negative, unsigned) = match text.strip_prefix('-') {
+        Some(unsigned) => (true, unsigned),
+        None => (false, text),
+    };
+    let (mantissa, exponent_text) = unsigned
+        .split_once(['e', 'E'])
+        .map_or((unsigned, None), |(mantissa, exponent)| {
+            (mantissa, Some(exponent))
+        });
+    let (whole, fraction) = mantissa
+        .split_once('.')
+        .map_or((mantissa, ""), |(whole, fraction)| (whole, fraction));
+    let mut digits = String::with_capacity(whole.len() + fraction.len());
+    digits.push_str(whole);
+    digits.push_str(fraction);
+    let digits = digits.trim_start_matches('0');
+    if digits.is_empty() {
+        return Some(0);
+    }
+    if negative {
+        return None;
+    }
+    let exponent = match exponent_text {
+        Some(exponent) => exponent.parse::<i128>().ok()?,
+        None => 0,
+    };
+    let shift = exponent.checked_sub(fraction.len() as i128)?;
+    if shift >= 0 {
+        let shift = usize::try_from(shift).ok()?;
+        if digits.len().checked_add(shift)? > 16 {
+            return None;
+        }
+        let value = digits.parse::<u64>().ok()?;
+        let scale = 10_u64.checked_pow(u32::try_from(shift).ok()?)?;
+        let value = value.checked_mul(scale)?;
+        (value <= MAX_SAFE_INTEGER).then_some(value)
+    } else {
+        let discarded = usize::try_from(shift.checked_neg()?).ok()?;
+        if discarded >= digits.len() {
+            return None;
+        }
+        let split = digits.len() - discarded;
+        if !digits.as_bytes()[split..]
+            .iter()
+            .all(|digit| *digit == b'0')
+        {
+            return None;
+        }
+        let value = digits[..split].parse::<u64>().ok()?;
+        (value <= MAX_SAFE_INTEGER).then_some(value)
     }
 }
 
@@ -1031,8 +1350,17 @@ fn parse_work_unit(value: &Json, where_: &str) -> Result<WorkUnit, String> {
 }
 
 fn parse_challenge_selection(value: &Json, where_: &str) -> Result<ChallengeSelection, String> {
-    let object = object(value, where_, &["id", "challenger", "target", "units"])?;
+    let object = object(
+        value,
+        where_,
+        &["id", "challenger", "target", "lane", "scope", "units"],
+    )?;
     let units = parse_array(object, "units", where_, parse_work_unit)?;
+    let lane = match string(object, "lane", where_)? {
+        "gate" => ChallengeLane::Gate,
+        "scheduled" => ChallengeLane::Scheduled,
+        other => return Err(format!("{where_}.lane has unsupported value `{other}`")),
+    };
     Ok(ChallengeSelection {
         id: id(object, "id", where_)?,
         challenger: parse_challenger_ref(
@@ -1043,7 +1371,50 @@ fn parse_challenge_selection(value: &Json, where_: &str) -> Result<ChallengeSele
             required(object, "target", where_)?,
             &format!("{where_}.target"),
         )?,
+        lane,
+        scope: parse_challenge_scope(
+            required(object, "scope", where_)?,
+            &format!("{where_}.scope"),
+        )?,
         units,
+    })
+}
+
+fn parse_challenge_scope(value: &Json, where_: &str) -> Result<ChallengeScope, String> {
+    let object = object(value, where_, &["anchors", "inputs", "fingerprint"])?;
+    Ok(ChallengeScope {
+        anchors: parse_array(object, "anchors", where_, parse_challenge_scope_item)?,
+        inputs: parse_array(object, "inputs", where_, parse_challenge_scope_item)?,
+        fingerprint: fingerprint(object, "fingerprint", where_)?,
+    })
+}
+
+fn parse_challenge_scope_item(value: &Json, where_: &str) -> Result<ChallengeScopeItem, String> {
+    let object = object(value, where_, &["kind", "id", "fingerprint"])?;
+    let kind = match string(object, "kind", where_)? {
+        "claim" => ChallengeScopeKind::Claim,
+        "binding" => ChallengeScopeKind::Binding,
+        "qualification" => ChallengeScopeKind::Qualification,
+        "claim-judgment" => ChallengeScopeKind::ClaimJudgment,
+        "check" => ChallengeScopeKind::Check,
+        "check-implementation" => ChallengeScopeKind::CheckImplementation,
+        "realization" => ChallengeScopeKind::Realization,
+        "mechanism" => ChallengeScopeKind::Mechanism,
+        "mechanism-implementation" => ChallengeScopeKind::MechanismImplementation,
+        "artifact" => ChallengeScopeKind::Artifact,
+        "context" => ChallengeScopeKind::Context,
+        "policy" => ChallengeScopeKind::Policy,
+        "area" => ChallengeScopeKind::Area,
+        "realization-obligation" => ChallengeScopeKind::RealizationObligation,
+        "surface" => ChallengeScopeKind::Surface,
+        "surface-member" => ChallengeScopeKind::SurfaceMember,
+        "enumeration" => ChallengeScopeKind::Enumeration,
+        other => return Err(format!("{where_}.kind has unsupported value `{other}`")),
+    };
+    Ok(ChallengeScopeItem {
+        kind,
+        id: nonempty(object, "id", where_)?,
+        fingerprint: fingerprint(object, "fingerprint", where_)?,
     })
 }
 
@@ -1086,6 +1457,7 @@ fn parse_provenance(value: &Json, where_: &str) -> Result<Provenance, String> {
             "mode",
             "source",
             "normalizer",
+            "adapter",
             "generated_at_ms",
             "principal",
             "attributes",
@@ -1108,6 +1480,8 @@ fn parse_provenance(value: &Json, where_: &str) -> Result<Provenance, String> {
         &normalizer_where,
         &["id", "version", "build_fingerprint"],
     )?;
+    let adapter_where = format!("{where_}.adapter");
+    let adapter = parse_adapter_provenance(required(fields, "adapter", where_)?, &adapter_where)?;
     Ok(Provenance {
         mode,
         source: SourceProvenance {
@@ -1118,15 +1492,225 @@ fn parse_provenance(value: &Json, where_: &str) -> Result<Provenance, String> {
         normalizer: Normalizer {
             id: id(normalizer, "id", &normalizer_where)?,
             version: nonempty(normalizer, "version", &normalizer_where)?,
-            build_fingerprint: optional_fingerprint(
-                normalizer,
-                "build_fingerprint",
-                &normalizer_where,
-            )?,
+            build_fingerprint: fingerprint(normalizer, "build_fingerprint", &normalizer_where)?,
         },
+        adapter,
         generated_at_ms: integer(fields, "generated_at_ms", where_)?,
         principal: optional_nonempty(fields, "principal", where_)?,
         attributes: optional_string_map(fields, "attributes", where_)?,
+    })
+}
+
+fn parse_adapter_provenance(value: &Json, where_: &str) -> Result<AdapterProvenance, String> {
+    let object = object(
+        value,
+        where_,
+        &[
+            "id",
+            "adapter_version",
+            "adapter_fingerprint",
+            "descriptor_fingerprint",
+            "configuration_fingerprint",
+            "launch_fingerprint",
+            "routes",
+            "import_inputs",
+        ],
+    )?;
+    Ok(AdapterProvenance {
+        id: segment(object, "id", where_)?,
+        adapter_version: nonempty(object, "adapter_version", where_)?,
+        adapter_fingerprint: fingerprint(object, "adapter_fingerprint", where_)?,
+        descriptor_fingerprint: fingerprint(object, "descriptor_fingerprint", where_)?,
+        configuration_fingerprint: fingerprint(object, "configuration_fingerprint", where_)?,
+        launch_fingerprint: fingerprint(object, "launch_fingerprint", where_)?,
+        routes: parse_array(object, "routes", where_, parse_launch_route)?,
+        import_inputs: parse_array(object, "import_inputs", where_, parse_import_input)?,
+    })
+}
+
+fn parse_launch_route(value: &Json, where_: &str) -> Result<LaunchRoute, String> {
+    let fields = object(value, where_, &["selection", "capability", "inputs"])?;
+    let selection_where = format!("{where_}.selection");
+    let selection = object(
+        required(fields, "selection", where_)?,
+        &selection_where,
+        &["kind", "id"],
+    )?;
+    let kind = match string(selection, "kind", &selection_where)? {
+        "check" => RouteSelectionKind::Check,
+        "challenge" => RouteSelectionKind::Challenge,
+        other => {
+            return Err(format!(
+                "{selection_where}.kind has unsupported value `{other}`"
+            ))
+        }
+    };
+    let capability_where = format!("{where_}.capability");
+    let capability = object(
+        required(fields, "capability", where_)?,
+        &capability_where,
+        &["address", "class", "challenge_form", "fingerprint"],
+    )?;
+    let class = match string(capability, "class", &capability_where)? {
+        "check.execute" => RouteCapabilityClass::CheckExecute,
+        "check.import" => RouteCapabilityClass::CheckImport,
+        "challenge.execute" => RouteCapabilityClass::ChallengeExecute,
+        "challenge.import" => RouteCapabilityClass::ChallengeImport,
+        other => {
+            return Err(format!(
+                "{capability_where}.class has unsupported value `{other}`"
+            ))
+        }
+    };
+    let challenge_form = match kind {
+        RouteSelectionKind::Check => {
+            if capability
+                .iter()
+                .any(|(field, _)| field == "challenge_form")
+            {
+                return Err(format!(
+                    "{capability_where}.challenge_form is forbidden for a Check route"
+                ));
+            }
+            None
+        }
+        RouteSelectionKind::Challenge => Some(id(capability, "challenge_form", &capability_where)?),
+    };
+    let address = nonempty(capability, "address", &capability_where)?;
+    validate_capability_address(&address)
+        .map_err(|detail| format!("{capability_where}.address {detail}"))?;
+    let inputs = match kind {
+        RouteSelectionKind::Check => {
+            if fields.iter().any(|(field, _)| field == "inputs") {
+                return Err(format!("{where_}.inputs is forbidden for a Check route"));
+            }
+            Vec::new()
+        }
+        RouteSelectionKind::Challenge => {
+            let inputs = parse_array(fields, "inputs", where_, parse_launch_input)?;
+            ensure_sorted_unique(&inputs, launch_input_key, &format!("{where_}.inputs"))?;
+            inputs
+        }
+    };
+    let route = LaunchRoute {
+        selection: RouteSelection {
+            kind,
+            id: id(selection, "id", &selection_where)?,
+        },
+        capability: RouteCapability {
+            address,
+            class,
+            challenge_form,
+            fingerprint: fingerprint(capability, "fingerprint", &capability_where)?,
+        },
+        inputs,
+    };
+    if let Some(error) = launch_route_structure_errors(&route, where_)
+        .into_iter()
+        .next()
+    {
+        return Err(error.to_string());
+    }
+    Ok(route)
+}
+
+fn parse_launch_input(value: &Json, where_: &str) -> Result<LaunchInput, String> {
+    let fields = object(value, where_, &["kind", "id", "fingerprint", "source"])?;
+    let kind = match string(fields, "kind", where_)? {
+        "check-implementation" => LaunchInputKind::CheckImplementation,
+        "realization" => LaunchInputKind::Realization,
+        "mechanism-implementation" => LaunchInputKind::MechanismImplementation,
+        "artifact" => LaunchInputKind::Artifact,
+        "surface-member" => LaunchInputKind::SurfaceMember,
+        "enumeration" => LaunchInputKind::Enumeration,
+        other => return Err(format!("{where_}.kind has unsupported value `{other}`")),
+    };
+    let source_where = format!("{where_}.source");
+    let source_fields = object_pairs(required(fields, "source", where_)?, &source_where)?;
+    let source_kind = string(source_fields, "kind", &source_where)?;
+    let source = match source_kind {
+        "source" => {
+            let source = object(
+                required(fields, "source", where_)?,
+                &source_where,
+                &["kind", "file", "language", "site"],
+            )?;
+            LaunchInputSource::Source {
+                file: nonempty(source, "file", &source_where)?,
+                language: segment(source, "language", &source_where)?,
+                site: nonempty(source, "site", &source_where)?,
+            }
+        }
+        "artifact" => {
+            let source = object(
+                required(fields, "source", where_)?,
+                &source_where,
+                &[
+                    "kind",
+                    "file",
+                    "artifact_kind",
+                    "identity",
+                    "unique",
+                    "columns",
+                    "predicate",
+                ],
+            )?;
+            LaunchInputSource::Artifact {
+                file: nonempty(source, "file", &source_where)?,
+                artifact_kind: segment(source, "artifact_kind", &source_where)?,
+                identity: nonempty(source, "identity", &source_where)?,
+                unique: nullable_bool(source, "unique", &source_where)?,
+                columns: string_set(source, "columns", &source_where)?,
+                predicate: nullable_string(source, "predicate", &source_where)?,
+            }
+        }
+        "enumeration" => {
+            let source = object(
+                required(fields, "source", where_)?,
+                &source_where,
+                &["kind", "file", "enumerator_kind", "identity"],
+            )?;
+            LaunchInputSource::Enumeration {
+                file: nonempty(source, "file", &source_where)?,
+                enumerator_kind: segment(source, "enumerator_kind", &source_where)?,
+                identity: nonempty(source, "identity", &source_where)?,
+            }
+        }
+        "surface-member" => {
+            let source = object(
+                required(fields, "source", where_)?,
+                &source_where,
+                &["kind", "member_kind", "file", "language", "site"],
+            )?;
+            exact_string(source, "member_kind", &source_where, "enumerated")?;
+            LaunchInputSource::SurfaceMember {
+                file: nonempty(source, "file", &source_where)?,
+                language: segment(source, "language", &source_where)?,
+                site: nonempty(source, "site", &source_where)?,
+            }
+        }
+        other => {
+            return Err(format!(
+                "{source_where}.kind has unsupported value `{other}`"
+            ))
+        }
+    };
+    let input = LaunchInput {
+        kind,
+        id: nonempty(fields, "id", where_)?,
+        fingerprint: fingerprint(fields, "fingerprint", where_)?,
+        source,
+    };
+    validate_launch_input(&input, where_)?;
+    Ok(input)
+}
+
+fn parse_import_input(value: &Json, where_: &str) -> Result<ImportInputIdentity, String> {
+    let object = object(value, where_, &["id", "digest", "size_bytes"])?;
+    Ok(ImportInputIdentity {
+        id: id(object, "id", where_)?,
+        digest: fingerprint(object, "digest", where_)?,
+        size_bytes: integer(object, "size_bytes", where_)?,
     })
 }
 
@@ -1237,6 +1821,12 @@ fn parse_scope(value: &Json, where_: &str) -> Result<DiagnosticScope, String> {
             let object = object(value, where_, &["kind", "check"])?;
             Ok(DiagnosticScope::CheckExecution(id(
                 object, "check", where_,
+            )?))
+        }
+        "challenge-selection" => {
+            let object = object(value, where_, &["kind", "id"])?;
+            Ok(DiagnosticScope::ChallengeSelection(id(
+                object, "id", where_,
             )?))
         }
         "challenger-execution" => {
@@ -1516,9 +2106,39 @@ fn optional_nonempty(
     }
 }
 
+fn nullable_bool(
+    object: &[(String, Json)],
+    field: &str,
+    where_: &str,
+) -> Result<Option<bool>, String> {
+    match required(object, field, where_)? {
+        Json::Null => Ok(None),
+        Json::Bool(value) => Ok(Some(*value)),
+        _ => Err(format!("{where_}.{field} must be a boolean or null")),
+    }
+}
+
+fn nullable_string(
+    object: &[(String, Json)],
+    field: &str,
+    where_: &str,
+) -> Result<Option<String>, String> {
+    match required(object, field, where_)? {
+        Json::Null => Ok(None),
+        Json::Str(value) => Ok(Some(value.clone())),
+        _ => Err(format!("{where_}.{field} must be a string or null")),
+    }
+}
+
 fn id(object: &[(String, Json)], field: &str, where_: &str) -> Result<String, String> {
     let value = nonempty(object, field, where_)?;
     validate_id(&value, true).map_err(|reason| format!("{where_}.{field}: {reason}"))?;
+    Ok(value)
+}
+
+fn segment(object: &[(String, Json)], field: &str, where_: &str) -> Result<String, String> {
+    let value = nonempty(object, field, where_)?;
+    validate_id(&value, false).map_err(|reason| format!("{where_}.{field}: {reason}"))?;
     Ok(value)
 }
 
@@ -1677,6 +2297,20 @@ fn valid_bundle_relative(value: &str) -> bool {
             .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
 }
 
+fn validate_capability_address(value: &str) -> Result<(), String> {
+    let mut parts = value.split('/');
+    let adapter = parts.next().unwrap_or_default();
+    let capability = parts.next().unwrap_or_default();
+    if adapter.is_empty() || capability.is_empty() || parts.next().is_some() {
+        return Err("must have exact `<adapter-id>/<capability-id>` form".into());
+    }
+    if adapter.contains("--") || capability.contains("--") {
+        return Err("segments must be lower kebab without consecutive hyphens".into());
+    }
+    validate_id(adapter, false)?;
+    validate_id(capability, false)
+}
+
 fn validate_claim_id(value: &str) -> Result<(), String> {
     let Some((spec, case)) = value.split_once('#') else {
         return Err("must have exact `<spec-id>#<case-id>` form".into());
@@ -1772,6 +2406,13 @@ fn unsafe_number_paths(bundle: &RunBundle) -> Vec<String> {
         "provenance.generated_at_ms",
         bundle.provenance.generated_at_ms,
     );
+    for (index, input) in bundle.provenance.adapter.import_inputs.iter().enumerate() {
+        record_unsafe_number(
+            &mut paths,
+            &format!("provenance.adapter.import_inputs[{index}].size_bytes"),
+            input.size_bytes,
+        );
+    }
     for (index, artifact) in bundle.artifacts.iter().enumerate() {
         record_unsafe_number(
             &mut paths,
@@ -1844,8 +2485,73 @@ pub fn subject_fingerprint(subject: &Subject) -> String {
     jcs_sha256(&Json::obj(vec![
         ("format", Json::str("azimuth-subject-fingerprint")),
         ("version", Json::Num(1.0)),
-        ("subject", subject_json(subject)),
+        ("subject", subject_to_json(subject)),
     ]))
+}
+
+/// Validates the standalone structural and canonical invariants of a typed Subject.
+pub fn validate_subject_component(subject: &Subject) -> Vec<SchemaError> {
+    let mut errors = Vec::new();
+    for path in unsafe_subject_number_paths(subject) {
+        errors.push(SchemaError {
+            path,
+            detail: format!("exceeds the maximum safe integer {MAX_SAFE_INTEGER}"),
+        });
+    }
+    if errors.is_empty() {
+        if let Err(detail) = parse_subject(&subject_to_json(subject), "$") {
+            errors.push(SchemaError {
+                path: "$".into(),
+                detail,
+            });
+        }
+    }
+    let (values, label): (Vec<String>, &str) = match subject {
+        Subject::Workspace { repositories } | Subject::CiCandidate { repositories } => (
+            repositories.iter().map(|item| item.id.clone()).collect(),
+            "$.repositories",
+        ),
+        Subject::Artifact { artifacts } | Subject::Deployment { artifacts, .. } => (
+            artifacts.iter().map(|item| item.id.clone()).collect(),
+            "$.artifacts",
+        ),
+        Subject::MonitoringWindow { services, .. } => (
+            services.iter().map(|item| item.service.clone()).collect(),
+            "$.services",
+        ),
+        Subject::Service { .. } => (vec!["service".into()], "$"),
+    };
+    if values.is_empty() {
+        errors.push(SchemaError {
+            path: label.into(),
+            detail: "must not be empty".into(),
+        });
+    } else if let Err(detail) = ensure_sorted_unique(&values, Clone::clone, label) {
+        errors.push(SchemaError {
+            path: label.into(),
+            detail,
+        });
+    }
+    if let Subject::MonitoringWindow {
+        window_start_ms,
+        window_end_ms,
+        ..
+    } = subject
+    {
+        if window_end_ms <= window_start_ms {
+            errors.push(SchemaError {
+                path: "$.window_end_ms".into(),
+                detail: "must close a non-empty half-open interval".into(),
+            });
+        }
+    }
+    errors.sort_by(|left, right| {
+        left.path
+            .cmp(&right.path)
+            .then_with(|| left.detail.cmp(&right.detail))
+    });
+    errors.dedup();
+    errors
 }
 
 pub fn plan_fingerprint(subject_fingerprint: &str, plan: &Plan) -> String {
@@ -1869,6 +2575,814 @@ pub fn plan_fingerprint(subject_fingerprint: &str, plan: &Plan) -> String {
             ),
         ),
     ]))
+}
+
+pub fn challenge_selection_id(
+    challenger_fingerprint: &str,
+    target_kind: ChallengeTargetKind,
+    target_fingerprint: &str,
+) -> String {
+    let fingerprint = jcs_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-challenge-selection-identity")),
+        ("version", Json::Num(1.0)),
+        ("challenger_fingerprint", Json::str(challenger_fingerprint)),
+        ("target_kind", Json::str(target_kind.name())),
+        ("target_fingerprint", Json::str(target_fingerprint)),
+    ]));
+    format!("challenge/{}", fingerprint.trim_start_matches("sha256:"))
+}
+
+pub fn challenge_scope_fingerprint(scope: &ChallengeScope) -> String {
+    jcs_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-challenge-scope-fingerprint")),
+        ("version", Json::Num(1.0)),
+        (
+            "anchors",
+            Json::Arr(
+                scope
+                    .anchors
+                    .iter()
+                    .map(challenge_scope_item_json)
+                    .collect(),
+            ),
+        ),
+        (
+            "inputs",
+            Json::Arr(scope.inputs.iter().map(challenge_scope_item_json).collect()),
+        ),
+    ]))
+}
+
+/// Recomputes the exact D47 launch fingerprint without depending on planner-owned types.
+pub fn launch_fingerprint(
+    operation: ProvenanceMode,
+    planned_at_ms: u64,
+    subject: &Subject,
+    subject_fingerprint: &str,
+    plan: &Plan,
+    adapter: &LaunchAdapterIdentity,
+    routes: &[LaunchRoute],
+) -> String {
+    jcs_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-run-launch-fingerprint")),
+        ("version", Json::Num(1.0)),
+        ("operation", Json::str(operation.name())),
+        ("planned_at_ms", Json::Num(planned_at_ms as f64)),
+        ("subject", subject_to_json(subject)),
+        ("subject_fingerprint", Json::str(subject_fingerprint)),
+        ("plan", plan_to_json(plan)),
+        (
+            "adapter",
+            Json::obj(vec![
+                ("id", Json::str(&adapter.id)),
+                ("adapter_version", Json::str(&adapter.adapter_version)),
+                (
+                    "adapter_fingerprint",
+                    Json::str(&adapter.adapter_fingerprint),
+                ),
+                (
+                    "descriptor_fingerprint",
+                    Json::str(&adapter.descriptor_fingerprint),
+                ),
+                (
+                    "configuration_fingerprint",
+                    Json::str(&adapter.configuration_fingerprint),
+                ),
+            ]),
+        ),
+        (
+            "routes",
+            Json::Arr(routes.iter().map(launch_route_to_json).collect()),
+        ),
+    ]))
+}
+
+fn launch_adapter_identity(adapter: &AdapterProvenance) -> LaunchAdapterIdentity {
+    LaunchAdapterIdentity {
+        id: adapter.id.clone(),
+        adapter_version: adapter.adapter_version.clone(),
+        adapter_fingerprint: adapter.adapter_fingerprint.clone(),
+        descriptor_fingerprint: adapter.descriptor_fingerprint.clone(),
+        configuration_fingerprint: adapter.configuration_fingerprint.clone(),
+    }
+}
+
+pub fn construct_challenge_scope(
+    anchors: Vec<ChallengeScopeItem>,
+    inputs: Vec<ChallengeScopeItem>,
+) -> Result<ChallengeScope, Vec<SchemaError>> {
+    let mut scope = ChallengeScope {
+        anchors,
+        inputs,
+        fingerprint: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            .into(),
+    };
+    let errors = challenge_scope_structure_errors(&scope, "$.scope");
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+    scope.fingerprint = challenge_scope_fingerprint(&scope);
+    Ok(scope)
+}
+
+/// Constructs one strict D47 accountable input from a model-derived semantic component.
+pub fn construct_launch_input(
+    kind: LaunchInputKind,
+    id: String,
+    fingerprint: String,
+    source: LaunchInputSource,
+) -> Result<LaunchInput, SchemaError> {
+    let input = LaunchInput {
+        kind,
+        id,
+        fingerprint,
+        source,
+    };
+    validate_launch_input(&input, "$.input")
+        .map(|()| input)
+        .map_err(|detail| SchemaError {
+            path: "$.input".into(),
+            detail,
+        })
+}
+
+/// Constructs one strict D47 route from an already selected capability and accountable inputs.
+pub fn construct_launch_route(
+    selection: RouteSelection,
+    capability: RouteCapability,
+    inputs: Vec<LaunchInput>,
+) -> Result<LaunchRoute, Vec<SchemaError>> {
+    let route = LaunchRoute {
+        selection,
+        capability,
+        inputs,
+    };
+    let errors = launch_route_structure_errors(&route, "$.route");
+    if errors.is_empty() {
+        Ok(route)
+    } else {
+        Err(errors)
+    }
+}
+
+/// Validates strict D47 route shape and exact source-backed projection against a semantic Plan.
+pub fn validate_launch_routes_against_plan(
+    plan: &Plan,
+    routes: &[LaunchRoute],
+) -> Vec<SchemaError> {
+    let mut errors = Vec::new();
+    if let Err(detail) = ensure_sorted_unique(
+        routes,
+        |route| (route.selection.kind, route.selection.id.clone()),
+        "$.routes",
+    ) {
+        errors.push(SchemaError {
+            path: "$.routes".into(),
+            detail,
+        });
+    }
+    let expected = plan
+        .checks
+        .iter()
+        .map(|check| (RouteSelectionKind::Check, check.id.as_str()))
+        .chain(
+            plan.challenges
+                .iter()
+                .map(|challenge| (RouteSelectionKind::Challenge, challenge.id.as_str())),
+        )
+        .collect::<Vec<_>>();
+    if routes.len() != expected.len() {
+        errors.push(SchemaError {
+            path: "$.routes".into(),
+            detail: format!(
+                "must contain exactly one route for each of {} semantic selections",
+                expected.len()
+            ),
+        });
+    }
+    for (index, route) in routes.iter().enumerate() {
+        let path = format!("$.routes[{index}]");
+        errors.extend(launch_route_structure_errors(route, &path));
+        if expected.get(index).copied() != Some((route.selection.kind, route.selection.id.as_str()))
+        {
+            errors.push(SchemaError {
+                path: format!("{path}.selection"),
+                detail: "must repeat the semantic Plan selection in canonical order".into(),
+            });
+            continue;
+        }
+        if route.selection.kind == RouteSelectionKind::Challenge {
+            let challenge = plan
+                .challenges
+                .iter()
+                .find(|challenge| challenge.id == route.selection.id)
+                .expect("matching Challenge route follows the Plan account");
+            errors.extend(launch_input_projection_errors(challenge, route, &path));
+        }
+    }
+    errors.sort_by(|left, right| {
+        left.path
+            .cmp(&right.path)
+            .then_with(|| left.detail.cmp(&right.detail))
+    });
+    errors.dedup();
+    errors
+}
+
+fn launch_route_structure_errors(route: &LaunchRoute, path: &str) -> Vec<SchemaError> {
+    let mut errors = Vec::new();
+    if let Err(detail) = validate_id(&route.selection.id, true) {
+        errors.push(SchemaError {
+            path: format!("{path}.selection.id"),
+            detail,
+        });
+    }
+    if let Err(detail) = validate_capability_address(&route.capability.address) {
+        errors.push(SchemaError {
+            path: format!("{path}.capability.address"),
+            detail,
+        });
+    }
+    if !valid_fingerprint(&route.capability.fingerprint) {
+        errors.push(SchemaError {
+            path: format!("{path}.capability.fingerprint"),
+            detail: "must be `sha256:` followed by 64 lowercase hex digits".into(),
+        });
+    }
+    match route.selection.kind {
+        RouteSelectionKind::Check => {
+            if !matches!(
+                route.capability.class,
+                RouteCapabilityClass::CheckExecute | RouteCapabilityClass::CheckImport
+            ) {
+                errors.push(SchemaError {
+                    path: format!("{path}.capability.class"),
+                    detail: "must be a Check capability class".into(),
+                });
+            }
+            if route.capability.challenge_form.is_some() {
+                errors.push(SchemaError {
+                    path: format!("{path}.capability.challenge_form"),
+                    detail: "is forbidden for a Check route".into(),
+                });
+            }
+            if !route.inputs.is_empty() {
+                errors.push(SchemaError {
+                    path: format!("{path}.inputs"),
+                    detail: "is forbidden for a Check route".into(),
+                });
+            }
+        }
+        RouteSelectionKind::Challenge => {
+            if !matches!(
+                route.capability.class,
+                RouteCapabilityClass::ChallengeExecute | RouteCapabilityClass::ChallengeImport
+            ) {
+                errors.push(SchemaError {
+                    path: format!("{path}.capability.class"),
+                    detail: "must be a Challenge capability class".into(),
+                });
+            }
+            match route.capability.challenge_form.as_deref() {
+                Some(form) => {
+                    if let Err(detail) = validate_id(form, true) {
+                        errors.push(SchemaError {
+                            path: format!("{path}.capability.challenge_form"),
+                            detail,
+                        });
+                    }
+                }
+                None => errors.push(SchemaError {
+                    path: format!("{path}.capability.challenge_form"),
+                    detail: "is required for a Challenge route".into(),
+                }),
+            }
+            if let Err(detail) =
+                ensure_sorted_unique(&route.inputs, launch_input_key, &format!("{path}.inputs"))
+            {
+                errors.push(SchemaError {
+                    path: format!("{path}.inputs"),
+                    detail,
+                });
+            }
+            let mut identities = BTreeMap::<(LaunchInputKind, &str), &str>::new();
+            for (index, input) in route.inputs.iter().enumerate() {
+                let input_path = format!("{path}.inputs[{index}]");
+                if let Err(detail) = validate_launch_input(input, &input_path) {
+                    errors.push(SchemaError {
+                        path: input_path,
+                        detail,
+                    });
+                }
+                let identity = (input.kind, input.id.as_str());
+                if let Some(previous) = identities.insert(identity, input.fingerprint.as_str()) {
+                    if previous != input.fingerprint {
+                        errors.push(SchemaError {
+                            path: format!("{path}.inputs"),
+                            detail: format!(
+                                "conflicting fingerprints for `{}` `{}`",
+                                input.kind.name(),
+                                input.id
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    errors
+}
+
+fn launch_input_projection_errors(
+    challenge: &ChallengeSelection,
+    route: &LaunchRoute,
+    path: &str,
+) -> Vec<SchemaError> {
+    let expected = challenge
+        .scope
+        .anchors
+        .iter()
+        .chain(&challenge.scope.inputs)
+        .filter_map(|item| {
+            LaunchInputKind::from_scope_kind(item.kind)
+                .map(|kind| (kind, item.id.clone(), item.fingerprint.clone()))
+        })
+        .collect::<BTreeSet<_>>();
+    let actual = route
+        .inputs
+        .iter()
+        .map(launch_input_key)
+        .collect::<BTreeSet<_>>();
+    if actual == expected {
+        return Vec::new();
+    }
+    let missing = expected.difference(&actual).cloned().collect::<Vec<_>>();
+    let extra = actual.difference(&expected).cloned().collect::<Vec<_>>();
+    vec![SchemaError {
+        path: format!("{path}.inputs"),
+        detail: format!(
+            "must exactly project source-backed semantic scope; missing {missing:?}, extra {extra:?}"
+        ),
+    }]
+}
+
+fn launch_input_key(input: &LaunchInput) -> (LaunchInputKind, String, String) {
+    (input.kind, input.id.clone(), input.fingerprint.clone())
+}
+
+fn validate_launch_input(input: &LaunchInput, where_: &str) -> Result<(), String> {
+    if input.id.is_empty() {
+        return Err(format!("{where_}.id must not be empty"));
+    }
+    if !valid_fingerprint(&input.fingerprint) {
+        return Err(format!(
+            "{where_}.fingerprint must be `sha256:` followed by 64 lowercase hex digits"
+        ));
+    }
+    match (&input.kind, &input.source) {
+        (
+            LaunchInputKind::CheckImplementation
+            | LaunchInputKind::Realization
+            | LaunchInputKind::MechanismImplementation,
+            LaunchInputSource::Source {
+                file,
+                language,
+                site,
+            },
+        ) => {
+            validate_source_locator(file, language, site, where_)?;
+            validate_implementation_identity(&input.id)
+                .map_err(|detail| format!("{where_}.id {detail}"))
+        }
+        (
+            LaunchInputKind::SurfaceMember,
+            LaunchInputSource::Source {
+                file,
+                language,
+                site,
+            },
+        ) => {
+            validate_source_locator(file, language, site, where_)?;
+            let Some((surface, identity)) = input.id.split_once("|tagged|") else {
+                return Err(format!(
+                    "{where_}.id must have exact `<surface>|tagged|<SourceIdentity>` form"
+                ));
+            };
+            if surface.is_empty() {
+                return Err(format!("{where_}.id has an empty surface identity"));
+            }
+            validate_id(surface, true).map_err(|detail| format!("{where_}.id surface {detail}"))?;
+            validate_implementation_identity(identity)
+                .map_err(|detail| format!("{where_}.id tagged SourceIdentity {detail}"))
+        }
+        (
+            LaunchInputKind::Artifact,
+            LaunchInputSource::Artifact {
+                file,
+                artifact_kind,
+                identity,
+                unique,
+                columns,
+                predicate,
+            },
+        ) => {
+            validate_workspace_file(file, where_)?;
+            validate_implementation_identity(identity)
+                .map_err(|detail| format!("{where_}.source.identity {detail}"))?;
+            let identity_kind = identity.split('|').nth(1).unwrap_or_default();
+            if identity_kind != artifact_kind {
+                return Err(format!(
+                    "{where_}.source.artifact_kind must equal the SourceIdentity address kind"
+                ));
+            }
+            if columns.iter().any(String::is_empty) {
+                return Err(format!("{where_}.source.columns contains an empty value"));
+            }
+            let expected = crate::fingerprint::artifact_property_digest(&Json::obj(vec![
+                ("id", Json::str(&input.id)),
+                ("kind", Json::str(artifact_kind)),
+                ("identity", Json::str(identity)),
+                ("unique", unique.map(Json::Bool).unwrap_or(Json::Null)),
+                (
+                    "columns",
+                    Json::Arr(columns.iter().map(Json::str).collect()),
+                ),
+                (
+                    "predicate",
+                    predicate.as_ref().map(Json::str).unwrap_or(Json::Null),
+                ),
+            ]));
+            if input.fingerprint != expected {
+                return Err(format!("{where_}.fingerprint must be `{expected}`"));
+            }
+            Ok(())
+        }
+        (
+            LaunchInputKind::Enumeration,
+            LaunchInputSource::Enumeration {
+                file,
+                enumerator_kind,
+                identity,
+            },
+        ) => {
+            validate_workspace_file(file, where_)?;
+            validate_implementation_identity(identity)
+                .map_err(|detail| format!("{where_}.source.identity {detail}"))?;
+            let suffix = format!("|{identity}");
+            let Some(prefix) = input.id.strip_suffix(&suffix) else {
+                return Err(format!(
+                    "{where_}.id must end with its exact source identity"
+                ));
+            };
+            let parts = prefix.split('|').collect::<Vec<_>>();
+            if parts.len() != 4 || parts.iter().any(|part| part.is_empty()) {
+                return Err(format!(
+                    "{where_}.id must have exact surface/area/mount/enumerator/source identity"
+                ));
+            }
+            validate_id(parts[0], true)
+                .map_err(|detail| format!("{where_}.id surface {detail}"))?;
+            validate_id(parts[1], false).map_err(|detail| format!("{where_}.id area {detail}"))?;
+            validate_id(parts[2], false).map_err(|detail| format!("{where_}.id mount {detail}"))?;
+            validate_id(parts[3], false)
+                .map_err(|detail| format!("{where_}.id enumerator {detail}"))?;
+            if identity.split('|').next() != Some(parts[1]) {
+                return Err(format!(
+                    "{where_}.source.identity area must equal the semantic id area"
+                ));
+            }
+            if parts[3] != enumerator_kind {
+                return Err(format!(
+                    "{where_}.source.enumerator_kind must equal the semantic id enumerator"
+                ));
+            }
+            Ok(())
+        }
+        (
+            LaunchInputKind::SurfaceMember,
+            LaunchInputSource::SurfaceMember {
+                file,
+                language,
+                site,
+            },
+        ) => {
+            validate_source_locator(file, language, site, where_)?;
+            let Some((surface, member_file)) = input.id.split_once("|enumerated|") else {
+                return Err(format!(
+                    "{where_}.id must have exact `<surface>|enumerated|<file>` form"
+                ));
+            };
+            if surface.is_empty() || member_file != file {
+                return Err(format!(
+                    "{where_}.source.file must repeat the enumerated semantic member identity"
+                ));
+            }
+            validate_id(surface, true).map_err(|detail| format!("{where_}.id surface {detail}"))?;
+            let expected = crate::fingerprint::enumerated_surface_member_digest(surface, file);
+            if input.fingerprint != expected {
+                return Err(format!("{where_}.fingerprint must be `{expected}`"));
+            }
+            Ok(())
+        }
+        _ => Err(format!(
+            "{where_}.source variant does not match `{}`",
+            input.kind.name()
+        )),
+    }
+}
+
+fn validate_source_locator(
+    file: &str,
+    language: &str,
+    site: &str,
+    where_: &str,
+) -> Result<(), String> {
+    validate_workspace_file(file, where_)?;
+    validate_id(language, false).map_err(|detail| format!("{where_}.source.language {detail}"))?;
+    if site.is_empty() {
+        return Err(format!("{where_}.source.site must not be empty"));
+    }
+    Ok(())
+}
+
+fn validate_workspace_file(file: &str, where_: &str) -> Result<(), String> {
+    if valid_bundle_relative(file) {
+        Ok(())
+    } else {
+        Err(format!(
+            "{where_}.source.file is not a normalized workspace-relative path"
+        ))
+    }
+}
+
+/// Validates one typed D46 semantic Plan before it enters a launch plan or bundle.
+pub fn validate_plan_component(subject_fingerprint: &str, plan: &Plan) -> Vec<SchemaError> {
+    let mut errors = Vec::new();
+    if !valid_fingerprint(subject_fingerprint) {
+        errors.push(SchemaError {
+            path: "$.subject_fingerprint".into(),
+            detail: "must be `sha256:` followed by 64 lowercase hex digits".into(),
+        });
+    }
+    if let Err(detail) = parse_plan(&plan_to_json(plan), "$") {
+        errors.push(SchemaError {
+            path: "$".into(),
+            detail,
+        });
+    }
+    if plan.checks.is_empty() && plan.challenges.is_empty() {
+        errors.push(SchemaError {
+            path: "$".into(),
+            detail: "must select at least one Check or Challenge".into(),
+        });
+    }
+    collect_plan_array_errors(plan, &mut errors);
+    if valid_fingerprint(subject_fingerprint) {
+        let expected = plan_fingerprint(subject_fingerprint, plan);
+        if plan.fingerprint != expected {
+            errors.push(SchemaError {
+                path: "$.fingerprint".into(),
+                detail: format!("must be `{expected}`"),
+            });
+        }
+    }
+    errors.sort_by(|left, right| {
+        left.path
+            .cmp(&right.path)
+            .then_with(|| left.detail.cmp(&right.detail))
+    });
+    errors.dedup();
+    errors
+}
+
+fn collect_plan_array_errors(plan: &Plan, errors: &mut Vec<SchemaError>) {
+    for (path, result) in [
+        (
+            "$.checks",
+            ensure_sorted_unique(&plan.checks, |item| item.id.clone(), "$.checks"),
+        ),
+        (
+            "$.challenges",
+            ensure_sorted_unique(&plan.challenges, |item| item.id.clone(), "$.challenges"),
+        ),
+    ] {
+        if let Err(detail) = result {
+            errors.push(SchemaError {
+                path: path.into(),
+                detail,
+            });
+        }
+    }
+    for check in &plan.checks {
+        if check.implementations.is_empty() || check.units.is_empty() {
+            errors.push(SchemaError {
+                path: format!("$.checks.{}", check.id),
+                detail: "must have non-empty implementation and unit sets".into(),
+            });
+        }
+        for (suffix, result) in [
+            (
+                "implementations",
+                ensure_sorted_unique(
+                    &check.implementations,
+                    |item| item.identity.clone(),
+                    "implementations",
+                ),
+            ),
+            (
+                "units",
+                ensure_sorted_unique(&check.units, |item| item.id.clone(), "units"),
+            ),
+        ] {
+            if let Err(detail) = result {
+                errors.push(SchemaError {
+                    path: format!("$.checks.{}.{suffix}", check.id),
+                    detail,
+                });
+            }
+        }
+    }
+    let mut semantic_challenges = BTreeSet::new();
+    for challenge in &plan.challenges {
+        if challenge.units.is_empty() {
+            errors.push(SchemaError {
+                path: format!("$.challenges.{}.units", challenge.id),
+                detail: "must not be empty".into(),
+            });
+        }
+        if let Err(detail) =
+            ensure_sorted_unique(&challenge.units, |item| item.id.clone(), "challenge units")
+        {
+            errors.push(SchemaError {
+                path: format!("$.challenges.{}.units", challenge.id),
+                detail,
+            });
+        }
+        let key = (
+            challenge.challenger.fingerprint.clone(),
+            challenge.target.kind.name(),
+            challenge.target.fingerprint.clone(),
+        );
+        if !semantic_challenges.insert(key) {
+            errors.push(SchemaError {
+                path: "$.challenges".into(),
+                detail: "contains a duplicate Challenger/target semantic tuple".into(),
+            });
+        }
+        collect_challenge_identity_and_scope_errors(challenge, "$.challenges", errors);
+    }
+}
+
+fn collect_challenge_identity_and_scope_errors(
+    challenge: &ChallengeSelection,
+    prefix: &str,
+    errors: &mut Vec<SchemaError>,
+) {
+    let path = format!("{prefix}.{}", challenge.id);
+    errors.extend(challenge_scope_structure_errors(
+        &challenge.scope,
+        &format!("{path}.scope"),
+    ));
+    let expected_id = challenge_selection_id(
+        &challenge.challenger.fingerprint,
+        challenge.target.kind,
+        &challenge.target.fingerprint,
+    );
+    if challenge.id != expected_id {
+        errors.push(SchemaError {
+            path: format!("{path}.id"),
+            detail: format!("must be `{expected_id}`"),
+        });
+    }
+    let expected_scope = challenge_scope_fingerprint(&challenge.scope);
+    if challenge.scope.fingerprint != expected_scope {
+        errors.push(SchemaError {
+            path: format!("{path}.scope.fingerprint"),
+            detail: format!("must be `{expected_scope}`"),
+        });
+    }
+}
+
+fn challenge_scope_structure_errors(scope: &ChallengeScope, path: &str) -> Vec<SchemaError> {
+    let mut errors = Vec::new();
+    for (name, items) in [
+        ("anchors", scope.anchors.as_slice()),
+        ("inputs", scope.inputs.as_slice()),
+    ] {
+        if items.is_empty() {
+            errors.push(SchemaError {
+                path: format!("{path}.{name}"),
+                detail: "must not be empty".into(),
+            });
+        }
+        if let Err(detail) = ensure_sorted_unique(items, Clone::clone, name) {
+            errors.push(SchemaError {
+                path: format!("{path}.{name}"),
+                detail,
+            });
+        }
+        for item in items {
+            if item.id.is_empty() {
+                errors.push(SchemaError {
+                    path: format!("{path}.{name}"),
+                    detail: format!("`{}` scope item id must not be empty", item.kind.name()),
+                });
+            }
+            if !valid_fingerprint(&item.fingerprint) {
+                errors.push(SchemaError {
+                    path: format!("{path}.{name}"),
+                    detail: format!(
+                        concat!(
+                            "`{}` `{}` fingerprint must be `sha256:` followed by 64 ",
+                            "lowercase hex digits"
+                        ),
+                        item.kind.name(),
+                        item.id
+                    ),
+                });
+            }
+        }
+    }
+    let mut identities = BTreeMap::<(ChallengeScopeKind, &str), &str>::new();
+    for item in scope.anchors.iter().chain(&scope.inputs) {
+        let identity = (item.kind, item.id.as_str());
+        if let Some(previous) = identities.insert(identity, item.fingerprint.as_str()) {
+            if previous != item.fingerprint {
+                errors.push(SchemaError {
+                    path: path.into(),
+                    detail: format!(
+                        "conflicting fingerprints for `{}` `{}` across semantic scope",
+                        item.kind.name(),
+                        item.id
+                    ),
+                });
+            }
+        }
+    }
+    errors.sort_by(|left, right| {
+        left.path
+            .cmp(&right.path)
+            .then_with(|| left.detail.cmp(&right.detail))
+    });
+    errors.dedup();
+    errors
+}
+
+/// Constructs and fingerprints a strict semantic Plan from already resolved selections.
+pub fn construct_plan(
+    subject_fingerprint: &str,
+    model_fingerprint: String,
+    required_context: BTreeMap<String, String>,
+    checks: Vec<CheckSelection>,
+    challenges: Vec<ChallengeSelection>,
+) -> Result<Plan, Vec<SchemaError>> {
+    let mut plan = Plan {
+        model_fingerprint,
+        required_context,
+        checks,
+        challenges,
+        fingerprint: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            .into(),
+    };
+    let mut scope_errors = plan
+        .challenges
+        .iter()
+        .flat_map(|challenge| {
+            challenge_scope_structure_errors(
+                &challenge.scope,
+                &format!("$.challenges.{}.scope", challenge.id),
+            )
+        })
+        .collect::<Vec<_>>();
+    if scope_errors.is_empty() {
+        for challenge in &plan.challenges {
+            let expected = challenge_scope_fingerprint(&challenge.scope);
+            if challenge.scope.fingerprint != expected {
+                scope_errors.push(SchemaError {
+                    path: format!("$.challenges.{}.scope.fingerprint", challenge.id),
+                    detail: format!("must be `{expected}`"),
+                });
+            }
+        }
+    }
+    if !scope_errors.is_empty() {
+        scope_errors.sort_by(|left, right| {
+            left.path
+                .cmp(&right.path)
+                .then_with(|| left.detail.cmp(&right.detail))
+        });
+        scope_errors.dedup();
+        return Err(scope_errors);
+    }
+    if valid_fingerprint(subject_fingerprint) {
+        plan.fingerprint = plan_fingerprint(subject_fingerprint, &plan);
+    }
+    let errors = validate_plan_component(subject_fingerprint, &plan);
+    if errors.is_empty() {
+        Ok(plan)
+    } else {
+        Err(errors)
+    }
 }
 
 pub fn selection_fingerprint(selection: &ActualSelection) -> String {
@@ -1908,6 +3422,10 @@ pub fn run_id(bundle: &RunBundle) -> String {
             Json::str(&bundle.subject_fingerprint),
         ),
         ("plan_fingerprint", Json::str(&bundle.plan.fingerprint)),
+        (
+            "launch_fingerprint",
+            Json::str(&bundle.provenance.adapter.launch_fingerprint),
+        ),
     ]))
 }
 
@@ -2003,7 +3521,7 @@ fn bundle_json(bundle: &RunBundle, include_fingerprint: bool) -> Json {
         ));
     }
     fields.extend([
-        ("subject".into(), subject_json(&bundle.subject)),
+        ("subject".into(), subject_to_json(&bundle.subject)),
         (
             "subject_fingerprint".into(),
             Json::str(&bundle.subject_fingerprint),
@@ -2021,12 +3539,12 @@ fn bundle_json(bundle: &RunBundle, include_fingerprint: bool) -> Json {
             Json::Num(bundle.finished_at_ms as f64),
         ),
         ("status".into(), Json::str(bundle.status.name())),
-        ("plan".into(), plan_json(&bundle.plan)),
+        ("plan".into(), plan_to_json(&bundle.plan)),
         (
             "actual_selection".into(),
             actual_selection_json(&bundle.actual_selection),
         ),
-        ("provenance".into(), provenance_json(&bundle.provenance)),
+        ("provenance".into(), provenance_to_json(&bundle.provenance)),
         (
             "artifacts".into(),
             Json::Arr(bundle.artifacts.iter().map(artifact_json).collect()),
@@ -2063,7 +3581,11 @@ fn bundle_json(bundle: &RunBundle, include_fingerprint: bool) -> Json {
     Json::Obj(fields)
 }
 
-fn subject_json(subject: &Subject) -> Json {
+pub fn subject_to_json(subject: &Subject) -> Json {
+    assert!(
+        unsafe_subject_number_paths(subject).is_empty(),
+        "unsafe Subject number must be rejected before serialization"
+    );
     match subject {
         Subject::Workspace { repositories } => Json::obj(vec![
             ("kind", Json::str("workspace")),
@@ -2157,7 +3679,7 @@ fn service_state_json(item: &ServiceState) -> Json {
     ])
 }
 
-fn plan_json(plan: &Plan) -> Json {
+pub fn plan_to_json(plan: &Plan) -> Json {
     Json::obj(vec![
         ("model_fingerprint", Json::str(&plan.model_fingerprint)),
         ("required_context", map_json(&plan.required_context)),
@@ -2239,10 +3761,34 @@ fn challenge_selection_json(item: &ChallengeSelection) -> Json {
         ("id", Json::str(&item.id)),
         ("challenger", challenger_ref_json(&item.challenger)),
         ("target", target_json(&item.target)),
+        ("lane", Json::str(item.lane.name())),
+        ("scope", challenge_scope_json(&item.scope)),
         (
             "units",
             Json::Arr(item.units.iter().map(work_unit_json).collect()),
         ),
+    ])
+}
+
+fn challenge_scope_json(item: &ChallengeScope) -> Json {
+    Json::obj(vec![
+        (
+            "anchors",
+            Json::Arr(item.anchors.iter().map(challenge_scope_item_json).collect()),
+        ),
+        (
+            "inputs",
+            Json::Arr(item.inputs.iter().map(challenge_scope_item_json).collect()),
+        ),
+        ("fingerprint", Json::str(&item.fingerprint)),
+    ])
+}
+
+fn challenge_scope_item_json(item: &ChallengeScopeItem) -> Json {
+    Json::obj(vec![
+        ("kind", Json::str(item.kind.name())),
+        ("id", Json::str(&item.id)),
+        ("fingerprint", Json::str(&item.fingerprint)),
     ])
 }
 
@@ -2261,7 +3807,16 @@ fn target_json(item: &ChallengeTarget) -> Json {
     ])
 }
 
-fn provenance_json(item: &Provenance) -> Json {
+pub fn provenance_to_json(item: &Provenance) -> Json {
+    assert!(
+        item.generated_at_ms <= MAX_SAFE_INTEGER
+            && item
+                .adapter
+                .import_inputs
+                .iter()
+                .all(|input| input.size_bytes <= MAX_SAFE_INTEGER),
+        "unsafe provenance number must be rejected before serialization"
+    );
     let mut source = vec![
         ("system".into(), Json::str(&item.source.system)),
         ("execution".into(), Json::str(&item.source.execution)),
@@ -2269,17 +3824,19 @@ fn provenance_json(item: &Provenance) -> Json {
     if let Some(uri) = &item.source.uri {
         source.push(("uri".into(), Json::str(uri)));
     }
-    let mut normalizer = vec![
+    let normalizer = vec![
         ("id".into(), Json::str(&item.normalizer.id)),
         ("version".into(), Json::str(&item.normalizer.version)),
+        (
+            "build_fingerprint".into(),
+            Json::str(&item.normalizer.build_fingerprint),
+        ),
     ];
-    if let Some(fingerprint) = &item.normalizer.build_fingerprint {
-        normalizer.push(("build_fingerprint".into(), Json::str(fingerprint)));
-    }
     let mut fields = vec![
         ("mode".into(), Json::str(item.mode.name())),
         ("source".into(), Json::Obj(source)),
         ("normalizer".into(), Json::Obj(normalizer)),
+        ("adapter".into(), adapter_provenance_to_json(&item.adapter)),
         (
             "generated_at_ms".into(),
             Json::Num(item.generated_at_ms as f64),
@@ -2292,6 +3849,149 @@ fn provenance_json(item: &Provenance) -> Json {
         fields.push(("attributes".into(), map_json(attributes)));
     }
     Json::Obj(fields)
+}
+
+pub fn adapter_provenance_to_json(item: &AdapterProvenance) -> Json {
+    assert!(
+        item.import_inputs
+            .iter()
+            .all(|input| input.size_bytes <= MAX_SAFE_INTEGER),
+        "unsafe import-input number must be rejected before serialization"
+    );
+    Json::obj(vec![
+        ("id", Json::str(&item.id)),
+        ("adapter_version", Json::str(&item.adapter_version)),
+        ("adapter_fingerprint", Json::str(&item.adapter_fingerprint)),
+        (
+            "descriptor_fingerprint",
+            Json::str(&item.descriptor_fingerprint),
+        ),
+        (
+            "configuration_fingerprint",
+            Json::str(&item.configuration_fingerprint),
+        ),
+        ("launch_fingerprint", Json::str(&item.launch_fingerprint)),
+        (
+            "routes",
+            Json::Arr(item.routes.iter().map(launch_route_to_json).collect()),
+        ),
+        (
+            "import_inputs",
+            Json::Arr(
+                item.import_inputs
+                    .iter()
+                    .map(import_input_to_json)
+                    .collect(),
+            ),
+        ),
+    ])
+}
+
+pub fn launch_route_to_json(item: &LaunchRoute) -> Json {
+    let mut capability = vec![
+        ("address".into(), Json::str(&item.capability.address)),
+        ("class".into(), Json::str(item.capability.class.name())),
+    ];
+    if let Some(form) = &item.capability.challenge_form {
+        capability.push(("challenge_form".into(), Json::str(form)));
+    }
+    capability.push((
+        "fingerprint".into(),
+        Json::str(&item.capability.fingerprint),
+    ));
+    let mut fields = vec![
+        (
+            "selection".into(),
+            Json::obj(vec![
+                ("kind", Json::str(item.selection.kind.name())),
+                ("id", Json::str(&item.selection.id)),
+            ]),
+        ),
+        ("capability".into(), Json::Obj(capability)),
+    ];
+    if item.selection.kind == RouteSelectionKind::Challenge || !item.inputs.is_empty() {
+        fields.push((
+            "inputs".into(),
+            Json::Arr(item.inputs.iter().map(launch_input_to_json).collect()),
+        ));
+    }
+    Json::Obj(fields)
+}
+
+pub fn launch_input_to_json(item: &LaunchInput) -> Json {
+    let source = match &item.source {
+        LaunchInputSource::Source {
+            file,
+            language,
+            site,
+        } => Json::obj(vec![
+            ("kind", Json::str("source")),
+            ("file", Json::str(file)),
+            ("language", Json::str(language)),
+            ("site", Json::str(site)),
+        ]),
+        LaunchInputSource::Artifact {
+            file,
+            artifact_kind,
+            identity,
+            unique,
+            columns,
+            predicate,
+        } => Json::obj(vec![
+            ("kind", Json::str("artifact")),
+            ("file", Json::str(file)),
+            ("artifact_kind", Json::str(artifact_kind)),
+            ("identity", Json::str(identity)),
+            ("unique", unique.map(Json::Bool).unwrap_or(Json::Null)),
+            (
+                "columns",
+                Json::Arr(columns.iter().map(Json::str).collect()),
+            ),
+            (
+                "predicate",
+                predicate.as_ref().map(Json::str).unwrap_or(Json::Null),
+            ),
+        ]),
+        LaunchInputSource::Enumeration {
+            file,
+            enumerator_kind,
+            identity,
+        } => Json::obj(vec![
+            ("kind", Json::str("enumeration")),
+            ("file", Json::str(file)),
+            ("enumerator_kind", Json::str(enumerator_kind)),
+            ("identity", Json::str(identity)),
+        ]),
+        LaunchInputSource::SurfaceMember {
+            file,
+            language,
+            site,
+        } => Json::obj(vec![
+            ("kind", Json::str("surface-member")),
+            ("member_kind", Json::str("enumerated")),
+            ("file", Json::str(file)),
+            ("language", Json::str(language)),
+            ("site", Json::str(site)),
+        ]),
+    };
+    Json::obj(vec![
+        ("kind", Json::str(item.kind.name())),
+        ("id", Json::str(&item.id)),
+        ("fingerprint", Json::str(&item.fingerprint)),
+        ("source", source),
+    ])
+}
+
+pub fn import_input_to_json(item: &ImportInputIdentity) -> Json {
+    assert!(
+        item.size_bytes <= MAX_SAFE_INTEGER,
+        "unsafe import-input number must be rejected before serialization"
+    );
+    Json::obj(vec![
+        ("id", Json::str(&item.id)),
+        ("digest", Json::str(&item.digest)),
+        ("size_bytes", Json::Num(item.size_bytes as f64)),
+    ])
 }
 
 fn artifact_json(item: &Artifact) -> Json {
@@ -2336,6 +4036,10 @@ fn scope_json(item: &DiagnosticScope) -> Json {
         DiagnosticScope::CheckExecution(check) => Json::obj(vec![
             ("kind", Json::str("check-execution")),
             ("check", Json::str(check)),
+        ]),
+        DiagnosticScope::ChallengeSelection(id) => Json::obj(vec![
+            ("kind", Json::str("challenge-selection")),
+            ("id", Json::str(id)),
         ]),
         DiagnosticScope::ChallengerExecution {
             challenger_fingerprint,
@@ -2494,10 +4198,48 @@ fn map_json(map: &BTreeMap<String, String>) -> Json {
     )
 }
 
-fn jcs_sha256(value: &Json) -> String {
+/// Serializes an Azimuth protocol value using RFC 8785 canonical ordering and integer rules.
+pub fn canonical_json(value: &Json) -> Result<String, String> {
+    reject_duplicate_keys(value, "$".into())?;
+    validate_canonical_numbers(value, "$")?;
     let mut canonical = String::new();
     write_jcs(value, &mut canonical);
-    format!("sha256:{}", sha256(canonical.as_bytes()))
+    Ok(canonical)
+}
+
+/// Hashes an Azimuth protocol value after strict RFC 8785 canonicalization.
+pub fn canonical_fingerprint(value: &Json) -> Result<String, String> {
+    canonical_json(value).map(|canonical| format!("sha256:{}", sha256(canonical.as_bytes())))
+}
+
+fn validate_canonical_numbers(value: &Json, where_: &str) -> Result<(), String> {
+    match value {
+        Json::Num(number)
+            if !number.is_finite()
+                || *number < 0.0
+                || number.fract() != 0.0
+                || *number > MAX_SAFE_INTEGER as f64 =>
+        {
+            Err(format!("{where_} must be a non-negative safe integer"))
+        }
+        Json::Arr(items) => {
+            for (index, item) in items.iter().enumerate() {
+                validate_canonical_numbers(item, &format!("{where_}[{index}]"))?;
+            }
+            Ok(())
+        }
+        Json::Obj(fields) => {
+            for (key, item) in fields {
+                validate_canonical_numbers(item, &format!("{where_}.{key}"))?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn jcs_sha256(value: &Json) -> String {
+    canonical_fingerprint(value).expect("typed protocol values must be canonicalizable")
 }
 
 fn write_jcs(value: &Json, out: &mut String) {
@@ -2594,6 +4336,7 @@ pub fn verify(bundle: &RunBundle) -> Vec<Finding> {
     }
     validate_subject(bundle, &mut add);
     validate_canonical_arrays(bundle, &mut add);
+    validate_provenance(bundle, &mut add);
 
     let expected_subject = subject_fingerprint(&bundle.subject);
     if bundle.subject_fingerprint != expected_subject {
@@ -2750,6 +4493,18 @@ fn validate_canonical_arrays(bundle: &RunBundle, add: &mut impl FnMut(&str, Stri
         "actual_selection.challenges",
         add,
     );
+    canonical(
+        &bundle.provenance.adapter.routes,
+        |item| (item.selection.kind, item.selection.id.clone()),
+        "provenance.adapter.routes",
+        add,
+    );
+    canonical(
+        &bundle.provenance.adapter.import_inputs,
+        |item| item.id.clone(),
+        "provenance.adapter.import_inputs",
+        add,
+    );
     for (label, checks) in [
         ("plan.checks", bundle.plan.checks.as_slice()),
         (
@@ -2781,6 +4536,17 @@ fn validate_canonical_arrays(bundle: &RunBundle, add: &mut impl FnMut(&str, Stri
     ] {
         let mut semantic = BTreeSet::new();
         for challenge in challenges {
+            let expected_id = challenge_selection_id(
+                &challenge.challenger.fingerprint,
+                challenge.target.kind,
+                &challenge.target.fingerprint,
+            );
+            if challenge.id != expected_id {
+                add(
+                    "run/challenge-selection-id",
+                    format!("{label} Challenge id must be `{expected_id}`"),
+                );
+            }
             canonical(
                 &challenge.units,
                 |item| item.id.clone(),
@@ -2796,6 +4562,63 @@ fn validate_canonical_arrays(bundle: &RunBundle, add: &mut impl FnMut(&str, Stri
                 add(
                     "run/duplicate-challenge-target",
                     format!("{label} repeats one Challenger/target semantic tuple"),
+                );
+            }
+            for (scope_name, items) in [
+                ("anchors", challenge.scope.anchors.as_slice()),
+                ("inputs", challenge.scope.inputs.as_slice()),
+            ] {
+                if items.is_empty() {
+                    add(
+                        "run/challenge-scope-cardinality",
+                        format!(
+                            "{label} Challenge `{}` scope.{scope_name} must not be empty",
+                            challenge.id
+                        ),
+                    );
+                }
+                canonical(
+                    items,
+                    Clone::clone,
+                    &format!("{label}.{}.scope.{scope_name}", challenge.id),
+                    add,
+                );
+            }
+            let mut scope_identities = BTreeMap::<(ChallengeScopeKind, &str), &str>::new();
+            for item in challenge
+                .scope
+                .anchors
+                .iter()
+                .chain(&challenge.scope.inputs)
+            {
+                let identity = (item.kind, item.id.as_str());
+                if let Some(previous) = scope_identities.insert(identity, item.fingerprint.as_str())
+                {
+                    if previous != item.fingerprint {
+                        add(
+                            "run/challenge-scope-conflict",
+                            format!(
+                                concat!(
+                                    "{}.{} gives `{}` `{}` conflicting fingerprints ",
+                                    "across semantic scope"
+                                ),
+                                label,
+                                challenge.id,
+                                item.kind.name(),
+                                item.id
+                            ),
+                        );
+                    }
+                }
+            }
+            let expected_scope = challenge_scope_fingerprint(&challenge.scope);
+            if challenge.scope.fingerprint != expected_scope {
+                add(
+                    "run/challenge-scope-fingerprint",
+                    format!(
+                        "{label} Challenge `{}` scope fingerprint must be `{expected_scope}`",
+                        challenge.id
+                    ),
                 );
             }
         }
@@ -2890,6 +4713,185 @@ fn validate_canonical_arrays(bundle: &RunBundle, add: &mut impl FnMut(&str, Stri
     }
 }
 
+/// Validates D47 provenance against the bundle's provider-neutral semantic Plan.
+pub fn verify_provenance(bundle: &RunBundle) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    let unsafe_numbers = unsafe_number_paths(bundle);
+    if !unsafe_numbers.is_empty() {
+        for path in unsafe_numbers {
+            findings.push(Finding {
+                run_id: bundle.run_id.clone(),
+                code: "run/unsafe-number".into(),
+                detail: format!("{path} exceeds the maximum safe integer {MAX_SAFE_INTEGER}"),
+            });
+        }
+        findings.sort();
+        findings.dedup();
+        return findings;
+    }
+    let mut add = |code: &str, detail: String| {
+        findings.push(Finding {
+            run_id: bundle.run_id.clone(),
+            code: code.into(),
+            detail,
+        });
+    };
+    canonical(
+        &bundle.provenance.adapter.routes,
+        |item| (item.selection.kind, item.selection.id.clone()),
+        "provenance.adapter.routes",
+        &mut add,
+    );
+    canonical(
+        &bundle.provenance.adapter.import_inputs,
+        |item| item.id.clone(),
+        "provenance.adapter.import_inputs",
+        &mut add,
+    );
+    validate_provenance(bundle, &mut add);
+    findings.sort();
+    findings.dedup();
+    findings
+}
+
+fn validate_provenance(bundle: &RunBundle, add: &mut impl FnMut(&str, String)) {
+    let provenance = &bundle.provenance;
+    let adapter = &provenance.adapter;
+    let expected_normalizer = format!("adapter/{}", adapter.id);
+    if provenance.normalizer.id != expected_normalizer
+        || provenance.normalizer.version != adapter.adapter_version
+        || provenance.normalizer.build_fingerprint != adapter.adapter_fingerprint
+    {
+        add(
+            "run/provenance-normalizer",
+            "normalizer must repeat the configured adapter identity exactly".into(),
+        );
+    }
+
+    match provenance.mode {
+        ProvenanceMode::Execute if !adapter.import_inputs.is_empty() => add(
+            "run/provenance-import-inputs",
+            "execute provenance requires an empty import-input array".into(),
+        ),
+        ProvenanceMode::Import if adapter.import_inputs.is_empty() => add(
+            "run/provenance-import-inputs",
+            "import provenance requires at least one import-input identity".into(),
+        ),
+        _ => {}
+    }
+
+    let expected_launch_fingerprint = launch_fingerprint(
+        provenance.mode,
+        bundle.planned_at_ms,
+        &bundle.subject,
+        &bundle.subject_fingerprint,
+        &bundle.plan,
+        &launch_adapter_identity(adapter),
+        &adapter.routes,
+    );
+    if adapter.launch_fingerprint != expected_launch_fingerprint {
+        add(
+            "run/provenance-launch-fingerprint",
+            format!("launch fingerprint must be `{expected_launch_fingerprint}`"),
+        );
+    }
+
+    for error in validate_launch_routes_against_plan(&bundle.plan, &adapter.routes) {
+        let code = if error.path.contains(".inputs") {
+            "run/provenance-route-inputs"
+        } else {
+            "run/provenance-route-shape"
+        };
+        add(code, error.to_string());
+    }
+
+    let expected_selections = bundle
+        .plan
+        .checks
+        .iter()
+        .map(|check| (RouteSelectionKind::Check, check.id.as_str()))
+        .chain(
+            bundle
+                .plan
+                .challenges
+                .iter()
+                .map(|challenge| (RouteSelectionKind::Challenge, challenge.id.as_str())),
+        )
+        .collect::<Vec<_>>();
+    if adapter.routes.len() != expected_selections.len() {
+        add(
+            "run/provenance-route-cardinality",
+            format!(
+                "adapter routes must contain exactly one entry for each of {} semantic selections",
+                expected_selections.len()
+            ),
+        );
+    }
+    for (index, route) in adapter.routes.iter().enumerate() {
+        if expected_selections.get(index).copied()
+            != Some((route.selection.kind, route.selection.id.as_str()))
+        {
+            add(
+                "run/provenance-route-selection",
+                format!(
+                    "route {index} does not repeat the semantic Plan selection in launch order"
+                ),
+            );
+        }
+        let expected_prefix = format!("{}/", adapter.id);
+        if !route.capability.address.starts_with(&expected_prefix) {
+            add(
+                "run/provenance-route-adapter",
+                format!(
+                    "route `{}` does not use adapter `{}`",
+                    route.selection.id, adapter.id
+                ),
+            );
+        }
+        let expected_class = match (provenance.mode, route.selection.kind) {
+            (ProvenanceMode::Execute, RouteSelectionKind::Check) => {
+                RouteCapabilityClass::CheckExecute
+            }
+            (ProvenanceMode::Import, RouteSelectionKind::Check) => {
+                RouteCapabilityClass::CheckImport
+            }
+            (ProvenanceMode::Execute, RouteSelectionKind::Challenge) => {
+                RouteCapabilityClass::ChallengeExecute
+            }
+            (ProvenanceMode::Import, RouteSelectionKind::Challenge) => {
+                RouteCapabilityClass::ChallengeImport
+            }
+        };
+        if route.capability.class != expected_class {
+            add(
+                "run/provenance-route-class",
+                format!(
+                    "route `{}` must use class `{}`",
+                    route.selection.id,
+                    expected_class.name()
+                ),
+            );
+        }
+        match route.selection.kind {
+            RouteSelectionKind::Check if route.capability.challenge_form.is_some() => add(
+                "run/provenance-route-form",
+                format!(
+                    "Check route `{}` must not carry a Challenge form",
+                    route.selection.id
+                ),
+            ),
+            RouteSelectionKind::Challenge if route.capability.challenge_form.is_none() => add(
+                "run/provenance-route-form",
+                format!(
+                    "Challenge route `{}` must carry a Challenge form",
+                    route.selection.id
+                ),
+            ),
+            _ => {}
+        }
+    }
+}
+
 fn validate_selection(bundle: &RunBundle, add: &mut impl FnMut(&str, String)) {
     if bundle.plan.checks.is_empty() && bundle.plan.challenges.is_empty() {
         add(
@@ -2962,11 +4964,15 @@ fn validate_selection(bundle: &RunBundle, add: &mut impl FnMut(&str, String)) {
             );
             continue;
         };
-        if actual.challenger != planned.challenger || actual.target != planned.target {
+        if actual.challenger != planned.challenger
+            || actual.target != planned.target
+            || actual.lane != planned.lane
+            || actual.scope != planned.scope
+        {
             add(
                 "run/challenge-substitution",
                 format!(
-                    "actual Challenge `{}` changes its semantic target",
+                    "actual Challenge `{}` changes its semantic identity, lane or scope",
                     actual.id
                 ),
             );
@@ -3044,6 +5050,17 @@ fn validate_references_and_results(bundle: &RunBundle, add: &mut impl FnMut(&str
                     ),
                 )
             }
+            DiagnosticScope::ChallengeSelection(id)
+                if !bundle.plan.challenges.iter().any(|item| item.id == *id) =>
+            {
+                add(
+                    "run/unresolved-diagnostic-scope",
+                    format!(
+                        "diagnostic `{}` names unknown Challenge selection `{id}`",
+                        diagnostic.id
+                    ),
+                )
+            }
             DiagnosticScope::ChallengerExecution {
                 challenger_fingerprint,
                 target_fingerprint,
@@ -3063,6 +5080,7 @@ fn validate_references_and_results(bundle: &RunBundle, add: &mut impl FnMut(&str
             _ => {}
         }
     }
+    validate_omitted_challenge_diagnostics(bundle, &bundle.diagnostics, add);
     for activity in &bundle.activities {
         if activity.started_at_ms < bundle.started_at_ms
             || activity.finished_at_ms < activity.started_at_ms
@@ -3150,6 +5168,91 @@ fn validate_refs(
             add(
                 "run/unresolved-reference",
                 format!("{kind} `{reference}` does not resolve"),
+            );
+        }
+    }
+}
+
+fn validate_omitted_challenge_diagnostics(
+    bundle: &RunBundle,
+    diagnostics: &[Diagnostic],
+    add: &mut impl FnMut(&str, String),
+) {
+    let actual = bundle
+        .actual_selection
+        .challenges
+        .iter()
+        .map(|item| item.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let omitted = bundle
+        .plan
+        .challenges
+        .iter()
+        .filter(|item| !actual.contains(item.id.as_str()))
+        .map(|item| item.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut by_selection = BTreeMap::<&str, Vec<&Diagnostic>>::new();
+    for diagnostic in diagnostics {
+        if let DiagnosticScope::ChallengeSelection(id) = &diagnostic.scope {
+            by_selection
+                .entry(id.as_str())
+                .or_default()
+                .push(diagnostic);
+        }
+    }
+    for (selection, scoped) in &by_selection {
+        if !omitted.contains(selection) || bundle.status == RunStatus::Complete {
+            add(
+                "run/unexpected-challenge-selection-diagnostic",
+                format!(
+                    concat!(
+                        "Challenge-selection diagnostics require an omitted Challenge in an ",
+                        "incomplete Run; found `{}`"
+                    ),
+                    selection
+                ),
+            );
+        }
+        if scoped.len() > 1 {
+            add(
+                "run/challenge-omission-diagnostic-cardinality",
+                format!(
+                    concat!(
+                        "omitted Challenge `{}` has {} selection diagnostics; ",
+                        "expected exactly one"
+                    ),
+                    selection,
+                    scoped.len()
+                ),
+            );
+        }
+    }
+    if bundle.status == RunStatus::Complete {
+        return;
+    }
+    for selection in omitted {
+        let scoped = by_selection
+            .get(selection)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        if scoped.len() != 1 {
+            add(
+                "run/challenge-omission-diagnostic-cardinality",
+                format!(
+                    concat!(
+                        "omitted Challenge `{}` has {} selection diagnostics; ",
+                        "expected exactly one"
+                    ),
+                    selection,
+                    scoped.len()
+                ),
+            );
+            continue;
+        }
+        if scoped[0].class != DiagnosticClass::Execution {
+            add(
+                "run/challenge-omission-diagnostic-class",
+                format!("omitted Challenge `{selection}` diagnostic must have class `execution`"),
             );
         }
     }
@@ -3731,6 +5834,19 @@ fn validate_anchors(initial: &RunBundle, correction: &RunBundle, findings: &mut 
         || initial.actual_selection.context != correction.actual_selection.context
         || initial.provenance.source.system != correction.provenance.source.system
         || initial.provenance.source.execution != correction.provenance.source.execution
+        || initial.provenance.normalizer != correction.provenance.normalizer
+        || initial.provenance.adapter.id != correction.provenance.adapter.id
+        || initial.provenance.adapter.adapter_version
+            != correction.provenance.adapter.adapter_version
+        || initial.provenance.adapter.adapter_fingerprint
+            != correction.provenance.adapter.adapter_fingerprint
+        || initial.provenance.adapter.descriptor_fingerprint
+            != correction.provenance.adapter.descriptor_fingerprint
+        || initial.provenance.adapter.configuration_fingerprint
+            != correction.provenance.adapter.configuration_fingerprint
+        || initial.provenance.adapter.launch_fingerprint
+            != correction.provenance.adapter.launch_fingerprint
+        || initial.provenance.adapter.routes != correction.provenance.adapter.routes
         || initial.planned_at_ms != correction.planned_at_ms
         || initial.started_at_ms != correction.started_at_ms;
     if changed {

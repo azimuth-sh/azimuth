@@ -15,13 +15,38 @@ Archive records an accepted semantic transition. It is not a branch merge or dep
 1. Read completion conditions and verify every plan and work-package item is complete.
 2. Confirm intent deltas are applied and current design names only mechanisms that exist.
 3. Confirm every current framework Claim remains routine and has no inapplicable Check, Evidence
-   Binding or Qualification.
+   Binding, Qualification or Claim Judgment. For any authorized non-routine consumer Claim, confirm
+   its strict Claim Judgment, Decision Policy required forms and one project Challenge Schedule are
+   current before accepting planning behavior.
 4. Run required builds, ordinary tests and composed gates. Emit fresh manifests and run
    `azimuth validate` over their union.
 5. Inspect `azimuth report traceability` when relationships changed. Confirm version 2 export for
    public graph changes.
-6. Write `outcome.md` with `Status: accepted`, `## Departures` and `## Residual decisions`.
-7. Set the proposal to `Status: accepted and complete` only after the preceding facts hold.
+6. When Run bundles changed, use `azimuth run verify --bundle <file>...` over every relevant
+   correction set and `azimuth run inspect --bundle <file>...` for its deterministic account.
+   Apply the strict [Run bundle format](../../../azimuth/formats/run-bundle.md) without treating a
+   valid negative or partial fact as a protocol failure.
+7. When adapters changed, run `azimuth adapter verify`, create applicable Check-only,
+   Challenge-only and mixed launch plans and exercise execute or import through the strict
+   [adapter](../../../azimuth/formats/adapter.md) and
+   [launch-plan](../../../azimuth/formats/run-launch-plan.md) contracts. Confirm process-limit,
+   process-group, schema, identity and bundle failures publish no output, while valid adverse facts
+   remain successful exchanges. Confirm Challenge planning resolves every candidate disposition,
+   current accepted decision, required form, schedule lane, semantic scope and accountable launch
+   input from the complete model, with one explicit capability and no automatic widening. Confirm
+   an allowed incomplete scheduled omission has one exact `challenge-selection` diagnostic and no
+   fabricated result. Confirm one bounded core exchange whose deadline covers request writing,
+   stream draining and core's wait. Confirm core establishes the process group before spawn,
+   signals it on every terminal path and cleans members and inherited pipes only while they retain
+   group membership. Authorized descendants may escape with `setsid`, `setpgid` or equivalent, and
+   their termination is not guaranteed. This is not non-escapable descendant containment, a
+   sandbox, daemon supervision or hostile-code isolation. Adapters remain short-lived, not daemons,
+   webhook hosts or long-running supervisors.
+8. When mechanism extractors changed, prove that the existing two-argument marker produces one
+   ecosystem-semantic qualified site, exact path-free typed binding and companion Artifact. Reject
+   ambiguity, unsupported identity, non-normal/outside-root locators and any file-path fallback.
+9. Write `outcome.md` with `Status: accepted`, `## Departures` and `## Residual decisions`.
+10. Set the proposal to `Status: accepted and complete` only after the preceding facts hold.
 
 ## Local acceptance
 
@@ -44,4 +69,9 @@ azimuth project accept-change --project <catalog> --before <active-workset> \
 ```
 
 The CLI verifies both immutable accounts. It creates no Git commit, deployment, Run or provider
-receipt. The D42 service wire remains isolated, and no Assurance Service export command exists.
+receipt. `azimuth run verify` and `azimuth run inspect` likewise perform no planning, provider
+execution, report import, durable ingest or Assurance State projection. `azimuth run plan` resolves
+Check-only, Challenge-only or mixed requests from the complete model; it does not execute
+`model.extract`, ingest Runs, derive Assurance State, infer cache validity or authorize historical
+reuse. A clean Challenge Result is not product evidence, and `deferred` is not a result. The D42
+service wire remains isolated, and no Assurance Service export command exists.

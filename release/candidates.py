@@ -174,7 +174,12 @@ def smoke_dotnet(catalog, annotations, emitter):
 def smoke_typescript(annotations, emitter):
     with tempfile.TemporaryDirectory(prefix="azimuth-npm-consumer-") as temporary:
         consumer = Path(temporary)
-        (consumer / "package.json").write_text('{"private":true,"type":"commonjs"}\n')
+        # The emitter derives an ecosystem-semantic site from the package name, so the disposable
+        # consumer needs a real one rather than an anonymous private manifest.
+        (consumer / "package.json").write_text(
+            '{"name":"azimuth-release-smoke-consumer","version":"0.0.0",'
+            '"private":true,"type":"commonjs"}\n'
+        )
         run(
             [
                 "npm",
@@ -206,6 +211,24 @@ def smoke_typescript(annotations, emitter):
         source.write_text(
             "import { realizes } from '@azimuth-sh/annotations';\n"
             "export function start(): void { realizes('consumer', 'starts'); }\n"
+        )
+        # The emitter resolves a site through the nearest TypeScript project, so a consumer
+        # without one fails closed rather than guessing an identity from the file path.
+        (consumer / "tsconfig.json").write_text(
+            json.dumps(
+                {
+                    "compilerOptions": {
+                        "module": "commonjs",
+                        "moduleResolution": "node",
+                        "noEmit": True,
+                        "skipLibCheck": True,
+                        "target": "ES2022",
+                    },
+                    "include": ["sample.ts"],
+                },
+                indent=2,
+            )
+            + "\n"
         )
         manifest = consumer / "manifest.json"
         run(

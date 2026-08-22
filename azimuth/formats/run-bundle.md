@@ -198,15 +198,33 @@ and never claims to have re-derived repository, artifact or deployment content.
   ],
   "challenges": [
     {
-      "id": "recovery-credibility",
+      "id": "challenge/91f69477f56b9a2ba588fb045529ddbaa7184c79f473eab50f73a0c5f70d038b",
       "challenger": {
         "id": "mutation/implementation-perturbation",
-        "fingerprint": "sha256:<challenger-fingerprint>"
+        "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "target": {
         "kind": "qualification",
         "id": "payments/recovery-replay-edge",
-        "fingerprint": "sha256:<qualification-fingerprint>"
+        "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "lane": "gate",
+      "scope": {
+        "anchors": [
+          {
+            "kind": "realization",
+            "id": "payments|rust-item|recovery::replay",
+            "fingerprint": "sha256:<source-fingerprint>"
+          }
+        ],
+        "inputs": [
+          {
+            "kind": "check-implementation",
+            "id": "payments|rust-item|recovery::replay-after-loss",
+            "fingerprint": "sha256:<source-fingerprint>"
+          }
+        ],
+        "fingerprint": "sha256:<scope-fingerprint>"
       },
       "units": [
         {
@@ -232,15 +250,45 @@ Implementation `identity` is the D45 stable semantic SourceIdentity
 glob-free semantic identity rather than a file, path, numeric line, or path-plus-line locator; it
 uses the realization-selector boundary from [verification.md](verification.md).
 
-Challenges sort by their plan-local id, which is unique. The semantic tuple of Challenger
-fingerprint, target kind and target fingerprint is also unique within the plan. Target kind is
-exactly `qualification | claim-judgment`. Qualification target ids are Evidence Binding ids; Claim
-Judgment target ids have exact case-level Claim form `<spec-id>#<case-id>`. The fingerprint, not the
-display id, is the exact decision target.
+Challenges sort by their plan-local id, which is unique. `lane` is exactly `gate | scheduled` and
+is derived from the current Challenge Schedule. Scope is the strict semantic Challenge scope from
+[verification.md](verification.md); its arrays and fingerprint are validated independently.
+
+The semantic tuple of Challenger fingerprint, target kind and target fingerprint is also unique
+within the plan. Target kind is exactly `qualification | claim-judgment`. Qualification target ids
+are Evidence Binding ids; Claim Judgment target ids have exact case-level Claim form
+`<spec-id>#<case-id>`. The fingerprint, not the display id, is the exact decision target.
+
+Generated Challenge ids are `challenge/<64-lowercase-hex>`, where the suffix is the raw SHA-256 of
+RFC 8785 canonical UTF-8 for:
+
+```json
+{
+  "format": "azimuth-challenge-selection-identity",
+  "version": 1,
+  "challenger_fingerprint": <challenger-fingerprint>,
+  "target_kind": <target-kind>,
+  "target_fingerprint": <target-fingerprint>
+}
+```
+
+The id is independent of selector order, authored Plan id, capability, work units, lane and scope.
+Selections with the same exact tuple union their anchors and inputs. Conflicting capabilities or
+work units fail planning; neither arrival order nor one lexically smaller Plan wins.
+
+For Challenger fingerprint `sha256:` followed by 64 `a` characters, Qualification fingerprint
+`sha256:` followed by 64 `b` characters and target kind `qualification`, the canonical preimage is:
+
+```json
+{"challenger_fingerprint":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","format":"azimuth-challenge-selection-identity","target_fingerprint":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","target_kind":"qualification","version":1}
+```
+
+The generated id is
+`challenge/91f69477f56b9a2ba588fb045529ddbaa7184c79f473eab50f73a0c5f70d038b`.
 
 The standalone verifier recomputes plan identity and lexical exactness. It does not assert that
-the named model, Check, Challenger or decision is current. Dependent planning and ledger changes
-perform that join.
+the named model, Check, Challenger or decision is current. Model-aware generated planning performs
+the current-authority join; the ledger later joins accepted facts.
 
 ## Actual selection
 
@@ -259,15 +307,15 @@ perform that join.
 
 Actual Check and Challenge entries have the same exact shapes as plan entries. A selected Check
 repeats its complete planned implementation array and only its units may be a non-empty subset. A
-selected Challenge repeats its semantic identity and only its units may be a non-empty subset.
-Context equals `plan.required_context` exactly, and `plan_fingerprint` equals the recomputed plan
-fingerprint.
+selected Challenge repeats its semantic identity, lane and complete scope, and only its units may
+be a non-empty subset. Context equals `plan.required_context` exactly, and `plan_fingerprint` equals
+the recomputed plan fingerprint.
 
 Every actual entry resolves to the plan entry with the same identity. Units are a non-empty subset
-of that entry. Additional or changed entries, fingerprints, implementations, unit parameters or
-context are material mismatches. Status `complete` requires actual `checks` and `challenges` to
-equal the plan arrays and actual context to equal required context; other terminal statuses may
-carry a subset of entries or units.
+of that entry. Additional or changed entries, fingerprints, implementations, target, lane, scope,
+unit parameters or context are material mismatches. Status `complete` requires actual `checks` and
+`challenges` to equal the plan arrays and actual context to equal required context; other terminal
+statuses may carry a subset of entries or units.
 
 ## Provenance
 
@@ -280,9 +328,31 @@ carry a subset of entries or units.
     "uri": "https://example.invalid/native-run/991"
   },
   "normalizer": {
-    "id": "azimuth/local",
+    "id": "adapter/synthetic",
     "version": "0.1.0-alpha.2",
-    "build_fingerprint": "sha256:<64-lowercase-hex>"
+    "build_fingerprint": "sha256:<adapter-fingerprint>"
+  },
+  "adapter": {
+    "id": "synthetic",
+    "adapter_version": "0.1.0-alpha.2",
+    "adapter_fingerprint": "sha256:<adapter-fingerprint>",
+    "descriptor_fingerprint": "sha256:<descriptor-fingerprint>",
+    "configuration_fingerprint": "sha256:<configuration-fingerprint>",
+    "launch_fingerprint": "sha256:<launch-fingerprint>",
+    "routes": [
+      {
+        "selection": {
+          "kind": "check",
+          "id": "payments/recovery-under-broker-loss"
+        },
+        "capability": {
+          "address": "synthetic/checks",
+          "class": "check.execute",
+          "fingerprint": "sha256:<capability-fingerprint>"
+        }
+      }
+    ],
+    "import_inputs": []
   },
   "generated_at_ms": 1787300021000,
   "principal": "ci/workload-identity",
@@ -293,11 +363,36 @@ carry a subset of entries or units.
 ```
 
 Mode is `execute | import`. `source.system` and `normalizer.id` are lower kebab path ids.
-`source.execution`, version and principal are non-empty strings. Source URI, principal,
-normalizer build fingerprint and attributes are optional; no other fields are. Attributes are an
-exact string map. `generated_at_ms >= finished_at_ms`. Verification never dereferences the URI.
+`source.execution`, version and principal are non-empty strings. Source URI, principal and
+attributes are optional; no other fields are. Attributes are an exact string map.
+`generated_at_ms >= finished_at_ms`. Verification never dereferences the URI.
 
-Provider capability identity is absent until the adapter protocol defines it.
+`adapter` is required. Its identity and routes equal the strict launch plan from
+[run-launch-plan.md](run-launch-plan.md). Route shapes, ordering, capability classes, Challenge
+forms and fingerprints follow that format exactly. Every address uses the one adapter id. There is
+exactly one route for every semantic Plan selection and no other route.
+
+`normalizer.id` is exactly `adapter/<configured-adapter-id>`. Its version equals the returned
+adapter description's `adapter_version` and `adapter.adapter_version`, and its required build
+fingerprint equals `adapter.adapter_fingerprint`. The distinct `source` object retains the native
+provider execution.
+
+For `mode: execute`, `import_inputs` is exactly `[]`. For `mode: import`, it is a non-empty array
+sorted by unique lower-kebab path `id`:
+
+```json
+{
+  "id": "native-report",
+  "digest": "sha256:<64-lowercase-hex>",
+  "size_bytes": 18423
+}
+```
+
+These are the exact identities core computed and supplied to the adapter. Paths, URIs and native
+execution ids are not input identities and do not occur in this array. The launch operation equals
+provenance mode. The bundle's Subject, Subject fingerprint and Plan equal the launch plan. The
+adapter response request id and description are transport fields protected before publication;
+they are not copied into the provider-neutral bundle.
 
 ## Artifacts
 
@@ -331,8 +426,8 @@ start with `/`. Artifact arrays sort by unique id. Verification never reads a lo
   "message": "The recovery implementation mutation survived.",
   "scope": {
     "kind": "challenger-execution",
-    "challenger_fingerprint": "sha256:<64-lowercase-hex>",
-    "target_fingerprint": "sha256:<64-lowercase-hex>"
+    "challenger_fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "target_fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   },
   "artifacts": ["native-report"],
   "details": {
@@ -350,14 +445,24 @@ one of:
 {"kind":"activity","id":"fault-probe/attempt-1"}
 {"kind":"check-execution","check":"payments/recovery-under-broker-loss"}
 {
+  "kind": "challenge-selection",
+  "id": "challenge/91f69477f56b9a2ba588fb045529ddbaa7184c79f473eab50f73a0c5f70d038b"
+}
+{
   "kind": "challenger-execution",
-  "challenger_fingerprint": "sha256:<64-lowercase-hex>",
-  "target_fingerprint": "sha256:<64-lowercase-hex>"
+  "challenger_fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "target_fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 }
 ```
 
 Artifact references sort and are unique. Details are an exact string map. Diagnostics explain
 facts but do not determine outcomes.
+
+For status `partial | cancelled | timed-out`, every planned Challenge omitted from actual
+selection has exactly one diagnostic whose class is `execution`, whose scope is that
+`challenge-selection` id and whose non-empty message states the reason. No Challenger execution or
+Challenge Result exists for the omission. No such omission is valid for `complete`. A diagnostic
+does not turn deferred work into a result and does not make the outstanding selection disappear.
 
 ## Activities
 
@@ -430,15 +535,15 @@ not repeated here. There is no lifecycle stage or expiry.
 
 ```json
 {
-  "challenge": "recovery-credibility",
+  "challenge": "challenge/91f69477f56b9a2ba588fb045529ddbaa7184c79f473eab50f73a0c5f70d038b",
   "challenger": {
     "id": "mutation/implementation-perturbation",
-    "fingerprint": "sha256:<challenger-fingerprint>"
+    "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   },
   "target": {
     "kind": "qualification",
     "id": "payments/recovery-replay-edge",
-    "fingerprint": "sha256:<qualification-fingerprint>"
+    "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   },
   "units": [
     {
@@ -512,7 +617,8 @@ preimage objects, where angle-bracket values stand for the normalized JSON value
   "source_system": <system>,
   "source_execution": <execution>,
   "subject_fingerprint": <subject-fp>,
-  "plan_fingerprint": <plan-fp>
+  "plan_fingerprint": <plan-fp>,
+  "launch_fingerprint": <launch-fp>
 }
 {
   "format": "azimuth-observation-fingerprint",
@@ -541,6 +647,16 @@ preimage objects, where angle-bracket values stand for the normalized JSON value
 }
 ```
 
+For the complete launch vector in [run-launch-plan.md](run-launch-plan.md), source system
+`synthetic` and source execution `run-1`, the canonical Run-id preimage is:
+
+```json
+{"format":"azimuth-run-identity","launch_fingerprint":"sha256:980dc9e544f41414e3a2735e84a6d9733aee85b2961899bb538f1f34c4347237","plan_fingerprint":"sha256:b75606956b9c1857f8b401d9bad207253b90f6948efddb5532a769b9f488fbfb","source_execution":"run-1","source_system":"synthetic","subject_fingerprint":"sha256:22478698e6731ce5984658e366386e466fe173216bc7cb721168e1638d2dee02","version":1}
+```
+
+Its SHA-256 value is
+`sha256:45acaf027cc7abee8a7a8ba8c0ff3ac80c6af61a16dbc904f6406e0fe11642dc`.
+
 `check`, `challenger` and `target` are the complete corresponding normalized objects, not joined
 strings. A plan preimage excludes the plan's `fingerprint`; a selection preimage excludes the
 selection's `fingerprint`; and the bundle preimage excludes only `bundle_fingerprint`.
@@ -551,6 +667,7 @@ Every array has one canonical order:
   unique in that Subject.
 - Plan and actual Checks sort by id; Check implementations sort by identity; units sort by id.
 - Plan and actual Challenges sort by plan-local id; Challenge units sort by id.
+- Provenance adapter routes use launch-route order. Import inputs sort by id.
 - Root artifacts, diagnostics and activities sort by id. Check executions sort by Check id;
   Challenger executions sort by plan-local Challenge id.
 - Execution units sort by id. Attempts are an ordered sequence by contiguous ordinal and are not a
@@ -573,12 +690,19 @@ Input order is irrelevant. Exact bundle-fingerprint duplicates deduplicate. For 
 - `(run_id, bundle_revision)` cannot name different content;
 - one predecessor cannot have several successors;
 - Subject, Subject fingerprint, plan, plan fingerprint, required and actual context, source system,
-  source execution, planned time and started time are correction anchors and do not change; and
+  source execution, complete normalizer, adapter identity, version, descriptor, configuration,
+  launch, routes, planned time and started time are correction anchors and do not change; and
 - the set contains one linear chain with no missing predecessor, gap, fork or cycle.
 
 A correction is a complete bundle. Late work updates actual selection, activities, results,
-finished time and provenance by replacing the complete previous account. If a correction anchor
-was wrong, it is a new Run.
+finished time and provenance by replacing the complete previous account. Import-input identities
+are protected by each revision's bundle fingerprint but may change when a later or completed native
+report for the same source execution is normalized through the frozen launch route. If a correction
+anchor was wrong, it is a new Run.
+
+An adapter correction request carries the complete verified terminal bundle as well as the ordered
+revision/fingerprint chain identities. This gives a stateless adapter every fixed field needed to
+construct the exact next complete revision; core still verifies the combined chain independently.
 
 ## Command boundary
 
@@ -604,5 +728,15 @@ Inspect exits zero for a protocol-consistent set. A well-typed set with protocol
 and still emits its deterministic account, including those Findings. Malformed JSON, schema or
 command usage exits two and emits no inspection account.
 
-`plan`, `execute`, `import` and `ingest` remain unknown Run operations. No command invokes an
-adapter, reads an artifact locator, contacts the D42 service or translates an alpha 1 record.
+`plan`, `execute` and `import` use the separate adapter and launch contracts. `ingest` remains
+unknown. Standalone verification and inspection never invoke an adapter, read an artifact or input
+locator, contact the D42 service or translate an alpha 1 record.
+
+D47 deliberately replaces the earlier unpublished pre-release version 1 shape that lacked adapter
+provenance. A bundle without the required D47 adapter account is rejected; there is no compatibility
+reader and no second interpretation of the current version 1 schema.
+
+D48 likewise replaces the unpublished Challenge shape in place. Every Challenge selection now has
+`lane` and `scope`, actual selection repeats both, and an omitted Challenge uses the strict
+selection-scoped diagnostic. A prior Challenge entry without those fields is rejected rather than
+upgraded or interpreted twice.

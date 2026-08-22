@@ -1,4 +1,5 @@
-//! Repository-owned Check, Evidence Binding, Qualification, and Challenger declarations.
+//! Repository-owned Check, Evidence Binding, Qualification, Claim Judgment, and Challenge
+//! declarations.
 
 use crate::diag::{validate_id, Diag};
 use crate::json::{self, Json};
@@ -18,12 +19,22 @@ const BINDING_LABELS: &[&str] = &[
     "Oracle",
     "Context",
     "Challenge domain",
-    "Qualification policy",
+    "Policy",
 ];
 const QUALIFICATION_LABELS: &[&str] = &["Verdict", "Fingerprint", "Qualified", "Qualifier"];
-const CHALLENGER_LABELS: &[&str] = &["Form", "Searches for"];
+const CLAIM_JUDGMENT_LABELS: &[&str] = &[
+    "Verdict",
+    "Policy",
+    "Fingerprint",
+    "Judged",
+    "Judge",
+    "Basis",
+    "Residual risk",
+];
+const CHALLENGER_LABELS: &[&str] = &["Form", "Searches for", "Required scope"];
 const PLAN_LABELS: &[&str] = &["Challenger", "Select"];
 const POLICY_LABELS: &[&str] = &["Required challenge"];
+const SCHEDULE_LABELS: &[&str] = &["Gate challenge", "Scheduled challenge"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Check {
@@ -78,10 +89,117 @@ pub struct EvidenceBinding {
     pub oracle: Oracle,
     pub context: BTreeMap<String, String>,
     pub challenge_domain: Vec<ChallengeDomain>,
-    pub qualification_policy: String,
+    pub policy: String,
     pub rationale: String,
     pub path: String,
     pub line: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClaimJudgmentVerdict {
+    Accepted,
+    Rejected,
+}
+
+impl ClaimJudgmentVerdict {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "accepted" => Some(Self::Accepted),
+            "rejected" => Some(Self::Rejected),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Accepted => "accepted",
+            Self::Rejected => "rejected",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClaimJudgment {
+    pub id: String,
+    pub verdict: ClaimJudgmentVerdict,
+    pub policy: String,
+    pub fingerprint: String,
+    pub judged: String,
+    pub judge: String,
+    pub basis: Vec<String>,
+    pub residual_risks: Vec<String>,
+    pub rationale: String,
+    pub path: String,
+    pub line: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SemanticScopeKind {
+    Claim,
+    Binding,
+    Qualification,
+    ClaimJudgment,
+    Check,
+    CheckImplementation,
+    Realization,
+    Mechanism,
+    MechanismImplementation,
+    Artifact,
+    Context,
+    Policy,
+    Area,
+    RealizationObligation,
+    Surface,
+    SurfaceMember,
+    Enumeration,
+}
+
+impl SemanticScopeKind {
+    pub const ALL: [Self; 17] = [
+        Self::Claim,
+        Self::Binding,
+        Self::Qualification,
+        Self::ClaimJudgment,
+        Self::Check,
+        Self::CheckImplementation,
+        Self::Realization,
+        Self::Mechanism,
+        Self::MechanismImplementation,
+        Self::Artifact,
+        Self::Context,
+        Self::Policy,
+        Self::Area,
+        Self::RealizationObligation,
+        Self::Surface,
+        Self::SurfaceMember,
+        Self::Enumeration,
+    ];
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.name() == value)
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Claim => "claim",
+            Self::Binding => "binding",
+            Self::Qualification => "qualification",
+            Self::ClaimJudgment => "claim-judgment",
+            Self::Check => "check",
+            Self::CheckImplementation => "check-implementation",
+            Self::Realization => "realization",
+            Self::Mechanism => "mechanism",
+            Self::MechanismImplementation => "mechanism-implementation",
+            Self::Artifact => "artifact",
+            Self::Context => "context",
+            Self::Policy => "policy",
+            Self::Area => "area",
+            Self::RealizationObligation => "realization-obligation",
+            Self::Surface => "surface",
+            Self::SurfaceMember => "surface-member",
+            Self::Enumeration => "enumeration",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,6 +242,7 @@ pub struct Challenger {
     pub id: String,
     pub form: String,
     pub searches_for: String,
+    pub required_scope: Vec<SemanticScopeKind>,
     pub rationale: String,
     pub path: String,
     pub line: usize,
@@ -181,12 +300,13 @@ pub struct Verification {
     pub checks: Vec<Check>,
     pub bindings: Vec<EvidenceBinding>,
     pub qualifications: Vec<Qualification>,
+    pub claim_judgments: Vec<ClaimJudgment>,
     pub challengers: Vec<Challenger>,
     pub challenge_plans: Vec<ChallengePlan>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct QualificationPolicy {
+pub struct DecisionPolicy {
     pub id: String,
     pub required_challenges: Vec<String>,
     pub rationale: String,
@@ -195,9 +315,19 @@ pub struct QualificationPolicy {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct QualificationPolicies {
+pub struct ChallengeSchedule {
+    pub gate_challenges: Vec<String>,
+    pub scheduled_challenges: Vec<String>,
+    pub rationale: String,
     pub path: String,
-    pub policies: Vec<QualificationPolicy>,
+    pub line: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecisionStandards {
+    pub path: String,
+    pub policies: Vec<DecisionPolicy>,
+    pub schedule: ChallengeSchedule,
 }
 
 pub fn load_verification(path: &Path) -> Result<Verification, Vec<Diag>> {
@@ -214,6 +344,7 @@ pub fn parse_verification(path: &str, source: &str) -> Result<Verification, Vec<
     let mut checks: Vec<Check> = Vec::new();
     let mut bindings: Vec<EvidenceBinding> = Vec::new();
     let mut qualifications: Vec<Qualification> = Vec::new();
+    let mut claim_judgments: Vec<ClaimJudgment> = Vec::new();
     let mut challengers: Vec<Challenger> = Vec::new();
     let mut challenge_plans: Vec<ChallengePlan> = Vec::new();
     let mut i = 0;
@@ -258,19 +389,23 @@ pub fn parse_verification(path: &str, source: &str) -> Result<Verification, Vec<
                     path,
                     line,
                     format!("unrecognized heading `{text}`"),
-                    "a Check, Evidence Binding, Qualification, Challenger, or Challenge Plan",
+                    "a Check, Evidence Binding, Qualification, Claim Judgment, Challenger, or \
+                     Challenge Plan",
                 ));
             }
             i += 1;
             continue;
         };
-        if let Err(reason) = validate_id(id, true) {
+        if kind == "Claim Judgment" {
+            validate_claim_reference(path, line, id, &mut errors);
+        } else if let Err(reason) = validate_id(id, true) {
             errors.push(Diag::at(path, line, format!("invalid {kind} id: {reason}")));
         }
         let labels = match kind {
             "Check" => CHECK_LABELS,
             "Evidence Binding" => BINDING_LABELS,
             "Qualification" => QUALIFICATION_LABELS,
+            "Claim Judgment" => CLAIM_JUDGMENT_LABELS,
             "Challenger" => CHALLENGER_LABELS,
             "Challenge Plan" => PLAN_LABELS,
             _ => unreachable!(),
@@ -309,6 +444,20 @@ pub fn parse_verification(path: &str, source: &str) -> Result<Verification, Vec<
                         &mut errors,
                     );
                     qualifications.push(value);
+                })
+            }
+            "Claim Judgment" => {
+                parse_claim_judgment(path, line, id, &block, &mut errors).map(|value| {
+                    reject_duplicate_id(
+                        path,
+                        line,
+                        kind,
+                        id,
+                        &claim_judgments,
+                        |item| &item.id,
+                        &mut errors,
+                    );
+                    claim_judgments.push(value);
                 })
             }
             "Challenger" => parse_challenger(path, line, id, &block, &mut errors).map(|value| {
@@ -357,6 +506,7 @@ pub fn parse_verification(path: &str, source: &str) -> Result<Verification, Vec<
             checks,
             bindings,
             qualifications,
+            claim_judgments,
             challengers,
             challenge_plans,
         })
@@ -370,6 +520,7 @@ fn declaration_heading(text: &str) -> Option<(&'static str, &str)> {
         "Check",
         "Evidence Binding",
         "Qualification",
+        "Claim Judgment",
         "Challenger",
         "Challenge Plan",
     ] {
@@ -471,23 +622,8 @@ fn parse_binding(
         errors,
     )?;
     let challenge_domain = parse_challenge_domain(path, line, &domain_text, errors)?;
-    let qualification_policy = required(
-        block,
-        path,
-        line,
-        "Evidence Binding",
-        id,
-        "Qualification policy",
-        errors,
-    )?;
-    validate_reference(
-        path,
-        line,
-        "qualification policy",
-        &qualification_policy,
-        true,
-        errors,
-    );
+    let policy = required(block, path, line, "Evidence Binding", id, "Policy", errors)?;
+    validate_reference(path, line, "Decision Policy", &policy, true, errors);
     require_rationale(path, line, "Evidence Binding", id, block, errors);
     Some(EvidenceBinding {
         id: id.to_string(),
@@ -499,7 +635,79 @@ fn parse_binding(
         oracle,
         context,
         challenge_domain,
-        qualification_policy,
+        policy,
+        rationale: block.prose.clone(),
+        path: path.to_string(),
+        line,
+    })
+}
+
+fn parse_claim_judgment(
+    path: &str,
+    line: usize,
+    id: &str,
+    block: &Block,
+    errors: &mut Vec<Diag>,
+) -> Option<ClaimJudgment> {
+    let verdict_text = required(block, path, line, "Claim Judgment", id, "Verdict", errors)?;
+    let verdict = ClaimJudgmentVerdict::parse(&verdict_text).or_else(|| {
+        errors.push(Diag::expecting(
+            path,
+            line,
+            format!("unknown Claim Judgment verdict `{verdict_text}`"),
+            "accepted or rejected",
+        ));
+        None
+    })?;
+    let policy = required(block, path, line, "Claim Judgment", id, "Policy", errors)?;
+    validate_reference(path, line, "Decision Policy", &policy, true, errors);
+    let fingerprint = required(
+        block,
+        path,
+        line,
+        "Claim Judgment",
+        id,
+        "Fingerprint",
+        errors,
+    )?;
+    if !valid_fingerprint(&fingerprint) {
+        errors.push(Diag::expecting(
+            path,
+            line,
+            format!("invalid Claim Judgment fingerprint `{fingerprint}`"),
+            "sha256: followed by 64 lowercase hexadecimal digits",
+        ));
+    }
+    let judged = required(block, path, line, "Claim Judgment", id, "Judged", errors)?;
+    if !valid_iso_date(&judged) {
+        errors.push(Diag::expecting(
+            path,
+            line,
+            format!("invalid Claim Judgment date `{judged}`"),
+            "an ISO date in YYYY-MM-DD form",
+        ));
+    }
+    let judge = required(block, path, line, "Claim Judgment", id, "Judge", errors)?;
+    let basis = repeated_non_empty(block, path, line, "Claim Judgment", id, "Basis", errors);
+    let residual_risks = repeated_non_empty(
+        block,
+        path,
+        line,
+        "Claim Judgment",
+        id,
+        "Residual risk",
+        errors,
+    );
+    require_rationale(path, line, "Claim Judgment", id, block, errors);
+    Some(ClaimJudgment {
+        id: id.to_string(),
+        verdict,
+        policy,
+        fingerprint,
+        judged,
+        judge,
+        basis,
+        residual_risks,
         rationale: block.prose.clone(),
         path: path.to_string(),
         line,
@@ -573,11 +781,22 @@ fn parse_challenger(
     let form = required(block, path, line, "Challenger", id, "Form", errors)?;
     validate_reference(path, line, "Challenger form", &form, true, errors);
     let searches_for = required(block, path, line, "Challenger", id, "Searches for", errors)?;
+    let required_scope_text = required(
+        block,
+        path,
+        line,
+        "Challenger",
+        id,
+        "Required scope",
+        errors,
+    )?;
+    let required_scope = parse_required_scope(path, line, &required_scope_text, errors)?;
     require_rationale(path, line, "Challenger", id, block, errors);
     Some(Challenger {
         id: id.to_string(),
         form,
         searches_for,
+        required_scope,
         rationale: block.prose.clone(),
         path: path.to_string(),
         line,
@@ -621,24 +840,36 @@ fn parse_challenge_plan(
     })
 }
 
-pub fn parse_policies(path: &str, source: &str) -> Result<QualificationPolicies, Vec<Diag>> {
+pub fn parse_standards(path: &str, source: &str) -> Result<DecisionStandards, Vec<Diag>> {
     let lines = source.lines().collect::<Vec<_>>();
     let mut errors = Vec::new();
     let mut title = false;
-    let mut policies: Vec<QualificationPolicy> = Vec::new();
+    let mut policies: Vec<DecisionPolicy> = Vec::new();
+    let mut schedule = None;
     let mut i = 0;
     while i < lines.len() {
         let text = lines[i].trim();
         let line = i + 1;
-        if text == "# Qualification policies" {
+        if text == "# Decision policies and Challenge schedule" {
+            if title {
+                errors.push(Diag::at(
+                    path,
+                    line,
+                    "Decision Standards title is declared twice",
+                ));
+            }
             title = true;
             i += 1;
             continue;
         }
-        if let Some(id) = text.strip_prefix("## Policy:") {
+        if let Some(id) = text.strip_prefix("## Decision Policy:") {
             let id = id.trim();
             if let Err(reason) = validate_id(id, true) {
-                errors.push(Diag::at(path, line, format!("invalid policy id: {reason}")));
+                errors.push(Diag::at(
+                    path,
+                    line,
+                    format!("invalid Decision Policy id: {reason}"),
+                ));
             }
             let block_start = i + 1;
             let (block, next) = read_block(&lines, block_start, POLICY_LABELS);
@@ -647,12 +878,12 @@ pub fn parse_policies(path: &str, source: &str) -> Result<QualificationPolicies,
                 &lines,
                 block_start,
                 POLICY_LABELS,
-                "Policy",
+                "Decision Policy",
                 id,
                 &mut errors,
             );
             i = next;
-            reject_stray_and_duplicates(path, line, "Policy", id, &block, &mut errors);
+            reject_stray_and_duplicates(path, line, "Decision Policy", id, &block, &mut errors);
             let mut required_challenges = block
                 .labels
                 .iter()
@@ -666,25 +897,31 @@ pub fn parse_policies(path: &str, source: &str) -> Result<QualificationPolicies,
             let original_len = required_challenges.len();
             required_challenges.dedup();
             if required_challenges.is_empty() {
-                errors.push(missing(path, line, "Policy", id, "Required challenge"));
+                errors.push(missing(
+                    path,
+                    line,
+                    "Decision Policy",
+                    id,
+                    "Required challenge",
+                ));
             } else if required_challenges.len() != original_len {
                 errors.push(Diag::at(
                     path,
                     line,
-                    format!("Policy `{id}` repeats a required challenge"),
+                    format!("Decision Policy `{id}` repeats a required challenge"),
                 ));
             }
-            require_rationale(path, line, "Policy", id, &block, &mut errors);
+            require_rationale(path, line, "Decision Policy", id, &block, &mut errors);
             reject_duplicate_id(
                 path,
                 line,
-                "Policy",
+                "Decision Policy",
                 id,
                 &policies,
                 |item| &item.id,
                 &mut errors,
             );
-            policies.push(QualificationPolicy {
+            policies.push(DecisionPolicy {
                 id: id.to_string(),
                 required_challenges,
                 rationale: block.prose,
@@ -693,12 +930,86 @@ pub fn parse_policies(path: &str, source: &str) -> Result<QualificationPolicies,
             });
             continue;
         }
+        if let Some(id) = text.strip_prefix("## Challenge Schedule:") {
+            let id = id.trim();
+            if id != "current" {
+                errors.push(Diag::expecting(
+                    path,
+                    line,
+                    format!("unknown Challenge Schedule id `{id}`"),
+                    "`current`",
+                ));
+            }
+            let block_start = i + 1;
+            let (block, next) = read_block(&lines, block_start, SCHEDULE_LABELS);
+            reject_unknown_label_like_lines(
+                path,
+                &lines,
+                block_start,
+                SCHEDULE_LABELS,
+                "Challenge Schedule",
+                id,
+                &mut errors,
+            );
+            i = next;
+            reject_stray_and_duplicates(path, line, "Challenge Schedule", id, &block, &mut errors);
+            let mut gate_challenges = repeated_values(&block, "Gate challenge");
+            let mut scheduled_challenges = repeated_values(&block, "Scheduled challenge");
+            validate_distinct_forms(
+                path,
+                line,
+                "Gate challenge",
+                &mut gate_challenges,
+                &mut errors,
+            );
+            validate_distinct_forms(
+                path,
+                line,
+                "Scheduled challenge",
+                &mut scheduled_challenges,
+                &mut errors,
+            );
+            if gate_challenges.is_empty() && scheduled_challenges.is_empty() {
+                errors.push(Diag::at(
+                    path,
+                    line,
+                    "Challenge Schedule `current` has no challenge form",
+                ));
+            }
+            for form in &gate_challenges {
+                if scheduled_challenges.contains(form) {
+                    errors.push(Diag::at(
+                        path,
+                        line,
+                        format!("Challenge form `{form}` occurs in both scheduling lanes"),
+                    ));
+                }
+            }
+            require_rationale(path, line, "Challenge Schedule", id, &block, &mut errors);
+            if schedule.is_some() {
+                errors.push(Diag::at(
+                    path,
+                    line,
+                    "Challenge Schedule `current` is declared twice",
+                ));
+            } else {
+                schedule = Some(ChallengeSchedule {
+                    gate_challenges,
+                    scheduled_challenges,
+                    rationale: block.prose,
+                    path: path.to_string(),
+                    line,
+                });
+            }
+            continue;
+        }
         if text.starts_with('#') && !text.starts_with("## Semantics") {
             errors.push(Diag::expecting(
                 path,
                 line,
-                format!("unrecognized policy heading `{text}`"),
-                "`# Qualification policies` or `## Policy: <id>`",
+                format!("unrecognized Decision Standards heading `{text}`"),
+                "the strict title, `## Decision Policy: <id>`, or \
+                 `## Challenge Schedule: current`",
             ));
         }
         i += 1;
@@ -707,25 +1018,58 @@ pub fn parse_policies(path: &str, source: &str) -> Result<QualificationPolicies,
         errors.push(Diag::expecting(
             path,
             0,
-            "not a qualification policies file",
-            "`# Qualification policies`",
+            "not a Decision Standards file",
+            "`# Decision policies and Challenge schedule`",
         ));
     }
+    let schedule = schedule.unwrap_or_else(|| {
+        errors.push(Diag::expecting(
+            path,
+            0,
+            "no current Challenge Schedule",
+            "exactly one `## Challenge Schedule: current` block",
+        ));
+        ChallengeSchedule {
+            gate_challenges: Vec::new(),
+            scheduled_challenges: Vec::new(),
+            rationale: String::new(),
+            path: path.to_string(),
+            line: 0,
+        }
+    });
+    let scheduled_forms = schedule
+        .gate_challenges
+        .iter()
+        .chain(&schedule.scheduled_challenges)
+        .collect::<BTreeSet<_>>();
+    for form in policies
+        .iter()
+        .flat_map(|policy| &policy.required_challenges)
+    {
+        if !scheduled_forms.contains(form) {
+            errors.push(Diag::at(
+                path,
+                schedule.line,
+                format!("required Challenge form `{form}` has no scheduling lane"),
+            ));
+        }
+    }
     if errors.is_empty() {
-        Ok(QualificationPolicies {
+        Ok(DecisionStandards {
             path: path.to_string(),
             policies,
+            schedule,
         })
     } else {
         Err(errors)
     }
 }
 
-pub fn load_policies(path: &Path) -> Result<QualificationPolicies, Vec<Diag>> {
+pub fn load_standards(path: &Path) -> Result<DecisionStandards, Vec<Diag>> {
     let display = path.display().to_string();
     let source = fs::read_to_string(path)
         .map_err(|error| vec![Diag::file(&display, format!("cannot read: {error}"))])?;
-    parse_policies(&display, &source)
+    parse_standards(&display, &source)
 }
 
 pub fn parse_selector(
@@ -892,6 +1236,124 @@ fn parse_challenge_domain(
     Some(domains.into_iter().collect())
 }
 
+fn parse_required_scope(
+    path: &str,
+    line: usize,
+    value: &str,
+    errors: &mut Vec<Diag>,
+) -> Option<Vec<SemanticScopeKind>> {
+    let parsed = match json::parse(value) {
+        Ok(value) => value,
+        Err(reason) => {
+            errors.push(Diag::at(
+                path,
+                line,
+                format!("invalid Required scope JSON: {reason}"),
+            ));
+            return None;
+        }
+    };
+    let Json::Arr(values) = parsed else {
+        errors.push(Diag::expecting(
+            path,
+            line,
+            "Required scope is not an array",
+            "a non-empty JSON array of closed semantic scope kinds",
+        ));
+        return None;
+    };
+    let mut kinds = BTreeSet::new();
+    let mut had_duplicates = false;
+    for value in values {
+        let Some(value) = value.as_str() else {
+            errors.push(Diag::at(
+                path,
+                line,
+                "Required scope values must be strings",
+            ));
+            continue;
+        };
+        match SemanticScopeKind::parse(value) {
+            Some(kind) if !kinds.insert(kind) => had_duplicates = true,
+            Some(_) => {}
+            None => errors.push(Diag::expecting(
+                path,
+                line,
+                format!("unknown Required scope kind `{value}`"),
+                "one of the closed semantic Challenge scope kinds",
+            )),
+        }
+    }
+    if kinds.is_empty() {
+        errors.push(Diag::at(path, line, "Required scope must not be empty"));
+    }
+    if had_duplicates {
+        errors.push(Diag::at(
+            path,
+            line,
+            "Required scope repeats a semantic kind",
+        ));
+    }
+    Some(kinds.into_iter().collect())
+}
+
+fn repeated_non_empty(
+    block: &Block,
+    path: &str,
+    line: usize,
+    kind: &str,
+    id: &str,
+    key: &str,
+    errors: &mut Vec<Diag>,
+) -> Vec<String> {
+    for label in block.labels.iter().filter(|label| label.key == key) {
+        if label.value.is_empty() {
+            errors.push(Diag::at(
+                path,
+                label.line,
+                format!("{kind} `{id}` has an empty `{key}:` value"),
+            ));
+        }
+    }
+    let values = repeated_values(block, key);
+    if values.is_empty() {
+        errors.push(missing(path, line, kind, id, key));
+    }
+    values
+}
+
+fn repeated_values(block: &Block, key: &str) -> Vec<String> {
+    block
+        .labels
+        .iter()
+        .filter(|label| label.key == key)
+        .map(|label| label.value.clone())
+        .filter(|value| !value.is_empty())
+        .collect()
+}
+
+fn validate_distinct_forms(
+    path: &str,
+    line: usize,
+    label: &str,
+    forms: &mut Vec<String>,
+    errors: &mut Vec<Diag>,
+) {
+    for form in forms.iter() {
+        validate_reference(path, line, "challenge form", form, true, errors);
+    }
+    forms.sort();
+    let original_len = forms.len();
+    forms.dedup();
+    if forms.len() != original_len {
+        errors.push(Diag::at(
+            path,
+            line,
+            format!("Challenge Schedule repeats a `{label}:` form"),
+        ));
+    }
+}
+
 fn reject_stray_and_duplicates(
     path: &str,
     line: usize,
@@ -909,12 +1371,24 @@ fn reject_stray_and_duplicates(
     }
     let repeatable = match kind {
         "Check" => Some("Method"),
+        "Claim Judgment" => None,
         "Challenge Plan" => Some("Select"),
-        "Policy" => Some("Required challenge"),
+        "Decision Policy" => Some("Required challenge"),
+        "Challenge Schedule" => None,
         _ => None,
     };
     for duplicate in block.duplicates() {
-        if Some(duplicate.key.as_str()) != repeatable {
+        let allowed = match kind {
+            "Claim Judgment" => matches!(duplicate.key.as_str(), "Basis" | "Residual risk"),
+            "Challenge Schedule" => {
+                matches!(
+                    duplicate.key.as_str(),
+                    "Gate challenge" | "Scheduled challenge"
+                )
+            }
+            _ => Some(duplicate.key.as_str()) == repeatable,
+        };
+        if !allowed {
             errors.push(Diag::at(
                 path,
                 duplicate.line,
@@ -1244,17 +1718,39 @@ pub fn context_json(context: &BTreeMap<String, String>) -> Json {
     ])
 }
 
-pub fn policy_json(policy: &QualificationPolicy) -> Json {
+pub fn policy_json(policy: &DecisionPolicy) -> Json {
     let mut required_challenges = policy.required_challenges.clone();
     required_challenges.sort();
     required_challenges.dedup();
     Json::obj(vec![
-        ("format", Json::str("azimuth-qualification-policy")),
+        ("format", Json::str("azimuth-decision-policy-digest")),
         ("version", Json::Num(1.0)),
         ("id", Json::str(&policy.id)),
         (
             "required_challenges",
             Json::Arr(required_challenges.iter().map(Json::str).collect()),
+        ),
+    ])
+}
+
+pub fn schedule_json(schedule: &ChallengeSchedule) -> Json {
+    let mut gate_challenges = schedule.gate_challenges.clone();
+    gate_challenges.sort();
+    gate_challenges.dedup();
+    let mut scheduled_challenges = schedule.scheduled_challenges.clone();
+    scheduled_challenges.sort();
+    scheduled_challenges.dedup();
+    Json::obj(vec![
+        ("format", Json::str("azimuth-challenge-schedule-digest")),
+        ("version", Json::Num(1.0)),
+        ("id", Json::str("current")),
+        (
+            "gate_challenges",
+            Json::Arr(gate_challenges.iter().map(Json::str).collect()),
+        ),
+        (
+            "scheduled_challenges",
+            Json::Arr(scheduled_challenges.iter().map(Json::str).collect()),
         ),
     ])
 }

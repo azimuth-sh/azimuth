@@ -2450,6 +2450,488 @@ if local and ledger validation cannot share the same parser and reducer.
 
 ---
 
+## D47 — Explicit adapters bind semantic plans to bounded provider work *(2026-08-21)*
+
+**Decision.** Preserve D46's provider-neutral semantic Plan and introduce a separate strict
+`azimuth-run-launch-plan` version 1. Core owns model loading, Check selection and the D46 Plan. A
+launch plan binds that exact Plan and Subject to one configured adapter and one explicit capability
+route for every selected Check or Challenge. An adapter translates those frozen selections to
+provider work; it never loads or interprets the repository model independently.
+
+Adapter configuration is the strict `azimuth/adapters.json` format. There is no executable search,
+entry-point convention or `PATH` fallback. One configuration entry pins a project-local adapter
+id, provider family, protocol version, adapter version and build, executable and resource content,
+expected descriptor, non-secret semantic settings, child environment and process limits. A path is
+absolute or is contained beneath the configuration directory after resolution. Core stages and
+hashes content from one open handle and invokes the staged executable directly without a shell.
+
+**Capability identity.** The version 1 semantic classes are closed:
+
+- `model.extract`;
+- `check.execute`;
+- `check.import`;
+- `challenge.execute`; and
+- `challenge.import`.
+
+Provider-family identities remain open lower-kebab path ids and describe implementation families;
+they are not route addresses. A configured capability address is exactly
+`<configured-adapter-id>/<capability-id>`, where both address parts are lower-kebab segments. One
+capability may support several classes. Challenge forms are open lower-kebab path ids declared by
+challenge capabilities rather than enumerated by core. One Run uses one configured adapter id, but
+its selections may route through several capabilities of that adapter.
+
+Four identities separate concerns. The adapter fingerprint binds protocol, adapter identity,
+provider family, version, build and executable and resource digests. A capability fingerprint adds
+its id, classes, challenge forms and exact non-secret semantic settings. The descriptor fingerprint
+binds the complete reported adapter and capability dictionary. The configuration fingerprint also
+binds adapter-wide semantic settings, the complete exact literal environment and timeout and stream
+limits. Locators and prose enter none of these fingerprints. Alpha 2 has no inherited environment,
+secret value, secret reference or interpolation notation.
+
+**Static description handshake.** `azimuth adapter verify` launches the configured executable with
+one `describe` request. The returned description must equal the configured description, including
+adapter, build, content, capability and fingerprint fields. Execute and import responses repeat the
+same description, so replacing a binary after a successful verification still fails closed. Core
+stages and hashes configured content for every invocation; a prior verify is not a lease.
+
+**Launch identity.** A launch plan contains one exact D46 Subject and Subject fingerprint, planned
+time, one `execute | import` operation, the complete D46 Plan, configured adapter identity and
+sorted routes. There is exactly one route for every semantic selection and no other route. Check
+routes require `check.execute` or `check.import` according to the operation. Challenge routes
+require the matching Challenge class and repeat the open Challenger form supported by the
+capability. `model.extract` is a configuration capability, not a Run operation in this change. Any
+planned time, Subject, semantic Plan, operation, adapter or route substitution changes the launch
+fingerprint. The D47 Run-id preimage adds that launch fingerprint to D46's source, Subject and Plan
+identity, so route or configuration substitution creates a different Run id directly.
+
+The current planner accepts explicit Check ids, finite non-empty work-unit sets and capability
+addresses. It loads and fingerprints the complete unselected model, resolves the current Check
+fingerprint and every stable implementation, and emits `challenges: []`. It neither requires a
+Qualification nor compares Run context with an Evidence Binding. Challenge Plan resolution and
+decision applicability belong to the next change; hand-authored launch plans may exercise the
+Challenge transport boundary without pretending that resolution exists. Their declared form is
+provider-accountable and capability-checked, but current Challenger/form validation waits for that
+change.
+
+**Process protocol.** Every adapter interaction is one bounded short-lived process with one strict
+versioned JSON request on standard input and exactly one strict versioned JSON response on standard
+output. Core closes input after the request, clears the child environment, supplies only configured
+non-secret literal values, and drains standard output and standard error concurrently into
+independent capped buffers. It enforces the configured timeout and never automatically retries
+execute after a timeout because native work may already have occurred.
+
+One deadline derived from the configured timeout bounds request writing, concurrent response and
+diagnostic reading, and core's own wait. On a supported host, process creation places the adapter in
+a fresh process group before adapter code begins. Core signals the group on every terminal path and
+cleans members and inherited pipes while they retain group membership. If the host cannot provide
+the required process-group primitive, invocation is rejected before spawn as an exit-one transport
+failure and produces no output. The host mechanism is not semantic protocol identity.
+
+This is not non-escapable descendant containment. Authorized adapter code may call `setsid`,
+`setpgid` or equivalent facilities and leave the group. Such an escaped descendant cannot make core
+read or wait past the deadline, but core does not guarantee its termination. Version 1 is not a
+filesystem or network sandbox, daemon supervisor or hostile-code isolation boundary.
+
+**Adversarial correction, 2026-08-21.** An earlier D47 draft claimed that platform-equivalent
+process-tree containment could guarantee termination of every descendant and inherited pipe.
+Adversarial review falsified that claim because an authorized descendant can escape a Unix process
+group. The deadline and best-effort group-cleanup contract above replaces that stronger draft.
+
+Core stages content before every invocation. It opens each configured executable, resource and
+import input exactly once, copies and hashes bytes from that same open handle into a private
+invocation directory, validates each executable and resource against its configured digest, and
+derives each import input's digest and size from that stream. It makes staged content non-writable
+and uses only staged paths. Resources and inputs are read-only; the executable retains only the
+owner permissions needed to read and execute it. This closes hash-then-open substitution without
+pretending to sandbox authorized adapter code. The adapter retains the host filesystem and network
+authority of the Azimuth process.
+
+A description request fingerprint binds the targeted adapter and configuration. An execute or
+import request fingerprint binds the operation, launch identity and sorted core-computed input
+content identities. The request carries adapter-wide and selected-capability semantic settings and
+resolved resource locators. Resource and input paths are transport locators and do not enter
+identity; their content does. The adapter must read each supplied input, verify its digest and size,
+and repeat the stable identity in bundle provenance. Mutable paths, URIs and provider execution ids
+cannot substitute for content identity.
+
+A successful execute or import response contains the exact request identity, launch identity,
+configured description and one complete D46 bundle. The bundle repeats adapter, descriptor,
+configuration, launch, route and import-input identities in provenance, and its planned time equals
+the launch. Core validates all of those values, actual selection, reduction and the complete bundle
+before atomic publication. A valid violated Observation, Challenge finding, partial Run,
+cancellation or timeout is an honest fact and exits zero.
+
+Nonzero adapter exit, timeout, stream overflow, extra response content or an explicit adapter
+failure is a transport failure and exits one. Model, content, descriptor, capability, request,
+launch, provenance, selection or bundle-invariant mismatch also exits one. CLI and local input
+schema errors, and malformed or schema-invalid adapter responses, exit two. Neither nonzero class
+publishes an output. Standard error and process exit status are diagnostics, never product facts.
+
+Execute and import may receive repeated predecessor bundle files. Core verifies the full D46 chain,
+then sends its unique `(bundle revision, bundle fingerprint)` identities in revision order and
+binds them in request identity. It also sends the complete verified terminal bundle, or `null` for
+an empty chain. The terminal fingerprint already commits the full bundle, so this redundant content
+does not enter request identity. With no predecessors the adapter returns revision zero. Otherwise
+a stateless adapter uses the terminal account to preserve every anchor and returns exactly the next
+complete revision. Core verifies terminal identity and the combined chain before spawn and again
+before atomic publication.
+
+The launch and bundle adapter accounts repeat exact adapter version. The D46 `normalizer` is now
+exactly `adapter/<configured-adapter-id>`, uses that adapter version and uses the adapter
+fingerprint as its build fingerprint. The complete normalizer is a correction anchor. This removes
+two competing producer identities while the separate source object continues to identify
+provider-native execution.
+
+**Corrections.** D47 adapter provenance is part of the fixed execution route. Adapter,
+configuration, descriptor, launch and capability routes are correction anchors in addition to
+D46's anchors. Import-input identities are protected per bundle revision but are not anchors: a
+later or completed native report for the same source execution may change bytes in the next
+correction. A different adapter, capability or configuration creates a new Run rather than
+rewriting how the existing Run occurred.
+
+**Pre-release replacement.** D47 replaces the unpublished D46 version 1 bundle shape in place.
+Package versions remain alpha 1, so no published Run protocol v1 has acquired a second meaning. The
+single current alpha 2 v1 schema requires adapter provenance and rejects the prior shape; no
+compatibility reader or alternate interpretation remains.
+
+**Command boundary.** The public surface is `azimuth adapter verify [--config <file>]`,
+`azimuth run plan --request <file> [--model <dir>] [--standards <file>] [--workspace <file>]`
+` [--manifest <file>...] [--config <file>] [--out <file>]`,
+`azimuth run execute --plan <file> [--predecessor <bundle>...] [--config <file>] [--out <file>]`
+and `azimuth run import --plan <file> --input <id>=<file>...`
+` [--predecessor <bundle>...] [--config <file>] [--out <file>]`.
+Configuration defaults to `azimuth/adapters.json`. Existing standalone `run verify` and
+`run inspect` retain their protocol-only meaning. Durable `run ingest` remains absent.
+
+**Why.** A reusable semantic Plan must survive capability changes without acquiring provider
+syntax, while a Run account must still reveal which exact executable route produced it. Local Check
+execution and native report import require the same identity checks but different capability
+classes. A bounded process also gives provider packages a language-neutral extension boundary
+without embedding arbitrary tools or long-running webhooks in core.
+
+**Strongest rejected alternative.** Put capability addresses directly in the D46 Plan. That makes
+provider installation part of semantic selection and prevents the same Plan from being routed in a
+developer workspace and CI. In-process plugins were also rejected: they weaken isolation, make one
+language ABI authoritative and cannot apply the same executable, environment and stream bounds.
+
+**Validation.** Ordinary engineering tests must cover strict configuration and description shape,
+same-handle staging, literal environment clearing, all five classes, capability substitution,
+canonical fingerprints, complete route cardinality, description drift, timeout, both stream bounds,
+malformed and extra response content, import relocation with stable content identity, predecessor
+chains, returned provenance, atomic output and valid adverse facts. One executing and one importing
+synthetic adapter must share the conformance suite. All current Claims remain routine and create no
+Qualifications.
+
+**What would falsify it.** Revisit the boundary if two structurally different providers require
+provider syntax in the D46 Plan, if one-request processes cannot safely represent bounded native
+execution, if content-addressed import cannot avoid mutable provider identity, or if configuration
+fingerprints churn on relocation without a behavior change.
+
+---
+
+## D48 — Traceability freezes decision Challenges before provider translation *(2026-08-21)*
+
+**Decision authority.** Add one strict Claim Judgment to `verification.md` for every standard or
+critical case Claim. The Judgment is the repository-owned, total-composition decision for that
+Claim; it is not a Run result or Subject-specific Assurance State. Its id is the Claim id, its
+verdict is `accepted | rejected`, and only a fingerprint-current accepted decision is executable.
+Routine Claims reject Judgments. The alpha 1 plural judgment facet remains invalid.
+
+One `Decision Policy` namespace replaces D45's Qualification Policy name in place. Evidence
+Bindings and Claim Judgments both use `Policy:`. Policies require open Challenge forms and their
+digest contains only policy id and sorted forms. A separate strict `Challenge Schedule: current`
+assigns every required or declared form exactly once to `gate | scheduled`. Schedule identity
+affects the complete model, semantic Plan and Challenge selection, but never a Qualification,
+Claim Judgment, policy or Challenger fingerprint. Alpha 2 defines no cache, cadence, TTL,
+historical applicability, Subject equivalence or time-based deferral.
+
+Either schedule lane may be empty, but their union is non-empty. The D48 Evidence Binding preimage
+uses literal `decision_policy_digest`; it rejects D45's unpublished
+`qualification_policy_digest` field rather than preserving two identities.
+
+**Total composition.** Claim Judgment identity binds the semantic Claim and criticality; exact
+case realizations; mechanisms attached to the case or parent requirement; each mechanism's
+attachment, enforcement, expectations, exact resolved artifact and optional single marker
+implementation; applicable surface contributions, witnesses and member identities; the exact
+Claim realization obligation; Evidence Binding fingerprints; recomputed expected Qualification
+fingerprints and authored verdicts; policy digest; Judgment verdict; and ordered basis and residual
+risk statements.
+
+Realizations are unique by SourceIdentity. Repeating one identity with a different source
+fingerprint makes the expected composition unavailable rather than treating two versions of one
+site as two realizations.
+
+The expected fingerprint never trusts a stale authored Qualification fingerprint. A missing
+required realization or a duplicate or unstable realization identity, mechanism implementation,
+artifact, enumeration witness, binding, Qualification or policy makes the expected composition
+unavailable rather than inventing a placeholder. Incidental paths, lines, mounts, dates,
+accountable people and explanatory prose are excluded. D13 model-authoritative source and
+surface-member identities remain semantic even where a member identity is a file.
+
+**Adversarial identity correction, 2026-08-22.** Audit found that D48's implementation account did
+not freeze how a marker-derived mechanism obtains SourceIdentity. Existing extractors encoded
+`<file>#<site>` in `binding`; a source relocation could therefore rename the semantic mechanism
+implementation, while two same-named methods could remain ambiguous. That contradicts D33 and the
+path exclusions above.
+
+The corrected strict manifest requires `site` on every `mechanism_implementations` record. It is a
+compiler-semantic qualified identity, unique within the assembled `(area, address-kind)` namespace.
+It includes module or package, declaring type or receiver and overload signature wherever the
+language can distinguish overloads. The accountable emitter derives that meaning from its compiler
+or runtime metadata and fails when its extraction account is ambiguous. Core cannot prove semantic
+qualification by inspecting opaque site bytes. It checks the strict site syntax, exact binding and
+post-assembly uniqueness and consistency instead. A file path is never a disambiguator.
+
+In raw extractor output, `binding` is exactly `<address-kind>:<site>` when split at its first `:`.
+Its lower-kebab prefix is the address kind derived from `lang`, and its complete remaining suffix
+equals `site` byte-for-byte. The raw marker companion Artifact requires `id`, `kind` and `file` and
+permits the existing optional typed `unique`, `columns` and `predicate` properties. Id equals the
+raw binding, kind equals its prefix and file equals the implementation locator. A raw companion is
+matched by that complete triple. Reusing one raw id in different files is not an Artifact collision
+before area assembly only when every record is an exact marker companion; repeating or ambiguously
+matching the triple, or mixing an ordinary Artifact into the collision, is invalid.
+
+A paired raw companion is marker-only. Before rewriting, core rejects any explicit Design
+`Binding:` that equals either its raw id or its derived assembled key. A marker implementation may
+resolve only the exact mechanism named by its `spec` and `mechanism`; its companion cannot fan out
+to another marker target or cross into the explicit-binding route. Artifact reuse is permitted only
+for an ordinary non-companion Artifact referenced by one or more explicit Design bindings.
+
+Project assembly resolves the file to exactly one area and mount, then derives the SourceIdentity
+key `<area>|<address-kind>|<site>`. Before model identity, mechanism resolution or fingerprinting,
+it atomically rewrites both the marker implementation `binding` and its companion Artifact `id` to
+that key and attaches the same SourceIdentity account to both. The assembled companion id is
+already its SourceIdentity key; core does not derive a second `<area>|<kind>|<id>` identity from it.
+Optional Artifact properties are preserved; their D48 account canonicalizes absence to `null`, `[]`
+and `null`. General non-companion artifacts and explicit Design bindings keep their authored kind
+and id semantics. This is the only Artifact id rewrite.
+
+Path-free means that neither binding nor companion id is derived from or extended with the
+workspace-relative `file`. A semantic package or module identity may retain its language-native
+separators, including `/`, without becoming a file locator.
+
+Exactly one marker target may name one qualified source declaration and companion. A duplicate
+target, another `(spec, mechanism)` at that site or a conflicting `(area, address-kind, site)`
+account is invalid. More than one qualified site for one mechanism prevents a current Claim
+Judgment. The same kind and site in different areas produce different legal keys and may implement
+different mechanisms because their SourceIdentities differ. Local and federated assembly perform
+the identical rewrite and checks; a federated repository, revision or checkout locator never
+enters the key.
+
+Moving unchanged source within the same area while preserving language, qualified site and source
+fingerprint leaves mechanism SourceIdentity, Claim Judgment and semantic Challenge scope stable.
+The changed `file` remains visible in the complete-model account and accountable launch input, so
+complete-model and launch fingerprints change. Crossing an area or changing language, site or
+source content changes semantic identity or fingerprint.
+
+This correction adds no annotation argument: source continues to declare only
+`ImplementsMechanism(spec, mechanism)` in its ecosystem's existing spelling. The extractor owns
+qualified-site derivation, typed binding and companion Artifact emission. Manifests missing `site`,
+using untyped or path-bearing raw bindings, carrying a prequalified assembled key as raw binding,
+mismatching prefix, site or companion, or relying on file paths for semantic qualification are
+rejected in place with no compatibility reader.
+
+**Adversarial semantic-account correction, 2026-08-22.** Review found that the general
+compiler-qualified rule still overclaimed what four native extractors could establish. In
+particular, a Clang canonical type can contain a lambda source location, a Python namespace module
+can change when an input directory is mistaken for its import root, Go generic names can leak into
+an otherwise unchanged signature, and parsed Rust tokens do not prove a Cargo target or module
+graph. This revision narrows each alpha contract instead of accepting locator-derived identities.
+
+C++ accepts a mechanism marker only on a compiler-proven, program-global, external-linkage,
+non-module declaration that is neither templated nor constrained. Its site is the program-global
+qualified declaration name followed by Clang's canonical function type. An internal-linkage or
+anonymous-namespace declaration, a local type or callable, a declaration attached to a C++ module,
+any function or enclosing class template, any constrained declaration, or any canonical type that
+contains a source locator is rejected. Supporting those cases requires a later build-target and
+module identity account; file, compilation-directory and line data cannot repair them.
+
+For Python, `--root` is the one declared semantic import root. Every selected `.py` file derives
+its module from its normalized path relative to that root; `__init__.py` denotes its containing
+package. Positional input files and directories select work only and never become alternate import
+roots. An outside-root file, invalid module segment, two selected files resolving one module, or a
+file/package or namespace collision is rejected. The same root and sources therefore produce the
+same module identity regardless of input grouping.
+
+TypeScript and JavaScript use one whole compiler-configured project. Every selected source resolves
+to the same nearest unambiguous `tsconfig.json | jsconfig.json`, and that config's nearest owning
+`package.json` supplies one exact package name. Inputs select sources within the project and do not
+define projects, package roots or module names. Discovery covers exactly `.ts`, `.tsx`, `.mts`,
+`.cts`, `.js`, `.jsx`, `.mjs` and `.cjs`, excluding declaration files. Canonical real-path
+deduplication occurs before the configured Program is built.
+
+The TypeScript/JavaScript site contains package identity, one compiler-proven module specifier,
+receiver kind `static | instance | none`, qualified symbol and the complete sorted overload set.
+The module specifier is either the unique declared package export or the unique package-relative
+specifier accepted by the configured resolver. It never contains an absolute path or the
+workspace-relative raw `file`. Moving a module is semantic; relocation evidence moves the project
+root while preserving package name, config meaning and module specifier.
+
+Every overload account includes generic arity, positional generic parameters, constraints,
+parameter modifiers and compiler-canonical parameter and return types. Type aliases are recursively
+resolved to canonical target types and alias spelling is excluded. If the public checker account
+cannot prove a unique module, symbol, overload or canonical alias/type identity without a file
+locator, extraction fails.
+
+The compiler must resolve the marker call to the `@azimuth-sh/annotations` package's
+`implementsMechanism` export, including a valid import alias or namespace access. A local homonym
+is ordinary code and emits nothing. A marker-shaped call whose imported annotation symbol, literal
+arguments, enclosing callable or signature is invalid fails before output. The emitter uses the
+complete configured Program and accepts no relevant options, syntax or semantic diagnostic for a
+marked declaration or type it depends on; when diagnostic relevance cannot be proven, it fails
+closed. CLI failure is controlled, uses its declared nonzero class and leaves no output.
+
+Go continues to use the compiler package import path, receiver, function and `go/types` signature.
+Every compiler type parameter is replaced recursively by its zero-based position in the receiver
+and callable signature; source parameter names never enter the site. Receiver type parameters
+precede callable type parameters in that positional account. Constraints, parameter types,
+variadic position and result types remain semantic.
+
+Rust first resolves exactly one conventional Cargo target and crate, proves that the selected file
+is reachable through that target's conventional module graph and requires the target to compile.
+Ambiguous multi-target reachability, custom target paths, `#[path]`, generated or included source
+and files outside the reachable graph are rejected in alpha 2. Target kind, Cargo target name and
+compiler crate name qualify the module and declaration so two compilation targets cannot collide.
+
+Rust source address uses the compiler-accepted, whitespace-normalized declared signature. It
+includes callable qualifiers, receiver form, parameter types, return type, generic constraints and
+where constraints, but excludes parameter pattern names. Generic parameters are replaced by their
+zero-based declared positions. Declared type-path spelling is semantic in alpha 2: changing from an
+alias to its underlying type changes the site even when the compiler resolves both to one type.
+This explicitly retracts the stronger implication that the Rust extractor already owns exact
+resolved-type identity; such an identity requires a separately frozen compiler metadata account.
+
+Every emitter canonicalizes the raw `file` as one non-empty workspace-relative path under
+`--root`, with `/` separators and no empty, `.`, `..` or backslash segment. An outside-root or
+otherwise non-normal locator is rejected before output. None of these restrictions changes a D45,
+D46, D47 or D48 canonical preimage algorithm: `site` remains one opaque semantic string and file
+remains excluded from semantic identity. Re-emitting a previously non-canonical site can change
+downstream model and Plan fingerprints, as intended; no published canonical hash vector is
+reinterpreted.
+
+**Challengers and resolution.** A Challenger now declares a sorted non-empty set of required
+closed semantic scope kinds. Its identity binds id, open form, objection proposition and that set.
+Core never infers scope from the form name.
+
+All seven D45 selector forms are current. Resolution retains every candidate as `selected |
+missing-decision | stale-decision | rejected-decision | invalid-decision | inapplicable |
+unresolved-relation`. Binding and Check selectors reach Qualifications directly. Realization and
+mechanism Qualification selectors honor each binding's challenge domain. Claim Judgment selectors
+from Claim, realization or mechanism reach related Claims without consulting binding challenge
+domains. One successful sibling cannot hide an adverse candidate, and zero selection never widens
+to a suite, path or glob.
+
+Each candidate retains its selector and one exact relation object. Qualification targets reached
+through bindings, Checks or related Claims use the binding relation; a related Claim without a
+binding uses the Claim relation. Claim Judgment targets always use the related Claim relation.
+Only an absent direct binding, Check or Claim or a relation with no related Claim uses that exact
+unresolved anchor as the relation object.
+
+Only a current `qualified` Qualification or `accepted` Claim Judgment is selected. Candidate caps
+count every unique reached record before cross-Plan selection deduplication. Executable selections
+deduplicate by exact `(Challenger fingerprint, target kind, target fingerprint)`. A Qualification
+Challenge projects a dependency edge to its owning Claim and current Claim Judgment; it never
+manufactures a second direct Judgment Challenge Result.
+
+Candidate disposition precedence is routine `inapplicable`, absent declaration
+`missing-decision`, unavailable expected fingerprint `invalid-decision`, fingerprint mismatch
+`stale-decision`, current negative verdict `rejected-decision`, then current positive `selected`.
+
+**Semantic scope.** Every selected Challenge carries sorted selector anchors, complete semantic
+decision inputs and a canonical scope fingerprint. The closed vocabulary is `claim | binding |
+qualification | claim-judgment | check | check-implementation | realization | mechanism |
+mechanism-implementation | artifact | context | policy | area | realization-obligation | surface |
+surface-member | enumeration`. Overlapping selectors union scope; conflicting fingerprints for
+one typed identity fail. A selection covers a required Challenger kind only when the kind occurs
+in its anchors or inputs.
+
+A context scope item uses its Evidence Binding id and the exact D45 context fingerprint; it never
+uses a context display string or a second digest.
+
+The seven projections preserve their exact authored origin. Qualification inputs always include
+the decision, binding, Claim, Check, complete Check implementations, context and policy;
+mechanism-origin selection always includes the exact artifact and includes a mechanism
+implementation only for a marker-derived route. Claim Judgment inputs expand the complete
+composition item by item, including each binding's Check implementations, context and policy and
+the Judgment's own policy, plus every applicable surface, member, enumeration, area and obligation.
+Mutation can therefore receive one selected realization and its bound Check implementations,
+mechanism fault injection the exact mechanism and bound Check, and broad analysis the exact Claim
+composition without a provider path map.
+
+**Planning and launch.** The planning request contains required `checks` and `challenges` arrays,
+either of which may be empty while their union is non-empty. Every Challenge request names one
+authored Plan, one explicit configured capability, finite work units and a nonzero
+`max_candidates`. Core loads the complete unselected model, resolves the fixed requested Plan
+union, requires exact Qualification context equality and validates the operation class, exact
+Challenger form and D47 one-adapter boundary. It neither trusts caller-supplied semantic fields nor
+chooses or adds capabilities.
+
+For every selected decision, that request union supplies a runnable selection for every form its
+policy requires. Additional forms strengthen the search. Missing coverage, any adverse candidate,
+mixed contexts, cap overflow and conflicting duplicate capability or units fail before launch.
+Check-only, Challenge-only and mixed plans remain valid.
+
+D46 Challenge selections gain exact `gate | scheduled` lane and semantic scope. Target-derived
+selection ids depend only on Challenger fingerprint, target kind and target fingerprint, so Plan
+or selector order cannot rename them. Actual selection repeats lane and complete scope. For a
+partial, cancelled or timed-out Run, each omitted planned Challenge has exactly one execution
+diagnostic scoped to that selection id and no Result. Complete omission or any added, substituted
+or changed target, context, scope or unit is a mismatch.
+
+D47 Challenge routes gain sorted accountable launch inputs for every source-backed scope item.
+They repeat semantic kind, id and fingerprint and carry strict source, artifact, enumeration or
+surface-member locator accounts. Locator projection participates in the launch fingerprint and
+returned provenance but never semantic Plan identity. Adapters receive frozen form, semantic scope
+and source inputs; they do not load the Azimuth model or receive provider selectors from core.
+
+**Outcome meaning.** D46 retains exactly `clean | findings | inconclusive` Challenge Results.
+`deferred` is not a result. A clean result is a negative search fact, not product evidence or a
+repository decision. One fault activity may still produce a direct Check Observation and a
+distinct Qualification Challenge Result without deriving either from the other.
+
+**Breaking transition.** D48 atomically replaces D45's reserved Claim Judgment selectors and
+D47's Check-only generated planning. It replaces `Qualification Policy` grammar and the unpublished
+D46/D47 Challenge and launch-route shapes in place. There is no compatibility reader, alias or
+second interpretation. Durable ingest, authorization, retention, corrections policy and Assurance
+State remain the Run-ledger change; `azimuth run ingest` remains absent.
+
+**Why.** A decision fingerprint alone cannot tell mutation, fault or analysis providers what to
+perturb. Passing paths or asking each adapter to traverse the model would create a second authority.
+Typed semantic scope preserves reviewed meaning while accountable launch inputs let each provider
+translate the same frozen selection. Separate scheduling preserves expensive work without making
+cost or deferral part of decision truth.
+
+**Validation.** Ordinary engineering tests use synthetic non-routine models to prove strict
+Judgment and policy grammar, total-composition staleness isolation, all seven selector mappings,
+candidate visibility, required-form coverage, context and cap failure, scope and launch-input
+identity, mutation, dual-role fault and broad-analysis selection, partial deferral and actual
+selection mismatch. All current framework Claims remain routine and acquire no verification
+declarations.
+
+The identity correction additionally requires language-emitter tests to prove qualified
+receiver/type and overload distinction and emitter-side ambiguity failure. Core, local and
+federated tests prove strict syntax, exact raw binding and companion matching, atomic area-key
+rewriting, same-area conflict and cross-area distinction, local/federated equality, rejection of
+marker/explicit dual use, missing-site and path-bearing legacy records, and relocation stability
+for Judgment and scope alongside changed complete-model and launch locator identity.
+
+Native conformance also proves C++ rejects every excluded linkage, module, template, constraint
+and source-locator-bearing type; Python input grouping cannot change a root-relative module and
+module collisions fail; Go generic renaming preserves the positional site; and Rust selects one
+compiling Cargo target, follows its module graph, normalizes patterns and generics and rejects each
+unsupported target or source route. TypeScript/JavaScript conformance proves project and package
+identity, module and root relocation behavior, static/instance distinction, canonical aliases,
+overloads and generic constraints, symbol-resolved markers, all eight source extensions, canonical
+deduplication and controlled diagnostic failure. Every emitter rejects an outside-root or
+non-normal file.
+
+**What would falsify it.** Revisit D48 if two real providers cannot translate the closed semantic
+scope without provider syntax in the Plan, if total-composition identity causes unrelated Claims
+to stale, if candidate accounts cannot expose adverse siblings deterministically, or if the strict
+gate/scheduled split cannot represent expensive work without inventing cache semantics.
+
+---
+
 ## Method
 
 **Concern catalog first, notation last.** No mechanism enters the model until **≥2 structurally

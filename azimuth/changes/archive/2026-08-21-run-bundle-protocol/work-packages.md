@@ -22,28 +22,35 @@ Objective: expose only service-free Run verification and inspection
 Evidence: help, output parity, exit-class and reserved-subcommand tests
 
 ## Work package: run-conformance-experiment
-Status: pending
+Status: complete
 Depends on: run-cli-surface
 Owns: experiments/run-bundles
 Objective: exercise representative Subjects, aggregation, dual-role execution and corrections
 Evidence: standalone synthetic conformance gate
 
 ## Work package: run-gate-integration
-Status: pending
+Status: complete
 Depends on: run-conformance-experiment
 Owns: scripts/check.sh
 Objective: include Run conformance before release qualification
 Evidence: shell syntax, isolation discovery and canonical root gate
 
+## Work package: run-release-account-transition
+Status: complete
+Depends on: run-gate-integration
+Owns: .azimuth/release/github-workflow-receipt.json, .azimuth/release/ordinary-workflow-receipt.json, .azimuth/release/release-workflow-receipt.json
+Objective: retire stale active hosted accounts after the root gate and experiment catalog change
+Evidence: immutable archive copies, pending-account qualification and canonical root gate
+
 ## Work package: run-public-account
-Status: pending
+Status: complete
 Depends on: run-format-kernel, run-cli-surface
 Owns: README.md, docs/framework.md, docs/glossary.md, docs/change-process.md, docs/assurance-extensions.md, azimuth/README.md, tools/azimuth/README.md
 Objective: make the implemented Run exchange and remaining deferred boundaries public
 Evidence: terminology, command, link, 100-column and prohibited-name audits
 
 ## Work package: run-agent-guidance
-Status: pending
+Status: complete
 Depends on: run-cli-surface
 Owns: AGENTS.md, .agents/skills/azimuth-propose/SKILL.md, .agents/skills/azimuth-apply/SKILL.md, .agents/skills/azimuth-archive/SKILL.md
 Objective: teach current Run verification without inventing adapter or ledger workflows
