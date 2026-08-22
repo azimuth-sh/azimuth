@@ -12,11 +12,13 @@ use azimuth::workspace::{
 };
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const B: &str = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const C: &str = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+static NEXT_TEMPORARY_ROOT: AtomicU64 = AtomicU64::new(0);
 const STANDARDS: &str = "# Decision policies and Challenge schedule\n\n\
 ## Decision Policy: credible\n\
 Required challenge: mutation\n\n\
@@ -778,7 +780,25 @@ fn temporary_root() -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let root = std::env::temp_dir().join(format!("azimuth-decision-scope-{nonce}"));
+    temporary_root_with_nonce(nonce)
+}
+
+fn temporary_root_with_nonce(nonce: u128) -> PathBuf {
+    let sequence = NEXT_TEMPORARY_ROOT.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!(
+        "azimuth-decision-scope-{nonce}-{}-{sequence}",
+        std::process::id()
+    ));
     fs::create_dir_all(&root).unwrap();
     root
+}
+
+#[test]
+fn temporary_roots_remain_distinct_when_clock_nonce_matches() {
+    let first = temporary_root_with_nonce(0);
+    let second = temporary_root_with_nonce(0);
+
+    assert_ne!(first, second);
+    fs::remove_dir_all(first).unwrap();
+    fs::remove_dir_all(second).unwrap();
 }

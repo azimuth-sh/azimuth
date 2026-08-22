@@ -1,15 +1,14 @@
 # Assurance extensions
 
-Status: **Run and bounded adapter exchange implemented; applicability projection and ledger
-deferred**.
+Status: **decision-aware planning and bounded adapter exchange implemented; Run ledger deferred**.
 
 Azimuth is an evidence control plane, not a catalog of testing and analysis products. Alpha 2
 implements the repository graph from Checks through Evidence Bindings to Qualifications, plus
-Challengers and Challenge Plans. D46 also implements a strict provider-neutral Run bundle and
-service-free verification and inspection. D47 implements explicit short-lived adapter invocation,
-Check-only Run planning, native execution and exact report import. Projecting current decision
-applicability into generated Run selections and the replacement Assurance Service ledger remain
-deferred.
+total-composition Claim Judgments, Challengers, Challenge Plans, Decision Policies and one current
+Challenge Schedule. D46 implements a strict provider-neutral Run bundle and service-free
+verification and inspection. D47 and D48 implement explicit short-lived adapter invocation,
+complete-model Check and Challenge planning, native execution and exact report import. The
+replacement Assurance Service ledger remains deferred.
 
 This document records the role and authority boundaries extension work must preserve. Strict wire
 details remain in the [adapter](../azimuth/formats/adapter.md),
@@ -55,10 +54,12 @@ them.
 The implemented alpha 2 extension seam is repository-owned:
 
 - `verification.md` declares Checks, Evidence Bindings, Qualifications, Challengers and Challenge
-  Plans;
+  Plans plus one Claim Judgment for every applicable case Claim;
+- project standards declare Decision Policies and one `gate | scheduled` Challenge Schedule;
 - source uses sparse `ImplementsCheck(<check-id>)` linkage;
 - extractors emit implementation identity and source fingerprints, never evidentiary meaning;
-- Challenge Plans select exact current Qualification fingerprints through model relations; and
+- Challenge Plans use seven selector forms for exact current Qualification or Claim Judgment
+  fingerprints and preserve every candidate disposition; and
 - `azimuth export` version 2 exposes the derived repository graph and Findings.
 
 Ordinary tests, analyzer rules and monitors remain outside Azimuth until deliberately enrolled.
@@ -67,8 +68,8 @@ independent of storage capacity: a future ledger may retain very large execution
 semantic Check graph remains sparse.
 
 All active Claims in this repository are routine. They therefore have no current Checks, Evidence
-Bindings or Qualifications. The parser, extractor and release suites are ordinary engineering
-tests, not Azimuth evidence.
+Bindings, Qualifications or Claim Judgments. The parser, extractor and release suites are ordinary
+engineering tests, not Azimuth evidence.
 
 ## Current Run exchange
 
@@ -127,8 +128,23 @@ azimuth run import --plan <file> --input <id>=<file>... \
 ```
 
 Verification performs the configured description handshake. Planning loads the complete unselected
-model, resolves each requested Check and all its stable implementations, then emits a Check-only
-semantic Plan and exact launch routes. There is no `--only` or partial-model planning path.
+model and accepts Check-only, Challenge-only or mixed strict requests. Check requests name an
+explicit capability and finite units. Challenge requests additionally name an authored Plan and
+nonzero candidate cap. The two arrays are required and their combined selection is non-empty.
+
+Planning resolves the fixed union of requested Plans. Only current qualified Qualifications and
+current accepted Claim Judgments execute. Every reached candidate counts toward its Plan cap, and
+any `missing-decision | stale-decision | rejected-decision | invalid-decision | inapplicable |
+unresolved-relation` candidate fails planning. Exact Qualification context, policy-required-form
+coverage and the one-adapter boundary must hold. Core validates each explicit capability's
+operation class and exact Challenger form; it never chooses or adds a capability. There is no
+`--only` or partial-model planning path.
+
+Every Challenge selection freezes its `gate | scheduled` lane, exact target and sorted semantic
+scope. Scope contains typed selector anchors and complete decision inputs. Each launch route
+projects every source-backed scope item into one exact accountable source, Artifact, enumeration or
+surface-member input. Scope affects semantic Plan identity; locator projection affects launch
+identity. The adapter does not load or reinterpret the repository model.
 
 For every exchange, core stages executable, resource and import-input bytes from the same open
 streams it hashes and invokes only staged content with a cleared environment. On a supported host,
@@ -156,19 +172,23 @@ execution arrive through the frozen route. Changing the route creates another Ru
 
 A valid violated Observation, Challenge finding, partial or cancelled Run, or adapter-returned
 protocol-valid `timed-out` Run fact exits zero. A host-enforced process deadline is a transport
-timeout and exits one, as does another transport, semantic, content or identity mismatch. CLI and
-schema failures exit two. No nonzero result publishes an output bundle.
+timeout and exits one, as does another transport, semantic, content or identity mismatch. A
+returned `timed-out` fact is valid only when the complete response arrives inside that host
+deadline; host timeout publishes nothing. CLI and schema failures exit two. No nonzero result
+publishes an output bundle.
 
-Current planning emits `challenges: []`. Repository Challenge Plans already resolve authored
-Qualification targets, but the planner does not project those targets or their current
-applicability into generated Run selections. Claim Judgment target resolution remains later. The
-planner does not require a current Qualification before a Check can execute. A hand-authored strict
-launch plan may exercise Challenge transport without claiming current decision authority.
-`model.extract` is declared but has no current execution command.
+Challenge Results are exactly `clean | findings | inconclusive`. Clean records only that the
+configured search found no objection; it creates neither positive product evidence nor repository
+credibility. Every planned Challenge omitted from a partial, cancelled or timed-out Run has one
+execution diagnostic scoped to its selection id and no fabricated Result. Scheduled omission is
+allowed deferral; gate omission records execution failure. Added or substituted selection is a
+mismatch. A challenged Qualification projects an impact edge to its Claim and current Claim
+Judgment but never creates a duplicate direct Judgment Challenge Result. `model.extract` is
+declared but has no current execution command.
 
 Adapters are short-lived processes. There is no long-running adapter, service bridge, provider
-webhook or generic event gateway. A future gateway may authenticate an inbound event and invoke a
-bounded import adapter, but provider-specific webhook logic must not enter the Assurance Service.
+webhook or generic event gateway. Provider-specific event hosting does not enter core or the
+Assurance Service.
 
 Continuous monitoring must become bounded execution windows. Alert delivery may establish a
 negative event, but silence is not success unless an enrolled Check also establishes that the
@@ -177,6 +197,9 @@ measurement and delivery path was complete and healthy for the exact window.
 Raw reports and telemetry remain in their systems of record. Run bundles carry content digests,
 immutable references and enough provenance to preserve their normalized interpretation; standalone
 verification never dereferences an artifact locator.
+
+The synthetic [Challenge-planning conformance](../experiments/challenge-planning/README.md) proves
+these planning, outcome, omission, import and mismatch boundaries through public commands only.
 
 ## Service and wire boundary
 
@@ -192,8 +215,8 @@ version 2 repository model and no runtime ledger records.
 
 ## Acceptance boundary for future extensions
 
-A future provider package, Challenge planner or ledger integration is composable only if it
-preserves all of these properties:
+A future provider package or ledger integration is composable only if it preserves all of these
+properties:
 
 - adding a provider requires no provider-specific semantic type in core;
 - unknown schemas, statuses and partial selection fail closed;
@@ -204,5 +227,6 @@ preserves all of these properties:
 - monitoring silence is not interpreted as a satisfied product result; and
 - equivalent normalized bundles work locally and through the optional ledger.
 
-Current adapter transport stops before Challenge decision resolution and durable ingest. Active
-guidance must not simulate those missing authorities or dynamic assurance with checked-in records.
+Current adapter transport stops before durable ingestion. There is no authorization, retention,
+cache-validity, cross-Subject reuse or Subject-specific Assurance State authority. Active guidance
+must not simulate those missing authorities or dynamic assurance with checked-in records.

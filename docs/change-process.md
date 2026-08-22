@@ -61,16 +61,24 @@ Apply accepted intent deltas to package `spec.md`. Distil only mechanisms that n
 current `design.md`. Because every current Claim is routine, do not create package
 `verification.md` files, Checks, Evidence Bindings or Qualifications for this alpha transition.
 
-A future non-routine change will use the D45 graph:
+A non-routine change uses the current decision graph:
 
 ```text
 Check -> Evidence Binding -> Qualification
+Claim composition -> Claim Judgment
+Challenger -> Challenge Plan -> exact Qualification or Claim Judgment
 ```
 
 A Check has one atomic terminal proposition. Each binding relates that Check to exactly one
 case-level Claim and owns form, exact required context, challenge domain and policy. The binding id
 is also its sole Qualification id. One Check may bind to several Claims and one Claim may receive
 several Checks.
+
+Each standard or critical case Claim also has one total-composition Claim Judgment. Evidence
+Bindings and Judgments name one Decision Policy whose open forms must be covered by current
+Challengers and Plans. The project Challenge Schedule assigns every required or declared form
+exactly once to `gate | scheduled`. These are repository decisions and declarations, never Run
+results.
 
 Source then uses `ImplementsCheck(<project-global-check-id>)`. It never declares Claim identity,
 form, context or Qualification. Unmarked tests remain outside the graph.
@@ -116,8 +124,8 @@ D46 implements a standalone [`azimuth-run-bundle` version 1](../azimuth/formats/
 exchange. A Run binds one exact Subject and may contain Check executions, Challenger executions or
 both. Its plan and actual semantic selection are explicit, and its retries and work units reduce to
 one Observation per actually selected Check and one Challenge Result per selected Challenger
-target. Challengers search for objections to Qualifications or later Claim Judgments; a clean
-result is not positive product evidence.
+target. Challengers search for objections to Qualifications or Claim Judgments; a clean result is
+not positive product evidence.
 
 Use the service-free protocol commands to verify or inspect an already normalized bundle or
 correction set:
@@ -132,11 +140,12 @@ fingerprints remain current, apply execution results to Assurance State, call a 
 the bundle. A protocol-consistent violated Observation, Challenge findings or partial Run remains a
 valid execution account rather than a command failure.
 
-Repository Challenge Plans select exact authored Qualification targets through stable
-traceability, never through paths, line numbers, globs or silent whole-suite fallback. Claim
-Judgment targets remain later. Mutation testing, broad static analysis, flakiness repetition and
-qualification-oriented fault injection normally act as Challengers. Fault injection with a direct
-recovery or durability oracle may instead implement a Check.
+Repository Challenge Plans select exact current qualified Qualification and current accepted Claim
+Judgment targets through stable traceability, never through paths, line numbers, globs or silent
+whole-suite fallback. The seven selector forms preserve every selected, missing, stale, rejected,
+invalid, inapplicable or unresolved candidate. Mutation testing, broad static analysis, flakiness
+repetition and qualification-oriented fault injection normally act as Challengers. Fault injection
+with a direct recovery or durability oracle may instead implement a Check.
 
 Configure provider work explicitly in strict `azimuth/adapters.json`, then use:
 
@@ -150,10 +159,17 @@ azimuth run import --plan <file> --input <id>=<file>... \
   [--predecessor <bundle>...] [--config <file>] [--out <file>]
 ```
 
-Core loads the complete unselected model and creates a provider-neutral Check Plan before binding
-it to exact configured capability routes in a separate launch plan. Planning has no `--only` or
-partial-model path, always emits `challenges: []` and neither requires a current Qualification nor
-infers evidentiary applicability.
+Core loads the complete unselected model and accepts Check-only, Challenge-only and mixed strict
+requests. Every request selection names one explicit configured capability and finite work units;
+each Challenge request also names an authored Plan and nonzero candidate cap. Planning resolves the
+fixed requested Plan union, fails on any adverse candidate, requires exact Qualification context
+and covers every selected decision's policy-required forms. It has no `--only` or partial-model
+path and never adds a capability or widens a selector.
+
+Each Challenge selection records its schedule lane and exact semantic scope. Each launch route
+projects every source-backed scope item to one accountable input with the same kind, id and
+fingerprint plus its locator account. Scope changes semantic Plan identity; locators change launch
+identity. The adapter translates this frozen account rather than loading the Azimuth model.
 
 Execute and import stage executable, resource and input content from the streams core hashes,
 clear the child environment and bound both output streams. On supported hosts, the adapter starts
@@ -171,16 +187,21 @@ response is revision zero or the exact next complete revision.
 A valid violated Observation, Challenge finding, partial or cancelled Run, or adapter-returned
 protocol-valid `timed-out` Run fact is an execution fact and exits zero. A host-enforced process
 deadline is a transport timeout and exits one, as does a semantic, identity, content, other
-transport or bundle mismatch. CLI and schema failures exit two. Neither nonzero class leaves an
-output file.
+transport or bundle mismatch. The returned `timed-out` fact is valid only when its complete bundle
+arrives within the host deadline; the host timeout publishes nothing. CLI and schema failures exit
+two. Neither nonzero class leaves an output file.
 
-Repository Challenge Plans already resolve authored Qualification targets through stable
-traceability. Current planning does not project those targets or their current applicability into
-generated Run selections; Claim Judgment target resolution remains later. A hand-authored strict
-launch plan may exercise Challenge transport, but it does not establish model authority.
-`model.extract` execution, long-running adapters, inbound gateways and service bridges are also
-absent. Durable `azimuth run ingest`, authorization, retention and Subject-specific Assurance State
-belong to the future ledger.
+Challenge Results are exactly `clean | findings | inconclusive`. Clean is only a negative search
+fact and creates no credibility or product evidence. Every planned Challenge omitted from a
+partial, cancelled or timed-out Run has one exact execution diagnostic and no fabricated Result;
+omitting scheduled work is allowed deferral, while gate omission records execution failure. Added
+or substituted targets, context, units or scope are selection mismatches and publish nothing.
+
+`model.extract` execution is absent. Durable ingestion, authorization, retention and
+Subject-specific Assurance State belong to the future Run ledger. Current planning defines no
+cache validity, cadence, historical-applicability or cross-Subject reuse semantics. Adapters are
+bounded short-lived processes; there is no daemon, webhook, inbound gateway or long-running adapter
+boundary.
 
 The optional Assurance Service remains isolated on its D42 v1 wire until the Run-ledger replacement
 is accepted. It does not ingest Run bundles, and there is no compatibility bridge or Assurance

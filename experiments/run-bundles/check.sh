@@ -91,6 +91,67 @@ for name, kind in expected.items():
         "check",
         "challenge",
     ]
+    challenge = bundle["plan"]["challenges"][0]
+    expected_selection = fingerprint(
+        {
+            "format": "azimuth-challenge-selection-identity",
+            "version": 1,
+            "challenger_fingerprint": challenge["challenger"]["fingerprint"],
+            "target_kind": challenge["target"]["kind"],
+            "target_fingerprint": challenge["target"]["fingerprint"],
+        }
+    )
+    assert challenge["id"] == "challenge/" + expected_selection.removeprefix("sha256:")
+    assert challenge["lane"] == "gate"
+    scope = challenge["scope"]
+    assert scope["fingerprint"] == fingerprint(
+        {
+            "format": "azimuth-challenge-scope-fingerprint",
+            "version": 1,
+            "anchors": scope["anchors"],
+            "inputs": scope["inputs"],
+        }
+    )
+    assert [(item["kind"], item["id"]) for item in scope["anchors"]] == [
+        ("realization", "synthetic|rust-symbol|recovery::execute")
+    ]
+    assert [(item["kind"], item["id"]) for item in scope["inputs"]] == [
+        ("claim", "synthetic/recovery#recovers"),
+        ("binding", "synthetic/recovery-edge"),
+        ("qualification", "synthetic/recovery-edge"),
+        ("check", "synthetic/recovery-check"),
+        ("check-implementation", "synthetic|rust-symbol|recovery::probe"),
+        ("context", "synthetic/recovery-edge"),
+        ("policy", "synthetic/recovery-policy"),
+    ]
+    route_inputs = adapter["routes"][1]["inputs"]
+    projectable = {
+        "check-implementation",
+        "realization",
+        "mechanism-implementation",
+        "artifact",
+        "surface-member",
+        "enumeration",
+    }
+    assert [(item["kind"], item["id"], item["fingerprint"]) for item in route_inputs] == [
+        (item["kind"], item["id"], item["fingerprint"])
+        for item in scope["inputs"] + scope["anchors"]
+        if item["kind"] in projectable
+    ]
+    assert [item["source"] for item in route_inputs] == [
+        {
+            "kind": "source",
+            "file": "tests/recovery.rs",
+            "language": "rust",
+            "site": "recovery::probe",
+        },
+        {
+            "kind": "source",
+            "file": "src/recovery.rs",
+            "language": "rust",
+            "site": "recovery::execute",
+        },
+    ]
     launch_identity = {
         field: adapter[field]
         for field in [
@@ -176,7 +237,16 @@ partial, correction = [json.load(open(path, encoding="utf-8")) for path in sys.a
 attempts = partial["check_executions"][0]["units"][0]["attempts"]
 assert [attempt["outcome"] for attempt in attempts] == ["inconclusive", "satisfied"]
 assert partial["check_executions"][0]["observation"]["outcome"] == "inconclusive"
+omitted = partial["plan"]["challenges"][0]["id"]
+assert partial["actual_selection"]["challenges"] == []
+assert partial["challenger_executions"] == []
+assert len(partial["diagnostics"]) == 1
+diagnostic = partial["diagnostics"][0]
+assert diagnostic["class"] == "execution"
+assert diagnostic["scope"] == {"kind": "challenge-selection", "id": omitted}
 assert correction["check_executions"][0]["observation"]["outcome"] == "satisfied"
+assert correction["actual_selection"]["challenges"] == correction["plan"]["challenges"]
+assert len(correction["challenger_executions"]) == 1
 assert correction["bundle_revision"] == 1
 assert correction["corrects"] == partial["bundle_fingerprint"]
 assert correction["run_id"] == partial["run_id"]

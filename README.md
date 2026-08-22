@@ -19,7 +19,7 @@ development. The canonical product site is <https://azimuth.sh>.
 | `tools/extractors/` | language and structural extractors |
 | `packages/` | annotation packages; only .NET and TypeScript are selected for the first release |
 | `azimuth/formats/` | parser contracts for model and project artifacts |
-| `azimuth/standards/` | Qualification policies for non-routine Claims |
+| `azimuth/standards/` | Decision Policies and the current Challenge Schedule |
 | `azimuth/changes/` | active framework changes transferred from development |
 | `docs/` | framework definition, decisions, glossary and operating guidance |
 | `services/assurance/` | isolated D42 service pending the Run-ledger replacement |
@@ -51,8 +51,10 @@ identity or support promise.
 Main positions Azimuth as an evidence control plane. `azimuth validate`,
 `azimuth report traceability` and `azimuth export` are the active model commands. The repository
 defines requirement and case Claims, sparse Check-to-Claim Evidence Bindings, one Qualification
-per binding and semantic challenge declarations. All current framework Claims are routine, so
-ordinary engineering tests are not enrolled as Azimuth Checks.
+per binding, one total-composition Claim Judgment per non-routine case Claim and semantic Challenge
+declarations. Decision Policies require open Challenge forms; one separate schedule assigns each
+required or declared form exactly once to `gate` or `scheduled`. All current framework Claims are
+routine, so ordinary engineering tests are not enrolled as Azimuth Checks.
 
 D46 defines the strict [`azimuth-run-bundle`](azimuth/formats/run-bundle.md) version 1 exchange.
 `azimuth run verify` checks its shape, identities, selection, reduction and correction history;
@@ -61,7 +63,8 @@ or Assurance State.
 
 D47 adds strict [`adapter`](azimuth/formats/adapter.md) configuration and
 [`azimuth-run-launch-plan`](azimuth/formats/run-launch-plan.md) version 1. Core loads the complete
-model, derives a provider-neutral Check Plan and binds it to exact configured capability routes.
+model, derives a provider-neutral Check and Challenge Plan and binds it to exact configured
+capability routes.
 `azimuth adapter verify`, `azimuth run plan`, `azimuth run execute` and `azimuth run import` expose
 the short-lived provider boundary. Adapter content and imports are staged from the same streams
 core hashes. On supported hosts, every exchange uses a fresh process group, bounded output and one
@@ -71,12 +74,29 @@ an equivalent to leave the group. It cannot extend core's wait beyond the deadli
 not guarantee its termination. This is not non-escapable descendant containment, daemon
 supervision, hostile-code isolation or a filesystem or network sandbox.
 
-Current planning is Check-only and emits no Challenges. Repository Challenge Plans already resolve
-authored Qualification targets, but projecting their current applicability into generated Run
-selections is deferred; Claim Judgment target resolution remains later. `model.extract` execution,
-long-running adapters, event gateways, durable ingest and Assurance State are also deferred. The
-existing Assurance Service stays isolated on its D42 v1 wire until the Run-ledger replacement is
-accepted; there is no compatibility bridge or service export command.
+An adapter-returned protocol-valid `timed-out` Run fact exits zero only when its complete response
+arrives within the host deadline. A host-enforced deadline is a transport timeout, exits one and
+publishes no bundle.
+
+Planning accepts strict Check-only, Challenge-only and mixed requests. It loads the complete
+unselected model, resolves all seven Qualification and Claim Judgment selector forms, preserves
+every candidate disposition and requires the fixed requested Plan union to cover each selected
+decision's required forms. Every Challenge freezes its lane, semantic scope and accountable launch
+inputs; callers name each capability explicitly and core never widens an unresolved selector.
+
+Protocol-valid `clean`, `findings` and `inconclusive` Challenge Results are execution facts. Clean
+is only a negative search fact and creates neither credibility nor product evidence. Every
+Challenge omitted from a partial, cancelled or timed-out Run has one exact diagnostic and no
+fabricated Result; scheduled omission is allowed deferral, while gate omission records execution
+failure. The [Challenge-planning conformance](experiments/challenge-planning/README.md) exercises
+these boundaries through public commands.
+
+`model.extract` execution, durable Run ingestion, authorization, retention and Subject-specific
+Assurance State remain deferred. Current planning defines no cache, cadence or cross-Subject reuse
+semantics. Adapters remain bounded short-lived processes; there is no daemon, webhook or
+long-running adapter boundary. The existing Assurance Service stays isolated on its D42 v1 wire
+until the Run-ledger replacement is accepted; there is no compatibility bridge or service export
+command.
 
 ## Development and dogfooding
 

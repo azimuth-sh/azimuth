@@ -12,12 +12,17 @@ use std::time::Instant;
 
 static NEXT_LAB: AtomicU64 = AtomicU64::new(0);
 
-const STANDARDS: &str = "# Qualification policies
+const STANDARDS: &str = "# Decision policies and Challenge schedule
 
-## Policy: credible-executable
+## Decision Policy: credible-executable
 Required challenge: implementation-perturbation
 
 The policy requires an implementation challenge.
+
+## Challenge Schedule: current
+Gate challenge: implementation-perturbation
+
+The implementation challenge runs in the gate lane.
 ";
 
 const SYSTEM_SPEC: &str = "# Spec: payments/receipt

@@ -129,6 +129,7 @@ fn a_code_mechanism_may_derive_its_binding_from_an_implementation_marker() {
         mechanism_implementations: vec![MechanismImplementation {
             spec: "alpha".into(),
             mechanism: "concurrent-insert-constraint".into(),
+            site: "alpha::insert".into(),
             binding: "rust-symbol:alpha::insert".into(),
             file: "src/alpha.rs".into(),
             lang: "rust".into(),

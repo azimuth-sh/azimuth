@@ -294,6 +294,7 @@ def initialize(root: pathlib.Path) -> None:
                 "units": [{"id": "whole", "parameters": {}}],
             }
         ],
+        "challenges": [],
     }
     execute = {**base, "operation": "execute"}
     imported = copy.deepcopy(base)
@@ -348,16 +349,71 @@ def derive_launches(source: pathlib.Path, config_path: pathlib.Path, target: pat
     write_json(target / "substitution-reidentified.json", substituted)
 
     dual = copy.deepcopy(substituted)
+    challenger_fingerprint = fixed("c")
+    target_fingerprint = fixed("d")
+    anchors = [
+        {
+            "kind": "claim",
+            "id": "synthetic/behavior#works",
+            "fingerprint": fixed("e"),
+        }
+    ]
+    inputs = [
+        {
+            "kind": "claim",
+            "id": "synthetic/behavior#works",
+            "fingerprint": fixed("e"),
+        },
+        {
+            "kind": "claim-judgment",
+            "id": "synthetic/behavior#works",
+            "fingerprint": target_fingerprint,
+        },
+        {
+            "kind": "realization",
+            "id": "synthetic|rust-symbol|behavior::execute",
+            "fingerprint": fixed("f"),
+        },
+        {
+            "kind": "policy",
+            "id": "synthetic/claim-judgment-policy",
+            "fingerprint": fixed("9"),
+        },
+    ]
+    scope_fingerprint = fingerprint(
+        {
+            "format": "azimuth-challenge-scope-fingerprint",
+            "version": 1,
+            "anchors": anchors,
+            "inputs": inputs,
+        }
+    )
+    selection_fingerprint = fingerprint(
+        {
+            "format": "azimuth-challenge-selection-identity",
+            "version": 1,
+            "challenger_fingerprint": challenger_fingerprint,
+            "target_kind": "claim-judgment",
+            "target_fingerprint": target_fingerprint,
+        }
+    )
+    challenge_id = "challenge/" + selection_fingerprint.removeprefix("sha256:")
     challenge = {
-        "id": "synthetic-challenge",
+        "id": challenge_id,
         "challenger": {
             "id": "fault-injection/synthetic",
-            "fingerprint": fixed("c"),
+            "fingerprint": challenger_fingerprint,
         },
         "target": {
             "kind": "claim-judgment",
             "id": "synthetic/behavior#works",
-            "fingerprint": fixed("d"),
+            "fingerprint": target_fingerprint,
+        },
+        "lane": "gate",
+        "scope": {
+            "anchors": anchors,
+            "inputs": inputs,
+            "fingerprint": scope_fingerprint,
         },
         "units": [{"id": "whole", "parameters": {}}],
     }
@@ -375,13 +431,26 @@ def derive_launches(source: pathlib.Path, config_path: pathlib.Path, target: pat
     )
     dual["routes"].append(
         {
-            "selection": {"kind": "challenge", "id": "synthetic-challenge"},
+            "selection": {"kind": "challenge", "id": challenge_id},
             "capability": {
                 "address": "executor/dual",
                 "class": "challenge.execute",
                 "challenge_form": "fault-injection",
                 "fingerprint": dual_capability["fingerprint"],
             },
+            "inputs": [
+                {
+                    "kind": "realization",
+                    "id": "synthetic|rust-symbol|behavior::execute",
+                    "fingerprint": fixed("f"),
+                    "source": {
+                        "kind": "source",
+                        "file": "src/behavior.rs",
+                        "language": "rust-symbol",
+                        "site": "behavior::execute",
+                    },
+                }
+            ],
         }
     )
     dual["fingerprint"] = launch_fingerprint(dual)

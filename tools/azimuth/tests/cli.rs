@@ -123,7 +123,7 @@ fn only_export_is_a_populated_two_spec_graph_closure() {
                  Terminal: complete\n\nAtomic.\n\n## Evidence Binding: edge/{name}\n\
                  Check: {name}/check\nClaim: {name}#{name}-holds\nProposition: direct\n\
                  Scope: unit\nQuantification: example\nOracle: direct\nContext: {{}}\n\
-                 Challenge domain: [\"context\"]\nQualification policy: credible\n\nReviewable.\n"
+                 Challenge domain: [\"context\"]\nPolicy: credible-executable\n\nReviewable.\n"
             ),
         )
         .unwrap();

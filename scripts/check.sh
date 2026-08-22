@@ -40,6 +40,8 @@ cargo test --manifest-path tools/extractors/rust/Cargo.toml
 ./experiments/assurance-service/check.sh
 ./experiments/run-bundles/check.sh
 ./experiments/adapter-capabilities/check.sh
+./experiments/challenge-planning/check.sh
+./experiments/mechanism-identities/check.sh
 
 cargo test --manifest-path services/assurance/Cargo.toml --lib
 (

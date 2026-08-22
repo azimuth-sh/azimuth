@@ -52,19 +52,115 @@ def check_selection(units: list[dict[str, object]]) -> dict[str, object]:
 
 
 def challenge_selection(units: list[dict[str, object]]) -> dict[str, object]:
+    challenger_fingerprint = fixed("d")
+    target_fingerprint = fixed("e")
+    anchors = [
+        {
+            "kind": "realization",
+            "id": "synthetic|rust-symbol|recovery::execute",
+            "fingerprint": fixed("f"),
+        }
+    ]
+    inputs = [
+        {
+            "kind": "claim",
+            "id": "synthetic/recovery#recovers",
+            "fingerprint": fixed("1"),
+        },
+        {
+            "kind": "binding",
+            "id": "synthetic/recovery-edge",
+            "fingerprint": fixed("2"),
+        },
+        {
+            "kind": "qualification",
+            "id": "synthetic/recovery-edge",
+            "fingerprint": target_fingerprint,
+        },
+        {
+            "kind": "check",
+            "id": "synthetic/recovery-check",
+            "fingerprint": fixed("b"),
+        },
+        {
+            "kind": "check-implementation",
+            "id": "synthetic|rust-symbol|recovery::probe",
+            "fingerprint": fixed("c"),
+        },
+        {
+            "kind": "context",
+            "id": "synthetic/recovery-edge",
+            "fingerprint": fixed("3"),
+        },
+        {
+            "kind": "policy",
+            "id": "synthetic/recovery-policy",
+            "fingerprint": fixed("9"),
+        },
+    ]
+    scope_fingerprint = fingerprint(
+        {
+            "format": "azimuth-challenge-scope-fingerprint",
+            "version": 1,
+            "anchors": anchors,
+            "inputs": inputs,
+        }
+    )
+    selection_fingerprint = fingerprint(
+        {
+            "format": "azimuth-challenge-selection-identity",
+            "version": 1,
+            "challenger_fingerprint": challenger_fingerprint,
+            "target_kind": "qualification",
+            "target_fingerprint": target_fingerprint,
+        }
+    )
     return {
-        "id": "synthetic-credibility",
+        "id": "challenge/" + selection_fingerprint.removeprefix("sha256:"),
         "challenger": {
             "id": "mutation/implementation-perturbation",
-            "fingerprint": fixed("d"),
+            "fingerprint": challenger_fingerprint,
         },
         "target": {
             "kind": "qualification",
             "id": "synthetic/recovery-edge",
-            "fingerprint": fixed("e"),
+            "fingerprint": target_fingerprint,
+        },
+        "lane": "gate",
+        "scope": {
+            "anchors": anchors,
+            "inputs": inputs,
+            "fingerprint": scope_fingerprint,
         },
         "units": copy.deepcopy(units),
     }
+
+
+def challenge_launch_inputs() -> list[dict[str, object]]:
+    return [
+        {
+            "kind": "check-implementation",
+            "id": "synthetic|rust-symbol|recovery::probe",
+            "fingerprint": fixed("c"),
+            "source": {
+                "kind": "source",
+                "file": "tests/recovery.rs",
+                "language": "rust",
+                "site": "recovery::probe",
+            },
+        },
+        {
+            "kind": "realization",
+            "id": "synthetic|rust-symbol|recovery::execute",
+            "fingerprint": fixed("f"),
+            "source": {
+                "kind": "source",
+                "file": "src/recovery.rs",
+                "language": "rust",
+                "site": "recovery::execute",
+            },
+        },
+    ]
 
 
 def subject(kind: str) -> dict[str, object]:
@@ -153,6 +249,7 @@ def routes(plan: dict[str, object], mode: str) -> list[dict[str, object]]:
                     "challenge_form": "implementation-perturbation",
                     "fingerprint": CHALLENGE_CAPABILITY_FINGERPRINT,
                 },
+                "inputs": challenge_launch_inputs(),
             }
         )
     return result
@@ -429,6 +526,19 @@ def partial_bundle(label: str) -> dict[str, object]:
     bundle["check_executions"][0]["observation"]["outcome"] = "inconclusive"
     bundle["check_executions"][0]["observation"]["observed_at_ms"] = 140
     bundle["challenger_executions"] = []
+    challenge_id = bundle["plan"]["challenges"][0]["id"]
+    bundle["diagnostics"] = [
+        {
+            "id": "challenge/execution-omission",
+            "class": "execution",
+            "severity": "warning",
+            "code": "challenge/not-executed",
+            "message": "The planned Challenge did not execute before this partial result.",
+            "scope": {"kind": "challenge-selection", "id": challenge_id},
+            "artifacts": [],
+            "details": {"reason": "partial-run"},
+        }
+    ]
     return refresh(bundle)
 
 

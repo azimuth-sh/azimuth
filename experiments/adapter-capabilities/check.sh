@@ -204,6 +204,54 @@ assert correction["provenance"]["adapter"]["import_inputs"] != [identity]
 dual = load("dual-role-bundle.json")
 assert len(dual["check_executions"]) == 1
 assert len(dual["challenger_executions"]) == 1
+selection = dual["plan"]["challenges"][0]
+selection_preimage = {
+    "format": "azimuth-challenge-selection-identity",
+    "version": 1,
+    "challenger_fingerprint": selection["challenger"]["fingerprint"],
+    "target_kind": selection["target"]["kind"],
+    "target_fingerprint": selection["target"]["fingerprint"],
+}
+expected_selection = "challenge/" + hashlib.sha256(
+    json.dumps(selection_preimage, separators=(",", ":"), sort_keys=True).encode()
+).hexdigest()
+assert selection["id"] == expected_selection
+assert selection["lane"] == "gate"
+scope = selection["scope"]
+scope_preimage = {
+    "format": "azimuth-challenge-scope-fingerprint",
+    "version": 1,
+    "anchors": scope["anchors"],
+    "inputs": scope["inputs"],
+}
+assert scope["fingerprint"] == "sha256:" + hashlib.sha256(
+    json.dumps(scope_preimage, separators=(",", ":"), sort_keys=True).encode()
+).hexdigest()
+assert [(item["kind"], item["id"]) for item in scope["anchors"]] == [
+    ("claim", "synthetic/behavior#works")
+]
+assert [(item["kind"], item["id"]) for item in scope["inputs"]] == [
+    ("claim", "synthetic/behavior#works"),
+    ("claim-judgment", "synthetic/behavior#works"),
+    ("realization", "synthetic|rust-symbol|behavior::execute"),
+    ("policy", "synthetic/claim-judgment-policy"),
+]
+challenge_route = dual["provenance"]["adapter"]["routes"][1]
+assert challenge_route["selection"] == {"kind": "challenge", "id": selection["id"]}
+assert [
+    (item["kind"], item["id"], item["fingerprint"])
+    for item in challenge_route["inputs"]
+] == [
+    (item["kind"], item["id"], item["fingerprint"])
+    for item in scope["inputs"]
+    if item["kind"] == "realization"
+]
+assert challenge_route["inputs"][0]["source"] == {
+    "kind": "source",
+    "file": "src/behavior.rs",
+    "language": "rust-symbol",
+    "site": "behavior::execute",
+}
 check_activity = dual["check_executions"][0]["units"][0]["attempts"][0]["activity"]
 challenge_activity = dual["challenger_executions"][0]["units"][0]["attempts"][0]["activity"]
 assert check_activity == challenge_activity == "shared-work"

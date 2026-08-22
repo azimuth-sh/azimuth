@@ -31,12 +31,12 @@ Evidence: seven selectors, disposition visibility, domain gates, deduplication a
 ## Work package: decision-scope-integration
 Status: complete
 Depends on: challenge-resolution-projection, mechanism-identity-authority
-Owns: tools/azimuth/src/fingerprint.rs, tools/azimuth/src/manifest.rs, tools/azimuth/src/model.rs, tools/azimuth/src/lib.rs, tools/azimuth/src/federation.rs, tools/azimuth/tests/decision_scope.rs, tools/azimuth/tests/spec_parse.rs, tools/azimuth/tests/packages.rs, tools/azimuth/tests/federation.rs
+Owns: tools/azimuth/src/fingerprint.rs, tools/azimuth/src/manifest.rs, tools/azimuth/src/model.rs, tools/azimuth/src/lib.rs, tools/azimuth/src/federation.rs, tools/azimuth/tests/decision_scope.rs, tools/azimuth/tests/spec_parse.rs, tools/azimuth/tests/packages.rs
 Objective: expose canonical scope, strict mechanism identity, resolution export and selected closure
 Evidence: export parity, relocation, federated identity, conflicts and selection-closure tests
 
 ## Work package: mechanism-identity-native
-Status: pending
+Status: complete
 Depends on: mechanism-identity-authority
 Owns: tools/extractors/cpp, tools/extractors/python, tools/extractors/go, tools/extractors/rust
 Objective: emit strict qualified path-independent mechanism sites and bindings in native extractors
@@ -50,14 +50,14 @@ Objective: emit strict qualified path-independent mechanism sites in managed ext
 Evidence: focused extractor suites, overload ambiguity and relocation-stability tests
 
 ## Work package: mechanism-identity-typescript
-Status: pending
+Status: complete
 Depends on: mechanism-identity-authority
 Owns: tools/extractors/typescript
 Objective: emit strict qualified path-independent mechanism sites and bindings in TypeScript
 Evidence: focused extractor suite, ambiguity rejection, package and relocation tests
 
 ## Work package: mechanism-identity-conformance
-Status: pending
+Status: complete
 Depends on: decision-scope-integration, mechanism-identity-native, mechanism-identity-managed, mechanism-identity-typescript
 Owns: experiments/mechanism-identities
 Objective: prove relocation changes launch locators without changing semantic decision identity
@@ -85,21 +85,21 @@ Objective: accept strict Challenge requests without weakening command, exit or a
 Evidence: help, schema, Check-only, Challenge-only, mixed, exit-class and output-safety tests
 
 ## Work package: challenge-conformance-experiment
-Status: pending
+Status: complete
 Depends on: challenge-cli-cutover
 Owns: experiments/challenge-planning
 Objective: exercise mutation, dual-role fault and broad-static-analysis selection through public commands
 Evidence: selected scope, clean, findings, inconclusive, partial, drift and zero-resolution cases
 
 ## Work package: existing-challenge-fixture-migration
-Status: pending
+Status: complete
 Depends on: semantic-challenge-planner, challenge-run-protocol, mechanism-identity-native, mechanism-identity-managed, mechanism-identity-typescript
-Owns: tools/azimuth/tests/adapter_host.rs, tools/azimuth/tests/designs.rs, experiments/run-bundles, experiments/adapter-capabilities
+Owns: tools/azimuth/tests/adapter_host.rs, tools/azimuth/tests/cli.rs, tools/azimuth/tests/designs.rs, tools/azimuth/tests/federation.rs, experiments/run-bundles, experiments/adapter-capabilities, experiments/polyglot/services/javascript/tsconfig.json
 Objective: migrate strict hand-authored mechanism, Challenge-selection and route fixtures
 Evidence: adapter-host, Run-bundle and adapter-capability conformance gates
 
 ## Work package: challenge-gate-integration
-Status: pending
+Status: complete
 Depends on: challenge-conformance-experiment, existing-challenge-fixture-migration, mechanism-identity-conformance
 Owns: scripts/check.sh
 Objective: add Challenge-planning conformance before service and release qualification
@@ -113,7 +113,7 @@ Objective: apply routine intent and replace obsolete Check-only Challenge-planni
 Evidence: exact delta projection, all-routine audit and composed validation
 
 ## Work package: challenge-public-account
-Status: pending
+Status: complete
 Depends on: challenge-conformance-experiment, current-intent-transition
 Owns: README.md, docs/framework.md, docs/glossary.md, docs/change-process.md, docs/assurance-extensions.md, azimuth/README.md, tools/azimuth/README.md
 Objective: document current decision authoring, selection, scope, outcomes and ledger boundary

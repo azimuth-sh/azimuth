@@ -50,6 +50,24 @@ it to one current artifact. Code can identify an implementation with
 `implements-mechanism`; non-code artifacts can be bound through an extractor-resolved address. The
 design identity survives deletion of its implementation, making the broken relation visible.
 
+A marker-derived implementation is one atomic implementation-and-companion account. Its seven raw
+fields are `spec`, `mechanism`, `site`, `binding`, `file`, `lang` and `source_fingerprint`; its raw
+binding is exactly `<address-kind>:<site>`. Project assembly resolves the file to one area and
+atomically rewrites the implementation binding and companion Artifact id to
+`<area>|<address-kind>|<site>`. The compiler- or runtime-qualified site is semantic; the file is
+only an accountable locator. Local and federated assembly use the same rewrite, and neither file,
+mount, repository nor revision can disambiguate semantic identity.
+
+The qualified-site account is deliberately ecosystem-specific. .NET uses namespace, declaring
+type, method and metadata parameter signature; Java and Kotlin use binary class, method and JVM
+descriptor. TypeScript and JavaScript use owning package, compiler module, receiver, symbol and
+canonical overload set. Go uses import path, receiver, function and `go/types` signature with
+positional generics. Python uses the one root-relative module and `__qualname__`. Rust binds one
+conventional Cargo target and reachable module to a normalized declared signature whose type-path
+spelling remains semantic. C++ accepts only a program-global, external-linkage, non-module,
+non-template and unconstrained declaration and uses qualified name plus canonical function type.
+Each emitter fails when that account is ambiguous rather than adding a path.
+
 Residue belongs outside the Claim graph: orientation, danger zones, deliberately absent behavior
 and other knowledge that cannot be derived. It may be recorded beside design, but it creates no
 semantic relation.
@@ -63,7 +81,9 @@ Check implementation --implements--> Check --Evidence Binding--> case-level Clai
                                              |
                                              +-- Qualification
 
-Challenger --Challenge Plan--> exact Qualification fingerprint
+case-level Claim --total composition--> Claim Judgment
+
+Challenger --Challenge Plan--> exact Qualification or Claim Judgment fingerprint
 ```
 
 ### Check
@@ -86,14 +106,14 @@ result bears on exactly one case-level Claim and declares:
 - actual `scope`, `quantification` and `oracle`;
 - an exact required-context string map;
 - the relations a Challenger may traverse; and
-- one Qualification policy.
+- one Decision Policy.
 
 One Check may bind to several Claims only when the same atomic result honestly bears on every one.
 Each relationship is a separate binding. Conversely, one Claim may receive several Checks with
 different methods, contexts or oracles. A `(Check, Claim)` pair is unique.
 
 Executable Checks demonstrate sampled behavior. Structural enforcement remains a mechanism and
-can contribute to a future total assurance account without requiring a fictitious execution
+can contribute to a total-composition Claim Judgment without requiring a fictitious execution
 result.
 
 ### Qualification
@@ -111,21 +131,67 @@ change stale the precise decision without turning ordinary relocation into seman
 A Qualification judges credibility. It neither records an execution nor establishes that its
 Claim is satisfied.
 
+### Claim Judgment and policy
+
+A **Claim Judgment** is the repository-owned decision over one standard or critical case Claim's
+total applicable composition. Its exact identity binds the Claim and criticality, realizations,
+mechanisms and resolved artifacts, applicable surfaces and obligations, Evidence Bindings,
+recomputed Qualification expectations, one Decision Policy, verdict, ordered basis and residual
+risk. It is `accepted | rejected`; only a fingerprint-current accepted Judgment is executable.
+Routine Claims reject Judgments. A Run never authors or repairs one.
+
+The strict `verification.md` block is:
+
+```text
+## Claim Judgment: <spec-id>#<case-id>
+Verdict: accepted | rejected
+Policy: <decision-policy-id>
+Fingerprint: sha256:<64-lowercase-hex>
+Judged: YYYY-MM-DD
+Judge: <accountable identity>
+Basis: <one or more ordered statements>
+Residual risk: <one or more ordered statements>
+```
+
+Unknown labels, duplicate ids, routine targets, missing basis or residual risk and dangling Claims
+fail. Date, judge and rationale remain accountable metadata rather than fingerprint inputs.
+
+One project `Decision Policy` namespace supplies the open Challenge forms required for Evidence
+Bindings and Claim Judgments. A separate `Challenge Schedule: current` assigns every required or
+declared form exactly once to `gate | scheduled`. Scheduling changes model, Plan and selection
+identity but not Qualification, Claim Judgment, policy or Challenger identity.
+
+```text
+## Decision Policy: <id>
+Required challenge: <open-form>
+
+## Challenge Schedule: current
+Gate challenge: <open-form>
+Scheduled challenge: <open-form>
+```
+
+Each policy has at least one distinct required form. The schedule is singular and non-empty; either
+lane may be empty. A form cannot occur in both lanes or remain unscheduled.
+
 ### Challengers and Challenge Plans
 
-A **Challenger** searches for a reason to distrust a Qualification. The proposition determines the
-role, not the executable brand. Mutation testing, broad static analysis, flakiness repetition,
-oracle mutation and qualification-oriented fault injection normally act as Challengers. A
-claim-specific analyzer with an independent product oracle can instead implement a Check.
+A **Challenger** searches for a reason to distrust a Qualification or Claim Judgment. The
+proposition determines the role, not the executable brand. It declares an open form and a non-empty
+set of required closed semantic scope kinds. Mutation testing, broad static analysis, flakiness
+repetition, oracle mutation and qualification-oriented fault injection normally act as
+Challengers. A claim-specific analyzer with an independent product oracle can instead implement a
+Check.
 
-A **Challenge Plan** names one Challenger and semantic selectors. Current selectors resolve exact
-Qualification fingerprints from bindings, Checks, realizations or mechanisms. Resolution unions,
-sorts and deduplicates targets; a selector that resolves nothing is a Finding. Paths, globs and
-line numbers are not semantic selectors, and zero matches never fall back to a whole suite.
+A **Challenge Plan** names one Challenger and uses exactly seven selector forms: Qualification from
+binding, Check, realization or mechanism, and Claim Judgment from Claim, realization or mechanism.
+Resolution retains every candidate as `selected`, `missing-decision`, `stale-decision`,
+`rejected-decision`, `invalid-decision`, `inapplicable` or `unresolved-relation`. Only a current
+positive decision is selected. One successful sibling never hides an adverse candidate, and zero
+selection never falls back to a path, glob or whole suite.
 
-Claim Judgment selectors are reserved in the format but cannot resolve until a separate change
-defines a current total-composition Claim Judgment. There is no current Claim Judgment authoring
-file or command.
+Executable selections deduplicate by exact Challenger and target identity. A challenged
+Qualification projects an impact edge to its owning Claim and current Claim Judgment; this graph
+edge does not fabricate a direct Judgment Challenge Result.
 
 A Challenger is not recursively qualified in alpha 2. Its quality is an ordinary tool-release,
 conformance and review concern.
@@ -160,9 +226,10 @@ detail and corrective help (D44). The categories are `intent`, `realization`, `v
 
 Findings include incomplete intent, dangling or missing realizations, unresolved mechanisms and
 surfaces, invalid Check and binding cardinality, missing or stale Qualifications, unstable Check
-implementations, verification applied to routine Claims, and unresolved Challenge Plans. The
-machine tier establishes only that the repository account is structurally consistent; it cannot
-establish product truth.
+implementations, missing, stale or rejected Claim Judgments, incomplete Decision Policy or schedule
+coverage, verification applied to routine Claims, and unresolved Challenge Plans. The machine tier
+establishes only that the repository account is structurally consistent; it cannot establish
+product truth.
 
 ## Tool and derived outputs
 
@@ -176,12 +243,14 @@ azimuth export --out model.json
 
 `azimuth validate` is the sole deterministic model validator. It does not execute Checks.
 `azimuth report traceability` is a pure projection over selected case-level Claims, their ordered
-realization identities and derived Check relationships. It creates no authored authority or
-execution fact and writes no file unless `--out` is supplied.
+realization identities, derived Check relationships, Challenge resolution accounts and
+decision-impact edges. It creates no authored authority, direct Judgment Result or execution fact
+and writes no file unless `--out` is supplied.
 
 `azimuth export` writes the complete derived model as format version 2. The export includes specs,
 workspace data, realization and implementation linkage, mechanisms, Checks, Evidence Bindings,
-Qualifications, Challengers, Challenge Plans and Findings. It contains no execution ledger data.
+Qualifications, Claim Judgments, Decision Policies, the Challenge Schedule, Challengers, Challenge
+Plans, candidate resolutions, decision-impact edges and Findings. It contains no Run ledger data.
 There is no assurance-specific export command in alpha 2.
 
 The core reads language-neutral manifests rather than source. Ecosystem extractors emit the shared
@@ -278,11 +347,27 @@ azimuth run import --plan <file> --input <id>=<file>... \
 ```
 
 Verification compares the running adapter's complete description with configuration. Planning
-loads the complete unselected model, resolves each requested Check fingerprint and its complete
-stable implementation set, creates the provider-neutral Plan, then freezes capability routing in
-the launch plan. It has no partial-model or `--only` mode. Current planning selects Checks only,
-always emits `challenges: []`, requires no current Qualification and infers no evidentiary
-applicability.
+loads the complete unselected model and accepts strict Check-only, Challenge-only or mixed requests;
+the two arrays are required and their union is non-empty. A Check request names its exact configured
+capability and finite units. A Challenge request names an authored Plan, explicit capability,
+finite units and a nonzero candidate cap. Core derives fingerprints, targets, Challenger forms,
+lanes and scope; callers supply none of those semantic fields. There is no partial-model or
+`--only` mode.
+
+The requested Challenge Plan union is fixed. Every reached candidate counts toward its Plan cap,
+including adverse dispositions, before cross-Plan selection deduplication. Any adverse candidate,
+cap overflow, mixed Qualification contexts or conflicting work fails planning. For every selected
+decision, the union must contain a runnable target for every form required by its Decision Policy;
+additional forms are strengthening. Core validates the exact `check.execute | check.import` or
+`challenge.execute | challenge.import` class, the Challenger's exact open form and the one-adapter
+boundary. It never chooses or adds a capability.
+
+Each Challenge selection freezes its `gate | scheduled` lane and canonical semantic scope. Scope
+contains sorted selector anchors and complete decision inputs with typed identities and
+fingerprints. Each Challenge route projects exactly the source-backed scope items into accountable
+source, Artifact, enumeration or surface-member locator accounts. Scope changes semantic Plan
+identity; locator changes launch identity. An adapter translates this frozen account and never
+loads or reinterprets the repository model.
 
 Execute and import stage the configured executable, resources and import inputs from the same open
 streams core hashes. Core clears the child environment and invokes the staged executable directly.
@@ -305,8 +390,9 @@ terminal account and must return revision zero or exactly the next revision corr
 terminal fingerprint. A valid violated Observation, Challenge finding, partial or cancelled Run,
 or adapter-returned protocol-valid `timed-out` Run fact is honest and exits zero. A host-enforced
 process deadline is a transport timeout and exits one, as does a semantic, identity, content or
-other transport mismatch. CLI and schema failure exits two. Neither nonzero class publishes an
-output.
+other transport mismatch. A `timed-out` Run is protocol-valid only when the adapter returns that
+complete fact within the host deadline; a host deadline produces no bundle. CLI and schema failure
+exits two. Neither nonzero class publishes an output.
 
 Adapter, configuration, description, launch, capability routes, planned time and the complete
 normalizer join the correction anchors. Import-input identities remain protected in each revision
@@ -316,12 +402,23 @@ different adapter, capability or configuration therefore starts a different Run.
 The current Run bundle version 1 requires this D47 adapter provenance. It replaces the unpublished
 pre-D47 shape in place, and no compatibility reader accepts that earlier shape.
 
-The transport can represent Check and Challenge routes in a hand-authored strict launch plan.
-Repository Challenge Plans already resolve authored Qualification targets, but current planning
-does not project those targets or their current applicability into generated Run selections. Claim
-Judgment target resolution remains later. `model.extract` execution, long-running adapters,
-service bridges and inbound event gateways also remain absent. Durable `azimuth run ingest` is
-unknown.
+Generated plans currently represent Check and Challenge routes with model authority. Challenge
+Results are exactly `clean | findings | inconclusive`. Clean means only that the configured search
+found no objection; it creates no evidence or credibility. Every planned Challenge omitted from a
+partial, cancelled or timed-out Run has exactly one execution diagnostic scoped to its selection id
+and no fabricated Result. Scheduled omission is allowed deferral; gate omission records an honest
+execution failure. Added or substituted target, context, scope or units is a mismatch.
+
+`model.extract` execution remains absent. Durable ingestion, authorization, retention and
+Subject-specific Assurance State remain Run-ledger work. Current planning defines no cache
+validity, cadence, historical-applicability or cross-Subject reuse semantics. Adapters remain
+bounded short-lived processes; there is no daemon, webhook, event gateway or long-running adapter
+boundary.
+
+The synthetic [Challenge-planning conformance](../experiments/challenge-planning/README.md) uses
+only public plan, execute, import, verify and inspect commands. It exercises all seven selectors,
+mixed planning, exact scope and routes, mutation, fault and broad-analysis meanings, scheduled
+omission, import provenance and selection mismatch without creating persistent state.
 
 The optional Assurance Service is likewise awaiting the Run-ledger replacement. D42's version 1
 claim-contract and project-snapshot wire remains isolated inside the existing service boundary
@@ -342,8 +439,7 @@ The citation is documentary; no build, test, release or acceptance step reads th
 ## What is not claimed
 
 Azimuth does not prove prose predicates, infer honest linkage from source, turn a clean Challenger
-search into positive product evidence, or enroll native tests automatically. Its current outputs
-are a versioned repository account, derived traceability and validated bounded adapter exchanges.
-Projecting current decision applicability into generated Run selections, Claim Judgment target
-resolution, durable ingestion and Subject-specific assurance remain deferred rather than simulated
-through repository records or protocol validity.
+search into positive product evidence, create a repository decision from execution facts or enroll
+native tests automatically. Its current outputs are a versioned repository account, derived
+traceability and validated bounded adapter exchanges. Durable ingestion and Subject-specific
+assurance remain deferred rather than simulated through repository records or protocol validity.

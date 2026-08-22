@@ -52,7 +52,8 @@ USAGE
 
 OPTIONS
     --model <dir>          current model packages (default: azimuth/model)
-    --standards <file>     qualification policies (default: azimuth/standards/verification.md)
+    --standards <file>     decision policies and Challenge schedule
+                           (default: azimuth/standards/verification.md)
     --workspace <file>     areas, surfaces and obligations (default: workspace.json beside model/)
     --manifest <file>      a linkage manifest; repeatable
     --only <pattern>       restrict to spec ids; `billing/**` or an exact id; repeatable

@@ -67,7 +67,14 @@ function main(argv: string[]): number {
     }
   }
 
-  const { manifest, warnings } = emit(roots, root);
+  let emitted: ReturnType<typeof emit>;
+  try {
+    emitted = emit(roots, root);
+  } catch (error) {
+    console.error(`azimuth-emit: ${(error as Error).message}`);
+    return 2;
+  }
+  const { manifest, warnings } = emitted;
 
   try {
     for (const target of workspace ? surfaceTargets(workspace, root) : []) {
@@ -111,13 +118,18 @@ function main(argv: string[]): number {
     return 2;
   }
 
-  fs.mkdirSync(path.dirname(path.resolve(output)), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(manifest, null, 2)}\n`);
-  console.error(
-    `${manifest.realizes.length} realizes, ` +
-      `${manifest.check_implementations.length} Check implementations, ` +
-      `${manifest.mechanism_implementations.length} mechanism implementations → ${output}`,
-  );
+  try {
+    fs.mkdirSync(path.dirname(path.resolve(output)), { recursive: true });
+    fs.writeFileSync(output, `${JSON.stringify(manifest, null, 2)}\n`);
+    console.error(
+      `${manifest.realizes.length} realizes, ` +
+        `${manifest.check_implementations.length} Check implementations, ` +
+        `${manifest.mechanism_implementations.length} mechanism implementations → ${output}`,
+    );
+  } catch (error) {
+    console.error(`azimuth-emit: ${(error as Error).message}`);
+    return 2;
+  }
   return 0;
 }
 

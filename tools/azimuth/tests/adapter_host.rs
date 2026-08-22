@@ -206,6 +206,7 @@ impl Fixture {
                 challenge_form: None,
                 fingerprint: configured.capabilities[0].fingerprint.clone(),
             },
+            inputs: Vec::new(),
         };
         let mut launch = LaunchPlan {
             operation,
