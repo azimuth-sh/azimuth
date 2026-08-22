@@ -56,8 +56,10 @@ class ReleaseQualificationTests(unittest.TestCase):
 
     def test_each_contract_dimension_drifts_independently(self):
         mutations = {
-            "version": lambda item: item["release"].__setitem__("version", "0.1.0-alpha.2"),
-            "tag": lambda item: item["release"].__setitem__("tag", "v0.1.0-alpha.2"),
+            # Drift values are deliberately unreleasable so a future version bump cannot
+            # make the mutation a no-op and silently disarm this test.
+            "version": lambda item: item["release"].__setitem__("version", "0.0.0-drift"),
+            "tag": lambda item: item["release"].__setitem__("tag", "v0.0.0-drift"),
             "license": lambda item: item["release"].__setitem__("license", "MIT"),
             "repository": lambda item: item["release"].__setitem__(
                 "repository", "https://example.invalid/source"

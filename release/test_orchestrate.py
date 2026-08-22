@@ -191,7 +191,7 @@ class ReleaseOrchestrationTests(unittest.TestCase):
             candidate_root = Path(temporary)
             account = self.account(candidate_root)
             with self.assertRaisesRegex(OrchestrationError, "tag"):
-                assemble(candidate_root, REVISION, "v0.1.0-alpha.2", self.root)
+                assemble(candidate_root, REVISION, "v0.0.0-drift", self.root)
             with self.assertRaisesRegex(OrchestrationError, "revision"):
                 assemble(candidate_root, "short", self.catalog["release"]["tag"], self.root)
             for subject in account["subjects"]:

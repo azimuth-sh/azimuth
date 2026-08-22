@@ -8,7 +8,7 @@ explicitly configured short-lived adapters without requiring a hosted service.
 
 This is the canonical development and release repository. Framework changes, pull requests and
 version history land here, and publication derives artifacts from immutable version tags in the
-same history. Version `0.1.0-alpha.1` remains fixed by its tag while `main` carries subsequent
+same history. Each published version remains fixed by its tag while `main` carries subsequent
 development. The canonical product site is <https://azimuth.sh>.
 
 ## Repository layout
@@ -29,12 +29,12 @@ development. The canonical product site is <https://azimuth.sh>.
 The implementations for Go, JVM, Python, Rust annotations and C++ remain experiments. Their
 presence in source is not a publication or compatibility promise.
 
-## Published alpha 1 support contract
+## Published alpha 2 support contract
 
-The immutable alpha 1 tag supports the Rust CLI and core (including federation), the .NET and
+The immutable alpha 2 tag supports the Rust CLI and core (including federation), the .NET and
 TypeScript annotations and extractors, and the assurance API and diagnostic web images defined at
-that tag. Main is making an incompatible alpha 2 transition and does not preserve old readers or
-command aliases.
+that tag. Alpha 2 is an incompatible transition from alpha 1: old readers, formats and command
+aliases are removed rather than retained, so an alpha 1 model does not load.
 Formats, standards, skills and documentation are supported as repository artifacts at the same Git
 tag. Alpha contracts may change incompatibly in a later prerelease.
 
@@ -42,8 +42,12 @@ Qualified native CLI targets are Linux x64, macOS ARM64 and Windows x64. Qualifi
 platforms are Linux AMD64 and Linux ARM64. Other source may compile elsewhere, but that is not a
 qualified binary or image claim.
 
+Durable Run ingestion, authorization, retention and Subject-specific Assurance State are not in
+this release. The assurance images ship the isolated D42 service, which the Run-ledger change will
+replace; alpha 2 claims no ledger, no hosted event gateway and no production provider adapters.
+
 The Go, JVM, Python, Rust-annotation and C++ integrations and every tree under `experiments/` are
-experimental source. CI exercises them, but version `0.1.0-alpha.1` assigns them no public package
+experimental source. CI exercises them, but version `0.1.0-alpha.2` assigns them no public package
 identity or support promise.
 
 ## Alpha 2 model

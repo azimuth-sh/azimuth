@@ -2,8 +2,8 @@
   "format": "azimuth-release-artifacts",
   "schemaVersion": 1,
   "release": {
-    "version": "0.1.0-alpha.1",
-    "tag": "v0.1.0-alpha.1",
+    "version": "0.1.0-alpha.2",
+    "tag": "v0.1.0-alpha.2",
     "license": "Apache-2.0",
     "repository": "https://github.com/azimuth-sh/azimuth",
     "homepage": "https://azimuth.sh"

@@ -76,3 +76,8 @@ uses non-signature payload identity for preservation. GitHub build provenance do
 complete SBOM or cross-ecosystem signing coverage. Public completion evidence is rollout-dependent
 and cannot exist until `v0.1.0-alpha.1` is actually published; the release operation retains that
 condition.
+
+*(revised)* The `v0.1.0-alpha.1` publication discharged that condition and produced the
+first public completion evidence. The condition itself is retained rather than removed: it
+now binds each subsequent immutable version, so `v0.1.0-alpha.2` owes its own completion
+evidence and cannot inherit the first alpha's.
