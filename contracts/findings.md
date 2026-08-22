@@ -1,11 +1,8 @@
 # Finding registry
 
-A Finding is one deterministic defect derived from the complete model. Findings are the product of
-`azimuth validate` and are carried inside `azimuth export` under the root `findings` key; they are
-part of the exported account and therefore part of the model digest.
+A Finding is one deterministic defect derived from the complete model. Findings are the product of `azimuth validate` and are carried inside `azimuth export` under the root `findings` key; they are part of the exported account and therefore part of the model digest.
 
-A Finding is never authored. Its kind, category, severity and remediation sentence are owned by the
-tool; only the location, claim and detail vary with the model.
+A Finding is never authored. Its kind, category, severity and remediation sentence are owned by the tool; only the location, claim and detail vary with the model.
 
 ## Record
 
@@ -28,30 +25,20 @@ These are the only keys, in exactly this order, and all nine are always present.
 - `kind` is one stable string from the registry below.
 - `category` is derived from `kind` and is never independent of it.
 - `severity` is `error | warning`.
-- `claim` is the case-level Claim id `<spec>#<scenario>`, or `null` when the Finding is not
-  attributable to one Claim.
-- `criticality` is `critical | standard | routine`, or `null`. It is `null` on every Finding raised
-  through the shared error path, including ones whose subject does have a declared criticality.
-- `file` is the path of the artifact carrying the defect — a spec, design, verification authority,
-  workspace or source file, depending on the kind.
-- `line` is the one-based source line, or `0` when the defect has no line — a manifest-derived
-  relation or a workspace declaration.
+- `claim` is the case-level Claim id `<spec>#<scenario>`, or `null` when the Finding is not attributable to one Claim.
+- `criticality` is `critical | standard | routine`, or `null`. It is `null` on every Finding raised through the shared error path, including ones whose subject does have a declared criticality.
+- `file` is the path of the artifact carrying the defect — a spec, design, verification authority, workspace or source file, depending on the kind.
+- `line` is the one-based source line, or `0` when the defect has no line — a manifest-derived relation or a workspace declaration.
 - `detail` is a generated sentence naming the specific subject.
-- `help` is the fixed remediation sentence owned by the kind. Two Findings of one kind always carry
-  the same `help`.
+- `help` is the fixed remediation sentence owned by the kind. Two Findings of one kind always carry the same `help`.
 
 Findings are sorted by `(file, line, kind, claim, detail)`.
 
 ## Severity
 
-Severity is not a property of the kind. Most kinds are always `error`. Six kinds derive severity
-from the criticality of the requirement they attach to: `routine` yields `warning`, and `standard`,
-`critical` and an undeclared criticality all yield `error`. One kind is always `warning`.
+Severity is not a property of the kind. Most kinds are always `error`. Six kinds derive severity from the criticality of the requirement they attach to: `routine` yields `warning`, and `standard`, `critical` and an undeclared criticality all yield `error`. One kind is always `warning`.
 
-Three of the criticality-derived kinds are unreachable for a routine requirement because their
-enclosing pass skips routine Claims first, so they are `error` in practice; they are listed as
-criticality-derived because that is what the code does, and a change to the enclosing filter would
-change the outcome without touching the severity call.
+Three of the criticality-derived kinds are unreachable for a routine requirement because their enclosing pass skips routine Claims first, so they are `error` in practice; they are listed as criticality-derived because that is what the code does, and a change to the enclosing filter would change the outcome without touching the severity call.
 
 ## Categories
 
@@ -61,16 +48,13 @@ The category set is closed:
 intent | realization | verification | mechanism | judgment | surface | execution
 ```
 
-No current kind maps to `execution`. The category exists in the closed set and is unreachable from
-the current registry. A consumer that switches on `category` must still accept it.
+No current kind maps to `execution`. The category exists in the closed set and is unreachable from the current registry. A consumer that switches on `category` must still accept it.
 
-The mapping from kind to category is exhaustive by construction: a kind not named in one of the
-explicit groups falls through to `verification`.
+The mapping from kind to category is exhaustive by construction: a kind not named in one of the explicit groups falls through to `verification`.
 
 ## Kinds
 
-The registry is exhaustive. `derived` in the severity column means the criticality rule above;
-`derived*` marks the three kinds whose enclosing pass makes `warning` unreachable today.
+The registry is exhaustive. `derived` in the severity column means the criticality rule above; `derived*` marks the three kinds whose enclosing pass makes `warning` unreachable today.
 
 | Kind | Category | Severity |
 |---|---|---|
@@ -117,36 +101,27 @@ The registry is exhaustive. `derived` in the severity column means the criticali
 | `missing-required-challenge` | verification | error |
 | `insufficient-challenge-scope` | verification | error |
 
-The table lists kinds in registry declaration order, which is not the order Findings are emitted or
-sorted.
+The table lists kinds in registry declaration order, which is not the order Findings are emitted or sorted.
 
 ### What each kind reports
 
-- `unclassified` — a requirement declares no criticality. A missing declaration is a semantic gap,
-  not a parse error.
+- `unclassified` — a requirement declares no criticality. A missing declaration is a semantic gap, not a parse error.
 - `unrealized` — a non-routine Claim has no production site realizing it.
 - `dangling-realization` — a `Realizes` site names a Claim that does not exist.
 - `dangling-design-entry` — a design entry targets a requirement or scenario that does not exist.
-- `undeclared-mechanism` — a critical requirement declares no enforcement mechanism. The whole pass
-  is gated on the design artifact being in use at all: a project with no design file is never told
-  that every critical requirement is a Finding.
+- `undeclared-mechanism` — a critical requirement declares no enforcement mechanism. The whole pass is gated on the design artifact being in use at all: a project with no design file is never told that every critical requirement is a Finding.
 - `unresolved-design-binding` — a mechanism resolves to zero or several artifact bindings.
-- `enforcement-mismatch` — a mechanism's declared enforcement contradicts the derived properties of
-  the artifact it binds.
+- `enforcement-mismatch` — a mechanism's declared enforcement contradicts the derived properties of the artifact it binds.
 - `missing-surface` — a site-domain Claim declares no `Over:` surface.
 - `unknown-surface` — a site-domain Claim's `Over:` value names no declared workspace surface.
-- `enumerator-unsound-or-underived` — a surface contribution produced no successful enumeration
-  witness, so tag-derived membership is not complete.
+- `enumerator-unsound-or-underived` — a surface contribution produced no successful enumeration witness, so tag-derived membership is not complete.
 - `invariant-breach` — an enumerated surface member discharges nothing.
-- `missing-required-realization` — a realization obligation's required area contains no realization
-  of the Claim.
-- `dangling-realization-obligation` — an obligation names a Claim that does not exist, or one that
-  is not a standard or critical behavioural Claim.
+- `missing-required-realization` — a realization obligation's required area contains no realization of the Claim.
+- `dangling-realization-obligation` — an obligation names a Claim that does not exist, or one that is not a standard or critical behavioural Claim.
 - `dangling-mechanism-implementation` — an implementation marker names no design-owned mechanism.
 - `unbound-claim` — a non-routine Claim has no Evidence Binding.
 - `check-without-binding` — a declared Check is bound to nothing.
-- `binding-missing-check`, `binding-missing-claim`, `binding-missing-policy` — an Evidence Binding
-  names a Check, Claim or Decision Policy that does not exist.
+- `binding-missing-check`, `binding-missing-claim`, `binding-missing-policy` — an Evidence Binding names a Check, Claim or Decision Policy that does not exist.
 - `missing-qualification` — a binding has no reviewed Qualification.
 - `dangling-qualification` — a Qualification names no binding.
 - `rejected-qualification` — the current Qualification's verdict is `rejected`.
@@ -154,30 +129,19 @@ sorted.
 - `missing-claim-judgment` — a standard or critical Claim has no total-composition Judgment.
 - `rejected-claim-judgment` — the current Claim Judgment's verdict is `rejected`.
 - `stale-claim-judgment` — the authored Claim Judgment fingerprint does not equal the derived one.
-- `invalid-claim-judgment` — the Claim composition is incomplete, so no current Judgment can be
-  derived against it.
+- `invalid-claim-judgment` — the Claim composition is incomplete, so no current Judgment can be derived against it.
 - `unimplemented-check` — a Check has no stable source implementation.
 - `dangling-check-implementation` — a source marker names a Check that does not exist.
-- `unstable-check-implementation` — a Check implementation has no resolved semantic source identity
-  and fingerprint.
-- `inapplicable-verification` — an Evidence Binding or Claim Judgment targets a routine Claim.
-  Routine Claims reject Checks, bindings, Qualifications and Claim Judgments targeted to them.
+- `unstable-check-implementation` — a Check implementation has no resolved semantic source identity and fingerprint.
+- `inapplicable-verification` — an Evidence Binding or Claim Judgment targets a routine Claim. Routine Claims reject Checks, bindings, Qualifications and Claim Judgments targeted to them.
 - `missing-challenger` — a Challenge Plan names a Challenger that does not exist.
 - `unresolved-challenge-plan` — a Challenge Plan resolves no current accepted decision.
-- `missing-challenge-decision`, `stale-challenge-decision`, `rejected-challenge-decision`,
-  `invalid-challenge-decision`, `inapplicable-challenge-decision`, `unresolved-challenge-relation`
-  — one per adverse candidate disposition of a Challenge Plan selector, mapped one-to-one from the
-  dispositions `missing-decision`, `stale-decision`, `rejected-decision`, `invalid-decision`,
-  `inapplicable` and `unresolved-relation`. The `selected` disposition raises nothing.
-- `invalid-challenge-resolution` — conflicting declarations, currently a duplicate candidate
-  reached through different selectors of one Plan.
-- `missing-required-challenge` — a Decision Policy requires a Challenge form that has no Challenger
-  at all, or no runnable Plan reaching the decision.
-- `insufficient-challenge-scope` — a runnable Plan reaches the decision but its selected semantic
-  scope does not cover every scope kind the Challenger requires.
+- `missing-challenge-decision`, `stale-challenge-decision`, `rejected-challenge-decision`, `invalid-challenge-decision`, `inapplicable-challenge-decision`, `unresolved-challenge-relation` — one per adverse candidate disposition of a Challenge Plan selector, mapped one-to-one from the dispositions `missing-decision`, `stale-decision`, `rejected-decision`, `invalid-decision`, `inapplicable` and `unresolved-relation`. The `selected` disposition raises nothing.
+- `invalid-challenge-resolution` — conflicting declarations, currently a duplicate candidate reached through different selectors of one Plan.
+- `missing-required-challenge` — a Decision Policy requires a Challenge form that has no Challenger at all, or no runnable Plan reaching the decision.
+- `insufficient-challenge-scope` — a runnable Plan reaches the decision but its selected semantic scope does not cover every scope kind the Challenger requires.
 
-A Challenger has no aggregate score, and no Finding kind expresses one. Findings are reviewed
-against the specific predicate they attack.
+A Challenger has no aggregate score, and no Finding kind expresses one. Findings are reviewed against the specific predicate they attack.
 
 ## Domain gating
 
@@ -187,26 +151,17 @@ Which kinds can apply to a Claim depends on its domain. The domain value set is 
 behaviour | sites
 ```
 
-No spec field declares it. The parser assigns it structurally: a `## Invariant:` heading yields
-`sites`, and a `## Requirement:` heading with its `### Scenario:` children yields `behaviour`.
-There is no `Domain:` label, and an invariant accepts only `Criticality:` and `Over:`.
+No spec field declares it. The parser assigns it structurally: a `## Invariant:` heading yields `sites`, and a `## Requirement:` heading with its `### Scenario:` children yields `behaviour`. There is no `Domain:` label, and an invariant accepts only `Criticality:` and `Over:`.
 
 The gating that follows:
 
-- `missing-surface`, `unknown-surface`, `enumerator-unsound-or-underived` and `invariant-breach`
-  are raised only for `sites` Claims.
-- `dangling-realization-obligation` is raised for any realization obligation whose Claim is not a
-  standard or critical `behaviour` Claim.
-- Only the `behaviour` requirements of the spec whose id equals a surface id contribute
-  tag-derived membership to that surface. A `sites` requirement's synthesized scenario never counts
-  as a member of the surface it ranges over.
+- `missing-surface`, `unknown-surface`, `enumerator-unsound-or-underived` and `invariant-breach` are raised only for `sites` Claims.
+- `dangling-realization-obligation` is raised for any realization obligation whose Claim is not a standard or critical `behaviour` Claim.
+- Only the `behaviour` requirements of the spec whose id equals a surface id contribute tag-derived membership to that surface. A `sites` requirement's synthesized scenario never counts as a member of the surface it ranges over.
 
-No other kind consults the domain. Because an invariant carries one synthesized scenario, a `sites`
-Claim is an ordinary case-level Claim to every other pass: it can be `unrealized`, `unbound-claim`,
-`missing-claim-judgment` and the rest on the same terms as a `behaviour` Claim.
+No other kind consults the domain. Because an invariant carries one synthesized scenario, a `sites` Claim is an ordinary case-level Claim to every other pass: it can be `unrealized`, `unbound-claim`, `missing-claim-judgment` and the rest on the same terms as a `behaviour` Claim.
 
-The domain participates in the case-Claim digest and therefore in every fingerprint derived from
-it, but it is not serialized in the export. A consumer reading an export cannot recover it.
+The domain participates in the case-Claim digest and therefore in every fingerprint derived from it, but it is not serialized in the export. A consumer reading an export cannot recover it.
 
 ## Command boundary
 
@@ -217,6 +172,4 @@ azimuth export [--model <dir>] [--standards <file>] [--workspace <file>]
   [--manifest <file>...] [--only <pattern>...] [--out <file>]
 ```
 
-`azimuth validate` exits one when at least one error-severity Finding exists and zero otherwise;
-warnings alone do not fail it. `azimuth export` exits zero whenever the model loads, error-severity
-Findings included: there, the Findings are the output. Both exit two on load or usage failure.
+`azimuth validate` exits one when at least one error-severity Finding exists and zero otherwise; warnings alone do not fail it. `azimuth export` exits zero whenever the model loads, error-severity Findings included: there, the Findings are the output. Both exit two on load or usage failure.

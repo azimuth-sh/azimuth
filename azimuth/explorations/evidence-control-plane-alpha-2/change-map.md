@@ -1,8 +1,6 @@
 # Candidate change map: Alpha 2 Evidence Control Plane
 
-This map identifies likely authorities and dependency order, not committed implementation scope.
-Proposal work may refine identifiers and boundaries, but each change must carry the exploration
-decisions it implements and remain independently reviewable.
+This map identifies likely authorities and dependency order, not committed implementation scope. Proposal work may refine identifiers and boundaries, but each change must carry the exploration decisions it implements and remain independently reviewable.
 
 ## Dependency graph
 
@@ -36,8 +34,7 @@ Scope:
 
 - revise authoritative decisions and glossary;
 - define the two Claim levels;
-- define Check, Evidence Binding, Qualification, Claim Judgment, Run, Subject, Observation,
-  Challenge, Challenge Result and Assurance State;
+- define Check, Evidence Binding, Qualification, Claim Judgment, Run, Subject, Observation, Challenge, Challenge Result and Assurance State;
 - state ownership, identity, cardinality and non-recursive boundaries;
 - distinguish repository decisions from execution-ledger facts;
 - retire the active `rtm` concept;
@@ -46,13 +43,11 @@ Scope:
 
 Completion evidence:
 
-- structurally different local, CI, mutation, fault-injection, static-analysis and monitoring cases
-  can be expressed without changing the definitions;
+- structurally different local, CI, mutation, fault-injection, static-analysis and monitoring cases can be expressed without changing the definitions;
 - terminology has one meaning across decisions, glossary, framework, formats and service language;
 - unresolved schema and temporal questions become explicit obligations for dependent changes.
 
-This is the root change. A dependent format or command proposal must not invent its own assurance
-semantics.
+This is the root change. A dependent format or command proposal must not invent its own assurance semantics.
 
 ## Change B — `verification-evidence-bindings`
 
@@ -74,8 +69,7 @@ Scope:
 Completion evidence:
 
 - synthetic cases cover one Check bound to several Claims with separate Qualifications;
-- invalid cases reject unbound Checks, independent outcomes hidden in one Check, missing
-  implementation linkage and unstable challenge selectors;
+- invalid cases reject unbound Checks, independent outcomes hidden in one Check, missing implementation linkage and unstable challenge selectors;
 - source extractors provide implementation facts without declaring evidentiary meaning.
 
 ## Change C — `validation-command-surface`
@@ -107,13 +101,11 @@ Depends on: Change A
 
 Scope:
 
-- specify Run, Subject, plan, actual selection, outcome, provenance, artifact reference and
-  diagnostic schemas;
+- specify Run, Subject, plan, actual selection, outcome, provenance, artifact reference and diagnostic schemas;
 - support Check and Challenger executions in one Run;
 - define one terminal Observation per `(Run, Check)`;
 - define exact Challenge Result targeting;
-- cover workspace, CI candidate, artifact, deployment, monitoring-window and imported-historical
-  Subjects;
+- cover workspace, CI candidate, artifact, deployment, monitoring-window and imported-historical Subjects;
 - settle retries, sharding, partial execution, cancellation, duplicate import and correction;
 - support local validation and inspection without the Assurance Service.
 
@@ -132,10 +124,8 @@ Depends on: Change D
 Scope:
 
 - define explicit adapter configuration and `<adapter-id>/<capability-id>` addressing;
-- define capability classes for model extraction, Check execution and import, and Challenge
-  execution and import;
-- specify protocol versioning, invocation, cancellation, timeout, diagnostics, artifacts and result
-  validation;
+- define capability classes for model extraction, Check execution and import, and Challenge execution and import;
+- specify protocol versioning, invocation, cancellation, timeout, diagnostics, artifacts and result validation;
 - keep semantic planning in core;
 - provide at least two structurally different synthetic conformance adapters;
 - define provider-family package and naming conventions.
@@ -165,12 +155,10 @@ Scope:
 
 Completion evidence:
 
-- mutation, qualification-oriented fault injection and broad static analysis challenge the intended
-  decisions in synthetic fixtures;
+- mutation, qualification-oriented fault injection and broad static analysis challenge the intended decisions in synthetic fixtures;
 - direct product assertions remain Observations;
 - traceability gaps and actual-selection drift create visible Findings or inconclusive results;
-- no duplicate Claim Judgment challenge is manufactured merely because an upstream Qualification
-  was challenged.
+- no duplicate Claim Judgment challenge is manufactured merely because an upstream Qualification was challenged.
 
 ## Change G — `assurance-ledger-runs`
 
@@ -215,9 +203,7 @@ Completion evidence:
 - provider logic remains outside the Assurance Service;
 - adapters remain bounded processes.
 
-Defer this change beyond alpha 2 unless the minimum release story explicitly requires hosted
-monitoring ingestion. File-based or CI-driven imports are sufficient to prove the control-plane
-boundary.
+Defer this change beyond alpha 2 unless the minimum release story explicitly requires hosted monitoring ingestion. File-based or CI-driven imports are sufficient to prove the control-plane boundary.
 
 ## Change I — `alpha2-consumer-workflow`
 
@@ -239,8 +225,7 @@ Scope:
 
 Completion evidence:
 
-- a clean-room synthetic project completes the journey from installation through a challenged
-  Qualification and inspected Assurance State;
+- a clean-room synthetic project completes the journey from installation through a challenged Qualification and inspected Assurance State;
 - documentation distinguishes mandatory alpha 2 capability from extension points;
 - no consumer checkout, vocabulary or executable dependency is required.
 
@@ -254,8 +239,7 @@ Depends on: every change selected for the release slice
 
 Scope:
 
-- migrate formats, standards, fixtures, extractors, skills, services and active development
-  accounts;
+- migrate formats, standards, fixtures, extractors, skills, services and active development accounts;
 - remove alpha 1 formats, aliases and readers rather than maintaining dual behavior;
 - remove superseded current terminology and derivable artifacts;
 - preserve prior decisions through explicit revisions rather than silent rewriting;
@@ -269,8 +253,7 @@ Completion evidence:
 - active change authority remains singular and internally consistent;
 - a repository-wide content audit finds no prohibited consumer-domain material or dependency.
 
-The existing `canonical-development-authority` change remains an independent predecessor that must
-reach its own honest completion boundary. This exploration does not alter or archive it.
+The existing `canonical-development-authority` change remains an independent predecessor that must reach its own honest completion boundary. This exploration does not alter or archive it.
 
 ## Change K — `alpha2-release`
 
@@ -298,35 +281,25 @@ Minimum recommended slice:
 - a complete service-free local and CI workflow;
 - canonical repository migration and cold-consumer evidence.
 
-The generic event gateway and production-grade provider adapters are extension changes unless their
-absence would make a claimed release capability false.
+The generic event gateway and production-grade provider adapters are extension changes unless their absence would make a claimed release capability false.
 
-The release proposal must select this slice before Change J begins. Release execution then confirms
-that the selected slice and its public claims still match the accepted implementation.
+The release proposal must select this slice before Change J begins. Release execution then confirms that the selected slice and its public claims still match the accepted implementation.
 
 Completion evidence:
 
-- a user can install the published alpha, initialize a new project, validate its model, execute or
-  import evidence, challenge a Qualification and inspect resulting Assurance State;
+- a user can install the published alpha, initialize a new project, validate its model, execute or import evidence, challenge a Qualification and inspect resulting Assurance State;
 - release claims name only shipped behavior;
 - publication is reproducible from this repository alone.
 
-All active Claims use routine criticality during this alpha. Existing higher-criticality Claims are
-lowered rather than carried with evidence obligations. Each implementation change still owes
-ordinary engineering tests and honest command results before acceptance.
+All active Claims use routine criticality during this alpha. Existing higher-criticality Claims are lowered rather than carried with evidence obligations. Each implementation change still owes ordinary engineering tests and honest command results before acceptance.
 
 ## Cross-change falsifiers
 
-- If a passing Observation automatically establishes a Qualification, the decision layers have
-  collapsed.
+- If a passing Observation automatically establishes a Qualification, the decision layers have collapsed.
 - If a clean Challenger is reported as product evidence, challenge semantics have failed.
 - If an adapter must interpret the full repository model, the core/provider boundary has failed.
 - If every native test becomes an Azimuth Observation, first-class enrollment has failed.
-- If a Run cannot identify its exact Subject and actual selection, it cannot support assurance
-  state.
-- If the service becomes required for local or ordinary CI use, the optional-service boundary has
-  failed.
-- If integrating a new provider requires a provider-specific semantic type in core, the capability
-  boundary has failed.
-- If alpha 2 cannot be installed and exercised from this repository's published artifacts alone,
-  the release is not complete.
+- If a Run cannot identify its exact Subject and actual selection, it cannot support assurance state.
+- If the service becomes required for local or ordinary CI use, the optional-service boundary has failed.
+- If integrating a new provider requires a provider-specific semantic type in core, the capability boundary has failed.
+- If alpha 2 cannot be installed and exercised from this repository's published artifacts alone, the release is not complete.

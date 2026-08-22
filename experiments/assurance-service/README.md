@@ -1,7 +1,6 @@
 # Assurance lifecycle experiment
 
-This experiment separates stable evidence qualification from recurring execution observations
-before either concept enters the Azimuth manifest or assurance-service storage model.
+This experiment separates stable evidence qualification from recurring execution observations before either concept enters the Azimuth manifest or assurance-service storage model.
 
 It demonstrates:
 
