@@ -20,14 +20,14 @@ mkdir -p "$BUILD_ROOT/extractors" "$BUILD_ROOT/jvm/azimuth-annotations" \
 (cd tools/extractors/cpp && python3 -m unittest -v test_azimuth_emit.py)
 
 javac -d "$BUILD_ROOT/jvm/azimuth-annotations" \
-  packages/jvm/src/main/java/dev/drim/azimuth/Azimuth.java
+  packages/jvm/src/main/java/sh/azimuth/Azimuth.java
 javac -cp "$BUILD_ROOT/jvm/azimuth-annotations" -d "$BUILD_ROOT/jvm/extractor" \
-  tools/extractors/jvm/src/main/java/dev/drim/azimuth/emit/Main.java
+  tools/extractors/jvm/src/main/java/sh/azimuth/emit/Main.java
 javac -cp "$BUILD_ROOT/jvm/azimuth-annotations:$BUILD_ROOT/jvm/extractor" \
   -d "$BUILD_ROOT/jvm/extractor-test" \
-  tools/extractors/jvm/src/test/java/dev/drim/azimuth/emit/MainTest.java
+  tools/extractors/jvm/src/test/java/sh/azimuth/emit/MainTest.java
 java -cp "$BUILD_ROOT/jvm/azimuth-annotations:$BUILD_ROOT/jvm/extractor:$BUILD_ROOT/jvm/extractor-test" \
-  dev.drim.azimuth.emit.MainTest
+  sh.azimuth.emit.MainTest
 
 (cd experiments/polyglot/services/go && \
   GOCACHE="$AZIMUTH_GO_CACHE" GOMODCACHE="$AZIMUTH_GO_MOD_CACHE" go test ./...)
@@ -73,12 +73,12 @@ python3 tools/extractors/cpp/azimuth_emit.py --output "$OUTPUT_ROOT/cpp.json" \
   --root "$REPO_ROOT" --include packages/cpp experiments/polyglot/services/cpp
 
 java -cp "$BUILD_ROOT/jvm/azimuth-annotations:$BUILD_ROOT/jvm/extractor" \
-  dev.drim.azimuth.emit.Main --output "$OUTPUT_ROOT/java.json" --root "$REPO_ROOT" \
+  sh.azimuth.emit.Main --output "$OUTPUT_ROOT/java.json" --root "$REPO_ROOT" \
   --source-root experiments/polyglot/services/java/src \
   --source-root experiments/polyglot/services/java/test \
   --classes "$BUILD_ROOT/jvm/java-service"
 java -cp "$BUILD_ROOT/jvm/azimuth-annotations:$BUILD_ROOT/jvm/extractor" \
-  dev.drim.azimuth.emit.Main --output "$OUTPUT_ROOT/kotlin.json" --root "$REPO_ROOT" \
+  sh.azimuth.emit.Main --output "$OUTPUT_ROOT/kotlin.json" --root "$REPO_ROOT" \
   --source-root experiments/polyglot/services/kotlin/src/main/kotlin \
   --source-root experiments/polyglot/services/kotlin/src/test/kotlin \
   --classes experiments/polyglot/services/kotlin/build/classes/kotlin/main \

@@ -26,9 +26,9 @@ RUST_EMITTER="$REPO_ROOT/tools/extractors/rust/target/debug/azimuth-emit-rust"
 dotnet build --nologo --verbosity quiet tools/extractors/dotnet/Azimuth.Emit/Azimuth.Emit.csproj
 DOTNET_EMITTER="$REPO_ROOT/tools/extractors/dotnet/Azimuth.Emit/bin/Debug/net10.0/"
 DOTNET_EMITTER+="azimuth-emit-dotnet.dll"
-javac -d "$BUILD/jvm/annotations" packages/jvm/src/main/java/dev/drim/azimuth/Azimuth.java
+javac -d "$BUILD/jvm/annotations" packages/jvm/src/main/java/sh/azimuth/Azimuth.java
 javac -cp "$BUILD/jvm/annotations" -d "$BUILD/jvm/emitter" \
-  tools/extractors/jvm/src/main/java/dev/drim/azimuth/emit/Main.java
+  tools/extractors/jvm/src/main/java/sh/azimuth/emit/Main.java
 JVM_CP="$BUILD/jvm/annotations:$BUILD/jvm/emitter"
 
 for phase in before after; do
@@ -51,7 +51,7 @@ for phase in before after; do
   dotnet "$DOTNET_EMITTER" --output "$OUTPUTS/$phase/dotnet.json" \
     --root "$FIXTURE" \
     "$FIXTURE/$phase/dotnet/bin/Debug/net10.0/MechanismIdentityFixture.dll"
-  java -cp "$JVM_CP" dev.drim.azimuth.emit.Main \
+  java -cp "$JVM_CP" sh.azimuth.emit.Main \
     --output "$OUTPUTS/$phase/jvm.json" --root "$FIXTURE" \
     --source-root "$FIXTURE/$phase/jvm/src" \
     --classes "$BUILD/$phase/jvm/classes"
@@ -109,7 +109,7 @@ mkdir -p "$BUILD/invalid/jvm/classes"
 javac -cp "$BUILD/jvm/annotations" -d "$BUILD/invalid/jvm/classes" \
   "$FIXTURE/invalid/jvm/src/invalid/Guard.java"
 expect_failure "$OUTPUTS/invalid-jvm.json" java -cp "$JVM_CP" \
-  dev.drim.azimuth.emit.Main --output "$OUTPUTS/invalid-jvm.json" \
+  sh.azimuth.emit.Main --output "$OUTPUTS/invalid-jvm.json" \
   --root "$FIXTURE/invalid/jvm" --source-root "$FIXTURE/invalid/jvm/src" \
   --classes "$BUILD/invalid/jvm/classes"
 expect_failure "$OUTPUTS/invalid-typescript.json" node \

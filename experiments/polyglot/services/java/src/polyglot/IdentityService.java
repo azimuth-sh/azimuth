@@ -1,7 +1,7 @@
 package polyglot;
 
 import com.sun.net.httpserver.HttpServer;
-import dev.drim.azimuth.Azimuth;
+import sh.azimuth.Azimuth;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 

@@ -1,4 +1,4 @@
-package dev.drim.azimuth;
+package sh.azimuth;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Repeatable;

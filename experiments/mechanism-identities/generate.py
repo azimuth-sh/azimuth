@@ -191,7 +191,7 @@ public static class Guard
     write(
         base / "jvm/src/conformance/Guard.java",
         """package conformance;
-import dev.drim.azimuth.Azimuth;
+import sh.azimuth.Azimuth;
 public final class Guard {
   @Azimuth.Realizes(spec="identity-jvm", scenario="relocation")
   @Azimuth.ImplementsCheck("identity-jvm/relocation")
@@ -329,7 +329,7 @@ public static class Invalid {
     write(
         base / "jvm/src/invalid/Guard.java",
         """package invalid;
-import dev.drim.azimuth.Azimuth;
+import sh.azimuth.Azimuth;
 public final class Guard {
   @Azimuth.ImplementsMechanism(spec="invalid-jvm", mechanism="first")
   @Azimuth.ImplementsMechanism(spec="invalid-jvm", mechanism="second")

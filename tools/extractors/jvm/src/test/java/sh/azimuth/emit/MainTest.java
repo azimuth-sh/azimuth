@@ -1,6 +1,6 @@
-package dev.drim.azimuth.emit;
+package sh.azimuth.emit;
 
-import dev.drim.azimuth.Azimuth;
+import sh.azimuth.Azimuth;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -21,7 +21,7 @@ public final class MainTest {
         Path source = sourceRoot.resolve("fixture/Identity.java");
         Files.writeString(source, """
                 package fixture;
-                import dev.drim.azimuth.Azimuth;
+                import sh.azimuth.Azimuth;
                 public final class Identity {
                     @Azimuth.Realizes(spec="polyglot/identity", scenario="java-identifies")
                     public static String identity() { return "java"; }
@@ -141,7 +141,7 @@ public final class MainTest {
         Path collisionSource = collisionSources.resolve("collision/Site.java");
         Files.writeString(collisionSource, """
                 package collision;
-                import dev.drim.azimuth.Azimuth;
+                import sh.azimuth.Azimuth;
                 public final class Site {
                     @Azimuth.ImplementsMechanism(spec="alpha", mechanism="first")
                     @Azimuth.ImplementsMechanism(spec="alpha", mechanism="second")

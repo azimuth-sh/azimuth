@@ -1,11 +1,11 @@
-package dev.drim.azimuth.emit;
+package sh.azimuth.emit;
 
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
-import dev.drim.azimuth.Azimuth;
+import sh.azimuth.Azimuth;
 import java.io.IOException;
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
