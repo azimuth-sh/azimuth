@@ -752,13 +752,24 @@ def publish_crate(archive):
     require(not result.get("errors"), f"crates.io rejected publication: {result.get('errors')}")
 
 
+def release_notes(account):
+    # The body names only the immutable version being published. Capability claims belong to the
+    # repository documentation at that tag, not to a string this module would have to keep current.
+    version = account["version"]
+    return (
+        f"Azimuth {version}. Prerelease published from tag {account['tag']}.\n\n"
+        f"Alpha versions may change incompatibly. See the repository at this tag for the "
+        f"supported artifact contract and migration guidance."
+    )
+
+
 def ensure_github_release(account, state, account_path, sums_path, repository=REPOSITORY):
     if not state["releaseExists"]:
         run(
             [
                 "gh", "release", "create", account["tag"], "--repo", repository,
                 "--verify-tag", "--prerelease", "--title", f"Azimuth {account['version']}",
-                "--notes", "First public alpha for Azimuth dogfooding.",
+                "--notes", release_notes(account),
             ]
         )
     support = {"candidates.json": account_path, "SHA256SUMS": sums_path}
@@ -780,6 +791,10 @@ def npm_dist_tag(version):
 
 def npm_tags_are_exact(version, tags, stable_versions):
     channel = npm_dist_tag(version)
+    if channel != "latest" and not stable_versions and tags.get("latest") != version:
+        # npm requires `latest` to resolve, and a package with no stable version has no better
+        # target. Leaving it on an older prerelease makes a plain install fetch a stale alpha.
+        return False
     return (
         tags.get(channel) == version
         and (
@@ -827,6 +842,8 @@ def normalize_npm_dist_tags(subject, version, stable_versions):
     tags = npm_cli_dist_tags(identity, env)
     if tags.get(channel) != version:
         run(["npm", "dist-tag", "add", f"{identity}@{version}", channel], env=env)
+    if channel != "latest" and not stable_versions and tags.get("latest") != version:
+        run(["npm", "dist-tag", "add", f"{identity}@{version}", "latest"], env=env)
     require(
         channel == "latest" or tags.get("latest") != version or not stable_versions,
         f"{subject['key']}: npm latest selects a prerelease despite stable versions; "
