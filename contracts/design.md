@@ -5,7 +5,9 @@ non-derivable assertions about named artifacts rather than a structural tour of 
 
 `design.md` describes accepted current mechanisms for its sibling spec. Proposed architecture,
 alternatives and implementation order live in a change's `design.md`. Archiving distils only what
-was built into the current model.
+was built into the current model. A design may fan out verification obligations; it never fans out
+evidence. Evidence exists once a Check, constraint or observation supplies it, so a planned
+mechanism must never read as an achieved one.
 
 All current framework Claims are routine and normally have no design obligation. The format
 remains available for a later accepted non-routine Claim and for current mechanisms that genuinely

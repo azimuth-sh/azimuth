@@ -854,7 +854,7 @@ fn launch_round_trip_is_deterministic_and_rejects_substitution() {
 }
 
 #[test]
-fn canonical_launch_vector_matches_d47() {
+fn canonical_launch_vector_matches_the_frozen_vector() {
     let subject = Subject::Artifact {
         artifacts: vec![ArtifactState {
             id: "image".into(),

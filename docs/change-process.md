@@ -1,6 +1,7 @@
 # Change delivery in the evidence control plane
 
-Status: **operating guidance**. Parser contracts and accepted decisions remain authoritative.
+Status: **operating guidance**. The implementation, its tests and the parser contracts under
+`contracts/` remain authoritative.
 
 Azimuth separates repository-owned intent and reviewed meaning from execution facts. During the
 fast-moving alpha every current framework Claim is routine. Changes therefore use ordinary
@@ -22,8 +23,9 @@ person accepting its output remains accountable for the result.
 ### 1. Explore uncertainty
 
 Use an exploration before commitment when a topic spans several changes, crosses an unfamiliar
-boundary or still has unresolved product choices. Persist only shared decisions and a bounded
-change map. Research does not silently become current framework authority.
+boundary or still has unresolved product choices. `azimuth explore create|list|show` scaffolds and
+lists the package under `azimuth/explorations/`. Persist only shared decisions and a bounded change
+map. Research does not silently become current framework authority.
 
 ### 2. Propose one transition
 
@@ -43,8 +45,11 @@ implementation sequence for the change; it is not a verification artifact or tes
 ### 3. Freeze shared contracts
 
 Before parallel work, freeze public formats, identities and ownership boundaries. Validate
-`work-packages.md`; every package declares dependencies, non-overlapping owned paths, objective and
-engineering checks. Workers do not finalize, archive or edit shared change state.
+`work-packages.md`. The parser requires a parsable `Status`, a non-empty `Objective` and non-empty
+`Owns` paths that are relative and never escape the checkout, and it detects overlapping ownership
+and dependency cycles. `Depends on` and `Evidence` are read but not required, so declaring them is
+a working convention rather than an enforced one. Workers do not finalize, archive or edit shared
+change state.
 
 ### 4. Implement observable behavior
 
@@ -98,8 +103,8 @@ case-level Claims and stable graph relations. Export writes model version 2. Non
 executes native tests or creates an execution fact.
 
 Run focused engineering tests while iterating, then affected component and composed suites.
-Enumerated surfaces must also exercise their real enumerator and a temporary untagged negative
-member before acceptance.
+As a working practice, exercise an enumerated surface against its real enumerator and a temporary
+untagged negative member before acceptance; no artifact enforces that rehearsal.
 
 ### 7. Record the outcome
 
@@ -120,7 +125,7 @@ acceptance.
 
 ## Run and adapter execution plane
 
-D46 implements a standalone [`azimuth-run-bundle` version 1](../azimuth/formats/run-bundle.md)
+Azimuth implements a standalone [`azimuth-run-bundle` version 1](../contracts/run-bundle.md)
 exchange. A Run binds one exact Subject and may contain Check executions, Challenger executions or
 both. Its plan and actual semantic selection are explicit, and its retries and work units reduce to
 one Observation per actually selected Check and one Challenge Result per selected Challenger
@@ -203,7 +208,7 @@ cache validity, cadence, historical-applicability or cross-Subject reuse semanti
 bounded short-lived processes; there is no daemon, webhook, inbound gateway or long-running adapter
 boundary.
 
-The optional Assurance Service remains isolated on its D42 v1 wire until the Run-ledger replacement
+The optional Assurance Service remains isolated on its alpha 1 wire until the Run-ledger replacement
 is accepted. It does not ingest Run bundles, and there is no compatibility bridge or Assurance
 Service export command.
 

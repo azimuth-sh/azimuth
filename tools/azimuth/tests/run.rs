@@ -644,7 +644,7 @@ fn claim_judgment_targets_and_semantic_implementation_identities_are_strict() {
 }
 
 #[test]
-fn d48_challenge_shape_has_no_compatibility_reader() {
+fn challenge_shape_has_no_compatibility_reader() {
     let bundle = valid_bundle();
     let mut missing_lane = to_json(&bundle);
     let plan = object_mut(&mut missing_lane, "plan");
@@ -1658,7 +1658,7 @@ fn sparse_revision_checks_do_not_enumerate_the_revision_range() {
 }
 
 #[test]
-fn public_component_helpers_construct_and_parse_strict_d46_values() {
+fn public_component_helpers_construct_and_parse_strict_run_bundle_values() {
     let bundle = valid_bundle();
     assert!(validate_subject_component(&bundle.subject).is_empty());
     assert_eq!(
@@ -1699,7 +1699,7 @@ fn public_component_helpers_construct_and_parse_strict_d46_values() {
 }
 
 #[test]
-fn d47_adapter_provenance_is_required_without_a_compatibility_shape() {
+fn adapter_provenance_is_required_without_a_compatibility_shape() {
     let bundle = valid_bundle();
     let provenance = provenance_to_json(&bundle.provenance);
     assert_eq!(

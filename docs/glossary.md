@@ -27,16 +27,18 @@ criticality and groups case-level Claims.
 unique per spec, not per requirement, so splitting or merging a requirement does not change case
 identity.
 
-**Domain** — what a Claim ranges over. The closed values are executions of a behavior, a set of
-sites, the code artifact itself, paired derivations that must agree, aggregate state over time and
-eventual absence (D13.3).
+**Domain** — what a Claim ranges over. The domain is never authored in a spec; the parser assigns
+it from the construct, so a scenario takes the behavioral domain and an `Invariant` with an `Over:`
+surface takes the site domain. The closed values are in
+[`contracts/findings.md`](../contracts/findings.md).
 
 **Quantifier** — deliberately absent from a Claim. Claims are universal; a constant field would
 carry no information. Evidence Binding quantification describes the breadth of a Check, not the
 logical quantifier of the Claim.
 
-**Criticality** — `critical | standard | routine`. It is declared on every requirement and may
-change without changing Claim identity. Routine Claims stop at intent and owe no realization,
+**Criticality** — how much a requirement matters, declared on every requirement and changeable
+without changing Claim identity. The closed levels are in
+[`contracts/spec.md`](../contracts/spec.md). Routine Claims stop at intent and owe no realization,
 mechanism or evidence linkage. Standard and critical Claims activate the applicable additional
 facets. Every active Claim in this repository is routine during the alpha 2 phase.
 
@@ -79,23 +81,29 @@ but declares no Claim relation or evidence form. Several sites may compose one C
 one case-level Claim. It states the edge proposition, evidence form, exact required context,
 challenge domain and Decision Policy. Each `(Check, Claim)` pair is unique.
 
-**Scope** — `unit | component | e2e`, defined by what must be real for the Check rather than by
-how many processes happen to execute.
+**Scope** — defined by what must be real for the Check rather than by how many processes happen
+to execute. The closed rungs are in [`contracts/verification.md`](../contracts/verification.md).
 
-**Quantification** — `example | universal`, describing whether a Check evaluates one case or
-ranges over a derived or generated set. *Narrowing:* `universal` describes the method's declared
-breadth, not mathematical exhaustiveness.
+**Quantification** — whether a Check evaluates one case or ranges over a derived or generated
+set. *Narrowing:* the broad value describes the method's declared breadth, not mathematical
+exhaustiveness. The closed values are in
+[`contracts/verification.md`](../contracts/verification.md).
 
-**Oracle** — the source of the expected result for an Evidence Binding:
-`direct | golden | relational | metamorphic | model-based | contract`. The vocabulary is
-descriptive and is not a ranking.
+**Oracle** — the source of the expected result for an Evidence Binding. The vocabulary is
+descriptive and is not a ranking; its closed values are in
+[`contracts/verification.md`](../contracts/verification.md). Three values are routinely confused and
+are distinguished by what the expectation is drawn from: `relational` states a relation among values
+observed for **one** case; `metamorphic` states a relation **across executions** connected by an
+intentional transformation; `model-based` computes the exact expected result from an **independent**
+model. One case is not one function or process — a request, its response, resulting persisted state
+and an outbound call gathered for the same case are one case.
 
 **Required context** — the exact string-to-string context in which an Evidence Binding is
 qualified. Alpha 2 provides no wildcards, ranges or provider expressions.
 
-**Challenge domain** — the closed set of relations a Challenger may traverse from an Evidence
-Binding: `realization | mechanism | check-implementation | oracle | context`. It is not a list of
-provider products.
+**Challenge domain** — the relations a Challenger may traverse from an Evidence Binding. It is
+not a list of provider products; the closed set is in
+[`contracts/verification.md`](../contracts/verification.md).
 
 **Qualification** — the reviewed decision about whether one exact Evidence Binding is credible in
 its required context. Its id is the binding id and its verdict is `qualified | rejected`. It
@@ -124,9 +132,9 @@ Checks, realizations or mechanisms and Claim Judgments from Claims, realizations
 Resolution retains every candidate disposition; zero selection is a Finding, never an implicit
 whole-suite fallback.
 
-**Challenge candidate disposition** — exactly `selected | missing-decision | stale-decision |
-rejected-decision | invalid-decision | inapplicable | unresolved-relation`. Only a current positive
-decision is selected. Adverse siblings remain visible.
+**Challenge candidate disposition** — how one resolved candidate stands. Only a current positive
+decision is selected, and adverse siblings remain visible. The closed dispositions are in
+[`contracts/verification.md`](../contracts/verification.md).
 
 **Claim Judgment** — the repository-owned `accepted | rejected` decision about one standard or
 critical case Claim's total applicable composition. Its id is the Claim id. Only a structurally
@@ -147,9 +155,8 @@ current routine Claims are in this category.
 independent of a code symbol, so deleting an implementation leaves an unresolved declaration
 instead of erasing both sides of the relation.
 
-**Enforcement kind** — one of `type | schema | constraint | choke-point | middleware | guard`.
-The kinds distinguish how violations are prevented. They are mechanism properties, not executable
-Check forms.
+**Enforcement kind** — how a mechanism prevents a violation. Kinds are mechanism properties, not
+executable Check forms; the closed ladder is in [`contracts/design.md`](../contracts/design.md).
 
 **Choke point** — a single place through which a violation would have to pass. Contrast with a
 guard repeated at every site.
@@ -157,8 +164,12 @@ guard repeated at every site.
 **Tag** — a machine-readable source annotation. Current tags express realization, mechanism
 implementation or Check implementation only. They do not assign evidence meaning.
 
-**`realizes`** — a production relation saying that the source site is on a case-level Claim's
-realization path. It is keyed by `(spec-id, case-id)` and carries no evidence form.
+**`realizes`** — a production relation saying that the source site establishes some part of a
+case-level Claim's predicate. It is keyed by `(spec-id, case-id)` and carries no evidence form.
+*Narrowing:* being on the path is not sufficient. A reviewer must be able to say which part of the
+predicate the site establishes; architecture that merely participates — broker topology, relays,
+metrics emission, event production — is a design mechanism rather than a realization. No Finding
+detects an unearned tag, so the discipline is the only defence.
 
 **`implements-mechanism`** — a production relation binding a compiler-resolved symbol to one
 declared design mechanism. Its source annotation retains exactly the spec and mechanism arguments;
@@ -192,7 +203,8 @@ producer to consumers. It is a realization site when correct routing is part of 
 **Fan-out** — one Claim realized at several sites across components or languages.
 
 **Exemption** — a deliberate, attributable and reviewable opt-out from an applicable obligation.
-An ordinary unenrolled test asserts no Azimuth evidence and therefore has nothing to exempt.
+*No exemption record, block or Finding kind exists in alpha 2*; the term is reserved. An ordinary
+unenrolled test asserts no Azimuth evidence and therefore has nothing to exempt.
 
 ## Areas and derived domains
 
@@ -216,8 +228,8 @@ edge.
 ## Validation and outputs
 
 **Finding** — one deterministic validation result with a stable kind, closed category, severity,
-source location, optional Claim and criticality, detail and corrective help. The exhaustive kind
-registry drives detailed output and counts.
+source location, optional Claim and criticality, detail and corrective help. The exhaustive registry
+and the closed categories are in [`contracts/findings.md`](../contracts/findings.md).
 
 **Validation** — deterministic interpretation of the derived repository model. `azimuth validate`
 reports Findings without executing Checks.
@@ -233,9 +245,11 @@ declarations, but no runtime ledger data. Alpha 2 has no assurance-specific expo
 **Machine tier** — deterministic model validation. It reports structural Findings and cannot
 establish truth.
 
-**Agent tier** — accountable semantic review of relations and propositions that the machine
-cannot interpret. For the implemented verification graph, it can propose a binding-level
-Qualification for evidence-owner review. It does not turn its own review into product evidence.
+**Agent tier** — accountable semantic review of relations and propositions the machine cannot
+interpret, such as whether a Check is discriminating or a realization earns its tag. *The model
+records no agent-tier artifact.* Review happens outside the tool and reaches the repository only as
+an authored `Qualifier:` or `Judge:` identity on a decision, which is accountable for the verdict
+however it was drafted.
 
 ## Project and change process
 
@@ -282,7 +296,7 @@ normally outside the change model.
 
 **Subject** — the exact workspace, CI candidate, artifact, deployment, service or bounded
 monitoring window about which a Run asserts execution facts. The
-[`azimuth-run-bundle` format](../azimuth/formats/run-bundle.md) defines the closed Subject variants;
+[`azimuth-run-bundle` format](../contracts/run-bundle.md) defines the closed Subject variants;
 provider locators remain provenance rather than exact state.
 
 **Run** — one bounded, provider-neutral logical execution over one exact Subject and semantic
@@ -309,12 +323,13 @@ capability route per selection. Changing a route changes launch identity and the
 planned and actual semantic selection, activities, attempts, terminal results and provenance.
 Versioned canonical fingerprints identify its semantic components and complete content.
 
-**Observation** — the terminal `satisfied | violated | inconclusive` result for one actually
-selected Check in one Run. It is an execution fact, not an Evidence Binding or Qualification, and
-is not copied for every binding.
+**Observation** — the terminal result for one actually selected Check in one Run, with closed
+outcomes in [`contracts/run-bundle.md`](../contracts/run-bundle.md). It is an execution fact, not an
+Evidence Binding or Qualification, and is not copied for every binding.
 
-**Challenge Result** — the terminal `clean | findings | inconclusive` result for one selected
-Challenger and exact Qualification or Claim Judgment target fingerprint. A clean result records a
+**Challenge Result** — the terminal result for one selected Challenger and exact Qualification or
+Claim Judgment target fingerprint, with closed outcomes in
+[`contracts/run-bundle.md`](../contracts/run-bundle.md). A clean result records a
 negative search, not positive product evidence.
 
 **Scheduled omission** — absence of one planned `scheduled` Challenge from an incomplete Run. It
@@ -345,9 +360,9 @@ provider identity, executable and resource content, description, exact non-secre
 environment literals, process limits and capabilities. Locators do not substitute for content
 identity.
 
-**Capability class** — one of the closed semantic adapter roles `model.extract`, `check.execute`,
-`check.import`, `challenge.execute` and `challenge.import`. `model.extract` is declared but has no
-current execution command.
+**Capability class** — the semantic role a configured adapter capability fills. The closed
+classes are in [`contracts/adapter.md`](../contracts/adapter.md); `model.extract` is declared but
+has no current execution command.
 
 **Configured capability address** — the open `<adapter-id>/<capability-id>` route identity for one
 configured capability. It is distinct from the open provider-family identity and from an open
@@ -366,6 +381,6 @@ complete response arrives within that deadline. A host-enforced deadline is a tr
 exits one and publishes no bundle.
 
 **Assurance Service** — the optional future durable ledger for accepted Runs and derived Assurance
-State. D42's version 1 service wire remains isolated until the Run-ledger replacement; it is neither
+State. The alpha 1 service wire remains isolated until the Run-ledger replacement; it is neither
 the alpha 2 repository-model format nor the Run-bundle protocol. No current adapter is a
 long-running service or webhook bridge.

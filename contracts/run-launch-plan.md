@@ -1,6 +1,6 @@
 # Run launch-plan format
 
-A Run launch plan binds one provider-neutral D46 semantic Plan to explicit configured adapter
+A Run launch plan binds one provider-neutral Run-bundle semantic Plan to explicit configured adapter
 capabilities. The file is strict JSON with format `azimuth-run-launch-plan` and version `1`.
 Unknown fields, duplicate object keys, invalid numbers, non-canonical arrays and duplicate
 identities fail. There is no alpha 1 reader.
@@ -57,16 +57,17 @@ identities fail. There is no alpha 1 reader.
 ```
 
 Operation is `execute | import`. `planned_at_ms` is the non-negative integral safe Unix-millisecond
-time at which core creates the bounded execution plan. Subject has one exact D46 Subject shape.
-`required_context` and unit parameters are exact objects from unique non-empty strings to strings;
+time at which core creates the bounded execution plan. Subject has one exact Run-bundle Subject
+shape. `required_context` and unit parameters are exact objects from unique non-empty strings to
+strings;
 `{}` is valid. `checks` and `challenges` are both required arrays; either may be empty, but their
 combined selection is non-empty.
 
 Checks sort by unique project-global Check id. Challenge requests sort by unique authored Challenge
 Plan id. Both name an exact configured `<adapter-id>/<capability-id>` address and non-empty units
 sorted by unique lower-kebab path id. `max_candidates` is required only for Challenge requests and
-is an integer from 1 through the D46 safe-integer maximum. It counts unique candidate records from
-that authored Plan after duplicate selectors are removed and before selections from different
+is an integer from 1 through the Run-bundle safe-integer maximum. It counts unique candidate records
+from that authored Plan after duplicate selectors are removed and before selections from different
 requested Plans deduplicate. Every disposition counts. Exceeding the cap fails before a launch is
 created; it never truncates.
 
@@ -126,10 +127,10 @@ The complete shape is:
 ```
 
 Operation is `execute | import`. `planned_at_ms` equals the planning request and later equals the
-D46 bundle field. Subject and Subject fingerprint obey D46. `plan` is the complete D46 Plan object,
-including its supplied and recomputed fingerprint. The Plan is unchanged from D46: it contains no
-Subject, adapter, capability, launch or import-input field. Core supplies the separately carried
-Subject fingerprint when recomputing the D46 Plan fingerprint.
+bundle field. Subject and Subject fingerprint obey the Run-bundle format. `plan` is the complete
+Plan object, including its supplied and recomputed fingerprint. The Plan is unchanged from the
+Run-bundle format: it contains no Subject, adapter, capability, launch or import-input field. Core
+supplies the separately carried Subject fingerprint when recomputing the Plan fingerprint.
 
 The adapter id is one lower-kebab segment. Adapter version is the exact non-empty configured
 version. Every fingerprint has exact `sha256:<64-lowercase-hex>` shape and equals the selected
@@ -182,13 +183,13 @@ A Challenge route is:
 }
 ```
 
-The example addresses the exact `a`/`b` selection-identity vector in the D46 format and projects
-both source-backed scope items. The Challenge selection id is its D46 plan-local id.
-`challenge_form` is the producer-accountable
-open lower-kebab path form paired with that Challenger fingerprint. It is required on Challenge
-routes and forbidden on Check routes. `inputs` is required on Challenge routes and forbidden on
-Check routes. Standalone format validation proves capability coverage for the declared form and
-the launch-input shape; generated planning proves their current model authority.
+The example addresses the exact `a`/`b` selection-identity vector in the Run-bundle format and
+projects both source-backed scope items. The Challenge selection id is its plan-local id.
+`challenge_form` is the producer-accountable open lower-kebab path form paired with that Challenger
+fingerprint. It is required on Challenge routes and forbidden on Check routes. `inputs` is required
+on Challenge routes and forbidden on Check routes. Standalone format validation proves capability
+coverage for the declared form and the launch-input shape; generated planning proves their current
+model authority.
 
 All addresses start with the launch adapter id followed by `/` and name one configured capability.
 For operation `execute`, route class is exactly `check.execute` or `challenge.execute` according to
@@ -270,7 +271,7 @@ A surface-member input is:
 ```
 
 `member_kind` is exactly `enumerated`; the tagged variant uses the ordinary `source` shape instead.
-The D13 enumerated-member file is both model-authoritative identity inside the outer id and an
+The enumerated-member file is both model-authoritative identity inside the outer id and an
 accountable locator. The derived language and site are repeated for provider translation but do
 not replace that identity. A tagged surface member's outer id contains the stable SourceIdentity.
 Artifact and enumeration variants repeat their stable SourceIdentity because their outer ids have
@@ -310,7 +311,7 @@ launch fingerprint. Check-only launch vectors therefore remain byte-for-byte unc
 ### Canonical vector
 
 This complete one-Check launch preimage is already in RFC 8785 form. Its Subject fingerprint is
-`sha256:22478698e6731ce5984658e366386e466fe173216bc7cb721168e1638d2dee02`, and its D46 Plan
+`sha256:22478698e6731ce5984658e366386e466fe173216bc7cb721168e1638d2dee02`, and its Plan
 fingerprint is
 `sha256:b75606956b9c1857f8b401d9bad207253b90f6948efddb5532a769b9f488fbfb`.
 
@@ -328,13 +329,13 @@ content identities and supplies them in the adapter request defined by
 [adapter.md](adapter.md). The request fingerprint combines the launch fingerprint and those input
 identities while excluding their locators.
 
-An adapter response repeats the launch fingerprint. Its normalized bundle repeats the launch
-adapter identity, routes and stable import-input identities in D47 provenance. Core compares those
-objects exactly, verifies actual selection against the semantic Plan and verifies the complete D46
+An adapter response repeats the launch fingerprint. Its normalized bundle repeats the launch adapter
+identity, routes and stable import-input identities in adapter provenance. Core compares those
+objects exactly, verifies actual selection against the semantic Plan and verifies the complete Run
 bundle before atomic output.
 
 Execute and import accept repeated predecessor bundle files in any order. Core verifies their full
-D46 correction chain and sends the sorted revision/fingerprint identities plus the complete
+correction chain and sends the sorted revision/fingerprint identities plus the complete
 verified terminal bundle in the adapter request. With no predecessors it sends a null terminal and
 requires revision zero. Otherwise the stateless adapter uses the terminal account to preserve every
 anchor, and the response is exactly the next full revision. Core validates it with the supplied
@@ -364,7 +365,7 @@ bundle-invariant mismatch exits one. CLI, configuration, planning-request, launc
 response schema failure exits two. Neither nonzero class leaves an output file. `run verify` and
 `run inspect` remain standalone protocol commands; `run ingest` remains unknown.
 
-D48 replaces the unpublished Check-only request and Challenge-route shape in place. Both request
-arrays are required, and every Challenge route requires exact accountable inputs. Prior requests
-without `challenges` and prior Challenge routes without `inputs` are rejected; there is no
+This version replaces the unpublished Check-only request and Challenge-route shape in place. Both
+request arrays are required, and every Challenge route requires exact accountable inputs. Prior
+requests without `challenges` and prior Challenge routes without `inputs` are rejected; there is no
 compatibility reader.

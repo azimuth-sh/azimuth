@@ -1,13 +1,13 @@
 # Azimuth assurance service
 
-This directory preserves the isolated D42 version 1 service wire from alpha 1. Its claim contracts,
+This directory preserves the isolated version 1 service wire from alpha 1. Its claim contracts,
 project snapshots, evidence definitions, qualifications, observations and gate decisions remain
 runnable for service development and private dogfood while the Run-ledger replacement is pending.
 
 This protocol is not a projection of the alpha 2 core model. Its observation resources are legacy
-service records, not D43 Run Observations or current Azimuth execution authority. The current CLI
-does not populate this wire, and neither `azimuth validate` nor repository finalization requires a
-running service.
+service records, not current Run Observations or current Azimuth execution authority. The current
+CLI does not populate this wire, and neither `azimuth validate` nor repository finalization requires
+a running service.
 
 ## Private single-team deployment
 
@@ -65,7 +65,7 @@ The backend requires `DATABASE_URL`. The web process reads `ASSURANCE_API_URL`, 
 
 ## Protocol surface
 
-The endpoints below describe only the isolated D42 version 1 wire. Their resource names do not
+The endpoints below describe only the isolated alpha 1 version 1 wire. Their resource names do not
 declare current alpha 2 Checks, Evidence Bindings, Qualifications, Runs or Observations.
 
 Every resource is scoped below `/v1/projects/{projectId}`:

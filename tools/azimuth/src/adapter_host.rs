@@ -1,4 +1,4 @@
-//! Bounded process host for the D47 adapter protocol.
+//! Bounded process host for the adapter protocol (contracts/adapter.md).
 //!
 //! The host owns one process exchange and complete response validation. It deliberately does not
 //! own CLI parsing or output-file publication: callers receive canonical bytes only after the

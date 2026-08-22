@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { emit, nextRoutes, scanText } from './emitter';
 
-// Synthetic sources only (D2). A silently wrong emitter produces a green matrix, which is the exact
+// Synthetic sources only. A silently wrong emitter produces a green matrix, which is the exact
 // failure the framework exists to prevent — so these assert on the shape of what is emitted, not
 // merely that something was.
 

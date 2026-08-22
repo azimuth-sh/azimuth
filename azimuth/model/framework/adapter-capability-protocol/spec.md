@@ -64,11 +64,11 @@ AND it freezes traceability-derived semantic scope before adapter translation
 ## Requirement: launch-plans-bind-capability-routing
 Criticality: routine
 
-Azimuth SHALL bind an exact Subject, operation and complete D46 semantic plan to explicit
+Azimuth SHALL bind an exact Subject, operation and complete Run-bundle semantic plan to explicit
 capability routes in one canonical launch plan.
 
 ### Scenario: capability-substitution-changes-launch-identity
-WHEN a route substitutes a capability while the D46 semantic plan stays unchanged
+WHEN a route substitutes a capability while the Run-bundle semantic plan stays unchanged
 THEN the launch fingerprint changes
 AND the derived Run id changes
 
@@ -110,7 +110,7 @@ AND it creates no adapter process or output bundle
 Criticality: routine
 
 Azimuth SHALL accept an executed adapter response only after validating its request identity,
-provenance, actual selection and complete D46 Run bundle.
+provenance, actual selection and complete Run bundle.
 
 ### Scenario: execution-output-is-atomic-after-validation
 WHEN returned execution identity or selection differs from the launch plan

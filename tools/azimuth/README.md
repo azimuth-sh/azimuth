@@ -63,14 +63,14 @@ repository declarations rather than a separate command. There is no Assurance Se
 Nested change and project commands retain their bounded lifecycle meanings.
 
 `azimuth run verify` validates one or more revisions of the strict
-[`azimuth-run-bundle` version 1](../../azimuth/formats/run-bundle.md) protocol. Protocol-consistent
+[`azimuth-run-bundle` version 1](../../contracts/run-bundle.md) protocol. Protocol-consistent
 violations, challenge findings and partial Runs exit `0`; internal protocol Findings exit `1`; and
 malformed JSON, schema errors or usage exit `2`. `azimuth run inspect` emits a deterministic text or
 JSON account, including protocol Findings on exit `1`, and labels repository authority and
 Assurance State unresolved.
 
 Adapter configuration defaults to strict
-[`azimuth/adapters.json`](../../azimuth/formats/adapter.md). `azimuth adapter verify` stages each
+[`azimuth/adapters.json`](../../contracts/adapter.md). `azimuth adapter verify` stages each
 configured executable and resource, performs the version 1 description handshake and fails closed
 on content, identity or capability drift. Core never searches `PATH`, invokes a shell or inherits
 the ambient environment.
@@ -78,7 +78,7 @@ the ambient environment.
 `azimuth run plan` loads the complete unselected model and accepts Check-only, Challenge-only or
 mixed strict requests. It creates a provider-neutral semantic Plan, then freezes Subject,
 operation, one configured adapter and one explicit capability route per selection in a separate
-[launch plan](../../azimuth/formats/run-launch-plan.md). Both request arrays are required and their
+[launch plan](../../contracts/run-launch-plan.md). Both request arrays are required and their
 union is non-empty. There is no partial-model or `--only` path.
 
 Check requests name an exact capability and finite units. Challenge requests name an authored
@@ -194,7 +194,7 @@ function type. Ambiguous or unsupported identities fail rather than incorporatin
 
 ## Run and adapter execution plane
 
-D46 implements one immutable provider-neutral bundle revision for a bounded Run over one exact
+Azimuth implements one immutable provider-neutral bundle revision for a bounded Run over one exact
 Subject and semantic plan. The bundle records actual selection, physical activities, ordered
 attempts, one terminal Observation per actually selected Check and one Challenge Result per
 selected Challenger target. Canonical fingerprints and full-replacement corrections make the
@@ -222,10 +222,10 @@ Judgment Challenge Result.
 `model.extract` execution is not implemented. Adapters are bounded short-lived processes; there is
 no long-running adapter, daemon, service bridge or webhook boundary.
 
-The current Run bundle version 1 requires D47 adapter provenance and rejects the unpublished
-pre-D47 shape without a compatibility reader.
+The current Run bundle version 1 requires adapter provenance and rejects the unpublished earlier
+shape without a compatibility reader.
 
-The optional Assurance Service remains isolated on its D42 v1 wire until a Run-ledger change
+The optional Assurance Service remains isolated on its alpha 1 v1 wire until a Run-ledger change
 replaces it. Core does not ingest Run bundles or service execution records, and the service is not
 model authority. Authorization, durable storage, retention and Subject-specific Assurance State
 remain ledger responsibilities. Current planning defines no cache validity, cadence,

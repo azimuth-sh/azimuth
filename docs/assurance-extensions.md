@@ -5,15 +5,15 @@ Status: **decision-aware planning and bounded adapter exchange implemented; Run 
 Azimuth is an evidence control plane, not a catalog of testing and analysis products. Alpha 2
 implements the repository graph from Checks through Evidence Bindings to Qualifications, plus
 total-composition Claim Judgments, Challengers, Challenge Plans, Decision Policies and one current
-Challenge Schedule. D46 implements a strict provider-neutral Run bundle and service-free
-verification and inspection. D47 and D48 implement explicit short-lived adapter invocation,
-complete-model Check and Challenge planning, native execution and exact report import. The
-replacement Assurance Service ledger remains deferred.
+Challenge Schedule. A strict provider-neutral Run bundle supports service-free verification and
+inspection. Explicit short-lived adapter invocation, complete-model Check and Challenge planning,
+native execution and exact report import sit beside them. The replacement Assurance Service ledger
+remains deferred.
 
 This document records the role and authority boundaries extension work must preserve. Strict wire
-details remain in the [adapter](../azimuth/formats/adapter.md),
-[launch-plan](../azimuth/formats/run-launch-plan.md) and
-[Run-bundle](../azimuth/formats/run-bundle.md) formats.
+details remain in the [adapter](../contracts/adapter.md),
+[launch-plan](../contracts/run-launch-plan.md) and
+[Run-bundle](../contracts/run-bundle.md) formats.
 
 ## Choose the role by proposition
 
@@ -67,13 +67,15 @@ This prevents thousands of native test cases from becoming accidental assurance 
 independent of storage capacity: a future ledger may retain very large execution volumes while the
 semantic Check graph remains sparse.
 
-All active Claims in this repository are routine. They therefore have no current Checks, Evidence
-Bindings, Qualifications or Claim Judgments. The parser, extractor and release suites are ordinary
-engineering tests, not Azimuth evidence.
+Every Claim in the accepted model under `azimuth/model/` is routine. They therefore have no
+current Checks, Evidence Bindings, Qualifications or Claim Judgments. The parser, extractor and
+release suites are ordinary engineering tests, not Azimuth evidence. Synthetic fixtures under
+`experiments/` do own non-routine Claims with decisions; they exercise the contracts and are not
+part of the accepted model.
 
 ## Current Run exchange
 
-The [`azimuth-run-bundle` version 1](../azimuth/formats/run-bundle.md) contract represents one
+The [`azimuth-run-bundle` version 1](../contracts/run-bundle.md) contract represents one
 logical Run over an exact workspace, CI candidate, artifact, deployment, service or monitoring
 window. It freezes the model and selected Check or Challenger fingerprints, exact context, planned
 and actual work, physical activities, ordered attempts, terminal results, content-addressed
@@ -91,8 +93,8 @@ invokes a provider, reads artifact locators or writes to a service.
 
 ## Current bounded adapter boundary
 
-D47 implements the separation in which core owns repository loading and semantic selection while
-an adapter translates a frozen selection to provider-native work. Strict `azimuth/adapters.json`
+The adapter boundary separates core, which owns repository loading and semantic selection, from an
+adapter, which translates a frozen selection to provider-native work. Strict `azimuth/adapters.json`
 configuration pins provider and adapter identity, executable and resource content, description,
 semantic settings, exact non-secret environment literals, process limits and capabilities. Core
 never discovers an executable through `PATH`, invokes a shell or inherits the ambient environment.
@@ -110,7 +112,7 @@ remain open. One capability may support several classes. One Run uses one config
 may route different selections through several capabilities without combining their semantic
 results.
 
-The provider-neutral D46 Plan freezes semantic targets, implementations, context and finite units.
+The provider-neutral Plan freezes semantic targets, implementations, context and finite units.
 A separate `azimuth-run-launch-plan` freezes the exact Subject, planned time,
 `execute | import` operation, complete Plan and one configured capability route per selection.
 Substituting a route changes launch identity and the derived Run id.
@@ -208,8 +210,8 @@ is accepted execution facts and derived Subject-specific state, not repository s
 provider integrations. The standalone bundle contract supplies the protocol meaning a future
 ledger must preserve; it does not authorize or ingest the Run.
 
-D42's version 1 claim-contract and project-snapshot wire remains isolated inside the existing
-service boundary until the replacement is implemented. It receives no bridge into the alpha 2
+The alpha 1 claim-contract and project-snapshot wire remains isolated inside the existing service
+boundary until the replacement is implemented. It receives no bridge into the alpha 2
 repository graph. There is no assurance-specific export command: `azimuth export` emits only the
 version 2 repository model and no runtime ledger records.
 

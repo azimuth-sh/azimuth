@@ -46,7 +46,7 @@ The current model is still split in ways that motivate alpha 2:
   [`services/assurance/domain/src/lib.rs`](../../../services/assurance/domain/src/lib.rs).
 - Repository verification declarations still describe imported executions through the D39
   observation protocol in
-  [`azimuth/formats/verification.md`](../../formats/verification.md).
+  [`azimuth/formats/verification.md`](../../../contracts/verification.md).
 
 These records demonstrate two structurally different needs: a stable reviewed decision about an
 evidentiary edge and repeatable facts about exact execution Subjects. They do not yet provide the

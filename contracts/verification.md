@@ -1,6 +1,6 @@
 # Verification declarations
 
-The repository-owned decision facet for alpha 2 (D43, D45, D48). This file declares what a Check
+The repository-owned decision facet for alpha 2. This file declares what a Check
 means, how its terminal result bears on a case-level Claim, whether that exact edge is credible in
 its required context and whether one Claim's total assurance composition is accepted. It never
 records an execution result.
@@ -331,7 +331,7 @@ before fingerprinting. Required-scope coverage tests kinds over the union of `an
 
 Stable item ids and fingerprints are exact: Claim uses its id and semantic Claim digest; binding,
 Qualification, Claim Judgment, Check and policy use their declared id and corresponding canonical
-fingerprint or digest. Context uses its owning Evidence Binding id and the D45 context fingerprint;
+fingerprint or digest. Context uses its owning Evidence Binding id and the context fingerprint;
 two contexts for one binding are structurally impossible. Realization and Check implementation use
 SourceIdentity and source fingerprint; mechanism uses `<spec>#<mechanism>` and its canonical
 mechanism-record digest; source mechanism implementation uses SourceIdentity and source
@@ -341,10 +341,10 @@ canonical sorted-area digest; and surface uses its id and canonical surface-acco
 enumeration uses
 `<surface>|<area>|<mount>|<enumerator>|<SourceIdentity>` and its source fingerprint. A tagged
 surface member uses `<surface>|tagged|<SourceIdentity>` and its source fingerprint; an enumerated
-member uses `<surface>|enumerated|<file>` and the canonical digest of that D13 model-authoritative
+member uses `<surface>|enumerated|<file>` and the canonical digest of that model-authoritative
 file identity. Locator paths never substitute for another kind's id.
 
-Auxiliary component digests use D45 canonical serialization over these exact envelopes:
+Auxiliary component digests use this file's canonical serialization over these exact envelopes:
 
 ```json
 {
@@ -367,7 +367,7 @@ Auxiliary component digests use D45 canonical serialization over these exact env
   "version": 1,
   "surface": <surface-id>,
   "kind": "enumerated",
-  "file": <D13-member-file-identity>
+  "file": <site-member-file-identity>
 }
 ```
 
@@ -375,7 +375,7 @@ The surface account has exactly `id`, `contributions` and `members`. Each contri
 `mount`, `enumerator` and `witness`; the witness has enumeration `kind`, stable `identity` and
 `source_fingerprint`. Contributions sort by `(area, mount, enumerator, witness.identity)`. A member
 is either `{"kind":"tagged","identity":<SourceIdentity>,"source_fingerprint":<fingerprint>}` or
-`{"kind":"enumerated","file":<D13-member-file-identity>}`. Members sort first by kind in
+`{"kind":"enumerated","file":<site-member-file-identity>}`. Members sort first by kind in
 `tagged | enumerated` order and then by identity or file. Every set-like array is unique on its sort
 key; a collision with different content makes the expected Judgment unavailable.
 
@@ -403,10 +403,11 @@ Its SHA-256 value is
 
 ## Canonical fingerprints
 
-Repository decision fingerprints use D45 canonical JSON: object keys sort recursively by their
+Repository decision fingerprints use canonical JSON: object keys sort recursively by their
 exact strings, set-like arrays use their declared order, strings preserve code points, expanded
 serialization uses two spaces and LF, and exactly one terminal LF is hashed. This is intentionally
-the existing model `canonical_sha256` contract, not D46 RFC 8785. There is no legacy reader.
+the existing model `canonical_sha256` contract, not the RFC 8785 serialization used by the
+Run-bundle format. There is no legacy reader.
 
 - Check fingerprint: format version, Check id, ordered methods, terminal proposition, and sorted
   implementation semantic identities plus source fingerprints.
@@ -421,7 +422,7 @@ Paths, lines, mounts and explanatory prose are excluded. Criticality remains exc
 Qualification identity but is included in Claim Judgment identity. A source, Claim, binding,
 policy or context change stales the decision it actually affects.
 
-The D48 Evidence Binding preimage is exactly:
+The Evidence Binding preimage is exactly:
 
 ```json
 {
@@ -441,7 +442,7 @@ The D48 Evidence Binding preimage is exactly:
 }
 ```
 
-The literal `decision_policy_digest` replaces D45's unpublished
+The literal `decision_policy_digest` replaces the unpublished
 `qualification_policy_digest` in place. The earlier field is rejected and there is no alternate
 preimage.
 
@@ -477,7 +478,7 @@ The Claim Judgment preimage is:
   "version": 1,
   "claim": {
     "id": <case-claim-id>,
-    "semantic_digest": <D45-case-claim-digest>,
+    "semantic_digest": <case-claim-digest>,
     "criticality": <standard-or-critical>,
     "realization_obligation_areas": <sorted-distinct-area-ids>,
     "surface": <applicable-surface-account-or-null>
@@ -547,7 +548,7 @@ The applicable surface account is exactly its `id`, sorted contribution
 `(area, mount, enumerator)` objects, one sorted witness per contribution and sorted member records.
 A contribution owns `area`, `mount` and `enumerator`; its nested witness has exactly enumeration
 `kind`, stable `identity` and `source_fingerprint`. A tagged member records its stable
-SourceIdentity and source fingerprint; an enumerated member records its D13 file identity. Their
+SourceIdentity and source fingerprint; an enumerated member records its file identity. Their
 tagged/enumerated variants cannot collapse.
 The mount id is an authored contribution identity; its path is excluded. The surface is `null`
 when the Claim has no `Over:`. The obligation areas are only the exact workspace obligation for the
@@ -788,7 +789,7 @@ the raw example above in area `payments` and mount `code`, the exact assembled p
 
 These are the exact assembled fields for the raw example, which omitted every optional Artifact
 property. Assembly preserves any emitted `unique`, `columns` and `predicate` value and rewrites only
-the companion id before attaching source identity. The D48 canonical Artifact account always
+the companion id before attaching source identity. The canonical Artifact account always
 represents an absent property as `"unique": null`, `"columns": []` or `"predicate": null`. The
 assembled companion id is already its SourceIdentity key; it is not expanded again as
 `<area>|<kind>|<id>`.
@@ -926,6 +927,58 @@ normalization removes whitespace around punctuation and uses one space only betw
 tokens. Declared type-path spelling is identity: an alias and its resolved underlying type produce
 different sites. This is intentionally weaker than resolved-type identity and is the complete
 Rust alpha contract.
+
+.NET reflects over built assemblies rather than source. Compiled metadata resolves repeatable
+attributes, inheritance and generics; the site is derived from metadata alone and a PDB path never
+disambiguates it. Compiler-generated types and special-name methods are excluded. The exact site
+is the declaring type's metadata name for a type-level marker, and for a method:
+
+```text
+<declaring-type>.<method-name>``<generic-arity>(<parameter-type>,...)
+```
+
+The ``` ``<generic-arity> ``` segment is present only on a generic method definition and absent
+otherwise. A metadata type name is the
+CLR full name, so a namespace-qualified name with `+` between nested types and a `` ` ``-arity
+suffix on a generic definition. A by-reference type appends `&`, a pointer appends `*`, an array
+appends `[` with one comma fewer than its rank and `]`, a constructed generic is
+`<definition>[<argument>,...]`, and a generic parameter is `!<position>` when declared by the type
+and `!!<position>` when declared by the method. Positions are zero-based; parameter names are not
+identity. The address kind is `dotnet-symbol` and `lang` is `csharp`.
+
+The file locator comes from the assembly's portable PDB, made relative to `--root`. An assembly
+built without a readable portable PDB yields no path and a warning rather than an invented one; a
+PDB document path that does not lie below `--root` is emitted as read. A marker fingerprint spans
+the sequence-point line range of the declaring method, extended upward to the line naming the
+method and over any immediately preceding attribute lines, and for an async or iterator method it
+is taken from the generated state machine's `MoveNext`. A type's fingerprint is the hash of its
+declared members' fingerprints, sorted and newline-joined. `ImplementsCheck` and
+`ImplementsMechanism` require a non-empty fingerprint and fail when metadata cannot produce one.
+
+The JVM profile reads compiled classes from `--classes` and matches them to sources under
+`--source-root`, with `--root` fixing the emitted locator. Synthetic, anonymous and local classes,
+synthetic and bridge methods and `module-info` are excluded. `lang` is `kotlin` when the resolved
+source file ends `.kt` and `java` otherwise; the address kind follows as `kotlin-symbol` or
+`java-symbol`. The exact site is the binary class name for a type-level marker, and for a method:
+
+```text
+<binary-class-name>.<method-name>(<parameter-descriptor>...)<return-descriptor>
+```
+
+The descriptor is the erased JVM form: `V Z B C S I J F D` for `void`, `boolean`, `byte`, `char`,
+`short`, `int`, `long`, `float` and `double`, `L<binary-name-with-slashes>;` for a reference type
+and the JVM array spelling for an array. Generic parameters are erased and are not identity;
+overloads separate by their erased descriptor and by nothing else. Parameter names are excluded.
+
+A class's source is resolved from its binary name with any `$` suffix removed and `.` changed to
+`/`, trying `.java`, then `.kt`, then the `Kt`-stripped `.kt` name for a Kotlin file facade. No
+unique source, or one source address reachable through two roots, is invalid. A `Realizes` or
+`ImplementsMechanism` fingerprint is the complete source file. An `ImplementsCheck` fingerprint is
+the exact enclosing method source: for Java the unique `javac`-parsed method with that name and
+parameter count, and for Kotlin the unique `fun <name>` declaration with its preceding annotation
+lines and its brace or expression body. A method that is not uniquely identified this way is
+invalid, and a method carrying both `ImplementsCheck` and `ImplementsMechanism` uses that same
+method span for both.
 
 These profiles change no canonical fingerprint preimage. The preimages continue to carry the exact
 opaque `site` and exclude `file`. Re-emitting a site that violated a profile changes its dependent

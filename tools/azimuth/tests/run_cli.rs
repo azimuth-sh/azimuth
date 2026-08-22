@@ -207,7 +207,7 @@ fn help_exposes_only_current_run_operations() {
         assert!(stdout.contains("azimuth run execute --plan <file>"));
         assert!(stdout.contains("azimuth run import --plan <file>"));
         assert!(stdout.contains("Checks, Challenges, or both"));
-        assert!(stdout.contains("azimuth/formats/run-launch-plan.md"));
+        assert!(stdout.contains("contracts/run-launch-plan.md"));
         assert!(!stdout.contains("--challenger"));
         assert!(!stdout.contains("--challenge-form"));
         assert!(!stdout.contains(" run ingest"));

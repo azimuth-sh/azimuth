@@ -134,7 +134,7 @@ for that ecosystem. The source marker says only which Check the site implements.
 in `verification.md` own every Check-to-Claim relationship and its form.
 
 A mechanism implementation continues to use `ImplementsMechanism(<spec>, <mechanism>)` in the
-existing ecosystem spelling. D48 adds no annotation argument. The extractor, not source authors,
+existing ecosystem spelling; no annotation argument is added. The extractor, not source authors,
 owns qualified `site`, typed `binding`, companion Artifact and source fingerprint derivation.
 
 An unmarked native test emits nothing. This is the normal state for ordinary engineering tests and

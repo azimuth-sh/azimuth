@@ -4,7 +4,7 @@ using Xunit;
 namespace Azimuth.Emit.Tests;
 
 /// <summary>
-/// Tests against the synthetic fixture beside this project (D2). A silently wrong emitter produces
+/// Tests against the synthetic fixture beside this project. A silently wrong emitter produces
 /// a green matrix, which is the exact failure the framework exists to prevent — so these assert on
 /// the shape of what is emitted, not merely that something was.
 /// </summary>

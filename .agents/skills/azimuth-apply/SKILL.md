@@ -12,7 +12,8 @@ Implement the approved target without treating proposal prose as source truth.
 
 ## Workflow
 
-1. Read every change artifact, affected current model package, D43–D48 and repository guidance.
+1. Read every change artifact, affected current model package, the format contracts under
+   `contracts/` and repository guidance.
    Run `azimuth change status <id>`.
 2. If `work-packages.md` exists, validate and coordinate it. Otherwise follow dependency order in
    the change's `plan.md`.
@@ -33,15 +34,15 @@ Implement the approved target without treating proposal prose as source truth.
 10. For Run-bundle work, verify every relevant correction set with
     `azimuth run verify --bundle <file>...`, then inspect the same set with
     `azimuth run inspect --bundle <file>...`. Follow the strict
-    [Run bundle format](../../../azimuth/formats/run-bundle.md); protocol validity is not current
+    [Run bundle format](../../../contracts/run-bundle.md); protocol validity is not current
     model acceptance or Assurance State.
 11. For adapter work, verify configured descriptions, create Check-only, Challenge-only and mixed
     launch plans as applicable from the complete model, and exercise the relevant execute or import
     path. Test candidate dispositions, required-form coverage, lanes, scope, launch inputs, content
     and descriptor drift, process bounds, response validation, valid adverse facts, scheduled
     omission diagnostics and failure without output. Follow the strict
-    [adapter](../../../azimuth/formats/adapter.md) and
-    [launch-plan](../../../azimuth/formats/run-launch-plan.md) formats.
+    [adapter](../../../contracts/adapter.md) and
+    [launch-plan](../../../contracts/run-launch-plan.md) formats.
 12. Complete plan and work-package statuses, write `outcome.md`, and leave the proposal at
     `implemented` until acceptance is genuinely established.
 
@@ -91,6 +92,6 @@ Implement the approved target without treating proposal prose as source truth.
   defines no cache-validity, cross-Subject reuse or historical applicability inference.
 - Adapters are bounded short-lived processes, not daemons, webhook hosts or long-running
   supervisors.
-- The D42 service wire remains isolated, and no Assurance Service export command exists.
+- The alpha 1 service wire remains isolated, and no Assurance Service export command exists.
 - Use `azimuth validate`, `azimuth report traceability` and `azimuth export` for the current model.
 - Do not archive; `azimuth-archive` owns the acceptance boundary.

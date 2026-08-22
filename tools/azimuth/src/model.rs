@@ -1,6 +1,6 @@
 //! The derived model.
 //!
-//! `claim = (domain, predicate)` (D13). The steel thread exercises only the behavioural domain,
+//! `claim = (domain, predicate)`. The current corpus exercises only the behavioural domain,
 //! which scenarios take implicitly and never name — so `domain` is not represented yet. When a
 //! second domain arrives it becomes a field here, not a second artifact type.
 
@@ -153,7 +153,7 @@ pub struct Scenario {
     pub line: usize,
 }
 
-/// What a claim ranges over (D13). The behavioural domain is implicit and never written; a second
+/// What a claim ranges over. The behavioural domain is implicit and never written; a second
 /// domain arrived only when the demo produced evidence that the first could not carry it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Domain {
@@ -176,7 +176,7 @@ impl Domain {
 #[derive(Debug, Clone)]
 pub struct Requirement {
     pub id: String,
-    /// `None` is the `unclassified` finding (D6.2), not a parse error: a missing *declaration* is a
+    /// `None` is the `unclassified` finding, not a parse error: a missing *declaration* is a
     /// semantic gap, while an unrecognized *construct* fails the parse.
     pub criticality: Option<Criticality>,
     pub statement: String,
@@ -276,7 +276,7 @@ impl CheckImplementation {
 /// a route table, a container, a manifest — rather than from a tag.
 ///
 /// This exists because deriving membership from tags cannot see a site nobody tagged, which is the
-/// failure D13.1 names: an enumerator that misses a member reports green over the gap. Identity is
+/// enumerator failure: an enumerator that misses a member reports green over the gap. Identity is
 /// the **file**: the member is the file, and a discharge anywhere in it discharges the member.
 #[derive(Debug, Clone)]
 pub struct ClassMember {
@@ -311,8 +311,8 @@ pub struct Artifact {
     pub source: Option<SourceIdentity>,
 }
 
-/// One provider-neutral D48 semantic-scope item plus the optional source account needed to build
-/// D47 launch inputs. The model owns semantic identity; Run protocol types remain a downstream
+/// One provider-neutral semantic-scope item plus the optional source account needed to build
+/// launch inputs. The model owns semantic identity; Run protocol types remain a downstream
 /// projection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SemanticScopeComponent {
@@ -356,7 +356,8 @@ pub struct SemanticChallengeScope {
 }
 
 impl SemanticChallengeScope {
-    /// Unions selector projections with D48 ordering and conflict rules. The same exact item may
+    /// Unions selector projections with the format's ordering and conflict rules. The same
+    /// exact item may
     /// remain in both arrays because authored origin and decision composition are distinct roles.
     pub fn merge(scopes: impl IntoIterator<Item = Self>) -> Option<Self> {
         let mut anchors = Vec::new();
@@ -687,7 +688,7 @@ impl Model {
         ))
     }
 
-    /// Builds the exact D48 total-composition preimage for one authored Claim Judgment.
+    /// Builds the exact total-composition preimage for one authored Claim Judgment.
     /// `None` means at least one required semantic dependency is absent or ambiguous.
     pub fn claim_judgment_preimage(
         &self,
@@ -846,8 +847,8 @@ impl Model {
         ))
     }
 
-    /// Expands one selected resolution candidate into the exact D48 model-semantic scope. The
-    /// caller may union several projections before constructing a D46 scope.
+    /// Expands one selected resolution candidate into the exact model-semantic scope. The
+    /// caller may union several projections before constructing a Run-bundle scope.
     pub fn challenge_candidate_scope(
         &self,
         candidate: &crate::validation::ChallengeCandidate,
@@ -1592,7 +1593,7 @@ impl Model {
         bindings
     }
 
-    /// D10 and D44: the export is the extension seam. Validation, dashboards and PR annotations
+    /// The export is the extension seam. Validation, dashboards and PR annotations
     /// consume this model; nothing else re-parses specs.
     pub fn to_json(&self, findings: &[crate::validation::Finding]) -> Json {
         let specs = self

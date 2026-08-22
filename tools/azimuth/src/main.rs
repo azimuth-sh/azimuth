@@ -63,7 +63,7 @@ OPTIONS
 
 RUN PLAN REQUESTS
     The strict request file may select Checks, Challenges, or both. See
-    azimuth/formats/run-launch-plan.md for the complete request shape.
+    contracts/run-launch-plan.md for the complete request shape.
 ";
 
 const RUN_USAGE: &str = "\
@@ -79,7 +79,7 @@ USAGE
 
 PLAN REQUESTS
     The strict request file may select Checks, Challenges, or both. See
-    azimuth/formats/run-launch-plan.md for the complete request shape.
+    contracts/run-launch-plan.md for the complete request shape.
 ";
 
 const ADAPTER_USAGE: &str = "\

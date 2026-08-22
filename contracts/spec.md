@@ -57,8 +57,8 @@ linkage, Check, Evidence Binding or Qualification. An ordinary test for a routin
 the Azimuth evidence graph and needs no exemption.
 
 The parser retains non-routine levels so a later accepted change can raise criticality. Such a
-change must add the explicit verification declarations required by D45; it cannot restore an older
-implicit evidence model.
+change must add the verification declarations required by the verification format; it cannot
+restore an older implicit evidence model.
 
 ## What cases do not carry
 

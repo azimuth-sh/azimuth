@@ -1,6 +1,6 @@
 # Mechanism identity conformance
 
-This experiment proves the D48 mechanism-identity boundary with the seven public extractor
+This experiment proves the mechanism-identity boundary with the seven public extractor
 families: C++, Python, Go, Rust, .NET, JVM and TypeScript/JavaScript. It creates two disposable
 copies of every declared language or project root, compiles them with their real toolchain and
 invokes the public extractor CLI. No consumer checkout, service, registry or network dependency is
@@ -26,7 +26,8 @@ kind, id, fingerprint and non-file source metadata remain equal.
 Two separately emitted C++ markers deliberately share one raw kind and site. They assemble in
 different areas without collision because their keys are `<area>|<kind>|<site>`; mapping both into
 one area fails before publication. Strict invalid fixtures cover every native, managed and
-TypeScript family. Pre-D48 records missing `site`, deriving `binding` and companion id from a file,
+TypeScript family. Superseded records missing `site`, deriving `binding` and companion id from a
+file,
 or mismatching the marker companion all fail without output. A retired alpha manifest key provides
 an additional proof that no compatibility reader remains.
 

@@ -245,7 +245,7 @@ Checks sort by `(id, fingerprint)` and ids are unique within a plan. Implementat
 `(identity, source_fingerprint)` and are non-empty. Units sort by id, are non-empty and have unique
 ids. One `whole` unit represents native work whose internal population is not separately planned.
 
-Implementation `identity` is the D45 stable semantic SourceIdentity
+Implementation `identity` is the stable semantic SourceIdentity
 `<area>|<address-kind>|<address>`. Area and address kind are lower kebab ids. Address is non-empty,
 glob-free semantic identity rather than a file, path, numeric line, or path-plus-line locator; it
 uses the realization-selector boundary from [verification.md](verification.md).
@@ -730,13 +730,13 @@ command usage exits two and emits no inspection account.
 
 `plan`, `execute` and `import` use the separate adapter and launch contracts. `ingest` remains
 unknown. Standalone verification and inspection never invoke an adapter, read an artifact or input
-locator, contact the D42 service or translate an alpha 1 record.
+locator, contact the isolated alpha 1 service or translate its records.
 
-D47 deliberately replaces the earlier unpublished pre-release version 1 shape that lacked adapter
-provenance. A bundle without the required D47 adapter account is rejected; there is no compatibility
+This version deliberately replaces the earlier unpublished pre-release shape that lacked adapter
+provenance. A bundle without the required adapter account is rejected; there is no compatibility
 reader and no second interpretation of the current version 1 schema.
 
-D48 likewise replaces the unpublished Challenge shape in place. Every Challenge selection now has
+It likewise replaces the unpublished Challenge shape in place. Every Challenge selection now has
 `lane` and `scope`, actual selection repeats both, and an omitted Challenge uses the strict
 selection-scoped diagnostic. A prior Challenge entry without those fields is rejected rather than
 upgraded or interpreted twice.

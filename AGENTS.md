@@ -11,19 +11,34 @@ executable or acceptance dependencies may not.
 | Path | Holds |
 |---|---|
 | `docs/framework.md` | derived account of the framework; start here |
-| `docs/decisions.md` | authoritative design decisions and their revision history |
 | `docs/glossary.md` | bounded terminology |
 | `docs/change-process.md` | change delivery, evidence and rollout guidance |
-| `azimuth/formats/` | parser contracts |
+| `docs/assurance-extensions.md` | role and authority boundaries extension work must preserve |
+| `contracts/` | parser contracts |
 | `azimuth/standards/` | Decision Policies and Challenge Schedule for non-routine decisions |
+| `azimuth/model/` | the framework's own accepted intent and mechanisms |
 | `azimuth/changes/` | active changes; one identifier has one authority |
+| `azimuth/changes/archive/` | the decision record: one archived change per accepted transition |
+| `azimuth/explorations/` | non-normative pre-commitment research; never authority |
 | `tools/azimuth/` | Rust CLI and core |
 | `tools/extractors/` | language and structural extractors |
-| `services/assurance/` | isolated D42 service pending the Run-ledger change |
+| `services/assurance/` | isolated alpha 1 service pending the Run-ledger change |
 | `experiments/` | synthetic, self-contained conformance evidence |
 
-Read `docs/decisions.md` before structural work. The framework document is derived and never
-overrides a decision.
+## Authority order
+
+When two artifacts disagree, the earlier item wins:
+
+1. `tools/azimuth/src/` and `tools/azimuth/tests/` — behaviour, and the tests that pin it;
+2. `contracts/` — parser contracts, pinned by frozen-vector tests;
+3. `azimuth/standards/verification.md` — current Decision Policies and the one Challenge Schedule;
+4. `azimuth/model/` — the framework's own accepted intent and mechanisms;
+5. `azimuth/changes/archive/<id>/` — why one accepted transition happened;
+6. `docs/` — derived prose, which holds no authority of its own.
+
+Read the format contract for the area you are changing before structural work. Derived prose is
+never the reason to keep a behaviour. There is no monolithic decision log: an accepted change's
+`proposal.md`, `design.md` and `outcome.md` are its record, and archived changes are immutable.
 
 ## Working rules
 
@@ -86,8 +101,32 @@ overrides a decision.
 - Exploration precedes commitment for uncertain multi-change work.
 - Validate `work-packages.md` before delegation. Workers edit only their declared non-overlapping
   paths and never finalize or archive.
+- Do not write, run or offer tests unless directly asked. This covers new tests, test
+  infrastructure and executing existing suites such as `cargo test` or `./scripts/check.sh`. The
+  framework is in a design phase, and test ceremony written now encodes decisions that are still
+  open. On finding a coverage gap, record it and continue; do not close it. Verify work with the
+  product's own commands and by inspection instead.
 - There is no backward-compatibility obligation during the alpha design phase unless an accepted
   change states one explicitly.
+- Heavy code analysis belongs to an extractor, never to core. AST, call-graph and schema access
+  happen in the ecosystem whose compiler API is already present; core reads manifests only. That
+  division is what keeps the zero-dependency rule affordable rather than heroic.
+- Every parse failure names the file, the line and what was expected. Strict formats are only
+  tolerable when their errors are precise, and there is no parser library to supply that for free.
+- Criticality needs counter-pressure before the first non-routine Claim lands. Whoever declares a
+  level does not pay for it, so without a cap or an explicit review at the change boundary every
+  Claim drifts to the top and the level stops carrying information. No mechanism enforces this yet.
+- Keep each mechanism usable alone. Adding one must enrich existing validation without re-authoring
+  existing artifacts, mixed adoption levels must coexist with no coordinating centre, and adopting
+  Azimuth on an existing codebase must be possible by baselining current Findings and forbidding
+  new ones.
+- A Challenger has no aggregate score. Findings are reviewed against the specific predicate they
+  attack; a project-wide percentage or threshold rewards irrelevant findings and punishes
+  deliberately untested infrastructure. A clean Challenge Result is likewise only a negative search
+  fact.
+- Requalification follows definition drift, not re-execution. Re-running an unchanged qualified
+  definition needs no new review and no commit; only a change to the definition, its form, oracle,
+  inputs or required context does.
 
 ## Adapter command boundary
 

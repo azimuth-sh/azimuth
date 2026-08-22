@@ -24,12 +24,12 @@ Archive records an accepted semantic transition. It is not a branch merge or dep
    public graph changes.
 6. When Run bundles changed, use `azimuth run verify --bundle <file>...` over every relevant
    correction set and `azimuth run inspect --bundle <file>...` for its deterministic account.
-   Apply the strict [Run bundle format](../../../azimuth/formats/run-bundle.md) without treating a
+   Apply the strict [Run bundle format](../../../contracts/run-bundle.md) without treating a
    valid negative or partial fact as a protocol failure.
 7. When adapters changed, run `azimuth adapter verify`, create applicable Check-only,
    Challenge-only and mixed launch plans and exercise execute or import through the strict
-   [adapter](../../../azimuth/formats/adapter.md) and
-   [launch-plan](../../../azimuth/formats/run-launch-plan.md) contracts. Confirm process-limit,
+   [adapter](../../../contracts/adapter.md) and
+   [launch-plan](../../../contracts/run-launch-plan.md) contracts. Confirm process-limit,
    process-group, schema, identity and bundle failures publish no output, while valid adverse facts
    remain successful exchanges. Confirm Challenge planning resolves every candidate disposition,
    current accepted decision, required form, schedule lane, semantic scope and accountable launch
@@ -73,5 +73,6 @@ receipt. `azimuth run verify` and `azimuth run inspect` likewise perform no plan
 execution, report import, durable ingest or Assurance State projection. `azimuth run plan` resolves
 Check-only, Challenge-only or mixed requests from the complete model; it does not execute
 `model.extract`, ingest Runs, derive Assurance State, infer cache validity or authorize historical
-reuse. A clean Challenge Result is not product evidence, and `deferred` is not a result. The D42
+reuse. A clean Challenge Result is not product evidence, and `deferred` is not a result. The
+alpha 1
 service wire remains isolated, and no Assurance Service export command exists.

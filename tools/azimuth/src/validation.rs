@@ -637,7 +637,7 @@ fn resolve_selector(model: &Model, selector: &SelectorIdentity) -> Vec<Challenge
         (DecisionKind::ClaimJudgment, RelationKind::Mechanism) => {
             judgment_relation_candidates(model, selector, claims_for_mechanism(model, &selector.id))
         }
-        _ => unreachable!("the parser admits only the seven D48 selector forms"),
+        _ => unreachable!("the parser admits only the seven selector forms"),
     }
 }
 
@@ -1947,12 +1947,12 @@ fn design_findings(model: &Model) -> Vec<Finding> {
         }
     }
 
-    // D6.5: a design entry is required for `critical`, optional for `standard`, absent for
+    // A design entry is required for `critical`, optional for `standard`, absent for
     // `routine`. Nothing here says the mechanism is missing from the code — only that its
     // strategy
     // is undeclared, and therefore that validation cannot compare the claim against reality.
     //
-    // Gated on the artifact being in use at all. D8.1 requires each mechanism to be usable alone
+    // Gated on the artifact being in use at all. Each mechanism must be usable alone
     // — `validate` without the design artifact — and a project that has not adopted it must not
     // be told that every critical requirement is a finding. Partial adoption still reports: one
     // design file means the artifact is in use, and the specs it omits are visible.
@@ -1989,13 +1989,13 @@ fn design_findings(model: &Model) -> Vec<Finding> {
     findings
 }
 
-/// Claims whose domain is a set of sites (D13).
+/// Claims whose domain is a set of sites.
 ///
 /// Membership has two sources, and the second exists because the first is not enough.
 ///
 /// A site joins by realizing any claim in the named spec — but that only reaches sites somebody
-/// already tagged, so a file carrying no tags at all can never be a member. That is the failure
-/// D13.1 names: an enumerator drawn from annotations reproduces the very bug the rule prevents and
+/// already tagged, so a file carrying no tags at all can never be a member. That is the enumerator
+/// failure: an enumerator drawn from annotations reproduces the very bug the rule prevents and
 /// reports green. A project's extractor may therefore emit `class_members` derived from what the
 /// build produced — a route table, a container, a migration set — and those join too, whether
 /// or
@@ -2011,7 +2011,8 @@ fn design_findings(model: &Model) -> Vec<Finding> {
 /// **Limitation, stated rather than hidden.** This verifies the weakest rung of the enforcement
 /// ladder — a guard at every site. A choke point that every member routes through would show as
 /// N−1
-/// breaches, which is exactly the defect D7 names in the alpha. Crediting a choke point needs
+/// breaches, which is exactly the defect the enforcement ladder names. Crediting a choke point
+/// needs
 /// call-graph analysis, which belongs to the extractor rather than derived-model validation.
 fn surface_findings(model: &Model) -> Vec<Finding> {
     let mut findings = Vec::new();

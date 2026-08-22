@@ -1,8 +1,13 @@
 # Azimuth — what the framework is
 
-Status: **derived**. This document states the current framework. [`decisions.md`](./decisions.md),
-the format contracts and implementation are authoritative when this account disagrees with them.
-Terminology is bounded by [`glossary.md`](./glossary.md).
+Status: **derived**. This document states the current framework. It is written from the artifacts
+and holds no authority of its own. When it disagrees with them, the authority order is the
+implementation and its tests, then the parser contracts in
+[`contracts/`](../contracts/), then
+[`azimuth/standards/verification.md`](../azimuth/standards/verification.md), then the accepted model
+under [`azimuth/model/`](../azimuth/model/). Terminology is bounded by
+[`glossary.md`](./glossary.md); each completed change keeps its own record under
+[`azimuth/changes/archive/`](../azimuth/changes/archive/).
 
 ---
 
@@ -10,7 +15,7 @@ Terminology is bounded by [`glossary.md`](./glossary.md).
 
 Azimuth is an **evidence control plane**. It keeps durable product intent, implementation linkage
 and reviewed evidentiary meaning in a repository without making a test runner, CI system, analyzer
-or monitoring provider authoritative for that meaning (D43).
+or monitoring provider authoritative for that meaning.
 
 A **Claim** is an addressable proposition about a product or its operation. Claims have two levels:
 
@@ -20,7 +25,7 @@ A **Claim** is an addressable proposition about a product or its operation. Clai
 The case is still written as a GIVEN/WHEN/THEN scenario, but it is not a second ontology beneath a
 Claim. A result about one case does not silently establish its broader requirement.
 
-Each Claim can have three facets (D3):
+Each Claim can have three facets:
 
 | Facet | Question | Repository authority |
 |---|---|---|
@@ -28,7 +33,7 @@ Each Claim can have three facets (D3):
 | mechanism | What makes it true? | `design.md` |
 | evidence | Why should a particular method be believed for this Claim? | `verification.md` |
 
-Criticality decides which facets are applicable (D20). A routine Claim stops at intent and owes no
+Criticality decides which facets are applicable. A routine Claim stops at intent and owes no
 realization, mechanism, Check, Evidence Binding or Qualification. Standard and critical Claims add
 the applicable obligations. Every active Claim in this repository is routine during the
 fast-moving alpha 2 phase. Its ordinary tests and release checks remain engineering safeguards;
@@ -47,8 +52,9 @@ an implementation is correct merely because it is linked.
 
 A design entry declares a stable mechanism identity, enforcement kind and rationale, then resolves
 it to one current artifact. Code can identify an implementation with
-`implements-mechanism`; non-code artifacts can be bound through an extractor-resolved address. The
-design identity survives deletion of its implementation, making the broken relation visible.
+`implements-mechanism`, from which the extractor derives the binding; a non-code artifact uses an
+explicit `Binding:` instead. The design identity survives deletion of its implementation, making
+the broken relation visible.
 
 A marker-derived implementation is one atomic implementation-and-companion account. Its seven raw
 fields are `spec`, `mechanism`, `site`, `binding`, `file`, `lang` and `source_fingerprint`; its raw
@@ -72,9 +78,14 @@ Residue belongs outside the Claim graph: orientation, danger zones, deliberately
 and other knowledge that cannot be derived. It may be recorded beside design, but it creates no
 semantic relation.
 
+The facets must also separate cleanly at N=1. If intent, mechanism and evidence only make sense
+when three different people author them, the separation is decorative and the framework cannot be
+dogfooded by a single maintainer. Ownership is therefore a removable layer rather than part of the
+model.
+
 ## Repository evidence graph
 
-The alpha 2 repository graph is deliberately sparse (D45):
+The alpha 2 repository graph is deliberately sparse:
 
 ```text
 Check implementation --implements--> Check --Evidence Binding--> case-level Claim
@@ -92,10 +103,10 @@ A **Check** is a deliberately enrolled verification method with one atomic termi
 It is not every native test, analyzer rule or monitor in a repository. If two assertions can vary
 independently, they are separate Checks even when one native process evaluates both.
 
-Source code uses `ImplementsCheck(<project-global-check-id>)`. Extractors emit only the Check id,
-resolved implementation site and exact source fingerprint. The marker names no Claim, evidence
-form, context or Qualification. Several implementation sites may compose one Check. Unmarked tests
-remain ordinary engineering tests and emit no Azimuth evidence linkage.
+Source code uses `ImplementsCheck(<project-global-check-id>)`. Extractors emit exactly the Check id,
+resolved implementation site, file locator, language and exact source fingerprint. The marker names
+no Claim, evidence form, context or Qualification. Several implementation sites may compose one
+Check. Unmarked tests remain ordinary engineering tests and emit no Azimuth evidence linkage.
 
 ### Evidence Binding
 
@@ -206,8 +217,10 @@ Routine Claims owe no realization linkage. For applicable non-routine Claims, se
 realize one Claim across components and languages. This fan-out is why the model must derive
 traceability rather than maintain a second hand-written matrix.
 
-A Claim can range over executions, a set of sites, a code artifact, paired derivations, aggregate
-state over time or eventual absence (D13). A site-domain Claim names an independently derived
+A Claim ranges over one of exactly two domains: executions of a behavior, or a set of sites. A
+scenario takes the behavioral domain implicitly; an `Invariant` with an `Over:` surface takes the
+site domain. No other domain value exists, and the domain is never written in a spec. A
+site-domain Claim names an independently derived
 surface. Its enumerators must inspect the same source from which the system is built, such as a
 route table, dependency container or type graph. A hand-maintained member list cannot establish a
 universal domain.
@@ -221,8 +234,9 @@ Neither relation creates an evidence edge.
 
 `azimuth validate` deterministically reports **Findings**. Each Finding has one kind from the
 exhaustive registry, a closed category, severity, source location, optional Claim and criticality,
-detail and corrective help (D44). The categories are `intent`, `realization`, `verification`,
-`mechanism`, `judgment`, `surface` and `execution`.
+detail and corrective help. The exhaustive registry and its closed categories are in
+[`contracts/findings.md`](../contracts/findings.md). No current Finding kind maps to the execution
+category; it is reserved for the deferred execution plane.
 
 Findings include incomplete intent, dangling or missing realizations, unresolved mechanisms and
 surfaces, invalid Check and binding cardinality, missing or stale Qualifications, unstable Check
@@ -241,6 +255,10 @@ azimuth report traceability
 azimuth export --out model.json
 ```
 
+Authoring and project commands sit beside them: `azimuth init`, `azimuth explore create|list|show`,
+`azimuth change ...` and `azimuth project ...`. They scaffold and move artifacts and perform no
+model validation or Check execution.
+
 `azimuth validate` is the sole deterministic model validator. It does not execute Checks.
 `azimuth report traceability` is a pure projection over selected case-level Claims, their ordered
 realization identities, derived Check relationships, Challenge resolution accounts and
@@ -250,7 +268,8 @@ and writes no file unless `--out` is supplied.
 `azimuth export` writes the complete derived model as format version 2. The export includes specs,
 workspace data, realization and implementation linkage, mechanisms, Checks, Evidence Bindings,
 Qualifications, Claim Judgments, Decision Policies, the Challenge Schedule, Challengers, Challenge
-Plans, candidate resolutions, decision-impact edges and Findings. It contains no Run ledger data.
+Plans, candidate resolutions and Findings. Decision-impact edges belong to the traceability
+projection, not to the export. It contains no Run ledger data.
 There is no assurance-specific export command in alpha 2.
 
 The core reads language-neutral manifests rather than source. Ecosystem extractors emit the shared
@@ -262,10 +281,9 @@ model validation or Check execution.
 
 ## Multi-repository assembly
 
-A project may be assembled from independent repositories without making paths global identity
-(D33). The project catalog declares required repositories, stable areas and model-source
-authorities. A workset supplies concrete revisions and content digests for repository manifests and
-execution receipts.
+A project may be assembled from independent repositories without making paths global identity. The
+project catalog declares required repositories, stable areas and model-source authorities. A workset
+supplies concrete revisions and content digests for repository manifests and execution receipts.
 
 Every federated source has semantic identity `(area, typed address)`. Repository, mount and path
 are locators. Moving an unchanged area between repositories preserves linkage; splitting or
@@ -281,7 +299,7 @@ authority.
 
 Current facets describe accepted state. A **change** proposes a target state through intent deltas,
 solution design, implementation work and verification obligations. Proposed facts do not become
-current simply because they appear in a change directory (D21).
+current simply because they appear in a change directory.
 
 Completion distils mechanisms that now exist and accepted intent into the current packages before
 archiving the whole change. The archive retains alternatives, departures and the semantic history
@@ -294,8 +312,8 @@ obligations no longer apply and what would raise it again.
 
 ## Run and adapter execution control plane
 
-D46 implements the provider-neutral
-[`azimuth-run-bundle` version 1](../azimuth/formats/run-bundle.md) exchange. One immutable bundle
+Azimuth implements the provider-neutral
+[`azimuth-run-bundle` version 1](../contracts/run-bundle.md) exchange. One immutable bundle
 revision accounts for one logical Run over one exact typed Subject and semantic plan. It freezes
 planned and actual selection, physical activities, ordered attempts, one terminal Observation for
 each actually selected Check and one terminal Challenge Result for each selected Challenger target.
@@ -320,16 +338,15 @@ execution fact and therefore exits zero. Inspection presents a deterministic acc
 current repository authority and Assurance State unresolved. Neither command calls a provider,
 reads an artifact locator, writes to a service or treats protocol validity as product acceptance.
 
-D47 adds an explicit short-lived adapter boundary. Strict `azimuth/adapters.json` configuration
-pins protocol and provider identity, executable and resource content, the description handshake,
-exact non-secret settings and environment literals, process limits and a capability dictionary.
-Core neither searches `PATH` nor invokes a shell. Its closed semantic capability classes are
-`model.extract`, `check.execute`, `check.import`, `challenge.execute` and `challenge.import`;
-provider families, configured `<adapter-id>/<capability-id>` addresses and Challenge forms remain
-open identities.
+An explicit short-lived adapter boundary sits beside it. Strict `azimuth/adapters.json`
+configuration pins protocol and provider identity, executable and resource content, the description
+handshake, exact non-secret settings and environment literals, process limits and a capability
+dictionary. Core neither searches `PATH` nor invokes a shell. Its closed semantic capability
+classes are in [`contracts/adapter.md`](../contracts/adapter.md); provider families, configured
+`<adapter-id>/<capability-id>` addresses and Challenge forms remain open identities.
 
-The reusable D46 semantic Plan contains no provider route. A separate strict
-[`azimuth-run-launch-plan`](../azimuth/formats/run-launch-plan.md) version 1 binds the exact
+The reusable semantic Plan contains no provider route. A separate strict
+[`azimuth-run-launch-plan`](../contracts/run-launch-plan.md) version 1 binds the exact
 Subject, planned time, `execute | import` operation and complete semantic Plan to one configured
 adapter and one capability route for every selection. Route or configuration substitution changes
 the launch fingerprint and therefore the derived Run id.
@@ -399,8 +416,8 @@ normalizer join the correction anchors. Import-input identities remain protected
 but may change when later bytes from the same native execution arrive through the frozen route. A
 different adapter, capability or configuration therefore starts a different Run.
 
-The current Run bundle version 1 requires this D47 adapter provenance. It replaces the unpublished
-pre-D47 shape in place, and no compatibility reader accepts that earlier shape.
+The current Run bundle version 1 requires this adapter provenance. It replaces the unpublished
+earlier shape in place, and no compatibility reader accepts it.
 
 Generated plans currently represent Check and Challenge routes with model authority. Challenge
 Results are exactly `clean | findings | inconclusive`. Clean means only that the configured search
@@ -416,11 +433,12 @@ bounded short-lived processes; there is no daemon, webhook, event gateway or lon
 boundary.
 
 The synthetic [Challenge-planning conformance](../experiments/challenge-planning/README.md) uses
-only public plan, execute, import, verify and inspect commands. It exercises all seven selectors,
+only the public `validate`, `export`, `adapter verify`, `run plan`, `run execute`, `run import`,
+`run verify` and `run inspect` commands. It exercises all seven selectors,
 mixed planning, exact scope and routes, mutation, fault and broad-analysis meanings, scheduled
 omission, import provenance and selection mismatch without creating persistent state.
 
-The optional Assurance Service is likewise awaiting the Run-ledger replacement. D42's version 1
+The optional Assurance Service is likewise awaiting the Run-ledger replacement. The alpha 1
 claim-contract and project-snapshot wire remains isolated inside the existing service boundary
 until that replacement removes it. It is not the alpha 2 repository model or Run-bundle protocol,
 is not emitted by `azimuth export`, and receives no compatibility bridge. Authorization, durable
@@ -437,6 +455,10 @@ The citation is documentary; no build, test, release or acceptance step reads th
 [historical-consumer-provenance]: https://github.com/drim-dev/azimuth-demo/blob/68a2eb5d46daf01ba087ec94b6a1ea7901c63bfd/azimuth/model/trips/rider-view/verification.md
 
 ## What is not claimed
+
+One falsifier stays open and is cheap to run once the export carries non-routine content: if the
+intent, mechanism and evidence views over the export turn out to be substantially the same view,
+the three-facet split is decorative and the artifacts should collapse into fewer.
 
 Azimuth does not prove prose predicates, infer honest linkage from source, turn a clean Challenger
 search into positive product evidence, create a repository decision from execution facts or enroll

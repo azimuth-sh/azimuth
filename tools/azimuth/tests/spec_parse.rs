@@ -1,6 +1,6 @@
 //! Spec parser tests.
 //!
-//! Fixtures here are synthetic by decision (D2). The moment this suite asserts against real demo
+//! Fixtures here are synthetic by decision. The moment this suite asserts against real demo
 //! specs, the tool and the fixture are welded together and neither can move independently.
 
 use azimuth::model::{Criticality, StepKind};
@@ -100,7 +100,7 @@ fn prose_before_the_first_requirement_is_not_a_statement() {
     assert!(!spec.requirements[0].statement.contains("claims nothing"));
 }
 
-/// D6.2 vs D11: a missing declaration is a Finding; an unknown construct is a parse error.
+/// A missing declaration is a Finding; an unknown construct is a parse error.
 /// Conflating them would either let syntax through as findings or hide a semantic gap.
 #[test]
 fn missing_criticality_parses_and_becomes_a_finding_not_an_error() {

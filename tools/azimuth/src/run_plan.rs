@@ -1,7 +1,7 @@
-//! Strict D47/D48 Run planning and launch-plan identity.
+//! Strict Run planning and launch-plan identity (contracts/run-launch-plan.md).
 //!
 //! The planner consumes a complete already-loaded model. It never loads provider semantics, applies
-//! a partial model selection. Provider routing is a separate launch layer over the unchanged D46
+//! a partial model selection. Provider routing is a separate launch layer over the unchanged
 //! semantic Plan.
 
 use crate::adapter::{AdapterConfiguration, CapabilityClass};

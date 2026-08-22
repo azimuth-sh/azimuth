@@ -1,6 +1,6 @@
 # Challenge planning conformance
 
-This self-contained synthetic experiment exercises D43 decision use and D48 semantic Challenge
+This self-contained synthetic experiment exercises repository decision use and semantic Challenge
 planning through public `azimuth` commands. It owns a standard Claim with a current Qualification
 and Claim Judgment, one claim-specific analyzer enrolled as a Check, mutation and broad-analysis
 Challengers, a distinct fault-injection Challenger and capability, all seven selector forms, an

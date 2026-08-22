@@ -12,7 +12,7 @@ categories = ["command-line-utilities", "development-tools"]
 rust-version = "1.85"
 include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE"]
 
-# No dependencies, by decision (D17). The destination is other people's CI.
+# No dependencies. The destination is other people's CI.
 
 [[bin]]
 name = "azimuth"

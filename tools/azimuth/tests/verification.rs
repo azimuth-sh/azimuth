@@ -431,7 +431,7 @@ fn decision_policy_schedule_and_challenger_match_frozen_vectors() {
 }
 
 #[test]
-fn evidence_binding_matches_the_frozen_d48_vector() {
+fn evidence_binding_matches_the_frozen_vector() {
     let binding = EvidenceBinding {
         id: "demo/binding".into(),
         check: "demo/check".into(),

@@ -1,4 +1,4 @@
-// Synthetic fixture for the emitter's own tests (D2).
+// Synthetic fixture for the emitter's own tests.
 import { realizes } from '@azimuth-sh/annotations';
 
 export function handler(): string {

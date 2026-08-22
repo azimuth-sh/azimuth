@@ -21,8 +21,8 @@
     <ToolCommandName>azimuth-emit-dotnet</ToolCommandName>
   </PropertyGroup>
 
-  <!-- D17 constrains the core, not the extractors. AST and metadata work belongs here, in an
-       ecosystem where the tooling is already present and idiomatic. -->
+  <!-- Zero dependencies constrain the core, not the extractors. AST and metadata work belongs
+       here, in an ecosystem where the tooling is already present and idiomatic. -->
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <None Include="../../../../README.md" Pack="true" PackagePath="/" />

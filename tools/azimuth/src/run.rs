@@ -1,4 +1,6 @@
-//! Strict provider-neutral Run bundle and accountable launch-route protocol (D46 through D48).
+//! Strict provider-neutral Run bundle and accountable launch-route protocol.
+//!
+//! Contracts: `contracts/run-bundle.md` and `contracts/run-launch-plan.md`.
 
 use crate::diag::validate_id;
 use crate::fingerprint::sha256;
@@ -734,19 +736,19 @@ fn strict_json_parse(source: &str) -> Result<Json, String> {
     Ok(value)
 }
 
-/// Parses one strict D46 Subject value without deriving product-state content.
+/// Parses one strict Run-bundle Subject value without deriving product-state content.
 pub fn subject_from_json(value: &Json) -> Result<Subject, String> {
     reject_duplicate_keys(value, "$".into())?;
     parse_subject(value, "$")
 }
 
-/// Parses one strict D46 semantic Plan value.
+/// Parses one strict Run-bundle semantic Plan value.
 pub fn plan_from_json(value: &Json) -> Result<Plan, String> {
     reject_duplicate_keys(value, "$".into())?;
     parse_plan(value, "$")
 }
 
-/// Parses one strict D47 provenance value.
+/// Parses one strict adapter provenance value.
 pub fn provenance_from_json(value: &Json) -> Result<Provenance, String> {
     reject_duplicate_keys(value, "$".into())?;
     parse_provenance(value, "$")
@@ -2613,7 +2615,7 @@ pub fn challenge_scope_fingerprint(scope: &ChallengeScope) -> String {
     ]))
 }
 
-/// Recomputes the exact D47 launch fingerprint without depending on planner-owned types.
+/// Recomputes the exact launch fingerprint without depending on planner-owned types.
 pub fn launch_fingerprint(
     operation: ProvenanceMode,
     planned_at_ms: u64,
@@ -2685,7 +2687,7 @@ pub fn construct_challenge_scope(
     Ok(scope)
 }
 
-/// Constructs one strict D47 accountable input from a model-derived semantic component.
+/// Constructs one strict accountable launch input from a model-derived semantic component.
 pub fn construct_launch_input(
     kind: LaunchInputKind,
     id: String,
@@ -2706,7 +2708,7 @@ pub fn construct_launch_input(
         })
 }
 
-/// Constructs one strict D47 route from an already selected capability and accountable inputs.
+/// Constructs one strict launch route from an already selected capability and accountable inputs.
 pub fn construct_launch_route(
     selection: RouteSelection,
     capability: RouteCapability,
@@ -2725,7 +2727,7 @@ pub fn construct_launch_route(
     }
 }
 
-/// Validates strict D47 route shape and exact source-backed projection against a semantic Plan.
+/// Validates strict launch-route shape and exact source-backed projection against a semantic Plan.
 pub fn validate_launch_routes_against_plan(
     plan: &Plan,
     routes: &[LaunchRoute],
@@ -3115,7 +3117,7 @@ fn validate_workspace_file(file: &str, where_: &str) -> Result<(), String> {
     }
 }
 
-/// Validates one typed D46 semantic Plan before it enters a launch plan or bundle.
+/// Validates one typed semantic Plan before it enters a launch plan or bundle.
 pub fn validate_plan_component(subject_fingerprint: &str, plan: &Plan) -> Vec<SchemaError> {
     let mut errors = Vec::new();
     if !valid_fingerprint(subject_fingerprint) {
@@ -4713,7 +4715,7 @@ fn validate_canonical_arrays(bundle: &RunBundle, add: &mut impl FnMut(&str, Stri
     }
 }
 
-/// Validates D47 provenance against the bundle's provider-neutral semantic Plan.
+/// Validates adapter provenance against the bundle's provider-neutral semantic Plan.
 pub fn verify_provenance(bundle: &RunBundle) -> Vec<Finding> {
     let mut findings = Vec::new();
     let unsafe_numbers = unsafe_number_paths(bundle);

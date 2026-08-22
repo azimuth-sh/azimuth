@@ -1,6 +1,6 @@
 //! Stable content fingerprints used where an audit record names a complete derived artifact.
 //!
-//! D17 keeps the core dependency-free. Keeping SHA-256 here avoids delegating the archive record to
+//! The core stays dependency-free. Keeping SHA-256 here avoids delegating the archive record to
 //! a platform command whose availability and output format would become part of the contract.
 
 pub fn sha256(input: &[u8]) -> String {

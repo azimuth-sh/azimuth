@@ -36,7 +36,6 @@ python3 -m unittest discover -s tools/extractors/cpp -p 'test_*.py'
 cargo test --manifest-path tools/extractors/rust/Cargo.toml
 
 ./experiments/polyglot/check.sh
-./experiments/assurance-extensions/check.sh
 ./experiments/assurance-service/check.sh
 ./experiments/run-bundles/check.sh
 ./experiments/adapter-capabilities/check.sh

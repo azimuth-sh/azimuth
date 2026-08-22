@@ -1,7 +1,7 @@
 //! Diagnostics.
 //!
-//! D17 makes good errors a matter of discipline rather than of a library default: without a
-//! parser crate, nothing supplies file/line/expected for free. D11 requires the parser to fail
+//! Good errors are a matter of discipline rather than of a library default: without a
+//! parser crate, nothing supplies file/line/expected for free. The parser must fail
 //! loudly, and the format's strictness is only tolerable when the errors are precise — so every
 //! parse failure carries where it happened and what was expected instead.
 
@@ -68,7 +68,7 @@ impl fmt::Display for Diag {
 /// Identifier charset, shared by spec, requirement and scenario ids.
 ///
 /// Lowercase kebab-case. Spec ids additionally admit `/` as a namespace separator — the slash is
-/// part of the id string, never derived from the filesystem (D11, azimuth/formats/spec.md).
+/// part of the id string, never derived from the filesystem (contracts/spec.md).
 pub fn validate_id(id: &str, allow_slash: bool) -> Result<(), String> {
     if id.is_empty() {
         return Err("id is empty".into());

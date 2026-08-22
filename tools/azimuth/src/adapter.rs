@@ -1,4 +1,4 @@
-//! Strict adapter configuration and identity kernel (D47).
+//! Strict adapter configuration and identity kernel (contracts/adapter.md).
 //!
 //! This module deliberately owns no process lifecycle. It turns one explicit configuration file
 //! into content-verified, typed adapter descriptions that the planner and bounded host can use.

@@ -1,13 +1,13 @@
 //! The spec parser.
 //!
-//! Replaces the alpha's OpenSpec reader (D11, D2.2). The grammar is documented beside the model
+//! Replaces the alpha's OpenSpec reader. The grammar is documented beside the model
 //! packages, and it is deliberately rigid so that a strict line-oriented parser is straightforward
-//! without a parser crate (D17).
+//! without a parser crate; see `Cargo.toml` for the empty dependency set.
 //!
 //! Two failure modes are kept apart on purpose:
 //!
-//! - an unrecognized **construct** fails the parse (D11 — fail loudly);
-//! - a missing **declaration** becomes a Finding (D6.2 — a requirement without `Criticality:` parses
+//! - an unrecognized **construct** fails the parse (fail loudly);
+//! - a missing **declaration** becomes a Finding (a requirement without `Criticality:` parses
 //!   and is reported as `unclassified`).
 //!
 //! Conflating them would either let syntax errors through as findings, or turn a semantic gap
@@ -205,7 +205,7 @@ impl<'a> SpecParser<'a> {
         self.id = Some(id.to_string());
     }
 
-    /// A claim whose domain is a set of sites (D13).
+    /// A claim whose domain is a set of sites (contracts/spec.md, site-domain invariants).
     ///
     /// It carries no scenarios: there is no WHEN, because the claim does not range over executions.
     /// One implicit scenario is synthesized so every derived relation keys it exactly as it does a

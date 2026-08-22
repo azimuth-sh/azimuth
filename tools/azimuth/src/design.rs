@@ -1,11 +1,12 @@
 //! The design artifact.
 //!
-//! The mechanism facet (D3): what makes a claim true, and how strongly. Nothing structural is
+//! The mechanism facet: what makes a claim true, and how strongly. Nothing structural is
 //! written here — that is derivable from production realization linkage — so an entry is a
 //! **falsifiable assertion about a named artifact**. When the code stops matching, that is a
 //! Finding rather than stale prose, which is what design documents have never had.
 //!
-//! Required for `critical` requirements, optional for `standard`, absent for `routine` (D6.5).
+//! Required for `critical` requirements, optional for `standard`, absent for `routine`
+//! (contracts/spec.md, criticality).
 
 use crate::diag::{validate_id, Diag};
 use crate::labels::read_block;
@@ -14,7 +15,7 @@ use std::path::{Path, PathBuf};
 
 const ENTRY_LABELS: &[&str] = &["Mechanism", "Enforcement", "Binding", "Expect"];
 
-/// D7's ladder, strongest first. Strength is never written in an entry: it is derived from the
+/// The enforcement ladder, strongest first. Strength is never written: it is derived from the
 /// kind, and writing it would duplicate a derivable fact.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Enforcement {
@@ -65,7 +66,7 @@ impl Enforcement {
         }
     }
 
-    /// D7: the top two rungs **are** proof-strength evidence — strong enforcement is
+    /// The top two rungs **are** proof-strength evidence — strong enforcement is
     /// self-evidencing. It does not follow that they establish any particular Claim; that belongs
     /// to total Claim Judgment rather than a fictitious executable Check.
     pub fn is_proof_capable(self) -> bool {

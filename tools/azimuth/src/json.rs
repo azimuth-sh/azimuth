@@ -1,4 +1,4 @@
-//! Minimal JSON, because the core takes no dependencies (D17).
+//! Minimal JSON, because the core takes no dependencies.
 //!
 //! Objects keep insertion order in a `Vec` rather than a map: manifests and exports are small,
 //! lookup is linear over a handful of keys, and stable key order makes the export diffable —

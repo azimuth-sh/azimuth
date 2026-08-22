@@ -38,7 +38,7 @@ same input without deriving a second topology.
 
 ## Areas
 
-An area is a stable architectural ownership namespace (D33), not a spec domain or evidence scope.
+An area is a stable architectural ownership namespace, not a spec domain or evidence scope.
 Its mounts are normalized workspace-relative source locators. Local checks derive a relation's area
 from its file and the longest containing mount; tags do not repeat the area. The shape deliberately
 matches project-catalog areas except that a local workspace has no repository field.

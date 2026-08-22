@@ -6,8 +6,8 @@
  * reads. Each ecosystem emits the manifest natively; the core only ever reads manifests, which is
  * why adding a language is a day's work rather than a fork of the core.
  *
- * D17 constrains the core, not the extractors: AST work belongs here, where the compiler API is
- * already present and idiomatic.
+ * Zero dependencies constrain the core, not the extractors: AST work belongs here, where the
+ * compiler API is already present and idiomatic.
  */
 
 import * as fs from 'node:fs';
@@ -1249,7 +1249,7 @@ function compareMechanism(a: MechanismImplementation, b: MechanismImplementation
  *
  * The point is the source: `app-path-routes-manifest.json` is written by the build, so a route that
  * exists is a member whether or not anyone remembered to tag it. Membership derived from tags can
- * only ever reach files somebody already annotated, which is the enumerator failure D13.1 names.
+ * only ever reach files somebody already annotated, which is precisely the enumerator failure.
  *
  * A member is identified by its file, because that is the unit the router names.
  * Framework-generated pages (`/_not-found`, `/_global-error`) are excluded: they are not sites

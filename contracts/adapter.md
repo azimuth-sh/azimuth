@@ -97,9 +97,9 @@ Environment names match `[A-Za-z_][A-Za-z0-9_]*`.
 Core clears the child environment and supplies only this exact non-secret literal map. Inherited
 environment names and values are not supported in version 1.
 
-Semantic settings configure provider translation. They cannot replace D46 required context or
-change what a selected Check or Challenger means. A behavior constraint needed for evidentiary
-interpretation belongs in the semantic Plan's exact context.
+Semantic settings configure provider translation. They cannot replace the Run-bundle required
+context or change what a selected Check or Challenger means. A behavior constraint needed for
+evidentiary interpretation belongs in the semantic Plan's exact context.
 
 Every limit is a positive safe integer. `timeout_ms` bounds the complete core exchange lifetime.
 `stdout_bytes` and `stderr_bytes` independently bound bytes read from the two streams, including a
@@ -283,7 +283,7 @@ bytes it consumes; a mismatch produces failure, never a bundle.
 `predecessors` is always present. It is empty for a new Run. Otherwise it contains the full verified
 existing correction chain, sorted by contiguous `bundle_revision` from zero, with exactly
 `bundle_revision` and `bundle_fingerprint` from each bundle. Core accepts predecessor CLI files in
-any order, verifies and deduplicates exact replay through D46 bundle-set verification, and rejects
+any order, verifies and deduplicates exact replay through Run-bundle set verification, and rejects
 multiple Runs, gaps, forks, changed launch identities or conflicting revisions before invoking the
 adapter.
 

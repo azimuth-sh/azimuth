@@ -38,7 +38,7 @@ many-to-many Check/Claim relationships, plus one total-composition Claim Judgmen
 case Claim. Evidence Bindings and Claim Judgments name a current Decision Policy; each policy
 declares required open Challenge forms, and the project Challenge Schedule assigns every required
 or declared form to exactly one `gate | scheduled` lane. The strict
-[Run bundle format](../../../azimuth/formats/run-bundle.md) is current:
+[Run bundle format](../../../contracts/run-bundle.md) is current:
 `azimuth run verify --bundle <file>...` checks standalone protocol and correction consistency, and
 `azimuth run inspect --bundle <file>...` presents a deterministic account with current model
 authority and Assurance State explicitly unresolved.
@@ -71,8 +71,8 @@ companion Artifact, and fails closed when it cannot prove uniqueness or a normal
 the declared root. A file path is never semantic disambiguation.
 
 When a proposal affects adapters, make the strict
-[adapter protocol](../../../azimuth/formats/adapter.md) and
-[launch-plan format](../../../azimuth/formats/run-launch-plan.md) explicit. Preserve direct
+[adapter protocol](../../../contracts/adapter.md) and
+[launch-plan format](../../../contracts/run-launch-plan.md) explicit. Preserve direct
 shell-free invocation, same-stream content staging, exact literal child environment, supported
 fresh process-group isolation before spawn, bounded streams and one bounded core exchange whose
 deadline covers request writing, concurrent stream draining and core's wait. Validate completely

@@ -18,11 +18,11 @@ development. The canonical product site is <https://azimuth.sh>.
 | `tools/azimuth/` | dependency-free Rust CLI and core, including federation |
 | `tools/extractors/` | language and structural extractors |
 | `packages/` | annotation packages; only .NET and TypeScript are selected for the first release |
-| `azimuth/formats/` | parser contracts for model and project artifacts |
+| `contracts/` | parser contracts for model and project artifacts |
 | `azimuth/standards/` | Decision Policies and the current Challenge Schedule |
 | `azimuth/changes/` | active framework changes transferred from development |
-| `docs/` | framework definition, decisions, glossary and operating guidance |
-| `services/assurance/` | isolated D42 service pending the Run-ledger replacement |
+| `docs/` | derived framework account, glossary and operating guidance |
+| `services/assurance/` | isolated alpha 1 service pending the Run-ledger replacement |
 | `experiments/` | self-contained conformance and lifecycle experiments |
 | `.agents/skills/` | agent workflows for exploration and change delivery |
 
@@ -42,8 +42,8 @@ Qualified native CLI targets are Linux x64, macOS ARM64 and Windows x64. Qualifi
 platforms are Linux AMD64 and Linux ARM64. Other source may compile elsewhere, but that is not a
 qualified binary or image claim.
 
-Durable Run ingestion, authorization, retention and Subject-specific Assurance State are not in
-this release. The assurance images ship the isolated D42 service, which the Run-ledger change will
+Durable Run ingestion, authorization, retention and Subject-specific Assurance State are not in this
+release. The assurance images ship the isolated alpha 1 service, which the Run-ledger change will
 replace; alpha 2 claims no ledger, no hosted event gateway and no production provider adapters.
 
 The Go, JVM, Python, Rust-annotation and C++ integrations and every tree under `experiments/` are
@@ -60,13 +60,14 @@ declarations. Decision Policies require open Challenge forms; one separate sched
 required or declared form exactly once to `gate` or `scheduled`. All current framework Claims are
 routine, so ordinary engineering tests are not enrolled as Azimuth Checks.
 
-D46 defines the strict [`azimuth-run-bundle`](azimuth/formats/run-bundle.md) version 1 exchange.
+Azimuth defines the strict [`azimuth-run-bundle`](contracts/run-bundle.md) version 1
+exchange.
 `azimuth run verify` checks its shape, identities, selection, reduction and correction history;
 `azimuth run inspect` presents the same protocol account without claiming current model acceptance
 or Assurance State.
 
-D47 adds strict [`adapter`](azimuth/formats/adapter.md) configuration and
-[`azimuth-run-launch-plan`](azimuth/formats/run-launch-plan.md) version 1. Core loads the complete
+It adds strict [`adapter`](contracts/adapter.md) configuration and
+[`azimuth-run-launch-plan`](contracts/run-launch-plan.md) version 1. Core loads the complete
 model, derives a provider-neutral Check and Challenge Plan and binds it to exact configured
 capability routes.
 `azimuth adapter verify`, `azimuth run plan`, `azimuth run execute` and `azimuth run import` expose
@@ -98,7 +99,7 @@ these boundaries through public commands.
 `model.extract` execution, durable Run ingestion, authorization, retention and Subject-specific
 Assurance State remain deferred. Current planning defines no cache, cadence or cross-Subject reuse
 semantics. Adapters remain bounded short-lived processes; there is no daemon, webhook or
-long-running adapter boundary. The existing Assurance Service stays isolated on its D42 v1 wire
+long-running adapter boundary. The existing Assurance Service stays isolated on its alpha 1 wire
 until the Run-ledger replacement is accepted; there is no compatibility bridge or service export
 command.
 
@@ -115,8 +116,10 @@ from a separate development tree.
 
 ## Start here
 
-Read `docs/framework.md`, then `docs/decisions.md` for the evidence and revisions behind the
-current design. `tools/azimuth/README.md` documents the commands implemented by the CLI.
+Read `docs/framework.md` for the derived account of the model, then `docs/glossary.md` for
+bounded terminology. `contracts/` holds the parser contracts those documents describe and
+outranks them wherever they disagree; `azimuth/changes/archive/` records why each accepted
+transition happened. `tools/azimuth/README.md` documents the commands implemented by the CLI.
 
 Run the domain-independent repository checks with:
 
