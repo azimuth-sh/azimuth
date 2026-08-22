@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const DEFAULT_STANDARDS: &str = "# Verification standards\nDefault scope: unit\n\n## Level: critical\nStrength: demonstration\nQuantification: universal\nResidual: required\n\n## Level: standard\nStrength: demonstration\nQuantification: example\nResidual: optional\n\n## Level: routine\nStrength: none\nResidual: optional\n";
+const DEFAULT_STANDARDS: &str = "# Decision policies and Challenge schedule\n\nDecision Policies name the open Challenge forms that must be searched before an Evidence\nBinding or Claim Judgment may be accepted. The separate schedule assigns every required form\nto one execution lane. Neither construct runs Challengers or defines provider commands.\n\nReplace these starting declarations with the policies and lanes this project actually needs.\nRoutine Claims use no policy, so a project that has not raised criticality may delete the\nDecision Policy block and keep one lane entry.\n\n## Decision Policy: credible-executable\nRequired challenge: implementation-perturbation\n\nUse for executable Check bindings whose credibility depends on the subject implementation.\n\n## Challenge Schedule: current\nGate challenge: implementation-perturbation\n\nThis project searches implementation perturbation in the gate lane. Every form required by a\nDecision Policy, and every form declared by a current Challenger, occurs in exactly one lane.\n";
 const DEFAULT_WORKSPACE: &str = "{\n  \"format\": \"azimuth-workspace\",\n  \"version\": 1,\n  \"areas\": [],\n  \"surfaces\": [],\n  \"realization_obligations\": []\n}\n";
 
 #[derive(Debug, Clone, Eq, PartialEq)]

@@ -353,6 +353,40 @@ fn traceability_report_writes_only_when_out_is_supplied() {
 }
 
 #[test]
+fn init_scaffolds_a_model_that_the_printed_next_command_validates() {
+    let root = root();
+    let azimuth_root = root.join("azimuth");
+
+    let initialized = azimuth(&["init", "--root", azimuth_root.to_str().unwrap()]);
+    assert!(initialized.status.success());
+    let hint = String::from_utf8(initialized.stdout).unwrap();
+    assert!(hint.contains("next: azimuth validate"));
+
+    // The scaffold must satisfy the current Decision Standards grammar, not a retired one.
+    let standards = azimuth_root.join("standards/verification.md");
+    let scaffolded = fs::read_to_string(&standards).unwrap();
+    assert!(scaffolded.starts_with("# Decision policies and Challenge schedule\n"));
+    assert!(scaffolded.contains("## Challenge Schedule: current"));
+
+    // Running exactly what init told the operator to run must succeed on the untouched scaffold.
+    let validated = azimuth(&[
+        "validate",
+        "--model",
+        azimuth_root.join("model").to_str().unwrap(),
+        "--standards",
+        standards.to_str().unwrap(),
+        "--workspace",
+        azimuth_root.join("workspace.json").to_str().unwrap(),
+    ]);
+    assert!(
+        validated.status.success(),
+        "init scaffold failed its own next command: {}",
+        String::from_utf8_lossy(&validated.stderr)
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn init_create_list_and_show_form_one_discoverable_path() {
     let root = root();
     let azimuth_root = root.join("azimuth");
