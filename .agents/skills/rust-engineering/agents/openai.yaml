@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust Engineering"
+  short_description: "Write strict, boring Rust for this repository"
+  default_prompt: "Use $rust-engineering to implement this Rust change with explicit domain types and straightforward, deterministic code."
