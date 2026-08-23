@@ -12,6 +12,7 @@ Define what the agent tier is for the alpha 2 verification graph: which roles it
 - Design no notation before the experiment in E2 reports.
 - Agent *quality* is out of scope. Agent *independence* and *specialization* are in scope; they are different questions and the second is not a solution to the first.
 - Do not write or run tests.
+- External literature and one corporate methodology whitepaper enter as non-normative provenance only. They motivate findings; they never become an executable or acceptance dependency of this repository.
 
 ## Existing context
 
@@ -127,6 +128,63 @@ It has no command, no skill, no record, no Finding kind and no export representa
 
 `contracts/findings.md` lists 42 kinds and none of them records "something was found here and no proposition governs it". A reviewer who notices behaviour no Claim covers has nowhere to put it. This gap was reached independently from the security direction, so two structurally different concerns demand it.
 
+### F18 — Criticality-scaled confirmer independence is normative prior art
+
+IEC 61508 Table 5 scales the assessor's organisational distance with SIL: an independent person at SIL 1, preferably an independent department at SIL 2, preferably an independent organisation at SIL 3, an independent organisation at SIL 4. DO-178C requires certain objectives be satisfied *with independence* — the verifier is not the producer of the item, and the separation is documented in the evidence — with the count scaling by DAL. ISO 26262 carries ASIL-indexed confirmation measures with the same structure.
+
+E5 is therefore not a novel position but the established shape of the same argument in functional safety. Two consequences follow. The design should adopt that vocabulary rather than invent parallel terms, and the burden now falls on any departure from a small independence ladder keyed to criticality, not on the proposal to have one.
+
+### F19 — in-toto layouts are the structural precedent, and they already answer F7 by construction
+
+An in-toto layout is a signed, versioned artifact declaring, per supply-chain step, which functionaries are authorized to perform it — by key identity, with a signature threshold for steps requiring higher trust. A functionary is defined as an individual *or an automated script*: human and machine occupy one slot by design, not by omission.
+
+The corpus never saying `Qualifier:` must be human is therefore the same silence a mature supply-chain standard chose deliberately. F7 remains undecided as a repository question, but it is no longer unprecedented in either direction.
+
+### F20 — Confirmer independence already ships in a coding agent, including the second-order case
+
+GitHub's Copilot coding agent cannot approve or merge its own pull requests, and approvals from users who collaborated with it on the changes do not satisfy review requirements. That is F6's correlation rule enforced in a shipped product, extended to a case this exploration had not reached: a human who worked with the agent is treated as correlated with it, not as independent by virtue of being human.
+
+F6 is confirmed rather than speculative, and its scope is wider than "do not use the same agent twice".
+
+### F21 — Acceptance rate is not evidence of competence, and measuring it alone instruments fatigue
+
+Two unrelated sources converge. A corporate engineering methodology sets a human override rate band of 10–25% and states that below 5% signals formal approval — false accountability recorded as real, with early signs of median review time under two minutes and agreement above 95%. Separately, a 2026 preprint names the *masking ratio*: corrected against uncorrected success rate, where a high acceptance figure may reflect confirmers repairing proposals rather than proposers producing sound ones.
+
+This bears directly on open question 4 and on E6. The observable cannot be acceptance. It must separate accepted unchanged from accepted after correction and retain the correction, or the measurement reports reviewer fatigue as agent trustworthiness — which is F9.1 with a dashboard.
+
+### F22 — The promotion loop has one deployed analogue, and its artifact already exists here
+
+ITIL distinguishes a normal change, which requires approval, from a standard change: pre-authorized, low-risk, repeatable, justified by a consistent success history, and requiring no approval per instance. Promotion from the first to the second runs through a reviewed standard change proposal held in a versioned catalogue.
+
+That is a decades-old deployment of the idea under discussion — an accumulated record for a decision *class* justifying removal of the per-instance human confirmer, through an explicitly reviewed artifact. In this framework that artifact needs no invention: amending an acceptor requirement would be a change with a proposal, an outcome and an immutable archived record. Only the record it would cite is missing.
+
+### F23 — Demotion is unclaimed across the field, and the framework already supplies it
+
+Across levels-of-automation taxonomies, adjustable and sliding autonomy, trust calibration, supply-chain attestation and agent governance, authority ratchets upward. No surveyed source specifies returning a decision class to human confirmation on adverse evidence, and none treats drift — the reviewer, its specialization or its definition changing, invalidating the record that earned the authority.
+
+Fingerprint staleness is exactly that mechanism. If an acceptor requirement is declared in a fingerprinted artifact, lowering it stales every decision that relied on the higher setting, at the same cost as raising it. This is requalification-follows-definition-drift applied to authority rather than to evidence, and it needs no new machinery.
+
+### F24 — No AI-governance framework permits performance-based reduction of oversight
+
+EU AI Act Article 14 requires oversight by natural persons with the necessary competence, training and authority, and separate verification by two natural persons for some systems. Oversight is commensurate with risk, autonomy and context of use, and there is no provision for reducing it on the basis of demonstrated operational performance. NIST AI RMF treats the question as non-prescriptive continuous monitoring; ISO/IEC 42001 requires documented oversight with no relaxation clause.
+
+A defensible argument in a regulated setting must therefore be built from the criticality-indexed independence lineage in F18, not from AI-governance frameworks. Any decision class touching a high-risk system should expect pressure on Article 14 grounds however good the recorded trail is.
+
+### F25 — The requirement's natural home is Decision Policy, and it is two axes rather than one
+
+A Decision Policy already declares required challenge forms, is named by an Evidence Binding and enters that binding's fingerprint, and criticality already selects which obligations apply. An acceptor requirement declared there would be reviewed as code, versioned, diffable beside the Claim it governs, and staleness-propagating with no new record type. Prior art puts this declaration in a process standard, in host settings or in a separate signed layout; none puts it in the reviewed model itself.
+
+It carries two independent questions that this exploration has already separated and that prior art also keeps apart: independence of the confirmer from the proposer (F6, F8) and whether an agent may hold the accountable identity at all (F7). A single slot conflating them would lose the distinction the argument rests on.
+
+No notation follows from this finding. The boundary holds: design none before E2 reports.
+
+### F26 — "Autonomy level" is overloaded, and in established use it labels a system
+
+In SAE J3016, in Sheridan and Verplank, and in the vendor agent ladders derived from them, a level describes a system rather than a decision point. Naming a per-decision mechanism an autonomy level imports that reading and invites comparison with taxonomies it does not implement.
+
+Established terms exist for each part: *independence* and *confirmation measure* for the requirement, *adjustable autonomy* where an operator varies the setting (*adaptive* where the agent varies its own, *mixed-initiative* where it is negotiated), *transfer of control* for a shift, and *trust calibration* and *appropriate reliance* for the evidence question.
+
+
 ## Decisions
 
 - **E1 — Model the tier as three roles, not one.** Proposer, acceptor and challenger have different planes, targets and constraints.
@@ -140,6 +198,10 @@ It has no command, no skill, no record, no Finding kind and no export representa
 - **E9 — Treat a specialized reviewer as a versioned artifact with a seeded-defect conformance suite.** Trust is the measured detection rate, not the specialization.
 - **E10 — Hold the provenance record pending measurement from E2.** The case is an inference about scale, and F15 gives a real reason for restraint.
 - **E11 — Route the unattributed finding through general work,** not an agent-tier mechanism.
+- **E12 — When notation is due, declare the acceptor requirement on the Decision Policy, keyed to criticality, as two axes.** Independence of the confirmer and admissibility of an agent identity are separate; F25 places them where review, versioning and staleness are already free. This decides where the mechanism belongs, not what it looks like.
+- **E13 — Measure accepted-unchanged and accepted-after-correction separately, or do not measure.** Per F21 an acceptance rate alone is a fatigue metric, and E6 rests on the measurement being honest.
+- **E14 — Treat demotion as a first-class requirement equal to promotion,** and prefer fingerprint staleness to any new mechanism. F23 makes this the framework's clearest advantage over the surveyed field; a ladder that only ascends is the failure mode everyone else has.
+- **E15 — Adopt established vocabulary rather than coin.** Independence, confirmation measure, functionary, threshold, adjustable autonomy, transfer of control, trust calibration. Reserve "autonomy level" for informal gloss, per F26.
 
 ## Rejected alternatives
 
@@ -172,3 +234,6 @@ No change is created and the frontier is deliberately undisposed. One experiment
 - **F11 is wrong** if a seeded-defect suite proves unbuildable because the defects worth catching cannot be synthesized convincingly.
 - **F14 is wrong** if agent drafting is not load-bearing, either because re-decision volume is low or because owners rewrite proposals rather than accepting them.
 - **E2 is wrong** if a skill with no model record cannot produce reviewable proposals in practice, making representation a precondition rather than an outcome.
+- **F21 is wrong** if accepted-unchanged and accepted-after-correction cannot be distinguished from what a review leaves behind, making the honest measurement unavailable rather than merely harder.
+- **F23 is wrong** if lowering an acceptor requirement must not stale decisions taken under the higher one — that is, if authority already exercised is properly immune to a later change in who was permitted to exercise it.
+- **F25 is wrong** if the requirement must vary per binding rather than per policy, which would make a named policy the wrong granularity and force a per-decision declaration.
