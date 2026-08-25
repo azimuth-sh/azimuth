@@ -1,6 +1,6 @@
 # Azimuth
 
-Canonical development and release repository for Azimuth. Framework source, model packages, tooling, skills, documentation and release workflows evolve here; version tags identify immutable published states. The repository must build, test and publish without a checkout of Drim, the ride-hailing fixture or any other consumer domain. Immutable citations may preserve provenance; executable or acceptance dependencies may not.
+Canonical development and release repository for Azimuth. Framework source, model packages, tooling, skills, documentation and release workflows evolve here; version tags identify immutable published states.
 
 ## Orientation
 

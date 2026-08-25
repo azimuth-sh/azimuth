@@ -91,3 +91,33 @@ Platform Engineering or Engineering Effectiveness is the natural operational own
 Proceed with an Azimuth-owned reference service, but begin with the qualification-to-observation vertical slice in `change-map.md`. The service earns a broader product scope only if that slice can reuse one qualified definition across executions, gate CI and production independently, and feed a precise work item back to a repository without changing accepted intent automatically.
 
 Experiment A passed on 2026-08-12. Eight deterministic cases reused one qualification across two CI revisions, confined production evidence to an exact subject, and produced focused work for expiry, violation, drift, context mismatch and challenge findings. The reference service may now implement the surviving boundary without revisiting the repository/service authority split.
+
+## Addendum 2026-08-23 — evidence form is a prerequisite for the state reducer
+
+Recorded after a positioning review of the alpha 2 model against an external AI-native lifecycle methodology. The review is consumer work and stays outside this repository; only the framework findings are kept here. Earlier sections are unchanged.
+
+### F10 — The binding records scope, quantification and oracle, but not the form of the evidence
+
+[`contracts/verification.md`](../../../contracts/verification.md) deliberately has no `Strength` field: executable Checks demonstrate sampled behaviour and structural proof lives in design mechanisms. That leaves two forms — demonstration and structural enforcement — and no third: **detection**, where a monitor, reconciliation job or alert rule reports a violation after it occurs, and where absence of a report is not a demonstration that the predicate held.
+
+The Run protocol already accepts the Subject for this evidence — `monitoring-window` in [`contracts/run-bundle.md`](../../../contracts/run-bundle.md) — so an Observation over a production window is protocol-valid today. Nothing on the Evidence Binding says what such an Observation means for the Claim. A future Assurance State reducer therefore cannot distinguish "the test passed" from "the alert did not fire" and would treat a silent detector as positive evidence, which is exactly the conflation AGENTS.md forbids for Challengers and incidents.
+
+Consequences:
+
+- Evidence form must be declared on the binding, or derived from the Check's declared form, before the reducer is designed. Three closed values are sufficient for the known cases: `demonstration | detection | structural`. Structural may remain mechanism-only, as the contract says today, if the reducer reads mechanisms directly.
+- A detection binding needs its own Qualification criterion: the detector must be shown to fire on an injected violation. This is the same counter-pressure mutation testing applies to demonstration evidence, and it belongs in `Challenge domain` as a required form for detection, not as prose.
+- Applicability of detection evidence is window-bound and expires by construction; demonstration evidence is revision-bound. The reducer's staleness rule differs per form, so form is an input to freshness, not just to interpretation.
+
+### F11 — A Qualification carries a verdict and rationale, not a structured basis
+
+`Qualification` records verdict, fingerprint, date, qualifier identity and free prose. It does not record which Challenge Results or reviews it relied on. Challenge Results target the Qualification fingerprint, so the link is recoverable from a ledger, but not from the repository account alone. Reconstructing why a qualification was granted means reading prose. This is acceptable for alpha 2 and should stay that way until the ledger exists; it is recorded so the ledger design treats "basis of a qualification" as a first-class query rather than an afterthought.
+
+### F12 — Exact context equality will generate binding ceremony on multi-platform CI
+
+`Context:` is exact string equality with no ranges or wildcards. One Check run on two platforms needs two bindings and two Qualifications, or a context with fewer keys. This is correct for alpha 2 and must not be relaxed casually — ranges reintroduce interpretation into the machine tier — but adoption guidance should say to choose context keys sparingly and to treat key proliferation as a Finding-worthy smell once the ledger can count bindings per Check.
+
+### Open questions added
+
+- Is evidence form a binding field, a Check property, or derived from the Check's declared role? A Check is one atomic terminal proposition; a detector's proposition is "no violation observed in window", which already differs in kind from "behaviour demonstrated on inputs".
+- What is the minimum Qualification criterion for a detection binding, and which Challenger form expresses "detector fires on injected violation"?
+- Does the reducer need per-form staleness rules from the first slice, or can the first slice confine itself to demonstration evidence and defer detection to the production-input experiment already listed above?
