@@ -26,6 +26,7 @@ fn valid_bundle() -> RunBundle {
     let check = CheckSelection {
         id: "payments/recovery".into(),
         fingerprint: fp('b'),
+        cases: vec!["payments#recovery/works".into()],
         implementations: vec![Implementation {
             identity: "payments|rust-symbol|recovery::replay".into(),
             source_fingerprint: fp('c'),
@@ -55,7 +56,7 @@ fn valid_bundle() -> RunBundle {
             fingerprint: fp('d'),
         },
         target: ChallengeTarget {
-            kind: ChallengeTargetKind::Qualification,
+            kind: ChallengeTargetKind::MethodQualification,
             id: "payments/recovery-edge".into(),
             fingerprint: fp('e'),
         },
@@ -214,16 +215,22 @@ fn valid_bundle() -> RunBundle {
                 attempts: vec![CheckAttempt {
                     ordinal: 1,
                     activity: "fault-probe".into(),
-                    outcome: ObservationOutcome::Satisfied,
+                    outcomes: [(
+                        "payments#recovery/works".into(),
+                        ObservationOutcome::Satisfied,
+                    )]
+                    .into_iter()
+                    .collect(),
                 }],
             }],
-            observation: Observation {
+            observations: vec![Observation {
+                case: "payments#recovery/works".into(),
                 outcome: ObservationOutcome::Satisfied,
                 observed_at_ms: 3,
                 fingerprint: fp('0'),
                 artifacts: vec!["native-report".into()],
                 diagnostics: vec![],
-            },
+            }],
         }],
         challenger_executions: vec![ChallengerExecution {
             challenge: challenge.id.clone(),
@@ -277,8 +284,15 @@ fn refresh(bundle: &mut RunBundle) {
     bundle.provenance.adapter.launch_fingerprint = current_launch_fingerprint(bundle);
     bundle.run_id = run_id(bundle);
     for index in 0..bundle.check_executions.len() {
-        let fingerprint = observation_fingerprint(bundle, &bundle.check_executions[index]);
-        bundle.check_executions[index].observation.fingerprint = fingerprint;
+        for observation_index in 0..bundle.check_executions[index].observations.len() {
+            let fingerprint = observation_fingerprint(
+                bundle,
+                &bundle.check_executions[index],
+                &bundle.check_executions[index].observations[observation_index],
+            );
+            bundle.check_executions[index].observations[observation_index].fingerprint =
+                fingerprint;
+        }
     }
     for index in 0..bundle.challenger_executions.len() {
         let fingerprint =
@@ -393,8 +407,8 @@ fn subject_fingerprint_uses_the_literal_jcs_envelope() {
 #[test]
 fn published_challenge_identity_and_scope_vectors_stay_stable() {
     assert_eq!(
-        challenge_selection_id(&fp('a'), ChallengeTargetKind::Qualification, &fp('b')),
-        "challenge/91f69477f56b9a2ba588fb045529ddbaa7184c79f473eab50f73a0c5f70d038b"
+        challenge_selection_id(&fp('a'), ChallengeTargetKind::MethodQualification, &fp('b')),
+        "challenge/71518eefaf1f73fa6fe99b690d178f71dd7b760d803ca361997dd9b697ec78e1"
     );
     let scope = ChallengeScope {
         anchors: vec![ChallengeScopeItem {
@@ -769,7 +783,11 @@ fn optional_provenance_attributes_preserve_presence_and_empty_map_values() {
 #[test]
 fn result_fingerprints_bind_context_check_and_plan_local_challenge_id() {
     let bundle = valid_bundle();
-    let observation = observation_fingerprint(&bundle, &bundle.check_executions[0]);
+    let observation = observation_fingerprint(
+        &bundle,
+        &bundle.check_executions[0],
+        &bundle.check_executions[0].observations[0],
+    );
     let mut changed_context = bundle.clone();
     changed_context
         .actual_selection
@@ -777,14 +795,22 @@ fn result_fingerprints_bind_context_check_and_plan_local_challenge_id() {
         .insert("platform".into(), "other".into());
     assert_ne!(
         observation,
-        observation_fingerprint(&changed_context, &changed_context.check_executions[0])
+        observation_fingerprint(
+            &changed_context,
+            &changed_context.check_executions[0],
+            &changed_context.check_executions[0].observations[0],
+        )
     );
 
     let mut changed_check = bundle.clone();
     changed_check.check_executions[0].check.fingerprint = fp('8');
     assert_ne!(
         observation,
-        observation_fingerprint(&changed_check, &changed_check.check_executions[0])
+        observation_fingerprint(
+            &changed_check,
+            &changed_check.check_executions[0],
+            &changed_check.check_executions[0].observations[0],
+        )
     );
 
     let result = challenge_result_fingerprint(&bundle, &bundle.challenger_executions[0]);
@@ -1286,14 +1312,24 @@ fn retry_reduction_recovers_technical_inconclusion_but_preserves_violation() {
         CheckAttempt {
             ordinal: 1,
             activity: "earlier".into(),
-            outcome: ObservationOutcome::Inconclusive,
+            outcomes: [(
+                "payments#recovery/works".into(),
+                ObservationOutcome::Inconclusive,
+            )]
+            .into_iter()
+            .collect(),
         },
     );
     recovered.check_executions[0].units[0].attempts[1].ordinal = 2;
     refresh(&mut recovered);
     assert!(verify(&recovered).is_empty());
 
-    recovered.check_executions[0].units[0].attempts[0].outcome = ObservationOutcome::Violated;
+    recovered.check_executions[0].units[0].attempts[0]
+        .outcomes
+        .insert(
+            "payments#recovery/works".into(),
+            ObservationOutcome::Violated,
+        );
     refresh(&mut recovered);
     assert!(has(&verify(&recovered), "run/observation-reduction"));
 }
@@ -1301,8 +1337,13 @@ fn retry_reduction_recovers_technical_inconclusion_but_preserves_violation() {
 #[test]
 fn violated_observations_are_valid_terminal_facts() {
     let mut bundle = valid_bundle();
-    bundle.check_executions[0].units[0].attempts[0].outcome = ObservationOutcome::Violated;
-    bundle.check_executions[0].observation.outcome = ObservationOutcome::Violated;
+    bundle.check_executions[0].units[0].attempts[0]
+        .outcomes
+        .insert(
+            "payments#recovery/works".into(),
+            ObservationOutcome::Violated,
+        );
+    bundle.check_executions[0].observations[0].outcome = ObservationOutcome::Violated;
     refresh(&mut bundle);
     assert!(verify(&bundle).is_empty());
 }
@@ -1315,7 +1356,12 @@ fn attempts_cannot_repeat_activity_and_noncompleted_activity_is_inconclusive() {
         .push(CheckAttempt {
             ordinal: 2,
             activity: "fault-probe".into(),
-            outcome: ObservationOutcome::Satisfied,
+            outcomes: [(
+                "payments#recovery/works".into(),
+                ObservationOutcome::Satisfied,
+            )]
+            .into_iter()
+            .collect(),
         });
     bundle.activities[0].status = ActivityStatus::Failed;
     refresh(&mut bundle);
@@ -1509,7 +1555,7 @@ fn every_in_memory_number_is_guarded_before_lossy_serialization() {
     bundle.check_executions[0].units[0].attempts[0].ordinal = unsafe_value;
     variants.push(bundle);
     let mut bundle = valid_bundle();
-    bundle.check_executions[0].observation.observed_at_ms = unsafe_value;
+    bundle.check_executions[0].observations[0].observed_at_ms = unsafe_value;
     variants.push(bundle);
     let mut bundle = valid_bundle();
     bundle.challenger_executions[0].units[0].attempts[0].ordinal = unsafe_value;

@@ -29,10 +29,10 @@ fn write_model(root: &std::path::Path, criticality: &str) -> PathBuf {
         model.join("sample/spec.md"),
         format!(
             "# Spec: sample\n\n\
-             ## Requirement: visible\n\
+             ## Claim: visible\n\
              Criticality: {criticality}\n\n\
              The system SHALL expose its state.\n\n\
-             ### Scenario: state-is-visible\n\
+             ### Case: state-is-visible\n\
              WHEN the state is requested\n\
              THEN the state is exposed\n"
         ),
@@ -77,7 +77,7 @@ fn removed_commands_and_positional_validator_ids_fail_closed() {
 }
 
 #[test]
-fn export_is_recursively_v2_without_retired_evidence_keys() {
+fn export_is_recursively_v3_without_retired_evidence_keys() {
     let root = root();
     let model = write_model(&root, "routine");
     let output = azimuth(&["export", "--model", model.to_str().unwrap()]);
@@ -86,7 +86,7 @@ fn export_is_recursively_v2_without_retired_evidence_keys() {
     let json = azimuth::json::parse(&rendered).unwrap();
     assert_eq!(
         json.get("version").and_then(azimuth::json::Json::as_num),
-        Some(2.0)
+        Some(3.0)
     );
     assert_no_retired_keys(&json);
     fs::remove_dir_all(root).unwrap();
@@ -110,20 +110,9 @@ fn only_export_is_a_populated_two_spec_graph_closure() {
         fs::write(
             package.join("design.md"),
             format!(
-                "# Design: {name}\n\n## Requirement: {name}-holds\n\
+                "# Design: {name}\n\n## Claim: {name}-holds\n\
                  Mechanism: {name}-mechanism\nEnforcement: schema\nBinding: {name}-artifact\n\n\
                  The artifact makes the invariant structural.\n"
-            ),
-        )
-        .unwrap();
-        fs::write(
-            package.join("verification.md"),
-            format!(
-                "# Verification: {name}\n\n## Check: {name}/check\nMethod: inspect\n\
-                 Terminal: complete\n\nAtomic.\n\n## Evidence Binding: edge/{name}\n\
-                 Check: {name}/check\nClaim: {name}#{name}-holds\nProposition: direct\n\
-                 Scope: unit\nQuantification: example\nOracle: direct\nContext: {{}}\n\
-                 Challenge domain: [\"context\"]\nPolicy: credible-executable\n\nReviewable.\n"
             ),
         )
         .unwrap();
@@ -335,7 +324,7 @@ fn traceability_report_writes_only_when_out_is_supplied() {
     assert!(stdout_report.status.success());
     assert!(!stdout_report.stdout.is_empty());
     let expected = String::from_utf8(stdout_report.stdout).unwrap();
-    assert!(expected.contains("\"id\": \"sample#state-is-visible\""));
+    assert!(expected.contains("\"id\": \"sample#visible/state-is-visible\""));
 
     let destination = root.join("traceability.json");
     let file_report = azimuth(&[
@@ -357,7 +346,13 @@ fn init_scaffolds_a_model_that_the_printed_next_command_validates() {
     let root = root();
     let azimuth_root = root.join("azimuth");
 
-    let initialized = azimuth(&["init", "--root", azimuth_root.to_str().unwrap()]);
+    let initialized = azimuth(&[
+        "init",
+        "--root",
+        azimuth_root.to_str().unwrap(),
+        "--agents",
+        "none",
+    ]);
     assert!(initialized.status.success());
     let hint = String::from_utf8(initialized.stdout).unwrap();
     assert!(hint.contains("next: azimuth validate"));
@@ -392,7 +387,13 @@ fn init_create_list_and_show_form_one_discoverable_path() {
     let azimuth_root = root.join("azimuth");
     let changes = azimuth_root.join("changes");
 
-    let initialized = azimuth(&["init", "--root", azimuth_root.to_str().unwrap()]);
+    let initialized = azimuth(&[
+        "init",
+        "--root",
+        azimuth_root.to_str().unwrap(),
+        "--agents",
+        "none",
+    ]);
     assert!(initialized.status.success());
     assert!(String::from_utf8(initialized.stdout)
         .unwrap()
@@ -428,7 +429,7 @@ fn init_create_list_and_show_form_one_discoverable_path() {
 }
 
 #[test]
-fn package_instructions_are_emitted_only_for_the_eligible_frontier() {
+fn package_brief_are_emitted_only_for_the_eligible_frontier() {
     let root = root();
     let changes = root.join("changes");
     assert!(azimuth(&[
@@ -448,7 +449,7 @@ fn package_instructions_are_emitted_only_for_the_eligible_frontier() {
 
     let instructions = azimuth(&[
         "change",
-        "instructions",
+        "brief",
         "parallel-work",
         "--package",
         "service",

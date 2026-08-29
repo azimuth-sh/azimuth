@@ -2,8 +2,9 @@
   "format": "azimuth-release-artifacts",
   "schemaVersion": 1,
   "release": {
-    "version": "0.1.0-alpha.3",
-    "tag": "v0.1.0-alpha.3",
+    "version": "0.1.0-alpha.4",
+    "tag": "v0.1.0-alpha.4",
+    "migrationLine": "alpha-claim-case",
     "license": "Apache-2.0",
     "repository": "https://github.com/azimuth-sh/azimuth",
     "homepage": "https://azimuth.sh"
@@ -14,7 +15,15 @@
       "ecosystem": "cargo",
       "identity": "azimuth",
       "manifest": "tools/azimuth/Cargo.toml",
-      "requiredFiles": ["*/src/lib.rs", "*/src/main.rs", "*/README.md", "*/LICENSE"],
+      "requiredFiles": [
+        "*/src/lib.rs",
+        "*/src/main.rs",
+        "*/resources/manifest.json",
+        "*/resources/skills/azimuth-maintain/SKILL.md",
+        "*/resources/references/intent-delta.md",
+        "*/README.md",
+        "*/LICENSE"
+      ],
       "allowedFiles": [
         "*/.cargo_vcs_info.json",
         "*/Cargo.lock",
@@ -22,6 +31,9 @@
         "*/Cargo.toml.orig",
         "*/LICENSE",
         "*/README.md",
+        "*/resources/*",
+        "*/resources/*/*",
+        "*/resources/*/*/*",
         "*/src/*.rs"
       ]
     },
@@ -99,12 +111,27 @@
       "x86_64-pc-windows-msvc"
     ]
   },
+  "resources": {
+    "format": "azimuth-cli-resources",
+    "manifest": "tools/azimuth/resources/manifest.json",
+    "package": "rust-cli-core"
+  },
+  "protocols": [
+    {"id": "model-export", "version": 3, "produces": true, "accepts": true},
+    {"id": "adapter-config", "version": 1, "produces": false, "accepts": true},
+    {"id": "run-bundle", "version": 1, "produces": true, "accepts": true},
+    {"id": "run-launch-plan", "version": 1, "produces": true, "accepts": true},
+    {"id": "workspace", "version": 1, "produces": true, "accepts": true},
+    {"id": "installation", "version": 1, "produces": true, "accepts": true},
+    {"id": "migration-plan", "version": 1, "produces": true, "accepts": true}
+  ],
   "supportedSurfaces": [
     "rust-cli-core",
     "dotnet-integration",
     "typescript-integration",
     "assurance-reference",
-    "repository-contracts"
+    "repository-contracts",
+    "consumer-installation"
   ],
   "experimentalSource": [
     "experiments",

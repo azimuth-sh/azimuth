@@ -144,13 +144,15 @@ def configured_adapter(root: pathlib.Path, mode: str, forms=None) -> dict[str, o
 
 
 def verification(
-    qualification: str,
+    method_qualification: str,
+    applicability: str,
     judgment: str,
-    critical_qualification: str,
+    critical_method_qualification: str,
+    critical_applicability: str,
     critical_judgment: str,
 ) -> str:
     plans = [
-        ("judgment-claim", "mutation/search", "claim-judgment from claim synthetic#works"),
+        ("judgment-claim", "mutation/search", "claim-judgment from claim synthetic#behavior"),
         (
             "judgment-mechanism",
             "mutation/search",
@@ -161,39 +163,40 @@ def verification(
             "mutation/search",
             "claim-judgment from realization core|rust-symbol|synthetic::works",
         ),
-        ("qualification-binding", "mutation/search", "qualification from binding synthetic/edge"),
-        ("qualification-check", "mutation/search", "qualification from check synthetic/analyzer"),
+        ("qualification-binding", "mutation/search", "applicability-decision from binding synthetic/edge"),
+        ("qualification-check", "mutation/search", "method-qualification from check synthetic/analyzer"),
         (
             "qualification-mechanism",
             "mutation/search",
-            "qualification from mechanism synthetic#guard",
+            "method-qualification from mechanism synthetic#guard",
         ),
         (
             "qualification-realization",
             "mutation/search",
-            "qualification from realization core|rust-symbol|synthetic::works",
+            "method-qualification from realization core|rust-symbol|synthetic::works",
         ),
-        ("broad-judgment", "broad/analyzer", "claim-judgment from claim synthetic#works"),
+        ("broad-judgment", "broad/analyzer", "claim-judgment from claim synthetic#behavior"),
         (
             "multi-target",
             "mutation/search",
-            "qualification from binding synthetic/edge\n"
-            "Select: claim-judgment from claim synthetic#works",
+            "applicability-decision from binding synthetic/edge\n"
+            "Select: claim-judgment from claim synthetic#behavior",
         ),
         (
             "fault-qualification",
             "fault/injector",
-            "qualification from mechanism synthetic#guard",
+            "applicability-decision from mechanism synthetic#guard",
         ),
         (
             "critical-judgment",
             "mutation/search",
-            "claim-judgment from claim synthetic#critical-works",
+            "claim-judgment from claim synthetic#critical-behavior",
         ),
         (
             "critical-qualification",
             "mutation/search",
-            "qualification from binding synthetic/critical-edge",
+            "applicability-decision from binding synthetic/critical-edge\n"
+            "Select: method-qualification from check synthetic/critical-analyzer",
         ),
     ]
     declarations = []
@@ -210,15 +213,22 @@ def verification(
         "Terminal: the claim-specific analyzer returns one bounded fact\n\n"
         "The analyzer is enrolled as a Check.\n\n"
         "## Evidence Binding: synthetic/edge\n"
-        "Check: synthetic/analyzer\nClaim: synthetic#works\nProposition: direct\n"
-        "Scope: unit\nQuantification: example\nOracle: direct\n"
-        "Context: {\"platform\":\"synthetic\"}\n"
+        "Check: synthetic/analyzer\nCase: synthetic#behavior/works\n"
+        "Method qualification: synthetic/analyzer-method\nProposition: direct\n"
+        "Context: {}\n"
         "Challenge domain: [\"realization\",\"mechanism\"]\nPolicy: credible\n\n"
-        "The binding is claim-specific.\n\n"
-        "## Qualification: synthetic/edge\nVerdict: qualified\n"
-        f"Fingerprint: {qualification}\nQualified: 2026-08-22\nQualifier: synthetic-owner\n\n"
-        "The exact binding is current.\n\n"
-        "## Claim Judgment: synthetic#works\nVerdict: accepted\nPolicy: credible\n"
+        "The binding is Case-specific.\n\n"
+        "## Method Qualification: synthetic/analyzer-method\n"
+        "Check: synthetic/analyzer\nScope: unit\nQuantification: example\nOracle: direct\n"
+        "Context: {\"platform\":\"synthetic\"}\n"
+        "Challenge domain: [\"realization\",\"mechanism\"]\nPolicy: credible\n"
+        "Verdict: qualified\n"
+        f"Fingerprint: {method_qualification}\nQualified: 2026-08-22\nQualifier: synthetic-owner\n\n"
+        "The exact shared method is current.\n\n"
+        "## Applicability Decision: synthetic/edge\nVerdict: applicable\n"
+        f"Fingerprint: {applicability}\nDecided: 2026-08-22\nDecider: synthetic-owner\n\n"
+        "The qualified method applies to the exact Case edge.\n\n"
+        "## Claim Judgment: synthetic#behavior\nVerdict: accepted\nPolicy: credible\n"
         f"Fingerprint: {judgment}\nJudged: 2026-08-22\nJudge: synthetic-owner\n"
         "Basis: the exact composition is accepted\n"
         "Residual risk: synthetic mutation risk remains\n\n"
@@ -228,14 +238,20 @@ def verification(
         "Terminal: the critical analyzer returns one bounded fact\n\n"
         "The second analyzer keeps the critical Claim independent.\n\n"
         "## Evidence Binding: synthetic/critical-edge\n"
-        "Check: synthetic/critical-analyzer\nClaim: synthetic#critical-works\n"
-        "Proposition: direct\nScope: unit\nQuantification: example\nOracle: direct\n"
-        "Context: {\"platform\":\"synthetic\"}\nChallenge domain: [\"realization\"]\n"
+        "Check: synthetic/critical-analyzer\nCase: synthetic#critical-behavior/critical-works\n"
+        "Method qualification: synthetic/critical-analyzer-method\nProposition: direct\n"
+        "Context: {}\nChallenge domain: [\"realization\"]\n"
         "Policy: credible\n\nThe critical binding is exact.\n\n"
-        "## Qualification: synthetic/critical-edge\nVerdict: qualified\n"
-        f"Fingerprint: {critical_qualification}\nQualified: 2026-08-22\n"
-        "Qualifier: synthetic-owner\n\nThe critical binding is current.\n\n"
-        "## Claim Judgment: synthetic#critical-works\nVerdict: accepted\nPolicy: credible\n"
+        "## Method Qualification: synthetic/critical-analyzer-method\n"
+        "Check: synthetic/critical-analyzer\nScope: unit\nQuantification: example\nOracle: direct\n"
+        "Context: {\"platform\":\"synthetic\"}\nChallenge domain: [\"realization\"]\n"
+        "Policy: credible\nVerdict: qualified\n"
+        f"Fingerprint: {critical_method_qualification}\nQualified: 2026-08-22\n"
+        "Qualifier: synthetic-owner\n\nThe critical shared method is current.\n\n"
+        "## Applicability Decision: synthetic/critical-edge\nVerdict: applicable\n"
+        f"Fingerprint: {critical_applicability}\nDecided: 2026-08-22\n"
+        "Decider: synthetic-owner\n\nThe critical method applies to the exact Case edge.\n\n"
+        "## Claim Judgment: synthetic#critical-behavior\nVerdict: accepted\nPolicy: credible\n"
         f"Fingerprint: {critical_judgment}\nJudged: 2026-08-22\nJudge: synthetic-owner\n"
         "Basis: the critical composition is accepted\nResidual risk: mutation risk remains\n\n"
         "The critical total decision is current.\n\n"
@@ -249,7 +265,7 @@ def verification(
         "The fault injector owns a distinct bounded search.\n\n"
         "## Challenger: mutation/search\nForm: mutation\n"
         "Searches for: mutants that survive the selected behavior\n"
-        "Required scope: [\"claim\"]\n\n"
+        "Required scope: [\"policy\"]\n\n"
         "The mutation search reports objections rather than evidence.\n\n"
         + "\n".join(declarations)
     )
@@ -270,6 +286,7 @@ def request(operation: str, plans: list[str], checks=True, context="synthetic", 
             {
                 "id": "synthetic/analyzer",
                 "capability": "synthetic/analyze",
+                "cases": ["synthetic#behavior/works"],
                 "units": [{"id": "whole", "parameters": {}}],
             }
         ] if checks else [],
@@ -327,28 +344,28 @@ def initialize(root: pathlib.Path) -> None:
     package = root / "model" / "synthetic"
     package.mkdir(parents=True)
     (package / "spec.md").write_text(
-        "# Spec: synthetic\n\n## Requirement: behavior\nCriticality: standard\n\n"
+        "# Spec: synthetic\n\n## Claim: behavior\nCriticality: standard\n\n"
         "The synthetic unit SHALL preserve its declared behavior.\n\n"
-        "### Scenario: works\nWHEN the analyzer and mutation search run\n"
+        "### Case: works\nWHEN the analyzer and mutation search run\n"
         "THEN each emits its own bounded fact\n\n"
-        "## Requirement: critical-behavior\nCriticality: critical\n\n"
+        "## Claim: critical-behavior\nCriticality: critical\n\n"
         "The critical synthetic unit SHALL preserve its declared behavior.\n\n"
-        "### Scenario: critical-works\nWHEN the critical analyzer runs\n"
+        "### Case: critical-works\nWHEN the critical analyzer runs\n"
         "THEN it emits one bounded fact\n",
         encoding="utf-8",
     )
     (package / "design.md").write_text(
-        "# Design: synthetic\n\n## Claim: works\nMechanism: guard\nEnforcement: guard\n"
+        "# Design: synthetic\n\n## Claim: behavior\nMechanism: guard\nEnforcement: guard\n"
         "Binding: artifact:guard\nExpect: unique=true\nExpect: columns=key\n\n"
         "The synthetic artifact makes the mechanism addressable.\n\n"
-        "## Requirement: critical-behavior\nMechanism: critical-guard\n"
+        "## Claim: critical-behavior\nMechanism: critical-guard\n"
         "Enforcement: constraint\nBinding: artifact:critical-guard\n"
         "Expect: unique=true\nExpect: columns=critical_key\n\n"
         "The critical artifact makes the second mechanism addressable.\n",
         encoding="utf-8",
     )
     (package / "verification.md").write_text(
-        verification(fixed("0"), fixed("1"), fixed("2"), fixed("3")),
+        verification(fixed("0"), fixed("1"), fixed("2"), fixed("3"), fixed("4"), fixed("5")),
         encoding="utf-8",
     )
     (root / "standards.md").write_text(
@@ -376,7 +393,7 @@ def initialize(root: pathlib.Path) -> None:
             "realizes": [
                 {
                     "spec": "synthetic",
-                    "scenario": "works",
+                    "claim": "behavior",
                     "site": "synthetic::works",
                     "file": "src/synthetic.rs",
                     "lang": "rust",
@@ -384,7 +401,7 @@ def initialize(root: pathlib.Path) -> None:
                 },
                 {
                     "spec": "synthetic",
-                    "scenario": "critical-works",
+                    "claim": "critical-behavior",
                     "site": "synthetic::critical_works",
                     "file": "src/critical.rs",
                     "lang": "rust",
@@ -482,24 +499,32 @@ def initialize(root: pathlib.Path) -> None:
 def seal(root: pathlib.Path, export_path: pathlib.Path) -> None:
     exported = json.loads(export_path.read_text(encoding="utf-8"))
     expected = {}
-    for resolution in exported["challenge_resolutions"]:
-        for candidate in resolution["candidates"]:
-            target = candidate.get("target")
-            if target and target.get("expected_fingerprint"):
-                expected[(target["kind"], target["id"])] = target["expected_fingerprint"]
+    for collection, kind in [
+        ("method_qualifications", "method-qualification"),
+        ("applicability_decisions", "applicability-decision"),
+        ("claim_judgments", "claim-judgment"),
+    ]:
+        for decision in exported[collection]:
+            expected[(kind, decision["id"])] = decision["expected_fingerprint"]
     source_path = root / "model" / "synthetic" / "verification.md"
     source = source_path.read_text(encoding="utf-8")
     source = source.replace(
-        fixed("0"), expected[("qualification", "synthetic/edge")]
+        fixed("0"), expected[("method-qualification", "synthetic/analyzer-method")]
     )
     source = source.replace(
-        fixed("1"), expected[("claim-judgment", "synthetic#works")]
+        fixed("1"), expected[("applicability-decision", "synthetic/edge")]
     )
     source = source.replace(
-        fixed("2"), expected[("qualification", "synthetic/critical-edge")]
+        fixed("2"), expected[("claim-judgment", "synthetic#behavior")]
     )
     source = source.replace(
-        fixed("3"), expected[("claim-judgment", "synthetic#critical-works")]
+        fixed("3"), expected[("method-qualification", "synthetic/critical-analyzer-method")]
+    )
+    source = source.replace(
+        fixed("4"), expected[("applicability-decision", "synthetic/critical-edge")]
+    )
+    source = source.replace(
+        fixed("5"), expected[("claim-judgment", "synthetic#critical-behavior")]
     )
     source_path.write_text(source, encoding="utf-8")
     negative = root / "model-zero"

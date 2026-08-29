@@ -1,9 +1,6 @@
 ---
 name: azimuth-apply
-description: >-
-  Implement an approved Azimuth change, update current facets, run honest engineering checks and
-  leave the change ready for finalization. Use after approval or when resuming an active change;
-  do not archive it.
+description: Implement an approved Azimuth change, update current facets, run honest engineering checks and leave the change ready for finalization. Use after approval or when resuming an active change; do not archive it.
 ---
 
 # Apply a change

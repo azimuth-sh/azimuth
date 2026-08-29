@@ -123,8 +123,7 @@ def run_id(bundle):
     )
 
 
-def observation_fingerprint(bundle, execution):
-    observation = execution["observation"]
+def observation_fingerprint(bundle, execution, observation):
     return fingerprint(
         {
             "format": "azimuth-observation-fingerprint",
@@ -132,6 +131,7 @@ def observation_fingerprint(bundle, execution):
             "run_id": bundle["run_id"],
             "subject_fingerprint": bundle["subject_fingerprint"],
             "check": execution["check"],
+            "case": observation["case"],
             "context": bundle["actual_selection"]["context"],
             "outcome": observation["outcome"],
             "observed_at_ms": observation["observed_at_ms"],
@@ -337,21 +337,30 @@ def make_bundle(request):
                         {
                             "ordinal": 1,
                             "activity": "shared-analysis",
-                            "outcome": check_outcome,
+                            "outcomes": {
+                                case: check_outcome for case in check["cases"]
+                            },
                         }
                     ],
                 }
                 for unit in check["units"]
             ],
-            "observation": {
-                "outcome": check_outcome,
-                "observed_at_ms": finished,
-                "fingerprint": "sha256:" + "0" * 64,
-                "artifacts": [],
-                "diagnostics": [],
-            },
+            "observations": [
+                {
+                    "case": case,
+                    "outcome": check_outcome,
+                    "observed_at_ms": finished,
+                    "fingerprint": "sha256:" + "0" * 64,
+                    "artifacts": [],
+                    "diagnostics": [],
+                }
+                for case in check["cases"]
+            ],
         }
-        execution["observation"]["fingerprint"] = observation_fingerprint(bundle, execution)
+        for observation in execution["observations"]:
+            observation["fingerprint"] = observation_fingerprint(
+                bundle, execution, observation
+            )
         bundle["check_executions"].append(execution)
     for index, challenge in enumerate(challenges):
         route = next(

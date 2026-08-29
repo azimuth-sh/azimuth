@@ -1,4 +1,4 @@
-//! Deterministic validation and Challenge Plan resolution over the alpha 3 model.
+//! Deterministic validation and Challenge Plan resolution over the alpha 4 model.
 
 use crate::json::Json;
 use crate::model::{Criticality, Model};

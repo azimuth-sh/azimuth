@@ -1,0 +1,35 @@
+{
+  "format": "azimuth-cli-resources",
+  "schemaVersion": 1,
+  "releaseVersion": "0.1.0-alpha.4",
+  "migrationLine": "alpha-claim-case",
+  "skills": [
+    "azimuth-explore",
+    "azimuth-propose",
+    "azimuth-apply",
+    "azimuth-archive",
+    "azimuth-coordinate",
+    "azimuth-maintain"
+  ],
+  "references": [
+    "exploration",
+    "proposal",
+    "intent-delta",
+    "design",
+    "verification",
+    "work-packages",
+    "outcome",
+    "migration"
+  ],
+  "templates": [
+    "init/README.md",
+    "init/standards-verification.md",
+    "init/workspace.json",
+    "exploration/exploration.md",
+    "change/proposal.md",
+    "change/plan.md"
+  ],
+  "migrations": [
+    "0.1.0-alpha.3-to-0.1.0-alpha.4"
+  ]
+}

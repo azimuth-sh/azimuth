@@ -36,6 +36,7 @@ fn valid_bundle() -> RunBundle {
     let check = CheckSelection {
         id: "payments/recovery".into(),
         fingerprint: fp('b'),
+        cases: vec!["payments#recovery/works".into()],
         implementations: vec![Implementation {
             identity: "payments|rust-symbol|recovery::replay".into(),
             source_fingerprint: fp('c'),
@@ -136,16 +137,22 @@ fn valid_bundle() -> RunBundle {
                 attempts: vec![CheckAttempt {
                     ordinal: 1,
                     activity: "check-attempt".into(),
-                    outcome: ObservationOutcome::Satisfied,
+                    outcomes: [(
+                        "payments#recovery/works".into(),
+                        ObservationOutcome::Satisfied,
+                    )]
+                    .into_iter()
+                    .collect(),
                 }],
             }],
-            observation: Observation {
+            observations: vec![Observation {
+                case: "payments#recovery/works".into(),
                 outcome: ObservationOutcome::Satisfied,
                 observed_at_ms: 3,
                 fingerprint: fp('0'),
                 artifacts: vec![],
                 diagnostics: vec![],
-            },
+            }],
         }],
         challenger_executions: vec![],
     };
@@ -175,8 +182,15 @@ fn refresh(bundle: &mut RunBundle) {
     );
     bundle.run_id = run_id(bundle);
     for index in 0..bundle.check_executions.len() {
-        bundle.check_executions[index].observation.fingerprint =
-            observation_fingerprint(bundle, &bundle.check_executions[index]);
+        for observation_index in 0..bundle.check_executions[index].observations.len() {
+            let fingerprint = observation_fingerprint(
+                bundle,
+                &bundle.check_executions[index],
+                &bundle.check_executions[index].observations[observation_index],
+            );
+            bundle.check_executions[index].observations[observation_index].fingerprint =
+                fingerprint;
+        }
     }
     for index in 0..bundle.challenger_executions.len() {
         bundle.challenger_executions[index].result.fingerprint =
@@ -219,8 +233,13 @@ fn verify_accepts_negative_and_partial_execution_facts() {
     let root = root();
     let violated_path = root.join("violated.json");
     let mut violated = valid_bundle();
-    violated.check_executions[0].units[0].attempts[0].outcome = ObservationOutcome::Violated;
-    violated.check_executions[0].observation.outcome = ObservationOutcome::Violated;
+    violated.check_executions[0].units[0].attempts[0]
+        .outcomes
+        .insert(
+            "payments#recovery/works".into(),
+            ObservationOutcome::Violated,
+        );
+    violated.check_executions[0].observations[0].outcome = ObservationOutcome::Violated;
     refresh(&mut violated);
     write_bundle(&violated_path, &violated);
 

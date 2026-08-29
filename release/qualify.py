@@ -55,8 +55,40 @@ def validate_catalog(catalog, root):
     require(catalog.get("format") == "azimuth-release-artifacts", "catalog format is unsupported")
     require(catalog.get("schemaVersion") == 1, "catalog schemaVersion is unsupported")
     release = catalog.get("release", {})
-    for field in ("version", "tag", "license", "repository", "homepage"):
+    for field in ("version", "tag", "migrationLine", "license", "repository", "homepage"):
         require(release.get(field), f"release.{field} is required")
+
+    resources = catalog.get("resources", {})
+    require(resources.get("format") == "azimuth-cli-resources", "resource format is unsupported")
+    require(resources.get("package") in [item.get("id") for item in catalog.get("packages", [])], "resource package is not public")
+    resource_manifest = root / resources.get("manifest", "")
+    require(resource_manifest.is_file(), "resource manifest does not exist")
+    resource_account = read_json(resource_manifest)
+    require(resource_account.get("format") == resources["format"], "resource manifest format differs from catalog")
+    require(resource_account.get("releaseVersion") == release["version"], "resource release differs from catalog")
+    require(resource_account.get("migrationLine") == release["migrationLine"], "resource migration line differs from catalog")
+    for collection in ("skills", "references", "templates", "migrations"):
+        require(resource_account.get(collection), f"resource manifest {collection} is empty")
+    resource_root = resource_manifest.parent
+    for skill in resource_account["skills"]:
+        require((resource_root / "skills" / skill / "SKILL.md").is_file(), f"resource skill is missing: {skill}")
+        require((resource_root / "skills" / skill / "agents/openai.yaml").is_file(), f"resource skill metadata is missing: {skill}")
+    for reference in resource_account["references"]:
+        require((resource_root / "references" / f"{reference}.md").is_file(), f"resource reference is missing: {reference}")
+    for template in resource_account["templates"]:
+        require((resource_root / "templates" / template).is_file(), f"resource template is missing: {template}")
+    for migration in resource_account["migrations"]:
+        require((resource_root / "migrations" / f"{migration}.md").is_file(), f"resource migration is missing: {migration}")
+
+    protocols = catalog.get("protocols", [])
+    require(protocols, "catalog declares no protocol compatibility")
+    protocol_ids = [item.get("id") for item in protocols]
+    require(len(protocol_ids) == len(set(protocol_ids)), "protocol ids are not unique")
+    for protocol in protocols:
+        require(isinstance(protocol.get("version"), int) and protocol["version"] > 0, f"{protocol.get('id')}: invalid protocol version")
+        require(isinstance(protocol.get("produces"), bool), f"{protocol.get('id')}: produces must be boolean")
+        require(isinstance(protocol.get("accepts"), bool), f"{protocol.get('id')}: accepts must be boolean")
+        require(protocol["produces"] or protocol["accepts"], f"{protocol.get('id')}: protocol has no direction")
 
     packages = catalog.get("packages", [])
     images = catalog.get("images", [])
@@ -203,6 +235,7 @@ def approved_contract_differences(catalog, approved):
     actual = {
         "version": release.get("version"),
         "tag": release.get("tag"),
+        "migrationLine": release.get("migrationLine"),
         "license": release.get("license"),
         "repository": release.get("repository"),
         "homepage": release.get("homepage"),
@@ -459,6 +492,8 @@ def qualify(root, output_root, allow_dirty):
         "packages": packages,
         "images": copy.deepcopy(catalog["images"]),
         "nativeBinaries": copy.deepcopy(catalog["nativeBinaries"]),
+        "resources": copy.deepcopy(catalog["resources"]),
+        "protocols": copy.deepcopy(catalog["protocols"]),
         "supportedSurfaces": copy.deepcopy(catalog["supportedSurfaces"]),
         "experimentalSource": copy.deepcopy(catalog["experimentalSource"]),
     }

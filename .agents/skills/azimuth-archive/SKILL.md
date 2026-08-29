@@ -1,9 +1,6 @@
 ---
 name: azimuth-archive
-description: >-
-  Accept, finalize and archive a completed Azimuth change after current facets, engineering checks,
-  outcomes and rollout-dependent conditions are satisfied. Use at the local or federated
-  completion boundary; never manufacture execution facts or commit implicitly.
+description: Accept, finalize and archive a completed Azimuth change after current facets, engineering checks, outcomes and rollout-dependent conditions are satisfied. Use at the local or federated completion boundary; never manufacture execution facts or commit implicitly.
 ---
 
 # Finalize and archive a change

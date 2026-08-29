@@ -30,8 +30,17 @@ USAGE
         [--config <file>] [--out <file>]
     azimuth run verify --bundle <file>...
     azimuth run inspect --bundle <file>... [--format text|json] [--out <file>]
-    azimuth init [--root <azimuth-dir>]
+    azimuth init --agents codex,claude|none [--root <azimuth-dir>] [--adopt-alias]
+    azimuth reference list
+    azimuth reference show <id> [--format text|json]
+    azimuth agent add|remove <codex|claude> [--root <azimuth-dir>]
+    azimuth component add <id> --manifest <file> [--root <azimuth-dir>]
+    azimuth component remove <id> [--root <azimuth-dir>]
+    azimuth update [--check|--dry-run] [--root <azimuth-dir>]
+    azimuth migrate plan --out <file> [--root <azimuth-dir>]
+    azimuth migrate apply --plan <file> [--root <azimuth-dir>]
     azimuth explore create <id> [--title <text>] [--explorations <dir>]
+    azimuth explore archive <id> --date <YYYY-MM-DD> [--explorations <dir>]
     azimuth explore list|show [<id>] [--explorations <dir>]
     azimuth project check --project <file> --workset <file> [--local <repository>]
     azimuth project export --project <file> --workset <file> [--local <repository>]
@@ -46,7 +55,7 @@ USAGE
     azimuth change list [--changes <dir>]
     azimuth change show|status <id-or-dir> [--changes <dir>] [options]
     azimuth change work-packages <id-or-dir> [--changes <dir>]
-    azimuth change instructions <id-or-dir> --package <id> [--changes <dir>]
+    azimuth change brief <id-or-dir> --package <id> [--changes <dir>]
     azimuth change finalize <dir> [options]
     azimuth change archive <dir> --date <YYYY-MM-DD> [options]
 
@@ -124,6 +133,21 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
     if command == "init" {
         return command_init(&args[1..]);
     }
+    if command == "reference" {
+        return command_reference(&args[1..]);
+    }
+    if command == "agent" {
+        return command_agent(&args[1..]);
+    }
+    if command == "component" {
+        return command_component(&args[1..]);
+    }
+    if command == "update" {
+        return command_update(&args[1..]);
+    }
+    if command == "migrate" {
+        return command_migrate(&args[1..]);
+    }
     if command == "explore" {
         return command_explore(&args[1..]);
     }
@@ -148,19 +172,37 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
 }
 
 fn command_init(args: &[String]) -> Result<ExitCode, String> {
-    let root = match args {
-        [] => PathBuf::from("azimuth"),
-        [option, value] if option == "--root" => PathBuf::from(value),
-        _ => return Err("init accepts only `--root <azimuth-dir>`".into()),
-    };
-    let created = azimuth::workflow::initialize(&root)?;
-    if created.is_empty() {
-        println!("Azimuth is already initialized at {}", root.display());
-    } else {
-        println!("initialized Azimuth at {}", root.display());
-        for path in created {
-            println!("  {}", path.display());
+    let mut root = PathBuf::from("azimuth");
+    let mut agents = None;
+    let mut adopt_alias = false;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--root" => {
+                root = PathBuf::from(argument_value(args, index, "--root")?);
+                index += 2;
+            }
+            "--agents" => {
+                agents = Some(
+                    argument_value(args, index, "--agents")?
+                        .split(',')
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>(),
+                );
+                index += 2;
+            }
+            "--adopt-alias" => {
+                adopt_alias = true;
+                index += 1;
+            }
+            other => return Err(format!("unknown init option `{other}`")),
         }
+    }
+    let agents = agents.ok_or("init needs explicit `--agents codex,claude` or `--agents none`")?;
+    let created = azimuth::installation::initialize(&root, &agents, adopt_alias)?;
+    println!("initialized Azimuth at {}", root.display());
+    for path in created {
+        println!("  {}", path.display());
     }
     println!(
         "next: azimuth validate --model {} --standards {} --workspace {}",
@@ -171,13 +213,218 @@ fn command_init(args: &[String]) -> Result<ExitCode, String> {
     Ok(ExitCode::SUCCESS)
 }
 
+fn command_reference(args: &[String]) -> Result<ExitCode, String> {
+    let Some(operation) = args.first() else {
+        return Err("reference needs `list` or `show`".into());
+    };
+    match operation.as_str() {
+        "list" => {
+            if args.len() != 1 {
+                return Err("reference list accepts no arguments".into());
+            }
+            for reference in azimuth::resources::REFERENCES {
+                println!("{}\t{}", reference.id, reference.format_version);
+            }
+        }
+        "show" => {
+            let id = args.get(1).ok_or("reference show needs an id")?;
+            let mut format = "text";
+            let mut index = 2;
+            while index < args.len() {
+                if args[index] != "--format" {
+                    return Err(format!("unknown reference option `{}`", args[index]));
+                }
+                format = args.get(index + 1).ok_or("`--format` needs text or json")?;
+                index += 2;
+            }
+            let reference = azimuth::resources::reference(id)
+                .ok_or_else(|| format!("unknown reference `{id}`"))?;
+            match format {
+                "text" => print!("{}", reference.prose),
+                "json" => print!(
+                    "{}",
+                    azimuth::resources::reference_json(reference).to_string_pretty()
+                ),
+                other => return Err(format!("unsupported reference format `{other}`")),
+            }
+        }
+        other => return Err(format!("unknown reference operation `{other}`")),
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn command_agent(args: &[String]) -> Result<ExitCode, String> {
+    let (operation, agent, root) = lifecycle_target(args, "agent")?;
+    let paths = match operation {
+        "add" => azimuth::installation::agent_add(&root, agent)?,
+        "remove" => azimuth::installation::agent_remove(&root, agent)?,
+        other => return Err(format!("unknown agent operation `{other}`")),
+    };
+    println!("{operation} agent integration `{agent}`");
+    for path in paths {
+        println!("  {}", path.display());
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn command_component(args: &[String]) -> Result<ExitCode, String> {
+    let operation = args.first().ok_or("component needs add or remove")?;
+    let id = args.get(1).ok_or("component operation needs an id")?;
+    let mut root = PathBuf::from("azimuth");
+    let mut manifest = None;
+    let mut index = 2;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--root" => {
+                root = PathBuf::from(argument_value(args, index, "--root")?);
+                index += 2;
+            }
+            "--manifest" => {
+                manifest = Some(PathBuf::from(argument_value(args, index, "--manifest")?));
+                index += 2;
+            }
+            other => return Err(format!("unknown component option `{other}`")),
+        }
+    }
+    match operation.as_str() {
+        "add" => azimuth::installation::component_add(
+            &root,
+            id,
+            &manifest.ok_or("component add needs `--manifest <file>`")?,
+        )?,
+        "remove" => {
+            if manifest.is_some() {
+                return Err("component remove does not accept `--manifest`".into());
+            }
+            azimuth::installation::component_remove(&root, id)?;
+        }
+        other => return Err(format!("unknown component operation `{other}`")),
+    }
+    println!("{operation} component `{id}`");
+    Ok(ExitCode::SUCCESS)
+}
+
+fn command_update(args: &[String]) -> Result<ExitCode, String> {
+    let mut root = PathBuf::from("azimuth");
+    let mut mode = azimuth::installation::UpdateMode::Apply;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--root" => {
+                root = PathBuf::from(argument_value(args, index, "--root")?);
+                index += 2;
+            }
+            "--check" if mode == azimuth::installation::UpdateMode::Apply => {
+                mode = azimuth::installation::UpdateMode::Check;
+                index += 1;
+            }
+            "--dry-run" if mode == azimuth::installation::UpdateMode::Apply => {
+                mode = azimuth::installation::UpdateMode::DryRun;
+                index += 1;
+            }
+            "--check" | "--dry-run" => {
+                return Err("update accepts only one of `--check` or `--dry-run`".into())
+            }
+            other => return Err(format!("unknown update option `{other}`")),
+        }
+    }
+    let actions = azimuth::installation::update(&root, mode)?;
+    let is_aligned = actions.is_empty();
+    if is_aligned {
+        println!(
+            "installation is aligned with azimuth {}",
+            env!("CARGO_PKG_VERSION")
+        );
+    } else {
+        for action in actions {
+            println!("{action}");
+        }
+    }
+    Ok(
+        if mode == azimuth::installation::UpdateMode::Check && !is_aligned {
+            ExitCode::from(1)
+        } else {
+            ExitCode::SUCCESS
+        },
+    )
+}
+
+fn command_migrate(args: &[String]) -> Result<ExitCode, String> {
+    let operation = args.first().ok_or("migrate needs plan or apply")?;
+    let mut root = PathBuf::from("azimuth");
+    let mut out = None;
+    let mut plan = None;
+    let mut index = 1;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--root" => {
+                root = PathBuf::from(argument_value(args, index, "--root")?);
+                index += 2;
+            }
+            "--out" => {
+                out = Some(PathBuf::from(argument_value(args, index, "--out")?));
+                index += 2;
+            }
+            "--plan" => {
+                plan = Some(PathBuf::from(argument_value(args, index, "--plan")?));
+                index += 2;
+            }
+            other => return Err(format!("unknown migrate option `{other}`")),
+        }
+    }
+    match operation.as_str() {
+        "plan" => {
+            if plan.is_some() {
+                return Err("migrate plan does not accept `--plan`".into());
+            }
+            let out = out.ok_or("migrate plan needs `--out <file>`")?;
+            let rendered = azimuth::installation::migration_plan(&root)?.to_string_pretty();
+            publish_output(rendered.as_bytes(), Some(&out))?;
+            println!("wrote migration plan to {}", out.display());
+        }
+        "apply" => {
+            if out.is_some() {
+                return Err("migrate apply does not accept `--out`".into());
+            }
+            let plan = plan.ok_or("migrate apply needs `--plan <file>`")?;
+            azimuth::installation::migration_apply(&root, &plan)?;
+            println!("migration plan is applicable; no semantic account edits are required");
+        }
+        other => return Err(format!("unknown migrate operation `{other}`")),
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn lifecycle_target<'a>(
+    args: &'a [String],
+    noun: &str,
+) -> Result<(&'a str, &'a str, PathBuf), String> {
+    let operation = args
+        .first()
+        .ok_or_else(|| format!("{noun} needs add or remove"))?;
+    let target = args
+        .get(1)
+        .ok_or_else(|| format!("{noun} operation needs an id"))?;
+    let mut root = PathBuf::from("azimuth");
+    let mut index = 2;
+    while index < args.len() {
+        if args[index] != "--root" {
+            return Err(format!("unknown {noun} option `{}`", args[index]));
+        }
+        root = PathBuf::from(argument_value(args, index, "--root")?);
+        index += 2;
+    }
+    Ok((operation, target, root))
+}
+
 fn command_explore(args: &[String]) -> Result<ExitCode, String> {
     let Some(operation) = args.first() else {
-        return Err("explore needs create, list or show".into());
+        return Err("explore needs create, list, show or archive".into());
     };
     let mut explorations = PathBuf::from("azimuth/explorations");
     let mut positional = Vec::new();
     let mut title = None;
+    let mut date = None;
     let mut index = 1;
     while index < args.len() {
         match args[index].as_str() {
@@ -187,6 +434,10 @@ fn command_explore(args: &[String]) -> Result<ExitCode, String> {
             }
             "--title" => {
                 title = Some(argument_value(args, index, "--title")?);
+                index += 2;
+            }
+            "--date" => {
+                date = Some(argument_value(args, index, "--date")?);
                 index += 2;
             }
             value if value.starts_with('-') => {
@@ -204,6 +455,9 @@ fn command_explore(args: &[String]) -> Result<ExitCode, String> {
             if positional.len() != 1 {
                 return Err("explore create accepts one id".into());
             }
+            if date.is_some() {
+                return Err("explore create does not accept `--date`".into());
+            }
             let root = azimuth::workflow::create_exploration(
                 &explorations,
                 id,
@@ -215,6 +469,9 @@ fn command_explore(args: &[String]) -> Result<ExitCode, String> {
         "list" => {
             if !positional.is_empty() {
                 return Err("explore list accepts no id".into());
+            }
+            if date.is_some() {
+                return Err("explore list does not accept `--date`".into());
             }
             let entries = match std::fs::read_dir(&explorations) {
                 Ok(entries) => entries,
@@ -241,10 +498,26 @@ fn command_explore(args: &[String]) -> Result<ExitCode, String> {
             if positional.len() != 1 {
                 return Err("explore show accepts one id".into());
             }
+            if date.is_some() {
+                return Err("explore show does not accept `--date`".into());
+            }
             let path = explorations.join(id).join("exploration.md");
             let source = std::fs::read_to_string(&path)
                 .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
             print!("{source}");
+            Ok(ExitCode::SUCCESS)
+        }
+        "archive" => {
+            let id = positional.first().ok_or("explore archive needs an id")?;
+            if positional.len() != 1 {
+                return Err("explore archive accepts one id".into());
+            }
+            if title.is_some() {
+                return Err("explore archive does not accept `--title`".into());
+            }
+            let date = date.ok_or("explore archive needs `--date <YYYY-MM-DD>`")?;
+            let destination = azimuth::workflow::archive_exploration(&explorations, id, &date)?;
+            println!("archived exploration `{id}` as {}", destination.display());
             Ok(ExitCode::SUCCESS)
         }
         other => Err(format!("unknown explore operation `{other}`")),
@@ -678,9 +951,9 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
             }
             return Ok(ExitCode::SUCCESS);
         }
-        "instructions" => {
-            let value = one_position(&positional, "change instructions needs one id or directory")?;
-            let package = package.ok_or("change instructions needs `--package <id>`")?;
+        "brief" => {
+            let value = one_position(&positional, "change brief needs one id or directory")?;
+            let package = package.ok_or("change brief needs `--package <id>`")?;
             let root = azimuth::workflow::resolve_change(&changes, value)?;
             let packages =
                 azimuth::workflow::load_work_packages(&root).map_err(|errors| errors.join("\n"))?;
@@ -694,10 +967,7 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
             {
                 return Err(format!("work package `{package}` is not eligible"));
             }
-            print!(
-                "{}",
-                azimuth::workflow::package_instructions(&root, selected)
-            );
+            print!("{}", azimuth::workflow::package_brief(&root, selected));
             return Ok(ExitCode::SUCCESS);
         }
         _ => {}

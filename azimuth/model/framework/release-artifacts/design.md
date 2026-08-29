@@ -6,9 +6,7 @@ Enforcement: guard
 Binding: release-artifact-contract
 
 The release catalog is the only repository-owned declaration of the complete first-alpha artifact
-set. Native manifests retain ecosystem-required copies, and qualification rejects any difference
-before an artifact can enter later publication orchestration. Removing the guard would make
-registry metadata and support claims independent again.
+set. Native manifests retain ecosystem-required copies, while the catalog also binds the resource manifest, migration line and independently versioned protocol matrix. Qualification rejects any difference before an artifact can enter later publication orchestration. Removing the guard would make registry metadata, consumer workflows, protocol support and support claims independent again.
 
 ## Claim: experimental-source-isolation
 Mechanism: experimental-isolation-gate

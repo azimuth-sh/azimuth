@@ -1,0 +1,4 @@
+interface:
+  display_name: "Archive an Azimuth change"
+  short_description: "Finalize and archive a completed change"
+  default_prompt: "Use $azimuth-archive to finalize and archive the completed Azimuth change."

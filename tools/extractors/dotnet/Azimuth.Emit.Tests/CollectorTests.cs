@@ -20,7 +20,7 @@ public sealed class CollectorTests
     {
         var entry = Assert.Single(
             Collect().Realizes,
-            r => r.Scenario == "type-level-thing");
+            r => r.Claim == "type-level-thing");
         Assert.Equal("alpha", entry.Spec);
         Assert.Equal("Azimuth.Fixture.Production", entry.Site);
     }
@@ -30,7 +30,7 @@ public sealed class CollectorTests
     {
         var entry = Assert.Single(
             Collect().Realizes,
-            r => r.Scenario == "method-level-thing");
+            r => r.Claim == "method-level-thing");
         Assert.Equal("Azimuth.Fixture.Production.Method", entry.Site);
     }
 
@@ -39,7 +39,7 @@ public sealed class CollectorTests
     {
         var branches = Collect()
             .Realizes.Where(r => r.Site == "Azimuth.Fixture.Production.Branching")
-            .Select(r => r.Scenario)
+            .Select(r => r.Claim)
             .OrderBy(s => s, StringComparer.Ordinal)
             .ToList();
         Assert.Equal(["first-branch", "second-branch"], branches);
@@ -55,7 +55,7 @@ public sealed class CollectorTests
     {
         var entry = Assert.Single(
             Collect().Realizes,
-            r => r.Scenario == "struct-level-thing");
+            r => r.Claim == "struct-level-thing");
         Assert.Equal("Azimuth.Fixture.Amount", entry.Site);
     }
 
@@ -221,7 +221,7 @@ public sealed class CollectorTests
     {
         var entry = Assert.Single(
             Collect().Realizes,
-            item => item.Scenario == "constructor-only-thing");
+            item => item.Claim == "constructor-only-thing");
 
         Assert.EndsWith("tools/extractors/dotnet/fixture/Fixture.cs", entry.File);
         Assert.Matches("^sha256:[0-9a-f]{64}$", entry.SourceFingerprint);
@@ -255,15 +255,15 @@ public sealed class CollectorTests
     {
         var entry = Assert.Single(
             Collect().Realizes,
-            r => r.Scenario == "async-thing");
+            r => r.Claim == "async-thing");
         Assert.EndsWith("Fixture.cs", entry.File);
     }
 
     [Fact]
     public void Entries_are_ordered_so_the_manifest_diffs()
     {
-        var scenarios = Collect().Realizes.Select(r => r.Scenario).ToList();
-        Assert.Equal(scenarios.OrderBy(s => s, StringComparer.Ordinal), scenarios);
+        var claims = Collect().Realizes.Select(r => r.Claim).ToList();
+        Assert.Equal(claims.OrderBy(claim => claim, StringComparer.Ordinal), claims);
     }
 
     [Fact]
@@ -274,7 +274,7 @@ public sealed class CollectorTests
 
         var realizes = root.GetProperty("realizes")[0];
         Assert.True(realizes.TryGetProperty("spec", out _));
-        Assert.True(realizes.TryGetProperty("scenario", out _));
+        Assert.True(realizes.TryGetProperty("claim", out _));
         Assert.False(realizes.TryGetProperty("req", out _));
         Assert.Equal("csharp", realizes.GetProperty("lang").GetString());
         Assert.Matches(

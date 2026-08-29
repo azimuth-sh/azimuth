@@ -174,6 +174,7 @@ impl Fixture {
         let check = CheckSelection {
             id: "demo/check".into(),
             fingerprint: fp('b'),
+            cases: vec!["demo#check/works".into()],
             implementations: vec![Implementation {
                 identity: "demo|rust-symbol|demo::check".into(),
                 source_fingerprint: fp('c'),
@@ -437,16 +438,19 @@ impl Fixture {
                 attempts: vec![CheckAttempt {
                     ordinal: 1,
                     activity: "native-check".into(),
-                    outcome: ObservationOutcome::Violated,
+                    outcomes: [("demo#check/works".into(), ObservationOutcome::Violated)]
+                        .into_iter()
+                        .collect(),
                 }],
             }],
-            observation: Observation {
+            observations: vec![Observation {
+                case: "demo#check/works".into(),
                 outcome: ObservationOutcome::Violated,
                 observed_at_ms: 12,
                 fingerprint: fp('0'),
                 artifacts: Vec::new(),
                 diagnostics: Vec::new(),
-            },
+            }],
         }];
         refresh(&mut bundle);
         assert!(
@@ -517,8 +521,15 @@ fn refresh(bundle: &mut RunBundle) {
     bundle.actual_selection.fingerprint = run::selection_fingerprint(&bundle.actual_selection);
     bundle.run_id = run::run_id(bundle);
     for index in 0..bundle.check_executions.len() {
-        let fingerprint = run::observation_fingerprint(bundle, &bundle.check_executions[index]);
-        bundle.check_executions[index].observation.fingerprint = fingerprint;
+        for observation_index in 0..bundle.check_executions[index].observations.len() {
+            let fingerprint = run::observation_fingerprint(
+                bundle,
+                &bundle.check_executions[index],
+                &bundle.check_executions[index].observations[observation_index],
+            );
+            bundle.check_executions[index].observations[observation_index].fingerprint =
+                fingerprint;
+        }
     }
     for index in 0..bundle.challenger_executions.len() {
         let fingerprint =
@@ -785,9 +796,7 @@ fn violated_cancelled_and_timed_out_runs_remain_successful_exchanges() {
     let violated = fixture.violated_bundle();
     fixture.set_bundle_response(&violated, &[]);
     assert_eq!(
-        fixture.invoke(&[]).unwrap().bundle.check_executions[0]
-            .observation
-            .outcome,
+        fixture.invoke(&[]).unwrap().bundle.check_executions[0].observations[0].outcome,
         ObservationOutcome::Violated
     );
 

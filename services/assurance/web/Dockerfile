@@ -1,4 +1,4 @@
-ARG AZIMUTH_VERSION=0.1.0-alpha.3
+ARG AZIMUTH_VERSION=0.1.0-alpha.4
 
 FROM node:22-bookworm-slim AS dependencies
 WORKDIR /app

@@ -43,8 +43,8 @@ use spec::parse_spec;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use verification::{
-    parse_standards, parse_verification, Check, EvidenceBinding, Qualification,
-    QualificationVerdict, Selector, SemanticScopeKind, Verification,
+    parse_standards, parse_verification, Check, EvidenceBinding, MethodQualification,
+    MethodQualificationVerdict, Selector, SemanticScopeKind, Verification,
 };
 
 mod spec {
@@ -90,13 +90,37 @@ fn implementation(id: &str, address: &str) -> CheckImplementation {
 }
 
 fn model(checks: &[&str]) -> Model {
+    let spec = parse_spec(
+        "synthetic/spec.md",
+        "# Spec: synthetic\n\n## Claim: works\nCriticality: standard\n\nThe synthetic subject SHALL work.\n\n### Case: works\nWHEN checked\nTHEN it works\n",
+    )
+    .unwrap();
     Model {
         verifications: vec![Verification {
             owner: "root".into(),
             path: "verification.md".into(),
             checks: checks.iter().map(|id| check(id)).collect(),
-            bindings: Vec::new(),
-            qualifications: Vec::new(),
+            bindings: checks
+                .iter()
+                .map(|id| EvidenceBinding {
+                    id: format!("bindings/{}", id.rsplit('/').next().unwrap()),
+                    check: (*id).into(),
+                    case: "synthetic#works/works".into(),
+                    method_qualification: format!(
+                        "qualifications/{}",
+                        id.rsplit('/').next().unwrap()
+                    ),
+                    proposition: "the Check bears on the Case".into(),
+                    context: BTreeMap::new(),
+                    challenge_domain: Vec::new(),
+                    policy: "credible".into(),
+                    rationale: String::new(),
+                    path: "verification.md".into(),
+                    line: 1,
+                })
+                .collect(),
+            method_qualifications: Vec::new(),
+            applicability_decisions: Vec::new(),
             claim_judgments: Vec::new(),
             challengers: Vec::new(),
             challenge_plans: Vec::new(),
@@ -105,6 +129,7 @@ fn model(checks: &[&str]) -> Model {
             .iter()
             .map(|id| implementation(id, &format!("checks::{}", id.rsplit('/').next().unwrap())))
             .collect(),
+        specs: vec![spec],
         ..Default::default()
     }
 }
@@ -171,12 +196,12 @@ fn configuration() -> AdapterConfiguration {
 fn challenge_model() -> Model {
     let spec = parse_spec(
         "alpha/spec.md",
-        "# Spec: alpha\n\n## Requirement: behavior\nCriticality: standard\n\nThe system SHALL work.\n\n### Scenario: works\nWHEN invoked\nTHEN it works\n",
+        "# Spec: alpha\n\n## Claim: behavior\nCriticality: standard\n\nThe system SHALL work.\n\n### Case: works\nWHEN invoked\nTHEN it works\n",
     )
     .unwrap();
     let verification = parse_verification(
         "alpha/verification.md",
-        "# Verification: alpha\n\n## Check: alpha/check\nMethod: invoke\nTerminal: the behavior works\n\nAtomic.\n\n## Evidence Binding: alpha/edge\nCheck: alpha/check\nClaim: alpha#works\nProposition: direct\nScope: unit\nQuantification: example\nOracle: direct\nContext: {\"platform\":\"linux\"}\nChallenge domain: [\"check-implementation\"]\nPolicy: credible\n\nReviewable.\n\n## Qualification: alpha/edge\nVerdict: qualified\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nQualified: 2026-08-22\nQualifier: owner\n\nQualified.\n\n## Challenger: mutation/search\nForm: mutation\nSearches for: an undetected change\nRequired scope: [\"binding\",\"check-implementation\"]\n\nSearches exact semantics.\n\n## Challenge Plan: alpha/plan\nChallenger: mutation/search\nSelect: qualification from binding alpha/edge\n\nTargets the qualification.\n",
+        "# Verification: alpha\n\n## Check: alpha/check\nMethod: invoke\nTerminal: the behavior works\n\nAtomic.\n\n## Evidence Binding: alpha/edge\nCheck: alpha/check\nCase: alpha#behavior/works\nMethod qualification: alpha/method\nProposition: direct\nContext: {\"platform\":\"linux\"}\nChallenge domain: [\"check-implementation\"]\nPolicy: credible\n\nReviewable.\n\n## Method Qualification: alpha/method\nCheck: alpha/check\nScope: unit\nQuantification: example\nOracle: direct\nContext: {\"platform\":\"linux\"}\nChallenge domain: [\"check-implementation\"]\nPolicy: credible\nVerdict: qualified\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nQualified: 2026-08-22\nQualifier: owner\n\nQualified.\n\n## Challenger: mutation/search\nForm: mutation\nSearches for: an undetected change\nRequired scope: [\"check-implementation\"]\n\nSearches exact semantics.\n\n## Challenge Plan: alpha/plan\nChallenger: mutation/search\nSelect: method-qualification from method-qualification alpha/method\n\nTargets the qualification.\n",
     )
     .unwrap();
     let standards = parse_standards(
@@ -192,26 +217,26 @@ fn challenge_model() -> Model {
         ..Default::default()
     };
     let expected = model
-        .expected_qualification_fingerprint(&model.verifications[0].bindings[0])
+        .expected_method_qualification_fingerprint(&model.verifications[0].method_qualifications[0])
         .unwrap();
-    model.verifications[0].qualifications[0].fingerprint = expected;
+    model.verifications[0].method_qualifications[0].fingerprint = expected;
     model
 }
 
 fn rich_challenge_model() -> Model {
     let alpha = parse_spec(
         "alpha/spec.md",
-        "# Spec: alpha\n\n## Requirement: behavior\nCriticality: standard\n\nThe system SHALL work.\n\n### Scenario: works\nWHEN invoked\nTHEN it works\n",
+        "# Spec: alpha\n\n## Claim: behavior\nCriticality: standard\n\nThe system SHALL work.\n\n### Case: works\nWHEN invoked\nTHEN it works\n",
     )
     .unwrap();
     let surface = parse_spec(
         "surface/spec.md",
-        "# Spec: surface\n\n## Requirement: routes\nCriticality: routine\n\nEvery route SHALL exist.\n\n### Scenario: tagged\nWHEN built\nTHEN it exists\n",
+        "# Spec: surface\n\n## Claim: routes\nCriticality: routine\n\nEvery route SHALL exist.\n\n### Case: tagged\nWHEN built\nTHEN it exists\n",
     )
     .unwrap();
     let verification = parse_verification(
         "alpha/verification.md",
-        "# Verification: alpha\n\n## Check: alpha/check\nMethod: invoke\nTerminal: the behavior works\n\nAtomic.\n\n## Evidence Binding: alpha/edge\nCheck: alpha/check\nClaim: alpha#works\nProposition: direct\nScope: unit\nQuantification: example\nOracle: direct\nContext: {\"platform\":\"linux\"}\nChallenge domain: [\"realization\",\"mechanism\"]\nPolicy: credible\n\nReviewable.\n\n## Qualification: alpha/edge\nVerdict: qualified\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nQualified: 2026-08-22\nQualifier: owner\n\nQualified.\n\n## Claim Judgment: alpha#works\nVerdict: accepted\nPolicy: credible\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nJudged: 2026-08-22\nJudge: owner\nBasis: the exact composition is accepted\nResidual risk: none identified\n\nAccepted.\n\n## Challenger: mutation/search\nForm: mutation\nSearches for: an undetected change\nRequired scope: [\"claim\"]\n\nSearches exact semantics.\n\n## Challenge Plan: alpha/plan\nChallenger: mutation/search\nSelect: claim-judgment from claim alpha#works\n\nTargets the total decision.\n",
+        "# Verification: alpha\n\n## Check: alpha/check\nMethod: invoke\nTerminal: the behavior works\n\nAtomic.\n\n## Evidence Binding: alpha/edge\nCheck: alpha/check\nCase: alpha#behavior/works\nMethod qualification: alpha/method\nProposition: direct\nContext: {\"platform\":\"linux\"}\nChallenge domain: [\"realization\",\"mechanism\"]\nPolicy: credible\n\nReviewable.\n\n## Method Qualification: alpha/method\nCheck: alpha/check\nScope: unit\nQuantification: example\nOracle: direct\nContext: {\"platform\":\"linux\"}\nChallenge domain: [\"realization\",\"mechanism\"]\nPolicy: credible\nVerdict: qualified\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nQualified: 2026-08-22\nQualifier: owner\n\nQualified.\n\n## Applicability Decision: alpha/edge\nVerdict: applicable\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nDecided: 2026-08-22\nDecider: owner\n\nApplicable.\n\n## Claim Judgment: alpha#behavior\nVerdict: accepted\nPolicy: credible\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nJudged: 2026-08-22\nJudge: owner\nBasis: the exact composition is accepted\nResidual risk: none identified\n\nAccepted.\n\n## Challenger: mutation/search\nForm: mutation\nSearches for: an undetected change\nRequired scope: [\"claim\"]\n\nSearches exact semantics.\n\n## Challenge Plan: alpha/plan\nChallenger: mutation/search\nSelect: claim-judgment from claim alpha#behavior\n\nTargets the total decision.\n",
     )
     .unwrap();
     let standards = parse_standards(
@@ -230,7 +255,7 @@ fn rich_challenge_model() -> Model {
         realizes: vec![
             Site {
                 spec: "alpha".into(),
-                scenario: "works".into(),
+                claim: "behavior".into(),
                 site: "alpha::works".into(),
                 file: "src/alpha.rs".into(),
                 lang: "rust".into(),
@@ -239,7 +264,7 @@ fn rich_challenge_model() -> Model {
             },
             Site {
                 spec: "surface".into(),
-                scenario: "tagged".into(),
+                claim: "routes".into(),
                 site: "GET /tagged".into(),
                 file: "app/tagged.ts".into(),
                 lang: "typescript".into(),
@@ -310,11 +335,12 @@ fn rich_challenge_model() -> Model {
             spec: "alpha".into(),
             path: "alpha/design.md".into(),
             entries: vec![DesignEntry {
-                target: Target::Scenario("works".into()),
+                target: Target::Claim("behavior".into()),
                 mechanisms: vec![
                     Mechanism {
                         id: "guard".into(),
                         kind: Enforcement::Guard,
+                        cases: vec!["works".into()],
                         binding: Some("artifact:guard".into()),
                         expected_unique: None,
                         expected_columns: vec!["key".into()],
@@ -324,6 +350,7 @@ fn rich_challenge_model() -> Model {
                     Mechanism {
                         id: "worker".into(),
                         kind: Enforcement::ChokePoint,
+                        cases: vec!["works".into()],
                         binding: None,
                         expected_unique: None,
                         expected_columns: Vec::new(),
@@ -364,17 +391,25 @@ fn rich_challenge_model() -> Model {
             realization_obligations: Vec::new(),
         },
     };
-    model.specs[0].requirements[0].over = Some("surface".into());
+    model.specs[0].claims[0].over = Some("surface".into());
     refresh_decisions(&mut model);
     model
 }
 
 fn refresh_decisions(model: &mut Model) {
-    for index in 0..model.verifications[0].bindings.len() {
+    for index in 0..model.verifications[0].method_qualifications.len() {
         let fingerprint = model
-            .expected_qualification_fingerprint(&model.verifications[0].bindings[index])
+            .expected_method_qualification_fingerprint(
+                &model.verifications[0].method_qualifications[index],
+            )
             .unwrap();
-        model.verifications[0].qualifications[index].fingerprint = fingerprint;
+        model.verifications[0].method_qualifications[index].fingerprint = fingerprint;
+    }
+    for index in 0..model.verifications[0].applicability_decisions.len() {
+        let fingerprint = model
+            .expected_applicability_fingerprint(&model.verifications[0].bindings[index])
+            .unwrap();
+        model.verifications[0].applicability_decisions[index].fingerprint = fingerprint;
     }
     for index in 0..model.verifications[0].claim_judgments.len() {
         let fingerprint = model
@@ -411,6 +446,7 @@ fn request(ids: &[&str], operation: RunOperation, capability: &str) -> PlanReque
             .map(|id| RequestedCheck {
                 id: (*id).into(),
                 capability: capability.into(),
+                cases: vec!["synthetic#works/works".into()],
                 units: vec![unit("whole")],
             })
             .collect(),
@@ -505,7 +541,8 @@ fn unknown_and_duplicate_model_checks_fail_closed() {
         path: "second/verification.md".into(),
         checks: vec![check("checks/alpha")],
         bindings: Vec::new(),
-        qualifications: Vec::new(),
+        method_qualifications: Vec::new(),
+        applicability_decisions: Vec::new(),
         claim_judgments: Vec::new(),
         challengers: Vec::new(),
         challenge_plans: Vec::new(),
@@ -670,8 +707,13 @@ fn exact_subject_context_units_time_and_operation_are_identity_bearing() {
 #[test]
 fn several_bindings_still_produce_one_check_and_no_challenges_or_qualification_gate() {
     let mut model = model(&["checks/alpha"]);
-    model.verifications[0].bindings = vec![binding("binding/one"), binding("binding/two")];
-    assert!(model.verifications[0].qualifications.is_empty());
+    let mut other_case = model.specs[0].claims[0].cases[0].clone();
+    other_case.id = "other".into();
+    model.specs[0].claims[0].cases.push(other_case);
+    let mut second = binding("binding/two");
+    second.case = "synthetic#works/other".into();
+    model.verifications[0].bindings.push(second);
+    assert!(model.verifications[0].method_qualifications.is_empty());
     let launch = plan(
         &model,
         &configuration(),
@@ -688,9 +730,16 @@ fn rejected_qualification_and_binding_context_mismatch_do_not_gate_planning() {
     let mut binding = binding("binding/one");
     binding.context.insert("platform".into(), "linux".into());
     model.verifications[0].bindings = vec![binding];
-    model.verifications[0].qualifications = vec![Qualification {
+    model.verifications[0].method_qualifications = vec![MethodQualification {
         id: "binding/one".into(),
-        verdict: QualificationVerdict::Rejected,
+        check: "checks/alpha".into(),
+        scope: model::Scope::Unit,
+        quantification: model::Quantification::Example,
+        oracle: model::Oracle::Direct,
+        context: BTreeMap::new(),
+        challenge_domain: Vec::new(),
+        policy: "credible".into(),
+        verdict: MethodQualificationVerdict::Rejected,
         fingerprint: fp('d'),
         qualified: "2026-08-21".into(),
         qualifier: "reviewer".into(),
@@ -873,6 +922,7 @@ fn canonical_launch_vector_matches_the_frozen_vector() {
             checks: vec![run::CheckSelection {
                 id: "demo/check".into(),
                 fingerprint: fp('6'),
+                cases: vec!["demo#works/works".into()],
                 implementations: vec![run::Implementation {
                     identity: "demo|rust-symbol|demo::check".into(),
                     source_fingerprint: fp('7'),
@@ -907,7 +957,7 @@ fn canonical_launch_vector_matches_the_frozen_vector() {
     };
     assert_eq!(
         launch_fingerprint(&launch),
-        "sha256:980dc9e544f41414e3a2735e84a6d9733aee85b2961899bb538f1f34c4347237"
+        "sha256:7043a3051227f7f36561e2076fd681f0567c745e1a0475df8983c8eabde866f6"
     );
 }
 
@@ -962,6 +1012,7 @@ fn challenge_only_and_mixed_plans_derive_exact_semantics_and_accountable_inputs(
     mixed.checks.push(RequestedCheck {
         id: "alpha/check".into(),
         capability: "demo/alpha".into(),
+        cases: vec!["alpha#behavior/works".into()],
         units: vec![unit("whole")],
     });
     let mixed = plan(&model, &config, &mixed).unwrap();
@@ -1031,7 +1082,7 @@ fn challenge_planning_fails_closed_on_caps_context_forms_and_empty_selection() {
     .any(|error| error.detail.contains("resolves no targets")));
 
     let mut stale = challenge_model();
-    stale.verifications[0].qualifications[0].fingerprint = fp('f');
+    stale.verifications[0].method_qualifications[0].fingerprint = fp('f');
     assert!(
         plan(&stale, &config, &challenge_request(RunOperation::Execute))
             .unwrap_err()
@@ -1057,16 +1108,18 @@ fn challenge_planning_fails_closed_on_caps_context_forms_and_empty_selection() {
 fn max_candidates_counts_the_resolved_plan_before_cross_plan_deduplication() {
     let mut model = challenge_model();
     model.verifications[0].challenge_plans[0].selectors =
-        vec![Selector::QualificationFromCheck("alpha/check".into())];
+        vec![Selector::MethodQualificationFromCheck("alpha/check".into())];
     let mut binding = model.verifications[0].bindings[0].clone();
     binding.id = "alpha/edge-two".into();
     model.verifications[0].bindings.push(binding);
-    let mut qualification = model.verifications[0].qualifications[0].clone();
+    let mut qualification = model.verifications[0].method_qualifications[0].clone();
     qualification.id = "alpha/edge-two".into();
     qualification.fingerprint = model
-        .expected_qualification_fingerprint(&model.verifications[0].bindings[1])
+        .expected_method_qualification_fingerprint(&qualification)
         .unwrap();
-    model.verifications[0].qualifications.push(qualification);
+    model.verifications[0]
+        .method_qualifications
+        .push(qualification);
     assert!(plan(
         &model,
         &configuration(),
@@ -1141,7 +1194,7 @@ fn challenge_planning_uses_complete_model_identity_and_required_form_union() {
     expanded.specs.push(
         parse_spec(
             "extra/spec.md",
-            "# Spec: extra\n\n## Requirement: behavior\nCriticality: routine\n\nThe system SHALL remain explicit.\n\n### Scenario: stable\nWHEN inspected\nTHEN it remains explicit\n",
+            "# Spec: extra\n\n## Claim: behavior\nCriticality: routine\n\nThe system SHALL remain explicit.\n\n### Case: stable\nWHEN inspected\nTHEN it remains explicit\n",
         )
         .unwrap(),
     );
@@ -1158,8 +1211,10 @@ fn challenge_planning_uses_complete_model_identity_and_required_form_union() {
     missing_form.decision_standards.as_mut().unwrap().policies[0]
         .required_challenges
         .push("destructive".into());
-    missing_form.verifications[0].qualifications[0].fingerprint = missing_form
-        .expected_qualification_fingerprint(&missing_form.verifications[0].bindings[0])
+    missing_form.verifications[0].method_qualifications[0].fingerprint = missing_form
+        .expected_method_qualification_fingerprint(
+            &missing_form.verifications[0].method_qualifications[0],
+        )
         .unwrap();
     let errors = plan(
         &missing_form,
@@ -1179,37 +1234,45 @@ fn challenge_planning_uses_complete_model_identity_and_required_form_union() {
 fn planner_executes_all_seven_selector_forms_through_current_decisions() {
     let cases = [
         (
-            Selector::QualificationFromBinding("alpha/edge".into()),
-            run::ChallengeTargetKind::Qualification,
+            Selector::ApplicabilityDecisionFromBinding("alpha/edge".into()),
+            run::ChallengeTargetKind::ApplicabilityDecision,
+            SemanticScopeKind::Binding,
         ),
         (
-            Selector::QualificationFromCheck("alpha/check".into()),
-            run::ChallengeTargetKind::Qualification,
+            Selector::MethodQualificationFromCheck("alpha/check".into()),
+            run::ChallengeTargetKind::MethodQualification,
+            SemanticScopeKind::Check,
         ),
         (
-            Selector::QualificationFromRealization("core|rust-item|alpha::works".into()),
-            run::ChallengeTargetKind::Qualification,
+            Selector::MethodQualificationFromRealization("core|rust-item|alpha::works".into()),
+            run::ChallengeTargetKind::MethodQualification,
+            SemanticScopeKind::Realization,
         ),
         (
-            Selector::QualificationFromMechanism("alpha#guard".into()),
-            run::ChallengeTargetKind::Qualification,
+            Selector::MethodQualificationFromMechanism("alpha#guard".into()),
+            run::ChallengeTargetKind::MethodQualification,
+            SemanticScopeKind::Mechanism,
         ),
         (
-            Selector::ClaimJudgmentFromClaim("alpha#works".into()),
+            Selector::ClaimJudgmentFromClaim("alpha#behavior".into()),
             run::ChallengeTargetKind::ClaimJudgment,
+            SemanticScopeKind::Claim,
         ),
         (
             Selector::ClaimJudgmentFromRealization("core|rust-item|alpha::works".into()),
             run::ChallengeTargetKind::ClaimJudgment,
+            SemanticScopeKind::Realization,
         ),
         (
             Selector::ClaimJudgmentFromMechanism("alpha#guard".into()),
             run::ChallengeTargetKind::ClaimJudgment,
+            SemanticScopeKind::Mechanism,
         ),
     ];
-    for (selector, expected_kind) in cases {
+    for (selector, expected_kind, required_scope) in cases {
         let mut model = rich_challenge_model();
         model.verifications[0].challenge_plans[0].selectors = vec![selector];
+        model.verifications[0].challengers[0].required_scope = vec![required_scope];
         let launch = plan(
             &model,
             &configuration(),
@@ -1267,15 +1330,21 @@ fn scheduled_lane_and_every_launch_input_locator_variant_are_derived() {
 fn add_second_binding(model: &mut Model, context: &str, stale: bool) {
     let mut binding = model.verifications[0].bindings[0].clone();
     binding.id = "alpha/edge-two".into();
+    binding.method_qualification = "alpha/method-two".into();
     binding.context.insert("platform".into(), context.into());
     model.verifications[0].bindings.push(binding);
-    let mut qualification = model.verifications[0].qualifications[0].clone();
-    qualification.id = "alpha/edge-two".into();
-    model.verifications[0].qualifications.push(qualification);
+    let mut qualification = model.verifications[0].method_qualifications[0].clone();
+    qualification.id = "alpha/method-two".into();
+    qualification
+        .context
+        .insert("platform".into(), context.into());
+    model.verifications[0]
+        .method_qualifications
+        .push(qualification);
     let fingerprint = model
-        .expected_qualification_fingerprint(&model.verifications[0].bindings[1])
+        .expected_method_qualification_fingerprint(&model.verifications[0].method_qualifications[1])
         .unwrap();
-    model.verifications[0].qualifications[1].fingerprint =
+    model.verifications[0].method_qualifications[1].fingerprint =
         if stale { fp('f') } else { fingerprint };
 }
 
@@ -1283,18 +1352,23 @@ fn add_second_binding(model: &mut Model, context: &str, stale: bool) {
 fn multi_target_context_and_adverse_siblings_fail_before_any_launch() {
     let mut contexts = rich_challenge_model();
     contexts.verifications[0].challenge_plans[0].selectors =
-        vec![Selector::QualificationFromCheck("alpha/check".into())];
+        vec![Selector::MethodQualificationFromCheck("alpha/check".into())];
+    contexts.verifications[0].challengers[0].required_scope = vec![SemanticScopeKind::Check];
     add_second_binding(&mut contexts, "windows", false);
     let mut request = challenge_request(RunOperation::Execute);
     request.challenges[0].max_candidates = 2;
-    assert!(plan(&contexts, &configuration(), &request)
-        .unwrap_err()
-        .iter()
-        .any(|error| error.detail.contains("context must equal")));
+    let context_errors = plan(&contexts, &configuration(), &request).unwrap_err();
+    assert!(
+        context_errors
+            .iter()
+            .any(|error| error.detail.contains("context must equal")),
+        "{context_errors:?}"
+    );
 
     let mut adverse = rich_challenge_model();
     adverse.verifications[0].challenge_plans[0].selectors =
-        vec![Selector::QualificationFromCheck("alpha/check".into())];
+        vec![Selector::MethodQualificationFromCheck("alpha/check".into())];
+    adverse.verifications[0].challengers[0].required_scope = vec![SemanticScopeKind::Check];
     add_second_binding(&mut adverse, "linux", true);
     let cap_errors = plan(
         &adverse,
@@ -1326,6 +1400,7 @@ fn mixed_check_challenge_routes_enforce_one_adapter_and_support_import() {
     cross.checks.push(RequestedCheck {
         id: "alpha/check".into(),
         capability: "demo/alpha".into(),
+        cases: vec!["alpha#behavior/works".into()],
         units: vec![unit("whole")],
     });
     cross.challenges[0].capability = "other/challenge".into();
@@ -1338,6 +1413,7 @@ fn mixed_check_challenge_routes_enforce_one_adapter_and_support_import() {
     import.checks.push(RequestedCheck {
         id: "alpha/check".into(),
         capability: "demo/reports".into(),
+        cases: vec!["alpha#behavior/works".into()],
         units: vec![unit("whole")],
     });
     let launch = plan(&model, &configuration(), &import).unwrap();
@@ -1400,7 +1476,7 @@ fn two_required_forms_use_the_fixed_requested_plan_union() {
 #[test]
 fn selector_order_is_stable_and_relocation_changes_only_launch_accounting() {
     let selectors = vec![
-        Selector::ClaimJudgmentFromClaim("alpha#works".into()),
+        Selector::ClaimJudgmentFromClaim("alpha#behavior".into()),
         Selector::ClaimJudgmentFromRealization("core|rust-item|alpha::works".into()),
         Selector::ClaimJudgmentFromMechanism("alpha#guard".into()),
     ];
@@ -1441,11 +1517,9 @@ fn binding(id: &str) -> EvidenceBinding {
     EvidenceBinding {
         id: id.into(),
         check: "checks/alpha".into(),
-        claim: format!("claims/example#{}", id.rsplit('/').next().unwrap()),
+        case: "synthetic#works/works".into(),
+        method_qualification: format!("qualifications/{}", id.rsplit('/').next().unwrap()),
         proposition: "the Check bears on the Claim".into(),
-        scope: model::Scope::Unit,
-        quantification: model::Quantification::Example,
-        oracle: model::Oracle::Direct,
         context: BTreeMap::new(),
         challenge_domain: Vec::new(),
         policy: "routine".into(),

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Maintain Azimuth installation"
+  short_description: "Initialize and update repository Azimuth tooling"
+  default_prompt: "Use $azimuth-maintain to initialize or update this repository's Azimuth installation."

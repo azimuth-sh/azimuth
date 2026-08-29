@@ -1,34 +1,34 @@
 # Spec: polyglot/identity
 
-## Requirement: service-identifies-implementation-language
+## Claim: service-identifies-implementation-language
 Criticality: routine
 
 Each reference service SHALL identify its implementation language through its identity capability.
 
-### Scenario: go-identifies
+### Case: go-identifies
 WHEN the Go identity capability is invoked
 THEN it returns `go`
 
-### Scenario: java-identifies
+### Case: java-identifies
 WHEN the Java identity capability is invoked
 THEN it returns `java`
 
-### Scenario: kotlin-identifies
+### Case: kotlin-identifies
 WHEN the Kotlin identity capability is invoked
 THEN it returns `kotlin`
 
-### Scenario: python-identifies
+### Case: python-identifies
 WHEN the Python identity capability is invoked
 THEN it returns `python`
 
-### Scenario: javascript-identifies
+### Case: javascript-identifies
 WHEN the JavaScript identity capability is invoked
 THEN it returns `javascript`
 
-### Scenario: rust-identifies
+### Case: rust-identifies
 WHEN the Rust identity capability is invoked
 THEN it returns `rust`
 
-### Scenario: cpp-identifies
+### Case: cpp-identifies
 WHEN the C++ identity capability is invoked
 THEN it returns `cpp`

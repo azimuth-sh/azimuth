@@ -1,12 +1,10 @@
 use azimuth::design::{Design, DesignEntry, Enforcement, Mechanism, Target};
 use azimuth::fingerprint::{
     binding_fingerprint, canonical_json, canonical_sha256, check_fingerprint, context_fingerprint,
-    policy_fingerprint, qualification_fingerprint, schedule_fingerprint,
+    method_qualification_fingerprint, policy_fingerprint, schedule_fingerprint,
 };
 use azimuth::json;
-use azimuth::model::{
-    Artifact, CheckImplementation, Model, Oracle, Quantification, Scope, Site, SourceIdentity,
-};
+use azimuth::model::{Artifact, CheckImplementation, Model, Site, SourceIdentity};
 use azimuth::spec::parse_spec;
 use azimuth::verification::{
     context_json, parse_selector, parse_standards, parse_verification, ChallengeDomain,
@@ -25,18 +23,23 @@ The methods describe one atomic terminal result.
 
 ## Evidence Binding: payments/recovery-edge
 Check: payments/recovery-under-loss
-Claim: payments/recovery#accepted-write-replayed
+Case: payments/recovery#recover/accepted-write-replayed
+Method qualification: payments/recovery-method
 Proposition: replay exercises the recovery predicate
-Scope: component
-Quantification: example
-Oracle: relational
 Context: {"storage":"postgres-17","platform":"linux-x86_64"}
 Challenge domain: ["oracle","realization","mechanism","context","check-implementation"]
 Policy: credible-executable
 
 The edge is narrower than the whole suite.
 
-## Qualification: payments/recovery-edge
+## Method Qualification: payments/recovery-method
+Check: payments/recovery-under-loss
+Scope: component
+Quantification: example
+Oracle: relational
+Context: {"storage":"postgres-17","platform":"linux-x86_64"}
+Challenge domain: ["oracle","context","check-implementation"]
+Policy: credible-executable
 Verdict: qualified
 Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 Qualified: 2026-08-21
@@ -44,7 +47,15 @@ Qualifier: evidence-owner@example
 
 The implementation and oracle make the edge credible.
 
-## Claim Judgment: payments/recovery#accepted-write-replayed
+## Applicability Decision: payments/recovery-edge
+Verdict: applicable
+Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+Decided: 2026-08-21
+Decider: evidence-owner@example
+
+The qualified method applies to this exact edge.
+
+## Claim Judgment: payments/recovery#recover
 Verdict: accepted
 Policy: credible-executable
 Fingerprint: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -64,11 +75,11 @@ Surviving changes object to credibility.
 
 ## Challenge Plan: payments/recovery-credibility
 Challenger: mutation/implementation-perturbation
-Select: qualification from binding payments/recovery-edge
-Select: qualification from check payments/recovery-under-loss
-Select: qualification from realization payments|rust-item|recovery::replay
-Select: qualification from mechanism payments/recovery#transactional-outbox
-Select: claim-judgment from claim payments/recovery#accepted-write-replayed
+Select: applicability-decision from binding payments/recovery-edge
+Select: method-qualification from check payments/recovery-under-loss
+Select: method-qualification from realization payments|rust-item|recovery::replay
+Select: method-qualification from mechanism payments/recovery#transactional-outbox
+Select: claim-judgment from claim payments/recovery#recover
 Select: claim-judgment from realization payments|rust-item|recovery::replay
 Select: claim-judgment from mechanism payments/recovery#transactional-outbox
 
@@ -86,10 +97,10 @@ Scheduled challenge: oracle-perturbation\n\n\
 The expensive objection remains scheduled.\n";
 
 const SPEC: &str = "# Spec: payments/recovery\n\n\
-## Requirement: recover\n\
+## Claim: recover\n\
 Criticality: standard\n\n\
 The system SHALL replay accepted writes.\n\n\
-### Scenario: accepted-write-replayed\n\
+### Case: accepted-write-replayed\n\
 WHEN the broker recovers\n\
 THEN the accepted write is replayed exactly once\n";
 
@@ -98,7 +109,7 @@ fn judgment_model() -> Model {
         specs: vec![parse_spec("spec.md", SPEC).unwrap()],
         realizes: vec![Site {
             spec: "payments/recovery".into(),
-            scenario: "accepted-write-replayed".into(),
+            claim: "recover".into(),
             site: "recovery::replay".into(),
             file: "src/recovery.rs".into(),
             lang: "rust".into(),
@@ -203,7 +214,7 @@ fn rejects_pre_f_policy_grammar_and_requires_one_current_schedule() {
 #[test]
 fn rejects_invalid_claim_judgments_and_required_scope() {
     let routine_target = DECLARATIONS.replace(
-        "## Claim Judgment: payments/recovery#accepted-write-replayed",
+        "## Claim Judgment: payments/recovery#recover",
         "## Claim Judgment: not-a-claim",
     );
     assert!(parse_verification("verification.md", &routine_target).is_err());
@@ -228,7 +239,7 @@ fn missing_judgments_remain_observable_while_authored_cardinality_is_strict() {
         missing
             .claims()
             .filter(|claim| matches!(
-                claim.requirement.criticality,
+                claim.claim.criticality,
                 Some(azimuth::model::Criticality::Standard | azimuth::model::Criticality::Critical)
             ))
             .count(),
@@ -248,7 +259,7 @@ fn missing_judgments_remain_observable_while_authored_cardinality_is_strict() {
     assert!(duplicate_messages.contains("already declared"));
 
     let mut routine = judgment_model();
-    routine.specs[0].requirements[0].criticality = Some(azimuth::model::Criticality::Routine);
+    routine.specs[0].claims[0].criticality = Some(azimuth::model::Criticality::Routine);
     assert!(routine
         .verification_declaration_issues()
         .iter()
@@ -306,7 +317,7 @@ fn rejects_calendar_impossible_qualification_dates() {
     let errors = parse_verification("verification.md", &invalid).unwrap_err();
     assert!(errors
         .iter()
-        .any(|error| error.message.contains("invalid Qualification date")));
+        .any(|error| error.message.contains("invalid Method Qualification date")));
 
     let leap = DECLARATIONS.replace("Qualified: 2026-08-21", "Qualified: 2028-02-29");
     assert!(parse_verification("verification.md", &leap).is_ok());
@@ -330,7 +341,7 @@ fn realization_selectors_reject_locator_and_pattern_shaped_identities() {
         "payments|rust-item|recovery::*",
     ] {
         let mut errors = Vec::new();
-        let selector = format!("qualification from realization {identity}");
+        let selector = format!("method-qualification from realization {identity}");
         parse_selector("verification.md", 1, &selector, &mut errors);
         assert!(!errors.is_empty(), "accepted `{identity}`");
     }
@@ -344,12 +355,14 @@ fn realization_selectors_reject_locator_and_pattern_shaped_identities() {
         "payments|next-route|GET /payments/[id]",
     ] {
         let mut errors = Vec::new();
-        let selector = format!("qualification from realization {identity}");
+        let selector = format!("method-qualification from realization {identity}");
         let parsed = parse_selector("verification.md", 1, &selector, &mut errors);
         assert!(errors.is_empty(), "rejected `{identity}`: {errors:?}");
         assert_eq!(
             parsed,
-            Some(Selector::QualificationFromRealization(identity.to_string()))
+            Some(Selector::MethodQualificationFromRealization(
+                identity.to_string()
+            ))
         );
     }
 }
@@ -358,7 +371,7 @@ fn realization_selectors_reject_locator_and_pattern_shaped_identities() {
 fn context_fingerprint_uses_a_versioned_canonical_envelope() {
     let declarations = parse_verification("verification.md", DECLARATIONS).unwrap();
     let context = &declarations.bindings[0].context;
-    let digest = context_fingerprint(&declarations.bindings[0]);
+    let digest = context_fingerprint(context);
 
     assert_eq!(
         canonical_json(&context_json(context)),
@@ -435,11 +448,9 @@ fn evidence_binding_matches_the_frozen_vector() {
     let binding = EvidenceBinding {
         id: "demo/binding".into(),
         check: "demo/check".into(),
-        claim: "demo/spec#case".into(),
+        case: "demo/spec#claim/case".into(),
+        method_qualification: "demo/method".into(),
         proposition: "the Check directly exercises the case".into(),
-        scope: Scope::Component,
-        quantification: Quantification::Example,
-        oracle: Oracle::Direct,
         context: BTreeMap::new(),
         challenge_domain: vec![ChallengeDomain::Realization],
         policy: "credible-executable".into(),
@@ -452,8 +463,9 @@ fn evidence_binding_matches_the_frozen_vector() {
             &binding,
             "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
         ),
-        "sha256:58dc690f4b9ec8fab6184d542154e88104df35448bb28d3e38cb2ae59fd627e7"
+        "sha256:e52cef0521968b10ed43510ac002a1940397fee3eb9101c4a92115d53d9f5ef7"
     );
 }
 
@@ -521,7 +533,15 @@ fn fingerprints_stale_only_for_their_semantic_inputs() {
     assert_eq!(check_digest, check_fingerprint(check, &[moved]));
 
     let policy_digest = policy_fingerprint(&standards.policies[0]);
-    let binding_digest = binding_fingerprint(binding, "sha256:claim", &policy_digest);
+    let qualification = &declarations.method_qualifications[0];
+    let qualification_digest =
+        method_qualification_fingerprint(qualification, &check_digest, &policy_digest);
+    let binding_digest = binding_fingerprint(
+        binding,
+        "sha256:case",
+        &qualification_digest,
+        &policy_digest,
+    );
     let mut reordered_domain = binding.clone();
     reordered_domain.challenge_domain.reverse();
     reordered_domain
@@ -529,26 +549,31 @@ fn fingerprints_stale_only_for_their_semantic_inputs() {
         .push(ChallengeDomain::Mechanism);
     assert_eq!(
         binding_digest,
-        binding_fingerprint(&reordered_domain, "sha256:claim", &policy_digest)
+        binding_fingerprint(
+            &reordered_domain,
+            "sha256:case",
+            &qualification_digest,
+            &policy_digest,
+        )
     );
-    let context_digest = context_fingerprint(binding);
-    let qualification = qualification_fingerprint(&check_digest, &binding_digest, &context_digest);
+    let context_digest = context_fingerprint(&qualification.context);
     let mut context_changed = binding.clone();
     context_changed
         .context
         .insert("platform".into(), "macos".into());
-    assert_eq!(
-        binding_digest,
-        binding_fingerprint(&context_changed, "sha256:claim", &policy_digest)
-    );
-    assert_ne!(context_digest, context_fingerprint(&context_changed));
     assert_ne!(
-        qualification,
-        qualification_fingerprint(
-            &check_digest,
-            &binding_digest,
-            &context_fingerprint(&context_changed)
+        binding_digest,
+        binding_fingerprint(
+            &context_changed,
+            "sha256:case",
+            &qualification_digest,
+            &policy_digest,
         )
+    );
+    assert_eq!(context_digest, context_fingerprint(&qualification.context));
+    assert_eq!(
+        qualification_digest,
+        method_qualification_fingerprint(qualification, &check_digest, &policy_digest)
     );
 }
 
@@ -603,7 +628,7 @@ fn claim_judgment_identity_uses_recomputed_total_composition() {
 
     model.check_implementations[0].source_fingerprint =
         "sha256:2222222222222222222222222222222222222222222222222222222222222222".into();
-    model.verifications[0].qualifications[0].fingerprint =
+    model.verifications[0].method_qualifications[0].fingerprint =
         "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".into();
     assert_eq!(
         original,
@@ -611,8 +636,8 @@ fn claim_judgment_identity_uses_recomputed_total_composition() {
             .expected_claim_judgment_fingerprint(&judgment)
             .unwrap()
     );
-    model.verifications[0].qualifications[0].verdict =
-        azimuth::verification::QualificationVerdict::Rejected;
+    model.verifications[0].method_qualifications[0].verdict =
+        azimuth::verification::MethodQualificationVerdict::Rejected;
     assert_ne!(
         original,
         model
@@ -624,8 +649,8 @@ fn claim_judgment_identity_uses_recomputed_total_composition() {
     accountable_only.judged = "2026-08-22".into();
     accountable_only.judge = "another-owner".into();
     accountable_only.rationale = "Different explanatory prose.".into();
-    model.verifications[0].qualifications[0].verdict =
-        azimuth::verification::QualificationVerdict::Qualified;
+    model.verifications[0].method_qualifications[0].verdict =
+        azimuth::verification::MethodQualificationVerdict::Qualified;
     assert_eq!(
         original,
         model
@@ -640,7 +665,7 @@ fn claim_judgment_requires_a_realization_in_every_obligated_area() {
     let judgment = model.claim_judgments().next().unwrap().clone();
     model.workspace.realization_obligations = vec![azimuth::workspace::RealizationObligation {
         spec: "payments/recovery".into(),
-        claim: "accepted-write-replayed".into(),
+        claim: "recover".into(),
         areas: vec!["payments".into(), "secondary".into()],
     }];
     assert!(model.claim_judgment_preimage(&judgment).is_none());
@@ -675,10 +700,11 @@ fn claim_judgment_collects_every_matching_design_entry() {
         path: "design.md".into(),
         entries: vec![
             DesignEntry {
-                target: Target::Scenario("accepted-write-replayed".into()),
+                target: Target::Claim("recover".into()),
                 mechanisms: vec![Mechanism {
                     id: "first-guard".into(),
                     kind: Enforcement::Guard,
+                    cases: vec!["accepted-write-replayed".into()],
                     binding: Some("first-artifact".into()),
                     expected_unique: None,
                     expected_columns: Vec::new(),
@@ -688,10 +714,11 @@ fn claim_judgment_collects_every_matching_design_entry() {
                 line: 2,
             },
             DesignEntry {
-                target: Target::Scenario("accepted-write-replayed".into()),
+                target: Target::Claim("recover".into()),
                 mechanisms: vec![Mechanism {
                     id: "second-guard".into(),
                     kind: Enforcement::Guard,
+                    cases: vec!["accepted-write-replayed".into()],
                     binding: Some("second-artifact".into()),
                     expected_unique: None,
                     expected_columns: Vec::new(),
@@ -742,8 +769,8 @@ fn claim_judgment_collects_every_matching_design_entry() {
 #[test]
 fn surface_contributions_use_the_authoritative_tuple_order() {
     let mut model = judgment_model();
-    model.specs[0].requirements[0].domain = azimuth::model::Domain::Sites;
-    model.specs[0].requirements[0].over = Some("payments/recovery".into());
+    model.specs[0].claims[0].domain = azimuth::model::Domain::Sites;
+    model.specs[0].claims[0].over = Some("payments/recovery".into());
     model.workspace.surfaces = vec![azimuth::workspace::Surface {
         id: "payments/recovery".into(),
         contributions: vec![
@@ -813,15 +840,16 @@ fn surface_contributions_use_the_authoritative_tuple_order() {
     );
     assert_eq!(
         fingerprint,
-        "sha256:30a4bc808115cde263c84f20ab34af5910f6fcddf09cb9ec52f7361f88e1b659"
+        "sha256:56adf7a21ea12c7f469498fb9e4753982d1bfeef844c695606d47265bf0b5900"
     );
 }
 
 #[test]
-fn model_enforces_project_cardinality_and_exports_only_version_two_fields() {
+fn model_enforces_project_cardinality_and_exports_only_version_three_fields() {
     let mut second = parse_verification("other/verification.md", DECLARATIONS).unwrap();
     second.bindings.clear();
-    second.qualifications.clear();
+    second.method_qualifications.clear();
+    second.applicability_decisions.clear();
     second.challengers.clear();
     second.challenge_plans.clear();
     let mut model = Model {
@@ -842,7 +870,7 @@ fn model_enforces_project_cardinality_and_exports_only_version_two_fields() {
     let exported = model.to_json(&[]);
     assert_eq!(
         exported.get("version").and_then(|value| value.as_num()),
-        Some(2.0)
+        Some(3.0)
     );
     for key in ["covers", "mechanism_covers", "observations"] {
         assert!(exported.get(key).is_none(), "retired export key `{key}`");
@@ -850,7 +878,8 @@ fn model_enforces_project_cardinality_and_exports_only_version_two_fields() {
     for key in [
         "checks",
         "evidence_bindings",
-        "qualifications",
+        "method_qualifications",
+        "applicability_decisions",
         "claim_judgments",
         "decision_policies",
         "challenge_schedule",

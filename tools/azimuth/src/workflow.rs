@@ -1,15 +1,12 @@
 //! Authoring and work-package operations that do not need the accepted assurance model.
 //!
-//! These operations deliberately stop at filesystem artifacts and deterministic instructions.
+//! These operations deliberately stop at filesystem artifacts and deterministic briefs.
 //! Product edits and agent dispatch remain agent-tier actions because the core cannot make either
 //! portable across repositories or coding-agent runtimes.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-
-const DEFAULT_STANDARDS: &str = "# Decision policies and Challenge schedule\n\nDecision Policies name the open Challenge forms that must be searched before an Evidence\nBinding or Claim Judgment may be accepted. The separate schedule assigns every required form\nto one execution lane. Neither construct runs Challengers or defines provider commands.\n\nReplace these starting declarations with the policies and lanes this project actually needs.\nRoutine Claims use no policy, so a project that has not raised criticality may delete the\nDecision Policy block and keep one lane entry.\n\n## Decision Policy: credible-executable\nRequired challenge: implementation-perturbation\n\nUse for executable Check bindings whose credibility depends on the subject implementation.\n\n## Challenge Schedule: current\nGate challenge: implementation-perturbation\n\nThis project searches implementation perturbation in the gate lane. Every form required by a\nDecision Policy, and every form declared by a current Challenger, occurs in exactly one lane.\n";
-const DEFAULT_WORKSPACE: &str = "{\n  \"format\": \"azimuth-workspace\",\n  \"version\": 1,\n  \"areas\": [],\n  \"surfaces\": [],\n  \"realization_obligations\": []\n}\n";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ChangeSummary {
@@ -72,13 +69,13 @@ pub fn initialize(root: &Path) -> Result<Vec<PathBuf>, String> {
     }
     let standards = root.join("standards/verification.md");
     if !standards.exists() {
-        fs::write(&standards, DEFAULT_STANDARDS)
+        fs::write(&standards, crate::resources::DEFAULT_STANDARDS)
             .map_err(|error| format!("cannot write {}: {error}", standards.display()))?;
         created.push(standards);
     }
     let workspace = root.join("workspace.json");
     if !workspace.exists() {
-        fs::write(&workspace, DEFAULT_WORKSPACE)
+        fs::write(&workspace, crate::resources::DEFAULT_WORKSPACE)
             .map_err(|error| format!("cannot write {}: {error}", workspace.display()))?;
         created.push(workspace);
     }
@@ -98,14 +95,12 @@ pub fn create_change(changes: &Path, id: &str, title: &str) -> Result<PathBuf, S
         .map_err(|error| format!("cannot create {}: {error}", root.display()))?;
     fs::write(
         root.join("proposal.md"),
-        format!(
-            "# Change: {id}\n\nStatus: proposed\n\n## Problem\n\n## Outcome\n\n## Scope\n\n## Affected claims\n\n## Completion conditions\n\n"
-        ),
+        render_template(crate::resources::PROPOSAL_TEMPLATE, id, title),
     )
     .map_err(|error| format!("cannot write proposal.md: {error}"))?;
     fs::write(
         root.join("plan.md"),
-        format!("# Plan: {title}\n\n- [ ] Add the accepted intent delta.\n- [ ] Implement and verify the change.\n- [ ] Record the outcome and complete the change.\n"),
+        render_template(crate::resources::PLAN_TEMPLATE, id, title),
     )
     .map_err(|error| format!("cannot write plan.md: {error}"))?;
     Ok(root)
@@ -124,12 +119,149 @@ pub fn create_exploration(explorations: &Path, id: &str, title: &str) -> Result<
         .map_err(|error| format!("cannot create {}: {error}", root.display()))?;
     fs::write(
         root.join("exploration.md"),
-        format!(
-            "# Exploration: {title}\n\nId: {id}\nStatus: exploring\n\n## Objective\n\n## Boundaries\n\n## Existing context\n\n## Findings\n\n## Decisions\n\n## Open questions\n\n## Result\n\n"
-        ),
+        render_template(crate::resources::EXPLORATION_TEMPLATE, id, title),
     )
     .map_err(|error| format!("cannot write exploration.md: {error}"))?;
     Ok(root)
+}
+
+fn render_template(template: &str, id: &str, title: &str) -> String {
+    template.replace("{{id}}", id).replace("{{title}}", title)
+}
+
+pub fn archive_exploration(explorations: &Path, id: &str, date: &str) -> Result<PathBuf, String> {
+    validate_id(id)?;
+    validate_archive_date(date)?;
+
+    let source = explorations.join(id);
+    let source_metadata = fs::symlink_metadata(&source).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            format!(
+                "active exploration `{id}` was not found at {}",
+                source.display()
+            )
+        } else {
+            format!("cannot inspect {}: {error}", source.display())
+        }
+    })?;
+    if !source_metadata.file_type().is_dir() {
+        return Err(format!(
+            "active exploration `{id}` is not a directory at {}",
+            source.display()
+        ));
+    }
+
+    let account = source.join("exploration.md");
+    let account_source = fs::read_to_string(&account)
+        .map_err(|error| format!("cannot read {}: {error}", account.display()))?;
+    require_approved_exploration(&account, &account_source)?;
+
+    let archive = explorations.join("archive");
+    let destination = archive.join(format!("{date}-{id}"));
+    match fs::symlink_metadata(&destination) {
+        Ok(_) => {
+            return Err(format!(
+                "exploration archive destination {} already exists",
+                destination.display()
+            ))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(format!(
+                "cannot inspect exploration archive destination {}: {error}",
+                destination.display()
+            ))
+        }
+    }
+    fs::create_dir_all(&archive)
+        .map_err(|error| format!("cannot create {}: {error}", archive.display()))?;
+    fs::rename(&source, &destination).map_err(|error| {
+        format!(
+            "cannot archive {} as {}: {error}",
+            source.display(),
+            destination.display()
+        )
+    })?;
+    Ok(destination)
+}
+
+fn require_approved_exploration(path: &Path, source: &str) -> Result<(), String> {
+    let mut status = None;
+    for (index, line) in source.lines().enumerate() {
+        let line_number = index + 1;
+        let trimmed = line.trim();
+        if trimmed.starts_with("## ") {
+            break;
+        }
+        if let Some(value) = trimmed.strip_prefix("Status:") {
+            if let Some((_, first_line)) = status {
+                return Err(format!(
+                    "{}:{line_number}: duplicate Status field; first declared at line {first_line}",
+                    path.display()
+                ));
+            }
+            status = Some((value.trim(), line_number));
+        } else if trimmed == "Status" || trimmed.starts_with("Status ") {
+            return Err(format!(
+                "{}:{line_number}: malformed Status field; expected `Status: approved`",
+                path.display()
+            ));
+        }
+    }
+
+    let Some((value, line)) = status else {
+        return Err(format!(
+            "{}: missing Status field before the first section; expected `Status: approved`",
+            path.display()
+        ));
+    };
+    if value != "approved" {
+        return Err(format!(
+            "{}:{line}: exploration status is `{value}`; expected `approved` before archival",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn validate_archive_date(value: &str) -> Result<(), String> {
+    let bytes = value.as_bytes();
+    if bytes.len() != 10
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || !bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| index == 4 || index == 7 || byte.is_ascii_digit())
+    {
+        return Err(format!(
+            "invalid exploration archive date `{value}`; expected YYYY-MM-DD"
+        ));
+    }
+
+    let year = value[0..4]
+        .parse::<u16>()
+        .map_err(|_| format!("invalid exploration archive date `{value}`; expected YYYY-MM-DD"))?;
+    let month = value[5..7]
+        .parse::<u8>()
+        .map_err(|_| format!("invalid exploration archive date `{value}`; expected YYYY-MM-DD"))?;
+    let day = value[8..10]
+        .parse::<u8>()
+        .map_err(|_| format!("invalid exploration archive date `{value}`; expected YYYY-MM-DD"))?;
+    let leap_year = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap_year => 29,
+        2 => 28,
+        _ => 0,
+    };
+    if year == 0 || day == 0 || day > days {
+        return Err(format!(
+            "invalid exploration archive date `{value}`; expected a real Gregorian date in YYYY-MM-DD form"
+        ));
+    }
+    Ok(())
 }
 
 pub fn list_changes(changes: &Path) -> Result<Vec<ChangeSummary>, String> {
@@ -456,7 +588,7 @@ pub fn eligible_packages(packages: &[WorkPackage]) -> Vec<&WorkPackage> {
         .collect()
 }
 
-pub fn package_instructions(root: &Path, package: &WorkPackage) -> String {
+pub fn package_brief(root: &Path, package: &WorkPackage) -> String {
     format!(
         "Implement Azimuth work package `{}` for change `{}`.\n\nObjective: {}\nOwned paths: {}\nEvidence: {}\n\nRead proposal.md, design.md, verification.md and plan.md when present. Do not edit outside the owned paths. Run the package evidence and report changed files, commands and residuals to the coordinator. Do not finalize or archive the change.\n",
         package.id,
@@ -581,7 +713,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["service"]
         );
-        assert!(package_instructions(&root, eligible[0]).contains("Do not edit outside"));
+        assert!(package_brief(&root, eligible[0]).contains("Do not edit outside"));
         fs::remove_dir_all(root).unwrap();
     }
 

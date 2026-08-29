@@ -23,7 +23,7 @@ public final class MainTest {
                 package fixture;
                 import sh.azimuth.Azimuth;
                 public final class Identity {
-                    @Azimuth.Realizes(spec="polyglot/identity", scenario="java-identifies")
+                    @Azimuth.Realizes(spec="polyglot/identity", claim="java-identifies")
                     public static String identity() { return "java"; }
                     @Azimuth.ImplementsCheck("polyglot/java-identity")
                     public static void identityTest() {}

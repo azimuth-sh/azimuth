@@ -1,6 +1,6 @@
 ---
 name: azimuth-explore
-description: Research and shape an uncertain initiative through strict one-question-at-a-time deliberation before creating Azimuth changes. Use for a new domain or module, a substantial refactor, curriculum or content design, or any effort likely to span several changes; research discoverable facts, pressure-test user-owned decisions, and persist only confirmed shared understanding under azimuth/explorations/.
+description: Research, approve and explicitly archive an uncertain initiative through strict one-question-at-a-time deliberation before creating Azimuth changes. Use for a new domain or module, a substantial refactor, curriculum or content design, any effort likely to span several changes, or a later request to archive an approved exploration; research discoverable facts, pressure-test user-owned decisions, persist only confirmed shared understanding, and keep approval separate from archival.
 ---
 
 # Explore an initiative
@@ -43,7 +43,7 @@ Keep epistemic roles explicit:
 6. Audit the material decisions, then present the resulting direction in sections. Ask for approval after each section and revise it before continuing.
 7. After every section is approved, ask explicitly whether shared understanding has been reached and whether the exploration may be persisted.
 8. Only after confirmation, form a concise stable topic id and run `azimuth explore create <id> --title <title>` when no package exists. Write the creation date as `Created: YYYY-MM-DD` in the account rather than embedding it in the active id. Write the approved account, self-review it, then ask the user to review the actual file.
-9. Correct requested issues and repeat the file-review gate. After approval, stop and offer explicit next steps without choosing one for the user.
+9. Correct requested issues and repeat the file-review gate. After the user approves the actual file, change `Status: exploring` to `Status: approved`. This records approval of the non-normative exploration only and never authorizes a candidate change. Treat this status-only transition as recording the completed review rather than reopening the file-review gate. Then stop and offer explicit next steps without choosing one for the user.
 
 ## Pressure-test decisions
 
@@ -89,9 +89,17 @@ Present only one coherent section at a time and ask whether it is correct. Reque
 - Keep proposed target behaviour out of `azimuth/model/`; that directory describes current truth.
 - Do not put a multi-change exploration inside the first change.
 - Let a downstream proposal declare `Exploration: <id>` and the decision ids it carries. Derive the reverse exploration-to-change map rather than maintaining two authoritative copies.
-- Archive an exploration when every decision has a disposition and its intended changes or experiments are identified. Do not wait for those changes to finish.
+- Keep an approved exploration at its active stable id until the user explicitly requests archival. Follow the separate archival boundary below.
 
 Self-review the written artifact for placeholders, contradictions, ambiguity, unsupported factual claims, scope drift, and accidental presentation of proposals as current truth. File review is a separate user gate; conversational approval does not substitute for it.
+
+## Archive only on a later explicit request
+
+Do not archive while recording approval and do not treat approval, a complete change map or a downstream proposal as implicit archival authorization. Stop after changing the reviewed account to `Status: approved`.
+
+On a later explicit archival request, inspect the actual active package and require `Status: approved`. Confirm that every material decision has a disposition and that the account identifies its intended changes, experiments, abandonment or deliberately retained open work as appropriate. Identified downstream work does not need to be proposed, implemented or completed.
+
+Run `azimuth explore archive <id> --date <YYYY-MM-DD> [--explorations <dir>]`. Do not move the directory manually and do not change its status during archival. Report the dated destination or the command's exact rejection boundary.
 
 ## Stop at the boundary
 

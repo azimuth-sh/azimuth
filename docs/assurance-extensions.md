@@ -32,7 +32,7 @@ to several Cases only when its terminal outcome is atomic and honestly bears on 
 
 ## Current repository boundary
 
-The implemented alpha 3 extension seam is repository-owned:
+The implemented alpha 4 extension seam is repository-owned:
 
 - `verification.md` declares Checks, Evidence Bindings, Method Qualifications, Applicability
   Decisions, Challengers and Challenge Plans plus one Claim Judgment per applicable parent Claim;
@@ -120,7 +120,7 @@ The synthetic [Challenge-planning conformance](../experiments/challenge-planning
 
 The replacement Assurance Service is deferred with the Run ledger. Its intended authority is accepted execution facts and derived Subject-specific state, not repository semantics or provider integrations. The standalone bundle contract supplies the protocol meaning a future ledger must preserve; it does not authorize or ingest the Run.
 
-The alpha 1 claim-contract and project-snapshot wire remains isolated inside the existing service boundary until the replacement is implemented. It receives no bridge into the alpha 3 repository graph. There is no assurance-specific export command: `azimuth export` emits only the version 3 repository model and no runtime ledger records.
+The alpha 1 claim-contract and project-snapshot wire remains isolated inside the existing service boundary until the replacement is implemented. It receives no bridge into the alpha 4 repository graph. There is no assurance-specific export command: `azimuth export` emits only the version 3 repository model and no runtime ledger records.
 
 ## Acceptance boundary for future extensions
 

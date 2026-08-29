@@ -79,5 +79,5 @@ condition.
 
 *(revised)* The `v0.1.0-alpha.1` publication discharged that condition and produced the
 first public completion evidence. The condition itself is retained rather than removed: it
-now binds each subsequent immutable version, so `v0.1.0-alpha.3` owes its own completion
+now binds each subsequent immutable version, so `v0.1.0-alpha.4` owes its own completion
 evidence and cannot inherit the first alpha's.

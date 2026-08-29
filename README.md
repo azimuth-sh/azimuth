@@ -95,7 +95,7 @@ These are a separate plane, not later steps.
 ## Commands
 
 ```sh
-azimuth init                      # scaffold the model directories
+azimuth init --agents codex      # scaffold the account and install Codex workflows
 azimuth validate                  # deterministic Findings over the derived model
 azimuth report traceability       # derived view of Claims, linkage and decisions
 azimuth export --out model.json   # the complete derived model for your own tooling
@@ -139,11 +139,11 @@ Open design questions are recorded under `azimuth/explorations/`, including thes
 
 ## Maturity
 
-Alpha. Formats may change incompatibly between prereleases, and alpha 3 does not load an alpha 1 model. Evaluate it on a bounded pilot, not on a critical path you cannot revisit.
+Alpha. Formats may change incompatibly between prereleases, and alpha 4 does not load an alpha 1 model. Evaluate it on a bounded pilot, not on a critical path you cannot revisit.
 
-The published alpha 3 tag supports the Rust CLI and core including federation, the .NET and TypeScript annotations and extractors, and the assurance API and diagnostic web images defined at that tag. Contracts, standards, skills and documentation are supported as repository artifacts at the same tag.
+The published alpha 4 tag supports the Rust CLI and core including federation, the bundled consumer skills, templates, references and migrations, the .NET and TypeScript annotations and extractors, and the assurance API and diagnostic web images defined at that tag. Protocol and schema versions remain independent and are declared in the release catalog.
 
-Qualified CLI targets are Linux x64, macOS ARM64 and Windows x64; qualified image platforms are Linux AMD64 and Linux ARM64. The C++, Go, JVM, Python and Rust annotation and extractor integrations, and everything under `experiments/`, are experimental source: CI exercises them, but `0.1.0-alpha.3` assigns them no package identity or support promise.
+Qualified CLI targets are Linux x64, macOS ARM64 and Windows x64; qualified image platforms are Linux AMD64 and Linux ARM64. The C++, Go, JVM, Python and Rust annotation and extractor integrations, and everything under `experiments/`, are experimental source: CI exercises them, but `0.1.0-alpha.4` assigns them no package identity or support promise.
 
 ## This repository
 

@@ -28,8 +28,8 @@ fn write_routine_spec(path: &Path, id: &str, scenario: &str) {
     fs::write(
         path,
         format!(
-            "# Spec: {id}\n\n## Requirement: works\nCriticality: routine\n\n\
-             The system SHALL work.\n\n### Scenario: {scenario}\nWHEN invoked\nTHEN it works\n"
+            "# Spec: {id}\n\n## Claim: works\nCriticality: routine\n\n\
+             The system SHALL work.\n\n### Case: {scenario}\nWHEN invoked\nTHEN it works\n"
         ),
     )
     .unwrap();
@@ -61,12 +61,12 @@ const MINIMAL: &str = "\
 
 Prose that claims nothing.
 
-## Requirement: thing-holds
+## Claim: thing-holds
 Criticality: standard
 
 The system SHALL hold the thing.
 
-### Scenario: thing-held
+### Case: thing-held
 GIVEN a thing
 WHEN it is examined
 THEN it is held
@@ -77,15 +77,15 @@ AND nothing else changed
 fn parses_a_minimal_spec() {
     let spec = parse_spec("t.md", MINIMAL).expect("parses");
     assert_eq!(spec.id, "alpha/beta");
-    assert_eq!(spec.requirements.len(), 1);
+    assert_eq!(spec.claims.len(), 1);
 
-    let r = &spec.requirements[0];
+    let r = &spec.claims[0];
     assert_eq!(r.id, "thing-holds");
     assert_eq!(r.criticality, Some(Criticality::Standard));
     assert_eq!(r.statement, "The system SHALL hold the thing.");
-    assert_eq!(r.scenarios.len(), 1);
+    assert_eq!(r.cases.len(), 1);
 
-    let s = &r.scenarios[0];
+    let s = &r.cases[0];
     assert_eq!(s.id, "thing-held");
     assert_eq!(s.steps.len(), 4);
     assert_eq!(s.steps[0].kind, StepKind::Given);
@@ -97,7 +97,7 @@ fn parses_a_minimal_spec() {
 #[test]
 fn prose_before_the_first_requirement_is_not_a_statement() {
     let spec = parse_spec("t.md", MINIMAL).unwrap();
-    assert!(!spec.requirements[0].statement.contains("claims nothing"));
+    assert!(!spec.claims[0].statement.contains("claims nothing"));
 }
 
 /// A missing declaration is a Finding; an unknown construct is a parse error.
@@ -106,7 +106,7 @@ fn prose_before_the_first_requirement_is_not_a_statement() {
 fn missing_criticality_parses_and_becomes_a_finding_not_an_error() {
     let source = MINIMAL.replace("Criticality: standard\n", "");
     let spec = parse_spec("t.md", &source).expect("missing criticality still parses");
-    assert_eq!(spec.requirements[0].criticality, None);
+    assert_eq!(spec.claims[0].criticality, None);
 }
 
 #[test]
@@ -130,12 +130,12 @@ fn diagnostics_carry_file_and_line() {
 #[test]
 fn ids_are_lowercase_kebab_case() {
     let message = err(&MINIMAL.replace("thing-held", "Thing_Held"));
-    assert!(message.contains("invalid scenario id"), "{message}");
+    assert!(message.contains("invalid case id"), "{message}");
 }
 
 #[test]
 fn slash_is_only_allowed_in_spec_ids() {
-    let message = err(&MINIMAL.replace("## Requirement: thing-holds", "## Requirement: a/b"));
+    let message = err(&MINIMAL.replace("## Claim: thing-holds", "## Claim: a/b"));
     assert!(message.contains("only allowed in spec ids"), "{message}");
 }
 
@@ -167,18 +167,18 @@ fn unrecognized_lines_in_a_scenario_fail_loudly() {
 }
 
 #[test]
-fn a_requirement_needs_at_least_one_scenario() {
+fn a_claim_needs_at_least_one_case() {
     let source = "\
 # Spec: alpha
 
-## Requirement: lonely
+## Claim: lonely
 Criticality: standard
 
 The system SHALL do something unfalsifiable.
 ";
     let message = err(source);
-    assert!(message.contains("has no scenarios"), "{message}");
-    assert!(message.contains("case-level Claim identity"), "{message}");
+    assert!(message.contains("has no cases"), "{message}");
+    assert!(message.contains("normative `### Case:`"), "{message}");
 }
 
 #[test]
@@ -186,10 +186,10 @@ fn a_requirement_needs_a_statement() {
     let source = "\
 # Spec: alpha
 
-## Requirement: silent
+## Claim: silent
 Criticality: standard
 
-### Scenario: something
+### Case: something
 WHEN a thing happens
 THEN another thing happens
 ";
@@ -206,15 +206,15 @@ fn a_file_declares_exactly_one_spec() {
 
 #[test]
 fn a_file_without_a_spec_heading_is_an_error() {
-    let message = err("## Requirement: orphan\nCriticality: standard\n\nA SHALL.\n");
+    let message = err("## Claim: orphan\nCriticality: standard\n\nA SHALL.\n");
     assert!(message.contains("no spec declared"), "{message}");
 }
 
 #[test]
 fn unknown_headings_fail_loudly() {
-    let message = err(&MINIMAL.replace("## Requirement: thing-holds", "## Rule: thing-holds"));
+    let message = err(&MINIMAL.replace("## Claim: thing-holds", "## Rule: thing-holds"));
     assert!(message.contains("unrecognized heading"), "{message}");
-    assert!(message.contains("`## Requirement:"), "{message}");
+    assert!(message.contains("`## Claim:"), "{message}");
 }
 
 #[test]
@@ -238,41 +238,40 @@ fn a_spec_cannot_carry_a_required_form() {
     assert!(err(&source).contains("unknown label `Quantification:`"));
 }
 
-/// Scenario ids are unique per spec, not per requirement — that is what lets a requirement split
-/// without touching a tag.
+/// Case ids are local to their parent Claim, so two Claims can use the same readable Case id.
 #[test]
-fn scenario_ids_are_unique_across_the_whole_spec() {
+fn case_ids_are_local_to_their_parent_claim() {
     let source = "\
 # Spec: alpha
 
-## Requirement: first
+## Claim: first
 Criticality: standard
 
 A SHALL.
 
-### Scenario: shared
+### Case: shared
 WHEN a thing happens
 THEN another thing happens
 
-## Requirement: second
+## Claim: second
 Criticality: standard
 
 Another SHALL.
 
-### Scenario: shared
+### Case: shared
 WHEN a thing happens
 THEN another thing happens
 ";
-    let message = err(source);
-    assert!(message.contains("not unique within this spec"), "{message}");
-    assert!(message.contains("survive a requirement split"), "{message}");
+    let spec = parse_spec("t.md", source).unwrap();
+    assert_eq!(spec.claims[0].cases[0].id, "shared");
+    assert_eq!(spec.claims[1].cases[0].id, "shared");
 }
 
 #[test]
 fn requirement_ids_are_unique() {
     let source = format!(
-        "{MINIMAL}\n## Requirement: thing-holds\nCriticality: standard\n\nA SHALL.\n\n\
-         ### Scenario: other\nWHEN a thing happens\nTHEN another thing happens\n"
+        "{MINIMAL}\n## Claim: thing-holds\nCriticality: standard\n\nA SHALL.\n\n\
+         ### Case: other\nWHEN a thing happens\nTHEN another thing happens\n"
     );
     assert!(err(&source).contains("declared twice"));
 }
@@ -286,22 +285,22 @@ fn fenced_blocks_are_not_parsed() {
 
 ```
 # Spec: not-a-spec
-## Requirement: not-a-requirement
+## Claim: not-a-requirement
 ```
 
-## Requirement: real
+## Claim: real
 Criticality: routine
 
 A SHALL.
 
-### Scenario: real-scenario
+### Case: real-scenario
 WHEN a thing happens
 THEN another thing happens
 ";
     let spec = parse_spec("t.md", source).expect("parses");
     assert_eq!(spec.id, "alpha");
-    assert_eq!(spec.requirements.len(), 1);
-    assert_eq!(spec.requirements[0].criticality, Some(Criticality::Routine));
+    assert_eq!(spec.claims.len(), 1);
+    assert_eq!(spec.claims[0].criticality, Some(Criticality::Routine));
 }
 
 #[test]
@@ -318,16 +317,16 @@ fn multiple_errors_are_reported_together() {
     let source = "\
 # Spec: alpha
 
-## Requirement: Bad_Id
+## Claim: Bad_Id
 Criticality: enormous
 
 A SHALL.
 
-### Scenario: also-bad
+### Case: also-bad
 THEN an outcome with no trigger
 ";
     let message = err(source);
-    assert!(message.contains("invalid requirement id"), "{message}");
+    assert!(message.contains("invalid claim id"), "{message}");
     assert!(message.contains("unknown criticality"), "{message}");
     assert!(message.contains("has no WHEN"), "{message}");
 }
@@ -503,7 +502,7 @@ fn cross_file_duplicate_check_claim_pairs_are_derivation_errors() {
     let errors = load_packages(&model).unwrap_err();
     assert!(errors.iter().any(|error| error
         .message
-        .contains("Check `shared/check` is already bound to Claim `alpha#works`")));
+        .contains("Check `shared/check` is already bound to Case `alpha#works/works`")));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -516,23 +515,22 @@ fn only_selection_retains_relevant_challenge_plans_atomically() {
     fs::write(
         model.join("alpha/verification.md"),
         "# Verification: alpha\n\n## Check: shared/check\nMethod: invoke\nTerminal: works\n\n\
-         Atomic.\n\n## Evidence Binding: edge/alpha\nCheck: shared/check\nClaim: alpha#works\n\
-         Proposition: direct\nScope: unit\nQuantification: example\nOracle: direct\nContext: {}\n\
+         Atomic.\n\n## Evidence Binding: edge/alpha\nCheck: shared/check\nCase: alpha#works/works\n\
+         Method qualification: shared/method\nProposition: direct\nContext: {}\n\
          Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n\n\
-         ## Evidence Binding: edge/beta\nCheck: shared/check\nClaim: beta#works\nProposition: direct\n\
-         Scope: unit\nQuantification: example\nOracle: direct\nContext: {}\n\
+         ## Evidence Binding: edge/beta\nCheck: shared/check\nCase: beta#works/works\n\
+         Method qualification: shared/method\nProposition: direct\nContext: {}\n\
          Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n\n\
-         ## Qualification: edge/alpha\nVerdict: qualified\n\
+         ## Method Qualification: shared/method\nCheck: shared/check\nScope: unit\n\
+         Quantification: example\nOracle: direct\nContext: {}\nChallenge domain: [\"context\"]\n\
+         Policy: credible\nVerdict: qualified\n\
          Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
-         Qualified: 2026-08-21\nQualifier: owner\n\nReviewed.\n\n\
-         ## Qualification: edge/beta\nVerdict: qualified\n\
-         Fingerprint: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n\
          Qualified: 2026-08-21\nQualifier: owner\n\nReviewed.\n\n\
          ## Challenger: mutation/perturb\nForm: implementation-perturbation\n\
          Searches for: an undetected change\nRequired scope: [\"context\"]\n\nOpen objection.\n\n\
          ## Challenge Plan: shared/plan\nChallenger: mutation/perturb\n\
-         Select: qualification from check shared/check\n\
-         Select: qualification from binding edge/beta\n\nTargets relevant decisions.\n",
+         Select: method-qualification from check shared/check\n\
+         Select: applicability-decision from binding edge/beta\n\nTargets relevant decisions.\n",
     )
     .unwrap();
 
@@ -560,18 +558,18 @@ fn only_selection_retains_relevant_challenge_plans_atomically() {
     assert_eq!(loaded.model.specs.len(), 2);
     assert_eq!(loaded.model.checks().count(), 1);
     assert_eq!(loaded.model.evidence_bindings().count(), 2);
-    assert_eq!(loaded.model.qualifications().count(), 2);
+    assert_eq!(loaded.model.method_qualifications().count(), 1);
     assert_eq!(loaded.model.challengers().count(), 1);
     assert_eq!(loaded.model.verifications.len(), 1);
     let plan = loaded.model.challenge_plans().next().unwrap();
     assert_eq!(plan.selectors.len(), 2);
     assert_eq!(
         plan.selectors[0].canonical(),
-        "qualification from check shared/check"
+        "method-qualification from check shared/check"
     );
     assert_eq!(
         plan.selectors[1].canonical(),
-        "qualification from binding edge/beta"
+        "applicability-decision from binding edge/beta"
     );
     assert_eq!(
         resolve_challenge_plan(&loaded.model, plan)
@@ -696,7 +694,7 @@ fn merged_manifest_conflicts_are_rejected_before_only_selection() {
     let second = root.join("second.json");
     let linkage = |fingerprint: char, suffix: &str| {
         format!(
-            "{{\"realizes\":[{{\"spec\":\"beta\",\"scenario\":\"works\",\
+            "{{\"realizes\":[{{\"spec\":\"beta\",\"claim\":\"works\",\
              \"site\":\"beta::works\",\"file\":\"src/beta.rs\",\"lang\":\"rust\",\
              \"source_fingerprint\":\"sha256:{}\"}}],\
              \"check_implementations\":[{{\"check\":\"beta/works\",\
@@ -888,7 +886,12 @@ fn missing_standards_warn_for_any_nonroutine_claim() {
     write_routine_spec(&model.join("routine/spec.md"), "routine", "works");
     fs::write(
         model.join("routine/verification.md"),
-        verification_binding("routine", "routine/check", "routine#works", "edge/routine"),
+        verification_binding(
+            "routine",
+            "routine/check",
+            "routine#works/works",
+            "edge/routine",
+        ),
     )
     .unwrap();
     let routine = load_packages(&model).unwrap();
@@ -916,7 +919,7 @@ fn missing_standards_warn_for_any_nonroutine_claim() {
             verification_binding(
                 "standard",
                 "standard/check",
-                "standard#works",
+                "standard#works/works",
                 "edge/standard",
             )
         ),
@@ -930,11 +933,11 @@ fn missing_standards_warn_for_any_nonroutine_claim() {
     fs::remove_dir_all(root).unwrap();
 }
 
-fn verification_binding(owner: &str, check: &str, claim: &str, binding: &str) -> String {
+fn verification_binding(owner: &str, check: &str, case: &str, binding: &str) -> String {
     format!(
         "# Verification: {owner}\n\n## Check: {check}\nMethod: invoke\nTerminal: works\n\n\
-         Atomic.\n\n## Evidence Binding: {binding}\nCheck: {check}\nClaim: {claim}\n\
-         Proposition: direct\nScope: unit\nQuantification: example\nOracle: direct\nContext: {{}}\n\
+         Atomic.\n\n## Evidence Binding: {binding}\nCheck: {check}\nCase: {case}\n\
+         Method qualification: {binding}-method\nProposition: direct\nContext: {{}}\n\
          Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n"
     )
 }
@@ -945,8 +948,8 @@ fn verification_with_binding(owner: &str, binding: &str, include_check: bool) ->
         .unwrap_or_default();
     format!(
         "# Verification: {owner}\n\n{check}## Evidence Binding: {binding}\n\
-         Check: shared/check\nClaim: alpha#works\nProposition: direct\nScope: unit\n\
-         Quantification: example\nOracle: direct\nContext: {{}}\n\
+         Check: shared/check\nCase: alpha#works/works\nMethod qualification: shared/method\n\
+         Proposition: direct\nContext: {{}}\n\
          Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n"
     )
 }

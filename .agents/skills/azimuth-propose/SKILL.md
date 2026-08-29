@@ -1,47 +1,130 @@
 ---
 name: azimuth-propose
-description: >-
-  Create or revise one bounded Azimuth change proposal from a clear request or approved
-  exploration. Use to define intent, scope, routine criticality, solution decisions, work packages
-  and completion conditions before implementation.
+description: Create or revise one bounded, approval-ready Azimuth change from a clear request or approved exploration. Use to establish singular authority, author current Claim/Case intent deltas, define scope and solution decisions, plan compatibility and migration, add safe work packages when useful, and validate a comprehensive proposal before implementation.
 ---
 
 # Propose one change
 
-Create the smallest semantic transition that can be reviewed and accepted independently.
+Create the smallest semantic transition that can be reviewed, implemented and accepted independently. A proposal is fully contained when a reviewer can decide it without reconstructing hidden product, architecture, compatibility, migration or completion assumptions from conversation history.
 
-## Workflow
+Stop after presenting the authored proposal for explicit approval. Approval of an originating exploration authorizes proposal creation; it does not approve the resulting change or authorize implementation.
 
-1. Read `AGENTS.md`, `azimuth/changes/README.md`, affected model packages and any originating exploration. In a federated project, locate singular change authority first.
-2. Check active changes with `azimuth change list`. Do not create competing authority for one id.
-3. Run `azimuth change create <id> --title <title>` to obtain the lightweight shape.
-4. Write the problem, outcome, in/out scope, affected Claim ids and completion conditions. Record originating exploration decisions when applicable.
-5. Add intent deltas only where observable obligations change. Keep every current framework Claim routine during the fast-moving alpha.
-6. Add change `design.md` only when alternatives, boundaries, failure modes or migration order make a solution decision reviewable. Do not add package verification declarations for routine Claims.
-7. For a site-domain invariant, identify the semantic population before implementation. Reuse an exact declared surface or propose area-mount enumerator contributions.
-8. If independent execution is useful, write `work-packages.md`. Each package declares status, dependencies, non-overlapping owned paths, objective and ordinary engineering checks.
-9. Run `azimuth change check <id>` and `azimuth change work-packages <id>` when applicable. Resolve parser and dependency errors before presenting the proposal.
-10. Present the proposal and ask for approval. Do not implement unless the request explicitly authorizes both proposal and implementation.
+## Establish readiness and authority
 
-## Model boundary
+1. Read the target repository's applicable `AGENTS.md` files and its change guidance. Respect its authority order, verification policy and dirty worktree.
+2. Confirm the request is sufficiently decided for one change. Use an approved exploration for an uncertain multi-change initiative. Read the actual exploration files, require their explicit approved status, and carry only confirmed decisions assigned to this change.
+3. Resolve any material contradiction or owner decision that would change the outcome, public contract, data authority, migration strategy or scope before authoring. Do not hide it as an implementation detail.
+4. In a federated project, locate the repository with singular authority for the change. Read the project catalog and workset when present; do not create competing local authority.
+5. Inspect the current accepted model, relevant archived decision records, implementation, data model, migrations, APIs, configuration and ordinary engineering checks. Treat current behavior as a discoverable fact, not as intended behavior unless accepted intent says so.
+6. Check `azimuth --version` and repository package/tool pins. Read the current [`contracts/spec.md`](../../../contracts/spec.md) and parser contracts for every artifact being authored. Do not copy syntax from archived changes, which may preserve an older version.
+7. Run the repository's normal `azimuth validate` invocation to distinguish a valid baseline from pre-existing Findings. If the current account cannot be loaded, report the blocker instead of manufacturing a valid proposal account.
 
-The current non-routine decision graph is Check → Evidence Binding → Qualification, with sparse many-to-many Check/Claim relationships, plus one total-composition Claim Judgment per applicable case Claim. Evidence Bindings and Claim Judgments name a current Decision Policy; each policy declares required open Challenge forms, and the project Challenge Schedule assigns every required or declared form to exactly one `gate | scheduled` lane. The strict [Run bundle format](../../../contracts/run-bundle.md) is current: `azimuth run verify --bundle <file>...` checks standalone protocol and correction consistency, and `azimuth run inspect --bundle <file>...` presents a deterministic account with current model authority and Assurance State explicitly unresolved.
+## Create singular change authority
 
-Strict adapter configuration, the description handshake, complete-model Check and Challenge planning and bounded execute/import transport are current. Configuration defaults to `azimuth/adapters.json`, names exact capability addresses and pins content, description, semantic settings, literal environment and process limits. A proposal must preserve core authority over the semantic Plan: an adapter only translates frozen selections or imports exact content-addressed native files.
+1. Run `azimuth change list`. Check active and archived entries; a stable id is not reused after archival.
+2. Choose a lower-kebab id that names the transition rather than an implementation task.
+3. Run:
 
-The planning request may be Check-only, Challenge-only or mixed, while its combined semantic selection is non-empty. Core resolves every Challenge candidate disposition, accepted current decision, required policy form, schedule lane, semantic scope and accountable launch input from the complete model. Every requested Plan names an explicit configured capability, finite units and a nonzero target cap. Core neither auto-selects capabilities nor widens unresolved work to provider selectors, paths, globs or suites.
+   ```text
+   azimuth change create <id> --title "<title>"
+   ```
 
-A clean Challenge Result is only a negative search fact. An allowed incomplete scheduled omission has one exact `challenge-selection` diagnostic and no result; `deferred` is not a result. Valid adverse or incomplete protocol facts are not transport failures. `model.extract` is a declared capability but has no current execution command. The Run ledger separately owns durable ingest, authorization, retention and Assurance State; current planning defines no cache-validity, cross-Subject reuse or historical applicability inference. A proposal must not invent those authorities, long-running adapters or removed alpha-era formats.
+4. Keep `proposal.md` at `Status: proposed` throughout authoring. Do not mark it active merely because its exploration was approved.
 
-When a proposal changes mechanism extractors, preserve the existing two-argument source marker. The extractor derives an ecosystem-semantic qualified `site`, exact path-free typed binding and companion Artifact, and fails closed when it cannot prove uniqueness or a normalized locator under the declared root. A file path is never semantic disambiguation.
+## Bound the transition
 
-When a proposal affects adapters, make the strict [adapter protocol](../../../contracts/adapter.md) and [launch-plan format](../../../contracts/run-launch-plan.md) explicit. Preserve direct shell-free invocation, same-stream content staging, exact literal child environment, supported fresh process-group isolation before spawn, bounded streams and one bounded core exchange whose deadline covers request writing, concurrent stream draining and core's wait. Validate completely before atomic output. Core signals the group on every terminal path and cleans members and inherited pipes while they remain in it. Authorized descendants may escape with `setsid`, `setpgid` or equivalent, and their termination is not guaranteed. This is not non-escapable descendant containment, a sandbox, daemon supervision or hostile-code isolation. Adapters remain short-lived; the protocol does not authorize daemons, webhook hosts or long-running supervisors.
+Author the proposal from evidence gathered in the repository and any approved exploration.
 
-## Routine path
+- **Problem:** Describe the present condition, who or what it harms, and why the existing model or mechanism cannot support the desired outcome. Separate facts from inference.
+- **Outcome:** State the accepted end state in observable terms. Avoid promising later-change behavior merely because this change creates an extension point for it.
+- **In scope:** Enumerate the behavior, data, contracts, components, migration work and documentation this change owns.
+- **Out of scope:** Name adjacent behavior, later changes, operational rollout, destructive cleanup and attractive refactors that are intentionally excluded.
+- **Affected claims:** List exact `<spec-id>#<claim-id>` identities added or deliberately affected. Do not use file paths or informal headings as identity.
+- **Originating decisions:** When applicable, cite the exploration and the exact decision or change-map entries carried by this proposal. Record any necessary refinement and why it does not contradict the approved direction.
+- **Completion conditions:** Make every condition inspectable after implementation. Cover observable behavior, persisted invariants, compatibility or migration results, required current-facet updates, documentation and permitted engineering checks. Do not use vague conditions such as "works" or "tests pass."
 
-A routine change normally needs `proposal.md`, any actual intent delta and `plan.md`. It uses ordinary engineering tests and adds no Check, binding or Qualification.
+Split the work when two outcomes can be accepted independently, when later work can begin without the first outcome, or when one proposal would require unrelated rollback decisions. A foundation change must still deliver usable invariants; an empty schema or speculative abstraction is not a semantic transition.
 
-## Work-package format
+## Author current intent deltas
+
+Add an intent delta only for an observable obligation that will become accepted intent. Organize specs by domain area, not service topology. Each file under `specs/` starts with one declared spec id:
+
+```markdown
+# Intent delta: <spec-id>
+
+## Add claim: <falsifiable-claim-id>
+Criticality: routine
+
+The product SHALL establish one singular normative proposition.
+
+### Add case: <standalone-case-id>
+GIVEN <precondition>
+WHEN <trigger>
+THEN <observable outcome>
+AND <further observable outcome>
+```
+
+Follow these rules:
+
+- Use `## Add claim:` and `### Add case:` exactly. Never use the removed `Requirement`/`Scenario` vocabulary.
+- Give every added Claim `Criticality: routine` during the current fast-moving alpha.
+- Give each Claim one or more Cases. A Claim owns governance and criticality; Cases express distinct normative conditions within its predicate.
+- Write one independently governable SHALL proposition per Claim. Split conjunctions that carry different consequences, owners or acceptance decisions.
+- Make Claim and Case ids lower-kebab, proposition-like and visibly distinct. Cases must stand alone in traceability output.
+- Put universal meaning in the Claim and conditional examples in Cases. Cases describe behavior, never test mechanics, source paths or implementation structure.
+- Use GIVEN only for a real precondition, WHEN for the trigger and THEN/AND for observable outcomes. Do not encode alternatives, rationale or design prose as normative steps.
+- Do not add package `verification.md`, Checks, Evidence Bindings, Qualifications or Claim Judgments for routine Claims. Ordinary engineering checks remain outside the Azimuth evidence graph.
+- The current delta parser machine-projects whole Claim additions and criticality changes. Do not invent modify, remove, rename or add-Case-to-existing-Claim operations. If the transition requires one, surface the parser/model limitation and resolve it explicitly before proceeding.
+
+When accepted intent truly does not change, add this metadata directly after `Status: proposed` and before the first section instead of creating an empty or cosmetic delta:
+
+```markdown
+Intent delta: none
+Because: <non-empty reason accepted intent remains unchanged>
+```
+
+Never combine `Intent delta: none` with a supported delta under `specs/`.
+
+## Make solution decisions reviewable
+
+Add `design.md` whenever implementation would otherwise have to choose behavior or architecture that could change the proposal's meaning. Include only relevant sections, but inspect each of these questions:
+
+- What owns each durable identity, namespace and lifecycle?
+- Which state is authoritative before, during and after the transition?
+- What invariants must schema constraints, domain logic and transaction boundaries preserve?
+- What are the read, write and event flows, including retries, concurrency and idempotency?
+- How do authorization, privacy, secrets and trust boundaries change?
+- What fails closed, what remains retriable, and what user-visible or operational failure results?
+- What telemetry or diagnostics are required to operate and troubleshoot the mechanism?
+- What scale, latency, storage or cost bounds affect the design?
+- Which existing APIs, data, content, clients and deployments remain compatible?
+- Does migration use expand/migrate/contract, backfill, dual read or dual write? Name the sole authority in every phase, cutover criteria, rollback boundary and destructive cleanup owner.
+- Which alternatives were rejected, and for what concrete trade-off?
+- Which extension points are intentionally reserved for later changes without implementing their semantics now?
+
+Do not claim reversibility when deployed writes or destructive migrations make it false. Do not use a feature flag to avoid deciding data authority. For additive foundations, state explicitly what begins using the foundation in this change and what remains unchanged until a later cutover.
+
+Keep design decisions traceable to a scoped outcome, Claim, Case or completion condition. Remove speculative machinery that none of them requires.
+
+## Write an executable implementation plan
+
+Replace the generated placeholders in `plan.md` with dependency-ordered, checkable implementation stages. The plan is an implementation sequence, not a verification artifact or exhaustive test inventory. Include, when applicable:
+
+1. contract and accepted-intent changes that later steps depend on;
+2. data/domain types, invariants and persistence changes;
+3. compatibility adapters, backfill and authority cutover;
+4. application behavior, interfaces and integrations;
+5. ordinary engineering checks permitted by repository instructions;
+6. emitted manifests and `azimuth validate` for the resulting current account;
+7. current `spec.md` and `design.md` facet updates;
+8. documentation, operational notes and removal of temporary compatibility paths owned by this change;
+9. outcome recording and readiness for finalization, without finalizing or archiving.
+
+Each item should name a concrete result and be markable complete without interpreting broad verbs such as "handle," "support" or "finish." Keep later-change work out of the plan even when the design names its extension boundary.
+
+## Add work packages only when useful
+
+Use `work-packages.md` only when independent, path-isolated execution will materially help. Freeze shared contracts before dependent packages, give shared state to the coordinator, and ensure workers do not edit overlapping paths, proposal state, outcome or archive location.
 
 ```markdown
 # Work packages: <change-id>
@@ -51,5 +134,25 @@ Status: pending
 Depends on: none
 Owns: path/one, path/two
 Objective: one bounded result
-Evidence: exact engineering commands
+Evidence: exact permitted engineering commands or inspections
 ```
+
+Declare every dependency, use checkout-relative owned paths, and make each package independently reportable. Then run `azimuth change work-packages <id>` and resolve invalid status, missing objective, escaping or overlapping paths, unknown dependencies and cycles before any delegation.
+
+## Preserve current framework boundaries
+
+- For a site-domain invariant, identify the semantic population before implementation. Reuse an exact declared surface or propose area-mount enumerator contributions; a path is not semantic identity.
+- For extractor changes, preserve the two-argument marker and ecosystem-semantic, path-free site identity. Heavy analysis remains in the ecosystem extractor and fails closed on ambiguity.
+- For adapter or Run changes, read the current adapter, launch-plan and Run-bundle contracts. Preserve core authority over exact semantic selection, bounded shell-free exchanges, complete validation and atomic output. Do not invent daemons, ingest, retention, cache validity or Assurance State authority.
+- A clean Challenge Result remains only a negative search fact. Do not turn execution success into repository acceptance or product evidence.
+
+## Validate completeness and hand off
+
+1. Run `azimuth change check <id>` and resolve every parser or projection error.
+2. Run `azimuth change work-packages <id>` when `work-packages.md` exists.
+3. Run the repository's normal `azimuth validate` command again. Distinguish newly introduced Findings from an explicitly recorded pre-existing baseline.
+4. Run `azimuth change show <id>` and inspect the complete rendered account, then inspect the working diff for omissions, accidental files and conflicts with user-owned changes.
+5. Audit the proposal against this question: can an implementer proceed without inventing product behavior, identity, ownership, compatibility, migration, failure or completion decisions? If not, resolve the gap or identify it as a blocking owner decision.
+6. Present the change id, authored artifacts, intent Claims/Cases, central solution decisions, scope exclusions, validation results and any residual questions. Ask for explicit approval of the actual proposal files.
+
+Do not implement, mark the change active, finalize, archive, commit or claim engineering results in the proposal-authoring turn unless the user separately and explicitly authorizes the applicable next action.

@@ -4,7 +4,7 @@ import os
 from azimuth_annotations import realizes
 
 
-@realizes("polyglot/identity", "python-identifies")
+@realizes("polyglot/identity", "service-identifies-implementation-language")
 def identity() -> str:
     return "python"
 

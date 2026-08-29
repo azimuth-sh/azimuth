@@ -2,7 +2,7 @@ const http = require('node:http');
 const { realizes } = require('../../../../packages/typescript/dist/index.js');
 
 function identity() {
-  realizes('polyglot/identity', 'javascript-identifies');
+  realizes('polyglot/identity', 'service-identifies-implementation-language');
   return 'javascript';
 }
 

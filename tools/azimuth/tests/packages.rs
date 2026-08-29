@@ -110,7 +110,7 @@ fn rejects_invalid_fingerprints_partial_identity_and_duplicates() {
 fn accepts_all_six_current_collections_and_rejects_unknown_top_level_keys() {
     let source = format!(
         r#"{{
-          "realizes":[{{"spec":"alpha","scenario":"works","site":"A","file":"a.rs","lang":"rust"}}],
+          "realizes":[{{"spec":"alpha","claim":"works","site":"A","file":"a.rs","lang":"rust"}}],
           "check_implementations":[{{"check":"alpha/works","site":"T","file":"t.rs",
             "lang":"rust","source_fingerprint":"{SHA}"}}],
           "mechanism_implementations":[{{"spec":"alpha","mechanism":"guard",

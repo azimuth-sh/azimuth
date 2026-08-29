@@ -33,6 +33,7 @@ plan() {
   "$AZIMUTH" run plan \
     --request "$request" \
     --model "$FIXTURE/model" \
+    --standards "$FIXTURE/standards.md" \
     --workspace "$FIXTURE/workspace.json" \
     --manifest "$FIXTURE/manifest.json" \
     --config "$config" \
@@ -255,7 +256,7 @@ assert challenge_route["inputs"][0]["source"] == {
 check_activity = dual["check_executions"][0]["units"][0]["attempts"][0]["activity"]
 challenge_activity = dual["challenger_executions"][0]["units"][0]["attempts"][0]["activity"]
 assert check_activity == challenge_activity == "shared-work"
-assert dual["check_executions"][0]["observation"]["outcome"] == "satisfied"
+assert dual["check_executions"][0]["observations"][0]["outcome"] == "satisfied"
 challenge = dual["challenger_executions"][0]
 assert challenge["result"]["outcome"] == "findings"
 assert challenge["result"]["objections"] == ["challenge/synthetic-finding"]
@@ -275,7 +276,7 @@ for name, (status, outcome) in expected.items():
     bundle = load(f"bundle-{name}.json")
     assert bundle["status"] == status
     actual = bundle["check_executions"]
-    assert (actual[0]["observation"]["outcome"] if actual else None) == outcome
+    assert (actual[0]["observations"][0]["outcome"] if actual else None) == outcome
 PY
 
 echo "adapter capability conformance passed"

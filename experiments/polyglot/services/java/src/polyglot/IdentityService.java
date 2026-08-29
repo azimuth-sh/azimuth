@@ -8,7 +8,7 @@ import java.nio.charset.StandardCharsets;
 public final class IdentityService {
     private IdentityService() {}
 
-    @Azimuth.Realizes(spec = "polyglot/identity", scenario = "java-identifies")
+    @Azimuth.Realizes(spec = "polyglot/identity", claim = "service-identifies-implementation-language")
     public static String identity() {
         return "java";
     }

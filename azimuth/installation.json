@@ -1,0 +1,16 @@
+{
+  "format": "azimuth-installation",
+  "schemaVersion": 1,
+  "releaseVersion": "0.1.0-alpha.4",
+  "migrationLine": "alpha-claim-case",
+  "agents": [],
+  "components": [],
+  "resources": [
+    {
+      "id": "orientation",
+      "path": "azimuth/README.md",
+      "sha256": "279c2e16f04e06b31175fe15b9c827dcfcf76ea0b06eb3c4a14fce9c1c1ca751"
+    }
+  ],
+  "aliases": []
+}

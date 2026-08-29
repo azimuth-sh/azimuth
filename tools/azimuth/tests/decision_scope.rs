@@ -33,22 +33,33 @@ Terminal: the behavior works\n\n\
 Atomic.\n\n\
 ## Evidence Binding: alpha/edge\n\
 Check: alpha/check\n\
-Claim: alpha#works\n\
+Case: alpha#behavior/works\n\
+Method qualification: alpha/method\n\
 Proposition: direct\n\
+Context: {}\n\
+Challenge domain: [\"realization\",\"mechanism\"]\n\
+Policy: credible\n\n\
+Reviewable.\n\n\
+## Method Qualification: alpha/method\n\
+Check: alpha/check\n\
 Scope: unit\n\
 Quantification: example\n\
 Oracle: direct\n\
 Context: {}\n\
 Challenge domain: [\"realization\",\"mechanism\"]\n\
-Policy: credible\n\n\
-Reviewable.\n\n\
-## Qualification: alpha/edge\n\
+Policy: credible\n\
 Verdict: qualified\n\
 Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
 Qualified: 2026-08-22\n\
 Qualifier: owner\n\n\
 Qualified.\n\n\
-## Claim Judgment: alpha#works\n\
+## Applicability Decision: alpha/edge\n\
+Verdict: applicable\n\
+Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
+Decided: 2026-08-22\n\
+Decider: owner\n\n\
+Applicable.\n\n\
+## Claim Judgment: alpha#behavior\n\
 Verdict: accepted\n\
 Policy: credible\n\
 Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
@@ -79,14 +90,14 @@ fn source(area: &str, mount: &str, kind: &str, address: &str) -> SourceIdentity 
 fn model() -> Model {
     let alpha = parse_spec(
         "alpha/spec.md",
-        "# Spec: alpha\n\n## Requirement: behavior\nCriticality: standard\n\n\
-         The system SHALL work.\n\n### Scenario: works\nWHEN invoked\nTHEN it works\n",
+        "# Spec: alpha\n\n## Claim: behavior\nCriticality: standard\n\n\
+         The system SHALL work.\n\n### Case: works\nWHEN invoked\nTHEN it works\n",
     )
     .unwrap();
     let surface = parse_spec(
         "surface/spec.md",
-        "# Spec: surface\n\n## Requirement: routes\nCriticality: routine\n\n\
-         Every route SHALL exist.\n\n### Scenario: tagged\nWHEN built\nTHEN it exists\n",
+        "# Spec: surface\n\n## Claim: routes\nCriticality: routine\n\n\
+         Every route SHALL exist.\n\n### Case: tagged\nWHEN built\nTHEN it exists\n",
     )
     .unwrap();
     let mut model = Model {
@@ -94,7 +105,7 @@ fn model() -> Model {
         realizes: vec![
             Site {
                 spec: "alpha".into(),
-                scenario: "works".into(),
+                claim: "behavior".into(),
                 site: "alpha::works".into(),
                 file: "src/alpha.rs".into(),
                 lang: "rust".into(),
@@ -103,7 +114,7 @@ fn model() -> Model {
             },
             Site {
                 spec: "surface".into(),
-                scenario: "tagged".into(),
+                claim: "routes".into(),
                 site: "GET /tagged".into(),
                 file: "app/tagged.ts".into(),
                 lang: "typescript".into(),
@@ -153,10 +164,11 @@ fn model() -> Model {
             spec: "alpha".into(),
             path: "alpha/design.md".into(),
             entries: vec![DesignEntry {
-                target: Target::Scenario("works".into()),
+                target: Target::Claim("behavior".into()),
                 mechanisms: vec![Mechanism {
                     id: "guard".into(),
                     kind: Enforcement::Guard,
+                    cases: vec!["works".into()],
                     binding: Some("artifact:guard".into()),
                     expected_unique: None,
                     expected_columns: vec!["key".into()],
@@ -195,22 +207,26 @@ fn model() -> Model {
             }],
             realization_obligations: vec![RealizationObligation {
                 spec: "alpha".into(),
-                claim: "works".into(),
+                claim: "behavior".into(),
                 areas: vec!["core".into()],
             }],
         },
         ..Default::default()
     };
-    model.specs[0].requirements[0].over = Some("surface".into());
+    model.specs[0].claims[0].over = Some("surface".into());
     refresh(&mut model);
     model
 }
 
 fn refresh(model: &mut Model) {
     let qualification = model
-        .expected_qualification_fingerprint(&model.verifications[0].bindings[0])
+        .expected_method_qualification_fingerprint(&model.verifications[0].method_qualifications[0])
         .unwrap();
-    model.verifications[0].qualifications[0].fingerprint = qualification;
+    model.verifications[0].method_qualifications[0].fingerprint = qualification;
+    let applicability = model
+        .expected_applicability_fingerprint(&model.verifications[0].bindings[0])
+        .unwrap();
+    model.verifications[0].applicability_decisions[0].fingerprint = applicability;
     let judgment = model
         .expected_claim_judgment_fingerprint(&model.verifications[0].claim_judgments[0])
         .unwrap();
@@ -253,13 +269,13 @@ fn export_resolutions_match_validation_order_and_an_independent_golden() {
         },
         "relation": {
           "kind": "claim",
-          "id": "alpha#works"
+          "id": "alpha#behavior"
         },
         "target": {
           "kind": "claim-judgment",
-          "id": "alpha#works",
-          "expected_fingerprint": "sha256:7b5b5aabef7abd371cb89c59e7f3c93160aa98a38415b6d032650a7de7b17dbc",
-          "authored_fingerprint": "sha256:7b5b5aabef7abd371cb89c59e7f3c93160aa98a38415b6d032650a7de7b17dbc"
+          "id": "alpha#behavior",
+          "expected_fingerprint": "sha256:9ba8840747b7797530579ec06410a06d24960d77dcc9ae848fb02697c32cc31f",
+          "authored_fingerprint": "sha256:9ba8840747b7797530579ec06410a06d24960d77dcc9ae848fb02697c32cc31f"
         },
         "disposition": "selected"
       }
@@ -280,13 +296,13 @@ fn export_resolutions_match_validation_order_and_an_independent_golden() {
         },
         "relation": {
           "kind": "claim",
-          "id": "alpha#works"
+          "id": "alpha#behavior"
         },
         "target": {
           "kind": "claim-judgment",
-          "id": "alpha#works",
-          "expected_fingerprint": "sha256:7b5b5aabef7abd371cb89c59e7f3c93160aa98a38415b6d032650a7de7b17dbc",
-          "authored_fingerprint": "sha256:7b5b5aabef7abd371cb89c59e7f3c93160aa98a38415b6d032650a7de7b17dbc"
+          "id": "alpha#behavior",
+          "expected_fingerprint": "sha256:9ba8840747b7797530579ec06410a06d24960d77dcc9ae848fb02697c32cc31f",
+          "authored_fingerprint": "sha256:9ba8840747b7797530579ec06410a06d24960d77dcc9ae848fb02697c32cc31f"
         },
         "disposition": "selected"
       }
@@ -348,8 +364,8 @@ fn direct_mechanism_and_total_judgment_scope_preserve_every_component_variant() 
         "sha256:c1e41a8cf0a5666a3817b2c2835d6c2fcda9c65d8ea1383255c7c16be21aee51"
     );
     assert_eq!(
-        azimuth::fingerprint::realization_obligation_digest("alpha#works", &["core".into()]),
-        "sha256:74ac6c8699e64bfaa192fc657fcc6003a44b7398f92db924a6c5ec3ebf4d6b27"
+        azimuth::fingerprint::realization_obligation_digest("alpha#behavior", &["core".into()]),
+        "sha256:d853b01504c755d039d1950e436b619032edc9bf759f40d4d45e12f5ec1325bb"
     );
     assert_eq!(
         azimuth::fingerprint::enumerated_surface_member_digest("surface", "app/enumerated.ts"),
@@ -395,33 +411,33 @@ fn marker_derived_mechanism_adds_one_source_implementation() {
 fn every_selector_projects_its_exact_authored_anchor() {
     let cases = [
         (
-            Selector::QualificationFromBinding("alpha/edge".into()),
+            Selector::ApplicabilityDecisionFromBinding("alpha/edge".into()),
             SemanticScopeKind::Binding,
             "alpha/edge",
-            SemanticScopeKind::Qualification,
+            SemanticScopeKind::MethodQualification,
         ),
         (
-            Selector::QualificationFromCheck("alpha/check".into()),
+            Selector::MethodQualificationFromCheck("alpha/check".into()),
             SemanticScopeKind::Check,
             "alpha/check",
-            SemanticScopeKind::Qualification,
+            SemanticScopeKind::MethodQualification,
         ),
         (
-            Selector::QualificationFromRealization("core|rust-item|alpha::works".into()),
+            Selector::MethodQualificationFromRealization("core|rust-item|alpha::works".into()),
             SemanticScopeKind::Realization,
             "core|rust-item|alpha::works",
-            SemanticScopeKind::Qualification,
+            SemanticScopeKind::MethodQualification,
         ),
         (
-            Selector::QualificationFromMechanism("alpha#guard".into()),
+            Selector::MethodQualificationFromMechanism("alpha#guard".into()),
             SemanticScopeKind::Mechanism,
             "alpha#guard",
-            SemanticScopeKind::Qualification,
+            SemanticScopeKind::MethodQualification,
         ),
         (
-            Selector::ClaimJudgmentFromClaim("alpha#works".into()),
+            Selector::ClaimJudgmentFromClaim("alpha#behavior".into()),
             SemanticScopeKind::Claim,
-            "alpha#works",
+            "alpha#behavior",
             SemanticScopeKind::ClaimJudgment,
         ),
         (
@@ -512,22 +528,22 @@ fn selected_view_retains_exact_plan_dependencies_and_resolution_bytes() {
     fs::create_dir_all(model_dir.join("beta")).unwrap();
     fs::write(
         model_dir.join("alpha/spec.md"),
-        "# Spec: alpha\n\n## Requirement: works\nCriticality: standard\n\nA SHALL work.\n\n\
-         ### Scenario: yes\nWHEN invoked\nTHEN it works\n",
+        "# Spec: alpha\n\n## Claim: works\nCriticality: standard\n\nA SHALL work.\n\n\
+         ### Case: yes\nWHEN invoked\nTHEN it works\n",
     )
     .unwrap();
     fs::write(
         model_dir.join("beta/spec.md"),
-        "# Spec: beta\n\n## Requirement: works\nCriticality: standard\n\nB SHALL work.\n\n\
-         ### Scenario: yes\nWHEN invoked\nTHEN it works\n\n\
-         ### Scenario: unrelated\nWHEN invoked elsewhere\nTHEN the sibling works\n",
+        "# Spec: beta\n\n## Claim: works\nCriticality: standard\n\nB SHALL work.\n\n\
+         ### Case: yes\nWHEN invoked\nTHEN it works\n\n\
+         ### Case: unrelated\nWHEN invoked elsewhere\nTHEN the sibling works\n",
     )
     .unwrap();
     fs::write(
         model_dir.join("beta/design.md"),
-        "# Design: beta\n\n## Claim: yes\nMechanism: selected-guard\nEnforcement: guard\n\
+        "# Design: beta\n\n## Claim: works\nMechanism: selected-guard\nEnforcement: guard\nCases: [\"yes\"]\n\
          Binding: artifact:beta-selected\n\nThe selected guard establishes this Claim.\n\n\
-         ## Claim: unrelated\nMechanism: sibling-guard\nEnforcement: guard\n\
+         Mechanism: sibling-guard\nEnforcement: guard\nCases: [\"unrelated\"]\n\
          Binding: artifact:beta-sibling\n\nThe sibling guard establishes only its Claim.\n",
     )
     .unwrap();
@@ -536,17 +552,17 @@ fn selected_view_retains_exact_plan_dependencies_and_resolution_bytes() {
         "# Verification: alpha\n\n\
          ## Check: alpha/check\nMethod: invoke\nTerminal: alpha works\n\nAtomic.\n\n\
          ## Check: beta/check\nMethod: invoke\nTerminal: beta works\n\nAtomic.\n\n\
-         ## Evidence Binding: alpha/edge\nCheck: alpha/check\nClaim: alpha#yes\n\
-         Proposition: direct\nScope: unit\nQuantification: example\nOracle: direct\nContext: {}\n\
+         ## Evidence Binding: alpha/edge\nCheck: alpha/check\nCase: alpha#works/yes\n\
+         Method qualification: alpha/method\nProposition: direct\nContext: {}\n\
          Challenge domain: [\"realization\"]\nPolicy: credible\n\nReviewable.\n\n\
-         ## Evidence Binding: beta/edge\nCheck: beta/check\nClaim: beta#yes\nProposition: direct\n\
-         Scope: unit\nQuantification: example\nOracle: direct\nContext: {}\n\
+         ## Evidence Binding: beta/edge\nCheck: beta/check\nCase: beta#works/yes\n\
+         Method qualification: beta/method\nProposition: direct\nContext: {}\n\
          Challenge domain: [\"mechanism\"]\nPolicy: credible\n\nReviewable.\n\n\
          ## Challenger: mutation/search\nForm: mutation\nSearches for: an undetected change\n\
          Required scope: [\"binding\"]\n\nSearches edges.\n\n\
          ## Challenge Plan: alpha/plan\nChallenger: mutation/search\n\
-         Select: qualification from binding alpha/edge\n\
-         Select: qualification from binding beta/edge\n\nRetain both.\n",
+         Select: applicability-decision from binding alpha/edge\n\
+         Select: applicability-decision from binding beta/edge\n\nRetain both.\n",
     )
     .unwrap();
     let standards = root.join("standards.md");
@@ -564,9 +580,9 @@ fn selected_view_retains_exact_plan_dependencies_and_resolution_bytes() {
         &manifest,
         format!(
             "{{\"realizes\":[\
-             {{\"spec\":\"beta\",\"scenario\":\"yes\",\"site\":\"beta::yes\",\
+             {{\"spec\":\"beta\",\"claim\":\"works\",\"site\":\"beta::yes\",\
              \"file\":\"src/beta.rs\",\"lang\":\"rust\",\"source_fingerprint\":\"{A}\"}},\
-             {{\"spec\":\"beta\",\"scenario\":\"unrelated\",\"site\":\"beta::sibling\",\
+             {{\"spec\":\"beta\",\"claim\":\"works\",\"site\":\"beta::sibling\",\
              \"file\":\"src/sibling.rs\",\"lang\":\"rust\",\"source_fingerprint\":\"{B}\"}}],\
              \"artifacts\":[\
              {{\"id\":\"artifact:beta-selected\",\"kind\":\"rust-item\",\
@@ -602,23 +618,23 @@ fn selected_view_retains_exact_plan_dependencies_and_resolution_bytes() {
         .iter()
         .find(|spec| spec.id == "beta")
         .unwrap();
-    assert_eq!(beta.requirements[0].statement, "B SHALL work.");
+    assert_eq!(beta.claims[0].statement, "B SHALL work.");
     assert_eq!(
-        beta.requirements[0]
-            .scenarios
+        beta.claims[0]
+            .cases
             .iter()
             .map(|scenario| scenario.id.as_str())
             .collect::<Vec<_>>(),
-        ["yes"]
+        ["yes", "unrelated"]
     );
     assert_eq!(
         selected
             .realizes
             .iter()
             .filter(|site| site.spec == "beta")
-            .map(|site| site.scenario.as_str())
+            .map(|site| site.claim.as_str())
             .collect::<Vec<_>>(),
-        ["yes"]
+        ["works", "works"]
     );
     assert_eq!(
         selected.designs[0].entries[0].mechanisms[0].id,
@@ -656,13 +672,13 @@ fn local_marker_relocation_preserves_semantics_and_changes_only_locator_accounts
     fs::create_dir_all(model_dir.join("alpha")).unwrap();
     fs::write(
         model_dir.join("alpha/spec.md"),
-        "# Spec: alpha\n\n## Requirement: behavior\nCriticality: standard\n\n\
-         The system SHALL work.\n\n### Scenario: works\nWHEN invoked\nTHEN it works\n",
+        "# Spec: alpha\n\n## Claim: behavior\nCriticality: standard\n\n\
+         The system SHALL work.\n\n### Case: works\nWHEN invoked\nTHEN it works\n",
     )
     .unwrap();
     fs::write(
         model_dir.join("alpha/design.md"),
-        "# Design: alpha\n\n## Claim: works\nMechanism: guard\nEnforcement: guard\n\n\
+        "# Design: alpha\n\n## Claim: behavior\nMechanism: guard\nEnforcement: guard\nCases: [\"works\"]\n\n\
          The qualified implementation establishes the guard.\n",
     )
     .unwrap();
@@ -682,7 +698,7 @@ fn local_marker_relocation_preserves_semantics_and_changes_only_locator_accounts
         fs::write(
             &manifest,
             format!(
-                "{{\"realizes\":[{{\"spec\":\"alpha\",\"scenario\":\"works\",\
+                "{{\"realizes\":[{{\"spec\":\"alpha\",\"claim\":\"behavior\",\
                  \"site\":\"alpha::works\",\"file\":\"src/alpha.rs\",\"lang\":\"rust\",\
                  \"source_fingerprint\":\"{A}\"}}],\
                  \"check_implementations\":[{{\"check\":\"alpha/check\",\

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Apply an Azimuth change"
+  short_description: "Implement one approved Azimuth change"
+  default_prompt: "Use $azimuth-apply to implement the approved Azimuth change without archiving it."

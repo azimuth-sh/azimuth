@@ -1,6 +1,6 @@
 [package]
 name = "azimuth"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 edition = "2021"
 description = "Derives and validates an evidence-control-plane model."
 license = "Apache-2.0"
@@ -10,7 +10,7 @@ homepage = "https://azimuth.sh"
 keywords = ["requirements", "traceability", "verification", "sdd"]
 categories = ["command-line-utilities", "development-tools"]
 rust-version = "1.85"
-include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE"]
+include = ["src/**", "resources/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE"]
 
 # No dependencies. The destination is other people's CI.
 

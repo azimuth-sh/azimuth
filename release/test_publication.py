@@ -805,7 +805,39 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             qualify(argparse.Namespace(root=self.root, out=output))
             linkage = json.loads((output / "publication-linkage.json").read_text())
             qualification = json.loads((output / "publication.json").read_text())
-            self.assertEqual(len(linkage["realizes"]), 7)
+            self.assertEqual(
+                {
+                    (entry["claim"], entry["site"], entry["file"])
+                    for entry in linkage["realizes"]
+                },
+                {
+                    (
+                        "tagged-candidates-are-verifiable",
+                        "public_release_preflight",
+                        "release/publication.py",
+                    ),
+                    (
+                        "tagged-candidates-are-verifiable",
+                        "retained_candidate_verifier",
+                        "release/publication.py",
+                    ),
+                    (
+                        "tagged-candidates-are-verifiable",
+                        "published_image_attestation",
+                        ".github/workflows/publish.yml",
+                    ),
+                    (
+                        "partial-publication-resumes-safely",
+                        "public_registry_adapters",
+                        "release/publication.py",
+                    ),
+                    (
+                        "partial-publication-resumes-safely",
+                        "public_completion_gate",
+                        "release/publication.py",
+                    ),
+                },
+            )
             self.assertEqual(
                 set(linkage),
                 {

@@ -15,7 +15,15 @@ azimuth validate --only 'billing/**'
 azimuth report traceability
 azimuth report traceability --out traceability.json
 azimuth export --out model.json
-azimuth init
+azimuth init --agents codex,claude|none [--adopt-alias]
+azimuth reference list
+azimuth reference show <id> [--format text|json]
+azimuth agent add|remove <codex|claude>
+azimuth component add <id> --manifest <file>
+azimuth component remove <id>
+azimuth update [--check|--dry-run]
+azimuth migrate plan --out <file>
+azimuth migrate apply --plan <file>
 
 azimuth adapter verify [--config <file>]
 azimuth run plan --request <file> [--model <dir>] [--standards <file>] \
@@ -31,13 +39,14 @@ azimuth run inspect --bundle run.json --format json --out inspection.json
 azimuth explore create <id> --title <text>
 azimuth explore list
 azimuth explore show <id>
+azimuth explore archive <id> --date YYYY-MM-DD [--explorations <dir>]
 
 azimuth change create <id> --title <text>
 azimuth change list
 azimuth change show <id>
 azimuth change status <id>
 azimuth change work-packages <id>
-azimuth change instructions <id> --package <package-id>
+azimuth change brief <id> --package <package-id>
 azimuth change check azimuth/changes/<id>
 azimuth change finalize azimuth/changes/<id>
 azimuth change archive azimuth/changes/<id> --date YYYY-MM-DD
@@ -55,6 +64,12 @@ options. Exit code `0` means clean, `1` means Findings were reported and `2` mea
 not be derived. `azimuth report traceability` is a pure projection over selected Cases with
 inherited parent context; it creates no authored authority or execution fact. `azimuth export`
 writes model version 3.
+
+`azimuth explore archive` requires an active lower-kebab id, a real Gregorian date and exactly one `Status: approved` field in the exploration preamble. It moves the complete package to `archive/YYYY-MM-DD-<id>/` without rewriting content and rejects an occupied destination.
+
+`azimuth init` requires an explicit integration choice and writes the tracked `azimuth/installation.json` ownership account. The consumer skills, templates, authoring references and migration edges come from the release-owned embedded resource cohort, not this repository's contributor `.agents/skills/`. `azimuth reference` exposes version-matched parser guidance without installing duplicate reference files.
+
+`azimuth agent` changes selected managed integrations. `azimuth component` validates and records an already installed exact-release annotation or emitter component without editing its native manifest. `azimuth update` compares and synchronizes the complete managed resource cohort offline; modified managed files, alias drift and component drift fail before the update. `azimuth migrate` separately plans historical account transitions and applies only a fingerprint-current automatic plan. It does not weaken normal validation.
 
 Model input defaults to `azimuth/model`. Decision Policies and the current Challenge Schedule default to `azimuth/standards/verification.md`, the workspace defaults beside the model root, and `--manifest` is repeatable. Selection operates on declared ids, not paths.
 
@@ -135,6 +150,8 @@ globs are not semantic selectors, and zero selection never widens to a suite.
 - `change.rs` handles change projection, finalization and archive gates.
 - `federation.rs` assembles revision-bound repository accounts.
 - `workflow.rs` scaffolds changes and validates path-isolated work packages.
+- `resources.rs` embeds the release-owned consumer resource cohort and reference registry.
+- `installation.rs` owns installation integrity, explicit components, offline update and account migration.
 
 The strict manifest collections are `realizes`, `check_implementations`, `mechanism_implementations`, `class_members`, `enumerations` and `artifacts`. Source fingerprints have the exact lexical form `sha256:<64-lowercase-hex>`. Removed alpha-era collections are rejected; there is no compatibility reader.
 

@@ -4,7 +4,7 @@ use azimuth::design::{parse_design, Enforcement, Target};
 use azimuth::model::{MechanismImplementation, Model};
 
 const DESIGN: &str = "# Design: alpha\n\n\
-## Requirement: matters\n\
+## Claim: matters\n\
 Mechanism: concurrent-insert-constraint\n\
 Enforcement: constraint\n\
 Binding: schema:index:ux_alpha\n\
@@ -26,7 +26,7 @@ fn error(source: &str) -> String {
 fn parses_implementation_binding_and_enforcement_expectations() {
     let design = parse_design("design.md", DESIGN).unwrap();
     let entry = &design.entries[0];
-    assert_eq!(entry.target, Target::Requirement("matters".into()));
+    assert_eq!(entry.target, Target::Claim("matters".into()));
     let mechanism = &entry.mechanisms[0];
     assert_eq!(mechanism.id, "concurrent-insert-constraint");
     assert_eq!(mechanism.kind, Enforcement::Constraint);
@@ -63,7 +63,7 @@ fn rejects_unknown_enforcement_and_duplicate_mechanism_ids() {
 #[test]
 fn a_requirement_may_carry_several_mechanisms() {
     let source = "# Design: alpha\n\n\
-## Requirement: matters\n\
+## Claim: matters\n\
 Mechanism: transition-writer\n\
 Enforcement: choke-point\n\
 Binding: rust:alpha::transition\n\

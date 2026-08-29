@@ -16,9 +16,13 @@ These are accountabilities, not job titles. An agent is an authoring and review 
 
 ## Current alpha sequence
 
+Before entering a stage, a consumer agent follows the matching installed skill and asks the running CLI for parser-sensitive details with `azimuth reference show <artifact>`. The target repository and its instruction hierarchy are the complete working context; ordinary consumer work does not consult the canonical Azimuth checkout. Templates scaffold an artifact, references define its current grammar, and skills own the workflow.
+
 ### 1. Explore uncertainty
 
-Use an exploration before commitment when a topic spans several changes, crosses an unfamiliar boundary or still has unresolved product choices. `azimuth explore create|list|show` scaffolds and lists the package under `azimuth/explorations/`. Persist only shared decisions and a bounded change map. Research does not silently become current framework authority.
+Use an exploration before commitment when a topic spans several changes, crosses an unfamiliar boundary or still has unresolved product choices. `azimuth explore create|list|show` scaffolds and reads the active package under `azimuth/explorations/`. Persist only shared decisions and a bounded change map. Research does not silently become current framework authority.
+
+Approval and archival are separate actions. After the actual exploration files are approved, leave the package active until a later explicit request invokes `azimuth explore archive <id> --date <YYYY-MM-DD>`. Archival requires the approved status and a complete disposition account, moves the package content-preservingly to the dated archive, and does not wait for identified changes or experiments to finish.
 
 ### 2. Propose one transition
 
@@ -26,7 +30,7 @@ Create one change id with singular authority. State the problem, outcome, in-sco
 
 All new or changed framework Claims remain routine until a later accepted change deliberately raises criticality after the codebase stabilizes. Criticality follows consequence rather than implementation size, but this repository currently chooses the routine boundary to avoid manufacturing immature assurance decisions.
 
-Add a change `design.md` only when alternatives, failure modes, migration order or boundaries need review. Add `work-packages.md` when work can be delegated safely. `plan.md` remains an implementation sequence for the change; it is not a verification artifact or test inventory.
+Add a change `design.md` only when alternatives, failure modes, migration order or boundaries need review. Add `work-packages.md` when work can be delegated safely. `plan.md` remains an implementation sequence for the change; it is not a verification artifact or test inventory. `azimuth change brief <change> --package <package>` renders one contextual delegation handoff; authoring grammar comes from `azimuth reference`, not from that brief.
 
 ### 3. Freeze shared contracts
 
@@ -144,6 +148,12 @@ Challenge Results are exactly `clean | findings | inconclusive`. Clean is only a
 `model.extract` execution is absent. Durable ingestion, authorization, retention and Subject-specific Assurance State belong to the future Run ledger. Current planning defines no cache validity, cadence, historical-applicability or cross-Subject reuse semantics. Adapters are bounded short-lived processes; there is no daemon, webhook, inbound gateway or long-running adapter boundary.
 
 The optional Assurance Service remains isolated on its alpha 1 wire until the Run-ledger replacement is accepted. It does not ingest Run bundles, and there is no compatibility bridge or Assurance Service export command.
+
+## Upgrading a consumer repository
+
+Upgrade the CLI and each adopted annotation or emitter pin through their owning package managers as one reviewed cohort. Then run `azimuth update --check`, inspect `azimuth update --dry-run`, resolve managed-file, alias or component diagnostics, and apply `azimuth update`. The command is offline and updates only CLI-owned resources and their installation account.
+
+If the release changes accepted account format, inspect the bundled migration reference, create a content-addressed plan with `azimuth migrate plan --out <file>`, resolve all review-required findings in the user-owned account, replan, and apply the exact plan. Normal validation never accepts the old grammar. Installations without `azimuth/installation.json` are not adopted automatically; the two known pre-manifest repositories preserve project-owned policy, remove reviewed generated guidance and initialize afresh.
 
 ## Branches and rollout
 

@@ -8,7 +8,8 @@ contract before publication.
 
 ### Case: one-source-version
 WHEN a selected first-alpha artifact exposes a version or source tag
-THEN it matches version `0.1.0-alpha.3` and tag `v0.1.0-alpha.3`
+THEN it matches version `0.1.0-alpha.4` and tag `v0.1.0-alpha.4`
+AND the release catalog and bundled resource account name migration line `alpha-claim-case`
 
 ### Case: registry-identities-match-contract
 WHEN a selected artifact is packed for its public registry
@@ -23,6 +24,12 @@ AND image identities also include `ghcr.io/azimuth-sh/azimuth-assurance-web`
 ### Case: packed-contents-are-bounded-and-licensed
 WHEN a selected package candidate is built
 THEN its complete contents are allowlisted and its metadata declares Apache-2.0
+AND the Rust CLI candidate contains the complete declared consumer resource cohort
+
+### Case: protocol-compatibility-is-explicit
+WHEN the release cohort is qualified
+THEN the catalog names every produced or accepted protocol and schema by independent version
+AND protocol versions are not inferred from the package release version
 
 ### Case: support-and-platforms-are-explicit
 WHEN the first-alpha support account is inspected

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Coordinate Azimuth work"
+  short_description: "Coordinate path-isolated work packages"
+  default_prompt: "Use $azimuth-coordinate to execute the approved change through its work packages."

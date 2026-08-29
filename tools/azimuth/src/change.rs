@@ -577,12 +577,12 @@ mod tests {
         fs::write(root.join("plan.md"), "- [ ] Apply it.\n").unwrap();
         fs::write(
             root.join("specs/alpha.md"),
-            "# Intent delta: alpha\n\n## Add requirement: added\nCriticality: routine\n\nText.\n\n### Add scenario: visible\nWHEN x\nTHEN y\n",
+            "# Intent delta: alpha\n\n## Add claim: added\nCriticality: routine\n\nText.\n\n### Add case: visible\nWHEN x\nTHEN y\n",
         )
         .unwrap();
         let current = parse_spec(
             "alpha.md",
-            "# Spec: alpha\n\n## Requirement: old\nCriticality: routine\n\nOld.\n\n### Scenario: existing\nWHEN x\nTHEN y\n",
+            "# Spec: alpha\n\n## Claim: old\nCriticality: routine\n\nOld.\n\n### Case: existing\nWHEN x\nTHEN y\n",
         )
         .unwrap();
         let model = Model {
@@ -604,12 +604,12 @@ mod tests {
         fs::write(root.join("plan.md"), "- [ ] Apply it.\n").unwrap();
         fs::write(
             root.join("specs/alpha.md"),
-            "# Intent delta: alpha\n\n## Add requirement: added\nCriticality: routine\n\nTarget statement.\n\n### Add scenario: visible\nWHEN x\nTHEN target behavior\n",
+            "# Intent delta: alpha\n\n## Add claim: added\nCriticality: routine\n\nTarget statement.\n\n### Add case: visible\nWHEN x\nTHEN target behavior\n",
         )
         .unwrap();
         let current = parse_spec(
             "alpha.md",
-            "# Spec: alpha\n\n## Requirement: added\nCriticality: routine\n\nDifferent statement.\n\n### Scenario: visible\nWHEN x\nTHEN different behavior\n",
+            "# Spec: alpha\n\n## Claim: added\nCriticality: routine\n\nDifferent statement.\n\n### Case: visible\nWHEN x\nTHEN different behavior\n",
         )
         .unwrap();
         let model = Model {
@@ -724,7 +724,7 @@ mod tests {
         fs::create_dir_all(root.join("specs")).unwrap();
         fs::write(
             root.join("specs/alpha.md"),
-            "# Intent delta: alpha\n\n## Add requirement: added\nCriticality: routine\n\nText.\n\n### Add scenario: visible\nWHEN x\nTHEN y\n",
+            "# Intent delta: alpha\n\n## Add claim: added\nCriticality: routine\n\nText.\n\n### Add case: visible\nWHEN x\nTHEN y\n",
         )
         .unwrap();
 
@@ -810,7 +810,7 @@ mod tests {
         let current = parse_spec(
             "alpha.md",
             &format!(
-                "# Spec: alpha\n\n## Requirement: existing\nCriticality: {}\n\nOld.\n\n### Scenario: visible\nWHEN x\nTHEN y\n",
+                "# Spec: alpha\n\n## Claim: existing\nCriticality: {}\n\nOld.\n\n### Case: visible\nWHEN x\nTHEN y\n",
                 criticality.name()
             ),
         )

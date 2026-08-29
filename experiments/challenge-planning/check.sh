@@ -150,49 +150,49 @@ valid_fp = re.compile(r"sha256:[0-9a-f]{64}").fullmatch
 
 launch = load("launch-all.json")
 exported = load("export.json")
-assert len(launch["plan"]["challenges"]) == 4
+assert len(launch["plan"]["challenges"]) == 5
 resolutions = {item["plan"]: item for item in exported["challenge_resolutions"]}
 selectors = {
     "judgment-claim": (
-        ("claim-judgment", "claim", "synthetic#works"),
-        ("claim", "synthetic#works"),
-        ("claim-judgment", "synthetic#works"),
-        ("claim", "synthetic#works"),
+        ("claim-judgment", "claim", "synthetic#behavior"),
+        ("claim", "synthetic#behavior"),
+        ("claim-judgment", "synthetic#behavior"),
+        ("claim", "synthetic#behavior"),
     ),
     "judgment-mechanism": (
         ("claim-judgment", "mechanism", "synthetic#guard"),
-        ("claim", "synthetic#works"),
-        ("claim-judgment", "synthetic#works"),
+        ("claim", "synthetic#behavior"),
+        ("claim-judgment", "synthetic#behavior"),
         ("mechanism", "synthetic#guard"),
     ),
     "judgment-realization": (
         ("claim-judgment", "realization", "core|rust-symbol|synthetic::works"),
-        ("claim", "synthetic#works"),
-        ("claim-judgment", "synthetic#works"),
+        ("claim", "synthetic#behavior"),
+        ("claim-judgment", "synthetic#behavior"),
         ("realization", "core|rust-symbol|synthetic::works"),
     ),
     "qualification-binding": (
-        ("qualification", "binding", "synthetic/edge"),
+        ("applicability-decision", "binding", "synthetic/edge"),
         ("binding", "synthetic/edge"),
-        ("qualification", "synthetic/edge"),
+        ("applicability-decision", "synthetic/edge"),
         ("binding", "synthetic/edge"),
     ),
     "qualification-check": (
-        ("qualification", "check", "synthetic/analyzer"),
-        ("binding", "synthetic/edge"),
-        ("qualification", "synthetic/edge"),
+        ("method-qualification", "check", "synthetic/analyzer"),
+        ("method-qualification", "synthetic/analyzer-method"),
+        ("method-qualification", "synthetic/analyzer-method"),
         ("check", "synthetic/analyzer"),
     ),
     "qualification-mechanism": (
-        ("qualification", "mechanism", "synthetic#guard"),
-        ("binding", "synthetic/edge"),
-        ("qualification", "synthetic/edge"),
+        ("method-qualification", "mechanism", "synthetic#guard"),
+        ("method-qualification", "synthetic/analyzer-method"),
+        ("method-qualification", "synthetic/analyzer-method"),
         ("mechanism", "synthetic#guard"),
     ),
     "qualification-realization": (
-        ("qualification", "realization", "core|rust-symbol|synthetic::works"),
-        ("binding", "synthetic/edge"),
-        ("qualification", "synthetic/edge"),
+        ("method-qualification", "realization", "core|rust-symbol|synthetic::works"),
+        ("method-qualification", "synthetic/analyzer-method"),
+        ("method-qualification", "synthetic/analyzer-method"),
         ("realization", "core|rust-symbol|synthetic::works"),
     ),
 }
@@ -261,9 +261,9 @@ broad = next(
 broad_route = routes[broad["id"]]
 assert broad["target"]["kind"] == "claim-judgment"
 assert {item["kind"] for item in broad["scope"]["inputs"]} == {
-    "artifact", "binding", "check", "check-implementation", "claim",
-    "claim-judgment", "context", "mechanism", "policy", "qualification",
-    "realization",
+    "applicability-decision", "artifact", "binding", "case", "check",
+    "check-implementation", "claim", "claim-judgment", "context", "mechanism",
+    "method-qualification", "policy", "realization",
 }
 assert broad_route["capability"]["address"] == "synthetic/challenge"
 assert broad_route["capability"]["challenge_form"] == "broad-analysis"
@@ -289,8 +289,8 @@ for name, expected in outcomes.items():
     challenge = bundle["challenger_executions"][0]
     assert check["units"][0]["attempts"][0]["activity"] == "shared-analysis"
     assert challenge["units"][0]["attempts"][0]["activity"] == "shared-analysis"
-    assert check["observation"]["fingerprint"] != challenge["result"]["fingerprint"]
-    assert challenge["target"]["kind"] == "qualification"
+    assert check["observations"][0]["fingerprint"] != challenge["result"]["fingerprint"]
+    assert challenge["target"]["kind"] == "applicability-decision"
     assert challenge["result"]["outcome"] == expected
     assert [item["code"] for item in bundle["diagnostics"]] == mutation_codes[name]
 
@@ -325,7 +325,7 @@ for name, (expected, codes) in fault_outcomes.items():
         item for item in bundle["challenger_executions"]
         if item["challenger"]["id"] == "fault/injector"
     )
-    assert execution["target"]["kind"] == "qualification"
+    assert execution["target"]["kind"] == "applicability-decision"
     assert execution["result"]["outcome"] == expected
     assert [item["code"] for item in bundle["diagnostics"]] == codes
 
@@ -337,9 +337,9 @@ fault_result = next(
 )
 assert check["units"][0]["attempts"][0]["activity"] == "shared-analysis"
 assert fault_result["units"][0]["attempts"][0]["activity"] == "shared-analysis"
-assert check["observation"]["outcome"] == "satisfied"
+assert check["observations"][0]["outcome"] == "satisfied"
 assert fault_result["result"]["outcome"] == "clean"
-assert check["observation"]["fingerprint"] != fault_result["result"]["fingerprint"]
+assert check["observations"][0]["fingerprint"] != fault_result["result"]["fingerprint"]
 
 omitted = load("bundle-omitted.json")
 assert omitted["status"] == "partial"

@@ -1,6 +1,6 @@
 {
   "name": "@azimuth-sh/annotations",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "description": "Azimuth claim and mechanism linkage tags for TypeScript.",
   "license": "Apache-2.0",
   "type": "commonjs",

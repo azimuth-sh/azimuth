@@ -107,7 +107,7 @@ fn snapshot_wire_shape_and_fingerprint_remain_service_compatible() {
     assert!(json.get("bindings").is_none());
     let rendered = json.to_string_pretty();
     assert!(rendered.contains("contractFingerprint"));
-    assert!(!rendered.contains("qualification_fingerprint"));
+    assert!(!rendered.contains("method_qualification_fingerprint"));
 }
 
 #[test]

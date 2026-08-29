@@ -25,6 +25,10 @@ A failed run is diagnostic information only. It cannot replace either successful
 
 ## Public alpha publication
 
+The catalog is the complete release cohort: CLI/core, supported annotations and emitters, images, native binaries, bundled consumer resources, the migration-line identity and independently versioned protocols. Publishing a package version without the matching resource manifest is not a valid Azimuth release. Every incompatible account-format release must add a migration edge within the current line or declare a new no-migration line boundary before qualification.
+
+Before rehearsal, update every native manifest and lockfile, `release/artifacts.json`, `release/acceptance.py`, resource manifest, migration inventory, contracts, accepted model and adopter/operator documentation to the same candidate account. The bundled skills must be reviewed as consumer workflows; `.agents/skills/` is never a release source.
+
 `.github/workflows/publish.yml` is owner-dispatched and accepts one successful rehearsal run id. It downloads that run's retained candidates and account; it does not build candidates. A dry run reads all public targets, derives the absent/exact/conflicting plan and records credential readiness with zero writes.
 
 Configure the `release` environment with `CARGO_REGISTRY_TOKEN`, `NUGET_API_KEY` and `NPM_TOKEN`. The npm identity must administer the `@azimuth-sh` organization. The workflow's bounded GitHub token owns GitHub Release and GHCR access. A crates.io token restricted to `publish-new` cannot use the legacy identity endpoint. NuGet, GitHub Release and GHCR likewise expose no non-writing probe that proves the right to create an unused identity, so the preflight records those limitations and learns authorization from the first write. npm organization administration is checked directly.
@@ -32,7 +36,7 @@ Configure the `release` environment with `CARGO_REGISTRY_TOKEN`, `NUGET_API_KEY`
 After the publication change is merged, run the release rehearsal on `main`, wait for its complete account, create the annotated catalog tag at that same main revision and push the tag. Use `gh` to dispatch the no-write preflight against the tag:
 
 ```sh
-gh workflow run publish.yml --ref v0.1.0-alpha.3 \
+gh workflow run publish.yml --ref v0.1.0-alpha.4 \
   -f rehearsal_run_id=RUN_ID -f dry_run=true
 gh run watch PUBLICATION_RUN_ID --exit-status
 ```

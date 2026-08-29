@@ -25,7 +25,7 @@ Each Claim can have three facets:
 Criticality decides which facets are applicable. A routine Claim stops at intent and owes no
 realization, mechanism, Evidence Binding, Method Qualification, Applicability Decision or Claim
 Judgment. Standard and critical Claims add the applicable obligations. Every active Claim in this
-repository is routine during the fast-moving alpha 3 phase. Its ordinary tests and release checks
+repository is routine during the fast-moving alpha 4 phase. Its ordinary tests and release checks
 remain engineering safeguards; they are not Azimuth evidence.
 
 ## Intent and mechanism
@@ -49,7 +49,7 @@ The facets must also separate cleanly at N=1. If intent, mechanism and evidence 
 
 ## Repository evidence graph
 
-The alpha 3 repository graph is deliberately sparse:
+The alpha 4 repository graph is deliberately sparse:
 
 ```text
 production site --Realizes---------------------------> Claim
@@ -159,7 +159,7 @@ Qualification fans out through every dependent binding; a challenged Applicabili
 local to its Case edge. Both reach the parent Claim and current Claim Judgment without fabricating
 another Challenge Result.
 
-A Challenger is not recursively qualified in alpha 3. Its quality is an ordinary tool-release, conformance and review concern.
+A Challenger is not recursively qualified in alpha 4. Its quality is an ordinary tool-release, conformance and review concern.
 
 ## Linkage and domains
 
@@ -185,6 +185,16 @@ Applicability Decisions, unstable Check implementations, missing, stale or rejec
 Judgments, incomplete policy coverage, verification applied to routine Claims and unresolved
 Challenge Plans.
 
+## Consumer installation and guidance
+
+The CLI embeds a release-owned consumer resource cohort independently of this repository's contributor skills. `azimuth init` requires an explicit `codex`, `claude`, combined or `none` agent choice, installs only the selected managed copies, and writes `azimuth/installation.json` with release, migration-line, integration, component, path and digest accounts. A pre-existing relative `.claude/skills` alias to the repository's `.agents/skills` directory may be adopted only by explicit request; Azimuth never creates a symlink.
+
+Installed skills own stage sequence, gates and stopping conditions. Templates own initial shape. `azimuth reference list|show` exposes the running parser's version-matched authoring descriptors and bundled prose without copying a reference library into the repository. `azimuth change brief` is different: it renders a contextual handoff for one eligible work package, so the retired `change instructions` name has no compatibility alias.
+
+Agent additions and removals update only accounted workflow files. Components are installed through their native ecosystem first, then registered explicitly with a repository-contained manifest; Azimuth validates the supported identity and exact running release but never edits the manifest or invokes its package manager. `azimuth update --check|--dry-run` and `azimuth update` compare the complete managed cohort with the running CLI, fail on modified resources, alias drift or component drift, and perform no network access, self-upgrade or semantic account rewrite.
+
+Account migration is a separate boundary. `azimuth migrate plan` uses only a dedicated historical reader, classifies the complete transition as automatic, review-required or unsupported, and binds it to exact input content. `azimuth migrate apply` refuses drift, unresolved semantic review and unknown edit schemas. Historical forms do not become acceptable to normal validation. Migration edges accumulate only within the catalog's explicit `migrationLine`; crossing a line is an explicit no-migration boundary unless a later release declares otherwise.
+
 ## Tool and derived outputs
 
 The current top-level model commands are:
@@ -195,7 +205,7 @@ azimuth report traceability
 azimuth export --out model.json
 ```
 
-Authoring and project commands sit beside them: `azimuth init`, `azimuth explore create|list|show`, `azimuth change ...` and `azimuth project ...`. They scaffold and move artifacts and perform no model validation or Check execution.
+Authoring, installation and project commands sit beside them: `azimuth init`, `azimuth reference ...`, `azimuth agent ...`, `azimuth component ...`, `azimuth update`, `azimuth migrate ...`, `azimuth explore create|list|show|archive`, `azimuth change ...` and `azimuth project ...`. They do not execute Checks.
 
 `azimuth validate` is the sole deterministic model validator. It does not execute Checks. `azimuth
 report traceability` is a pure projection over selected Cases with inherited parent realizations,
@@ -285,7 +295,7 @@ The synthetic [Challenge-planning conformance](../experiments/challenge-planning
 the public commands and exercises all twelve selector forms, mixed planning, exact scope and routes,
 scheduled omission, import provenance and selection mismatch without creating persistent state.
 
-The optional Assurance Service is likewise awaiting the Run-ledger replacement. The alpha 1 claim-contract and project-snapshot wire remains isolated inside the existing service boundary until that replacement removes it. It is not the alpha 3 repository model or Run-bundle protocol, is not emitted by `azimuth export`, and receives no compatibility bridge. Authorization, durable ingest, retention and Subject-specific Assurance State remain ledger work.
+The optional Assurance Service is likewise awaiting the Run-ledger replacement. The alpha 1 claim-contract and project-snapshot wire remains isolated inside the existing service boundary until that replacement removes it. It is not the alpha 4 repository model or Run-bundle protocol, is not emitted by `azimuth export`, and receives no compatibility bridge. Authorization, durable ingest, retention and Subject-specific Assurance State remain ledger work.
 
 The authority split is current: repositories own Claims, Checks, Evidence Bindings and reviewed decisions; Run producers own execution facts about exact Subjects. A standalone valid bundle does not establish that its model or decision fingerprints are current.
 

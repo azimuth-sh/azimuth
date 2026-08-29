@@ -118,7 +118,7 @@ for name, kind in expected.items():
     assert [(item["kind"], item["id"]) for item in scope["inputs"]] == [
         ("claim", "synthetic/recovery#recovers"),
         ("binding", "synthetic/recovery-edge"),
-        ("qualification", "synthetic/recovery-edge"),
+        ("method-qualification", "synthetic/recovery-edge"),
         ("check", "synthetic/recovery-check"),
         ("check-implementation", "synthetic|rust-symbol|recovery::probe"),
         ("context", "synthetic/recovery-edge"),
@@ -223,7 +223,7 @@ challenge_activities = {
     for attempt in unit["attempts"]
 }
 assert check_activities & challenge_activities == {"shared-probe"}
-assert bundle["check_executions"][0]["observation"]["outcome"] == "satisfied"
+assert bundle["check_executions"][0]["observations"][0]["outcome"] == "satisfied"
 assert bundle["challenger_executions"][0]["result"]["outcome"] == "clean"
 PY
 
@@ -235,8 +235,12 @@ import sys
 
 partial, correction = [json.load(open(path, encoding="utf-8")) for path in sys.argv[1:]]
 attempts = partial["check_executions"][0]["units"][0]["attempts"]
-assert [attempt["outcome"] for attempt in attempts] == ["inconclusive", "satisfied"]
-assert partial["check_executions"][0]["observation"]["outcome"] == "inconclusive"
+case = partial["plan"]["checks"][0]["cases"][0]
+assert [attempt["outcomes"] for attempt in attempts] == [
+    {case: "inconclusive"},
+    {case: "satisfied"},
+]
+assert partial["check_executions"][0]["observations"][0]["outcome"] == "inconclusive"
 omitted = partial["plan"]["challenges"][0]["id"]
 assert partial["actual_selection"]["challenges"] == []
 assert partial["challenger_executions"] == []
@@ -244,7 +248,7 @@ assert len(partial["diagnostics"]) == 1
 diagnostic = partial["diagnostics"][0]
 assert diagnostic["class"] == "execution"
 assert diagnostic["scope"] == {"kind": "challenge-selection", "id": omitted}
-assert correction["check_executions"][0]["observation"]["outcome"] == "satisfied"
+assert correction["check_executions"][0]["observations"][0]["outcome"] == "satisfied"
 assert correction["actual_selection"]["challenges"] == correction["plan"]["challenges"]
 assert len(correction["challenger_executions"]) == 1
 assert correction["bundle_revision"] == 1

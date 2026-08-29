@@ -1,0 +1,4 @@
+interface:
+  display_name: "Explore Azimuth initiatives"
+  short_description: "Research and approve an uncertain initiative"
+  default_prompt: "Use $azimuth-explore to research and shape this initiative before proposing changes."

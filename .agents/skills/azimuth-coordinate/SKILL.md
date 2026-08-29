@@ -11,7 +11,7 @@ The CLI computes the eligible frontier; the host agent runtime performs delegati
 
 1. Run `azimuth change work-packages <id>`. Stop on an unknown dependency, dependency cycle or overlapping ownership error.
 2. Keep shared contracts, change artifacts and integration files under coordinator ownership. Create a predecessor package for frozen contracts before parallel consumers start.
-3. For every eligible package, run `azimuth change instructions <id> --package <package-id>` and give that output to a fresh agent. Use the runtime's native parallel-agent capability when available. Otherwise execute the same packages sequentially without changing their boundaries.
+3. For every eligible package, run `azimuth change brief <id> --package <package-id>` and give that output to a fresh agent. Use the runtime's native parallel-agent capability when available. Otherwise execute the same packages sequentially without changing their boundaries.
 4. Require each worker to report changed files, commands run, evidence results and residuals. A worker must not finalize, archive, create another proposal, or edit outside its Owns paths.
 5. Review the result against its objective and scope before changing its Status to `complete`. Reject unreported cross-package edits even when tests pass.
 6. Re-run the CLI to compute the next eligible frontier. Continue until no pending package remains.

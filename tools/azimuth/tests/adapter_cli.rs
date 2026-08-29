@@ -207,13 +207,21 @@ fn model(root: &Path, checks: &[&str]) -> (PathBuf, PathBuf, PathBuf) {
     fs::create_dir(&package).unwrap();
     fs::write(
         package.join("spec.md"),
-        "# Spec: demo\n\n## Requirement: works\nCriticality: routine\n\n\
-         The demo SHALL work.\n\n### Scenario: works\nWHEN invoked\nTHEN it works\n",
+        "# Spec: demo\n\n## Claim: works\nCriticality: routine\n\n\
+         The demo SHALL work.\n\n### Case: works\nWHEN invoked\nTHEN it works\n",
     )
     .unwrap();
     let declarations = checks
         .iter()
-        .map(|id| format!("## Check: {id}\nMethod: invoke\nTerminal: works\n\nOne result.\n"))
+        .map(|id| {
+            let suffix = id.rsplit('/').next().unwrap();
+            format!(
+                "## Check: {id}\nMethod: invoke\nTerminal: works\n\nOne result.\n\n\
+                 ## Evidence Binding: demo/{suffix}-edge\nCheck: {id}\nCase: demo#works/works\n\
+                 Method qualification: demo/{suffix}-method\nProposition: direct\nContext: {{}}\n\
+                 Challenge domain: [\"check-implementation\"]\nPolicy: credible\n\nReviewable.\n"
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n");
     fs::write(
@@ -258,8 +266,8 @@ fn challenge_model(root: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     let (model, workspace, manifest) = model(root, &["demo/check"]);
     fs::write(
         model.join("demo/spec.md"),
-        "# Spec: demo\n\n## Requirement: works\nCriticality: standard\n\n\
-         The demo SHALL work.\n\n### Scenario: works\nWHEN invoked\nTHEN it works\n",
+        "# Spec: demo\n\n## Claim: works\nCriticality: standard\n\n\
+         The demo SHALL work.\n\n### Case: works\nWHEN invoked\nTHEN it works\n",
     )
     .unwrap();
     let standards = root.join("standards.md");
@@ -276,14 +284,17 @@ fn challenge_model(root: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
         format!(
             "# Verification: demo\n\n\
              ## Check: demo/check\nMethod: invoke\nTerminal: works\n\nOne result.\n\n\
-             ## Evidence Binding: demo/edge\nCheck: demo/check\nClaim: demo#works\n\
-             Proposition: direct\nScope: unit\nQuantification: example\nOracle: direct\n\
+             ## Evidence Binding: demo/edge\nCheck: demo/check\nCase: demo#works/works\n\
+             Method qualification: demo/method\nProposition: direct\n\
              Context: {{\"platform\":\"linux\"}}\nChallenge domain: [\"realization\",\"mechanism\"]\n\
              Policy: credible\n\nReviewable.\n\n\
-             ## Qualification: demo/edge\nVerdict: {verdict}\nFingerprint: {fingerprint}\n\
+             ## Method Qualification: demo/method\nCheck: demo/check\nScope: unit\n\
+             Quantification: example\nOracle: direct\nContext: {{\"platform\":\"linux\"}}\n\
+             Challenge domain: [\"check-implementation\"]\nPolicy: credible\n\
+             Verdict: {verdict}\nFingerprint: {fingerprint}\n\
              Qualified: 2026-08-22\nQualifier: owner\n\nQualified.\n\n\
              ## Challenger: mutation/search\nForm: {form}\nSearches for: an undetected change\n\
-             Required scope: [\"binding\",\"check-implementation\"]\n\nSearches exact semantics.\n\n\
+             Required scope: [\"check-implementation\"]\n\nSearches exact semantics.\n\n\
              ## Challenge Plan: demo/plan\nChallenger: mutation/search\nSelect: {selector}\n\n\
              Targets the current decision.\n"
         )
@@ -294,7 +305,7 @@ fn challenge_model(root: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
             &fp('0'),
             "qualified",
             "mutation",
-            "qualification from binding demo/edge",
+            "method-qualification from method-qualification demo/method",
         ),
     )
     .unwrap();
@@ -308,7 +319,9 @@ fn challenge_model(root: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     .unwrap();
     let fingerprint = loaded
         .model
-        .expected_qualification_fingerprint(&loaded.model.verifications[0].bindings[0])
+        .expected_method_qualification_fingerprint(
+            &loaded.model.verifications[0].method_qualifications[0],
+        )
         .unwrap();
     fs::write(
         &verification,
@@ -316,7 +329,7 @@ fn challenge_model(root: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
             &fingerprint,
             "qualified",
             "mutation",
-            "qualification from binding demo/edge",
+            "method-qualification from method-qualification demo/method",
         ),
     )
     .unwrap();
@@ -337,6 +350,7 @@ fn request(path: &Path, operation: RunOperation, check: &str) {
         checks: vec![RequestedCheck {
             id: check.into(),
             capability: "synthetic/checks".into(),
+            cases: vec!["demo#works/works".into()],
             units: vec![WorkUnit {
                 id: "whole".into(),
                 parameters: BTreeMap::new(),
@@ -373,6 +387,7 @@ fn challenge_request(
             vec![RequestedCheck {
                 id: "demo/check".into(),
                 capability: "synthetic/checks".into(),
+                cases: vec!["demo#works/works".into()],
                 units: vec![WorkUnit {
                     id: "whole".into(),
                     parameters: BTreeMap::new(),
@@ -446,7 +461,7 @@ fn add_second_challenge_candidate(
         manifest_source.replacen(
             '{',
             &format!(
-                "{{\"realizes\":[{{\"spec\":\"demo\",\"scenario\":\"works\",\
+                "{{\"realizes\":[{{\"spec\":\"demo\",\"claim\":\"works\",\
                  \"site\":\"demo::works\",\"file\":\"src/demo.rs\",\
                  \"lang\":\"rust-symbol\",\"source_fingerprint\":\"{}\"}}],",
                 fp('2')
@@ -461,18 +476,37 @@ fn add_second_challenge_candidate(
         .replace(
             "## Challenger: mutation/search",
             &format!(
-                "## Claim Judgment: demo#works\nVerdict: accepted\nPolicy: credible\nFingerprint: {}\n\
+                "## Applicability Decision: demo/edge\nVerdict: applicable\nFingerprint: {}\n\
+                 Decided: 2026-08-22\nDecider: owner\n\nApplicable.\n\n\
+                 ## Claim Judgment: demo#works\nVerdict: accepted\nPolicy: credible\nFingerprint: {}\n\
                  Judged: 2026-08-22\nJudge: owner\nBasis: the exact composition is accepted\n\
                  Residual risk: none identified\n\nAccepted.\n\n\
                  ## Challenger: mutation/search",
+                fp('3'),
                 fp('1')
             ),
         )
         .replace(
-            "Select: qualification from binding demo/edge",
-            "Select: qualification from binding demo/edge\n\
+            "Select: method-qualification from method-qualification demo/method",
+            "Select: method-qualification from method-qualification demo/method\n\
              Select: claim-judgment from claim demo#works",
         );
+    fs::write(&verification, source).unwrap();
+    let loaded = azimuth::load(
+        model,
+        standards,
+        workspace,
+        std::slice::from_ref(&manifest.to_path_buf()),
+        &[],
+    )
+    .unwrap();
+    let applicability_fingerprint = loaded
+        .model
+        .expected_applicability_fingerprint(&loaded.model.verifications[0].bindings[0])
+        .unwrap();
+    let source = fs::read_to_string(&verification)
+        .unwrap()
+        .replace(&fp('3'), &applicability_fingerprint);
     fs::write(&verification, source).unwrap();
     let loaded = azimuth::load(
         model,
@@ -585,8 +619,15 @@ fn refresh_bundle(bundle: &mut RunBundle) {
     bundle.actual_selection.fingerprint = selection_fingerprint(&bundle.actual_selection);
     bundle.run_id = run_id(bundle);
     for index in 0..bundle.check_executions.len() {
-        bundle.check_executions[index].observation.fingerprint =
-            observation_fingerprint(bundle, &bundle.check_executions[index]);
+        for observation_index in 0..bundle.check_executions[index].observations.len() {
+            let fingerprint = observation_fingerprint(
+                bundle,
+                &bundle.check_executions[index],
+                &bundle.check_executions[index].observations[observation_index],
+            );
+            bundle.check_executions[index].observations[observation_index].fingerprint =
+                fingerprint;
+        }
     }
     for index in 0..bundle.challenger_executions.len() {
         bundle.challenger_executions[index].result.fingerprint =
@@ -685,16 +726,27 @@ fn adapter_bundle(
                 attempts: vec![CheckAttempt {
                     ordinal: 1,
                     activity: "native-check".into(),
-                    outcome: ObservationOutcome::Violated,
+                    outcomes: launch.plan.checks[0]
+                        .cases
+                        .iter()
+                        .cloned()
+                        .map(|case| (case, ObservationOutcome::Violated))
+                        .collect(),
                 }],
             }],
-            observation: Observation {
-                outcome: ObservationOutcome::Violated,
-                observed_at_ms: launch.planned_at_ms + 2,
-                fingerprint: fp('0'),
-                artifacts: Vec::new(),
-                diagnostics: Vec::new(),
-            },
+            observations: launch.plan.checks[0]
+                .cases
+                .iter()
+                .cloned()
+                .map(|case| Observation {
+                    case,
+                    outcome: ObservationOutcome::Violated,
+                    observed_at_ms: launch.planned_at_ms + 2,
+                    fingerprint: fp('0'),
+                    artifacts: Vec::new(),
+                    diagnostics: Vec::new(),
+                })
+                .collect(),
         });
     }
     refresh_bundle(&mut bundle);

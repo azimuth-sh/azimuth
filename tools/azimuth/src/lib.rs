@@ -8,10 +8,12 @@ pub mod design;
 pub mod diag;
 pub mod federation;
 pub mod fingerprint;
+pub mod installation;
 pub mod json;
 pub mod labels;
 pub mod manifest;
 pub mod model;
+pub mod resources;
 pub mod run;
 pub mod run_plan;
 pub mod spec;
@@ -1167,6 +1169,7 @@ mod tests {
         Mechanism {
             id: id.into(),
             kind: Enforcement::Guard,
+            cases: Vec::new(),
             binding: Some(format!("{id}-artifact")),
             expected_unique: None,
             expected_columns: Vec::new(),
@@ -1179,8 +1182,8 @@ mod tests {
     fn mechanism_selection_closure_reads_every_matching_design_entry() {
         let spec = crate::spec::parse_spec(
             "spec.md",
-            "# Spec: example\n\n## Requirement: works\nCriticality: standard\n\nThe example \
-             SHALL work.\n\n### Scenario: succeeds\nWHEN invoked\nTHEN it succeeds\n",
+            "# Spec: example\n\n## Claim: works\nCriticality: standard\n\nThe example \
+             SHALL work.\n\n### Case: succeeds\nWHEN invoked\nTHEN it succeeds\n",
         )
         .unwrap();
         let model = Model {
@@ -1190,12 +1193,12 @@ mod tests {
                 path: "design.md".into(),
                 entries: vec![
                     DesignEntry {
-                        target: Target::Scenario("succeeds".into()),
+                        target: Target::Claim("works".into()),
                         mechanisms: vec![mechanism("first")],
                         line: 1,
                     },
                     DesignEntry {
-                        target: Target::Scenario("succeeds".into()),
+                        target: Target::Claim("works".into()),
                         mechanisms: vec![mechanism("second")],
                         line: 2,
                     },
@@ -1207,7 +1210,7 @@ mod tests {
 
         assert_eq!(
             selected_mechanism_claims(&model, "example#second"),
-            ["example#succeeds".to_string()].into_iter().collect()
+            ["example#works/succeeds".to_string()].into_iter().collect()
         );
     }
 
@@ -1215,8 +1218,8 @@ mod tests {
     fn every_nonroutine_claim_needs_decision_standards_even_without_declarations() {
         let spec = crate::spec::parse_spec(
             "spec.md",
-            "# Spec: example\n\n## Requirement: works\nCriticality: standard\n\nThe example \
-             SHALL work.\n\n### Scenario: succeeds\nWHEN invoked\nTHEN it succeeds\n",
+            "# Spec: example\n\n## Claim: works\nCriticality: standard\n\nThe example \
+             SHALL work.\n\n### Case: succeeds\nWHEN invoked\nTHEN it succeeds\n",
         )
         .unwrap();
         assert!(needs_standards(&Model {
