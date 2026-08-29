@@ -1,0 +1,12 @@
+{
+  "format": "azimuth-ordinary-workflow-receipt",
+  "schemaVersion": 1,
+  "workflow": ".github/workflows/ci.yml",
+  "sourceRevision": "b5f8829d0bdb9f3c3148263f5ec6c26bb4b1fb6d",
+  "executionRevision": "b5f8829d0bdb9f3c3148263f5ec6c26bb4b1fb6d",
+  "runUrl": "https://github.com/azimuth-sh/azimuth/actions/runs/33276912701",
+  "conclusion": "success",
+  "durationSeconds": 584,
+  "workflowSha256": "ee4ac64493b31536918b7d620f89a3c00d288e95bc459c6148e9b4ca2c3a9c85",
+  "rootGateSha256": "4fa218a86118cbb5324869f24ecfc4d20dfcd095baa3c481e13b78af7bb9fbe3"
+}
