@@ -120,8 +120,8 @@ def scan(
                         f"{relative}:{call.lineno}: retired alpha 1 marker {name} is not supported"
                     )
                 if name == "realizes":
-                    spec, scenario, *_ = strings(call, 2, name, relative)
-                    manifest["realizes"].append(entry(spec, scenario, site, relative, fingerprint))
+                    spec, claim, *_ = strings(call, 2, name, relative)
+                    manifest["realizes"].append(entry(spec, claim, site, relative, fingerprint))
                 elif name == "implements_check":
                     check, = strings(call, 1, name, relative)
                     manifest["check_implementations"].append(
@@ -172,10 +172,10 @@ def scan(
     return manifest
 
 
-def entry(spec: str, scenario: str, site: str, file: str, fingerprint: str) -> dict[str, object]:
+def entry(spec: str, claim: str, site: str, file: str, fingerprint: str) -> dict[str, object]:
     return {
         "spec": spec,
-        "scenario": scenario,
+        "claim": claim,
         "site": site,
         "file": file,
         "lang": "python",

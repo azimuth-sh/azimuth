@@ -162,6 +162,7 @@ Subject digests and revisions are opaque protocol values. Adapters define their 
     {
       "id": "payments/recovery-under-broker-loss",
       "fingerprint": "sha256:<check-fingerprint>",
+      "cases": ["payments/recovery#accepted-write/replayed-after-broker-loss"],
       "implementations": [
         {
           "identity": "payments|rust-symbol|recovery::replay-after-loss",
@@ -178,14 +179,14 @@ Subject digests and revisions are opaque protocol values. Adapters define their 
   ],
   "challenges": [
     {
-      "id": "challenge/91f69477f56b9a2ba588fb045529ddbaa7184c79f473eab50f73a0c5f70d038b",
+      "id": "challenge/71518eefaf1f73fa6fe99b690d178f71dd7b760d803ca361997dd9b697ec78e1",
       "challenger": {
         "id": "mutation/implementation-perturbation",
         "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "target": {
-        "kind": "qualification",
-        "id": "payments/recovery-replay-edge",
+        "kind": "method-qualification",
+        "id": "payments/recovery-method",
         "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       },
       "lane": "gate",
@@ -220,13 +221,21 @@ Subject digests and revisions are opaque protocol values. Adapters define their 
 
 `required_context` and every unit `parameters` value are exact JSON objects from non-empty strings to strings. Empty objects are valid. The combined Check and Challenge arrays are non-empty.
 
-Checks sort by `(id, fingerprint)` and ids are unique within a plan. Implementations sort by `(identity, source_fingerprint)` and are non-empty. Units sort by id, are non-empty and have unique ids. One `whole` unit represents native work whose internal population is not separately planned.
+Checks sort by `(id, fingerprint)` and ids are unique within a plan. `cases` is a non-empty,
+sorted, unique array of exact nested Case ids. Implementations sort by `(identity,
+source_fingerprint)` and are non-empty. Units sort by id, are non-empty and have unique ids. One
+`whole` unit represents native work whose internal population is not separately planned. One Check
+selection may name several Cases without duplicating its physical execution.
 
 Implementation `identity` is the stable semantic SourceIdentity `<area>|<address-kind>|<address>`. Area and address kind are lower kebab ids. Address is non-empty, glob-free semantic identity rather than a file, path, numeric line, or path-plus-line locator; it uses the realization-selector boundary from [verification.md](verification.md).
 
 Challenges sort by their plan-local id, which is unique. `lane` is exactly `gate | scheduled` and is derived from the current Challenge Schedule. Scope is the strict semantic Challenge scope from [verification.md](verification.md); its arrays and fingerprint are validated independently.
 
-The semantic tuple of Challenger fingerprint, target kind and target fingerprint is also unique within the plan. Target kind is exactly `qualification | claim-judgment`. Qualification target ids are Evidence Binding ids; Claim Judgment target ids have exact case-level Claim form `<spec-id>#<case-id>`. The fingerprint, not the display id, is the exact decision target.
+The semantic tuple of Challenger fingerprint, target kind and target fingerprint is also unique
+within the plan. Target kind is exactly `method-qualification | applicability-decision |
+claim-judgment`. Method Qualification ids are project-global, Applicability Decision ids are exact
+Evidence Binding ids and Claim Judgment ids have parent Claim form `<spec-id>#<claim-id>`. The
+fingerprint, not the display id, is the exact decision target.
 
 Generated Challenge ids are `challenge/<64-lowercase-hex>`, where the suffix is the raw SHA-256 of RFC 8785 canonical UTF-8 for:
 
@@ -242,13 +251,15 @@ Generated Challenge ids are `challenge/<64-lowercase-hex>`, where the suffix is 
 
 The id is independent of selector order, authored Plan id, capability, work units, lane and scope. Selections with the same exact tuple union their anchors and inputs. Conflicting capabilities or work units fail planning; neither arrival order nor one lexically smaller Plan wins.
 
-For Challenger fingerprint `sha256:` followed by 64 `a` characters, Qualification fingerprint `sha256:` followed by 64 `b` characters and target kind `qualification`, the canonical preimage is:
+For Challenger fingerprint `sha256:` followed by 64 `a` characters, Method Qualification
+fingerprint `sha256:` followed by 64 `b` characters and target kind `method-qualification`, the
+canonical preimage is:
 
 ```json
-{"challenger_fingerprint":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","format":"azimuth-challenge-selection-identity","target_fingerprint":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","target_kind":"qualification","version":1}
+{"challenger_fingerprint":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","format":"azimuth-challenge-selection-identity","target_fingerprint":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","target_kind":"method-qualification","version":1}
 ```
 
-The generated id is `challenge/91f69477f56b9a2ba588fb045529ddbaa7184c79f473eab50f73a0c5f70d038b`.
+The generated id is `challenge/71518eefaf1f73fa6fe99b690d178f71dd7b760d803ca361997dd9b697ec78e1`.
 
 The standalone verifier recomputes plan identity and lexical exactness. It does not assert that the named model, Check, Challenger or decision is current. Model-aware generated planning performs the current-authority join; the ledger later joins accepted facts.
 
@@ -283,12 +294,12 @@ Every actual entry resolves to the plan entry with the same identity. Units are 
   },
   "normalizer": {
     "id": "adapter/synthetic",
-    "version": "0.1.0-alpha.2",
+    "version": "0.1.0-alpha.3",
     "build_fingerprint": "sha256:<adapter-fingerprint>"
   },
   "adapter": {
     "id": "synthetic",
-    "adapter_version": "0.1.0-alpha.2",
+    "adapter_version": "0.1.0-alpha.3",
     "adapter_fingerprint": "sha256:<adapter-fingerprint>",
     "descriptor_fingerprint": "sha256:<descriptor-fingerprint>",
     "configuration_fingerprint": "sha256:<configuration-fingerprint>",
@@ -381,7 +392,7 @@ Diagnostic ids and codes are lower kebab path ids. Class is `objection | executi
 {"kind":"check-execution","check":"payments/recovery-under-broker-loss"}
 {
   "kind": "challenge-selection",
-  "id": "challenge/91f69477f56b9a2ba588fb045529ddbaa7184c79f473eab50f73a0c5f70d038b"
+  "id": "challenge/71518eefaf1f73fa6fe99b690d178f71dd7b760d803ca361997dd9b697ec78e1"
 }
 {
   "kind": "challenger-execution",
@@ -427,24 +438,40 @@ Activity ids are unique lower kebab path ids. Status is `completed | failed | ti
         {
           "ordinal": 1,
           "activity": "fault-probe/attempt-1",
-          "outcome": "satisfied"
+          "outcomes": {
+            "payments/recovery#accepted-write/replayed-after-broker-loss": "satisfied"
+          }
         }
       ]
     }
   ],
-  "observation": {
-    "outcome": "satisfied",
-    "observed_at_ms": 1787300019000,
-    "fingerprint": "sha256:<observation-fingerprint>",
-    "artifacts": ["native-report"],
-    "diagnostics": []
-  }
+  "observations": [
+    {
+      "case": "payments/recovery#accepted-write/replayed-after-broker-loss",
+      "outcome": "satisfied",
+      "observed_at_ms": 1787300019000,
+      "fingerprint": "sha256:<observation-fingerprint>",
+      "artifacts": ["native-report"],
+      "diagnostics": []
+    }
+  ]
 }
 ```
 
-Exactly one Check execution exists for every actual Check and none exists for an omitted planned Check. Execution units equal that Check's actual units. Unit ids sort and are unique. Attempts are non-empty with contiguous positive ordinals beginning at one and valid activity references. Attempt outcome is `satisfied | violated | inconclusive`; a non-completed activity requires `inconclusive`. One activity may occur at most once within one execution unit's attempt sequence, while the same activity may support a Check execution and a Challenger execution.
+Exactly one Check execution exists for every actual Check and none exists for an omitted planned
+Check. Execution units equal that Check's actual units. Unit ids sort and are unique. Attempts are
+non-empty with contiguous positive ordinals beginning at one and valid activity references. Every
+attempt's `outcomes` object has exactly one key for every selected Case and no other key; each value
+is `satisfied | violated | inconclusive`. A non-completed activity requires every Case outcome to be
+`inconclusive`. One activity may occur at most once within one execution unit's attempt sequence,
+while the same activity may support a Check execution and a Challenger execution.
 
-Unit reduction preserves any `violated`. Otherwise a final `satisfied` attempt produces `satisfied`; otherwise the unit is `inconclusive`. Observation reduction preserves any violated unit, produces satisfied only when actual units equal the planned units and all are satisfied, and is inconclusive otherwise. The declared Observation must equal the derived outcome.
+Reduction is independent for every selected Case. A Case/unit preserves any `violated`; otherwise a
+final `satisfied` attempt produces `satisfied`, and the unit is `inconclusive` otherwise. The Case
+Observation preserves any violated unit, produces satisfied only when actual selection exactly
+matches the planned Check—including Cases—and all units are satisfied for that Case, and is
+inconclusive otherwise. `observations` has exactly one entry per selected Case and each declared
+outcome must equal the derived outcome.
 
 Observation time falls within the Run interval and is no earlier than every referenced activity finish. Artifact and diagnostic references resolve. Context is the one actual Run context and is not repeated here. There is no lifecycle stage or expiry.
 
@@ -452,14 +479,14 @@ Observation time falls within the Run interval and is no earlier than every refe
 
 ```json
 {
-  "challenge": "challenge/91f69477f56b9a2ba588fb045529ddbaa7184c79f473eab50f73a0c5f70d038b",
+  "challenge": "challenge/71518eefaf1f73fa6fe99b690d178f71dd7b760d803ca361997dd9b697ec78e1",
   "challenger": {
     "id": "mutation/implementation-perturbation",
     "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   },
   "target": {
-    "kind": "qualification",
-    "id": "payments/recovery-replay-edge",
+    "kind": "method-qualification",
+    "id": "payments/recovery-method",
     "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   },
   "units": [
@@ -529,6 +556,7 @@ Canonical JSON is the JSON Canonicalization Scheme defined by RFC 8785. It uses 
   "run_id": <run-id>,
   "subject_fingerprint": <subject-fp>,
   "check": <check>,
+  "case": <case-id>,
   "context": <context>,
   "outcome": <outcome>,
   "observed_at_ms": <time>

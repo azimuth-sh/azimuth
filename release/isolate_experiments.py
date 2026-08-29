@@ -19,11 +19,7 @@ else:
 
 
 SPEC = "framework/release-artifacts"
-SCENARIOS = (
-    "all-experimental-source-is-gated",
-    "experiment-gates-need-no-domain-checkout",
-    "external-domain-evidence-is-citation-only",
-)
+CLAIMS = ("experimental-source-isolation",)
 ROOT_GATE = PurePosixPath("scripts/check.sh")
 POLYGLOT_GATE = PurePosixPath("experiments/polyglot/check.sh")
 WORKFLOW = PurePosixPath(".github/workflows/ci.yml")
@@ -456,13 +452,13 @@ def write_linkage(root, output_root):
         "realizes": [
             {
                 "spec": SPEC,
-                "scenario": scenario,
+                "claim": claim,
                 "site": "qualify_experimental_isolation",
                 "file": "release/isolate_experiments.py",
                 "lang": "python",
                 "source_fingerprint": qualifier_fingerprint,
             }
-            for scenario in SCENARIOS
+            for claim in CLAIMS
         ],
         "check_implementations": [],
         "mechanism_implementations": [],

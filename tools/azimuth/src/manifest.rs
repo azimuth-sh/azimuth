@@ -1,4 +1,4 @@
-//! Strict source-linkage manifest reader for the alpha 2 model.
+//! Strict source-linkage manifest reader for the alpha 3 model.
 
 use crate::diag::{validate_id, Diag};
 use crate::json::{self, Json};
@@ -96,7 +96,7 @@ pub fn parse(path: &str, root: &Json) -> Result<Manifest, Vec<Diag>> {
                 item,
                 &with_source(&[
                     "spec",
-                    "scenario",
+                    "claim",
                     "site",
                     "file",
                     "lang",
@@ -106,7 +106,7 @@ pub fn parse(path: &str, root: &Json) -> Result<Manifest, Vec<Diag>> {
             );
             let value = Site {
                 spec: required_string(path, where_, item, "spec", errors),
-                scenario: required_string(path, where_, item, "scenario", errors),
+                claim: required_string(path, where_, item, "claim", errors),
                 site: required_string(path, where_, item, "site", errors),
                 file: required_string(path, where_, item, "file", errors),
                 lang: required_string(path, where_, item, "lang", errors),
@@ -122,7 +122,7 @@ pub fn parse(path: &str, root: &Json) -> Result<Manifest, Vec<Diag>> {
             };
             let identity = format!(
                 "{}|{}|{}|{}|{}",
-                value.spec, value.scenario, value.site, value.file, value.lang
+                value.spec, value.claim, value.site, value.file, value.lang
             );
             if realizes.insert(identity.clone()) {
                 out.realizes.push(value);

@@ -6,21 +6,26 @@ Bounded definitions for the current framework. Borrowed terms are narrowed where
 
 ## Claim model
 
-**Claim** — an addressable proposition about a product or its operation. A requirement-level Claim states the normative proposition and owns criticality. A case-level Claim refines one observable condition without becoming a different kind of model object. One case result does not imply that it exhausts its requirement-level parent.
+**Claim** — the independently governable proposition about a product or its operation. It owns
+criticality, production realization, total Claim Judgment and Claim Assurance State.
+
+**Case** — a normative condition/outcome clause within one Claim's predicate. It is addressable for
+Evidence Bindings, Runs, Observations and Challenger impact, but owns no independent criticality,
+realization, Judgment or Assurance State. Its exact id is `<spec>#<claim>/<case>`.
 
 **Predicate** — what must hold, written in prose. *Narrowing:* it is not a formal predicate and has no machine-evaluable semantics. Azimuth checks the structure of an assurance account, not the truth of its prose.
 
-**Spec** — a named group of requirements with a declared, path-independent id. Specs are organized by problem domain rather than by service.
+**Spec** — a named group of Claims with a declared, path-independent id. Specs are organized by
+problem domain rather than by service.
 
-**Requirement** — a requirement-level Claim expressed as one normative SHALL proposition. It owns criticality and groups case-level Claims.
-
-**Scenario** — the GIVEN/WHEN/THEN syntax used to write a case-level Claim. Scenario ids are unique per spec, not per requirement, so splitting or merging a requirement does not change case identity.
-
-**Domain** — what a Claim ranges over. The domain is never authored in a spec; the parser assigns it from the construct, so a scenario takes the behavioral domain and an `Invariant` with an `Over:` surface takes the site domain. The closed values are in [`contracts/findings.md`](../contracts/findings.md).
+**Domain** — what a Claim ranges over. The parser assigns it structurally: a Claim with authored
+Cases takes `behaviour`; an `Invariant` with an `Over:` surface takes `sites` and receives one
+implicit Case.
 
 **Quantifier** — deliberately absent from a Claim. Claims are universal; a constant field would carry no information. Evidence Binding quantification describes the breadth of a Check, not the logical quantifier of the Claim.
 
-**Criticality** — how much a requirement matters, declared on every requirement and changeable without changing Claim identity. The closed levels are in [`contracts/spec.md`](../contracts/spec.md). Routine Claims stop at intent and owe no realization, mechanism or evidence linkage. Standard and critical Claims activate the applicable additional facets. Every active Claim in this repository is routine during the alpha 2 phase.
+**Criticality** — how much a Claim matters, declared on every Claim and changeable without changing
+its identity. Cases inherit it but do not own it.
 
 ## Facets and authority
 
@@ -30,21 +35,28 @@ Bounded definitions for the current framework. Borrowed terms are narrowed where
 
 **Mechanism** — what makes a Claim true. Recorded in `design.md` when applicable.
 
-**Evidence facet** — the repository-owned account of which deliberately enrolled methods bear on which case-level Claims and why they are credible. Recorded through Checks, Evidence Bindings and Qualifications plus total-composition Claim Judgments in `verification.md`. It contains no execution result.
+**Evidence facet** — the repository-owned account of which deliberately enrolled methods bear on
+which Cases and why. Recorded through Checks, Evidence Bindings, Method Qualifications,
+Applicability Decisions and total parent Claim Judgments in `verification.md`.
 
 **Residue** — knowledge that belongs to no Claim, such as orientation, danger zones and deliberately absent behavior. It is outside the model and creates no assurance relation.
 
 **Facet owner** — whoever is accountable for the sufficiency of one facet. Intent owner, mechanism owner and evidence owner describe accountabilities, not required job titles or exclusive authorship rights.
 
-**Repository authority** — durable model meaning owned and reviewed with source: Claims, criticality, mechanisms, Checks, Evidence Bindings, Qualifications, Challengers, Challenge Plans, Claim Judgments, Decision Policies, the Challenge Schedule, standards and rationale.
+**Repository authority** — durable model meaning owned and reviewed with source: Claims, Cases,
+criticality, mechanisms, Checks, Evidence Bindings, Method Qualifications, Applicability Decisions,
+Challengers, Challenge Plans, Claim Judgments, Decision Policies and the Challenge Schedule.
 
 ## Verification graph
 
-**Check** — a deliberately enrolled verification method with one atomic terminal proposition. It directly evaluates one or more product or operational case-level Claims through explicit Evidence Bindings. A Check is not every native test, analyzer rule or monitor.
+**Check** — a deliberately enrolled verification method with one atomic terminal proposition. It
+directly evaluates one or more Cases through explicit Evidence Bindings.
 
 **Check implementation** — one compiler- or extractor-resolved source site linked to a Check by `ImplementsCheck(<check-id>)`. It supplies implementation identity and an exact source fingerprint, but declares no Claim relation or evidence form. Several sites may compose one Check.
 
-**Evidence Binding** — one repository-owned relation from a Check's atomic terminal proposition to one case-level Claim. It states the edge proposition, evidence form, exact required context, challenge domain and Decision Policy. Each `(Check, Claim)` pair is unique.
+**Evidence Binding** — one repository-owned relation from a Check's atomic terminal proposition to
+one Case. It states the edge proposition, exact edge context, challenge domain, policy and referenced
+Method Qualification. Each `(Check, Case)` pair is unique.
 
 **Scope** — defined by what must be real for the Check rather than by how many processes happen to execute. The closed rungs are in [`contracts/verification.md`](../contracts/verification.md).
 
@@ -56,23 +68,33 @@ Bounded definitions for the current framework. Borrowed terms are narrowed where
 
 **Challenge domain** — the relations a Challenger may traverse from an Evidence Binding. It is not a list of provider products; the closed set is in [`contracts/verification.md`](../contracts/verification.md).
 
-**Qualification** — the reviewed decision about whether one exact Evidence Binding is credible in its required context. Its id is the binding id and its verdict is `qualified | rejected`. It neither records an execution nor establishes that the Claim is satisfied.
+**Method Qualification** — the `qualified | rejected` decision about exact shared Check-method
+inputs: implementation, form, oracle, common context, challenge domain and policy.
 
-**Qualification fingerprint** — the versioned SHA-256 identity combining the Check, binding and exact-context fingerprints. Semantic source and Claim changes stale it; paths, line numbers, mounts, criticality and explanatory prose do not.
+**Applicability Decision** — the `applicable | rejected` decision that one qualified method bears
+on one exact Evidence Binding and Case under edge context. Its id is the binding id.
 
-**Decision Policy** — a project standard naming the open Challenger forms required for an Evidence Binding or Claim Judgment. Its id and sorted forms participate in dependent decision identity. Declaring coverage does not execute a Challenger or make a decision credible.
+**Decision Policy** — a project standard naming open Challenger forms required for a Method
+Qualification, Applicability Decision or Claim Judgment.
 
-**Challenge Schedule** — the one project account assigning every required or declared Challenge form exactly once to `gate | scheduled`. The lane affects model, semantic Plan and selection identity but never Qualification, Claim Judgment, policy or Challenger identity.
+**Challenge Schedule** — the one project account assigning every required or declared Challenge
+form exactly once to `gate | scheduled`. The lane never changes repository decision identity.
 
-**Challenger** — a method that searches for a reason to distrust a Qualification or Claim Judgment. The proposition, not the executable brand, determines the role. It declares one open form and required closed semantic scope kinds. Challengers are not recursively qualified in alpha 2.
+**Challenger** — a method that searches for a reason to distrust a Method Qualification,
+Applicability Decision or Claim Judgment.
 
-**Challenge Plan** — a repository declaration that pairs one Challenger with semantic selectors for exact current decision fingerprints. Its seven forms select Qualifications from bindings, Checks, realizations or mechanisms and Claim Judgments from Claims, realizations or mechanisms. Resolution retains every candidate disposition; zero selection is a Finding, never an implicit whole-suite fallback.
+**Challenge Plan** — a repository declaration pairing one Challenger with twelve semantic selector
+forms for exact current Method Qualification, Applicability Decision and Claim Judgment
+fingerprints.
 
 **Challenge candidate disposition** — how one resolved candidate stands. Only a current positive decision is selected, and adverse siblings remain visible. The closed dispositions are in [`contracts/verification.md`](../contracts/verification.md).
 
-**Claim Judgment** — the repository-owned `accepted | rejected` decision about one standard or critical case Claim's total applicable composition. Its id is the Claim id. Only a structurally valid, fingerprint-current accepted Judgment is executable. It is distinct from a binding-level Qualification, a Challenge Result and Subject-specific Assurance State.
+**Claim Judgment** — the repository-owned `accepted | rejected` decision about one standard or
+critical parent Claim's total composition, including every Case and evidence edge.
 
-**Decision impact edge** — the pure projection from a challenged Qualification fingerprint through its binding and Claim to the current Claim Judgment, or from a direct Judgment target to its Claim. It never creates a second direct Judgment Challenge Result.
+**Decision impact edge** — the pure projection from a challenged decision through its exact
+dependants to the parent Claim and current Claim Judgment. Method impact fans out; applicability
+impact stays local. It never creates another Challenge Result.
 
 **Ordinary engineering test** — an unenrolled native test used to build confidence in the implementation. It creates no Azimuth evidence relation and needs no exemption. All tests for the current routine Claims are in this category.
 
@@ -86,7 +108,8 @@ Bounded definitions for the current framework. Borrowed terms are narrowed where
 
 **Tag** — a machine-readable source annotation. Current tags express realization, mechanism implementation or Check implementation only. They do not assign evidence meaning.
 
-**`realizes`** — a production relation saying that the source site establishes some part of a case-level Claim's predicate. It is keyed by `(spec-id, case-id)` and carries no evidence form. *Narrowing:* being on the path is not sufficient. A reviewer must be able to say which part of the predicate the site establishes; architecture that merely participates — broker topology, relays, metrics emission, event production — is a design mechanism rather than a realization. No Finding detects an unearned tag, so the discipline is the only defence.
+**`realizes`** — a production relation saying that the source site establishes some part of a parent
+Claim's predicate. It is keyed by `(spec-id, claim-id)` and carries no Case or evidence form.
 
 **`implements-mechanism`** — a production relation binding a compiler-resolved symbol to one declared design mechanism. Its source annotation retains exactly the spec and mechanism arguments; the extractor derives qualified identity.
 
@@ -102,7 +125,7 @@ Bounded definitions for the current framework. Borrowed terms are narrowed where
 
 **Fan-out** — one Claim realized at several sites across components or languages.
 
-**Exemption** — a deliberate, attributable and reviewable opt-out from an applicable obligation. *No exemption record, block or Finding kind exists in alpha 2*; the term is reserved. An ordinary unenrolled test asserts no Azimuth evidence and therefore has nothing to exempt.
+**Exemption** — a deliberate, attributable and reviewable opt-out from an applicable obligation. *No exemption record, block or Finding kind exists in alpha 3*; the term is reserved. An ordinary unenrolled test asserts no Azimuth evidence and therefore has nothing to exempt.
 
 ## Areas and derived domains
 
@@ -122,9 +145,12 @@ Bounded definitions for the current framework. Borrowed terms are narrowed where
 
 **Validation** — deterministic interpretation of the derived repository model. `azimuth validate` reports Findings without executing Checks.
 
-**Traceability report** — a pure derived view of selected case-level Claims, ordered realization identities, Check relationships, Challenge resolutions and decision-impact edges. `azimuth report traceability` creates no authored authority, direct Judgment Result or execution fact.
+**Traceability report** — a pure derived view of selected Cases, inherited parent realizations,
+Check relationships, Challenge resolutions and decision-impact edges.
 
-**Export** — the complete derived repository model serialized as format version 2 by `azimuth export`. It includes Findings, decisions, Challenge resolutions and verification graph declarations, but no runtime ledger data. Alpha 2 has no assurance-specific export.
+**Export** — the complete derived repository model serialized as format version 3 by `azimuth
+export`. It includes Claims, Cases, decisions, Challenge resolutions and Findings, but no runtime
+ledger data.
 
 **Machine tier** — deterministic model validation. It reports structural Findings and cannot establish truth.
 
@@ -174,9 +200,12 @@ Bounded definitions for the current framework. Borrowed terms are narrowed where
 
 **Run bundle** — one strict immutable JSON revision accounting for a Run's Subject, context, planned and actual semantic selection, activities, attempts, terminal results and provenance. Versioned canonical fingerprints identify its semantic components and complete content.
 
-**Observation** — the terminal result for one actually selected Check in one Run, with closed outcomes in [`contracts/run-bundle.md`](../contracts/run-bundle.md). It is an execution fact, not an Evidence Binding or Qualification, and is not copied for every binding.
+**Observation** — the Case-addressed terminal result for one actually selected Check in one Run.
+One physical Check execution produces exactly one Observation per selected Case.
 
-**Challenge Result** — the terminal result for one selected Challenger and exact Qualification or Claim Judgment target fingerprint, with closed outcomes in [`contracts/run-bundle.md`](../contracts/run-bundle.md). A clean result records a negative search, not positive product evidence.
+**Challenge Result** — the terminal result for one selected Challenger and exact Method
+Qualification, Applicability Decision or Claim Judgment fingerprint. A clean result records a
+negative search, not positive product evidence.
 
 **Scheduled omission** — absence of one planned `scheduled` Challenge from an incomplete Run. It has exactly one execution diagnostic scoped to the Challenge-selection id and no Challenge Result. It is not a fourth result and does not make the selection disappear from the Plan.
 
@@ -198,4 +227,4 @@ Bounded definitions for the current framework. Borrowed terms are narrowed where
 
 A protocol-valid adapter-returned `timed-out` Run is an execution fact and exits zero only when its complete response arrives within that deadline. A host-enforced deadline is a transport timeout, exits one and publishes no bundle.
 
-**Assurance Service** — the optional future durable ledger for accepted Runs and derived Assurance State. The alpha 1 service wire remains isolated until the Run-ledger replacement; it is neither the alpha 2 repository-model format nor the Run-bundle protocol. No current adapter is a long-running service or webhook bridge.
+**Assurance Service** — the optional future durable ledger for accepted Runs and derived Assurance State. The alpha 1 service wire remains isolated until the Run-ledger replacement; it is neither the alpha 3 repository-model format nor the Run-bundle protocol. No current adapter is a long-running service or webhook bridge.

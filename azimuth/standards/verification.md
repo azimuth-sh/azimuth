@@ -1,8 +1,9 @@
 # Decision policies and Challenge schedule
 
-Project Decision Policies name the open Challenge forms required before an Evidence Binding or
-Claim Judgment may be accepted. The separate schedule assigns every required form to one execution
-lane. Neither construct runs Challengers or defines provider commands.
+Project Decision Policies name the open Challenge forms required before a Method Qualification,
+Applicability Decision or Claim Judgment may be accepted. The separate schedule assigns every
+required form to one execution lane. Neither construct runs Challengers or defines provider
+commands.
 
 The grammar, coverage rules and digest preimages of this file are the
 [Decision Standards format](../../contracts/standards.md). This file holds only what this project
@@ -12,8 +13,8 @@ declares.
 Required challenge: implementation-perturbation
 Required challenge: oracle-perturbation
 
-Use for executable Check bindings whose credibility depends on both the subject implementation and
-the discriminating oracle.
+Use for method and applicability decisions whose credibility depends on both the subject
+implementation and the discriminating oracle.
 
 ## Challenge Schedule: current
 Gate challenge: implementation-perturbation

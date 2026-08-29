@@ -1,6 +1,6 @@
 # Design: framework/release-artifacts
 
-## Requirement: first-alpha-contract
+## Claim: first-alpha-contract
 Mechanism: release-artifact-qualification
 Enforcement: guard
 Binding: release-artifact-contract
@@ -10,7 +10,7 @@ set. Native manifests retain ecosystem-required copies, and qualification reject
 before an artifact can enter later publication orchestration. Removing the guard would make
 registry metadata and support claims independent again.
 
-## Requirement: experimental-source-isolation
+## Claim: experimental-source-isolation
 Mechanism: experimental-isolation-gate
 Enforcement: guard
 Binding: experimental-isolation-gate

@@ -1,6 +1,9 @@
 # Verification declarations
 
-The repository-owned decision facet for alpha 2. This file declares what a Check means, how its terminal result bears on a case-level Claim, whether that exact edge is credible in its required context and whether one Claim's total assurance composition is accepted. It never records an execution result.
+The repository-owned decision facet for alpha 3. This file declares what a Check means, how its
+terminal result bears on a Case, whether the shared method is credible, whether it applies to each
+exact Check-to-Case edge and whether one Claim's total assurance composition is accepted. It never
+records an execution result.
 
 Only standard and critical Claims may receive verification declarations. Routine Claims stop at intent. An ordinary native test without deliberate Check enrollment remains outside Azimuth.
 
@@ -12,7 +15,11 @@ Only standard and critical Claims may receive verification declarations. Routine
 
 At most one `verification.md` sits beside an owning `spec.md`. The header identifies repository authority and location; it is not a namespace.
 
-Check, Evidence Binding, Challenger and Challenge Plan ids are project-global, path-independent lower kebab path ids. A Claim Judgment id is exactly its case-level Claim id `<spec-id>#<case-id>`. Mechanism ids are `<spec-id>#<mechanism-id>`. Moving this file or its package changes no identity.
+Check, Evidence Binding, Method Qualification, Challenger and Challenge Plan ids are
+project-global, path-independent lower kebab path ids. An Applicability Decision id is exactly its
+Evidence Binding id. A Claim Judgment id is exactly its parent Claim id `<spec-id>#<claim-id>`.
+Case ids use `<spec-id>#<claim-id>/<case-id>`. Mechanism ids are
+`<spec-id>#<mechanism-id>`. Moving this file or its package changes no identity.
 
 Declarations may appear in any order. Every id and referenced identity is validated over the complete project account before `--only` selection retains the closure for selected Claims.
 
@@ -36,29 +43,25 @@ Prose after the label block is required review rationale and does not enter the 
 ```markdown
 ## Evidence Binding: payments/recovery-replay-edge
 Check: payments/recovery-under-broker-loss
-Claim: payments/recovery#accepted-write-is-replayed
+Case: payments/recovery#accepted-write/replayed-after-broker-loss
+Method qualification: payments/recovery-method
 Proposition: replay after injected broker loss directly exercises the recovery predicate
-Scope: component
-Quantification: example
-Oracle: relational
 Context: {"platform":"linux-x86_64","storage":"postgres-17"}
 Challenge domain: ["realization","mechanism","check-implementation","oracle","context"]
-Policy: credible-executable
+Policy: applicable-edge
 
 This edge is narrower than the whole recovery suite and can be challenged independently.
 ```
 
-A binding names exactly one Check and one case-level Claim. One Check may bind to several Claims, and one Claim may receive several Checks. The pair `(Check, Claim)` is unique.
+A binding names exactly one Check, one Case and one Method Qualification. One Check may bind to
+several Cases, and one Case may receive several Checks. The pair `(Check, Case)` is unique.
 
-`Proposition:` explains why the Check's one terminal result bears on this Claim. The form is the actual evidence form for this edge:
-
-- `Scope:` is `unit | component | e2e`;
-- `Quantification:` is `example | universal`; and
-- `Oracle:` is `direct | golden | relational | metamorphic | model-based | contract`.
+`Proposition:` explains why the Check's terminal result bears on this Case. `Context:` holds only
+Case- or edge-specific requirements. Shared method context belongs to the Method Qualification.
 
 There is no Strength field. Executable Checks demonstrate sampled behavior. Structural proof remains in design mechanisms and contributes to Claim Judgment rather than becoming a fictitious Observation.
 
-`Context:` is a required JSON object from string keys to uninterpreted string values. `{}` is explicit and valid. Equality is exact in alpha 2: values have no range, wildcard or provider-expression semantics.
+`Context:` is a required JSON object from string keys to uninterpreted string values. `{}` is explicit and valid. Equality is exact in alpha 3: values have no range, wildcard or provider-expression semantics.
 
 `Challenge domain:` is a non-empty JSON array drawn from the closed set `realization | mechanism | check-implementation | oracle | context`. Values are sorted and deduplicated semantically. It constrains relation-based challenge traversal; it is not a list of tools.
 
@@ -66,39 +69,72 @@ There is no Strength field. Executable Checks demonstrate sampled behavior. Stru
 
 The policy's required forms enter this binding's fingerprint. Capability coverage and actual challenge execution are validated by the dependent adapter and Run-planning contracts, not inferred from the presence of repository prose.
 
-## Qualification
+## Method Qualification
 
 ```markdown
-## Qualification: payments/recovery-replay-edge
+## Method Qualification: payments/recovery-method
+Check: payments/recovery-under-broker-loss
+Scope: component
+Quantification: example
+Oracle: relational
+Context: {"platform":"linux-x86_64","storage":"postgres-17"}
+Challenge domain: ["check-implementation","oracle","context"]
+Policy: credible-method
 Verdict: qualified
 Fingerprint: sha256:<64-lowercase-hex>
 Qualified: 2026-08-21
 Qualifier: evidence-owner@example
 
-The Check implementation, oracle and exact platform context make this edge credible.
+The Check implementation, oracle and common context make this method credible.
 ```
 
-The Qualification id is exactly the Evidence Binding id. Every applicable binding has exactly one Qualification. Duplicate blocks are parse errors; missing, rejected or stale Qualifications are Findings.
+A Method Qualification names one Check plus exact form, common context, challenge domain and
+Decision Policy inputs. Its id is independent of binding identity, so several bindings may reuse it
+only when those inputs are genuinely shared. Duplicate ids are parse errors; missing, rejected or
+stale Method Qualifications are Findings.
 
 `Verdict:` is `qualified | rejected`. `Qualified:` is an ISO date and `Qualifier:` is a non-empty accountable identity. Rationale is required and never changes the expected fingerprint.
+
+## Applicability Decision
+
+```markdown
+## Applicability Decision: payments/recovery-replay-edge
+Verdict: applicable
+Fingerprint: sha256:<64-lowercase-hex>
+Decided: 2026-08-21
+Decider: evidence-owner@example
+
+The qualified recovery method directly establishes this Case under the edge context.
+```
+
+The id is exactly one Evidence Binding id. Every binding has exactly one Applicability Decision.
+`Verdict:` is `applicable | rejected`; `Decided:` is an ISO date and `Decider:` is a non-empty
+accountable identity. Missing, rejected or stale decisions are Findings. An accepted Method
+Qualification never implies edge applicability.
 
 ## Claim Judgment
 
 ```markdown
-## Claim Judgment: payments/recovery#accepted-write-is-replayed
+## Claim Judgment: payments/recovery#accepted-write
 Verdict: accepted
 Policy: credible-executable
 Fingerprint: sha256:<64-lowercase-hex>
 Judged: 2026-08-21
 Judge: assurance-owner@example
 Basis: the recovery realizations and transactional mechanism compose the Claim
-Basis: both current Evidence Bindings are qualified in their declared contexts
+Basis: every Case has current applicable evidence and all shared methods are qualified
 Residual risk: correlated broker and storage loss remains outside the accepted composition
 
 The reviewed composition is sufficient for the declared Claim and residual risk.
 ```
 
-The id is exactly one existing case-level Claim id. Every standard or critical case Claim has exactly one Claim Judgment; a routine Claim rejects one. `Verdict:` is `accepted | rejected`. `Policy:` names one Decision Policy. `Judged:` is an ISO date and `Judge:` is a non-empty accountable identity. There is one or more `Basis:` line and one or more `Residual risk:` line; their declaration order is semantic. Use an explicit statement such as `none identified` rather than omitting a required account. Review rationale after the labels is required and non-semantic.
+The id is exactly one existing parent Claim id. Every standard or critical Claim has exactly one
+Claim Judgment; a routine Claim rejects one. The Judgment consumes every Case and evidence edge;
+Cases own no separate Judgment. `Verdict:` is `accepted | rejected`. `Policy:` names one Decision
+Policy. `Judged:` is an ISO date and `Judge:` is a non-empty accountable identity. There is one or
+more `Basis:` line and one or more `Residual risk:` line; their declaration order is semantic. Use
+an explicit statement such as `none identified` rather than omitting a required account. Review
+rationale after the labels is required and non-semantic.
 
 Only a structurally valid, fingerprint-current `accepted` Judgment is an executable Challenge target. A rejected Judgment is a current negative repository decision and remains a Finding; a clean Challenge Result cannot convert it to accepted.
 
@@ -113,27 +149,39 @@ Required scope: ["check-implementation","realization"]
 Surviving changes are objections to credibility, not product outcomes.
 ```
 
-`Form:` is an open lower kebab path id interpreted by Decision Policy and adapter capabilities. `Searches for:` is the objection proposition. `Required scope:` is a non-empty JSON array sorted and unique over the closed semantic scope kinds listed below. Core tests coverage by kind and never infers scope from the open form. It uses the same fixed kind order as semantic scope. A Challenger never directly evaluates a product Claim and is not recursively qualified in alpha 2.
+`Form:` is an open lower kebab path id interpreted by Decision Policy and adapter capabilities. `Searches for:` is the objection proposition. `Required scope:` is a non-empty JSON array sorted and unique over the closed semantic scope kinds listed below. Core tests coverage by kind and never infers scope from the open form. It uses the same fixed kind order as semantic scope. A Challenger never directly evaluates a product Claim and is not recursively qualified in alpha 3.
 
 ## Challenge Plan
 
 ```markdown
 ## Challenge Plan: payments/recovery-credibility
 Challenger: mutation/implementation-perturbation
-Select: qualification from binding payments/recovery-replay-edge
-Select: qualification from check payments/recovery-under-broker-loss
-Select: qualification from realization payments|rust-item|recovery::replay
-Select: qualification from mechanism payments/recovery#transactional-outbox
-Select: claim-judgment from claim payments/recovery#accepted-write-is-replayed
+Select: method-qualification from method-qualification payments/recovery-method
+Select: method-qualification from check payments/recovery-under-broker-loss
+Select: method-qualification from realization payments|rust-item|recovery::replay
+Select: method-qualification from mechanism payments/recovery#transactional-outbox
+Select: applicability-decision from binding payments/recovery-replay-edge
+Select: applicability-decision from case payments/recovery#accepted-write/replayed-after-broker-loss
+Select: applicability-decision from check payments/recovery-under-broker-loss
+Select: applicability-decision from realization payments|rust-item|recovery::replay
+Select: applicability-decision from mechanism payments/recovery#transactional-outbox
+Select: claim-judgment from claim payments/recovery#accepted-write
 Select: claim-judgment from realization payments|rust-item|recovery::replay
 Select: claim-judgment from mechanism payments/recovery#transactional-outbox
 
 The plan states semantic reach; a Run freezes the exact resolved fingerprints.
 ```
 
-A plan names one Challenger and one or more repeatable `Select:` lines using only the seven forms shown above. Resolution retains every reached candidate disposition. Executable selections union, sort and deduplicate exact current accepted decision fingerprints.
+A plan names one Challenger and one or more repeatable `Select:` lines using only the twelve forms
+shown above. Resolution retains every reached candidate disposition. Executable selections union,
+sort and deduplicate exact current positive decision fingerprints.
 
-Qualification traversal from realizations or mechanisms reaches case-level Claims and their Evidence Bindings only when each binding's Challenge domain authorizes that relation. Claim Judgment traversal reaches related total-composition decisions without consulting binding challenge domains. Zero resolution is a Finding. Source paths, line numbers, globs and whole-suite fallback are invalid.
+Method Qualification and Applicability Decision traversal from realizations or mechanisms reaches
+Cases and Evidence Bindings only when the corresponding challenge domain authorizes that relation.
+Method findings fan out through every dependent edge; Applicability Decision findings remain local
+to their edge. Claim Judgment traversal reaches related total-composition decisions without
+consulting binding challenge domains. Zero resolution is a Finding. Source paths, line numbers,
+globs and whole-suite fallback are invalid.
 
 The selector retains the complete semantic source address after the relation token, including spaces. An assembly-derived address such as `web|next-route|GET /payments/[id]` is semantic; a source-file locator remains invalid even when placed in the address field.
 
@@ -142,27 +190,31 @@ The selector retains the complete semantic source address after the relation tok
 Every `Select:` line normalizes to this strict selector object:
 
 ```json
-{"target":"qualification","from":"realization","id":"payments|rust-item|recovery::replay"}
+{"target":"method-qualification","from":"realization","id":"payments|rust-item|recovery::replay"}
 ```
 
-`target` is `qualification | claim-judgment`. The permitted `(target, from)` pairs are exactly `(qualification, binding | check | realization | mechanism)` and `(claim-judgment, claim | realization | mechanism)`. The address is retained byte-for-byte after the single separating space in Markdown.
+`target` is `method-qualification | applicability-decision | claim-judgment`. The permitted
+`(target, from)` pairs are exactly `(method-qualification, method-qualification | check |
+realization | mechanism)`, `(applicability-decision, binding | case | check | realization |
+mechanism)` and `(claim-judgment, claim | realization | mechanism)`. The address is retained
+byte-for-byte after the single separating space in Markdown.
 
 Each reached candidate has the strict derived shape:
 
 ```json
 {
   "selector": {
-    "target": "qualification",
+    "target": "method-qualification",
     "from": "realization",
     "id": "payments|rust-item|recovery::replay"
   },
   "relation": {
-    "kind": "claim",
-    "id": "payments/recovery#accepted-write-is-replayed"
+    "kind": "method-qualification",
+    "id": "payments/recovery-method"
   },
   "target": {
-    "kind": "qualification",
-    "id": "payments/recovery-replay-edge",
+    "kind": "method-qualification",
+    "id": "payments/recovery-method",
     "expected_fingerprint": "sha256:<64-lowercase-hex>",
     "authored_fingerprint": "sha256:<64-lowercase-hex>"
   },
@@ -170,16 +222,27 @@ Each reached candidate has the strict derived shape:
 }
 ```
 
-`relation.kind` is `binding | check | realization | mechanism | claim`; it identifies the exact model relation through which the candidate was reached. `target` is `null` only for `unresolved-relation`; otherwise it has exactly the fields above. `authored_fingerprint` is `null` only when no decision is authored; a malformed authored fingerprint is a parse error and creates no model. `expected_fingerprint` is `null` only when composition cannot be computed. Disposition is exactly `selected | missing-decision | stale-decision | rejected-decision | invalid-decision | inapplicable | unresolved-relation`.
+`relation.kind` is `binding | case | check | claim | method-qualification | realization |
+mechanism`; it identifies the exact model relation through which the candidate was reached.
+`target` is `null` only for `unresolved-relation`; otherwise it has exactly the fields above.
+`authored_fingerprint` is `null` only when no decision is authored; a malformed authored
+fingerprint is a parse error and creates no model. `expected_fingerprint` is `null` only when
+composition cannot be computed. Disposition is exactly `selected | missing-decision |
+stale-decision | rejected-decision | invalid-decision | inapplicable | unresolved-relation`.
 
 Records sort by canonical selector `(target, from, id)`, then relation `(kind, id)`, then target `(kind, id)` with `null` first. That tuple is also candidate identity; duplicate records fail. One successful record never hides an adverse sibling. Selector lines deduplicate by their canonical object before resolution. There is no fallback when all records are adverse.
 
-The seven mappings and their exact relation objects are total:
+The twelve mappings and their exact relation objects are total:
 
-- qualification from binding reaches that binding with `{"kind":"binding","id":<binding-id>}`; an absent binding retains the requested id in the same relation object and has no target;
-- qualification from Check reaches every binding naming it, each with `{"kind":"binding","id":<binding-id>}`; a missing Check or empty binding set yields one `{"kind":"check","id":<check-id>}` unresolved relation;
-- qualification from realization reaches every binding of every related case Claim, each with a binding relation object; a binding whose domain omits `realization` is `inapplicable`, a related Claim without a binding yields `{"kind":"claim","id":<claim-id>}`, and no related Claim yields `{"kind":"realization","id":<SourceIdentity>}`, both unresolved;
-- qualification from mechanism applies the preceding mapping with domain `mechanism`; no related Claim uses `{"kind":"mechanism","id":<spec-id#mechanism-id>}`;
+- Method Qualification from Method Qualification reaches that exact decision;
+- Method Qualification from Check reaches every Method Qualification naming it;
+- Method Qualification from realization or mechanism reaches the distinct Method Qualifications
+  used by related Case bindings whose challenge domain permits that relation;
+- Applicability Decision from binding reaches that binding's decision;
+- Applicability Decision from Case reaches every binding of that exact Case;
+- Applicability Decision from Check reaches every binding naming it;
+- Applicability Decision from realization or mechanism reaches the bindings of each related Case
+  whose challenge domain permits that relation;
 - Claim Judgment from Claim reaches that Claim with `{"kind":"claim","id":<claim-id>}`; an absent Claim retains the requested id in the same relation object and has no target;
 - Claim Judgment from realization reaches every related Claim, each with a Claim relation object, or one `{"kind":"realization","id":<SourceIdentity>}` unresolved relation when none exists; and
 - Claim Judgment from mechanism applies the preceding mapping with `{"kind":"mechanism","id":<spec-id#mechanism-id>}` only when no Claim relation exists.
@@ -212,47 +275,51 @@ Every generated Challenge selection carries:
 }
 ```
 
-The closed scope kinds are `claim | binding | qualification | claim-judgment | check | check-implementation | realization | mechanism | mechanism-implementation | artifact | context | policy | area | realization-obligation | surface | surface-member | enumeration`. Every item has exactly `kind`, non-empty stable `id` and fingerprint. Arrays sort and are unique by `(kind, id, fingerprint)` in the order just listed; two fingerprints for one `(kind, id)` are a conflict rather than two items. An item may occur once in each array because selector provenance and decision composition have different meanings.
+The closed scope kinds are `applicability-decision | case | claim | binding |
+method-qualification | claim-judgment | check | check-implementation | realization | mechanism |
+mechanism-implementation | artifact | context | policy | area | realization-obligation | surface |
+surface-member | enumeration`. Every item has exactly `kind`, non-empty stable `id` and
+fingerprint. Arrays sort and are unique by `(kind, id, fingerprint)` in that order; two
+fingerprints for one `(kind, id)` are a conflict rather than two items. An item may occur once in
+each array because selector provenance and decision composition are distinct roles.
 
-An anchor is the exact authored selector origin: binding, Check, realization, mechanism or Claim. Inputs are the complete semantic dependencies of the selected decision. The exact seven projections are:
+An anchor is the exact authored selector origin: Method Qualification, binding, Case, Check,
+realization, mechanism or Claim. Inputs are the complete semantic dependencies of the selected
+decision. The exact twelve projections follow the selector relations above.
 
-- qualification from binding anchors the binding;
-- qualification from Check anchors the Check;
-- qualification from realization anchors that exact realization;
-- qualification from mechanism anchors that exact mechanism and always adds its resolved artifact to inputs; a marker-derived route additionally adds its one mechanism implementation;
-- Claim Judgment from Claim anchors the Claim;
-- Claim Judgment from realization anchors that exact realization; and
-- Claim Judgment from mechanism anchors that exact mechanism.
-
-Every Qualification selection input contains its Qualification, binding, Claim, Check, complete Check implementation set, exact context and Decision Policy. Every Claim Judgment selection input contains, item by item:
+Every Method Qualification selection input contains that decision, Check, complete Check
+implementation set, common context and Decision Policy. Every Applicability Decision selection
+contains that decision, binding, Case, parent Claim, Method Qualification composition, edge
+context and Decision Policy. Every Claim Judgment selection input contains, item by item:
 
 - the Claim Judgment, Claim and Judgment's Decision Policy;
-- every exact case realization;
-- every applicable mechanism, its resolved artifact and its marker implementation when present;
-- every Evidence Binding and Qualification for the Claim;
+- every exact parent-Claim realization;
+- every applicable mechanism, its Case relevance, resolved artifact and marker implementation when present;
+- every Case, Evidence Binding, Method Qualification and Applicability Decision for the Claim;
 - each binding's Check, complete Check implementation set, exact context and Decision Policy;
 - the applicable surface, every contribution area, enumeration witness and tagged or enumerated surface member; and
 - the exact realization obligation and each obligated area when one exists.
 
 Relation-specific inputs above are additional. Overlapping selectors and Plans union the arrays before fingerprinting. Required-scope coverage tests kinds over the union of `anchors` and `inputs`.
 
-Stable item ids and fingerprints are exact: Claim uses its id and semantic Claim digest; binding, Qualification, Claim Judgment, Check and policy use their declared id and corresponding canonical fingerprint or digest. Context uses its owning Evidence Binding id and the context fingerprint; two contexts for one binding are structurally impossible. Realization and Check implementation use SourceIdentity and source fingerprint; mechanism uses `<spec>#<mechanism>` and its canonical mechanism-record digest; source mechanism implementation uses SourceIdentity and source fingerprint; artifact uses its artifact id and canonical source-identity and derived-property digest; area uses area id and canonical area digest; realization obligation uses its Claim id and canonical sorted-area digest; and surface uses its id and canonical surface-account digest. An enumeration uses `<surface>|<area>|<mount>|<enumerator>|<SourceIdentity>` and its source fingerprint. A tagged surface member uses `<surface>|tagged|<SourceIdentity>` and its source fingerprint; an enumerated member uses `<surface>|enumerated|<file>` and the canonical digest of that model-authoritative file identity. Locator paths never substitute for another kind's id.
+Stable item ids and fingerprints are exact: Case and Claim use their nested and parent ids with
+their semantic digests; binding, Method Qualification, Applicability Decision, Claim Judgment,
+Check and policy use their declared ids and corresponding fingerprint or digest. Context uses its
+owning decision or binding id and the canonical context-object fingerprint. Realization and Check
+implementation use SourceIdentity and source fingerprint; all other established component rules
+below are unchanged. Locator paths never substitute for another kind's id.
 
 Auxiliary component digests use this file's canonical serialization over these exact envelopes:
 
 ```json
-{
-  "format": "azimuth-context-fingerprint",
-  "version": 1,
-  "required_context": <binding-context-object>
-}
+<canonical-context-object>
 {"format":"azimuth-mechanism-record-digest","version":1,"mechanism":<mechanism-record>}
 {"format":"azimuth-artifact-property-digest","version":1,"artifact":<artifact-account>}
 {"format":"azimuth-area-digest","version":1,"id":<area-id>}
 {
   "format": "azimuth-realization-obligation-digest",
   "version": 1,
-  "claim": <case-claim-id>,
+  "claim": <parent-claim-id>,
   "areas": <sorted-distinct-area-ids>
 }
 {"format":"azimuth-surface-account-digest","version":1,"surface":<surface-account>}
@@ -293,13 +360,35 @@ Its SHA-256 value is `sha256:29cdeb0c856e2172f0693eba0962d038f6916f0ed0f3dde464c
 Repository decision fingerprints use canonical JSON: object keys sort recursively by their exact strings, set-like arrays use their declared order, strings preserve code points, expanded serialization uses two spaces and LF, and exactly one terminal LF is hashed. This is intentionally the existing model `canonical_sha256` contract, not the RFC 8785 serialization used by the Run-bundle format. There is no legacy reader.
 
 - Check fingerprint: format version, Check id, ordered methods, terminal proposition, and sorted implementation semantic identities plus source fingerprints.
-- Binding fingerprint: format version, binding id, Check id, semantic Claim digest, Proposition, form tuple, sorted challenge domain and Decision Policy digest.
-- Context fingerprint: format and version plus the canonical required-context object.
-- Qualification fingerprint: Check, Binding and Context fingerprints.
+- Method Qualification fingerprint: format version, id, Check id and fingerprint, form tuple,
+  canonical common context, sorted challenge domain and Decision Policy digest.
+- Binding fingerprint: format version, binding id, Check id, semantic Case digest, current Method
+  Qualification fingerprint, Proposition, canonical edge context, sorted challenge domain and
+  Decision Policy digest.
+- Applicability Decision fingerprint: an exact envelope over the Evidence Binding fingerprint.
+- Context fingerprint: the canonical context object itself.
 - Claim Judgment fingerprint: the exact total-composition preimage below.
 - Challenger fingerprint: id, open form, objection proposition and sorted required scope kinds.
 
-Paths, lines, mounts and explanatory prose are excluded. Criticality remains excluded from Qualification identity but is included in Claim Judgment identity. A source, Claim, binding, policy or context change stales the decision it actually affects.
+Paths, lines, mounts and explanatory prose are excluded. Criticality remains excluded from Method
+Qualification and Applicability Decision identity but is included in Claim Judgment identity. A
+source, Case, binding, policy or context change stales only the decisions whose inputs include it.
+
+The Method Qualification preimage is exactly:
+
+```json
+{
+  "format": "azimuth-method-qualification-fingerprint",
+  "version": 1,
+  "id": <method-qualification-id>,
+  "check": <check-id>,
+  "check_fingerprint": <check-fingerprint>,
+  "form": {"scope": <scope>, "quantification": <quantification>, "oracle": <oracle>},
+  "context": <common-context-object>,
+  "challenge_domain": <sorted-distinct-domain-kinds>,
+  "decision_policy_digest": <decision-policy-digest>
+}
+```
 
 The Evidence Binding preimage is exactly:
 
@@ -309,15 +398,22 @@ The Evidence Binding preimage is exactly:
   "version": 1,
   "id": <binding-id>,
   "check": <check-id>,
-  "claim_digest": <semantic-claim-digest>,
+  "case_digest": <semantic-case-digest>,
+  "method_qualification_fingerprint": <current-method-qualification-fingerprint>,
   "proposition": <binding-proposition>,
-  "form": {
-    "scope": <scope>,
-    "quantification": <quantification>,
-    "oracle": <oracle>
-  },
+  "context": <edge-context-object>,
   "challenge_domain": <sorted-distinct-domain-kinds>,
   "decision_policy_digest": <decision-policy-digest>
+}
+```
+
+The Applicability Decision preimage is exactly:
+
+```json
+{
+  "format": "azimuth-applicability-decision-fingerprint",
+  "version": 1,
+  "binding_fingerprint": <evidence-binding-fingerprint>
 }
 ```
 
@@ -354,8 +450,8 @@ The Claim Judgment preimage is:
   "format": "azimuth-claim-judgment-fingerprint",
   "version": 1,
   "claim": {
-    "id": <case-claim-id>,
-    "semantic_digest": <case-claim-digest>,
+    "id": <parent-claim-id>,
+    "semantic_digest": <parent-claim-digest-including-every-case>,
     "criticality": <standard-or-critical>,
     "realization_obligation_areas": <sorted-distinct-area-ids>,
     "surface": <applicable-surface-account-or-null>
@@ -363,7 +459,8 @@ The Claim Judgment preimage is:
   "realizations": <sorted-realization-records>,
   "mechanisms": <sorted-applicable-mechanism-records>,
   "bindings": <sorted-binding-id-and-fingerprint-records>,
-  "qualifications": <sorted-id-expected-fingerprint-and-verdict-records>,
+  "method_qualifications": <sorted-id-expected-fingerprint-and-verdict-records>,
+  "applicability_decisions": <sorted-id-expected-fingerprint-and-verdict-records>,
   "policy_digest": <decision-policy-digest>,
   "verdict": <accepted-or-rejected>,
   "basis": <ordered-non-empty-statements>,
@@ -371,15 +468,17 @@ The Claim Judgment preimage is:
 }
 ```
 
-A realization record is exactly `{"identity": <SourceIdentity>, "source_fingerprint": <fingerprint>}` and sorts uniquely by `identity`. Realizations are the exact sites for the case Claim's spec and scenario. Repeating one identity with the same fingerprint is a duplicate; repeating it with a different fingerprint makes the expected Judgment unavailable. A mechanism is applicable when it is attached to that scenario or its parent requirement and sorts by id. Its record is exactly:
+A realization record is exactly `{"identity": <SourceIdentity>, "source_fingerprint":
+<fingerprint>}` and sorts uniquely by `identity`. Realizations are the exact sites for the parent
+Claim. Repeating one identity with the same fingerprint is a duplicate; repeating it with a
+different fingerprint makes the expected Judgment unavailable. Every mechanism belongs to the
+Claim and may declare exact Case relevance. Its record is exactly:
 
 ```json
 {
   "id": <spec-id#mechanism-id>,
-  "attachment": {
-    "target_kind": <requirement-or-scenario>,
-    "target_id": <declared-target-id>
-  },
+  "claim": <parent-claim-id>,
+  "cases": <sorted-local-case-ids-or-empty-for-complete-claim>,
   "enforcement": <enforcement-kind>,
   "expect": {
     "unique": <boolean-or-null>,
@@ -398,7 +497,12 @@ A realization record is exactly `{"identity": <SourceIdentity>, "source_fingerpr
 }
 ```
 
-An explicit Design `Binding:` yields `implementation: null`. A marker-derived binding yields exactly `{"identity": <SourceIdentity>, "source_fingerprint": <fingerprint>, "artifact": <artifact-id>}`. Both paths resolve exactly one artifact and always include its canonical derived properties and stable SourceIdentity. Zero or several marker relations, a marker without stable source identity or fingerprint, or zero or several matching artifacts makes the expected Judgment unavailable. Moving a mechanism between the parent requirement and case changes `attachment` even when it remains applicable.
+An explicit Design `Binding:` yields `implementation: null`. A marker-derived binding yields
+exactly `{"identity": <SourceIdentity>, "source_fingerprint": <fingerprint>, "artifact":
+<artifact-id>}`. Both paths resolve exactly one artifact and always include its canonical derived
+properties and stable SourceIdentity. Zero or several marker relations, a marker without stable
+source identity or fingerprint, or zero or several matching artifacts makes the expected Judgment
+unavailable. Changing `cases` changes the mechanism record even when the Claim is unchanged.
 
 The two routes are exclusive. An explicit Design binding that names a marker companion's raw id or derived assembled key is a structural error and never produces an explicit-binding mechanism record. Ordinary non-companion Artifacts may still be shared by several explicit Design bindings.
 
@@ -406,113 +510,11 @@ For a marker-derived record, the manifest `site` is already represented by the a
 
 The applicable surface account is exactly its `id`, sorted contribution `(area, mount, enumerator)` objects, one sorted witness per contribution and sorted member records. A contribution owns `area`, `mount` and `enumerator`; its nested witness has exactly enumeration `kind`, stable `identity` and `source_fingerprint`. A tagged member records its stable SourceIdentity and source fingerprint; an enumerated member records its file identity. Their tagged/enumerated variants cannot collapse. The mount id is an authored contribution identity; its path is excluded. The surface is `null` when the Claim has no `Over:`. The obligation areas are only the exact workspace obligation for the spec and Claim, or `[]`.
 
-Binding records are exactly `{"id": <binding-id>, "fingerprint": <binding-fingerprint>}` sorted by id. Qualification records are exactly `{"id": <binding-id>, "expected_fingerprint": <recomputed-expected-fingerprint>, "verdict": <qualified-or-rejected>}` sorted by id. Missing or structurally invalid composition makes the expected Judgment unavailable; a stale authored Qualification fingerprint is never used.
-
-### Canonical decision vectors
-
-This Evidence Binding preimage is canonical:
-
-```json
-{
-  "challenge_domain": [
-    "realization"
-  ],
-  "check": "demo/check",
-  "claim_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "decision_policy_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-  "form": {
-    "oracle": "direct",
-    "quantification": "example",
-    "scope": "component"
-  },
-  "format": "azimuth-evidence-binding-fingerprint",
-  "id": "demo/binding",
-  "proposition": "the Check directly exercises the case",
-  "version": 1
-}
-```
-
-The serialized preimage has one terminal LF. Its SHA-256 value is `sha256:58dc690f4b9ec8fab6184d542154e88104df35448bb28d3e38cb2ae59fd627e7`.
-
-The current project policy preimage is:
-
-```json
-{
-  "format": "azimuth-decision-policy-digest",
-  "id": "credible-executable",
-  "required_challenges": [
-    "implementation-perturbation",
-    "oracle-perturbation"
-  ],
-  "version": 1
-}
-```
-
-The serialized preimage has one terminal LF. Its SHA-256 value is `sha256:852f3fdc2d9f376403c41e215e3a06304e667df9d1e4a49eae9af53300433b06`.
-
-This Challenger preimage is canonical:
-
-```json
-{
-  "form": "implementation-perturbation",
-  "format": "azimuth-challenger-fingerprint",
-  "id": "mutation/implementation-perturbation",
-  "required_scope": [
-    "check-implementation",
-    "realization"
-  ],
-  "searches_for": "an implementation change that leaves the bound Check satisfied",
-  "version": 1
-}
-```
-
-The serialized preimage has one terminal LF. Its SHA-256 value is `sha256:383c91179c3d79e1a7e2c974376d481c674f9df12aa24ee7c73104a1c03c0390`.
-
-This minimal Claim Judgment preimage is canonical:
-
-```json
-{
-  "basis": [
-    "the bound Check directly exercises the case"
-  ],
-  "bindings": [
-    {
-      "fingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "id": "demo/binding"
-    }
-  ],
-  "claim": {
-    "criticality": "standard",
-    "id": "demo/spec#case",
-    "realization_obligation_areas": [],
-    "semantic_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "surface": null
-  },
-  "format": "azimuth-claim-judgment-fingerprint",
-  "mechanisms": [],
-  "policy_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-  "qualifications": [
-    {
-      "expected_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-      "id": "demo/binding",
-      "verdict": "qualified"
-    }
-  ],
-  "realizations": [
-    {
-      "identity": "demo|rust-item|demo::subject",
-      "source_fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-    }
-  ],
-  "residual_risks": [
-    "none identified"
-  ],
-  "verdict": "accepted",
-  "version": 1
-}
-```
-
-The serialized preimage has one terminal LF. Its SHA-256 value is `sha256:98223be4d7f1cb21da47caae82aaf5f1d33dd879eee2240aeee1b643c1eeb441`.
+Binding records are exactly `{"id": <binding-id>, "fingerprint": <binding-fingerprint>}` sorted by
+id. Method Qualification and Applicability Decision records are each exactly `{"id":
+<decision-id>, "expected_fingerprint": <recomputed-expected-fingerprint>, "verdict":
+<closed-verdict>}` sorted by id. Missing or structurally invalid composition makes the expected
+Judgment unavailable; stale authored fingerprints are never used.
 
 ## Source boundary
 
@@ -547,7 +549,7 @@ These are the only fields on a raw MechanismImplementation. `spec` is a lower-ke
 
 `site` is a non-empty qualified identity under the closed ecosystem profiles below. Except for the narrow C++ alpha profile, it contains a module, package or compilation-target identity and a declaring type or receiver. Where supported, it also contains the overload signature or generic arity needed to distinguish declarations. For example, a .NET extractor may emit `Payments.CaptureService.CompleteAsync(Payments.CompletionId,System.Threading.CancellationToken)`. A short method such as `CompleteAsync`, a path-plus-symbol such as `src/Capture.cs#CompleteAsync`, and a source path used only to distinguish overloads are invalid. The accountable emitter establishes those semantic facts. Core treats `site` as opaque: it can require a non-empty trimmed string without control characters or `|`, but it cannot prove from bytes that a module, receiver or overload is genuinely compiler-qualified.
 
-The address-kind mapping for marker-derived mechanisms is closed in alpha 2:
+The address-kind mapping for marker-derived mechanisms is closed in alpha 3:
 
 - `csharp` maps to `dotnet-symbol`; and
 - `cpp | go | java | javascript | kotlin | python | rust | typescript` maps to `<lang>-symbol`.
@@ -695,7 +697,8 @@ Source uses `ImplementsCheck(<check-id>)`. A language extractor emits only:
 
 For Check records, workspace or project assembly attaches `area`, `mount`, `address_kind` and `address` from declared repository structure. Files and mounts remain locators; the semantic source identity is `<area>|<address-kind>|<address>`.
 
-An implementation marker contains no Claim, form, context or Qualification. A native test without the marker emits nothing.
+An implementation marker contains no Case, form, context, Method Qualification or Applicability
+Decision. A native test without the marker emits nothing.
 
 ## Rejected alpha 1 input
 

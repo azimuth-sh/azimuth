@@ -1,8 +1,7 @@
 //! The derived model.
 //!
-//! `claim = (domain, predicate)`. The current corpus exercises only the behavioural domain,
-//! which scenarios take implicitly and never name — so `domain` is not represented yet. When a
-//! second domain arrives it becomes a field here, not a second artifact type.
+//! `claim = (domain, predicate)`. Cases are normative constituents of that predicate; they are
+//! addressable without becoming independent assurance centres.
 
 use crate::json::Json;
 use std::collections::BTreeSet;
@@ -147,7 +146,7 @@ pub struct Step {
 }
 
 #[derive(Debug, Clone)]
-pub struct Scenario {
+pub struct Case {
     pub id: String,
     pub steps: Vec<Step>,
     pub line: usize,
@@ -174,13 +173,13 @@ impl Domain {
 }
 
 #[derive(Debug, Clone)]
-pub struct Requirement {
+pub struct Claim {
     pub id: String,
     /// `None` is the `unclassified` finding, not a parse error: a missing *declaration* is a
     /// semantic gap, while an unrecognized *construct* fails the parse.
     pub criticality: Option<Criticality>,
     pub statement: String,
-    pub scenarios: Vec<Scenario>,
+    pub cases: Vec<Case>,
     pub line: usize,
     pub domain: Domain,
     /// For `Domain::Sites`: the declared surface whose derived members form the domain.
@@ -191,7 +190,7 @@ pub struct Requirement {
 pub struct Spec {
     pub id: String,
     pub path: String,
-    pub requirements: Vec<Requirement>,
+    pub claims: Vec<Claim>,
 }
 
 /// Stable identity of a compiler/schema source inside a federated Azimuth project.
@@ -218,7 +217,7 @@ impl SourceIdentity {
 #[derive(Debug, Clone)]
 pub struct Site {
     pub spec: String,
-    pub scenario: String,
+    pub claim: String,
     pub site: String,
     pub file: String,
     pub lang: String,
@@ -399,48 +398,72 @@ pub struct Model {
     pub workspace: crate::workspace::Workspace,
 }
 
-/// A scenario plus the context needed to report on it.
-pub struct ClaimView<'a> {
+/// A normative Case plus its independently governed parent Claim.
+pub struct CaseView<'a> {
     pub spec: &'a Spec,
-    pub requirement: &'a Requirement,
-    pub scenario: &'a Scenario,
+    pub claim: &'a Claim,
+    pub case: &'a Case,
 }
 
-impl<'a> ClaimView<'a> {
+impl<'a> CaseView<'a> {
     pub fn id(&self) -> String {
-        format!("{}#{}", self.spec.id, self.scenario.id)
+        format!("{}#{}/{}", self.spec.id, self.claim.id, self.case.id)
+    }
+}
+
+/// An independently governable product proposition.
+pub struct ClaimView<'a> {
+    pub spec: &'a Spec,
+    pub claim: &'a Claim,
+}
+
+impl ClaimView<'_> {
+    pub fn id(&self) -> String {
+        format!("{}#{}", self.spec.id, self.claim.id)
     }
 }
 
 impl Model {
-    pub fn claims(&self) -> impl Iterator<Item = ClaimView<'_>> {
+    pub fn cases(&self) -> impl Iterator<Item = CaseView<'_>> {
         self.specs.iter().flat_map(|spec| {
-            spec.requirements.iter().flat_map(move |requirement| {
-                requirement.scenarios.iter().map(move |scenario| ClaimView {
-                    spec,
-                    requirement,
-                    scenario,
-                })
+            spec.claims.iter().flat_map(move |claim| {
+                claim
+                    .cases
+                    .iter()
+                    .map(move |case| CaseView { spec, claim, case })
             })
         })
     }
 
-    pub fn has_claim(&self, spec: &str, scenario: &str) -> bool {
-        self.specs.iter().any(|s| {
-            s.id == spec
-                && s.requirements
-                    .iter()
-                    .any(|r| r.scenarios.iter().any(|sc| sc.id == scenario))
+    pub fn claims(&self) -> impl Iterator<Item = ClaimView<'_>> {
+        self.specs.iter().flat_map(|spec| {
+            spec.claims
+                .iter()
+                .map(move |claim| ClaimView { spec, claim })
         })
     }
 
-    pub fn scenario_count(&self) -> usize {
+    pub fn has_claim(&self, spec: &str, claim: &str) -> bool {
+        self.specs
+            .iter()
+            .any(|s| s.id == spec && s.claims.iter().any(|candidate| candidate.id == claim))
+    }
+
+    pub fn case_count(&self) -> usize {
+        self.cases().count()
+    }
+
+    pub fn claim_count(&self) -> usize {
         self.claims().count()
     }
 
-    pub fn find_claim(&self, spec: &str, scenario: &str) -> Option<ClaimView<'_>> {
+    pub fn find_claim(&self, spec: &str, claim: &str) -> Option<ClaimView<'_>> {
         self.claims()
-            .find(|c| c.spec.id == spec && c.scenario.id == scenario)
+            .find(|candidate| candidate.spec.id == spec && candidate.claim.id == claim)
+    }
+
+    pub fn find_case(&self, id: &str) -> Option<CaseView<'_>> {
+        self.cases().find(|case| case.id() == id)
     }
 
     pub fn checks(&self) -> impl Iterator<Item = &crate::verification::Check> {
@@ -451,10 +474,20 @@ impl Model {
         self.verifications.iter().flat_map(|file| &file.bindings)
     }
 
-    pub fn qualifications(&self) -> impl Iterator<Item = &crate::verification::Qualification> {
+    pub fn method_qualifications(
+        &self,
+    ) -> impl Iterator<Item = &crate::verification::MethodQualification> {
         self.verifications
             .iter()
-            .flat_map(|file| &file.qualifications)
+            .flat_map(|file| &file.method_qualifications)
+    }
+
+    pub fn applicability_decisions(
+        &self,
+    ) -> impl Iterator<Item = &crate::verification::ApplicabilityDecision> {
+        self.verifications
+            .iter()
+            .flat_map(|file| &file.applicability_decisions)
     }
 
     pub fn claim_judgments(&self) -> impl Iterator<Item = &crate::verification::ClaimJudgment> {
@@ -482,6 +515,7 @@ impl Model {
         let mut check_ids = BTreeMap::new();
         let mut binding_ids = BTreeMap::new();
         let mut qualification_ids = BTreeMap::new();
+        let mut applicability_ids = BTreeMap::new();
         let mut judgment_ids = BTreeMap::new();
         let mut challenger_ids = BTreeMap::new();
         let mut plan_ids = BTreeMap::new();
@@ -507,24 +541,34 @@ impl Model {
                     binding.line,
                     &mut issues,
                 );
-                if !binding_pairs.insert((binding.check.clone(), binding.claim.clone())) {
+                if !binding_pairs.insert((binding.check.clone(), binding.case.clone())) {
                     issues.push(Diag::at(
                         &binding.path,
                         binding.line,
                         format!(
-                            "Check `{}` is already bound to Claim `{}`",
-                            binding.check, binding.claim
+                            "Check `{}` is already bound to Case `{}`",
+                            binding.check, binding.case
                         ),
                     ));
                 }
             }
-            for qualification in &file.qualifications {
+            for qualification in &file.method_qualifications {
                 record_global_id(
                     &mut qualification_ids,
-                    "Qualification",
+                    "Method Qualification",
                     &qualification.id,
                     &qualification.path,
                     qualification.line,
+                    &mut issues,
+                );
+            }
+            for decision in &file.applicability_decisions {
+                record_global_id(
+                    &mut applicability_ids,
+                    "Applicability Decision",
+                    &decision.id,
+                    &decision.path,
+                    decision.line,
                     &mut issues,
                 );
             }
@@ -541,12 +585,9 @@ impl Model {
                     None => issues.push(Diag::at(
                         &judgment.path,
                         judgment.line,
-                        format!(
-                            "Claim Judgment `{}` names no current case Claim",
-                            judgment.id
-                        ),
+                        format!("Claim Judgment `{}` names no current Claim", judgment.id),
                     )),
-                    Some(claim) if claim.requirement.criticality == Some(Criticality::Routine) => {
+                    Some(claim) if claim.claim.criticality == Some(Criticality::Routine) => {
                         issues.push(Diag::at(
                             &judgment.path,
                             judgment.line,
@@ -626,19 +667,18 @@ impl Model {
         issues
     }
 
-    /// Semantic Claim digest for Evidence Binding identity. Criticality and locations are omitted.
-    pub fn claim_digest(&self, claim_id: &str) -> Option<String> {
-        let claim = self.claims().find(|claim| claim.id() == claim_id)?;
+    /// Semantic Case digest for Evidence Binding identity. Criticality and locations are omitted.
+    pub fn case_digest(&self, case_id: &str) -> Option<String> {
+        let case = self.find_case(case_id)?;
         Some(crate::fingerprint::canonical_sha256(&Json::obj(vec![
-            ("format", Json::str("azimuth-case-claim-digest")),
+            ("format", Json::str("azimuth-case-digest")),
             ("version", Json::Num(1.0)),
-            ("id", Json::str(claim_id)),
-            ("requirement", Json::str(&claim.requirement.statement)),
-            ("domain", Json::str(claim.requirement.domain.name())),
+            ("id", Json::str(case_id)),
+            ("claim", Json::str(&case.claim.statement)),
+            ("domain", Json::str(case.claim.domain.name())),
             (
                 "over",
-                claim
-                    .requirement
+                case.claim
                     .over
                     .as_ref()
                     .map(Json::str)
@@ -647,8 +687,7 @@ impl Model {
             (
                 "steps",
                 Json::Arr(
-                    claim
-                        .scenario
+                    case.case
                         .steps
                         .iter()
                         .map(|step| {
@@ -663,28 +702,90 @@ impl Model {
         ])))
     }
 
-    pub fn expected_qualification_fingerprint(
+    pub fn claim_digest(&self, claim_id: &str) -> Option<String> {
+        let claim = self.claims().find(|claim| claim.id() == claim_id)?;
+        Some(crate::fingerprint::canonical_sha256(&Json::obj(vec![
+            ("format", Json::str("azimuth-claim-digest")),
+            ("version", Json::Num(1.0)),
+            ("id", Json::str(claim_id)),
+            ("predicate", Json::str(&claim.claim.statement)),
+            ("domain", Json::str(claim.claim.domain.name())),
+            (
+                "over",
+                claim
+                    .claim
+                    .over
+                    .as_ref()
+                    .map(Json::str)
+                    .unwrap_or(Json::Null),
+            ),
+            (
+                "cases",
+                Json::Arr(
+                    claim
+                        .claim
+                        .cases
+                        .iter()
+                        .map(|case| {
+                            let id = format!("{}#{}/{}", claim.spec.id, claim.claim.id, case.id);
+                            Json::obj(vec![
+                                ("id", Json::str(&id)),
+                                (
+                                    "semantic_digest",
+                                    Json::str(self.case_digest(&id).unwrap_or_default()),
+                                ),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+        ])))
+    }
+
+    pub fn expected_method_qualification_fingerprint(
+        &self,
+        qualification: &crate::verification::MethodQualification,
+    ) -> Option<String> {
+        let check = self
+            .checks()
+            .find(|check| check.id == qualification.check)?;
+        let policy = self
+            .decision_standards
+            .as_ref()?
+            .policies
+            .iter()
+            .find(|policy| policy.id == qualification.policy)?;
+        Some(crate::fingerprint::method_qualification_fingerprint(
+            qualification,
+            &crate::fingerprint::check_fingerprint(check, &self.check_implementations),
+            &crate::fingerprint::policy_fingerprint(policy),
+        ))
+    }
+
+    pub fn expected_applicability_fingerprint(
         &self,
         binding: &crate::verification::EvidenceBinding,
     ) -> Option<String> {
-        let check = self.checks().find(|check| check.id == binding.check)?;
+        let qualification = self
+            .method_qualifications()
+            .find(|qualification| qualification.id == binding.method_qualification)?;
+        if qualification.check != binding.check {
+            return None;
+        }
         let policy = self
             .decision_standards
             .as_ref()?
             .policies
             .iter()
             .find(|policy| policy.id == binding.policy)?;
-        let check_fingerprint =
-            crate::fingerprint::check_fingerprint(check, &self.check_implementations);
         let binding_fingerprint = crate::fingerprint::binding_fingerprint(
             binding,
-            &self.claim_digest(&binding.claim)?,
+            &self.case_digest(&binding.case)?,
+            &self.expected_method_qualification_fingerprint(qualification)?,
             &crate::fingerprint::policy_fingerprint(policy),
         );
-        Some(crate::fingerprint::qualification_fingerprint(
-            &check_fingerprint,
+        Some(crate::fingerprint::applicability_decision_fingerprint(
             &binding_fingerprint,
-            &crate::fingerprint::context_fingerprint(binding),
         ))
     }
 
@@ -695,7 +796,7 @@ impl Model {
         judgment: &crate::verification::ClaimJudgment,
     ) -> Option<Json> {
         let claim = self.claims().find(|claim| claim.id() == judgment.id)?;
-        let criticality = claim.requirement.criticality?;
+        let criticality = claim.claim.criticality?;
         if criticality == Criticality::Routine {
             return None;
         }
@@ -708,7 +809,7 @@ impl Model {
 
         let mut obligation_areas = self
             .workspace
-            .obligation(&claim.spec.id, &claim.scenario.id)
+            .obligation(&claim.spec.id, &claim.claim.id)
             .map(|obligation| obligation.areas.clone())
             .unwrap_or_default();
         obligation_areas.sort();
@@ -716,7 +817,7 @@ impl Model {
             return None;
         }
 
-        let surface = match &claim.requirement.over {
+        let surface = match &claim.claim.over {
             Some(id) => self.surface_account(id),
             None => Some(Json::Null),
         }?;
@@ -724,7 +825,7 @@ impl Model {
         let mut realization_sites = self
             .realizes
             .iter()
-            .filter(|site| site.spec == claim.spec.id && site.scenario == claim.scenario.id)
+            .filter(|site| site.spec == claim.spec.id && site.claim == claim.claim.id)
             .collect::<Vec<_>>();
         if realization_sites.is_empty() {
             return None;
@@ -756,17 +857,26 @@ impl Model {
 
         let mechanisms = self.mechanism_records(&claim)?;
 
+        let case_prefix = format!("{}/", judgment.id);
         let mut bindings = self
             .evidence_bindings()
-            .filter(|binding| binding.claim == judgment.id)
+            .filter(|binding| binding.case.starts_with(&case_prefix))
             .collect::<Vec<_>>();
         bindings.sort_by(|left, right| left.id.cmp(&right.id));
         if bindings.is_empty() || has_duplicates_by(&bindings, |binding| binding.id.clone()) {
             return None;
         }
         let mut binding_records = Vec::new();
-        let mut qualification_records = Vec::new();
+        let mut method_qualification_records = BTreeSet::new();
+        let mut applicability_records = Vec::new();
         for binding in bindings {
+            let method_qualifications = self
+                .method_qualifications()
+                .filter(|qualification| qualification.id == binding.method_qualification)
+                .collect::<Vec<_>>();
+            let [method_qualification] = method_qualifications.as_slice() else {
+                return None;
+            };
             let binding_policy = self
                 .decision_standards
                 .as_ref()?
@@ -775,29 +885,45 @@ impl Model {
                 .find(|policy| policy.id == binding.policy)?;
             let binding_fingerprint = crate::fingerprint::binding_fingerprint(
                 binding,
-                &self.claim_digest(&binding.claim)?,
+                &self.case_digest(&binding.case)?,
+                &self.expected_method_qualification_fingerprint(method_qualification)?,
                 &crate::fingerprint::policy_fingerprint(binding_policy),
             );
             binding_records.push(Json::obj(vec![
                 ("id", Json::str(&binding.id)),
                 ("fingerprint", Json::str(binding_fingerprint)),
             ]));
-            let qualifications = self
-                .qualifications()
-                .filter(|qualification| qualification.id == binding.id)
+            method_qualification_records.insert((
+                method_qualification.id.clone(),
+                self.expected_method_qualification_fingerprint(method_qualification)?,
+                method_qualification.verdict.name().to_string(),
+            ));
+            let decisions = self
+                .applicability_decisions()
+                .filter(|decision| decision.id == binding.id)
                 .collect::<Vec<_>>();
-            let [qualification] = qualifications.as_slice() else {
+            let [decision] = decisions.as_slice() else {
                 return None;
             };
-            qualification_records.push(Json::obj(vec![
-                ("id", Json::str(&qualification.id)),
+            applicability_records.push(Json::obj(vec![
+                ("id", Json::str(&decision.id)),
                 (
                     "expected_fingerprint",
-                    Json::str(self.expected_qualification_fingerprint(binding)?),
+                    Json::str(self.expected_applicability_fingerprint(binding)?),
                 ),
-                ("verdict", Json::str(qualification.verdict.name())),
+                ("verdict", Json::str(decision.verdict.name())),
             ]));
         }
+        let method_qualification_records = method_qualification_records
+            .into_iter()
+            .map(|(id, expected_fingerprint, verdict)| {
+                Json::obj(vec![
+                    ("id", Json::str(id)),
+                    ("expected_fingerprint", Json::str(expected_fingerprint)),
+                    ("verdict", Json::str(verdict)),
+                ])
+            })
+            .collect();
 
         Some(Json::obj(vec![
             ("format", Json::str("azimuth-claim-judgment-fingerprint")),
@@ -821,7 +947,11 @@ impl Model {
             ("realizations", Json::Arr(realizations)),
             ("mechanisms", Json::Arr(mechanisms)),
             ("bindings", Json::Arr(binding_records)),
-            ("qualifications", Json::Arr(qualification_records)),
+            (
+                "method_qualifications",
+                Json::Arr(method_qualification_records),
+            ),
+            ("applicability_decisions", Json::Arr(applicability_records)),
             (
                 "policy_digest",
                 Json::str(crate::fingerprint::policy_fingerprint(policy)),
@@ -867,11 +997,20 @@ impl Model {
                     .find(|binding| binding.id == candidate.selector.id)?;
                 anchors.push(self.binding_scope_component(binding)?);
             }
+            RelationKind::Case => {
+                anchors.push(self.case_scope_component(&candidate.selector.id)?);
+            }
             RelationKind::Check => {
                 anchors.push(self.check_scope_component(&candidate.selector.id)?);
             }
             RelationKind::Claim => {
                 anchors.push(self.claim_scope_component(&candidate.selector.id)?);
+            }
+            RelationKind::MethodQualification => {
+                let qualification = self
+                    .method_qualifications()
+                    .find(|qualification| qualification.id == candidate.selector.id)?;
+                anchors.push(self.method_qualification_scope_component(qualification)?);
             }
             RelationKind::Mechanism => {
                 let (mechanism, artifact, implementation) =
@@ -887,17 +1026,29 @@ impl Model {
 
         let target = candidate.target.as_ref()?;
         match target.kind {
-            DecisionKind::Qualification => {
+            DecisionKind::ApplicabilityDecision => {
                 let binding = self
                     .evidence_bindings()
                     .find(|binding| binding.id == target.id)?;
-                let expected = self.expected_qualification_fingerprint(binding)?;
+                let expected = self.expected_applicability_fingerprint(binding)?;
                 if target.expected_fingerprint.as_deref() != Some(expected.as_str())
                     || target.authored_fingerprint.as_deref() != Some(expected.as_str())
                 {
                     return None;
                 }
-                inputs.extend(self.qualification_scope_components(binding)?);
+                inputs.extend(self.applicability_scope_components(binding)?);
+            }
+            DecisionKind::MethodQualification => {
+                let qualification = self
+                    .method_qualifications()
+                    .find(|qualification| qualification.id == target.id)?;
+                let expected = self.expected_method_qualification_fingerprint(qualification)?;
+                if target.expected_fingerprint.as_deref() != Some(expected.as_str())
+                    || target.authored_fingerprint.as_deref() != Some(expected.as_str())
+                {
+                    return None;
+                }
+                inputs.extend(self.method_qualification_scope_components(qualification)?);
             }
             DecisionKind::ClaimJudgment => {
                 let judgment = self
@@ -924,6 +1075,14 @@ impl Model {
         ))
     }
 
+    fn case_scope_component(&self, id: &str) -> Option<SemanticScopeComponent> {
+        Some(scope_component(
+            crate::verification::SemanticScopeKind::Case,
+            id,
+            self.case_digest(id)?,
+        ))
+    }
+
     fn binding_scope_component(
         &self,
         binding: &crate::verification::EvidenceBinding,
@@ -934,12 +1093,16 @@ impl Model {
             .policies
             .iter()
             .find(|policy| policy.id == binding.policy)?;
+        let qualification = self
+            .method_qualifications()
+            .find(|qualification| qualification.id == binding.method_qualification)?;
         Some(scope_component(
             crate::verification::SemanticScopeKind::Binding,
             &binding.id,
             crate::fingerprint::binding_fingerprint(
                 binding,
-                &self.claim_digest(&binding.claim)?,
+                &self.case_digest(&binding.case)?,
+                &self.expected_method_qualification_fingerprint(qualification)?,
                 &crate::fingerprint::policy_fingerprint(policy),
             ),
         ))
@@ -989,38 +1152,35 @@ impl Model {
         )
     }
 
-    fn qualification_scope_components(
+    fn method_qualification_scope_component(
         &self,
-        binding: &crate::verification::EvidenceBinding,
+        qualification: &crate::verification::MethodQualification,
+    ) -> Option<SemanticScopeComponent> {
+        Some(scope_component(
+            crate::verification::SemanticScopeKind::MethodQualification,
+            &qualification.id,
+            self.expected_method_qualification_fingerprint(qualification)?,
+        ))
+    }
+
+    fn method_qualification_scope_components(
+        &self,
+        qualification: &crate::verification::MethodQualification,
     ) -> Option<Vec<SemanticScopeComponent>> {
         use crate::verification::SemanticScopeKind;
-
-        let qualifications = self
-            .qualifications()
-            .filter(|qualification| qualification.id == binding.id)
-            .collect::<Vec<_>>();
-        let [_qualification] = qualifications.as_slice() else {
-            return None;
-        };
         let policy = self
             .decision_standards
             .as_ref()?
             .policies
             .iter()
-            .find(|policy| policy.id == binding.policy)?;
+            .find(|policy| policy.id == qualification.policy)?;
         let mut components = vec![
-            scope_component(
-                SemanticScopeKind::Qualification,
-                &binding.id,
-                self.expected_qualification_fingerprint(binding)?,
-            ),
-            self.binding_scope_component(binding)?,
-            self.claim_scope_component(&binding.claim)?,
-            self.check_scope_component(&binding.check)?,
+            self.method_qualification_scope_component(qualification)?,
+            self.check_scope_component(&qualification.check)?,
             scope_component(
                 SemanticScopeKind::Context,
-                &binding.id,
-                crate::fingerprint::context_fingerprint(binding),
+                &qualification.id,
+                crate::fingerprint::context_fingerprint(&qualification.context),
             ),
             scope_component(
                 SemanticScopeKind::Policy,
@@ -1031,7 +1191,7 @@ impl Model {
         for implementation in self
             .check_implementations
             .iter()
-            .filter(|implementation| implementation.check == binding.check)
+            .filter(|implementation| implementation.check == qualification.check)
         {
             let identity = implementation.source.as_ref()?.key();
             components.push(source_scope_component(
@@ -1043,6 +1203,56 @@ impl Model {
                 &implementation.site,
             )?);
         }
+        normalize_scope_components(components)
+    }
+
+    fn applicability_scope_components(
+        &self,
+        binding: &crate::verification::EvidenceBinding,
+    ) -> Option<Vec<SemanticScopeComponent>> {
+        use crate::verification::SemanticScopeKind;
+
+        let qualifications = self
+            .method_qualifications()
+            .filter(|qualification| qualification.id == binding.method_qualification)
+            .collect::<Vec<_>>();
+        let [qualification] = qualifications.as_slice() else {
+            return None;
+        };
+        let decisions = self
+            .applicability_decisions()
+            .filter(|decision| decision.id == binding.id)
+            .collect::<Vec<_>>();
+        let [_decision] = decisions.as_slice() else {
+            return None;
+        };
+        let policy = self
+            .decision_standards
+            .as_ref()?
+            .policies
+            .iter()
+            .find(|policy| policy.id == binding.policy)?;
+        let mut components = vec![
+            scope_component(
+                SemanticScopeKind::ApplicabilityDecision,
+                &binding.id,
+                self.expected_applicability_fingerprint(binding)?,
+            ),
+            self.binding_scope_component(binding)?,
+            self.case_scope_component(&binding.case)?,
+            self.claim_scope_component(binding.case.rsplit_once('/')?.0)?,
+            scope_component(
+                SemanticScopeKind::Context,
+                &binding.id,
+                crate::fingerprint::context_fingerprint(&binding.context),
+            ),
+            scope_component(
+                SemanticScopeKind::Policy,
+                &policy.id,
+                crate::fingerprint::policy_fingerprint(policy),
+            ),
+        ];
+        components.extend(self.method_qualification_scope_components(qualification)?);
         normalize_scope_components(components)
     }
 
@@ -1080,7 +1290,7 @@ impl Model {
         for site in self
             .realizes
             .iter()
-            .filter(|site| site.spec == claim.spec.id && site.scenario == claim.scenario.id)
+            .filter(|site| site.spec == claim.spec.id && site.claim == claim.claim.id)
         {
             let identity = site.source.as_ref()?.key();
             components.push(source_scope_component(
@@ -1093,10 +1303,11 @@ impl Model {
             )?);
         }
         if let Some(design) = self.design_for(&claim.spec.id) {
-            for entry in design.entries.iter().filter(|entry| match &entry.target {
-                crate::design::Target::Requirement(target) => target == &claim.requirement.id,
-                crate::design::Target::Scenario(target) => target == &claim.scenario.id,
-            }) {
+            for entry in design
+                .entries
+                .iter()
+                .filter(|entry| entry.target.id() == claim.claim.id)
+            {
                 for mechanism in &entry.mechanisms {
                     let identity = format!("{}#{}", claim.spec.id, mechanism.id);
                     let (mechanism, artifact, implementation) =
@@ -1106,19 +1317,23 @@ impl Model {
                 }
             }
         }
+        for case in &claim.claim.cases {
+            components.push(self.case_scope_component(&format!(
+                "{}#{}/{}",
+                claim.spec.id, claim.claim.id, case.id
+            ))?);
+        }
+        let case_prefix = format!("{id}/");
         for binding in self
             .evidence_bindings()
-            .filter(|binding| binding.claim == id)
+            .filter(|binding| binding.case.starts_with(&case_prefix))
         {
-            components.extend(self.qualification_scope_components(binding)?);
+            components.extend(self.applicability_scope_components(binding)?);
         }
-        if let Some(surface_id) = &claim.requirement.over {
+        if let Some(surface_id) = &claim.claim.over {
             components.extend(self.surface_scope_components(surface_id)?);
         }
-        if let Some(obligation) = self
-            .workspace
-            .obligation(&claim.spec.id, &claim.scenario.id)
-        {
+        if let Some(obligation) = self.workspace.obligation(&claim.spec.id, &claim.claim.id) {
             let mut areas = obligation.areas.clone();
             areas.sort();
             if has_duplicates(&areas) {
@@ -1276,14 +1491,14 @@ impl Model {
             .iter()
             .find(|spec| spec.id == id)
             .into_iter()
-            .flat_map(|spec| &spec.requirements)
-            .filter(|requirement| requirement.domain == Domain::Behaviour)
-            .flat_map(|requirement| requirement.scenarios.iter().map(|scenario| &scenario.id))
+            .flat_map(|spec| &spec.claims)
+            .filter(|claim| claim.domain == Domain::Behaviour)
+            .map(|claim| &claim.id)
             .collect::<BTreeSet<_>>();
         for site in self
             .realizes
             .iter()
-            .filter(|site| site.spec == id && behavioural.contains(&site.scenario))
+            .filter(|site| site.spec == id && behavioural.contains(&site.claim))
         {
             let identity = site.source.as_ref()?.key();
             components.push(source_scope_component(
@@ -1321,10 +1536,7 @@ impl Model {
         let mut attached = design
             .entries
             .iter()
-            .filter(|entry| match &entry.target {
-                crate::design::Target::Requirement(id) => id == &claim.requirement.id,
-                crate::design::Target::Scenario(id) => id == &claim.scenario.id,
-            })
+            .filter(|entry| entry.target.id() == claim.claim.id)
             .flat_map(|entry| {
                 entry
                     .mechanisms
@@ -1348,6 +1560,16 @@ impl Model {
         entry: &crate::design::DesignEntry,
         mechanism: &crate::design::Mechanism,
     ) -> Option<Json> {
+        let claim = self.find_claim(&design.spec, entry.target.id())?;
+        if mechanism.cases.iter().any(|case| {
+            !claim
+                .claim
+                .cases
+                .iter()
+                .any(|candidate| candidate.id == *case)
+        }) {
+            return None;
+        }
         let implementations = self
             .mechanism_implementations
             .iter()
@@ -1388,10 +1610,7 @@ impl Model {
             return None;
         };
         let artifact_identity = artifact.source.as_ref()?.key();
-        let attachment_kind = match entry.target {
-            crate::design::Target::Requirement(_) => "requirement",
-            crate::design::Target::Scenario(_) => "scenario",
-        };
+        let attachment_kind = "claim";
         Some(Json::obj(vec![
             ("id", Json::str(format!("{}#{}", design.spec, mechanism.id))),
             (
@@ -1399,6 +1618,10 @@ impl Model {
                 Json::obj(vec![
                     ("target_kind", Json::str(attachment_kind)),
                     ("target_id", Json::str(entry.target.id())),
+                    (
+                        "cases",
+                        Json::Arr(mechanism.cases.iter().map(Json::str).collect()),
+                    ),
                 ]),
             ),
             ("enforcement", Json::str(mechanism.kind.name())),
@@ -1513,16 +1736,16 @@ impl Model {
         let class_spec = self.specs.iter().find(|spec| spec.id == surface.id);
         let behavioural = class_spec
             .into_iter()
-            .flat_map(|spec| &spec.requirements)
-            .filter(|requirement| requirement.domain == Domain::Behaviour)
-            .flat_map(|requirement| requirement.scenarios.iter().map(|scenario| &scenario.id))
+            .flat_map(|spec| &spec.claims)
+            .filter(|claim| claim.domain == Domain::Behaviour)
+            .map(|claim| &claim.id)
             .collect::<BTreeSet<_>>();
         let mut members = Vec::new();
         let mut member_keys = BTreeSet::new();
         for site in self
             .realizes
             .iter()
-            .filter(|site| site.spec == surface.id && behavioural.contains(&site.scenario))
+            .filter(|site| site.spec == surface.id && behavioural.contains(&site.claim))
         {
             let identity = site.source.as_ref()?.key();
             if site.source_fingerprint.is_empty()
@@ -1600,12 +1823,12 @@ impl Model {
             .specs
             .iter()
             .map(|spec| {
-                let reqs = spec
-                    .requirements
+                let claims = spec
+                    .claims
                     .iter()
                     .map(|r| {
-                        let scenarios = r
-                            .scenarios
+                        let cases = r
+                            .cases
                             .iter()
                             .map(|sc| {
                                 let steps = sc
@@ -1636,20 +1859,22 @@ impl Model {
                             ),
                             ("statement", Json::str(&r.statement)),
                             ("line", Json::Num(r.line as f64)),
-                            ("scenarios", Json::Arr(scenarios)),
+                            ("domain", Json::str(r.domain.name())),
+                            ("over", r.over.as_ref().map(Json::str).unwrap_or(Json::Null)),
+                            ("cases", Json::Arr(cases)),
                         ])
                     })
                     .collect();
                 Json::obj(vec![
                     ("id", Json::str(&spec.id)),
                     ("path", Json::str(&spec.path)),
-                    ("requirements", Json::Arr(reqs)),
+                    ("claims", Json::Arr(claims)),
                 ])
             })
             .collect();
 
         Json::obj(vec![
-            ("version", Json::Num(2.0)),
+            ("version", Json::Num(3.0)),
             ("specs", Json::Arr(specs)),
             (
                 "realizes",
@@ -1768,8 +1993,20 @@ impl Model {
                 ),
             ),
             (
-                "qualifications",
-                Json::Arr(self.qualifications().map(qualification_json).collect()),
+                "method_qualifications",
+                Json::Arr(
+                    self.method_qualifications()
+                        .map(|item| method_qualification_json(self, item))
+                        .collect(),
+                ),
+            ),
+            (
+                "applicability_decisions",
+                Json::Arr(
+                    self.applicability_decisions()
+                        .map(|decision| applicability_decision_json(self, decision))
+                        .collect(),
+                ),
             ),
             (
                 "claim_judgments",
@@ -1840,15 +2077,10 @@ impl Model {
                     let bindings = self.mechanism_bindings(&design.spec, m);
                     out.push(Json::obj(vec![
                         ("spec", Json::str(&design.spec)),
-                        (
-                            "target_kind",
-                            Json::str(match entry.target {
-                                crate::design::Target::Requirement(_) => "requirement",
-                                crate::design::Target::Scenario(_) => "scenario",
-                            }),
-                        ),
+                        ("target_kind", Json::str("claim")),
                         ("target", Json::str(entry.target.id())),
                         ("id", Json::str(&m.id)),
+                        ("cases", Json::Arr(m.cases.iter().map(Json::str).collect())),
                         ("enforcement", Json::str(m.kind.name())),
                         ("rung", Json::Num(m.kind.rung() as f64)),
                         (
@@ -1885,7 +2117,7 @@ impl Model {
 fn site_json(s: &Site, derived_area: Option<&str>) -> Json {
     let mut pairs = vec![
         ("spec".to_string(), Json::str(&s.spec)),
-        ("scenario".to_string(), Json::str(&s.scenario)),
+        ("claim".to_string(), Json::str(&s.claim)),
         ("site".to_string(), Json::str(&s.site)),
         ("file".to_string(), Json::str(&s.file)),
         ("lang".to_string(), Json::str(&s.lang)),
@@ -2044,14 +2276,12 @@ fn binding_json(model: &Model, item: &crate::verification::EvidenceBinding) -> J
     let mut fields = vec![
         ("id".to_string(), Json::str(&item.id)),
         ("check".to_string(), Json::str(&item.check)),
-        ("claim".to_string(), Json::str(&item.claim)),
-        ("proposition".to_string(), Json::str(&item.proposition)),
-        ("scope".to_string(), Json::str(item.scope.name())),
+        ("case".to_string(), Json::str(&item.case)),
         (
-            "quantification".to_string(),
-            Json::str(item.quantification.name()),
+            "method_qualification".to_string(),
+            Json::str(&item.method_qualification),
         ),
-        ("oracle".to_string(), Json::str(item.oracle.name())),
+        ("proposition".to_string(), Json::str(&item.proposition)),
         (
             "context".to_string(),
             crate::verification::context_json(&item.context),
@@ -2068,23 +2298,67 @@ fn binding_json(model: &Model, item: &crate::verification::EvidenceBinding) -> J
         ("policy".to_string(), Json::str(&item.policy)),
         (
             "context_fingerprint".to_string(),
-            Json::str(crate::fingerprint::context_fingerprint(item)),
+            Json::str(crate::fingerprint::context_fingerprint(&item.context)),
         ),
     ];
-    if let Some(expected) = model.expected_qualification_fingerprint(item) {
-        fields.push(("qualification_fingerprint".to_string(), Json::str(expected)));
+    if let Some(expected) = model.expected_applicability_fingerprint(item) {
+        fields.push(("applicability_fingerprint".to_string(), Json::str(expected)));
     }
     Json::Obj(fields)
 }
 
-fn qualification_json(item: &crate::verification::Qualification) -> Json {
-    Json::obj(vec![
+fn method_qualification_json(
+    model: &Model,
+    item: &crate::verification::MethodQualification,
+) -> Json {
+    let mut fields = vec![
         ("id", Json::str(&item.id)),
+        ("check", Json::str(&item.check)),
+        ("scope", Json::str(item.scope.name())),
+        ("quantification", Json::str(item.quantification.name())),
+        ("oracle", Json::str(item.oracle.name())),
+        ("context", crate::verification::context_json(&item.context)),
+        (
+            "challenge_domain",
+            Json::Arr(
+                item.challenge_domain
+                    .iter()
+                    .map(|domain| Json::str(domain.name()))
+                    .collect(),
+            ),
+        ),
+        ("policy", Json::str(&item.policy)),
         ("verdict", Json::str(item.verdict.name())),
         ("fingerprint", Json::str(&item.fingerprint)),
         ("qualified", Json::str(&item.qualified)),
         ("qualifier", Json::str(&item.qualifier)),
-    ])
+    ];
+    if let Some(expected) = model.expected_method_qualification_fingerprint(item) {
+        fields.push(("expected_fingerprint", Json::str(expected)));
+    }
+    Json::obj(fields)
+}
+
+fn applicability_decision_json(
+    model: &Model,
+    item: &crate::verification::ApplicabilityDecision,
+) -> Json {
+    let binding = model
+        .evidence_bindings()
+        .find(|binding| binding.id == item.id);
+    let mut fields = vec![
+        ("id".to_string(), Json::str(&item.id)),
+        ("verdict".to_string(), Json::str(item.verdict.name())),
+        ("fingerprint".to_string(), Json::str(&item.fingerprint)),
+        ("decided".to_string(), Json::str(&item.decided)),
+        ("decider".to_string(), Json::str(&item.decider)),
+    ];
+    if let Some(expected) =
+        binding.and_then(|binding| model.expected_applicability_fingerprint(binding))
+    {
+        fields.push(("expected_fingerprint".to_string(), Json::str(expected)));
+    }
+    Json::Obj(fields)
 }
 
 fn claim_judgment_json(model: &Model, item: &crate::verification::ClaimJudgment) -> Json {

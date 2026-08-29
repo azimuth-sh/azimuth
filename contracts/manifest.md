@@ -68,12 +68,12 @@ An emitted source identity does not survive assembly except on an Artifact. Both
 
 ## `realizes`
 
-A production realization site for one case-level Claim.
+A production realization site for one parent Claim.
 
 ```json
 {
   "spec": "payments/capture",
-  "scenario": "duplicate-completion-is-idempotent",
+  "claim": "duplicate-completion-is-idempotent",
   "site": "capture::complete",
   "file": "src/capture.rs",
   "lang": "rust",
@@ -81,15 +81,17 @@ A production realization site for one case-level Claim.
 }
 ```
 
-`spec`, `scenario`, `site`, `file` and `lang` are required. `source_fingerprint` is optional; when present it must be a fingerprint. The four source-identity fields are permitted. No other field is.
+`spec`, `claim`, `site`, `file` and `lang` are required. `source_fingerprint` is optional; when present it must be a fingerprint. The four source-identity fields are permitted. No other field is.
 
-Neither `spec` nor `scenario` is id-validated by the reader; both are matched against the model, where an unknown pair becomes a dangling-linkage finding rather than a parse error. `lang` is accepted as written and selects the address kind (see [Address kinds](#address-kinds)).
+Neither `spec` nor `claim` is id-validated by the reader; both are matched against the model, where an unknown pair becomes a dangling-linkage finding rather than a parse error. `lang` is accepted as written and selects the address kind (see [Address kinds](#address-kinds)).
 
-Within one manifest the identity is `spec|scenario|site|file|lang`, and a repeat is a duplicate realization.
+Within one manifest the identity is `spec|claim|site|file|lang`, and a repeat is a duplicate realization.
 
 ## `check_implementations`
 
-One source site that implements one project-global Check. The marker carries implementation identity only: no Claim, form, context or Qualification. Several records may implement one Check.
+One source site that implements one project-global Check. The marker carries implementation
+identity only: no Case, form, context, Method Qualification or Applicability Decision. Several
+records may implement one Check.
 
 ```json
 {
@@ -235,7 +237,7 @@ For a mechanism implementation, assembly atomically rewrites the implementation'
 
 Several manifests are read together. Duplicate detection inside one manifest is by the raw identity tuples above; after assembly the following must additionally hold across all manifests:
 
-- one realization per `(spec#scenario, source key)`;
+- one realization per `(spec#claim, source key)`;
 - one Check implementation per `(check, source key)`;
 - one marker implementation per `(spec, mechanism)`, and one marker target per mechanism source key;
 - one enumeration witness per `(class, area, mount, kind)`;

@@ -14,7 +14,7 @@ public final class Azimuth {
     @Repeatable(Realizations.class)
     public @interface Realizes {
         String spec();
-        String scenario();
+        String claim();
     }
 
     @Retention(RetentionPolicy.RUNTIME)

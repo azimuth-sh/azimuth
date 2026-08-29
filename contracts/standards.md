@@ -43,7 +43,9 @@ A Decision Policy id and a Challenge form id are project-global lower kebab path
 
 `Required challenge:` is the only recognized label and is repeatable. A policy needs at least one; repeating the same form is an error, and a `Required challenge:` line with an empty value is an invalid form id. Line order is not semantic — the parser sorts the forms. Two Decision Policy blocks with the same id are an error. Rationale prose is required.
 
-An Evidence Binding's or Claim Judgment's `Policy:` must name a declared policy; a binding naming an unknown policy is the `binding-missing-policy` Finding, not a parse error.
+A Method Qualification's, Evidence Binding's or Claim Judgment's `Policy:` must name a declared
+policy. An unknown reference becomes the corresponding dangling or missing-policy Finding rather
+than a parse error.
 
 ## Challenge Schedule
 
@@ -94,9 +96,18 @@ The Challenge Schedule digest is taken over exactly:
 
 The literal `"current"` is written into the schedule preimage; the parsed id does not vary.
 
-The Decision Policy digest participates in every Evidence Binding fingerprint as `decision_policy_digest`, and therefore in the Qualification fingerprint derived from it; it participates in the Claim Judgment preimage as `policy_digest`; and it appears as a `policy` scope component in Qualification and Claim Judgment semantic scope. Editing a policy's required forms stales only the decisions that cite that policy.
+The Decision Policy digest participates independently in Method Qualification and Evidence Binding
+fingerprints as `decision_policy_digest`; the binding fingerprint then determines its Applicability
+Decision. It participates in the Claim Judgment preimage as `policy_digest` and appears as a
+`policy` scope component in every applicable decision scope. Editing a policy's required forms
+stales only the decisions that cite that policy and their dependants.
 
-The Challenge Schedule digest participates in no Check, binding, context, Qualification, Challenger or Claim Judgment identity. It is published as the `digest` field of the exported `challenge_schedule` object and therefore participates in the complete-model digest that planning and finalization use. The lane itself is projected as `gate | scheduled` into every semantic Challenge selection: planning resolves the requested Challenger's form against the two lanes and fails when the form does not occupy exactly one.
+The Challenge Schedule digest participates in no Check, binding, context, Method Qualification,
+Applicability Decision, Challenger or Claim Judgment identity. It is published as the `digest`
+field of the exported `challenge_schedule` object and therefore participates in the complete-model
+digest that planning and finalization use. The lane itself is projected as `gate | scheduled` into
+every semantic Challenge selection: planning resolves the requested Challenger's form against the
+two lanes and fails when the form does not occupy exactly one.
 
 ## Parse errors
 

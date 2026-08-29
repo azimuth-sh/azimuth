@@ -20,13 +20,7 @@ else:
 
 
 SPEC = "framework/release-artifacts"
-SCENARIOS = (
-    "one-source-version",
-    "registry-identities-match-contract",
-    "packed-contents-are-bounded-and-licensed",
-    "support-and-platforms-are-explicit",
-    "experimental-source-is-not-published",
-)
+CLAIMS = ("first-alpha-contract",)
 
 
 class QualificationError(Exception):
@@ -427,13 +421,13 @@ def write_linkage(root, output_root):
         "realizes": [
             {
                 "spec": SPEC,
-                "scenario": scenario,
+                "claim": claim,
                 "site": site,
                 "file": "release/qualify.py",
                 "lang": "python",
                 "source_fingerprint": qualifier_fingerprint,
             }
-            for scenario in SCENARIOS
+            for claim in CLAIMS
             for site in ["qualify"]
         ],
         "check_implementations": [],

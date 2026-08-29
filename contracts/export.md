@@ -8,7 +8,7 @@ Output goes to stdout, or to `--out <file>` when given. The rendering is determi
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "specs": [],
   "realizes": [],
   "workspace": {},
@@ -20,7 +20,8 @@ Output goes to stdout, or to `--out <file>` when given. The rendering is determi
   "mechanisms": [],
   "checks": [],
   "evidence_bindings": [],
-  "qualifications": [],
+  "method_qualifications": [],
+  "applicability_decisions": [],
   "claim_judgments": [],
   "decision_policies": [],
   "challenge_schedule": null,
@@ -31,9 +32,12 @@ Output goes to stdout, or to `--out <file>` when given. The rendering is determi
 }
 ```
 
-These are the only root keys, in exactly this order. Every one is always present. `version` has exactly the value `2`.
+These are the only root keys, in exactly this order. Every one is always present. `version` has
+exactly the value `3`.
 
-The export root carries no `format` identifier. Every other serialized artifact — run bundle, run launch plan, workspace, run inspection, challenge resolution, every fingerprint preimage — names itself with a `format` string; the export does not. That is the current shape. A consumer distinguishes an export from a traceability projection, which also carries `"version": 2` and no `format`, by root keys: the export has `specs`, the projection has `claims` and `decision_impacts`.
+The export root carries no `format` identifier. A consumer distinguishes version 3 export from
+traceability by root keys: the export has `specs`, the projection has `cases` and
+`decision_impacts`.
 
 `challenge_schedule` is an object when a Decision Standards file was loaded and `null` otherwise. Every other value is an array.
 
@@ -41,8 +45,10 @@ The export root carries no `format` identifier. Every other serialized artifact 
 
 Ordering is derivation order, not a canonical sort, except where stated:
 
-- `specs` follow sorted spec file paths; requirements, scenarios and steps follow declaration order within their file.
-- `checks`, `evidence_bindings`, `qualifications`, `claim_judgments`, `challengers` and `challenge_plans` follow sorted `verification.md` paths, then declaration order within each file.
+- `specs` follow sorted spec file paths; Claims, Cases and steps follow declaration order within their file.
+- `checks`, `evidence_bindings`, `method_qualifications`, `applicability_decisions`,
+  `claim_judgments`, `challengers` and `challenge_plans` follow sorted `verification.md` paths, then
+  declaration order within each file.
 - `mechanisms` follow design load order, then design entry order, then mechanism order.
 - `realizes`, `mechanism_implementations`, `check_implementations`, `class_members`, `enumerations` and `artifacts` follow `--manifest` argument order, then the order inside each manifest. Core concatenates and does not re-sort them.
 - `decision_policies` follow declaration order in the Decision Standards file.
@@ -59,13 +65,15 @@ Ordering is derivation order, not a canonical sort, except where stated:
 {
   "id": "billing/invoices",
   "path": "azimuth/model/billing/invoices/spec.md",
-  "requirements": [
+  "claims": [
     {
       "id": "invoice-totals-are-exact",
       "criticality": "critical",
       "statement": "An invoice total SHALL equal the sum of its lines.",
       "line": 12,
-      "scenarios": [
+      "domain": "behaviour",
+      "over": null,
+      "cases": [
         {
           "id": "rounds-half-to-even",
           "line": 18,
@@ -77,18 +85,22 @@ Ordering is derivation order, not a canonical sort, except where stated:
 }
 ```
 
-`criticality` is `critical | standard | routine`, or `null` when the requirement declares none. `line` is the one-based source line of the heading. Step `kind` is `given | when | then | and`.
+`criticality` is `critical | standard | routine`, or `null` when the Claim declares none. `line` is
+the one-based source line of the heading. `domain` is `behaviour | sites`; `over` is a surface id
+for the sites domain and `null` otherwise. Step `kind` is `given | when | then | and`.
 
-A site-domain requirement — one written as `## Invariant:` — appears here with exactly one synthesized scenario whose id equals the requirement id and whose `steps` array is empty.
+A site-domain Claim—one written as `## Invariant:`—appears here with exactly one synthesized Case
+whose id equals the Claim id and whose `steps` array is empty.
 
-The export omits the requirement's `domain` and `over` values. Both exist in the derived model and both participate in the case-Claim digest, but neither is serialized here. A consumer cannot recover a Claim's domain from an export. The synthesized-scenario shape above is not a reliable discriminator: the parser does not require a behavioural scenario to declare steps, so an empty `steps` array is possible in either domain.
+Every Claim digest includes its domain, `over` value and the complete ordered Case set. Every Case
+digest includes the parent Claim statement and domain plus that Case's steps.
 
 ## Realizes
 
 ```json
 {
   "spec": "billing/invoices",
-  "scenario": "rounds-half-to-even",
+  "claim": "invoice-totals-are-exact",
   "site": "Billing.Invoice.total",
   "file": "services/billing/invoice.cs",
   "lang": "csharp",
@@ -100,7 +112,8 @@ The export omits the requirement's `domain` and `over` values. Both exist in the
 }
 ```
 
-`spec`, `scenario`, `site`, `file` and `lang` are always present. `source_fingerprint` is emitted only when non-empty. The record then carries exactly one of two tails:
+`spec`, `claim`, `site`, `file` and `lang` are always present. `source_fingerprint` is emitted only
+when non-empty. The record then carries exactly one of two tails:
 
 - when the relation has a semantic source identity, the four keys `area`, `address_kind`, `address` and `mount`, in that order; or
 - otherwise `derived_area`, holding the id of the workspace area whose longest mount path contains `file`.
@@ -203,9 +216,10 @@ Evidence that a class was enumerated from a system-produced source. The optional
 ```json
 {
   "spec": "billing/invoices",
-  "target_kind": "requirement",
+  "target_kind": "claim",
   "target": "invoice-totals-are-exact",
   "id": "unique-invoice-number",
+  "cases": ["rounds-half-to-even"],
   "enforcement": "schema",
   "rung": 1,
   "binding": "billing.invoice_number_unique",
@@ -215,7 +229,11 @@ Evidence that a class was enumerated from a system-produced source. The optional
 }
 ```
 
-All ten keys are always present in this order. `target_kind` is `requirement | scenario`. `enforcement` is `type | schema | constraint | choke-point | middleware | guard`, and `rung` is the integer that enforcement maps to: `type` and `schema` are 1, `constraint` and `choke-point` are 2, `middleware` is 3, `guard` is 4.
+All eleven keys are always present in this order. `target_kind` is always `claim`. `cases` is the
+sorted local Case relevance list and is empty when the mechanism bears on the complete Claim.
+`enforcement` is `type | schema | constraint | choke-point | middleware | guard`, and `rung` is the
+integer that enforcement maps to: `type` and `schema` are 1, `constraint` and `choke-point` are 2,
+`middleware` is 3, `guard` is 4.
 
 `binding` is the mechanism's single resolved artifact binding. The candidate set is the mechanism's own declared binding, if any, followed by the binding of every mechanism implementation naming that spec and mechanism. `binding` is the sole candidate when there is exactly one, and `null` when there are none or several. `expected_unique` and `expected_predicate` are `null` when the design declares none; `expected_columns` is an empty array when the design declares none.
 
@@ -238,48 +256,70 @@ All ten keys are always present in this order. `target_kind` is `requirement | s
 {
   "id": "billing/invoice-total-binding",
   "check": "billing/invoice-total-suite",
-  "claim": "billing/invoices#rounds-half-to-even",
+  "case": "billing/invoices#invoice-totals-are-exact/rounds-half-to-even",
+  "method_qualification": "billing/invoice-total-method",
   "proposition": "the suite exercises half-to-even rounding on two-line invoices",
-  "scope": "unit",
-  "quantification": "example",
-  "oracle": "direct",
-  "context": {
-    "format": "azimuth-context-fingerprint",
-    "version": 1,
-    "required_context": { "locale": "en-US" }
-  },
+  "context": { "locale": "en-US" },
   "challenge_domain": ["oracle"],
   "policy": "standard-evidence",
   "context_fingerprint": "sha256:<64-lowercase-hex>",
-  "qualification_fingerprint": "sha256:<64-lowercase-hex>"
+  "applicability_fingerprint": "sha256:<64-lowercase-hex>"
 }
 ```
 
-`scope` is `unit | component | e2e`. `quantification` is `example | universal`. `oracle` is `direct | golden | relational | metamorphic | model-based | contract`. Each `challenge_domain` entry is `realization | mechanism | check-implementation | oracle | context`.
+Each `challenge_domain` entry is `realization | mechanism | check-implementation | oracle |
+context`.
 
-`context` is the complete context-fingerprint preimage, with `required_context` holding the binding's required context keys in sorted key order; the object is `{}` when the binding requires no context.
+`context` is the exact edge context object; it is `{}` when the binding requires no edge-specific
+context.
 
-`qualification_fingerprint` is present only when the expected Qualification fingerprint is derivable — that is, when the binding's Check, Decision Policy and Claim all resolve in the loaded model. Its absence marks an incomplete composition, not a stale decision.
+`applicability_fingerprint` is present only when the expected Applicability Decision fingerprint is
+derivable. Its absence marks incomplete composition, not a stale decision.
 
-## Qualifications
+## Method qualifications
+
+```json
+{
+  "id": "billing/invoice-total-method",
+  "check": "billing/invoice-total-suite",
+  "scope": "unit",
+  "quantification": "example",
+  "oracle": "direct",
+  "context": {"locale":"en-US"},
+  "challenge_domain": ["oracle"],
+  "policy": "standard-evidence",
+  "verdict": "qualified",
+  "fingerprint": "sha256:<64-lowercase-hex>",
+  "qualified": "2026-08-21",
+  "qualifier": "a.reviewer",
+  "expected_fingerprint": "sha256:<64-lowercase-hex>"
+}
+```
+
+`verdict` is `qualified | rejected`. `fingerprint` is authored; `expected_fingerprint` is present
+when the complete method composition is derivable.
+
+## Applicability decisions
 
 ```json
 {
   "id": "billing/invoice-total-binding",
-  "verdict": "qualified",
+  "verdict": "applicable",
   "fingerprint": "sha256:<64-lowercase-hex>",
-  "qualified": "2026-08-21",
-  "qualifier": "a.reviewer"
+  "decided": "2026-08-21",
+  "decider": "a.reviewer",
+  "expected_fingerprint": "sha256:<64-lowercase-hex>"
 }
 ```
 
-`verdict` is `qualified | rejected`. `fingerprint` is the fingerprint the reviewer authored, not the fingerprint core derives; the derived counterpart is the binding's `qualification_fingerprint`. Comparing the two is how a consumer detects staleness.
+`verdict` is `applicable | rejected`. The id is exactly the binding id. The expected fingerprint is
+present only when the binding, Case, policy and referenced Method Qualification resolve.
 
 ## Claim judgments
 
 ```json
 {
-  "id": "billing/invoices#rounds-half-to-even",
+  "id": "billing/invoices#invoice-totals-are-exact",
   "verdict": "accepted",
   "policy": "standard-evidence",
   "fingerprint": "sha256:<64-lowercase-hex>",
@@ -329,7 +369,10 @@ The single `Challenge Schedule: current` block, or `null` when no Decision Stand
 }
 ```
 
-Each `required_scope` entry is one of `claim`, `binding`, `qualification`, `claim-judgment`, `check`, `check-implementation`, `realization`, `mechanism`, `mechanism-implementation`, `artifact`, `context`, `policy`, `area`, `realization-obligation`, `surface`, `surface-member`, `enumeration`.
+Each `required_scope` entry is one of `applicability-decision`, `case`, `claim`, `binding`,
+`method-qualification`, `claim-judgment`, `check`, `check-implementation`, `realization`,
+`mechanism`, `mechanism-implementation`, `artifact`, `context`, `policy`, `area`,
+`realization-obligation`, `surface`, `surface-member`, `enumeration`.
 
 ## Challenge plans
 
@@ -337,11 +380,11 @@ Each `required_scope` entry is one of `claim`, `binding`, `qualification`, `clai
 {
   "id": "billing/mutation-plan",
   "challenger": "billing/mutation-search",
-  "selectors": ["qualification from binding billing/invoice-total-binding"]
+  "selectors": ["applicability-decision from binding billing/invoice-total-binding"]
 }
 ```
 
-Each selector is its canonical string form: `qualification from binding <id>`, `qualification from check <id>`, `qualification from realization <id>`, `qualification from mechanism <id>`, `claim-judgment from claim <id>`, `claim-judgment from realization <id>` or `claim-judgment from mechanism <id>`.
+Each selector is one of the twelve canonical forms in [verification.md](verification.md).
 
 ## Challenge resolutions
 
@@ -356,13 +399,13 @@ One record per Challenge Plan, holding the deterministic resolution of that plan
   "candidates": [
     {
       "selector": {
-        "target": "qualification",
+        "target": "applicability-decision",
         "from": "binding",
         "id": "billing/invoice-total-binding"
       },
       "relation": { "kind": "binding", "id": "billing/invoice-total-binding" },
       "target": {
-        "kind": "qualification",
+        "kind": "applicability-decision",
         "id": "billing/invoice-total-binding",
         "expected_fingerprint": "sha256:<64-lowercase-hex>",
         "authored_fingerprint": "sha256:<64-lowercase-hex>"
@@ -374,7 +417,11 @@ One record per Challenge Plan, holding the deterministic resolution of that plan
 }
 ```
 
-These nested records are the one place in the export that names its own format. `selector.target` and `target.kind` are `qualification | claim-judgment`. `selector.from` and `relation.kind` are `binding | check | claim | mechanism | realization`. `target` is `null` when no decision target was reached; `expected_fingerprint` and `authored_fingerprint` are independently nullable.
+These nested records are the one place in the export that names its own format.
+`selector.target` and `target.kind` are `method-qualification | applicability-decision |
+claim-judgment`. `selector.from` and `relation.kind` use the closed relation kinds in the
+verification contract. `target` is `null` when no decision target was reached;
+`expected_fingerprint` and `authored_fingerprint` are independently nullable.
 
 `disposition` is `selected | missing-decision | stale-decision | rejected-decision | invalid-decision | inapplicable | unresolved-relation`. Adverse candidates are preserved rather than pruned: a plan reports every candidate its selectors reach, so a consumer sees the adverse siblings of a successful selector.
 
@@ -384,15 +431,15 @@ These nested records are the one place in the export that names its own format. 
 
 ```json
 {
-  "kind": "unbound-claim",
+  "kind": "unbound-case",
   "category": "verification",
   "severity": "error",
-  "claim": "billing/invoices#rounds-half-to-even",
+  "claim": "billing/invoices#invoice-totals-are-exact/rounds-half-to-even",
   "criticality": "critical",
   "file": "azimuth/model/billing/invoices/spec.md",
   "line": 18,
-  "detail": "non-routine Claim has no Evidence Binding",
-  "help": "Bind at least one deliberately enrolled Check to the Claim."
+  "detail": "non-routine Case has no Evidence Binding",
+  "help": "Bind at least one deliberately enrolled Check to the Case."
 }
 ```
 
@@ -403,8 +450,8 @@ Findings are part of the exported account and therefore part of the model digest
 ## What the export does not contain
 
 - No Run ledger data. Observations, Challenge Results, Run bundles, Assurance State and any notion of what has been executed are absent. The export is a static account of the model as authored and derived, not of anything that ran. Run facts live in run bundles; see `contracts/run-bundle.md`.
-- No decision-impact edges. The impact of a change on existing decisions belongs to the traceability projection emitted by `azimuth report traceability`, which carries them under `decision_impacts` alongside a per-Claim rollup. The export carries neither.
-- No requirement `domain` or `over` value, as stated above.
+- No decision-impact edges. The impact of a change on existing decisions belongs to the traceability projection emitted by `azimuth report traceability`, which carries them under `decision_impacts` alongside the per-Case account. The export carries neither.
+- No independent Case `domain` or `over` value. Cases inherit both from their parent Claim.
 - No derived surface membership inside the `workspace` block.
 
 ## Command boundary

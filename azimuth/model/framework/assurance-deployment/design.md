@@ -1,6 +1,6 @@
 # Design: framework/assurance-deployment
 
-## Requirement: private-network-containment
+## Claim: private-network-containment
 Mechanism: private-compose-profile
 Enforcement: guard
 Binding: private-deployment-qualification
@@ -10,7 +10,7 @@ network and binds the two application entry points to host loopback. A qualifica
 the resolved configuration and the operator account together. Removing the guard would let port,
 secret and documentation boundaries drift independently.
 
-## Requirement: assurance-ledger-durability
+## Claim: assurance-ledger-durability
 Mechanism: retained-ledger-lifecycle
 Enforcement: choke-point
 Binding: private-deployment-lifecycle
@@ -20,7 +20,7 @@ The lifecycle test writes through the public API, snapshots externally readable 
 stop, start and forced service recreation, and compares the public representation afterward.
 Removing the test would leave volume declaration and application behavior as unrelated assertions.
 
-## Requirement: selected-image-platforms-build
+## Claim: selected-image-platforms-build
 Mechanism: catalog-derived-image-matrix
 Enforcement: guard
 Binding: private-deployment-image-build

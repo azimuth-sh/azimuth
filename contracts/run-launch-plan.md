@@ -29,6 +29,7 @@ A Run launch plan binds one provider-neutral Run-bundle semantic Plan to explici
     {
       "id": "payments/recovery-under-broker-loss",
       "capability": "synthetic/checks",
+      "cases": ["payments/recovery#accepted-write/replayed-after-broker-loss"],
       "units": [
         {
           "id": "whole",
@@ -55,11 +56,26 @@ A Run launch plan binds one provider-neutral Run-bundle semantic Plan to explici
 
 Operation is `execute | import`. `planned_at_ms` is the non-negative integral safe Unix-millisecond time at which core creates the bounded execution plan. Subject has one exact Run-bundle Subject shape. `required_context` and unit parameters are exact objects from unique non-empty strings to strings; `{}` is valid. `checks` and `challenges` are both required arrays; either may be empty, but their combined selection is non-empty.
 
-Checks sort by unique project-global Check id. Challenge requests sort by unique authored Challenge Plan id. Both name an exact configured `<adapter-id>/<capability-id>` address and non-empty units sorted by unique lower-kebab path id. `max_candidates` is required only for Challenge requests and is an integer from 1 through the Run-bundle safe-integer maximum. It counts unique candidate records from that authored Plan after duplicate selectors are removed and before selections from different requested Plans deduplicate. Every disposition counts. Exceeding the cap fails before a launch is created; it never truncates.
+Checks sort by unique project-global Check id. Every Check request has a non-empty sorted unique
+`cases` array of exact nested Case ids and must have exactly one Evidence Binding from that Check to
+each Case. Challenge requests sort by unique authored Challenge Plan id. Both name an exact
+configured `<adapter-id>/<capability-id>` address and non-empty units sorted by unique lower-kebab
+path id. `max_candidates` is required only for Challenge requests and is an integer from 1 through
+the Run-bundle safe-integer maximum. It counts unique candidate records from that authored Plan
+after duplicate selectors are removed and before selections from different requested Plans
+deduplicate. Every disposition counts. Exceeding the cap fails before a launch is created; it never
+truncates.
 
 The planner loads the complete unselected current model before selection. It derives the Subject fingerprint, complete-model fingerprint, each selected current Check and its complete implementation set, and every candidate, current decision, Challenger, lane and semantic scope reached by the fixed union of requested Challenge Plans. It never accepts caller-supplied fingerprints, implementations, Challenger forms, targets, lanes, scopes or launch inputs.
 
-Only a `selected` candidate is runnable. Any other disposition in a requested Plan fails planning. For every selected decision, the requested Plan union contains at least one runnable selection for every form required by its Decision Policy. Extra forms strengthen the search. Qualification context equals `required_context` exactly; selected Qualifications from different contexts fail with guidance to create separate Runs. Claim Judgment repository identity remains independent of Run context and uses the one request context for execution.
+Only a `selected` candidate is runnable. Any other disposition in a requested Plan fails planning.
+For every selected decision, the requested Plan union contains at least one runnable selection for
+every form required by its Decision Policy. Extra forms strengthen the search. The selected
+decision's applicable context equals `required_context` exactly; decisions from different contexts
+fail with guidance to create separate Runs. Claim Judgment repository identity remains independent
+of Run context and uses the one request context for execution. Check execution itself requires the
+explicit Check-to-Case bindings but not current positive repository decisions; it records an
+execution fact and does not infer evidentiary applicability.
 
 Core verifies that each explicit capability has the operation's Challenge class and the current Challenger's exact form. It never chooses a capability lexically or trusts a form in the request. The one-adapter prefix rule spans Check and Challenge requests. Duplicate selections with different capabilities or units fail. There is no complete-model broadening, partial-model or `--only` path.
 
@@ -78,7 +94,7 @@ The complete shape is:
   "plan": {},
   "adapter": {
     "id": "synthetic",
-    "adapter_version": "0.1.0-alpha.2",
+    "adapter_version": "0.1.0-alpha.3",
     "adapter_fingerprint": "sha256:<adapter-fingerprint>",
     "descriptor_fingerprint": "sha256:<descriptor-fingerprint>",
     "configuration_fingerprint": "sha256:<configuration-fingerprint>"
@@ -114,7 +130,7 @@ A Challenge route is:
 {
   "selection": {
     "kind": "challenge",
-    "id": "challenge/91f69477f56b9a2ba588fb045529ddbaa7184c79f473eab50f73a0c5f70d038b"
+    "id": "challenge/71518eefaf1f73fa6fe99b690d178f71dd7b760d803ca361997dd9b697ec78e1"
   },
   "capability": {
     "address": "synthetic/challenges",
@@ -236,16 +252,6 @@ Canonical JSON is RFC 8785: UTF-8, no insignificant whitespace, ECMAScript strin
 The plan includes its `fingerprint`; the launch object excludes only its own `fingerprint`. A change to operation, planned time, Subject, semantic Plan, configured adapter identity, route, class, Challenge form or capability fingerprint therefore changes launch identity. Relocating unchanged configured adapter content does not; moving an accountable scope source does.
 
 `complete-routes` includes every Challenge route's complete accountable `inputs` array. There is no separate locator or launch-input fingerprint: semantic item fingerprints remain unchanged by a move, while any file, language, site or derived-metadata projection change alters the enclosing launch fingerprint. Check-only launch vectors therefore remain byte-for-byte unchanged.
-
-### Canonical vector
-
-This complete one-Check launch preimage is already in RFC 8785 form. Its Subject fingerprint is `sha256:22478698e6731ce5984658e366386e466fe173216bc7cb721168e1638d2dee02`, and its Plan fingerprint is `sha256:b75606956b9c1857f8b401d9bad207253b90f6948efddb5532a769b9f488fbfb`.
-
-```json
-{"adapter":{"adapter_fingerprint":"sha256:0000000000000000000000000000000000000000000000000000000000000000","adapter_version":"1","configuration_fingerprint":"sha256:1111111111111111111111111111111111111111111111111111111111111111","descriptor_fingerprint":"sha256:2222222222222222222222222222222222222222222222222222222222222222","id":"demo"},"format":"azimuth-run-launch-fingerprint","operation":"execute","plan":{"challenges":[],"checks":[{"fingerprint":"sha256:6666666666666666666666666666666666666666666666666666666666666666","id":"demo/check","implementations":[{"identity":"demo|rust-symbol|demo::check","source_fingerprint":"sha256:7777777777777777777777777777777777777777777777777777777777777777"}],"units":[{"id":"whole","parameters":{}}]}],"fingerprint":"sha256:b75606956b9c1857f8b401d9bad207253b90f6948efddb5532a769b9f488fbfb","model_fingerprint":"sha256:8888888888888888888888888888888888888888888888888888888888888888","required_context":{}},"planned_at_ms":1787300000000,"routes":[{"capability":{"address":"demo/check","class":"check.execute","fingerprint":"sha256:3333333333333333333333333333333333333333333333333333333333333333"},"selection":{"id":"demo/check","kind":"check"}}],"subject":{"artifacts":[{"digest":"sha256:4444444444444444444444444444444444444444444444444444444444444444","id":"image"}],"kind":"artifact"},"subject_fingerprint":"sha256:22478698e6731ce5984658e366386e466fe173216bc7cb721168e1638d2dee02","version":1}
-```
-
-Its SHA-256 value is `sha256:980dc9e544f41414e3a2735e84a6d9733aee85b2961899bb538f1f34c4347237`.
 
 ## Adapter request and returned bundle
 

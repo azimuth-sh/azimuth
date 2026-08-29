@@ -20,10 +20,10 @@ test('resolves a site to its enclosing function', () => {
   assert.deepEqual(
     {
       spec: result.realizes[0].spec,
-      scenario: result.realizes[0].scenario,
+      claim: result.realizes[0].claim,
       site: result.realizes[0].site,
     },
-    { spec: 'alpha', scenario: 'route-thing', site: 'handler' },
+    { spec: 'alpha', claim: 'route-thing', site: 'handler' },
   );
   assert.equal(result.realizes[0].lang, 'typescript');
 });
@@ -50,7 +50,7 @@ test('a site may realize several claims', () => {
     'a.ts',
   );
   assert.deepEqual(
-    result.realizes.map((r) => r.scenario),
+    result.realizes.map((r) => r.claim),
     ['first', 'second'],
   );
   assert.deepEqual(new Set(result.realizes.map((r) => r.site)), new Set(['f']));
@@ -142,7 +142,7 @@ test('a mechanism implementation emits the exact raw record and companion', () =
 test('a complete manifest uses the exact fingerprint lexical contract', () => {
   const dir = sourcePackage('@fixture/account', {
     'fixture.ts':
-    `declare function realizes(spec: string, scenario: string): void;
+    `declare function realizes(spec: string, claim: string): void;
      declare function implementsCheck(check: string): void;
      export function behavior() { realizes('alpha', 'behavior'); }
      export function mechanism() { implementsMechanism('alpha', 'guard'); }

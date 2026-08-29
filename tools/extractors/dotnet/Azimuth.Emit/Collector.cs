@@ -32,7 +32,7 @@ internal static class Collector
 
     public sealed record Entry(
         string Spec,
-        string Scenario,
+        string Claim,
         string Site,
         string File,
         string SourceFingerprint,
@@ -151,11 +151,11 @@ internal static class Collector
             var name = FullName(attribute);
             if (name == RealizesName)
             {
-                var (spec, scenario) = Pair(attribute);
+                var (spec, claim) = Pair(attribute);
                 result.Realizes.Add(
                     new Entry(
                         spec,
-                        scenario,
+                        claim,
                         type.FullName ?? type.Name,
                         typeFile,
                         typeFingerprint,
@@ -205,9 +205,9 @@ internal static class Collector
                 var name = FullName(attribute);
                 if (name == RealizesName)
                 {
-                    var (spec, scenario) = Pair(attribute);
+                    var (spec, claim) = Pair(attribute);
                     result.Realizes.Add(
-                        new Entry(spec, scenario, site, file, sourceFingerprint, null, null, null));
+                        new Entry(spec, claim, site, file, sourceFingerprint, null, null, null));
                 }
                 else if (name == ImplementsCheckName)
                 {
@@ -377,12 +377,12 @@ internal static class Collector
     private static string FullName(CustomAttributeData attribute) =>
         attribute.AttributeType.FullName ?? string.Empty;
 
-    private static (string Spec, string Scenario) Pair(CustomAttributeData attribute)
+    private static (string Spec, string Claim) Pair(CustomAttributeData attribute)
     {
         var args = attribute.ConstructorArguments;
         var spec = args.Count > 0 ? args[0].Value as string ?? string.Empty : string.Empty;
-        var scenario = args.Count > 1 ? args[1].Value as string ?? string.Empty : string.Empty;
-        return (spec, scenario);
+        var claim = args.Count > 1 ? args[1].Value as string ?? string.Empty : string.Empty;
+        return (spec, claim);
     }
 
     private static string FirstArgument(CustomAttributeData attribute) =>
@@ -401,8 +401,8 @@ internal static class Collector
             return bySpec;
         }
 
-        var byScenario = string.CompareOrdinal(a.Scenario, b.Scenario);
-        return byScenario != 0 ? byScenario : string.CompareOrdinal(a.Site, b.Site);
+        var byClaim = string.CompareOrdinal(a.Claim, b.Claim);
+        return byClaim != 0 ? byClaim : string.CompareOrdinal(a.Site, b.Site);
     }
 
     private static int CompareMechanismImplementation(
@@ -502,7 +502,7 @@ internal static class Collector
         {
             writer.WriteStartObject();
             writer.WriteString("spec", entry.Spec);
-            writer.WriteString("scenario", entry.Scenario);
+            writer.WriteString("claim", entry.Claim);
             writer.WriteString("site", entry.Site);
             writer.WriteString("file", entry.File);
             writer.WriteString("lang", Lang);

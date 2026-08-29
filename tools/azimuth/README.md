@@ -1,6 +1,9 @@
 # azimuth
 
-The dependency-free Rust core for Azimuth's evidence control plane. It derives repository-owned Claims and their graph, validates that graph, reports traceability, exports version 2 JSON and plans and hosts bounded adapter exchanges for provider-neutral Run bundles.
+The dependency-free Rust core for Azimuth's evidence control plane. It derives repository-owned
+Claims, their normative Cases and assurance graph, validates that graph, reports traceability,
+exports version 3 JSON and plans and hosts bounded adapter exchanges for provider-neutral Run
+bundles.
 
 Install a checkout with `cargo install --path tools/azimuth`.
 
@@ -47,7 +50,11 @@ azimuth project accept-change --project project.json --before active.json \
   --after archived.json --change <id> --date YYYY-MM-DD --out snapshot.json
 ```
 
-`azimuth validate` is the sole top-level deterministic validation command. It accepts only explicit options. Exit code `0` means clean, `1` means Findings were reported and `2` means the account could not be derived. `azimuth report traceability` is a pure projection over selected case-level Claims; it creates no authored authority or execution fact. `azimuth export` writes model version 2.
+`azimuth validate` is the sole top-level deterministic validation command. It accepts only explicit
+options. Exit code `0` means clean, `1` means Findings were reported and `2` means the account could
+not be derived. `azimuth report traceability` is a pure projection over selected Cases with
+inherited parent context; it creates no authored authority or execution fact. `azimuth export`
+writes model version 3.
 
 Model input defaults to `azimuth/model`. Decision Policies and the current Challenge Schedule default to `azimuth/standards/verification.md`, the workspace defaults beside the model root, and `--manifest` is repeatable. Selection operates on declared ids, not paths.
 
@@ -59,7 +66,12 @@ Adapter configuration defaults to strict [`azimuth/adapters.json`](../../contrac
 
 `azimuth run plan` loads the complete unselected model and accepts Check-only, Challenge-only or mixed strict requests. It creates a provider-neutral semantic Plan, then freezes Subject, operation, one configured adapter and one explicit capability route per selection in a separate [launch plan](../../contracts/run-launch-plan.md). Both request arrays are required and their union is non-empty. There is no partial-model or `--only` path.
 
-Check requests name an exact capability and finite units. Challenge requests name an authored Plan, exact capability, finite units and nonzero candidate cap. Planning resolves all seven Qualification and Claim Judgment selector forms and preserves `selected | missing-decision | stale-decision | rejected-decision | invalid-decision | inapplicable | unresolved-relation`. Every candidate counts before cross-Plan deduplication. Any adverse candidate, cap overflow, context mismatch or conflicting route fails planning.
+Check requests name an exact capability, finite Cases and finite units. Challenge requests name an
+authored Plan, exact capability, finite units and nonzero candidate cap. Planning resolves all
+twelve Method Qualification, Applicability Decision and Claim Judgment selector forms and
+preserves `selected | missing-decision | stale-decision | rejected-decision | invalid-decision |
+inapplicable | unresolved-relation`. Every candidate counts before cross-Plan deduplication. Any
+adverse candidate, cap overflow, context mismatch or conflicting route fails planning.
 
 The fixed requested Plan union must supply a runnable selection for every form required by each selected decision's Policy. Core validates the exact operation class, current Challenger form and one-adapter boundary; it never chooses or adds a capability. Generated Challenges carry a stable target-derived id, `gate | scheduled` lane and exact semantic scope. Challenge routes project every source-backed scope item to one accountable locator input. Scope affects Plan identity; locator projection affects launch identity.
 
@@ -73,34 +85,45 @@ A valid violated Observation, Challenge finding, partial or cancelled Run, or ad
 
 ## Model
 
-The intent graph has two Claim levels:
+The intent graph has one assurance centre. A parent Claim states the independently governed
+normative proposition and owns criticality, production realization, total Claim Judgment and future
+Assurance State. Its Cases are normative constituents with identities
+`<spec>#<claim>/<case>`—addressable for evidence, Runs, Observations and impact, but not governed
+independently.
 
-- a requirement-level Claim states the normative proposition and owns criticality;
-- a case-level Claim refines one observable condition and has identity `<spec>#<case>`.
-
-All current framework Claims are routine. They owe no realization, Check, Evidence Binding or Qualification. Ordinary tests still protect the implementation, but they are outside the Azimuth evidence graph.
+All current framework Claims are routine. They owe no realization, Check, Evidence Binding or
+decision. Ordinary tests still protect the implementation, but they are outside the Azimuth
+evidence graph.
 
 For a non-routine Claim, `verification.md` owns:
 
 - a Check with one atomic terminal proposition;
-- sparse Evidence Bindings from that Check to individual case Claims;
-- exactly one Qualification for each binding;
-- exactly one total-composition Claim Judgment for each standard or critical case Claim;
+- sparse Evidence Bindings from that Check to individual Cases;
+- shared Method Qualifications for exact Check method compositions;
+- exactly one Applicability Decision for each binding;
+- exactly one total-composition Claim Judgment for each standard or critical parent Claim;
 - Challengers that name open objection forms; and
 - Challenge Plans with semantic selectors over the graph.
 
 Evidence Bindings and Claim Judgments name project Decision Policies. One current Challenge Schedule assigns every required or declared form exactly once to `gate | scheduled`.
 
-One Check may bind to several Claims and one Claim may receive several Checks. Source only declares `ImplementsCheck(<project-global-check-id>)`. Workspace or federation assembly attaches semantic source identity. Evidence meaning never comes from the source marker.
+One Check may bind to several Cases and one Case may receive several Checks. Source only declares
+`ImplementsCheck(<project-global-check-id>)`. Workspace or federation assembly attaches semantic
+source identity. Evidence meaning never comes from the source marker.
 
-Qualification fingerprints compose canonical Check, binding and required-context fingerprints. Claim Judgment fingerprints bind the exact total composition, including recomputed Qualification expectations, policy, verdict, ordered basis and residual risk. Challenge selection traverses stable Claim, realization, mechanism, Check and binding relations. Paths, line numbers and globs are not semantic selectors, and zero selection never widens to a suite.
+Method Qualification fingerprints compose the exact Check, form, common context and policy.
+Applicability Decision fingerprints compose the Case digest, binding-specific proposition and
+context, current Method Qualification and policy. Claim Judgment fingerprints bind the exact total
+parent composition, including every Case and evidence edge. Challenge selection traverses stable
+decision, Case, Claim, realization, mechanism, Check and binding relations. Paths, line numbers and
+globs are not semantic selectors, and zero selection never widens to a suite.
 
 ## Implementation map
 
-- `spec.rs` parses strict requirement and case Claims.
+- `spec.rs` parses strict parent Claims and normative Cases.
 - `design.rs` parses current mechanisms and structural bindings.
 - `verification.rs` parses verification declarations, Decision Policies and the schedule.
-- `manifest.rs` reads strict v2 linkage collections.
+- `manifest.rs` reads strict linkage collections.
 - `workspace.rs` derives areas, surfaces and realization obligations.
 - `validation.rs` reports categorized Findings through one exhaustive registry.
 - `traceability.rs` derives traceability, Challenge resolutions and decision-impact edges.
@@ -108,7 +131,7 @@ Qualification fingerprints compose canonical Check, binding and required-context
 - `adapter.rs` parses strict configuration and derives adapter and capability identities.
 - `run_plan.rs` resolves complete-model Checks and Challenges and builds semantic and launch plans.
 - `adapter_host.rs` stages content, hosts bounded processes and validates returned bundles.
-- `model.rs` owns the graph and export version 2.
+- `model.rs` owns the graph and export version 3.
 - `change.rs` handles change projection, finalization and archive gates.
 - `federation.rs` assembles revision-bound repository accounts.
 - `workflow.rs` scaffolds changes and validates path-isolated work packages.
@@ -121,13 +144,26 @@ The ecosystem account is closed: .NET uses namespace/type/method/metadata signat
 
 ## Run and adapter execution plane
 
-Azimuth implements one immutable provider-neutral bundle revision for a bounded Run over one exact Subject and semantic plan. The bundle records actual selection, physical activities, ordered attempts, one terminal Observation per actually selected Check and one Challenge Result per selected Challenger target. Canonical fingerprints and full-replacement corrections make the standalone account deterministic without making it current repository acceptance.
+Azimuth implements one immutable provider-neutral bundle revision for a bounded Run over one exact
+Subject and semantic plan. The bundle records actual selection, physical activities, ordered
+attempts, one terminal Observation per selected Check-to-Case projection and one Challenge Result
+per selected Challenger target. Canonical fingerprints and full-replacement corrections make the
+standalone account deterministic without making it current repository acceptance.
 
 The semantic Plan is provider-neutral. A separate launch plan binds it to one configured adapter and exact capability routes so provider substitution changes launch identity and the derived Run id. Adapters expose a closed semantic capability dictionary with open configured addresses: `model.extract`, `check.execute`, `check.import`, `challenge.execute` and `challenge.import`.
 
-Current planning resolves exact current qualified Qualifications and current accepted Claim Judgments from the complete model. Every Challenge selection contains its lane, target and semantic scope; every Challenge route repeats the exact form and explicit capability and carries accountable inputs for source-backed scope. A Check request does not require a Qualification, because executing a Check and judging an Evidence Binding's credibility remain separate meanings.
+Current planning resolves exact current positive Method Qualifications, Applicability Decisions
+and Claim Judgments from the complete model. Every Challenge selection contains its lane, target
+and semantic scope; every Challenge route repeats the exact form and explicit capability and
+carries accountable inputs for source-backed scope. A Check request does not require either
+decision, because executing a Check and judging evidentiary applicability remain separate meanings.
 
-Challenge Results are exactly `clean | findings | inconclusive`. Clean records only a negative search fact and creates no evidence, Qualification or Judgment. Every planned Challenge omitted from a partial, cancelled or timed-out Run has one selection-scoped execution diagnostic and no fabricated Result. Scheduled omission is allowed deferral; gate omission remains an honest execution failure. Added or substituted targets, context, units or scope are mismatches. A Qualification impact edge reaches its dependent Claim Judgment without creating a duplicate direct Judgment Challenge Result.
+Challenge Results are exactly `clean | findings | inconclusive`. Clean records only a negative
+search fact and creates no evidence or decision. Every planned Challenge omitted from a partial,
+cancelled or timed-out Run has one selection-scoped execution diagnostic and no fabricated Result.
+Scheduled omission is allowed deferral; gate omission remains an honest execution failure. Added
+or substituted targets, context, units or scope are mismatches. Method findings fan through their
+dependent applicability edges; applicability findings stay local to the exact binding.
 
 `model.extract` execution is not implemented. Adapters are bounded short-lived processes; there is no long-running adapter, daemon, service bridge or webhook boundary.
 
@@ -141,4 +177,4 @@ Federated projects use a versioned project catalog plus a complete workset. Repo
 
 ## Tests
 
-Run `cargo test --manifest-path tools/azimuth/Cargo.toml`. Fixtures are synthetic and independent of consumer repositories. `experiments/challenge-planning/check.sh` exercises all seven selectors, mixed planning, explicit route inputs, mutation, fault and broad-analysis outcomes, scheduled omission, import provenance and selection mismatch through public commands.
+Run `cargo test --manifest-path tools/azimuth/Cargo.toml`. Fixtures are synthetic and independent of consumer repositories. `experiments/challenge-planning/check.sh` exercises all twelve selectors, mixed planning, explicit route inputs, mutation, fault and broad-analysis outcomes, scheduled omission, import provenance and selection mismatch through public commands.

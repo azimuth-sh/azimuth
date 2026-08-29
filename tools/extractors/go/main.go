@@ -27,7 +27,7 @@ const annotationPackage = "github.com/azimuth-sh/azimuth-go/azimuth"
 
 type relation struct {
 	Spec              string `json:"spec"`
-	Scenario          string `json:"scenario"`
+	Claim             string `json:"claim"`
 	Site              string `json:"site"`
 	File              string `json:"file"`
 	Lang              string `json:"lang"`
@@ -777,7 +777,7 @@ func appendMarker(
 	}
 	switch name {
 	case "Realizes":
-		result.Realizes = append(result.Realizes, relation{Spec: values[0], Scenario: values[1], Site: site, File: file, Lang: "go", SourceFingerprint: fingerprint})
+		result.Realizes = append(result.Realizes, relation{Spec: values[0], Claim: values[1], Site: site, File: file, Lang: "go", SourceFingerprint: fingerprint})
 	case "ImplementsCheck":
 		result.CheckImplementations = append(result.CheckImplementations, checkImplementation{Check: values[0], Site: site, File: file, Lang: "go", SourceFingerprint: fingerprint})
 	case "ImplementsMechanism":

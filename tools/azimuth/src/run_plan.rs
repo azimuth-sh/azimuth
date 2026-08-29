@@ -104,6 +104,7 @@ pub struct PlanRequest {
 pub struct RequestedCheck {
     pub id: String,
     pub capability: String,
+    pub cases: Vec<String>,
     pub units: Vec<WorkUnit>,
 }
 
@@ -232,6 +233,30 @@ pub fn plan(
             }
         };
 
+        let mut case_selection_valid = true;
+        for case_id in &requested.cases {
+            if model.find_case(case_id).is_none() {
+                errors.push(format!("unknown Case `{case_id}`"));
+                case_selection_valid = false;
+                continue;
+            }
+            let bindings = model
+                .evidence_bindings()
+                .filter(|binding| binding.check == requested.id && binding.case == *case_id)
+                .collect::<Vec<_>>();
+            let [_binding] = bindings.as_slice() else {
+                errors.push(format!(
+                    "Check `{}` does not have exactly one Evidence Binding to Case `{case_id}`",
+                    requested.id
+                ));
+                case_selection_valid = false;
+                continue;
+            };
+        }
+        if !case_selection_valid {
+            continue;
+        }
+
         let implementations = model
             .check_implementations
             .iter()
@@ -294,6 +319,7 @@ pub fn plan(
         checks.push(CheckSelection {
             id: check.id.clone(),
             fingerprint: crate::fingerprint::check_fingerprint(check, &model.check_implementations),
+            cases: requested.cases.clone(),
             implementations: resolved_implementations,
             units: requested.units.clone(),
         });
@@ -569,19 +595,50 @@ fn resolve_requested_challenges(
                 continue;
             }
             let policy_id = match kind {
-                DecisionKind::Qualification => {
+                DecisionKind::ApplicabilityDecision => {
                     let Some(binding) = model.evidence_bindings().find(|item| item.id == target_id)
                     else {
                         errors.push(format!("missing Evidence Binding `{target_id}`"));
                         continue;
                     };
-                    if binding.context != request.required_context {
+                    let Some(method) = model
+                        .method_qualifications()
+                        .find(|item| item.id == binding.method_qualification)
+                    else {
                         errors.push(format!(
-                            "Qualification `{target_id}` context must equal required_context"
+                            "missing Method Qualification `{}`",
+                            binding.method_qualification
+                        ));
+                        continue;
+                    };
+                    let mut context = method.context.clone();
+                    let conflict = binding.context.iter().any(|(key, value)| {
+                        context.get(key).is_some_and(|current| current != value)
+                    });
+                    context.extend(binding.context.clone());
+                    if conflict || context != request.required_context {
+                        errors.push(format!(
+                            "Applicability Decision `{target_id}` context must equal required_context"
                         ));
                         continue;
                     }
                     binding.policy.clone()
+                }
+                DecisionKind::MethodQualification => {
+                    let Some(qualification) = model
+                        .method_qualifications()
+                        .find(|item| item.id == target_id)
+                    else {
+                        errors.push(format!("missing Method Qualification `{target_id}`"));
+                        continue;
+                    };
+                    if qualification.context != request.required_context {
+                        errors.push(format!(
+                            "Method Qualification `{target_id}` context must equal required_context"
+                        ));
+                        continue;
+                    }
+                    qualification.policy.clone()
                 }
                 DecisionKind::ClaimJudgment => {
                     let Some(judgment) = model.claim_judgments().find(|item| item.id == target_id)
@@ -600,8 +657,9 @@ fn resolve_requested_challenges(
 
             let challenger_fingerprint = crate::fingerprint::challenger_fingerprint(challenger);
             let target_kind = match kind {
-                DecisionKind::Qualification => ChallengeTargetKind::Qualification,
+                DecisionKind::ApplicabilityDecision => ChallengeTargetKind::ApplicabilityDecision,
                 DecisionKind::ClaimJudgment => ChallengeTargetKind::ClaimJudgment,
+                DecisionKind::MethodQualification => ChallengeTargetKind::MethodQualification,
             };
             let id = run::challenge_selection_id(
                 &challenger_fingerprint,
@@ -739,9 +797,11 @@ fn scope_item(item: &SemanticScopeComponent) -> ChallengeScopeItem {
 fn scope_kind(kind: crate::verification::SemanticScopeKind) -> ChallengeScopeKind {
     use crate::verification::SemanticScopeKind as S;
     match kind {
+        S::ApplicabilityDecision => ChallengeScopeKind::ApplicabilityDecision,
+        S::Case => ChallengeScopeKind::Case,
         S::Claim => ChallengeScopeKind::Claim,
         S::Binding => ChallengeScopeKind::Binding,
-        S::Qualification => ChallengeScopeKind::Qualification,
+        S::MethodQualification => ChallengeScopeKind::MethodQualification,
         S::ClaimJudgment => ChallengeScopeKind::ClaimJudgment,
         S::Check => ChallengeScopeKind::Check,
         S::CheckImplementation => ChallengeScopeKind::CheckImplementation,
@@ -1189,12 +1249,16 @@ fn parse_requested_challenge(value: &Json, where_: &str) -> Result<RequestedChal
 }
 
 fn parse_requested_check(value: &Json, where_: &str) -> Result<RequestedCheck, String> {
-    let fields = object(value, where_, &["id", "capability", "units"])?;
+    let fields = object(value, where_, &["id", "capability", "cases", "units"])?;
     let id = nonempty(fields, where_, "id")?;
     validate_id(&id, true).map_err(|detail| format!("{where_}.id {detail}"))?;
     let capability = nonempty(fields, where_, "capability")?;
     validate_capability_address(&capability)
         .map_err(|detail| format!("{where_}.capability {detail}"))?;
+    let cases = parse_cases(
+        required(fields, "cases", where_)?,
+        &format!("{where_}.cases"),
+    )?;
     let values = array(
         required(fields, "units", where_)?,
         &format!("{where_}.units"),
@@ -1207,6 +1271,7 @@ fn parse_requested_check(value: &Json, where_: &str) -> Result<RequestedCheck, S
     Ok(RequestedCheck {
         id,
         capability,
+        cases,
         units,
     })
 }
@@ -1303,6 +1368,7 @@ fn validate_request(request: &PlanRequest) -> Result<(), String> {
         validate_id(&check.id, true).map_err(|detail| format!("$.checks[{index}].id {detail}"))?;
         validate_capability_address(&check.capability)
             .map_err(|detail| format!("$.checks[{index}].capability {detail}"))?;
+        validate_cases(&check.cases, &format!("$.checks[{index}].cases"))?;
         validate_units(&check.units, &format!("$.checks[{index}].units"))?;
     }
     ensure_sorted_unique(
@@ -1390,6 +1456,10 @@ fn requested_check_json(check: &RequestedCheck) -> Json {
     Json::obj(vec![
         ("id", Json::str(&check.id)),
         ("capability", Json::str(&check.capability)),
+        (
+            "cases",
+            Json::Arr(check.cases.iter().map(Json::str).collect()),
+        ),
         (
             "units",
             Json::Arr(
@@ -1581,6 +1651,42 @@ where
 {
     let mut seen = BTreeSet::new();
     items.iter().any(|item| !seen.insert(key(item)))
+}
+
+fn parse_cases(value: &Json, where_: &str) -> Result<Vec<String>, String> {
+    let values = array(value, where_)?;
+    let mut cases = Vec::new();
+    for (index, value) in values.iter().enumerate() {
+        let Json::Str(case) = value else {
+            return Err(format!("{where_}[{index}] must be a string"));
+        };
+        cases.push(case.clone());
+    }
+    validate_cases(&cases, where_)?;
+    Ok(cases)
+}
+
+fn validate_cases(cases: &[String], where_: &str) -> Result<(), String> {
+    if cases.is_empty() {
+        return Err(format!("{where_} must not be empty"));
+    }
+    ensure_sorted_unique(cases, String::as_str, where_)?;
+    for case in cases {
+        let Some((claim, local_case)) = case.rsplit_once('/') else {
+            return Err(format!(
+                "{where_} Case `{case}` must have `<spec-id>#<claim-id>/<case-id>` form"
+            ));
+        };
+        let Some((spec, claim_id)) = claim.split_once('#') else {
+            return Err(format!(
+                "{where_} Case `{case}` must have `<spec-id>#<claim-id>/<case-id>` form"
+            ));
+        };
+        if !valid_path_id(spec) || !valid_segment(claim_id) || !valid_segment(local_case) {
+            return Err(format!("{where_} Case `{case}` has invalid ids"));
+        }
+    }
+    Ok(())
 }
 
 fn valid_fingerprint(value: &str) -> bool {

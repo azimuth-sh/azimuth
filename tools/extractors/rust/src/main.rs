@@ -1118,7 +1118,7 @@ fn array_body(values: &str) -> String {
 fn relation_json(marker: &Marker) -> String {
     let fields = vec![
         ("spec", marker.values[0].as_str()),
-        ("scenario", marker.values[1].as_str()),
+        ("claim", marker.values[1].as_str()),
         ("site", marker.site.as_str()),
         ("file", marker.file.as_str()),
         ("lang", "rust"),

@@ -7,7 +7,7 @@
     <AssemblyName>Azimuth.Annotations</AssemblyName>
     <RootNamespace>Azimuth.Annotations</RootNamespace>
     <PackageId>Azimuth.Annotations</PackageId>
-    <Version>0.1.0-alpha.2</Version>
+    <Version>0.1.0-alpha.3</Version>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <Description>Azimuth source linkage for Claims, mechanisms and enrolled Checks.</Description>
     <PackageProjectUrl>https://azimuth.sh</PackageProjectUrl>

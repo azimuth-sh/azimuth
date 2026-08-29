@@ -15,15 +15,15 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 pub struct Addition {
     pub spec: String,
-    pub requirement: String,
+    pub claim: String,
     pub criticality: Criticality,
     pub statement: String,
-    pub scenarios: Vec<AddedScenario>,
+    pub cases: Vec<AddedCase>,
     pub applied: bool,
 }
 
 #[derive(Debug, Clone)]
-pub struct AddedScenario {
+pub struct AddedCase {
     pub id: String,
     pub steps: Vec<(StepKind, String)>,
 }
@@ -31,7 +31,7 @@ pub struct AddedScenario {
 #[derive(Debug, Clone)]
 pub struct CriticalityChange {
     pub spec: String,
-    pub requirement: String,
+    pub claim: String,
     pub from: Criticality,
     pub to: Criticality,
     pub because: String,
@@ -114,19 +114,18 @@ pub fn inspect(root: &Path, model: &Model) -> Result<Report, Vec<String>> {
     if !errors.is_empty() {
         return Err(errors);
     }
-    let unapplied_claims: usize = additions
+    let unapplied_claims = additions
         .iter()
         .filter(|addition| !addition.applied)
-        .map(|addition| addition.scenarios.len())
-        .sum();
+        .count();
     Ok(Report {
         id,
         additions,
         criticality_changes,
         unchanged_intent_reason,
         incomplete_plan_items,
-        current_claims: model.scenario_count(),
-        target_claims: model.scenario_count() + unapplied_claims,
+        current_claims: model.claim_count(),
+        target_claims: model.claim_count() + unapplied_claims,
     })
 }
 
@@ -243,21 +242,21 @@ fn parse_delta(
     while index < lines.len() {
         let line = lines[index];
         let trimmed = line.trim();
-        if let Some(requirement) = trimmed.strip_prefix("## Add requirement:") {
-            normalized.push_str("## Requirement:");
-            normalized.push_str(requirement);
+        if let Some(claim) = trimmed.strip_prefix("## Add claim:") {
+            normalized.push_str("## Claim:");
+            normalized.push_str(claim);
             has_addition = true;
-        } else if let Some(scenario) = trimmed.strip_prefix("### Add scenario:") {
-            normalized.push_str("### Scenario:");
-            normalized.push_str(scenario);
-        } else if let Some(requirement) = trimmed.strip_prefix("## Change criticality:") {
+        } else if let Some(case) = trimmed.strip_prefix("### Add case:") {
+            normalized.push_str("### Case:");
+            normalized.push_str(case);
+        } else if let Some(claim) = trimmed.strip_prefix("## Change criticality:") {
             let (block, next) =
                 read_block(&lines, index + 1, &["From", "To", "Because", "Revisit"]);
             parse_criticality_change(
                 path,
                 index + 1,
                 spec,
-                requirement.trim(),
+                claim.trim(),
                 &block,
                 model,
                 criticality_changes,
@@ -292,29 +291,25 @@ fn parse_delta(
         }
     };
 
-    for requirement in parsed.requirements {
-        let Some(criticality) = requirement.criticality else {
+    for claim in parsed.claims {
+        let Some(criticality) = claim.criticality else {
             errors.push(format!(
                 "{}: `{}` declares no criticality",
                 path.display(),
-                requirement.id
+                claim.id
             ));
             continue;
         };
-        if requirement.scenarios.is_empty() {
-            errors.push(format!(
-                "{}: `{}` adds no scenarios",
-                path.display(),
-                requirement.id
-            ));
+        if claim.cases.is_empty() {
+            errors.push(format!("{}: `{}` adds no Cases", path.display(), claim.id));
             continue;
         }
-        let scenarios: Vec<AddedScenario> = requirement
-            .scenarios
+        let cases: Vec<AddedCase> = claim
+            .cases
             .iter()
-            .map(|scenario| AddedScenario {
-                id: scenario.id.clone(),
-                steps: scenario
+            .map(|case| AddedCase {
+                id: case.id.clone(),
+                steps: case
                     .steps
                     .iter()
                     .map(|step| (step.kind, step.text.clone()))
@@ -323,15 +318,15 @@ fn parse_delta(
             .collect();
         let applied = model.specs.iter().any(|candidate| {
             candidate.id == parsed.id
-                && candidate.requirements.iter().any(|existing| {
-                    existing.id == requirement.id
+                && candidate.claims.iter().any(|existing| {
+                    existing.id == claim.id
                         && existing.criticality == Some(criticality)
-                        && existing.statement == requirement.statement
-                        && scenarios.iter().all(|scenario| {
-                            existing.scenarios.iter().any(|item| {
-                                item.id == scenario.id
-                                    && item.steps.len() == scenario.steps.len()
-                                    && item.steps.iter().zip(&scenario.steps).all(
+                        && existing.statement == claim.statement
+                        && cases.iter().all(|case| {
+                            existing.cases.iter().any(|item| {
+                                item.id == case.id
+                                    && item.steps.len() == case.steps.len()
+                                    && item.steps.iter().zip(&case.steps).all(
                                         |(current, target)| {
                                             current.kind == target.0 && current.text == target.1
                                         },
@@ -342,10 +337,10 @@ fn parse_delta(
         });
         additions.push(Addition {
             spec: parsed.id.clone(),
-            requirement: requirement.id,
+            claim: claim.id,
             criticality,
-            statement: requirement.statement,
-            scenarios,
+            statement: claim.statement,
+            cases,
             applied,
         });
     }
@@ -355,7 +350,7 @@ fn parse_criticality_change(
     path: &Path,
     line: usize,
     spec: &str,
-    requirement: &str,
+    claim: &str,
     block: &crate::labels::Block,
     model: &Model,
     changes: &mut Vec<CriticalityChange>,
@@ -416,7 +411,7 @@ fn parse_criticality_change(
     };
     if from == to {
         errors.push(format!(
-            "{}:{line}: criticality change keeps `{requirement}` at `{}`",
+            "{}:{line}: criticality change keeps `{claim}` at `{}`",
             path.display(),
             from.name()
         ));
@@ -427,16 +422,16 @@ fn parse_criticality_change(
         .filter(|value| !value.is_empty());
     if to < from && revisit.is_none() {
         errors.push(format!(
-            "{}:{line}: lowering `{requirement}` requires `Revisit:` with the condition that raises it again",
+            "{}:{line}: lowering `{claim}` requires `Revisit:` with the condition that raises it again",
             path.display()
         ));
     }
     if changes
         .iter()
-        .any(|change| change.spec == spec && change.requirement == requirement)
+        .any(|change| change.spec == spec && change.claim == claim)
     {
         errors.push(format!(
-            "{}:{line}: criticality for `{spec}#{requirement}` changes more than once",
+            "{}:{line}: criticality for `{spec}#{claim}` changes more than once",
             path.display()
         ));
         return;
@@ -448,27 +443,27 @@ fn parse_criticality_change(
         .find(|candidate| candidate.id == spec)
         .and_then(|candidate| {
             candidate
-                .requirements
+                .claims
                 .iter()
-                .find(|candidate| candidate.id == requirement)
+                .find(|candidate| candidate.id == claim)
         });
     let Some(current) = current else {
         errors.push(format!(
-            "{}:{line}: `{spec}#{requirement}` does not exist in current intent",
+            "{}:{line}: `{spec}#{claim}` does not exist in current intent",
             path.display()
         ));
         return;
     };
     let Some(current_level) = current.criticality else {
         errors.push(format!(
-            "{}:{line}: `{spec}#{requirement}` is unclassified and cannot match `From:`",
+            "{}:{line}: `{spec}#{claim}` is unclassified and cannot match `From:`",
             path.display()
         ));
         return;
     };
     if current_level != from && current_level != to {
         errors.push(format!(
-            "{}:{line}: `{spec}#{requirement}` is `{}`, not declared `From: {}` or `To: {}`",
+            "{}:{line}: `{spec}#{claim}` is `{}`, not declared `From: {}` or `To: {}`",
             path.display(),
             current_level.name(),
             from.name(),
@@ -479,7 +474,7 @@ fn parse_criticality_change(
     if from != to && !because.is_empty() {
         changes.push(CriticalityChange {
             spec: spec.to_string(),
-            requirement: requirement.to_string(),
+            claim: claim.to_string(),
             from,
             to,
             because: because.to_string(),
@@ -507,7 +502,7 @@ pub fn completion_issues(root: &Path, report: &Report) -> Vec<String> {
         if !addition.applied {
             issues.push(format!(
                 "{}#{} has not been applied to current specs",
-                addition.spec, addition.requirement
+                addition.spec, addition.claim
             ));
         }
     }
@@ -516,7 +511,7 @@ pub fn completion_issues(root: &Path, report: &Report) -> Vec<String> {
             issues.push(format!(
                 "{}#{} criticality has not changed from {} to {}",
                 change.spec,
-                change.requirement,
+                change.claim,
                 change.from.name(),
                 change.to.name()
             ));

@@ -77,9 +77,9 @@ function taggedChecks(source: string, file: string): CheckImplementation[] {
     left.check.localeCompare(right.check) || left.site.localeCompare(right.site));
 }
 
-function entry(spec: string, scenario: string, site: string, file: string, source: string): Entry {
+function entry(spec: string, claim: string, site: string, file: string, source: string): Entry {
   return {
-    spec, scenario, site, file, lang: 'prometheus',
+    spec, claim, site, file, lang: 'prometheus',
     source_fingerprint: fingerprint(source),
   };
 }

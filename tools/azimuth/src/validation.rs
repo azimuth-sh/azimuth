@@ -1,10 +1,9 @@
-//! Deterministic validation and Challenge Plan resolution over the alpha 2 model.
+//! Deterministic validation and Challenge Plan resolution over the alpha 3 model.
 
-use crate::design::Target;
 use crate::json::Json;
 use crate::model::{Criticality, Model};
 use crate::verification::{
-    ChallengeDomain, ChallengePlan, ClaimJudgmentVerdict, QualificationVerdict, Selector,
+    ChallengeDomain, ChallengePlan, ClaimJudgmentVerdict, MethodQualificationVerdict, Selector,
     SemanticScopeKind,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -74,15 +73,19 @@ define_finding_kinds! {
     MissingRequiredRealization,
     DanglingRealizationObligation,
     DanglingMechanismImplementation,
-    UnboundClaim,
+    UnboundCase,
     CheckWithoutBinding,
     BindingMissingCheck,
-    BindingMissingClaim,
+    BindingMissingCase,
     BindingMissingPolicy,
-    MissingQualification,
-    DanglingQualification,
-    RejectedQualification,
-    StaleQualification,
+    MissingMethodQualification,
+    DanglingMethodQualification,
+    RejectedMethodQualification,
+    StaleMethodQualification,
+    MissingApplicabilityDecision,
+    DanglingApplicabilityDecision,
+    RejectedApplicabilityDecision,
+    StaleApplicabilityDecision,
     MissingClaimJudgment,
     RejectedClaimJudgment,
     StaleClaimJudgment,
@@ -121,15 +124,19 @@ impl FindingKind {
             Self::MissingRequiredRealization => "missing-required-realization",
             Self::DanglingRealizationObligation => "dangling-realization-obligation",
             Self::DanglingMechanismImplementation => "dangling-mechanism-implementation",
-            Self::UnboundClaim => "unbound-claim",
+            Self::UnboundCase => "unbound-case",
             Self::CheckWithoutBinding => "check-without-binding",
             Self::BindingMissingCheck => "binding-missing-check",
-            Self::BindingMissingClaim => "binding-missing-claim",
+            Self::BindingMissingCase => "binding-missing-case",
             Self::BindingMissingPolicy => "binding-missing-policy",
-            Self::MissingQualification => "missing-qualification",
-            Self::DanglingQualification => "dangling-qualification",
-            Self::RejectedQualification => "rejected-qualification",
-            Self::StaleQualification => "stale-qualification",
+            Self::MissingMethodQualification => "missing-method-qualification",
+            Self::DanglingMethodQualification => "dangling-method-qualification",
+            Self::RejectedMethodQualification => "rejected-method-qualification",
+            Self::StaleMethodQualification => "stale-method-qualification",
+            Self::MissingApplicabilityDecision => "missing-applicability-decision",
+            Self::DanglingApplicabilityDecision => "dangling-applicability-decision",
+            Self::RejectedApplicabilityDecision => "rejected-applicability-decision",
+            Self::StaleApplicabilityDecision => "stale-applicability-decision",
             Self::MissingClaimJudgment => "missing-claim-judgment",
             Self::RejectedClaimJudgment => "rejected-claim-judgment",
             Self::StaleClaimJudgment => "stale-claim-judgment",
@@ -168,10 +175,14 @@ impl FindingKind {
             | Self::UnknownSurface
             | Self::EnumeratorUnsoundOrUnderived
             | Self::InvariantBreach => FindingCategory::Surface,
-            Self::MissingQualification
-            | Self::DanglingQualification
-            | Self::RejectedQualification
-            | Self::StaleQualification
+            Self::MissingMethodQualification
+            | Self::DanglingMethodQualification
+            | Self::RejectedMethodQualification
+            | Self::StaleMethodQualification
+            | Self::MissingApplicabilityDecision
+            | Self::DanglingApplicabilityDecision
+            | Self::RejectedApplicabilityDecision
+            | Self::StaleApplicabilityDecision
             | Self::MissingClaimJudgment
             | Self::RejectedClaimJudgment
             | Self::StaleClaimJudgment
@@ -193,13 +204,13 @@ impl FindingKind {
 
     pub fn help(self) -> &'static str {
         match self {
-            Self::Unclassified => "Declare the requirement's criticality explicitly.",
+            Self::Unclassified => "Declare the Claim's criticality explicitly.",
             Self::Unrealized => "Link production code that establishes the Claim predicate.",
             Self::DanglingRealization => {
                 "Retarget or remove the production link to the unknown Claim."
             }
             Self::DanglingDesignEntry => "Retarget or remove the design entry.",
-            Self::UndeclaredMechanism => "Declare how the critical requirement is enforced.",
+            Self::UndeclaredMechanism => "Declare how the critical Claim is enforced.",
             Self::UnresolvedDesignBinding => "Bind the mechanism to one extracted artifact.",
             Self::EnforcementMismatch => {
                 "Align enforcement with the artifact's derived properties."
@@ -211,15 +222,31 @@ impl FindingKind {
             Self::MissingRequiredRealization => "Add a realization from the required area.",
             Self::DanglingRealizationObligation => "Retarget or remove the realization obligation.",
             Self::DanglingMechanismImplementation => "Retarget the implementation to a mechanism.",
-            Self::UnboundClaim => "Bind at least one deliberately enrolled Check to the Claim.",
+            Self::UnboundCase => "Bind at least one deliberately enrolled Check to the Case.",
             Self::CheckWithoutBinding => "Add an Evidence Binding or remove the unused Check.",
             Self::BindingMissingCheck => "Retarget the binding to a declared Check.",
-            Self::BindingMissingClaim => "Retarget the binding to a current case-level Claim.",
+            Self::BindingMissingCase => "Retarget the binding to a current Case.",
             Self::BindingMissingPolicy => "Retarget the binding to a declared Decision Policy.",
-            Self::MissingQualification => "Record the binding's reviewed Qualification.",
-            Self::DanglingQualification => "Retarget or remove the Qualification.",
-            Self::RejectedQualification => "Resolve the objection before qualifying the binding.",
-            Self::StaleQualification => "Re-qualify the binding against its current fingerprint.",
+            Self::MissingMethodQualification => {
+                "Record the Check method's reviewed Method Qualification."
+            }
+            Self::DanglingMethodQualification => "Retarget or remove the Method Qualification.",
+            Self::RejectedMethodQualification => {
+                "Resolve the objection before qualifying the method."
+            }
+            Self::StaleMethodQualification => {
+                "Re-qualify the method against its current fingerprint."
+            }
+            Self::MissingApplicabilityDecision => {
+                "Record the binding's reviewed Applicability Decision."
+            }
+            Self::DanglingApplicabilityDecision => "Retarget or remove the Applicability Decision.",
+            Self::RejectedApplicabilityDecision => {
+                "Resolve the objection before accepting applicability."
+            }
+            Self::StaleApplicabilityDecision => {
+                "Review applicability against its current fingerprint."
+            }
             Self::MissingClaimJudgment => "Record the Claim's total-composition Judgment.",
             Self::RejectedClaimJudgment => "Resolve the objection before accepting the Claim.",
             Self::StaleClaimJudgment => "Rejudge the Claim against its current composition.",
@@ -300,15 +327,17 @@ impl Finding {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DecisionKind {
+    ApplicabilityDecision,
     ClaimJudgment,
-    Qualification,
+    MethodQualification,
 }
 
 impl DecisionKind {
     pub fn name(self) -> &'static str {
         match self {
+            Self::ApplicabilityDecision => "applicability-decision",
             Self::ClaimJudgment => "claim-judgment",
-            Self::Qualification => "qualification",
+            Self::MethodQualification => "method-qualification",
         }
     }
 }
@@ -316,8 +345,10 @@ impl DecisionKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RelationKind {
     Binding,
+    Case,
     Check,
     Claim,
+    MethodQualification,
     Mechanism,
     Realization,
 }
@@ -326,8 +357,10 @@ impl RelationKind {
     pub fn name(self) -> &'static str {
         match self {
             Self::Binding => "binding",
+            Self::Case => "case",
             Self::Check => "check",
             Self::Claim => "claim",
+            Self::MethodQualification => "method-qualification",
             Self::Mechanism => "mechanism",
             Self::Realization => "realization",
         }
@@ -531,18 +564,45 @@ impl DecisionCandidateTarget {
 
 fn selector_identity(selector: &Selector) -> SelectorIdentity {
     match selector {
-        Selector::QualificationFromBinding(id) => {
-            selector_id(DecisionKind::Qualification, RelationKind::Binding, id)
+        Selector::MethodQualificationFromMethodQualification(id) => selector_id(
+            DecisionKind::MethodQualification,
+            RelationKind::MethodQualification,
+            id,
+        ),
+        Selector::MethodQualificationFromCheck(id) => {
+            selector_id(DecisionKind::MethodQualification, RelationKind::Check, id)
         }
-        Selector::QualificationFromCheck(id) => {
-            selector_id(DecisionKind::Qualification, RelationKind::Check, id)
+        Selector::MethodQualificationFromRealization(id) => selector_id(
+            DecisionKind::MethodQualification,
+            RelationKind::Realization,
+            id,
+        ),
+        Selector::MethodQualificationFromMechanism(id) => selector_id(
+            DecisionKind::MethodQualification,
+            RelationKind::Mechanism,
+            id,
+        ),
+        Selector::ApplicabilityDecisionFromBinding(id) => selector_id(
+            DecisionKind::ApplicabilityDecision,
+            RelationKind::Binding,
+            id,
+        ),
+        Selector::ApplicabilityDecisionFromCase(id) => {
+            selector_id(DecisionKind::ApplicabilityDecision, RelationKind::Case, id)
         }
-        Selector::QualificationFromRealization(id) => {
-            selector_id(DecisionKind::Qualification, RelationKind::Realization, id)
+        Selector::ApplicabilityDecisionFromCheck(id) => {
+            selector_id(DecisionKind::ApplicabilityDecision, RelationKind::Check, id)
         }
-        Selector::QualificationFromMechanism(id) => {
-            selector_id(DecisionKind::Qualification, RelationKind::Mechanism, id)
-        }
+        Selector::ApplicabilityDecisionFromRealization(id) => selector_id(
+            DecisionKind::ApplicabilityDecision,
+            RelationKind::Realization,
+            id,
+        ),
+        Selector::ApplicabilityDecisionFromMechanism(id) => selector_id(
+            DecisionKind::ApplicabilityDecision,
+            RelationKind::Mechanism,
+            id,
+        ),
         Selector::ClaimJudgmentFromClaim(id) => {
             selector_id(DecisionKind::ClaimJudgment, RelationKind::Claim, id)
         }
@@ -582,16 +642,80 @@ fn candidate_key(
 
 fn resolve_selector(model: &Model, selector: &SelectorIdentity) -> Vec<ChallengeCandidate> {
     match (selector.target, selector.from) {
-        (DecisionKind::Qualification, RelationKind::Binding) => {
+        (DecisionKind::MethodQualification, RelationKind::MethodQualification) => {
+            let Some(qualification) = model
+                .method_qualifications()
+                .find(|qualification| qualification.id == selector.id)
+            else {
+                return vec![unresolved(
+                    selector,
+                    RelationKind::MethodQualification,
+                    &selector.id,
+                )];
+            };
+            vec![method_qualification_candidate(
+                model,
+                selector,
+                qualification,
+                true,
+            )]
+        }
+        (DecisionKind::MethodQualification, RelationKind::Check) => {
+            let qualifications = model
+                .method_qualifications()
+                .filter(|qualification| qualification.check == selector.id)
+                .collect::<Vec<_>>();
+            if qualifications.is_empty() {
+                vec![unresolved(selector, RelationKind::Check, &selector.id)]
+            } else {
+                qualifications
+                    .into_iter()
+                    .map(|qualification| {
+                        method_qualification_candidate(model, selector, qualification, true)
+                    })
+                    .collect()
+            }
+        }
+        (DecisionKind::MethodQualification, RelationKind::Realization) => {
+            method_qualification_relation_candidates(
+                model,
+                selector,
+                cases_for_realization(model, &selector.id),
+                ChallengeDomain::Realization,
+            )
+        }
+        (DecisionKind::MethodQualification, RelationKind::Mechanism) => {
+            method_qualification_relation_candidates(
+                model,
+                selector,
+                cases_for_mechanism(model, &selector.id),
+                ChallengeDomain::Mechanism,
+            )
+        }
+        (DecisionKind::ApplicabilityDecision, RelationKind::Binding) => {
             let Some(binding) = model
                 .evidence_bindings()
                 .find(|binding| binding.id == selector.id)
             else {
                 return vec![unresolved(selector, RelationKind::Binding, &selector.id)];
             };
-            vec![qualification_candidate(model, selector, binding, true)]
+            vec![applicability_candidate(model, selector, binding, true)]
         }
-        (DecisionKind::Qualification, RelationKind::Check) => {
+        (DecisionKind::ApplicabilityDecision, RelationKind::Case) => {
+            let bindings = model
+                .evidence_bindings()
+                .filter(|binding| binding.case == selector.id)
+                .collect::<Vec<_>>();
+            if model.find_case(&selector.id).is_none() || bindings.is_empty() {
+                vec![unresolved(selector, RelationKind::Case, &selector.id)]
+            } else {
+                bindings
+                    .into_iter()
+                    .map(|binding| applicability_candidate(model, selector, binding, true))
+                    .collect()
+            }
+        }
+        (DecisionKind::ApplicabilityDecision, RelationKind::Check) => {
             let check_exists = model.checks().any(|check| check.id == selector.id);
             let bindings = model
                 .evidence_bindings()
@@ -602,23 +726,23 @@ fn resolve_selector(model: &Model, selector: &SelectorIdentity) -> Vec<Challenge
             } else {
                 bindings
                     .into_iter()
-                    .map(|binding| qualification_candidate(model, selector, binding, true))
+                    .map(|binding| applicability_candidate(model, selector, binding, true))
                     .collect()
             }
         }
-        (DecisionKind::Qualification, RelationKind::Realization) => {
-            qualification_relation_candidates(
+        (DecisionKind::ApplicabilityDecision, RelationKind::Realization) => {
+            applicability_relation_candidates(
                 model,
                 selector,
-                claims_for_realization(model, &selector.id),
+                cases_for_realization(model, &selector.id),
                 ChallengeDomain::Realization,
             )
         }
-        (DecisionKind::Qualification, RelationKind::Mechanism) => {
-            qualification_relation_candidates(
+        (DecisionKind::ApplicabilityDecision, RelationKind::Mechanism) => {
+            applicability_relation_candidates(
                 model,
                 selector,
-                claims_for_mechanism(model, &selector.id),
+                cases_for_mechanism(model, &selector.id),
                 ChallengeDomain::Mechanism,
             )
         }
@@ -637,7 +761,7 @@ fn resolve_selector(model: &Model, selector: &SelectorIdentity) -> Vec<Challenge
         (DecisionKind::ClaimJudgment, RelationKind::Mechanism) => {
             judgment_relation_candidates(model, selector, claims_for_mechanism(model, &selector.id))
         }
-        _ => unreachable!("the parser admits only the seven selector forms"),
+        _ => unreachable!("the parser admits only supported selector forms"),
     }
 }
 
@@ -649,9 +773,9 @@ fn claims_for_realization(model: &Model, identity: &str) -> BTreeSet<String> {
             site.source
                 .as_ref()
                 .is_some_and(|source| source.key() == identity)
-                && model.has_claim(&site.spec, &site.scenario)
+                && model.has_claim(&site.spec, &site.claim)
         })
-        .map(|site| format!("{}#{}", site.spec, site.scenario))
+        .map(|site| format!("{}#{}", site.spec, site.claim))
         .collect()
 }
 
@@ -662,45 +786,83 @@ fn claims_for_mechanism(model: &Model, identity: &str) -> BTreeSet<String> {
     let Some(design) = model.design_for(spec_id) else {
         return BTreeSet::new();
     };
-    model
-        .claims()
-        .filter(|claim| claim.spec.id == spec_id)
-        .filter(|claim| {
-            design
-                .for_scenario(&claim.scenario.id)
-                .into_iter()
-                .chain(design.for_requirement(&claim.requirement.id))
-                .any(|entry| {
-                    entry
-                        .mechanisms
-                        .iter()
-                        .any(|mechanism| mechanism.id == mechanism_id)
-                })
+    design
+        .entries
+        .iter()
+        .filter(|entry| {
+            entry
+                .mechanisms
+                .iter()
+                .any(|mechanism| mechanism.id == mechanism_id)
         })
-        .map(|claim| claim.id())
+        .map(|entry| format!("{spec_id}#{}", entry.target.id()))
         .collect()
 }
 
-fn qualification_relation_candidates(
+fn cases_for_realization(model: &Model, identity: &str) -> BTreeSet<String> {
+    claims_for_realization(model, identity)
+        .into_iter()
+        .flat_map(|claim_id| {
+            model
+                .claims()
+                .find(|claim| claim.id() == claim_id)
+                .into_iter()
+                .flat_map(|claim| {
+                    claim.claim.cases.iter().map(move |case| {
+                        format!("{}#{}/{}", claim.spec.id, claim.claim.id, case.id)
+                    })
+                })
+        })
+        .collect()
+}
+
+fn cases_for_mechanism(model: &Model, identity: &str) -> BTreeSet<String> {
+    let Some((spec_id, mechanism_id)) = identity.split_once('#') else {
+        return BTreeSet::new();
+    };
+    let Some(design) = model.design_for(spec_id) else {
+        return BTreeSet::new();
+    };
+    let mut cases = BTreeSet::new();
+    for entry in &design.entries {
+        let Some(claim) = model.find_claim(spec_id, entry.target.id()) else {
+            continue;
+        };
+        for mechanism in entry
+            .mechanisms
+            .iter()
+            .filter(|mechanism| mechanism.id == mechanism_id)
+        {
+            for case in &claim.claim.cases {
+                if mechanism.cases.is_empty() || mechanism.cases.contains(&case.id) {
+                    cases.insert(format!("{spec_id}#{}/{}", claim.claim.id, case.id));
+                }
+            }
+        }
+    }
+    cases
+}
+
+fn applicability_relation_candidates(
     model: &Model,
     selector: &SelectorIdentity,
-    claims: BTreeSet<String>,
+    cases: BTreeSet<String>,
     domain: ChallengeDomain,
 ) -> Vec<ChallengeCandidate> {
-    if claims.is_empty() {
+    if cases.is_empty() {
         return vec![unresolved(selector, selector.from, &selector.id)];
     }
     let mut candidates = Vec::new();
-    for claim in claims {
+    for case in cases {
         let bindings = model
             .evidence_bindings()
-            .filter(|binding| binding.claim == claim)
+            .filter(|binding| binding.case == case)
             .collect::<Vec<_>>();
         if bindings.is_empty() {
-            candidates.push(unresolved(selector, RelationKind::Claim, &claim));
+            candidates.push(unresolved(selector, RelationKind::Case, &case));
         } else {
             candidates.extend(bindings.into_iter().map(|binding| {
-                qualification_candidate(
+                applicability_candidate(
                     model,
                     selector,
                     binding,
@@ -710,6 +872,42 @@ fn qualification_relation_candidates(
         }
     }
     candidates
+}
+
+fn method_qualification_relation_candidates(
+    model: &Model,
+    selector: &SelectorIdentity,
+    cases: BTreeSet<String>,
+    domain: ChallengeDomain,
+) -> Vec<ChallengeCandidate> {
+    if cases.is_empty() {
+        return vec![unresolved(selector, selector.from, &selector.id)];
+    }
+    let qualification_ids = model
+        .evidence_bindings()
+        .filter(|binding| cases.contains(&binding.case))
+        .map(|binding| binding.method_qualification.clone())
+        .collect::<BTreeSet<_>>();
+    if qualification_ids.is_empty() {
+        return vec![unresolved(selector, selector.from, &selector.id)];
+    }
+    qualification_ids
+        .into_iter()
+        .map(|id| {
+            let Some(qualification) = model
+                .method_qualifications()
+                .find(|qualification| qualification.id == id)
+            else {
+                return unresolved(selector, RelationKind::MethodQualification, &id);
+            };
+            method_qualification_candidate(
+                model,
+                selector,
+                qualification,
+                qualification.challenge_domain.contains(&domain),
+            )
+        })
+        .collect()
 }
 
 fn judgment_relation_candidates(
@@ -726,33 +924,33 @@ fn judgment_relation_candidates(
         .collect()
 }
 
-fn qualification_candidate(
+fn applicability_candidate(
     model: &Model,
     selector: &SelectorIdentity,
     binding: &crate::verification::EvidenceBinding,
     relation_applicable: bool,
 ) -> ChallengeCandidate {
-    let claim = model.claims().find(|claim| claim.id() == binding.claim);
-    let qualification = model
-        .qualifications()
-        .find(|qualification| qualification.id == binding.id);
-    let expected = model.expected_qualification_fingerprint(binding);
-    let authored = qualification.map(|qualification| qualification.fingerprint.clone());
+    let claim = model.cases().find(|claim| claim.id() == binding.case);
+    let decision = model
+        .applicability_decisions()
+        .find(|decision| decision.id == binding.id);
+    let expected = model.expected_applicability_fingerprint(binding);
+    let authored = decision.map(|decision| decision.fingerprint.clone());
     let inapplicable = !relation_applicable
         || claim
             .as_ref()
-            .is_some_and(|claim| claim.requirement.criticality == Some(Criticality::Routine));
+            .is_some_and(|claim| claim.claim.criticality == Some(Criticality::Routine));
     let disposition = if inapplicable {
         CandidateDisposition::Inapplicable
-    } else if qualification.is_none() {
+    } else if decision.is_none() {
         CandidateDisposition::MissingDecision
     } else if expected.is_none() {
         CandidateDisposition::InvalidDecision
     } else if authored.as_ref() != expected.as_ref() {
         CandidateDisposition::StaleDecision
-    } else if qualification
-        .is_some_and(|qualification| qualification.verdict == QualificationVerdict::Rejected)
-    {
+    } else if decision.is_some_and(|decision| {
+        decision.verdict == crate::verification::ApplicabilityVerdict::Rejected
+    }) {
         CandidateDisposition::RejectedDecision
     } else {
         CandidateDisposition::Selected
@@ -764,8 +962,52 @@ fn qualification_candidate(
             id: binding.id.clone(),
         },
         target: Some(DecisionCandidateTarget {
-            kind: DecisionKind::Qualification,
+            kind: DecisionKind::ApplicabilityDecision,
             id: binding.id.clone(),
+            expected_fingerprint: expected,
+            authored_fingerprint: authored,
+        }),
+        disposition,
+    }
+}
+
+fn method_qualification_candidate(
+    model: &Model,
+    selector: &SelectorIdentity,
+    qualification: &crate::verification::MethodQualification,
+    relation_applicable: bool,
+) -> ChallengeCandidate {
+    let expected = model.expected_method_qualification_fingerprint(qualification);
+    let authored = Some(qualification.fingerprint.clone());
+    let has_non_routine_edge = model.evidence_bindings().any(|binding| {
+        binding.method_qualification == qualification.id
+            && model.find_case(&binding.case).is_some_and(|case| {
+                matches!(
+                    case.claim.criticality,
+                    Some(Criticality::Standard | Criticality::Critical)
+                )
+            })
+    });
+    let disposition = if !relation_applicable || !has_non_routine_edge {
+        CandidateDisposition::Inapplicable
+    } else if expected.is_none() {
+        CandidateDisposition::InvalidDecision
+    } else if authored.as_ref() != expected.as_ref() {
+        CandidateDisposition::StaleDecision
+    } else if qualification.verdict == MethodQualificationVerdict::Rejected {
+        CandidateDisposition::RejectedDecision
+    } else {
+        CandidateDisposition::Selected
+    };
+    ChallengeCandidate {
+        selector: selector.clone(),
+        relation: RelationIdentity {
+            kind: RelationKind::MethodQualification,
+            id: qualification.id.clone(),
+        },
+        target: Some(DecisionCandidateTarget {
+            kind: DecisionKind::MethodQualification,
+            id: qualification.id.clone(),
             expected_fingerprint: expected,
             authored_fingerprint: authored,
         }),
@@ -787,7 +1029,7 @@ fn judgment_candidate(
     let authored = judgment.map(|judgment| judgment.fingerprint.clone());
     let disposition = if claim
         .as_ref()
-        .is_some_and(|claim| claim.requirement.criticality == Some(Criticality::Routine))
+        .is_some_and(|claim| claim.claim.criticality == Some(Criticality::Routine))
     {
         CandidateDisposition::Inapplicable
     } else if judgment.is_none() {
@@ -843,46 +1085,46 @@ fn severity_for(criticality: Option<Criticality>) -> Severity {
 pub fn validate(model: &Model) -> Vec<Finding> {
     let mut findings = Vec::new();
     for spec in &model.specs {
-        for requirement in &spec.requirements {
-            if requirement.criticality.is_none() {
+        for claim in &spec.claims {
+            if claim.criticality.is_none() {
                 findings.push(Finding {
                     kind: FindingKind::Unclassified,
                     severity: Severity::Error,
-                    claim: Some(format!("{}#{}", spec.id, requirement.id)),
+                    claim: Some(format!("{}#{}", spec.id, claim.id)),
                     criticality: None,
                     path: spec.path.clone(),
-                    line: requirement.line,
-                    detail: format!("requirement `{}` declares no criticality", requirement.id),
+                    line: claim.line,
+                    detail: format!("Claim `{}` declares no criticality", claim.id),
                 });
             }
         }
     }
     for claim in model.claims() {
-        if claim.requirement.criticality == Some(Criticality::Routine) {
+        if claim.claim.criticality == Some(Criticality::Routine) {
             continue;
         }
         if !model
             .realizes
             .iter()
-            .any(|site| site.spec == claim.spec.id && site.scenario == claim.scenario.id)
+            .any(|site| site.spec == claim.spec.id && site.claim == claim.claim.id)
         {
             findings.push(Finding {
                 kind: FindingKind::Unrealized,
-                severity: severity_for(claim.requirement.criticality),
+                severity: severity_for(claim.claim.criticality),
                 claim: Some(claim.id()),
-                criticality: claim.requirement.criticality,
+                criticality: claim.claim.criticality,
                 path: claim.spec.path.clone(),
-                line: claim.scenario.line,
+                line: claim.claim.line,
                 detail: "no production code realizes this Claim".into(),
             });
         }
     }
     for site in &model.realizes {
-        if !model.has_claim(&site.spec, &site.scenario) {
+        if !model.has_claim(&site.spec, &site.claim) {
             findings.push(Finding {
                 kind: FindingKind::DanglingRealization,
                 severity: Severity::Error,
-                claim: Some(format!("{}#{}", site.spec, site.scenario)),
+                claim: Some(format!("{}#{}", site.spec, site.claim)),
                 criticality: None,
                 path: site.file.clone(),
                 line: 0,
@@ -945,23 +1187,37 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
         .as_ref()
         .map(|standards| &standards.policies[..])
         .unwrap_or(&[]);
-    for claim in model.claims() {
+    for case in model.cases() {
         let bindings = model
             .evidence_bindings()
-            .filter(|binding| binding.claim == claim.id())
+            .filter(|binding| binding.case == case.id())
             .collect::<Vec<_>>();
-        if claim.requirement.criticality == Some(Criticality::Routine) {
+        if case.claim.criticality == Some(Criticality::Routine) {
             for binding in bindings {
                 findings.push(Finding {
                     kind: FindingKind::InapplicableVerification,
                     severity: Severity::Warning,
-                    claim: Some(claim.id()),
-                    criticality: claim.requirement.criticality,
+                    claim: Some(case.id()),
+                    criticality: case.claim.criticality,
                     path: binding.path.clone(),
                     line: binding.line,
-                    detail: format!("Evidence Binding `{}` targets a routine Claim", binding.id),
+                    detail: format!("Evidence Binding `{}` targets a routine Case", binding.id),
                 });
             }
+        } else if case.claim.criticality.is_some() && bindings.is_empty() {
+            findings.push(Finding {
+                kind: FindingKind::UnboundCase,
+                severity: severity_for(case.claim.criticality),
+                claim: Some(case.id()),
+                criticality: case.claim.criticality,
+                path: case.spec.path.clone(),
+                line: case.case.line,
+                detail: "non-routine Case has no Evidence Binding".into(),
+            });
+        }
+    }
+    for claim in model.claims() {
+        if claim.claim.criticality == Some(Criticality::Routine) {
             for judgment in model
                 .claim_judgments()
                 .filter(|judgment| judgment.id == claim.id())
@@ -970,75 +1226,67 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                     kind: FindingKind::InapplicableVerification,
                     severity: Severity::Warning,
                     claim: Some(claim.id()),
-                    criticality: claim.requirement.criticality,
+                    criticality: claim.claim.criticality,
                     path: judgment.path.clone(),
                     line: judgment.line,
                     detail: format!("Claim Judgment `{}` targets a routine Claim", judgment.id),
                 });
             }
-        } else if claim.requirement.criticality.is_some() && bindings.is_empty() {
-            findings.push(Finding {
-                kind: FindingKind::UnboundClaim,
-                severity: severity_for(claim.requirement.criticality),
-                claim: Some(claim.id()),
-                criticality: claim.requirement.criticality,
-                path: claim.spec.path.clone(),
-                line: claim.scenario.line,
-                detail: "non-routine Claim has no Evidence Binding".into(),
-            });
+            continue;
         }
-        if matches!(
-            claim.requirement.criticality,
+        if !matches!(
+            claim.claim.criticality,
             Some(Criticality::Standard | Criticality::Critical)
         ) {
-            let judgment = model
-                .claim_judgments()
-                .find(|judgment| judgment.id == claim.id());
-            match judgment {
-                None => findings.push(Finding {
-                    kind: FindingKind::MissingClaimJudgment,
-                    severity: Severity::Error,
-                    claim: Some(claim.id()),
-                    criticality: claim.requirement.criticality,
-                    path: claim.spec.path.clone(),
-                    line: claim.scenario.line,
-                    detail: "non-routine Claim has no total-composition Judgment".into(),
-                }),
-                Some(judgment) => {
-                    let expected = model.expected_claim_judgment_fingerprint(judgment);
-                    if expected.is_none() {
-                        findings.push(simple(
-                            FindingKind::InvalidClaimJudgment,
-                            &judgment.path,
-                            judgment.line,
-                            Some(claim.id()),
-                            format!(
-                                "Claim Judgment `{}` has unavailable expected composition",
-                                judgment.id
-                            ),
-                        ));
-                    } else if expected.as_ref() != Some(&judgment.fingerprint) {
-                        findings.push(simple(
-                            FindingKind::StaleClaimJudgment,
-                            &judgment.path,
-                            judgment.line,
-                            Some(claim.id()),
-                            format!(
-                                "Claim Judgment `{}` expected {}, found {}",
-                                judgment.id,
-                                expected.as_deref().unwrap_or_default(),
-                                judgment.fingerprint
-                            ),
-                        ));
-                    } else if judgment.verdict == ClaimJudgmentVerdict::Rejected {
-                        findings.push(simple(
-                            FindingKind::RejectedClaimJudgment,
-                            &judgment.path,
-                            judgment.line,
-                            Some(claim.id()),
-                            format!("Claim Judgment `{}` is rejected", judgment.id),
-                        ));
-                    }
+            continue;
+        }
+        let judgment = model
+            .claim_judgments()
+            .find(|judgment| judgment.id == claim.id());
+        match judgment {
+            None => findings.push(Finding {
+                kind: FindingKind::MissingClaimJudgment,
+                severity: Severity::Error,
+                claim: Some(claim.id()),
+                criticality: claim.claim.criticality,
+                path: claim.spec.path.clone(),
+                line: claim.claim.line,
+                detail: "non-routine Claim has no total-composition Judgment".into(),
+            }),
+            Some(judgment) => {
+                let expected = model.expected_claim_judgment_fingerprint(judgment);
+                if expected.is_none() {
+                    findings.push(simple(
+                        FindingKind::InvalidClaimJudgment,
+                        &judgment.path,
+                        judgment.line,
+                        Some(claim.id()),
+                        format!(
+                            "Claim Judgment `{}` has unavailable expected composition",
+                            judgment.id
+                        ),
+                    ));
+                } else if expected.as_ref() != Some(&judgment.fingerprint) {
+                    findings.push(simple(
+                        FindingKind::StaleClaimJudgment,
+                        &judgment.path,
+                        judgment.line,
+                        Some(claim.id()),
+                        format!(
+                            "Claim Judgment `{}` expected {}, found {}",
+                            judgment.id,
+                            expected.as_deref().unwrap_or_default(),
+                            judgment.fingerprint
+                        ),
+                    ));
+                } else if judgment.verdict == ClaimJudgmentVerdict::Rejected {
+                    findings.push(simple(
+                        FindingKind::RejectedClaimJudgment,
+                        &judgment.path,
+                        judgment.line,
+                        Some(claim.id()),
+                        format!("Claim Judgment `{}` is rejected", judgment.id),
+                    ));
                 }
             }
         }
@@ -1059,11 +1307,11 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
         let has_applicable_binding = model.evidence_bindings().any(|binding| {
             binding.check == check.id
                 && model
-                    .claims()
-                    .find(|claim| claim.id() == binding.claim)
+                    .cases()
+                    .find(|claim| claim.id() == binding.case)
                     .is_some_and(|claim| {
                         matches!(
-                            claim.requirement.criticality,
+                            claim.claim.criticality,
                             Some(Criticality::Standard | Criticality::Critical)
                         )
                     })
@@ -1100,11 +1348,11 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
         let has_applicable_binding = model.evidence_bindings().any(|binding| {
             binding.check == implementation.check
                 && model
-                    .claims()
-                    .find(|claim| claim.id() == binding.claim)
+                    .cases()
+                    .find(|claim| claim.id() == binding.case)
                     .is_some_and(|claim| {
                         matches!(
-                            claim.requirement.criticality,
+                            claim.claim.criticality,
                             Some(Criticality::Standard | Criticality::Critical)
                         )
                     })
@@ -1127,10 +1375,10 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
         }
     }
     for binding in model.evidence_bindings() {
-        let claim = model.claims().find(|claim| claim.id() == binding.claim);
+        let claim = model.cases().find(|claim| claim.id() == binding.case);
         if claim
             .as_ref()
-            .is_some_and(|claim| claim.requirement.criticality == Some(Criticality::Routine))
+            .is_some_and(|claim| claim.claim.criticality == Some(Criticality::Routine))
         {
             continue;
         }
@@ -1139,7 +1387,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                 FindingKind::BindingMissingCheck,
                 &binding.path,
                 binding.line,
-                Some(binding.claim.clone()),
+                Some(binding.case.clone()),
                 format!(
                     "binding `{}` names unknown Check `{}`",
                     binding.id, binding.check
@@ -1148,11 +1396,11 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
         }
         if claim.is_none() {
             findings.push(simple(
-                FindingKind::BindingMissingClaim,
+                FindingKind::BindingMissingCase,
                 &binding.path,
                 binding.line,
-                Some(binding.claim.clone()),
-                format!("binding `{}` names no current case-level Claim", binding.id),
+                Some(binding.case.clone()),
+                format!("binding `{}` names no current Case", binding.id),
             ));
         }
         if !policies.iter().any(|policy| policy.id == binding.policy) {
@@ -1160,62 +1408,148 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                 FindingKind::BindingMissingPolicy,
                 &binding.path,
                 binding.line,
-                Some(binding.claim.clone()),
+                Some(binding.case.clone()),
                 format!(
                     "binding `{}` names unknown policy `{}`",
                     binding.id, binding.policy
                 ),
             ));
         }
-        let qualification = model
-            .qualifications()
-            .find(|qualification| qualification.id == binding.id);
-        let Some(qualification) = qualification else {
+        let method_qualification = model
+            .method_qualifications()
+            .find(|qualification| qualification.id == binding.method_qualification);
+        let Some(method_qualification) = method_qualification else {
             findings.push(simple(
-                FindingKind::MissingQualification,
+                FindingKind::MissingMethodQualification,
                 &binding.path,
                 binding.line,
-                Some(binding.claim.clone()),
-                format!("binding `{}` has no Qualification", binding.id),
+                Some(binding.case.clone()),
+                format!(
+                    "binding `{}` names missing Method Qualification `{}`",
+                    binding.id, binding.method_qualification
+                ),
             ));
             continue;
         };
-        if let Some(expected) = model.expected_qualification_fingerprint(binding) {
-            if qualification.fingerprint != expected {
+        if method_qualification.check != binding.check {
+            findings.push(simple(
+                FindingKind::MissingMethodQualification,
+                &binding.path,
+                binding.line,
+                Some(binding.case.clone()),
+                format!(
+                    "binding `{}` and Method Qualification `{}` name different Checks",
+                    binding.id, method_qualification.id
+                ),
+            ));
+            continue;
+        }
+        let decision = model
+            .applicability_decisions()
+            .find(|decision| decision.id == binding.id);
+        let Some(decision) = decision else {
+            findings.push(simple(
+                FindingKind::MissingApplicabilityDecision,
+                &binding.path,
+                binding.line,
+                Some(binding.case.clone()),
+                format!("binding `{}` has no Applicability Decision", binding.id),
+            ));
+            continue;
+        };
+        if let Some(expected) = model.expected_applicability_fingerprint(binding) {
+            if decision.fingerprint != expected {
                 findings.push(simple(
-                    FindingKind::StaleQualification,
-                    &qualification.path,
-                    qualification.line,
-                    Some(binding.claim.clone()),
+                    FindingKind::StaleApplicabilityDecision,
+                    &decision.path,
+                    decision.line,
+                    Some(binding.case.clone()),
                     format!(
-                        "Qualification `{}` expected {}, found {}",
-                        qualification.id, expected, qualification.fingerprint
+                        "Applicability Decision `{}` expected {}, found {}",
+                        decision.id, expected, decision.fingerprint
                     ),
                 ));
-            } else if qualification.verdict == QualificationVerdict::Rejected {
+            } else if decision.verdict == crate::verification::ApplicabilityVerdict::Rejected {
                 findings.push(simple(
-                    FindingKind::RejectedQualification,
-                    &qualification.path,
-                    qualification.line,
-                    Some(binding.claim.clone()),
-                    format!("Qualification `{}` is rejected", qualification.id),
+                    FindingKind::RejectedApplicabilityDecision,
+                    &decision.path,
+                    decision.line,
+                    Some(binding.case.clone()),
+                    format!("Applicability Decision `{}` is rejected", decision.id),
                 ));
             }
         }
     }
-    for qualification in model.qualifications() {
-        if !model
-            .evidence_bindings()
-            .any(|binding| binding.id == qualification.id)
+    for qualification in model.method_qualifications() {
+        if !model.checks().any(|check| check.id == qualification.check)
+            || !model
+                .evidence_bindings()
+                .any(|binding| binding.method_qualification == qualification.id)
         {
             findings.push(simple(
-                FindingKind::DanglingQualification,
+                FindingKind::DanglingMethodQualification,
                 &qualification.path,
                 qualification.line,
                 None,
                 format!(
-                    "Qualification `{}` names no Evidence Binding",
+                    "Method Qualification `{}` has no current Check-to-Case edge",
                     qualification.id
+                ),
+            ));
+            continue;
+        }
+        if !policies
+            .iter()
+            .any(|policy| policy.id == qualification.policy)
+        {
+            findings.push(simple(
+                FindingKind::DanglingMethodQualification,
+                &qualification.path,
+                qualification.line,
+                None,
+                format!(
+                    "Method Qualification `{}` names unknown policy `{}`",
+                    qualification.id, qualification.policy
+                ),
+            ));
+            continue;
+        }
+        if let Some(expected) = model.expected_method_qualification_fingerprint(qualification) {
+            if qualification.fingerprint != expected {
+                findings.push(simple(
+                    FindingKind::StaleMethodQualification,
+                    &qualification.path,
+                    qualification.line,
+                    None,
+                    format!(
+                        "Method Qualification `{}` expected {}, found {}",
+                        qualification.id, expected, qualification.fingerprint
+                    ),
+                ));
+            } else if qualification.verdict == MethodQualificationVerdict::Rejected {
+                findings.push(simple(
+                    FindingKind::RejectedMethodQualification,
+                    &qualification.path,
+                    qualification.line,
+                    None,
+                    format!("Method Qualification `{}` is rejected", qualification.id),
+                ));
+            }
+        }
+    }
+    for decision in model.applicability_decisions() {
+        if !model
+            .evidence_bindings()
+            .any(|binding| binding.id == decision.id)
+        {
+            findings.push(simple(
+                FindingKind::DanglingApplicabilityDecision,
+                &decision.path,
+                decision.line,
+                None,
+                format!(
+                    "Applicability Decision `{}` names no Evidence Binding",
+                    decision.id
                 ),
             ));
         }
@@ -1300,10 +1634,15 @@ fn candidate_target_claim(model: &Model, candidate: &ChallengeCandidate) -> Opti
     let target = candidate.target.as_ref()?;
     match target.kind {
         DecisionKind::ClaimJudgment => Some(target.id.clone()),
-        DecisionKind::Qualification => model
+        DecisionKind::ApplicabilityDecision => model
             .evidence_bindings()
             .find(|binding| binding.id == target.id)
-            .map(|binding| binding.claim.clone()),
+            .map(|binding| binding.case.clone()),
+        DecisionKind::MethodQualification => model
+            .evidence_bindings()
+            .filter(|binding| binding.method_qualification == target.id)
+            .map(|binding| binding.case.clone())
+            .next(),
     }
 }
 
@@ -1318,19 +1657,42 @@ pub fn challenge_plan_relevant_to_selection(
     checks: &BTreeSet<String>,
 ) -> bool {
     plan.selectors.iter().any(|selector| match selector {
-        Selector::QualificationFromBinding(id) => bindings.contains(id),
-        Selector::QualificationFromCheck(id) => checks.contains(id),
-        Selector::QualificationFromRealization(identity)
-        | Selector::ClaimJudgmentFromRealization(identity) => {
-            claims_for_realization(model, identity)
+        Selector::MethodQualificationFromMethodQualification(id) => model
+            .evidence_bindings()
+            .any(|binding| binding.method_qualification == *id && claims.contains(&binding.case)),
+        Selector::MethodQualificationFromCheck(id)
+        | Selector::ApplicabilityDecisionFromCheck(id) => checks.contains(id),
+        Selector::ApplicabilityDecisionFromBinding(id) => bindings.contains(id),
+        Selector::ApplicabilityDecisionFromCase(id) => claims.contains(id),
+        Selector::MethodQualificationFromRealization(identity)
+        | Selector::ApplicabilityDecisionFromRealization(identity) => {
+            cases_for_realization(model, identity)
                 .iter()
                 .any(|claim| claims.contains(claim))
         }
-        Selector::QualificationFromMechanism(identity)
-        | Selector::ClaimJudgmentFromMechanism(identity) => claims_for_mechanism(model, identity)
+        Selector::MethodQualificationFromMechanism(identity)
+        | Selector::ApplicabilityDecisionFromMechanism(identity) => {
+            cases_for_mechanism(model, identity)
+                .iter()
+                .any(|claim| claims.contains(claim))
+        }
+        Selector::ClaimJudgmentFromClaim(id) => claims
             .iter()
-            .any(|claim| claims.contains(claim)),
-        Selector::ClaimJudgmentFromClaim(id) => claims.contains(id),
+            .any(|case| case.starts_with(&format!("{id}/"))),
+        Selector::ClaimJudgmentFromRealization(identity) => claims_for_realization(model, identity)
+            .iter()
+            .any(|parent| {
+                claims
+                    .iter()
+                    .any(|case| case.starts_with(&format!("{parent}/")))
+            }),
+        Selector::ClaimJudgmentFromMechanism(identity) => {
+            claims_for_mechanism(model, identity).iter().any(|parent| {
+                claims
+                    .iter()
+                    .any(|case| case.starts_with(&format!("{parent}/")))
+            })
+        }
     })
 }
 
@@ -1345,13 +1707,29 @@ fn required_challenge_coverage_findings(model: &Model) -> Vec<Finding> {
         .collect::<Vec<_>>();
 
     let mut decisions = Vec::<(DecisionCandidateTarget, String, String, usize)>::new();
+    for qualification in model.method_qualifications() {
+        let selector = selector_id(
+            DecisionKind::MethodQualification,
+            RelationKind::MethodQualification,
+            &qualification.id,
+        );
+        let candidate = method_qualification_candidate(model, &selector, qualification, true);
+        if candidate.disposition == CandidateDisposition::Selected {
+            decisions.push((
+                candidate.target.expect("a reached method has a target"),
+                qualification.policy.clone(),
+                qualification.path.clone(),
+                qualification.line,
+            ));
+        }
+    }
     for binding in model.evidence_bindings() {
         let selector = selector_id(
-            DecisionKind::Qualification,
+            DecisionKind::ApplicabilityDecision,
             RelationKind::Binding,
             &binding.id,
         );
-        let candidate = qualification_candidate(model, &selector, binding, true);
+        let candidate = applicability_candidate(model, &selector, binding, true);
         if candidate.disposition == CandidateDisposition::Selected {
             decisions.push((
                 candidate.target.expect("a reached binding has a target"),
@@ -1478,10 +1856,14 @@ fn same_target(
 fn target_claim(model: &Model, target: &DecisionCandidateTarget) -> Option<String> {
     match target.kind {
         DecisionKind::ClaimJudgment => Some(target.id.clone()),
-        DecisionKind::Qualification => model
+        DecisionKind::ApplicabilityDecision => model
             .evidence_bindings()
             .find(|binding| binding.id == target.id)
-            .map(|binding| binding.claim.clone()),
+            .map(|binding| binding.case.clone()),
+        DecisionKind::MethodQualification => model
+            .evidence_bindings()
+            .find(|binding| binding.method_qualification == target.id)
+            .map(|binding| binding.case.clone()),
     }
 }
 
@@ -1500,11 +1882,17 @@ pub fn challenge_candidate_scope_kinds(
         RelationKind::Binding => {
             kinds.insert(SemanticScopeKind::Binding);
         }
+        RelationKind::Case => {
+            kinds.insert(SemanticScopeKind::Case);
+        }
         RelationKind::Check => {
             kinds.insert(SemanticScopeKind::Check);
         }
         RelationKind::Claim => {
             kinds.insert(SemanticScopeKind::Claim);
+        }
+        RelationKind::MethodQualification => {
+            kinds.insert(SemanticScopeKind::MethodQualification);
         }
         RelationKind::Mechanism => {
             kinds.insert(SemanticScopeKind::Mechanism);
@@ -1521,14 +1909,33 @@ pub fn challenge_candidate_scope_kinds(
     }
     let target = candidate.target.as_ref()?;
     match target.kind {
-        DecisionKind::Qualification => {
+        DecisionKind::ApplicabilityDecision => {
             let Some(binding) = model
                 .evidence_bindings()
                 .find(|binding| binding.id == target.id)
             else {
                 return None;
             };
-            add_qualification_input_kinds(model, binding, &mut kinds)?;
+            add_applicability_input_kinds(model, binding, &mut kinds)?;
+        }
+        DecisionKind::MethodQualification => {
+            let qualification = model
+                .method_qualifications()
+                .find(|qualification| qualification.id == target.id)?;
+            if model.expected_method_qualification_fingerprint(qualification)?
+                != qualification.fingerprint
+            {
+                return None;
+            }
+            kinds.extend([
+                SemanticScopeKind::MethodQualification,
+                SemanticScopeKind::Check,
+                SemanticScopeKind::Context,
+                SemanticScopeKind::Policy,
+            ]);
+            if stable_check_implementations(model, &qualification.check)? {
+                kinds.insert(SemanticScopeKind::CheckImplementation);
+            }
         }
         DecisionKind::ClaimJudgment => {
             kinds.insert(SemanticScopeKind::ClaimJudgment);
@@ -1541,7 +1948,7 @@ pub fn challenge_candidate_scope_kinds(
                 }
             }
             if let Some(claim) = model.claims().find(|claim| claim.id() == target.id) {
-                if let Some(surface_id) = &claim.requirement.over {
+                if let Some(surface_id) = &claim.claim.over {
                     kinds.insert(SemanticScopeKind::Surface);
                     if let Some(surface) = model.workspace.surface(surface_id) {
                         if !surface.contributions.is_empty() {
@@ -1554,15 +1961,14 @@ pub fn challenge_candidate_scope_kinds(
                         .iter()
                         .find(|spec| spec.id == *surface_id)
                         .into_iter()
-                        .flat_map(|spec| &spec.requirements)
-                        .filter(|requirement| requirement.domain == crate::model::Domain::Behaviour)
-                        .flat_map(|requirement| {
-                            requirement.scenarios.iter().map(|scenario| &scenario.id)
-                        })
+                        .flat_map(|spec| &spec.claims)
+                        .filter(|claim| claim.domain == crate::model::Domain::Behaviour)
+                        .map(|claim| &claim.id)
                         .collect::<BTreeSet<_>>();
-                    let tagged_member = model.realizes.iter().any(|site| {
-                        site.spec == *surface_id && behavioural.contains(&site.scenario)
-                    });
+                    let tagged_member = model
+                        .realizes
+                        .iter()
+                        .any(|site| site.spec == *surface_id && behavioural.contains(&site.claim));
                     let enumerated_member = model
                         .class_members
                         .iter()
@@ -1574,7 +1980,7 @@ pub fn challenge_candidate_scope_kinds(
                 if model
                     .realizes
                     .iter()
-                    .any(|site| site.spec == claim.spec.id && site.scenario == claim.scenario.id)
+                    .any(|site| site.spec == claim.spec.id && site.claim == claim.claim.id)
                 {
                     if !stable_claim_realizations(model, &target.id) {
                         return None;
@@ -1582,11 +1988,7 @@ pub fn challenge_candidate_scope_kinds(
                     kinds.insert(SemanticScopeKind::Realization);
                 }
                 if let Some(design) = model.design_for(&claim.spec.id) {
-                    for entry in design
-                        .for_scenario(&claim.scenario.id)
-                        .into_iter()
-                        .chain(design.for_requirement(&claim.requirement.id))
-                    {
+                    if let Some(entry) = design.for_claim(&claim.claim.id) {
                         for mechanism in &entry.mechanisms {
                             kinds.insert(SemanticScopeKind::Mechanism);
                             if !add_mechanism_relation_kinds(
@@ -1600,23 +2002,24 @@ pub fn challenge_candidate_scope_kinds(
                     }
                 }
             }
+            let case_prefix = format!("{}/", target.id);
             for binding in model
                 .evidence_bindings()
-                .filter(|binding| binding.claim == target.id)
+                .filter(|binding| binding.case.starts_with(&case_prefix))
             {
-                add_qualification_input_kinds(model, binding, &mut kinds)?;
+                add_applicability_input_kinds(model, binding, &mut kinds)?;
             }
         }
     }
     Some(kinds)
 }
 
-fn add_qualification_input_kinds(
+fn add_applicability_input_kinds(
     model: &Model,
     binding: &crate::verification::EvidenceBinding,
     kinds: &mut BTreeSet<SemanticScopeKind>,
 ) -> Option<()> {
-    model.claim_digest(&binding.claim)?;
+    model.case_digest(&binding.case)?;
     model.checks().find(|check| check.id == binding.check)?;
     model
         .decision_standards
@@ -1625,14 +2028,21 @@ fn add_qualification_input_kinds(
         .iter()
         .find(|policy| policy.id == binding.policy)?;
     let qualification = model
-        .qualifications()
-        .find(|qualification| qualification.id == binding.id)?;
-    if model.expected_qualification_fingerprint(binding)? != qualification.fingerprint {
+        .method_qualifications()
+        .find(|qualification| qualification.id == binding.method_qualification)?;
+    let decision = model
+        .applicability_decisions()
+        .find(|decision| decision.id == binding.id)?;
+    if model.expected_method_qualification_fingerprint(qualification)? != qualification.fingerprint
+        || model.expected_applicability_fingerprint(binding)? != decision.fingerprint
+    {
         return None;
     }
     kinds.extend([
-        SemanticScopeKind::Qualification,
+        SemanticScopeKind::ApplicabilityDecision,
+        SemanticScopeKind::MethodQualification,
         SemanticScopeKind::Binding,
+        SemanticScopeKind::Case,
         SemanticScopeKind::Claim,
         SemanticScopeKind::Check,
         SemanticScopeKind::Context,
@@ -1725,14 +2135,14 @@ fn stable_realization_anchor(model: &Model, identity: &str) -> bool {
 }
 
 fn stable_claim_realizations(model: &Model, claim_id: &str) -> bool {
-    let Some((spec, scenario)) = claim_id.split_once('#') else {
+    let Some((spec, claim)) = claim_id.split_once('#') else {
         return false;
     };
     let mut identities = BTreeMap::<String, String>::new();
     let sites = model
         .realizes
         .iter()
-        .filter(|site| site.spec == spec && site.scenario == scenario)
+        .filter(|site| site.spec == spec && site.claim == claim)
         .collect::<Vec<_>>();
     if sites.is_empty() {
         return false;
@@ -1823,14 +2233,8 @@ fn design_findings(model: &Model) -> Vec<Finding> {
         };
         for entry in &design.entries {
             let id = entry.target.id();
-            let exists = match &entry.target {
-                Target::Requirement(_) => spec.requirements.iter().any(|r| r.id == id),
-                Target::Scenario(_) => spec
-                    .requirements
-                    .iter()
-                    .any(|r| r.scenarios.iter().any(|s| s.id == id)),
-            };
-            if !exists {
+            let claim = spec.claims.iter().find(|claim| claim.id == id);
+            if claim.is_none() {
                 findings.push(Finding {
                     kind: FindingKind::DanglingDesignEntry,
                     severity: Severity::Error,
@@ -1838,11 +2242,29 @@ fn design_findings(model: &Model) -> Vec<Finding> {
                     criticality: None,
                     path: design.path.clone(),
                     line: entry.line,
-                    detail: "names a requirement or claim that does not exist".into(),
+                    detail: "names a Claim that does not exist".into(),
                 });
             }
 
             for mechanism in &entry.mechanisms {
+                if let Some(claim) = claim {
+                    for case in &mechanism.cases {
+                        if !claim.cases.iter().any(|candidate| candidate.id == *case) {
+                            findings.push(Finding {
+                                kind: FindingKind::DanglingDesignEntry,
+                                severity: Severity::Error,
+                                claim: Some(format!("{}#{}", design.spec, id)),
+                                criticality: claim.criticality,
+                                path: design.path.clone(),
+                                line: mechanism.line,
+                                detail: format!(
+                                    "mechanism `{}` names Case `{case}` that does not exist under Claim `{id}`",
+                                    mechanism.id
+                                ),
+                            });
+                        }
+                    }
+                }
                 let bindings = model.mechanism_bindings(&design.spec, mechanism);
                 if bindings.len() != 1 {
                     findings.push(Finding {
@@ -1954,33 +2376,27 @@ fn design_findings(model: &Model) -> Vec<Finding> {
     //
     // Gated on the artifact being in use at all. Each mechanism must be usable alone
     // — `validate` without the design artifact — and a project that has not adopted it must not
-    // be told that every critical requirement is a finding. Partial adoption still reports: one
+    // be told that every critical Claim is a finding. Partial adoption still reports: one
     // design file means the artifact is in use, and the specs it omits are visible.
     for spec in &model.specs {
         if model.designs.is_empty() {
             break;
         }
         let design = model.design_for(&spec.id);
-        for requirement in &spec.requirements {
-            if requirement.criticality != Some(Criticality::Critical) {
+        for claim in &spec.claims {
+            if claim.criticality != Some(Criticality::Critical) {
                 continue;
             }
-            let declared = design.is_some_and(|d| {
-                d.for_requirement(&requirement.id).is_some()
-                    || requirement
-                        .scenarios
-                        .iter()
-                        .any(|s| d.for_scenario(&s.id).is_some())
-            });
+            let declared = design.is_some_and(|d| d.for_claim(&claim.id).is_some());
             if !declared {
                 findings.push(Finding {
                     kind: FindingKind::UndeclaredMechanism,
                     severity: Severity::Error,
-                    claim: Some(format!("{}#{}", spec.id, requirement.id)),
-                    criticality: requirement.criticality,
+                    claim: Some(format!("{}#{}", spec.id, claim.id)),
+                    criticality: claim.criticality,
                     path: spec.path.clone(),
-                    line: requirement.line,
-                    detail: "critical requirement declares no enforcement mechanism".into(),
+                    line: claim.line,
+                    detail: "critical Claim declares no enforcement mechanism".into(),
                 });
             }
         }
@@ -2018,19 +2434,19 @@ fn surface_findings(model: &Model) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     for spec in &model.specs {
-        for requirement in &spec.requirements {
-            if requirement.domain != crate::model::Domain::Sites {
+        for claim in &spec.claims {
+            if claim.domain != crate::model::Domain::Sites {
                 continue;
             }
-            let claim_id = format!("{}#{}", spec.id, requirement.id);
-            let Some(over) = &requirement.over else {
+            let claim_id = format!("{}#{}", spec.id, claim.id);
+            let Some(over) = &claim.over else {
                 findings.push(Finding {
                     kind: FindingKind::MissingSurface,
-                    severity: severity_for(requirement.criticality),
+                    severity: severity_for(claim.criticality),
                     claim: Some(claim_id),
-                    criticality: requirement.criticality,
+                    criticality: claim.criticality,
                     path: spec.path.clone(),
-                    line: requirement.line,
+                    line: claim.line,
                     detail: "site-domain claim declares no `Over:` surface".into(),
                 });
                 continue;
@@ -2040,9 +2456,9 @@ fn surface_findings(model: &Model) -> Vec<Finding> {
                     kind: FindingKind::UnknownSurface,
                     severity: Severity::Error,
                     claim: Some(claim_id),
-                    criticality: requirement.criticality,
+                    criticality: claim.criticality,
                     path: spec.path.clone(),
-                    line: requirement.line,
+                    line: claim.line,
                     detail: format!(
                         "`Over: {over}` names no surface in {}",
                         model.workspace.path
@@ -2073,11 +2489,11 @@ fn surface_findings(model: &Model) -> Vec<Finding> {
                     .join(", ");
                 findings.push(Finding {
                     kind: FindingKind::EnumeratorUnsoundOrUnderived,
-                    severity: severity_for(requirement.criticality),
+                    severity: severity_for(claim.criticality),
                     claim: Some(claim_id),
-                    criticality: requirement.criticality,
+                    criticality: claim.criticality,
                     path: spec.path.clone(),
-                    line: requirement.line,
+                    line: claim.line,
                     detail: format!(
                         "surface `{}` has no successful witness for contribution(s) {missing}; tag-derived membership is not complete",
                         surface.id
@@ -2092,9 +2508,9 @@ fn surface_findings(model: &Model) -> Vec<Finding> {
                 .find(|candidate| candidate.id == surface.id);
             let behavioural: Vec<&str> = class_spec
                 .into_iter()
-                .flat_map(|class_spec| &class_spec.requirements)
-                .filter(|r| r.domain == crate::model::Domain::Behaviour)
-                .flat_map(|r| r.scenarios.iter().map(|s| s.id.as_str()))
+                .flat_map(|class_spec| &class_spec.claims)
+                .filter(|claim| claim.domain == crate::model::Domain::Behaviour)
+                .map(|claim| claim.id.as_str())
                 .collect();
 
             // (site, file, by_file): `by_file` marks a member the extractor enumerated, whose
@@ -2103,7 +2519,7 @@ fn surface_findings(model: &Model) -> Vec<Finding> {
                 .realizes
                 .iter()
                 .filter(|site| {
-                    site.spec == surface.id && behavioural.contains(&site.scenario.as_str())
+                    site.spec == surface.id && behavioural.contains(&site.claim.as_str())
                 })
                 .map(|site| (site.site.as_str(), site.file.as_str(), false))
                 .collect();
@@ -2122,7 +2538,7 @@ fn surface_findings(model: &Model) -> Vec<Finding> {
             let discharges: Vec<(&str, &str)> = model
                 .realizes
                 .iter()
-                .filter(|site| site.spec == spec.id && site.scenario == requirement.id)
+                .filter(|site| site.spec == spec.id && site.claim == claim.id)
                 .map(|site| (site.site.as_str(), site.file.as_str()))
                 .collect();
 
@@ -2137,9 +2553,9 @@ fn surface_findings(model: &Model) -> Vec<Finding> {
                 }
                 findings.push(Finding {
                     kind: FindingKind::InvariantBreach,
-                    severity: severity_for(requirement.criticality),
-                    claim: Some(format!("{}#{}", spec.id, requirement.id)),
-                    criticality: requirement.criticality,
+                    severity: severity_for(claim.criticality),
+                    claim: Some(format!("{}#{}", spec.id, claim.id)),
+                    criticality: claim.criticality,
                     path: file.to_string(),
                     line: 0,
                     detail: format!("`{site}` is in the class and discharges nothing"),
@@ -2166,9 +2582,9 @@ fn realization_obligation_findings(model: &Model) -> Vec<Finding> {
             });
             continue;
         };
-        if claim.requirement.domain != crate::model::Domain::Behaviour
+        if claim.claim.domain != crate::model::Domain::Behaviour
             || !matches!(
-                claim.requirement.criticality,
+                claim.claim.criticality,
                 Some(Criticality::Standard | Criticality::Critical)
             )
         {
@@ -2176,7 +2592,7 @@ fn realization_obligation_findings(model: &Model) -> Vec<Finding> {
                 kind: FindingKind::DanglingRealizationObligation,
                 severity: Severity::Error,
                 claim: Some(claim.id()),
-                criticality: claim.requirement.criticality,
+                criticality: claim.claim.criticality,
                 path: model.workspace.path.clone(),
                 line: 0,
                 detail: "area obligations apply only to standard or critical behavioral claims"
@@ -2188,7 +2604,7 @@ fn realization_obligation_findings(model: &Model) -> Vec<Finding> {
         for area in &obligation.areas {
             let realized = model.realizes.iter().any(|site| {
                 site.spec == obligation.spec
-                    && site.scenario == obligation.claim
+                    && site.claim == obligation.claim
                     && site
                         .source
                         .as_ref()
@@ -2204,9 +2620,9 @@ fn realization_obligation_findings(model: &Model) -> Vec<Finding> {
             if !realized {
                 findings.push(Finding {
                     kind: FindingKind::MissingRequiredRealization,
-                    severity: severity_for(claim.requirement.criticality),
+                    severity: severity_for(claim.claim.criticality),
                     claim: Some(claim.id()),
-                    criticality: claim.requirement.criticality,
+                    criticality: claim.claim.criticality,
                     path: model.workspace.path.clone(),
                     line: 0,
                     detail: format!("required area `{area}` has no realization of this claim"),
@@ -2225,7 +2641,7 @@ pub struct Summary {
 
 pub fn summarize(model: &Model, findings: &[Finding]) -> Summary {
     Summary {
-        claims: model.scenario_count(),
+        claims: model.claim_count(),
         errors: findings
             .iter()
             .filter(|h| h.severity == Severity::Error)

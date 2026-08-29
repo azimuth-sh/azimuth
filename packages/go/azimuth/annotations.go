@@ -1,6 +1,6 @@
 package azimuth
 
-func Realizes(spec string, scenario string) {}
+func Realizes(spec string, claim string) {}
 
 func ImplementsCheck(check string) {}
 

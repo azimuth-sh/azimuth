@@ -34,7 +34,7 @@ const COMPILER_GLOBAL_TYPES = new Set([
 
 export interface Entry {
   spec: string;
-  scenario: string;
+  claim: string;
   site: string;
   file: string;
   lang: string;
@@ -152,13 +152,13 @@ function scanSource(
     if (isMarkerCall(node, 'realizes')) {
       const args = stringArgs(node);
       if (args.length < 2) {
-        result.warnings.push(warn(node, source, file, 'realizes needs a spec and a scenario id'));
+        result.warnings.push(warn(node, source, file, 'realizes needs a spec and a claim id'));
         return;
       }
       const site = resolveSite(node, source);
       result.realizes.push({
         spec: args[0],
-        scenario: args[1],
+        claim: args[1],
         site: site.name,
         file,
         lang,
@@ -1230,7 +1230,7 @@ function compareCheckImplementation(a: CheckImplementation, b: CheckImplementati
 function compare(a: Entry, b: Entry): number {
   return (
     a.spec.localeCompare(b.spec) ||
-    a.scenario.localeCompare(b.scenario) ||
+    a.claim.localeCompare(b.claim) ||
     a.site.localeCompare(b.site)
   );
 }

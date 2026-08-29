@@ -740,11 +740,11 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
                     "planned"
                 };
                 println!(
-                    "  add {}#{} · {} · {} scenario(s) · {state} · {}",
+                    "  add {}#{} · {} · {} Case(s) · {state} · {}",
                     addition.spec,
-                    addition.requirement,
+                    addition.claim,
                     addition.criticality.name(),
-                    addition.scenarios.len(),
+                    addition.cases.len(),
                     change_obligations(addition.criticality)
                 );
             }
@@ -753,7 +753,7 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
                 println!(
                     "  criticality {}#{} · {} → {} · {state} · {}",
                     change.spec,
-                    change.requirement,
+                    change.claim,
                     change.from.name(),
                     change.to.name(),
                     change_obligations(change.to)
@@ -1613,13 +1613,16 @@ fn run_inspection_text(
                 .then_with(|| left.check.fingerprint.cmp(&right.check.fingerprint))
         });
         for execution in observations {
-            let _ = writeln!(
-                rendered,
-                "  Observation: {} {} {}",
-                execution.check.id,
-                execution.observation.outcome.name(),
-                execution.observation.fingerprint
-            );
+            for observation in &execution.observations {
+                let _ = writeln!(
+                    rendered,
+                    "  Observation: {} {} {} {}",
+                    execution.check.id,
+                    observation.case,
+                    observation.outcome.name(),
+                    observation.fingerprint
+                );
+            }
         }
         let mut challenges = bundle.challenger_executions.iter().collect::<Vec<_>>();
         challenges.sort_by(|left, right| left.challenge.cmp(&right.challenge));
@@ -1662,13 +1665,16 @@ fn run_inspection_json(
             });
             let observations = observations
                 .into_iter()
-                .map(|execution| {
-                    Json::obj(vec![
-                        ("check", Json::str(&execution.check.id)),
-                        ("check_fingerprint", Json::str(&execution.check.fingerprint)),
-                        ("outcome", Json::str(execution.observation.outcome.name())),
-                        ("fingerprint", Json::str(&execution.observation.fingerprint)),
-                    ])
+                .flat_map(|execution| {
+                    execution.observations.iter().map(|observation| {
+                        Json::obj(vec![
+                            ("check", Json::str(&execution.check.id)),
+                            ("check_fingerprint", Json::str(&execution.check.fingerprint)),
+                            ("case", Json::str(&observation.case)),
+                            ("outcome", Json::str(observation.outcome.name())),
+                            ("fingerprint", Json::str(&observation.fingerprint)),
+                        ])
+                    })
                 })
                 .collect();
             let mut challenges = bundle.challenger_executions.iter().collect::<Vec<_>>();

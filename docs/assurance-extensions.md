@@ -2,7 +2,10 @@
 
 Status: **decision-aware planning and bounded adapter exchange implemented; Run ledger deferred**.
 
-Azimuth is an evidence control plane, not a catalog of testing and analysis products. Alpha 2 implements the repository graph from Checks through Evidence Bindings to Qualifications, plus total-composition Claim Judgments, Challengers, Challenge Plans, Decision Policies and one current Challenge Schedule. A strict provider-neutral Run bundle supports service-free verification and inspection. Explicit short-lived adapter invocation, complete-model Check and Challenge planning, native execution and exact report import sit beside them. The replacement Assurance Service ledger remains deferred.
+Azimuth is an evidence control plane, not a catalog of testing and analysis products. Alpha 2
+implements the repository graph from Checks through Case Evidence Bindings to shared Method
+Qualifications and edge Applicability Decisions, plus total parent Claim Judgments, Challengers,
+Challenge Plans, Decision Policies and one current Challenge Schedule.
 
 This document records the role and authority boundaries extension work must preserve. Strict wire details remain in the [adapter](../contracts/adapter.md), [launch-plan](../contracts/run-launch-plan.md) and [Run-bundle](../contracts/run-bundle.md) formats.
 
@@ -16,29 +19,35 @@ The executable brand does not decide whether an activity is a Check or a Challen
 - Mutation testing is normally a Challenger because it attacks Check sensitivity rather than the product predicate.
 - Broad static analysis is normally a Challenger because a clean search does not establish product behavior.
 - A claim-specific static rule with an independent product oracle can be a Check.
-- Flakiness repetition, test-order randomization and oracle mutation are Challengers because they search for reasons to distrust a Qualification.
+- Flakiness repetition, test-order randomization and oracle mutation are Challengers because they
+  search for reasons to distrust a method or applicability decision.
 - A contract or schema assertion is a Check when the accepted or rejected interaction is itself the product predicate.
 - A backup restoration or rollback drill is a Check when it directly evaluates a recovery Claim for an exact artifact or deployment.
 - A penetration or exploratory session is a Challenger by default because negative search does not imply product satisfaction.
 
 One physical execution may perform both roles. A broker-loss exercise could directly evaluate a recovery Check while challenging whether another Check detects the injected fault. The runtime model must preserve the product outcome and the separately targeted challenge outcome rather than collapsing them into one generic success.
 
-Every Check has at least one Evidence Binding to a product or operational case-level Claim. One Check may bind to several Claims only when its terminal outcome is atomic and honestly bears on each. Independently variable results require separate Checks even when one native process produces them.
+Every Check has at least one Evidence Binding to a product or operational Case. One Check may bind
+to several Cases only when its terminal outcome is atomic and honestly bears on each.
 
 ## Current repository boundary
 
-The implemented alpha 2 extension seam is repository-owned:
+The implemented alpha 3 extension seam is repository-owned:
 
-- `verification.md` declares Checks, Evidence Bindings, Qualifications, Challengers and Challenge Plans plus one Claim Judgment for every applicable case Claim;
+- `verification.md` declares Checks, Evidence Bindings, Method Qualifications, Applicability
+  Decisions, Challengers and Challenge Plans plus one Claim Judgment per applicable parent Claim;
 - project standards declare Decision Policies and one `gate | scheduled` Challenge Schedule;
 - source uses sparse `ImplementsCheck(<check-id>)` linkage;
 - extractors emit implementation identity and source fingerprints, never evidentiary meaning;
-- Challenge Plans use seven selector forms for exact current Qualification or Claim Judgment fingerprints and preserve every candidate disposition; and
-- `azimuth export` version 2 exposes the derived repository graph and Findings.
+- Challenge Plans use twelve selector forms for exact current decision fingerprints and preserve
+  every candidate disposition; and
+- `azimuth export` version 3 exposes the derived repository graph and Findings.
 
 Ordinary tests, analyzer rules and monitors remain outside Azimuth until deliberately enrolled. This prevents thousands of native test cases from becoming accidental assurance authority. It is independent of storage capacity: a future ledger may retain very large execution volumes while the semantic Check graph remains sparse.
 
-Every Claim in the accepted model under `azimuth/model/` is routine. They therefore have no current Checks, Evidence Bindings, Qualifications or Claim Judgments. The parser, extractor and release suites are ordinary engineering tests, not Azimuth evidence. Synthetic fixtures under `experiments/` do own non-routine Claims with decisions; they exercise the contracts and are not part of the accepted model.
+Every Claim in the accepted model under `azimuth/model/` is routine. They therefore have no current
+Checks, Evidence Bindings or decisions. The parser, extractor and release suites are ordinary
+engineering tests, not Azimuth evidence.
 
 ## Current Run exchange
 
@@ -78,7 +87,10 @@ azimuth run import --plan <file> --input <id>=<file>... \
 
 Verification performs the configured description handshake. Planning loads the complete unselected model and accepts Check-only, Challenge-only or mixed strict requests. Check requests name an explicit capability and finite units. Challenge requests additionally name an authored Plan and nonzero candidate cap. The two arrays are required and their combined selection is non-empty.
 
-Planning resolves the fixed union of requested Plans. Only current qualified Qualifications and current accepted Claim Judgments execute. Every reached candidate counts toward its Plan cap, and any `missing-decision | stale-decision | rejected-decision | invalid-decision | inapplicable | unresolved-relation` candidate fails planning. Exact Qualification context, policy-required-form coverage and the one-adapter boundary must hold. Core validates each explicit capability's operation class and exact Challenger form; it never chooses or adds a capability. There is no `--only` or partial-model planning path.
+Planning resolves the fixed union of requested Plans. Only current positive Method Qualifications,
+Applicability Decisions and Claim Judgments execute as Challenge targets. Every reached candidate
+counts toward its Plan cap, and any adverse disposition fails planning. Exact decision context,
+policy-required-form coverage and the one-adapter boundary must hold.
 
 Every Challenge selection freezes its `gate | scheduled` lane, exact target and sorted semantic scope. Scope contains typed selector anchors and complete decision inputs. Each launch route projects every source-backed scope item into one exact accountable source, Artifact, enumeration or surface-member input. Scope affects semantic Plan identity; locator projection affects launch identity. The adapter does not load or reinterpret the repository model.
 
@@ -92,7 +104,9 @@ Adapter, configuration, description, launch, routes and normalizer are correctio
 
 A valid violated Observation, Challenge finding, partial or cancelled Run, or adapter-returned protocol-valid `timed-out` Run fact exits zero. A host-enforced process deadline is a transport timeout and exits one, as does another transport, semantic, content or identity mismatch. A returned `timed-out` fact is valid only when the complete response arrives inside that host deadline; host timeout publishes nothing. CLI and schema failures exit two. No nonzero result publishes an output bundle.
 
-Challenge Results are exactly `clean | findings | inconclusive`. Clean records only that the configured search found no objection; it creates neither positive product evidence nor repository credibility. Every planned Challenge omitted from a partial, cancelled or timed-out Run has one execution diagnostic scoped to its selection id and no fabricated Result. Scheduled omission is allowed deferral; gate omission records execution failure. Added or substituted selection is a mismatch. A challenged Qualification projects an impact edge to its Claim and current Claim Judgment but never creates a duplicate direct Judgment Challenge Result. `model.extract` is declared but has no current execution command.
+Challenge Results are exactly `clean | findings | inconclusive`. Clean records only that the
+configured search found no objection. A challenged Method Qualification fans out through dependent
+edges; an Applicability Decision remains local. Neither path fabricates a direct Judgment result.
 
 Adapters are short-lived processes. There is no long-running adapter, service bridge, provider webhook or generic event gateway. Provider-specific event hosting does not enter core or the Assurance Service.
 
@@ -106,7 +120,7 @@ The synthetic [Challenge-planning conformance](../experiments/challenge-planning
 
 The replacement Assurance Service is deferred with the Run ledger. Its intended authority is accepted execution facts and derived Subject-specific state, not repository semantics or provider integrations. The standalone bundle contract supplies the protocol meaning a future ledger must preserve; it does not authorize or ingest the Run.
 
-The alpha 1 claim-contract and project-snapshot wire remains isolated inside the existing service boundary until the replacement is implemented. It receives no bridge into the alpha 2 repository graph. There is no assurance-specific export command: `azimuth export` emits only the version 2 repository model and no runtime ledger records.
+The alpha 1 claim-contract and project-snapshot wire remains isolated inside the existing service boundary until the replacement is implemented. It receives no bridge into the alpha 3 repository graph. There is no assurance-specific export command: `azimuth export` emits only the version 3 repository model and no runtime ledger records.
 
 ## Acceptance boundary for future extensions
 

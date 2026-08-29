@@ -52,18 +52,21 @@ The record deliberately omits the bundle's plan, actual selection, provenance, a
 
 ## Observations
 
-One entry per Check execution in the bundle, sorted by check id, then check fingerprint.
+One entry per Case Observation in the bundle, sorted by Check id, Check fingerprint and Case id.
 
 ```json
 {
   "check": "billing/invoice-total-suite",
   "check_fingerprint": "sha256:<64-lowercase-hex>",
+  "case": "billing/invoices#totals/rounds-half-to-even",
   "outcome": "satisfied",
   "fingerprint": "sha256:<64-lowercase-hex>"
 }
 ```
 
-All four keys are always present. `outcome` is `satisfied | violated | inconclusive`. `check_fingerprint` is the Check identity the execution was launched against; `fingerprint` is the Observation's own fingerprint.
+All five keys are always present. `case` is the exact nested Case selected for this Observation.
+`outcome` is `satisfied | violated | inconclusive`. `check_fingerprint` is the Check identity the
+execution was launched against; `fingerprint` is the Observation's own fingerprint.
 
 ## Challenge results
 
@@ -74,7 +77,7 @@ One entry per Challenger execution in the bundle, sorted by challenge id.
   "challenge": "challenge/<plan-local-id>",
   "challenger": "billing/mutation-search",
   "challenger_fingerprint": "sha256:<64-lowercase-hex>",
-  "target_kind": "qualification",
+  "target_kind": "applicability-decision",
   "target": "billing/invoice-total-binding",
   "target_fingerprint": "sha256:<64-lowercase-hex>",
   "outcome": "clean",
@@ -82,7 +85,10 @@ One entry per Challenger execution in the bundle, sorted by challenge id.
 }
 ```
 
-All eight keys are always present. `target_kind` is `qualification | claim-judgment`. `outcome` is `clean | findings | inconclusive`. A `clean` outcome is only a negative search fact; it is not evidence that the target decision holds, and the inspection assigns it no aggregate score.
+All eight keys are always present. `target_kind` is `method-qualification |
+applicability-decision | claim-judgment`. `outcome` is `clean | findings | inconclusive`. A `clean`
+outcome is only a negative search fact; it is not evidence that the target decision holds, and the
+inspection assigns it no aggregate score.
 
 An allowed incomplete scheduled omission produces no entry here. It is carried by the bundle's own `challenge-selection` diagnostic, which this format does not project.
 

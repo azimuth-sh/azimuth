@@ -11,7 +11,7 @@ The manifest has exactly six collections:
   "realizes": [
     {
       "spec": "payments/capture",
-      "scenario": "duplicate-completion-is-idempotent",
+      "claim": "duplicate-completion-is-idempotent",
       "site": "capture::complete",
       "file": "src/capture.rs",
       "lang": "rust",
@@ -52,7 +52,10 @@ The manifest has exactly six collections:
 
 Every `source_fingerprint` is SHA-256 in the exact lexical form shown. Extractors fingerprint the smallest trustworthy enclosing semantic site. Ecosystems without a stable source span may use a complete-file boundary, but they may not invent a short or provider-specific fingerprint.
 
-`realizes` links production implementation to a case-level Claim and carries no verification form. `check_implementations` links source to one project-global Check id and carries no Claim, form, context or Qualification. Workspace or project assembly attaches area, mount and semantic source address. Several implementation records may compose one Check.
+`realizes` links production implementation to a parent Claim and carries no Case or verification
+form. `check_implementations` links source to one project-global Check id and carries no Case,
+form, context or decision. Workspace or project assembly attaches area, mount and semantic source
+address. Several implementation records may compose one Check.
 
 `mechanism_implementations` links source to a declared design mechanism. Its seven raw fields are all required: `spec` is a lower-kebab path id and `mechanism` is one lower-kebab segment. The old record without `site` is invalid. The extractor derives a qualified site under its closed semantic profile, exact typed binding and companion Artifact as one atomic account. Enumeration witnesses and class members establish complete site domains independently of linkage markers. Artifacts provide exact structural binding targets.
 
@@ -83,7 +86,10 @@ Unknown collections and removed alpha-era fields fail closed. There are no resul
 
 ## Source opt-in
 
-Production source uses `Realizes(<spec>, <case>)`. A deliberately enrolled Check implementation uses `ImplementsCheck(<project-global-check-id>)`; language packages expose the idiomatic spelling for that ecosystem. The source marker says only which Check the site implements. Evidence Bindings in `verification.md` own every Check-to-Claim relationship and its form.
+Production source uses `Realizes(<spec>, <claim>)`. A deliberately enrolled Check implementation
+uses `ImplementsCheck(<project-global-check-id>)`; language packages expose the idiomatic spelling
+for that ecosystem. The source marker says only which Check the site implements. Evidence Bindings
+in `verification.md` own every Check-to-Case relationship.
 
 A mechanism implementation continues to use `ImplementsMechanism(<spec>, <mechanism>)` in the existing ecosystem spelling; no annotation argument is added. The extractor, not source authors, owns qualified `site`, typed `binding`, companion Artifact and source fingerprint derivation.
 
@@ -121,7 +127,7 @@ azimuth-emit-ts --output manifest.json --root . src
 - Rust requires one compiler-accepted conventional Cargo target and reachable conventional module graph. Its site includes target kind, target and compiler crate names, module, receiver or trait and a normalized declared signature. Parameter patterns are excluded, generic parameters are positional and declared type-path spelling remains identity. Ambiguous or custom targets, `#[path]`, generated or included source and unreachable files fail.
 - C++ consumes Clang's semantic AST and `clang::annotate` metadata. Alpha 2 accepts only program-global external-linkage, non-module, non-template and unconstrained declarations, using qualified name plus canonical function type. Internal linkage, anonymous namespaces, local or module-attached declarations, templates, constraints and source-locator-bearing types fail until a build/module identity account exists.
 
-`experiments/polyglot/check.sh` builds all seven language fixtures, runs ordinary tests, emits seven strict manifests, validates their union and asserts export version 2.
+`experiments/polyglot/check.sh` builds all seven language fixtures, runs ordinary tests, emits seven strict manifests, validates their union and asserts export version 3.
 
 ## Tests
 

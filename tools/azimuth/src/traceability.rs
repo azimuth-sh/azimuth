@@ -7,15 +7,15 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraceabilityReport {
-    pub claims: Vec<TraceabilityClaim>,
+    pub cases: Vec<TraceabilityCase>,
     pub challenge_resolutions: Vec<ChallengeResolution>,
     pub decision_impacts: DecisionImpactProjection,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TraceabilityClaim {
+pub struct TraceabilityCase {
     pub id: String,
-    pub parent_requirement: String,
+    pub parent_claim: String,
     pub criticality: Option<Criticality>,
     pub statement: String,
     pub steps: Vec<TraceabilityStep>,
@@ -36,8 +36,10 @@ pub struct TraceabilityVerification {
     pub binding: String,
     pub applicable: bool,
     pub current: bool,
-    pub qualification: Option<String>,
-    pub verdict: Option<String>,
+    pub method_qualification: Option<String>,
+    pub method_verdict: Option<String>,
+    pub applicability_decision: Option<String>,
+    pub applicability_verdict: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,19 +53,23 @@ pub struct TraceabilityJudgment {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ImpactNodeKind {
+    ApplicabilityDecision,
     Binding,
+    Case,
     Claim,
     ClaimJudgment,
-    Qualification,
+    MethodQualification,
 }
 
 impl ImpactNodeKind {
     pub fn name(self) -> &'static str {
         match self {
+            Self::ApplicabilityDecision => "applicability-decision",
             Self::Binding => "binding",
+            Self::Case => "case",
             Self::Claim => "claim",
             Self::ClaimJudgment => "claim-judgment",
-            Self::Qualification => "qualification",
+            Self::MethodQualification => "method-qualification",
         }
     }
 }
@@ -98,42 +104,55 @@ pub fn project(model: &Model) -> TraceabilityReport {
     let mut realizations = BTreeMap::<(String, String), BTreeSet<String>>::new();
     for site in &model.realizes {
         realizations
-            .entry((site.spec.clone(), site.scenario.clone()))
+            .entry((site.spec.clone(), site.claim.clone()))
             .or_default()
             .extend(realization_identity(site));
     }
 
-    let mut claims = BTreeMap::<String, TraceabilityClaim>::new();
-    for claim in model.claims() {
+    let mut cases = BTreeMap::<String, TraceabilityCase>::new();
+    for claim in model.cases() {
         let id = claim.id();
-        let relation_key = (claim.spec.id.clone(), claim.scenario.id.clone());
+        let relation_key = (claim.spec.id.clone(), claim.claim.id.clone());
         let mut verification = model
             .evidence_bindings()
-            .filter(|binding| binding.claim == id)
+            .filter(|binding| binding.case == id)
             .map(|binding| {
                 let applicable = matches!(
-                    claim.requirement.criticality,
+                    claim.claim.criticality,
                     Some(Criticality::Standard | Criticality::Critical)
                 );
                 let qualification = model
-                    .qualifications()
-                    .find(|qualification| qualification.id == binding.id);
+                    .method_qualifications()
+                    .find(|qualification| qualification.id == binding.method_qualification);
                 let current_qualification = qualification.filter(|qualification| {
                     applicable
                         && model
-                            .expected_qualification_fingerprint(binding)
+                            .expected_method_qualification_fingerprint(qualification)
                             .is_some_and(|expected| qualification.fingerprint == expected)
                 });
-                let current = current_qualification.is_some();
+                let decision = model
+                    .applicability_decisions()
+                    .find(|decision| decision.id == binding.id);
+                let current_decision = decision.filter(|decision| {
+                    applicable
+                        && model
+                            .expected_applicability_fingerprint(binding)
+                            .is_some_and(|expected| decision.fingerprint == expected)
+                });
+                let current = current_qualification.is_some() && current_decision.is_some();
                 TraceabilityVerification {
                     check: binding.check.clone(),
                     binding: binding.id.clone(),
                     applicable,
                     current,
-                    qualification: current_qualification
+                    method_qualification: current_qualification
                         .map(|qualification| qualification.fingerprint.clone()),
-                    verdict: current_qualification
+                    method_verdict: current_qualification
                         .map(|qualification| qualification.verdict.name().to_string()),
+                    applicability_decision: current_decision
+                        .map(|decision| decision.fingerprint.clone()),
+                    applicability_verdict: current_decision
+                        .map(|decision| decision.verdict.name().to_string()),
                 }
             })
             .collect::<Vec<_>>();
@@ -143,28 +162,32 @@ pub fn project(model: &Model) -> TraceabilityReport {
                 &left.check,
                 left.applicable,
                 left.current,
-                &left.qualification,
-                &left.verdict,
+                &left.method_qualification,
+                &left.method_verdict,
+                &left.applicability_decision,
+                &left.applicability_verdict,
             )
                 .cmp(&(
                     &right.binding,
                     &right.check,
                     right.applicable,
                     right.current,
-                    &right.qualification,
-                    &right.verdict,
+                    &right.method_qualification,
+                    &right.method_verdict,
+                    &right.applicability_decision,
+                    &right.applicability_verdict,
                 ))
         });
         verification.dedup();
-        claims.insert(
+        cases.insert(
             id.clone(),
-            TraceabilityClaim {
+            TraceabilityCase {
                 id: id.clone(),
-                parent_requirement: claim.requirement.id.clone(),
-                criticality: claim.requirement.criticality,
-                statement: claim.requirement.statement.clone(),
+                parent_claim: format!("{}#{}", claim.spec.id, claim.claim.id),
+                criticality: claim.claim.criticality,
+                statement: claim.claim.statement.clone(),
                 steps: claim
-                    .scenario
+                    .case
                     .steps
                     .iter()
                     .map(|step| TraceabilityStep {
@@ -173,12 +196,17 @@ pub fn project(model: &Model) -> TraceabilityReport {
                     })
                     .collect(),
                 realizations: realizations
-                    .remove(&relation_key)
+                    .get(&relation_key)
+                    .cloned()
                     .unwrap_or_default()
                     .into_iter()
                     .collect(),
                 verification,
-                judgment: traceability_judgment(model, &id, claim.requirement.criticality),
+                judgment: traceability_judgment(
+                    model,
+                    &format!("{}#{}", claim.spec.id, claim.claim.id),
+                    claim.claim.criticality,
+                ),
             },
         );
     }
@@ -190,7 +218,7 @@ pub fn project(model: &Model) -> TraceabilityReport {
         (&left.plan, &left.challenger).cmp(&(&right.plan, &right.challenger))
     });
     TraceabilityReport {
-        claims: claims.into_values().collect(),
+        cases: cases.into_values().collect(),
         challenge_resolutions,
         decision_impacts: project_current_decision_impacts(model),
     }
@@ -233,20 +261,48 @@ pub fn project_decision_impacts(
     let mut edges = BTreeSet::new();
     for target in targets {
         match target.kind {
-            DecisionKind::Qualification => {
+            DecisionKind::ApplicabilityDecision => {
                 let Some(binding) = model
                     .evidence_bindings()
                     .find(|binding| binding.id == target.id)
                 else {
                     continue;
                 };
+                let Some(decision) = model
+                    .applicability_decisions()
+                    .find(|decision| decision.id == target.id)
+                else {
+                    continue;
+                };
+                let Some(expected) = model.expected_applicability_fingerprint(binding) else {
+                    continue;
+                };
+                if expected != target.fingerprint || decision.fingerprint != target.fingerprint {
+                    continue;
+                }
+                let source = decision_node(target);
+                let binding_node = impact_node(ImpactNodeKind::Binding, &binding.id, None);
+                let case_node = impact_node(ImpactNodeKind::Case, &binding.case, None);
+                let Some((claim_id, _)) = binding.case.rsplit_once('/') else {
+                    continue;
+                };
+                let claim_node = impact_node(ImpactNodeKind::Claim, claim_id, None);
+                insert_edge(&mut nodes, &mut edges, source, binding_node.clone());
+                insert_edge(&mut nodes, &mut edges, binding_node, case_node.clone());
+                insert_edge(&mut nodes, &mut edges, case_node, claim_node.clone());
+                if let Some(judgment_node) = current_judgment_node(model, claim_id) {
+                    insert_edge(&mut nodes, &mut edges, claim_node, judgment_node);
+                }
+            }
+            DecisionKind::MethodQualification => {
                 let Some(qualification) = model
-                    .qualifications()
+                    .method_qualifications()
                     .find(|qualification| qualification.id == target.id)
                 else {
                     continue;
                 };
-                let Some(expected) = model.expected_qualification_fingerprint(binding) else {
+                let Some(expected) = model.expected_method_qualification_fingerprint(qualification)
+                else {
                     continue;
                 };
                 if expected != target.fingerprint || qualification.fingerprint != target.fingerprint
@@ -254,12 +310,52 @@ pub fn project_decision_impacts(
                     continue;
                 }
                 let source = decision_node(target);
-                let binding_node = impact_node(ImpactNodeKind::Binding, &binding.id, None);
-                let claim_node = impact_node(ImpactNodeKind::Claim, &binding.claim, None);
-                insert_edge(&mut nodes, &mut edges, source, binding_node.clone());
-                insert_edge(&mut nodes, &mut edges, binding_node, claim_node.clone());
-                if let Some(judgment_node) = current_judgment_node(model, &binding.claim) {
-                    insert_edge(&mut nodes, &mut edges, claim_node, judgment_node);
+                for binding in model
+                    .evidence_bindings()
+                    .filter(|binding| binding.method_qualification == target.id)
+                {
+                    let binding_node = impact_node(ImpactNodeKind::Binding, &binding.id, None);
+                    let case_node = impact_node(ImpactNodeKind::Case, &binding.case, None);
+                    let Some((claim_id, _)) = binding.case.rsplit_once('/') else {
+                        continue;
+                    };
+                    let claim_node = impact_node(ImpactNodeKind::Claim, claim_id, None);
+                    let current_applicability = model
+                        .applicability_decisions()
+                        .find(|decision| decision.id == binding.id)
+                        .and_then(|decision| {
+                            model
+                                .expected_applicability_fingerprint(binding)
+                                .filter(|expected| *expected == decision.fingerprint)
+                                .map(|_| {
+                                    impact_node(
+                                        ImpactNodeKind::ApplicabilityDecision,
+                                        &decision.id,
+                                        Some(decision.fingerprint.clone()),
+                                    )
+                                })
+                        });
+                    if let Some(applicability_node) = current_applicability {
+                        insert_edge(
+                            &mut nodes,
+                            &mut edges,
+                            source.clone(),
+                            applicability_node.clone(),
+                        );
+                        insert_edge(
+                            &mut nodes,
+                            &mut edges,
+                            applicability_node,
+                            binding_node.clone(),
+                        );
+                    } else {
+                        insert_edge(&mut nodes, &mut edges, source.clone(), binding_node.clone());
+                    }
+                    insert_edge(&mut nodes, &mut edges, binding_node, case_node.clone());
+                    insert_edge(&mut nodes, &mut edges, case_node, claim_node.clone());
+                    if let Some(judgment_node) = current_judgment_node(model, claim_id) {
+                        insert_edge(&mut nodes, &mut edges, claim_node, judgment_node);
+                    }
                 }
             }
             DecisionKind::ClaimJudgment => {
@@ -292,21 +388,33 @@ pub fn project_decision_impacts(
 
 pub fn project_current_decision_impacts(model: &Model) -> DecisionImpactProjection {
     let mut targets = Vec::new();
-    for qualification in model.qualifications() {
+    for qualification in model.method_qualifications() {
+        if model
+            .expected_method_qualification_fingerprint(qualification)
+            .is_some_and(|expected| expected == qualification.fingerprint)
+        {
+            targets.push(DecisionReference {
+                kind: DecisionKind::MethodQualification,
+                id: qualification.id.clone(),
+                fingerprint: qualification.fingerprint.clone(),
+            });
+        }
+    }
+    for decision in model.applicability_decisions() {
         let Some(binding) = model
             .evidence_bindings()
-            .find(|binding| binding.id == qualification.id)
+            .find(|binding| binding.id == decision.id)
         else {
             continue;
         };
         if model
-            .expected_qualification_fingerprint(binding)
-            .is_some_and(|expected| expected == qualification.fingerprint)
+            .expected_applicability_fingerprint(binding)
+            .is_some_and(|expected| expected == decision.fingerprint)
         {
             targets.push(DecisionReference {
-                kind: DecisionKind::Qualification,
-                id: qualification.id.clone(),
-                fingerprint: qualification.fingerprint.clone(),
+                kind: DecisionKind::ApplicabilityDecision,
+                id: decision.id.clone(),
+                fingerprint: decision.fingerprint.clone(),
             });
         }
     }
@@ -344,8 +452,9 @@ fn current_judgment_node(model: &Model, claim_id: &str) -> Option<DecisionImpact
 fn decision_node(target: &DecisionReference) -> DecisionImpactNode {
     impact_node(
         match target.kind {
-            DecisionKind::Qualification => ImpactNodeKind::Qualification,
+            DecisionKind::ApplicabilityDecision => ImpactNodeKind::ApplicabilityDecision,
             DecisionKind::ClaimJudgment => ImpactNodeKind::ClaimJudgment,
+            DecisionKind::MethodQualification => ImpactNodeKind::MethodQualification,
         },
         &target.id,
         Some(target.fingerprint.clone()),
@@ -374,10 +483,10 @@ fn insert_edge(
 impl TraceabilityReport {
     pub fn to_json(&self) -> Json {
         Json::obj(vec![
-            ("version", Json::Num(2.0)),
+            ("version", Json::Num(3.0)),
             (
-                "claims",
-                Json::Arr(self.claims.iter().map(TraceabilityClaim::to_json).collect()),
+                "cases",
+                Json::Arr(self.cases.iter().map(TraceabilityCase::to_json).collect()),
             ),
             (
                 "challenge_resolutions",
@@ -393,11 +502,11 @@ impl TraceabilityReport {
     }
 }
 
-impl TraceabilityClaim {
+impl TraceabilityCase {
     fn to_json(&self) -> Json {
         Json::obj(vec![
             ("id", Json::str(&self.id)),
-            ("parent_requirement", Json::str(&self.parent_requirement)),
+            ("parent_claim", Json::str(&self.parent_claim)),
             (
                 "criticality",
                 self.criticality
@@ -510,15 +619,32 @@ impl TraceabilityVerification {
             ("applicable", Json::Bool(self.applicable)),
             ("current", Json::Bool(self.current)),
             (
-                "qualification",
-                self.qualification
+                "method_qualification",
+                self.method_qualification
                     .as_ref()
                     .map(Json::str)
                     .unwrap_or(Json::Null),
             ),
             (
-                "verdict",
-                self.verdict.as_ref().map(Json::str).unwrap_or(Json::Null),
+                "method_verdict",
+                self.method_verdict
+                    .as_ref()
+                    .map(Json::str)
+                    .unwrap_or(Json::Null),
+            ),
+            (
+                "applicability_decision",
+                self.applicability_decision
+                    .as_ref()
+                    .map(Json::str)
+                    .unwrap_or(Json::Null),
+            ),
+            (
+                "applicability_verdict",
+                self.applicability_verdict
+                    .as_ref()
+                    .map(Json::str)
+                    .unwrap_or(Json::Null),
             ),
         ])
     }

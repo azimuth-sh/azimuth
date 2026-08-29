@@ -147,6 +147,7 @@ pub struct ActualSelection {
 pub struct CheckSelection {
     pub id: String,
     pub fingerprint: String,
+    pub cases: Vec<String>,
     pub implementations: Vec<Implementation>,
     pub units: Vec<WorkUnit>,
 }
@@ -204,9 +205,11 @@ pub struct ChallengeScopeItem {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ChallengeScopeKind {
+    ApplicabilityDecision,
+    Case,
     Claim,
     Binding,
-    Qualification,
+    MethodQualification,
     ClaimJudgment,
     Check,
     CheckImplementation,
@@ -226,9 +229,11 @@ pub enum ChallengeScopeKind {
 impl ChallengeScopeKind {
     pub fn name(self) -> &'static str {
         match self {
+            Self::ApplicabilityDecision => "applicability-decision",
+            Self::Case => "case",
             Self::Claim => "claim",
             Self::Binding => "binding",
-            Self::Qualification => "qualification",
+            Self::MethodQualification => "method-qualification",
             Self::ClaimJudgment => "claim-judgment",
             Self::Check => "check",
             Self::CheckImplementation => "check-implementation",
@@ -262,15 +267,17 @@ pub struct ChallengeTarget {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChallengeTargetKind {
-    Qualification,
+    ApplicabilityDecision,
     ClaimJudgment,
+    MethodQualification,
 }
 
 impl ChallengeTargetKind {
     pub fn name(self) -> &'static str {
         match self {
-            Self::Qualification => "qualification",
+            Self::ApplicabilityDecision => "applicability-decision",
             Self::ClaimJudgment => "claim-judgment",
+            Self::MethodQualification => "method-qualification",
         }
     }
 }
@@ -591,7 +598,7 @@ impl ActivityStatus {
 pub struct CheckExecution {
     pub check: CheckRef,
     pub units: Vec<CheckExecutionUnit>,
-    pub observation: Observation,
+    pub observations: Vec<Observation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -610,7 +617,7 @@ pub struct CheckExecutionUnit {
 pub struct CheckAttempt {
     pub ordinal: u64,
     pub activity: String,
-    pub outcome: ObservationOutcome,
+    pub outcomes: BTreeMap<String, ObservationOutcome>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -632,6 +639,7 @@ impl ObservationOutcome {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Observation {
+    pub case: String,
     pub outcome: ObservationOutcome,
     pub observed_at_ms: u64,
     pub fingerprint: String,
@@ -1317,13 +1325,14 @@ fn parse_check_selection(value: &Json, where_: &str) -> Result<CheckSelection, S
     let object = object(
         value,
         where_,
-        &["id", "fingerprint", "implementations", "units"],
+        &["id", "fingerprint", "cases", "implementations", "units"],
     )?;
     let implementations = parse_array(object, "implementations", where_, parse_implementation)?;
     let units = parse_array(object, "units", where_, parse_work_unit)?;
     Ok(CheckSelection {
         id: id(object, "id", where_)?,
         fingerprint: fingerprint(object, "fingerprint", where_)?,
+        cases: string_set(object, "cases", where_)?,
         implementations,
         units,
     })
@@ -1394,9 +1403,11 @@ fn parse_challenge_scope(value: &Json, where_: &str) -> Result<ChallengeScope, S
 fn parse_challenge_scope_item(value: &Json, where_: &str) -> Result<ChallengeScopeItem, String> {
     let object = object(value, where_, &["kind", "id", "fingerprint"])?;
     let kind = match string(object, "kind", where_)? {
+        "applicability-decision" => ChallengeScopeKind::ApplicabilityDecision,
+        "case" => ChallengeScopeKind::Case,
         "claim" => ChallengeScopeKind::Claim,
         "binding" => ChallengeScopeKind::Binding,
-        "qualification" => ChallengeScopeKind::Qualification,
+        "method-qualification" => ChallengeScopeKind::MethodQualification,
         "claim-judgment" => ChallengeScopeKind::ClaimJudgment,
         "check" => ChallengeScopeKind::Check,
         "check-implementation" => ChallengeScopeKind::CheckImplementation,
@@ -1431,13 +1442,14 @@ fn parse_challenger_ref(value: &Json, where_: &str) -> Result<ChallengerRef, Str
 fn parse_target(value: &Json, where_: &str) -> Result<ChallengeTarget, String> {
     let object = object(value, where_, &["kind", "id", "fingerprint"])?;
     let kind = match string(object, "kind", where_)? {
-        "qualification" => ChallengeTargetKind::Qualification,
+        "applicability-decision" => ChallengeTargetKind::ApplicabilityDecision,
         "claim-judgment" => ChallengeTargetKind::ClaimJudgment,
+        "method-qualification" => ChallengeTargetKind::MethodQualification,
         other => return Err(format!("{where_}.kind has unsupported value `{other}`")),
     };
     let target_id = nonempty(object, "id", where_)?;
     match kind {
-        ChallengeTargetKind::Qualification => {
+        ChallengeTargetKind::ApplicabilityDecision | ChallengeTargetKind::MethodQualification => {
             validate_id(&target_id, true).map_err(|reason| format!("{where_}.id: {reason}"))?
         }
         ChallengeTargetKind::ClaimJudgment => {
@@ -1882,7 +1894,7 @@ fn parse_activity(value: &Json, where_: &str) -> Result<Activity, String> {
 }
 
 fn parse_check_execution(value: &Json, where_: &str) -> Result<CheckExecution, String> {
-    let object = object(value, where_, &["check", "units", "observation"])?;
+    let object = object(value, where_, &["check", "units", "observations"])?;
     let units = parse_array(object, "units", where_, parse_check_unit)?;
     Ok(CheckExecution {
         check: parse_check_ref(
@@ -1890,10 +1902,7 @@ fn parse_check_execution(value: &Json, where_: &str) -> Result<CheckExecution, S
             &format!("{where_}.check"),
         )?,
         units,
-        observation: parse_observation(
-            required(object, "observation", where_)?,
-            &format!("{where_}.observation"),
-        )?,
+        observations: parse_array(object, "observations", where_, parse_observation)?,
     })
 }
 
@@ -1915,17 +1924,15 @@ fn parse_check_unit(value: &Json, where_: &str) -> Result<CheckExecutionUnit, St
 }
 
 fn parse_check_attempt(value: &Json, where_: &str) -> Result<CheckAttempt, String> {
-    let object = object(value, where_, &["ordinal", "activity", "outcome"])?;
-    let outcome = match string(object, "outcome", where_)? {
-        "satisfied" => ObservationOutcome::Satisfied,
-        "violated" => ObservationOutcome::Violated,
-        "inconclusive" => ObservationOutcome::Inconclusive,
-        other => return Err(format!("{where_}.outcome has unsupported value `{other}`")),
-    };
+    let object = object(value, where_, &["ordinal", "activity", "outcomes"])?;
+    let outcomes = observation_outcomes(
+        required(object, "outcomes", where_)?,
+        &format!("{where_}.outcomes"),
+    )?;
     Ok(CheckAttempt {
         ordinal: integer(object, "ordinal", where_)?,
         activity: id(object, "activity", where_)?,
-        outcome,
+        outcomes,
     })
 }
 
@@ -1934,6 +1941,7 @@ fn parse_observation(value: &Json, where_: &str) -> Result<Observation, String> 
         value,
         where_,
         &[
+            "case",
             "outcome",
             "observed_at_ms",
             "fingerprint",
@@ -1948,12 +1956,40 @@ fn parse_observation(value: &Json, where_: &str) -> Result<Observation, String> 
         other => return Err(format!("{where_}.outcome has unsupported value `{other}`")),
     };
     Ok(Observation {
+        case: nonempty(object, "case", where_)?,
         outcome,
         observed_at_ms: integer(object, "observed_at_ms", where_)?,
         fingerprint: fingerprint(object, "fingerprint", where_)?,
         artifacts: string_set(object, "artifacts", where_)?,
         diagnostics: string_set(object, "diagnostics", where_)?,
     })
+}
+
+fn observation_outcomes(
+    value: &Json,
+    where_: &str,
+) -> Result<BTreeMap<String, ObservationOutcome>, String> {
+    let entries = object_pairs(value, where_)?;
+    if entries.is_empty() {
+        return Err(format!("{where_} must not be empty"));
+    }
+    let mut outcomes = BTreeMap::new();
+    for (case, value) in entries {
+        let Json::Str(value) = value else {
+            return Err(format!("{where_}.{case} must be a string"));
+        };
+        let outcome = match value.as_str() {
+            "satisfied" => ObservationOutcome::Satisfied,
+            "violated" => ObservationOutcome::Violated,
+            "inconclusive" => ObservationOutcome::Inconclusive,
+            other => return Err(format!("{where_}.{case} has unsupported value `{other}`")),
+        };
+        validate_case_id(case).map_err(|reason| format!("{where_}.{case}: {reason}"))?;
+        if outcomes.insert(case.clone(), outcome).is_some() {
+            return Err(format!("{where_} repeats Case `{case}`"));
+        }
+    }
+    Ok(outcomes)
 }
 
 fn parse_challenger_execution(value: &Json, where_: &str) -> Result<ChallengerExecution, String> {
@@ -2314,13 +2350,21 @@ fn validate_capability_address(value: &str) -> Result<(), String> {
 }
 
 fn validate_claim_id(value: &str) -> Result<(), String> {
-    let Some((spec, case)) = value.split_once('#') else {
-        return Err("must have exact `<spec-id>#<case-id>` form".into());
+    let Some((spec, claim)) = value.split_once('#') else {
+        return Err("must have exact `<spec-id>#<claim-id>` form".into());
     };
     if value.matches('#').count() != 1 {
         return Err("must contain exactly one `#`".into());
     }
     validate_id(spec, true)?;
+    validate_id(claim, false)
+}
+
+fn validate_case_id(value: &str) -> Result<(), String> {
+    let Some((claim, case)) = value.rsplit_once('/') else {
+        return Err("must have exact `<spec-id>#<claim-id>/<case-id>` form".into());
+    };
+    validate_claim_id(claim)?;
     validate_id(case, false)
 }
 
@@ -2446,11 +2490,15 @@ fn unsafe_number_paths(bundle: &RunBundle) -> Vec<String> {
                 );
             }
         }
-        record_unsafe_number(
-            &mut paths,
-            &format!("check_executions[{execution_index}].observation.observed_at_ms"),
-            execution.observation.observed_at_ms,
-        );
+        for (observation_index, observation) in execution.observations.iter().enumerate() {
+            record_unsafe_number(
+                &mut paths,
+                &format!(
+                    "check_executions[{execution_index}].observations[{observation_index}].observed_at_ms"
+                ),
+                observation.observed_at_ms,
+            );
+        }
     }
     for (execution_index, execution) in bundle.challenger_executions.iter().enumerate() {
         for (unit_index, unit) in execution.units.iter().enumerate() {
@@ -3176,13 +3224,17 @@ fn collect_plan_array_errors(plan: &Plan, errors: &mut Vec<SchemaError>) {
         }
     }
     for check in &plan.checks {
-        if check.implementations.is_empty() || check.units.is_empty() {
+        if check.cases.is_empty() || check.implementations.is_empty() || check.units.is_empty() {
             errors.push(SchemaError {
                 path: format!("$.checks.{}", check.id),
-                detail: "must have non-empty implementation and unit sets".into(),
+                detail: "must have non-empty Case, implementation and unit sets".into(),
             });
         }
         for (suffix, result) in [
+            (
+                "cases",
+                ensure_sorted_unique(&check.cases, Clone::clone, "cases"),
+            ),
             (
                 "implementations",
                 ensure_sorted_unique(
@@ -3199,6 +3251,14 @@ fn collect_plan_array_errors(plan: &Plan, errors: &mut Vec<SchemaError>) {
             if let Err(detail) = result {
                 errors.push(SchemaError {
                     path: format!("$.checks.{}.{suffix}", check.id),
+                    detail,
+                });
+            }
+        }
+        for case in &check.cases {
+            if let Err(detail) = validate_case_id(case) {
+                errors.push(SchemaError {
+                    path: format!("$.checks.{}.cases", check.id),
                     detail,
                 });
             }
@@ -3431,9 +3491,13 @@ pub fn run_id(bundle: &RunBundle) -> String {
     ]))
 }
 
-pub fn observation_fingerprint(bundle: &RunBundle, execution: &CheckExecution) -> String {
+pub fn observation_fingerprint(
+    bundle: &RunBundle,
+    execution: &CheckExecution,
+    observation: &Observation,
+) -> String {
     assert!(
-        execution.observation.observed_at_ms <= MAX_SAFE_INTEGER,
+        observation.observed_at_ms <= MAX_SAFE_INTEGER,
         "unsafe Observation number must be rejected before fingerprinting"
     );
     jcs_sha256(&Json::obj(vec![
@@ -3451,11 +3515,12 @@ pub fn observation_fingerprint(bundle: &RunBundle, execution: &CheckExecution) -
                 ("fingerprint", Json::str(&execution.check.fingerprint)),
             ]),
         ),
+        ("case", Json::str(&observation.case)),
         ("context", map_json(&bundle.actual_selection.context)),
-        ("outcome", Json::str(execution.observation.outcome.name())),
+        ("outcome", Json::str(observation.outcome.name())),
         (
             "observed_at_ms",
-            Json::Num(execution.observation.observed_at_ms as f64),
+            Json::Num(observation.observed_at_ms as f64),
         ),
     ]))
 }
@@ -3728,6 +3793,10 @@ fn check_selection_json(item: &CheckSelection) -> Json {
     Json::obj(vec![
         ("id", Json::str(&item.id)),
         ("fingerprint", Json::str(&item.fingerprint)),
+        (
+            "cases",
+            Json::Arr(item.cases.iter().map(Json::str).collect()),
+        ),
         (
             "implementations",
             Json::Arr(
@@ -4089,23 +4158,8 @@ fn check_execution_json(item: &CheckExecution) -> Json {
             Json::Arr(item.units.iter().map(check_execution_unit_json).collect()),
         ),
         (
-            "observation",
-            Json::obj(vec![
-                ("outcome", Json::str(item.observation.outcome.name())),
-                (
-                    "observed_at_ms",
-                    Json::Num(item.observation.observed_at_ms as f64),
-                ),
-                ("fingerprint", Json::str(&item.observation.fingerprint)),
-                (
-                    "artifacts",
-                    Json::Arr(item.observation.artifacts.iter().map(Json::str).collect()),
-                ),
-                (
-                    "diagnostics",
-                    Json::Arr(item.observation.diagnostics.iter().map(Json::str).collect()),
-                ),
-            ]),
+            "observations",
+            Json::Arr(item.observations.iter().map(observation_json).collect()),
         ),
     ])
 }
@@ -4122,11 +4176,39 @@ fn check_execution_unit_json(item: &CheckExecutionUnit) -> Json {
                         Json::obj(vec![
                             ("ordinal", Json::Num(attempt.ordinal as f64)),
                             ("activity", Json::str(&attempt.activity)),
-                            ("outcome", Json::str(attempt.outcome.name())),
+                            (
+                                "outcomes",
+                                Json::Obj(
+                                    attempt
+                                        .outcomes
+                                        .iter()
+                                        .map(|(case, outcome)| {
+                                            (case.clone(), Json::str(outcome.name()))
+                                        })
+                                        .collect(),
+                                ),
+                            ),
                         ])
                     })
                     .collect(),
             ),
+        ),
+    ])
+}
+
+fn observation_json(item: &Observation) -> Json {
+    Json::obj(vec![
+        ("case", Json::str(&item.case)),
+        ("outcome", Json::str(item.outcome.name())),
+        ("observed_at_ms", Json::Num(item.observed_at_ms as f64)),
+        ("fingerprint", Json::str(&item.fingerprint)),
+        (
+            "artifacts",
+            Json::Arr(item.artifacts.iter().map(Json::str).collect()),
+        ),
+        (
+            "diagnostics",
+            Json::Arr(item.diagnostics.iter().map(Json::str).collect()),
         ),
     ])
 }
@@ -4516,6 +4598,12 @@ fn validate_canonical_arrays(bundle: &RunBundle, add: &mut impl FnMut(&str, Stri
     ] {
         for check in checks {
             canonical(
+                &check.cases,
+                Clone::clone,
+                &format!("{label}.{}.cases", check.id),
+                add,
+            );
+            canonical(
                 &check.implementations,
                 |item| item.identity.clone(),
                 &format!("{label}.{}.implementations", check.id),
@@ -4675,17 +4763,25 @@ fn validate_canonical_arrays(bundle: &RunBundle, add: &mut impl FnMut(&str, Stri
             add,
         );
         canonical(
-            &execution.observation.artifacts,
-            Clone::clone,
-            "observation.artifacts",
+            &execution.observations,
+            |item| item.case.clone(),
+            "observations",
             add,
         );
-        canonical(
-            &execution.observation.diagnostics,
-            Clone::clone,
-            "observation.diagnostics",
-            add,
-        );
+        for observation in &execution.observations {
+            canonical(
+                &observation.artifacts,
+                Clone::clone,
+                "observation.artifacts",
+                add,
+            );
+            canonical(
+                &observation.diagnostics,
+                Clone::clone,
+                "observation.diagnostics",
+                add,
+            );
+        }
     }
     for execution in &bundle.challenger_executions {
         canonical(
@@ -4902,11 +4998,11 @@ fn validate_selection(bundle: &RunBundle, add: &mut impl FnMut(&str, String)) {
         );
     }
     for check in &bundle.plan.checks {
-        if check.implementations.is_empty() || check.units.is_empty() {
+        if check.cases.is_empty() || check.implementations.is_empty() || check.units.is_empty() {
             add(
                 "run/plan-cardinality",
                 format!(
-                    "planned Check `{}` has an empty implementation or unit set",
+                    "planned Check `{}` has an empty Case, implementation or unit set",
                     check.id
                 ),
             );
@@ -4932,6 +5028,15 @@ fn validate_selection(bundle: &RunBundle, add: &mut impl FnMut(&str, String)) {
             add(
                 "run/check-substitution",
                 format!("actual Check `{}` changes its fingerprint", actual.id),
+            );
+        }
+        if actual.cases != planned.cases {
+            add(
+                "run/check-case-substitution",
+                format!(
+                    "actual Check `{}` must repeat every planned Case",
+                    actual.id
+                ),
             );
         }
         if actual.implementations != planned.implementations {
@@ -5325,7 +5430,24 @@ fn validate_check_execution(
             ),
         );
     }
-    let mut reduced = Vec::new();
+    let selected_cases = actual
+        .map(|item| item.cases.iter().cloned().collect::<BTreeSet<_>>())
+        .unwrap_or_default();
+    let observation_cases = execution
+        .observations
+        .iter()
+        .map(|observation| observation.case.clone())
+        .collect::<BTreeSet<_>>();
+    if observation_cases != selected_cases || execution.observations.len() != selected_cases.len() {
+        add(
+            "run/observation-case-cardinality",
+            format!(
+                "Check `{}` must produce exactly one Observation for every selected Case",
+                execution.check.id
+            ),
+        );
+    }
+    let mut reduced = BTreeMap::<String, Vec<ObservationOutcome>>::new();
     let mut latest_finish = 0;
     for unit in &execution.units {
         if unit.attempts.is_empty() {
@@ -5336,7 +5458,12 @@ fn validate_check_execution(
                     execution.check.id, unit.id
                 ),
             );
-            reduced.push(ObservationOutcome::Inconclusive);
+            for case in &selected_cases {
+                reduced
+                    .entry(case.clone())
+                    .or_default()
+                    .push(ObservationOutcome::Inconclusive);
+            }
             continue;
         }
         validate_attempt_ordinals_and_activity_uniqueness(
@@ -5346,8 +5473,17 @@ fn validate_check_execution(
             &format!("Check `{}` unit `{}`", execution.check.id, unit.id),
             add,
         );
-        let mut violation = false;
         for attempt in &unit.attempts {
+            let attempt_cases = attempt.outcomes.keys().cloned().collect::<BTreeSet<_>>();
+            if attempt_cases != selected_cases {
+                add(
+                    "run/check-attempt-case-cardinality",
+                    format!(
+                        "Check `{}` unit `{}` attempt {} outcomes must exactly match selected Cases",
+                        execution.check.id, unit.id, attempt.ordinal
+                    ),
+                );
+            }
             match activities.get(attempt.activity.as_str()) {
                 None => add(
                     "run/unresolved-activity",
@@ -5359,7 +5495,10 @@ fn validate_check_execution(
                 Some(activity) => {
                     latest_finish = latest_finish.max(activity.finished_at_ms);
                     if activity.status != ActivityStatus::Completed
-                        && attempt.outcome != ObservationOutcome::Inconclusive
+                        && attempt
+                            .outcomes
+                            .values()
+                            .any(|outcome| *outcome != ObservationOutcome::Inconclusive)
                     {
                         add(
                             "run/activity-outcome-mismatch",
@@ -5371,74 +5510,84 @@ fn validate_check_execution(
                     }
                 }
             }
-            violation |= attempt.outcome == ObservationOutcome::Violated;
         }
-        let unit_outcome = if violation {
+        for case in &selected_cases {
+            let violation = unit
+                .attempts
+                .iter()
+                .any(|attempt| attempt.outcomes.get(case) == Some(&ObservationOutcome::Violated));
+            let unit_outcome = if violation {
+                ObservationOutcome::Violated
+            } else if unit.attempts.last().is_some_and(|attempt| {
+                attempt.outcomes.get(case) == Some(&ObservationOutcome::Satisfied)
+                    && activities
+                        .get(attempt.activity.as_str())
+                        .is_some_and(|activity| activity.status == ActivityStatus::Completed)
+            }) {
+                ObservationOutcome::Satisfied
+            } else {
+                ObservationOutcome::Inconclusive
+            };
+            reduced.entry(case.clone()).or_default().push(unit_outcome);
+        }
+    }
+    let complete_planned_check = actual.zip(planned).is_some_and(|(actual, planned)| {
+        actual.fingerprint == planned.fingerprint
+            && actual.cases == planned.cases
+            && actual.implementations == planned.implementations
+            && actual.units == planned.units
+    });
+    for observation in &execution.observations {
+        let case_outcomes = reduced.get(&observation.case).cloned().unwrap_or_default();
+        let expected = if case_outcomes.contains(&ObservationOutcome::Violated) {
             ObservationOutcome::Violated
-        } else if unit.attempts.last().is_some_and(|attempt| {
-            attempt.outcome == ObservationOutcome::Satisfied
-                && activities
-                    .get(attempt.activity.as_str())
-                    .is_some_and(|activity| activity.status == ActivityStatus::Completed)
-        }) {
+        } else if complete_planned_check
+            && !case_outcomes.is_empty()
+            && case_outcomes
+                .iter()
+                .all(|item| *item == ObservationOutcome::Satisfied)
+        {
             ObservationOutcome::Satisfied
         } else {
             ObservationOutcome::Inconclusive
         };
-        reduced.push(unit_outcome);
-    }
-    let complete_planned_check = actual.zip(planned).is_some_and(|(actual, planned)| {
-        actual.fingerprint == planned.fingerprint
-            && actual.implementations == planned.implementations
-            && actual.units == planned.units
-    });
-    let expected = if reduced.contains(&ObservationOutcome::Violated) {
-        ObservationOutcome::Violated
-    } else if complete_planned_check
-        && !reduced.is_empty()
-        && reduced
-            .iter()
-            .all(|item| *item == ObservationOutcome::Satisfied)
-    {
-        ObservationOutcome::Satisfied
-    } else {
-        ObservationOutcome::Inconclusive
-    };
-    if execution.observation.outcome != expected {
-        add(
-            "run/observation-reduction",
-            format!(
-                "Check `{}` Observation must reduce to `{}`",
-                execution.check.id,
-                expected.name()
-            ),
+        if observation.outcome != expected {
+            add(
+                "run/observation-reduction",
+                format!(
+                    "Check `{}` Case `{}` Observation must reduce to `{}`",
+                    execution.check.id,
+                    observation.case,
+                    expected.name()
+                ),
+            );
+        }
+        validate_result_time(
+            observation.observed_at_ms,
+            latest_finish,
+            bundle,
+            "Observation",
+            add,
         );
-    }
-    validate_result_time(
-        execution.observation.observed_at_ms,
-        latest_finish,
-        bundle,
-        "Observation",
-        add,
-    );
-    validate_refs(
-        &execution.observation.artifacts,
-        artifacts,
-        "Observation artifact",
-        add,
-    );
-    validate_map_refs(
-        &execution.observation.diagnostics,
-        diagnostics,
-        "Observation diagnostic",
-        add,
-    );
-    let expected_fingerprint = observation_fingerprint(bundle, execution);
-    if execution.observation.fingerprint != expected_fingerprint {
-        add(
-            "run/observation-fingerprint",
-            format!("Observation fingerprint must be `{expected_fingerprint}`"),
+        validate_refs(
+            &observation.artifacts,
+            artifacts,
+            "Observation artifact",
+            add,
         );
+        validate_map_refs(
+            &observation.diagnostics,
+            diagnostics,
+            "Observation diagnostic",
+            add,
+        );
+        let expected_fingerprint = observation_fingerprint(bundle, execution, observation);
+        if observation.fingerprint != expected_fingerprint {
+            add(
+                "run/observation-fingerprint",
+                format!("Observation fingerprint must be `{expected_fingerprint}`"),
+            );
+        }
     }
 }
 

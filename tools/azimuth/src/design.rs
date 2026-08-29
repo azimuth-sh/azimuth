@@ -5,15 +5,16 @@
 //! **falsifiable assertion about a named artifact**. When the code stops matching, that is a
 //! Finding rather than stale prose, which is what design documents have never had.
 //!
-//! Required for `critical` requirements, optional for `standard`, absent for `routine`
+//! Required for `critical` Claims, optional for `standard`, absent for `routine`
 //! (contracts/spec.md, criticality).
 
 use crate::diag::{validate_id, Diag};
+use crate::json::{self, Json};
 use crate::labels::read_block;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const ENTRY_LABELS: &[&str] = &["Mechanism", "Enforcement", "Binding", "Expect"];
+const ENTRY_LABELS: &[&str] = &["Mechanism", "Enforcement", "Cases", "Binding", "Expect"];
 
 /// The enforcement ladder, strongest first. Strength is never written: it is derived from the
 /// kind, and writing it would duplicate a derivable fact.
@@ -80,6 +81,9 @@ pub struct Mechanism {
     /// symbol rename nor a source address becomes the conceptual identity by accident.
     pub id: String,
     pub kind: Enforcement,
+    /// Empty means the mechanism bears on the complete Claim. Otherwise these are exact local
+    /// Case ids whose relevance is reviewed as part of total Claim composition.
+    pub cases: Vec<String>,
     /// Explicit for non-code artifacts. Code extractors normally derive this from an
     /// `ImplementsMechanism` site instead.
     pub binding: Option<String>,
@@ -90,17 +94,16 @@ pub struct Mechanism {
 }
 
 /// An entry keys on the coarsest level where its statement is true. One unique index makes all
-/// three `captured-once` scenarios true, and recording it three times would be duplication.
+/// several `captured-once` Cases true, and recording it repeatedly would be duplication.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Target {
-    Requirement(String),
-    Scenario(String),
+    Claim(String),
 }
 
 impl Target {
     pub fn id(&self) -> &str {
         match self {
-            Target::Requirement(id) | Target::Scenario(id) => id,
+            Target::Claim(id) => id,
         }
     }
 }
@@ -123,16 +126,10 @@ pub struct Design {
 }
 
 impl Design {
-    pub fn for_requirement(&self, id: &str) -> Option<&DesignEntry> {
+    pub fn for_claim(&self, id: &str) -> Option<&DesignEntry> {
         self.entries
             .iter()
-            .find(|e| e.target == Target::Requirement(id.to_string()))
-    }
-
-    pub fn for_scenario(&self, id: &str) -> Option<&DesignEntry> {
-        self.entries
-            .iter()
-            .find(|e| e.target == Target::Scenario(id.to_string()))
+            .find(|e| e.target == Target::Claim(id.to_string()))
     }
 }
 
@@ -254,18 +251,8 @@ pub fn parse_design(path: &str, source: &str) -> Result<Design, Vec<Diag>> {
         }
 
         let target = trimmed
-            .strip_prefix("## Requirement:")
-            .map(|r| {
-                (
-                    Target::Requirement(r.trim().to_string()),
-                    r.trim().to_string(),
-                )
-            })
-            .or_else(|| {
-                trimmed
-                    .strip_prefix("## Claim:")
-                    .map(|r| (Target::Scenario(r.trim().to_string()), r.trim().to_string()))
-            });
+            .strip_prefix("## Claim:")
+            .map(|r| (Target::Claim(r.trim().to_string()), r.trim().to_string()));
 
         if let Some((target, id)) = target {
             let (block, next) = read_block(&lines, i + 1, ENTRY_LABELS);
@@ -312,6 +299,7 @@ pub fn parse_design(path: &str, source: &str) -> Result<Design, Vec<Diag>> {
                             id: label.value.clone(),
                             line: label.line,
                             kind: None,
+                            cases: Vec::new(),
                             binding: None,
                             expected_unique: None,
                             expected_columns: Vec::new(),
@@ -340,6 +328,28 @@ pub fn parse_design(path: &str, source: &str) -> Result<Design, Vec<Diag>> {
                             label.line,
                             "`Enforcement:` with no mechanism",
                             "a `Mechanism:` line before it",
+                        )),
+                    },
+                    "Cases" => match pending.as_mut() {
+                        Some(draft) if draft.kind.is_some() && draft.cases.is_empty() => {
+                            draft.cases = parse_cases(path, label.line, &label.value, &mut errors);
+                        }
+                        Some(draft) if draft.kind.is_none() => errors.push(Diag::expecting(
+                            path,
+                            label.line,
+                            "`Cases:` with no enforcement",
+                            "an `Enforcement:` line before it",
+                        )),
+                        Some(_) => errors.push(Diag::at(
+                            path,
+                            label.line,
+                            "a mechanism declares Case relevance twice",
+                        )),
+                        None => errors.push(Diag::expecting(
+                            path,
+                            label.line,
+                            "`Cases:` with no mechanism",
+                            "a `Mechanism:` and `Enforcement:` before it",
                         )),
                     },
                     "Binding" => match pending.as_mut() {
@@ -465,7 +475,7 @@ pub fn parse_design(path: &str, source: &str) -> Result<Design, Vec<Diag>> {
                 path,
                 ln,
                 format!("unrecognized heading `{trimmed}`"),
-                "`# Design:`, `## Requirement:`, `## Claim:` or `## Residue`",
+                "`# Design:`, `## Claim:` or `## Residue`",
             ));
         }
         i += 1;
@@ -497,10 +507,67 @@ struct MechanismDraft {
     id: String,
     line: usize,
     kind: Option<Enforcement>,
+    cases: Vec<String>,
     binding: Option<String>,
     expected_unique: Option<bool>,
     expected_columns: Vec<String>,
     expected_predicate: Option<String>,
+}
+
+fn parse_cases(path: &str, line: usize, value: &str, errors: &mut Vec<Diag>) -> Vec<String> {
+    let parsed = match json::parse(value) {
+        Ok(Json::Arr(items)) => items,
+        Ok(_) => {
+            errors.push(Diag::expecting(
+                path,
+                line,
+                "Cases is not an array",
+                "a non-empty JSON array of unique local Case ids",
+            ));
+            return Vec::new();
+        }
+        Err(reason) => {
+            errors.push(Diag::at(
+                path,
+                line,
+                format!("invalid Cases JSON: {reason}"),
+            ));
+            return Vec::new();
+        }
+    };
+    let mut cases = Vec::new();
+    for item in parsed {
+        let Json::Str(id) = item else {
+            errors.push(Diag::expecting(
+                path,
+                line,
+                "Cases contains a non-string value",
+                "a non-empty JSON array of unique local Case ids",
+            ));
+            continue;
+        };
+        if validate_id(&id, false).is_err() {
+            errors.push(Diag::at(path, line, format!("invalid Case id `{id}`")));
+        }
+        cases.push(id);
+    }
+    let authored_cases = cases.clone();
+    cases.sort();
+    let original_len = cases.len();
+    cases.dedup();
+    if cases.is_empty() {
+        errors.push(Diag::at(path, line, "Cases must not be empty"));
+    } else if cases.len() != original_len {
+        errors.push(Diag::at(path, line, "Cases repeats a Case id"));
+    } else if cases != authored_cases {
+        errors.push(Diag::expecting(
+            path,
+            line,
+            "Cases is not sorted",
+            "local Case ids in ascending byte order",
+        ));
+    }
+    cases
 }
 
 fn finish_mechanism(
@@ -522,6 +589,7 @@ fn finish_mechanism(
     mechanisms.push(Mechanism {
         id: draft.id,
         kind,
+        cases: draft.cases,
         binding: draft.binding,
         expected_unique: draft.expected_unique,
         expected_columns: draft.expected_columns,

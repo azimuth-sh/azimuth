@@ -1,4 +1,4 @@
-ARG AZIMUTH_VERSION=0.1.0-alpha.2
+ARG AZIMUTH_VERSION=0.1.0-alpha.3
 
 FROM rust:1.87-bookworm AS build
 WORKDIR /source

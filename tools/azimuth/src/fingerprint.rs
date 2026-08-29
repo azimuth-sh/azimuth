@@ -243,7 +243,8 @@ pub fn enumerated_surface_member_digest(surface: &str, file: &str) -> String {
 
 pub fn binding_fingerprint(
     binding: &crate::verification::EvidenceBinding,
-    claim_digest: &str,
+    case_digest: &str,
+    method_qualification_fingerprint: &str,
     policy_digest: &str,
 ) -> String {
     use crate::json::Json;
@@ -259,15 +260,15 @@ pub fn binding_fingerprint(
         ("version", Json::Num(1.0)),
         ("id", Json::str(&binding.id)),
         ("check", Json::str(&binding.check)),
-        ("claim_digest", Json::str(claim_digest)),
+        ("case_digest", Json::str(case_digest)),
+        (
+            "method_qualification_fingerprint",
+            Json::str(method_qualification_fingerprint),
+        ),
         ("proposition", Json::str(&binding.proposition)),
         (
-            "form",
-            Json::obj(vec![
-                ("scope", Json::str(binding.scope.name())),
-                ("quantification", Json::str(binding.quantification.name())),
-                ("oracle", Json::str(binding.oracle.name())),
-            ]),
+            "context",
+            crate::verification::context_json(&binding.context),
         ),
         (
             "challenge_domain",
@@ -277,22 +278,64 @@ pub fn binding_fingerprint(
     ]))
 }
 
-pub fn context_fingerprint(binding: &crate::verification::EvidenceBinding) -> String {
-    canonical_sha256(&crate::verification::context_json(&binding.context))
+pub fn context_fingerprint(context: &std::collections::BTreeMap<String, String>) -> String {
+    canonical_sha256(&crate::verification::context_json(context))
 }
 
-pub fn qualification_fingerprint(
+pub fn method_qualification_fingerprint(
+    qualification: &crate::verification::MethodQualification,
     check_fingerprint: &str,
-    binding_fingerprint: &str,
-    context_fingerprint: &str,
+    policy_digest: &str,
 ) -> String {
     use crate::json::Json;
+    let mut challenge_domain = qualification
+        .challenge_domain
+        .iter()
+        .map(|domain| domain.name())
+        .collect::<Vec<_>>();
+    challenge_domain.sort();
+    challenge_domain.dedup();
     canonical_sha256(&Json::obj(vec![
-        ("format", Json::str("azimuth-qualification-fingerprint")),
+        (
+            "format",
+            Json::str("azimuth-method-qualification-fingerprint"),
+        ),
         ("version", Json::Num(1.0)),
+        ("id", Json::str(&qualification.id)),
+        ("check", Json::str(&qualification.check)),
         ("check_fingerprint", Json::str(check_fingerprint)),
+        (
+            "form",
+            Json::obj(vec![
+                ("scope", Json::str(qualification.scope.name())),
+                (
+                    "quantification",
+                    Json::str(qualification.quantification.name()),
+                ),
+                ("oracle", Json::str(qualification.oracle.name())),
+            ]),
+        ),
+        (
+            "context",
+            crate::verification::context_json(&qualification.context),
+        ),
+        (
+            "challenge_domain",
+            Json::Arr(challenge_domain.into_iter().map(Json::str).collect()),
+        ),
+        ("decision_policy_digest", Json::str(policy_digest)),
+    ]))
+}
+
+pub fn applicability_decision_fingerprint(binding_fingerprint: &str) -> String {
+    use crate::json::Json;
+    canonical_sha256(&Json::obj(vec![
+        (
+            "format",
+            Json::str("azimuth-applicability-decision-fingerprint"),
+        ),
+        ("version", Json::Num(1.0)),
         ("binding_fingerprint", Json::str(binding_fingerprint)),
-        ("context_fingerprint", Json::str(context_fingerprint)),
     ]))
 }
 

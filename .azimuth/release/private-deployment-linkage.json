@@ -2,7 +2,7 @@
   "realizes": [
     {
       "spec": "framework/assurance-deployment",
-      "scenario": "deployment-owns-secrets",
+      "claim": "private-network-containment",
       "site": "private_compose_profile",
       "file": "services/assurance/docker-compose.yml",
       "lang": "yaml",
@@ -10,15 +10,7 @@
     },
     {
       "spec": "framework/assurance-deployment",
-      "scenario": "host-bindings-match-private-boundary",
-      "site": "private_compose_profile",
-      "file": "services/assurance/docker-compose.yml",
-      "lang": "yaml",
-      "source_fingerprint": "sha256:fae663b8d9a5cffc89a900dc54b0a0f1c63f73a1272ffc23d901879dba21fb1c"
-    },
-    {
-      "spec": "framework/assurance-deployment",
-      "scenario": "containment-is-not-authentication",
+      "claim": "private-network-containment",
       "site": "private_deployment_account",
       "file": "services/assurance/README.md",
       "lang": "markdown",
@@ -26,7 +18,7 @@
     },
     {
       "spec": "framework/assurance-deployment",
-      "scenario": "history-survives-current-service-recreation",
+      "claim": "assurance-ledger-durability",
       "site": "assurance_data_volume",
       "file": "services/assurance/docker-compose.yml",
       "lang": "yaml",
@@ -34,7 +26,7 @@
     },
     {
       "spec": "framework/assurance-deployment",
-      "scenario": "retained-database-migrates-forward",
+      "claim": "assurance-ledger-durability",
       "site": "assurance_server_startup",
       "file": "services/assurance/server/src/main.rs",
       "lang": "rust",
@@ -42,7 +34,7 @@
     },
     {
       "spec": "framework/assurance-deployment",
-      "scenario": "complete-selected-image-matrix-builds",
+      "claim": "selected-image-platforms-build",
       "site": "build_selected_images",
       "file": "services/assurance/deployment/qualify.py",
       "lang": "python",

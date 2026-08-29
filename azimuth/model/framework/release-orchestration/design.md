@@ -1,6 +1,6 @@
 # Design: framework/release-orchestration
 
-## Requirement: qualification-lanes-converge
+## Claim: qualification-lanes-converge
 Mechanism: retained-candidate-dag
 Enforcement: guard
 Binding: release-rehearsal-account
@@ -10,7 +10,7 @@ lane's immutable outputs and lets a final account job accept only the exact sele
 Ordinary CI retains its one canonical root command but excludes the release-only image matrix.
 Removing the convergence guard would let a partial lane population look like a complete release.
 
-## Requirement: tagged-candidates-are-verifiable
+## Claim: tagged-candidates-are-verifiable
 Mechanism: tagged-subject-manifest
 Enforcement: choke-point
 Binding: release-candidate-manifest
@@ -28,7 +28,7 @@ For a published image digest, the chain requires retained-archive provenance at 
 revision, deterministic archive-to-index identity and registry-digest provenance at the repair
 revision. This distinguishes artifact source from the later operation that made it public.
 
-## Requirement: qualified-candidates-compose
+## Claim: qualified-candidates-compose
 Mechanism: disposable-candidate-consumers
 Enforcement: guard
 Binding: release-consumer-rehearsal
@@ -37,7 +37,7 @@ Disposable Cargo, NuGet and npm consumers install retained archives rather than 
 native runners execute retained CLI archives; emulated image checks start each selected platform.
 Removing these checks would leave packer success as the only evidence that distributions compose.
 
-## Requirement: partial-publication-resumes-safely
+## Claim: partial-publication-resumes-safely
 Mechanism: registry-state-planner
 Enforcement: choke-point
 Binding: release-publication-plan
@@ -79,5 +79,5 @@ condition.
 
 *(revised)* The `v0.1.0-alpha.1` publication discharged that condition and produced the
 first public completion evidence. The condition itself is retained rather than removed: it
-now binds each subsequent immutable version, so `v0.1.0-alpha.2` owes its own completion
+now binds each subsequent immutable version, so `v0.1.0-alpha.3` owes its own completion
 evidence and cannot inherit the first alpha's.

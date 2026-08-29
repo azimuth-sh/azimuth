@@ -4,12 +4,11 @@ namespace Azimuth.Annotations
 {
     /// <summary>
     /// Declares that a production-code site is on a claim's path, by the stable
-    /// <c>(spec-id, scenario-id)</c> pair.
+    /// <c>(spec-id, claim-id)</c> pair.
     /// </summary>
     /// <remarks>
-    /// The pair, not a triple: the requirement id is redundant because scenario ids are unique per
-    /// spec, and redundancy that can go stale is a liability. Dropping it is what makes splitting or
-    /// merging a requirement free — scenarios move between parents without a tag being touched.
+    /// Cases remain repository-owned evidence addresses. They do not enter source markers, so
+    /// refining a Claim's Cases does not duplicate or churn production linkage.
     /// <para>
     /// Carries no form. Form is how a <em>test</em> checks a behaviour, not a property of code.
     /// </para>
@@ -28,18 +27,18 @@ namespace Azimuth.Annotations
         AllowMultiple = true)]
     public sealed class RealizesAttribute : Attribute
     {
-        /// <summary>Tags a site as being on the path of <paramref name="scenario"/>.</summary>
-        public RealizesAttribute(string spec, string scenario)
+        /// <summary>Tags a site as being on the path of <paramref name="claim"/>.</summary>
+        public RealizesAttribute(string spec, string claim)
         {
             Spec = spec;
-            Scenario = scenario;
+            Claim = claim;
         }
 
         /// <summary>Stable spec id.</summary>
         public string Spec { get; }
 
-        /// <summary>Stable scenario id, unique within the spec.</summary>
-        public string Scenario { get; }
+        /// <summary>Stable Claim id within the spec.</summary>
+        public string Claim { get; }
     }
 
     /// <summary>Declares that a production artifact implements a named design mechanism.</summary>

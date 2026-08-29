@@ -65,7 +65,7 @@ impl fmt::Display for Diag {
     }
 }
 
-/// Identifier charset, shared by spec, requirement and scenario ids.
+/// Identifier charset, shared by Spec, Claim and Case ids.
 ///
 /// Lowercase kebab-case. Spec ids additionally admit `/` as a namespace separator — the slash is
 /// part of the id string, never derived from the filesystem (contracts/spec.md).

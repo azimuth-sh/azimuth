@@ -52,7 +52,7 @@ else:
 
 ROOT = Path(__file__).resolve().parent.parent
 REPOSITORY = "azimuth-sh/azimuth"
-USER_AGENT = "azimuth-release/0.1.0-alpha.2 (https://github.com/azimuth-sh/azimuth)"
+USER_AGENT = "azimuth-release/0.1.0-alpha.3 (https://github.com/azimuth-sh/azimuth)"
 SUPPORT_ASSETS = ("candidates.json", "SHA256SUMS")
 PUBLICATION_WORKFLOW = ROOT / ".github/workflows/publish.yml"
 UNSET = object()
@@ -1024,49 +1024,44 @@ def qualify(arguments):
     )
     implementation_fingerprint = combined_digest([implementation])
     workflow_fingerprint = combined_digest([workflow])
-    sites = {
-        "tag-catalog-and-revision-agree": (
+    realization_sites = [
+        (
+            "tagged-candidates-are-verifiable",
             "public_release_preflight",
             "release/publication.py",
             implementation_fingerprint,
         ),
-        "retained-downloads-have-checksums": (
+        (
+            "tagged-candidates-are-verifiable",
             "retained_candidate_verifier",
             "release/publication.py",
             implementation_fingerprint,
         ),
-        "executable-subjects-have-provenance": (
+        (
+            "tagged-candidates-are-verifiable",
             "published_image_attestation",
             ".github/workflows/publish.yml",
             workflow_fingerprint,
         ),
-        "exact-existing-target-is-preserved": (
+        (
+            "partial-publication-resumes-safely",
             "public_registry_adapters",
             "release/publication.py",
             implementation_fingerprint,
         ),
-        "absent-target-is-selected": (
-            "public_registry_adapters",
-            "release/publication.py",
-            implementation_fingerprint,
-        ),
-        "conflicting-target-fails": (
-            "public_registry_adapters",
-            "release/publication.py",
-            implementation_fingerprint,
-        ),
-        "completion-needs-public-retrieval": (
+        (
+            "partial-publication-resumes-safely",
             "public_completion_gate",
             "release/publication.py",
             implementation_fingerprint,
         ),
-    }
+    ]
     write_json(
         output / "publication-linkage.json",
         {
             "realizes": [
-                source_entry(scenario, site, file, fingerprint)
-                for scenario, (site, file, fingerprint) in sites.items()
+                source_entry(claim, site, file, fingerprint)
+                for claim, site, file, fingerprint in realization_sites
             ],
             "check_implementations": [],
             "mechanism_implementations": [],

@@ -20,17 +20,22 @@ Its second position is that **evidence needs an argument, not a link**. That a t
 
 Concepts arrive in the order you use them. Each step depends on the one before it, so nothing can be asserted before the thing it rests on exists.
 
-### 1. Declare the Claim
+### 1. Declare the Claim and its Cases
 
-A requirement is one normative SHALL proposition. Under it sit case-level Claims, written as GIVEN/WHEN/THEN scenarios, each independently addressable. Ids are declared rather than derived from file paths, so reorganising files changes nothing.
+A Claim is one independently governed SHALL proposition. Under it sit normative Cases, written as
+GIVEN/WHEN/THEN clauses and independently addressable for evidence and execution. Ids are declared
+rather than derived from file paths, so reorganising files changes nothing.
 
-Every requirement also declares its criticality: `critical`, `standard` or `routine`.
+Every Claim declares its criticality: `critical`, `standard` or `routine`. Cases inherit it and do
+not become separate governance centres.
 
 > **Routine Claims stop here.** No linkage, no evidence, no ceremony — one markdown entry, validated for internal consistency. This is the cost dial, and it is why adoption can start at effectively zero. Everything below applies only where you decided it should.
 
 ### 2. Mark the code that establishes it
 
-Production code carries `Realizes(spec, scenario)`. A site earns the marker when it establishes part of the named predicate — not merely because the request passes through it.
+Production code carries `Realizes(spec, claim)`. A site earns the marker when it establishes part
+of the parent Claim predicate—not merely because the request passes through it. Case identity stays
+out of source markers.
 
 Where a mechanism is what makes the Claim true — a type, a schema constraint, a choke point — the design facet names it and `ImplementsMechanism(spec, mechanism)` binds the implementation. Extractors resolve both to semantic identities, so a rename or a file move is a locator change, not a semantic one.
 
@@ -40,21 +45,30 @@ A Check is a deliberately enrolled verification method with one atomic outcome. 
 
 Unmarked tests stay ordinary tests and assert nothing. Your existing suite does not become an accidental assurance claim.
 
-### 4. Bind the Check to the Claim
+### 4. Bind the Check to a Case
 
-An Evidence Binding is the argument: why this atomic outcome bears on exactly this Claim, in what scope, with what oracle, under exactly what required context. One Check may bind to several Claims only when its outcome honestly bears on each, and each edge is a separate binding.
+An Evidence Binding is the edge argument: why this atomic Check outcome bears on exactly one Case,
+under exactly what Case-specific context. One Check may bind to several Cases only when its outcome
+honestly bears on each, and each edge is a separate binding.
 
 This is the step a traceability matrix skips.
 
-### 5. Qualify the binding
+### 5. Qualify the method and decide applicability
 
-A Qualification records that one binding is credible in its declared context, with a named qualifier, a date and a rationale. It judges credibility — not whether the Claim is satisfied, and not that anything was executed.
+A Method Qualification reviews the shared Check implementation, oracle, form and common context.
+An Applicability Decision separately reviews whether that qualified method establishes one exact
+Check-to-Case binding. Both are attributed and fingerprinted. Neither says that the Claim is
+satisfied or that anything was executed.
 
 ### 6. Judge the Claim
 
-A Claim Judgment is the decision over the Claim's total composition — its realizations, mechanisms, bindings and their Qualifications together — with an ordered basis and explicit residual risk.
+A Claim Judgment is the decision over the parent Claim's total composition—every Case,
+realization, mechanism, Evidence Binding, Method Qualification and Applicability Decision—with an
+ordered basis and explicit residual risk.
 
-Both decisions are fingerprinted, so a relevant change to the code, the Claim or the policy marks the precise decision stale and asks for it again. Paths, line numbers and prose do not.
+All three decision kinds are fingerprinted, so a relevant change to the code, Case, Claim, context
+or policy marks the precise dependent decision stale and asks for it again. Paths, line numbers and
+prose do not.
 
 ### Alongside: execution and challenge
 
@@ -72,9 +86,9 @@ These are a separate plane, not later steps.
 
 | You write | The tool derives |
 |---|---|
-| Claims and their criticality | which obligations apply |
+| Claims, Cases and Claim criticality | which obligations apply |
 | Three markers in source | semantic site identity and source fingerprints |
-| Why a method bears on a Claim | the traceability graph |
+| Why a method bears on a Case | the traceability graph |
 | Reviewed decisions with your name on them | which decisions have gone stale |
 | Which objections must be searched for | what is missing, as typed Findings |
 
@@ -115,7 +129,9 @@ Stated plainly, because discovering it later is worse.
 
 - **No runtime assurance state.** You cannot yet ask "what is assured in production right now." Durable Run ingestion, retention and per-Subject Assurance State are deferred.
 - **Decisions decay with content, not with time.** Staleness is fingerprint equality. There is no cadence, expiry or recurrence, so nothing re-opens a decision because the world moved.
-- **Required evidence does not follow criticality.** Policy attaches to each binding individually; you cannot yet declare that all critical Claims require a given objection.
+- **Required evidence does not follow criticality.** Decision Policy is selected explicitly by
+  each Method Qualification, Evidence Binding and Claim Judgment; criticality does not yet select
+  one automatically.
 - **Nothing caps criticality.** No mechanism prevents everything drifting to the top level.
 - **Azimuth does not yet apply its own evidence graph to itself.** Every Claim in this repository is routine, so the graph is exercised by fixtures and conformance suites rather than by the framework's own assurance.
 
@@ -123,11 +139,11 @@ Open design questions are recorded under `azimuth/explorations/`, including thes
 
 ## Maturity
 
-Alpha. Formats may change incompatibly between prereleases, and alpha 2 does not load an alpha 1 model. Evaluate it on a bounded pilot, not on a critical path you cannot revisit.
+Alpha. Formats may change incompatibly between prereleases, and alpha 3 does not load an alpha 1 model. Evaluate it on a bounded pilot, not on a critical path you cannot revisit.
 
-The published alpha 2 tag supports the Rust CLI and core including federation, the .NET and TypeScript annotations and extractors, and the assurance API and diagnostic web images defined at that tag. Contracts, standards, skills and documentation are supported as repository artifacts at the same tag.
+The published alpha 3 tag supports the Rust CLI and core including federation, the .NET and TypeScript annotations and extractors, and the assurance API and diagnostic web images defined at that tag. Contracts, standards, skills and documentation are supported as repository artifacts at the same tag.
 
-Qualified CLI targets are Linux x64, macOS ARM64 and Windows x64; qualified image platforms are Linux AMD64 and Linux ARM64. The C++, Go, JVM, Python and Rust annotation and extractor integrations, and everything under `experiments/`, are experimental source: CI exercises them, but `0.1.0-alpha.2` assigns them no package identity or support promise.
+Qualified CLI targets are Linux x64, macOS ARM64 and Windows x64; qualified image platforms are Linux AMD64 and Linux ARM64. The C++, Go, JVM, Python and Rust annotation and extractor integrations, and everything under `experiments/`, are experimental source: CI exercises them, but `0.1.0-alpha.3` assigns them no package identity or support promise.
 
 ## This repository
 

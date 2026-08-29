@@ -96,7 +96,7 @@ public final class Main {
             List<Entry> artifacts) {
         for (Azimuth.Realizes annotation : element.getAnnotationsByType(Azimuth.Realizes.class)) {
             realizes.add(Entry.relation(
-                    annotation.spec(), annotation.scenario(), site, file, lang, fileFingerprint));
+                    annotation.spec(), annotation.claim(), site, file, lang, fileFingerprint));
         }
         for (Azimuth.ImplementsCheck annotation
                 : element.getAnnotationsByType(Azimuth.ImplementsCheck.class)) {
@@ -357,8 +357,8 @@ public final class Main {
     record Entry(Map<String, String> fields) {
         static final Comparator<Entry> ORDER = Comparator.comparing(Entry::json);
 
-        static Entry relation(String spec, String scenario, String site, String file, String lang, String fingerprint) {
-            return entry("spec", spec, "scenario", scenario, "site", site, "file", file,
+        static Entry relation(String spec, String claim, String site, String file, String lang, String fingerprint) {
+            return entry("spec", spec, "claim", claim, "site", site, "file", file,
                     "lang", lang, "source_fingerprint", fingerprint);
         }
 

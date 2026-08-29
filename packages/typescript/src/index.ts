@@ -9,16 +9,16 @@
 
 /**
  * Marks a production-code site as being on a claim's path, keyed by the stable
- * `(spec, scenario)` pair.
+ * `(spec, claim)` pair.
  *
- * The pair, not a triple: scenario ids are unique per spec, so a requirement id would be redundant
- * information that can go stale. Dropping it is what makes splitting or merging a requirement free.
+ * The pair identifies the independently governed Claim. Cases remain repository-owned evidence
+ * addresses and never enter source markers.
  *
  * Carries no form — form is how a *test* checks, not a property of code.
  */
-export function realizes(spec: string, scenario: string): void {
+export function realizes(spec: string, claim: string): void {
   void spec;
-  void scenario;
+  void claim;
 }
 
 /**

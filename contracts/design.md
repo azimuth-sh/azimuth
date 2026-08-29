@@ -17,18 +17,24 @@ At most one `design.md` sits beside a package's `spec.md` and declares the same 
 ## Entries
 
 ```markdown
-## Requirement: <requirement-id>
+## Claim: <claim-id>
 Mechanism: <stable-mechanism-id>
 Enforcement: <kind>
+Cases: ["<case-id>", "<case-id>"]  (optional)
 Binding: <optional machine-addressable artifact id>
 Expect: <optional derived properties>
 
 Required prose explaining why this mechanism matters and what fails if it changes.
 ```
 
-An entry attaches at the coarsest Claim level where its proposition is true. Mechanisms normally key on a requirement because one constraint may support several cases. A mechanism that genuinely varies per case may key on that case as allowed by the parser.
+Every entry attaches to a Claim. A mechanism with no `Cases:` label bears on the complete Claim. A
+mechanism that bears only on some Cases names their local ids in a sorted, non-empty, duplicate-free
+JSON string array. This precision stays in the repository model; implementation markers still name
+only the Mechanism.
 
-A requirement may have several ordered mechanisms. Each mechanism id is stable and unique within its design. Reusable controls belong in concern-oriented specs instead of being copied into every consumer package.
+A Claim may have several ordered mechanisms. Each mechanism id is stable and unique within its
+design. Reusable controls belong in concern-oriented specs instead of being copied into every
+consumer package.
 
 ## Enforcement kinds
 

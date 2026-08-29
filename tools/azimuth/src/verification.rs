@@ -1,5 +1,5 @@
-//! Repository-owned Check, Evidence Binding, Qualification, Claim Judgment, and Challenge
-//! declarations.
+//! Repository-owned Check, Evidence Binding, Method Qualification, Applicability Decision,
+//! Claim Judgment, and Challenge declarations.
 
 use crate::diag::{validate_id, Diag};
 use crate::json::{self, Json};
@@ -12,16 +12,27 @@ use std::path::Path;
 const CHECK_LABELS: &[&str] = &["Method", "Terminal"];
 const BINDING_LABELS: &[&str] = &[
     "Check",
-    "Claim",
+    "Case",
+    "Method qualification",
     "Proposition",
+    "Context",
+    "Challenge domain",
+    "Policy",
+];
+const METHOD_QUALIFICATION_LABELS: &[&str] = &[
+    "Check",
     "Scope",
     "Quantification",
     "Oracle",
     "Context",
     "Challenge domain",
     "Policy",
+    "Verdict",
+    "Fingerprint",
+    "Qualified",
+    "Qualifier",
 ];
-const QUALIFICATION_LABELS: &[&str] = &["Verdict", "Fingerprint", "Qualified", "Qualifier"];
+const APPLICABILITY_DECISION_LABELS: &[&str] = &["Verdict", "Fingerprint", "Decided", "Decider"];
 const CLAIM_JUDGMENT_LABELS: &[&str] = &[
     "Verdict",
     "Policy",
@@ -82,11 +93,9 @@ impl ChallengeDomain {
 pub struct EvidenceBinding {
     pub id: String,
     pub check: String,
-    pub claim: String,
+    pub case: String,
+    pub method_qualification: String,
     pub proposition: String,
-    pub scope: Scope,
-    pub quantification: Quantification,
-    pub oracle: Oracle,
     pub context: BTreeMap<String, String>,
     pub challenge_domain: Vec<ChallengeDomain>,
     pub policy: String,
@@ -135,9 +144,11 @@ pub struct ClaimJudgment {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SemanticScopeKind {
+    ApplicabilityDecision,
+    Case,
     Claim,
     Binding,
-    Qualification,
+    MethodQualification,
     ClaimJudgment,
     Check,
     CheckImplementation,
@@ -155,10 +166,12 @@ pub enum SemanticScopeKind {
 }
 
 impl SemanticScopeKind {
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 19] = [
+        Self::ApplicabilityDecision,
+        Self::Case,
         Self::Claim,
         Self::Binding,
-        Self::Qualification,
+        Self::MethodQualification,
         Self::ClaimJudgment,
         Self::Check,
         Self::CheckImplementation,
@@ -181,9 +194,11 @@ impl SemanticScopeKind {
 
     pub fn name(self) -> &'static str {
         match self {
+            Self::ApplicabilityDecision => "applicability-decision",
+            Self::Case => "case",
             Self::Claim => "claim",
             Self::Binding => "binding",
-            Self::Qualification => "qualification",
+            Self::MethodQualification => "method-qualification",
             Self::ClaimJudgment => "claim-judgment",
             Self::Check => "check",
             Self::CheckImplementation => "check-implementation",
@@ -203,12 +218,12 @@ impl SemanticScopeKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum QualificationVerdict {
+pub enum MethodQualificationVerdict {
     Qualified,
     Rejected,
 }
 
-impl QualificationVerdict {
+impl MethodQualificationVerdict {
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "qualified" => Some(Self::Qualified),
@@ -226,12 +241,54 @@ impl QualificationVerdict {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Qualification {
+pub struct MethodQualification {
     pub id: String,
-    pub verdict: QualificationVerdict,
+    pub check: String,
+    pub scope: Scope,
+    pub quantification: Quantification,
+    pub oracle: Oracle,
+    pub context: BTreeMap<String, String>,
+    pub challenge_domain: Vec<ChallengeDomain>,
+    pub policy: String,
+    pub verdict: MethodQualificationVerdict,
     pub fingerprint: String,
     pub qualified: String,
     pub qualifier: String,
+    pub rationale: String,
+    pub path: String,
+    pub line: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApplicabilityVerdict {
+    Applicable,
+    Rejected,
+}
+
+impl ApplicabilityVerdict {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "applicable" => Some(Self::Applicable),
+            "rejected" => Some(Self::Rejected),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Applicable => "applicable",
+            Self::Rejected => "rejected",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApplicabilityDecision {
+    pub id: String,
+    pub verdict: ApplicabilityVerdict,
+    pub fingerprint: String,
+    pub decided: String,
+    pub decider: String,
     pub rationale: String,
     pub path: String,
     pub line: usize,
@@ -250,10 +307,15 @@ pub struct Challenger {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Selector {
-    QualificationFromBinding(String),
-    QualificationFromCheck(String),
-    QualificationFromRealization(String),
-    QualificationFromMechanism(String),
+    MethodQualificationFromMethodQualification(String),
+    MethodQualificationFromCheck(String),
+    MethodQualificationFromRealization(String),
+    MethodQualificationFromMechanism(String),
+    ApplicabilityDecisionFromBinding(String),
+    ApplicabilityDecisionFromCase(String),
+    ApplicabilityDecisionFromCheck(String),
+    ApplicabilityDecisionFromRealization(String),
+    ApplicabilityDecisionFromMechanism(String),
     ClaimJudgmentFromClaim(String),
     ClaimJudgmentFromRealization(String),
     ClaimJudgmentFromMechanism(String),
@@ -262,15 +324,32 @@ pub enum Selector {
 impl Selector {
     pub fn canonical(&self) -> String {
         match self {
-            Self::QualificationFromBinding(id) => {
-                format!("qualification from binding {id}")
+            Self::MethodQualificationFromMethodQualification(id) => {
+                format!("method-qualification from method-qualification {id}")
             }
-            Self::QualificationFromCheck(id) => format!("qualification from check {id}"),
-            Self::QualificationFromRealization(id) => {
-                format!("qualification from realization {id}")
+            Self::MethodQualificationFromCheck(id) => {
+                format!("method-qualification from check {id}")
             }
-            Self::QualificationFromMechanism(id) => {
-                format!("qualification from mechanism {id}")
+            Self::MethodQualificationFromRealization(id) => {
+                format!("method-qualification from realization {id}")
+            }
+            Self::MethodQualificationFromMechanism(id) => {
+                format!("method-qualification from mechanism {id}")
+            }
+            Self::ApplicabilityDecisionFromBinding(id) => {
+                format!("applicability-decision from binding {id}")
+            }
+            Self::ApplicabilityDecisionFromCase(id) => {
+                format!("applicability-decision from case {id}")
+            }
+            Self::ApplicabilityDecisionFromCheck(id) => {
+                format!("applicability-decision from check {id}")
+            }
+            Self::ApplicabilityDecisionFromRealization(id) => {
+                format!("applicability-decision from realization {id}")
+            }
+            Self::ApplicabilityDecisionFromMechanism(id) => {
+                format!("applicability-decision from mechanism {id}")
             }
             Self::ClaimJudgmentFromClaim(id) => format!("claim-judgment from claim {id}"),
             Self::ClaimJudgmentFromRealization(id) => {
@@ -299,7 +378,8 @@ pub struct Verification {
     pub path: String,
     pub checks: Vec<Check>,
     pub bindings: Vec<EvidenceBinding>,
-    pub qualifications: Vec<Qualification>,
+    pub method_qualifications: Vec<MethodQualification>,
+    pub applicability_decisions: Vec<ApplicabilityDecision>,
     pub claim_judgments: Vec<ClaimJudgment>,
     pub challengers: Vec<Challenger>,
     pub challenge_plans: Vec<ChallengePlan>,
@@ -343,7 +423,8 @@ pub fn parse_verification(path: &str, source: &str) -> Result<Verification, Vec<
     let mut owner = None;
     let mut checks: Vec<Check> = Vec::new();
     let mut bindings: Vec<EvidenceBinding> = Vec::new();
-    let mut qualifications: Vec<Qualification> = Vec::new();
+    let mut method_qualifications: Vec<MethodQualification> = Vec::new();
+    let mut applicability_decisions: Vec<ApplicabilityDecision> = Vec::new();
     let mut claim_judgments: Vec<ClaimJudgment> = Vec::new();
     let mut challengers: Vec<Challenger> = Vec::new();
     let mut challenge_plans: Vec<ChallengePlan> = Vec::new();
@@ -389,8 +470,8 @@ pub fn parse_verification(path: &str, source: &str) -> Result<Verification, Vec<
                     path,
                     line,
                     format!("unrecognized heading `{text}`"),
-                    "a Check, Evidence Binding, Qualification, Claim Judgment, Challenger, or \
-                     Challenge Plan",
+                    "a Check, Evidence Binding, Method Qualification, Applicability Decision, \
+                     Claim Judgment, Challenger, or Challenge Plan",
                 ));
             }
             i += 1;
@@ -404,7 +485,8 @@ pub fn parse_verification(path: &str, source: &str) -> Result<Verification, Vec<
         let labels = match kind {
             "Check" => CHECK_LABELS,
             "Evidence Binding" => BINDING_LABELS,
-            "Qualification" => QUALIFICATION_LABELS,
+            "Method Qualification" => METHOD_QUALIFICATION_LABELS,
+            "Applicability Decision" => APPLICABILITY_DECISION_LABELS,
             "Claim Judgment" => CLAIM_JUDGMENT_LABELS,
             "Challenger" => CHALLENGER_LABELS,
             "Challenge Plan" => PLAN_LABELS,
@@ -432,18 +514,32 @@ pub fn parse_verification(path: &str, source: &str) -> Result<Verification, Vec<
                 );
                 bindings.push(value);
             }),
-            "Qualification" => {
-                parse_qualification(path, line, id, &block, &mut errors).map(|value| {
+            "Method Qualification" => {
+                parse_method_qualification(path, line, id, &block, &mut errors).map(|value| {
                     reject_duplicate_id(
                         path,
                         line,
                         kind,
                         id,
-                        &qualifications,
+                        &method_qualifications,
                         |item| &item.id,
                         &mut errors,
                     );
-                    qualifications.push(value);
+                    method_qualifications.push(value);
+                })
+            }
+            "Applicability Decision" => {
+                parse_applicability_decision(path, line, id, &block, &mut errors).map(|value| {
+                    reject_duplicate_id(
+                        path,
+                        line,
+                        kind,
+                        id,
+                        &applicability_decisions,
+                        |item| &item.id,
+                        &mut errors,
+                    );
+                    applicability_decisions.push(value);
                 })
             }
             "Claim Judgment" => {
@@ -505,7 +601,8 @@ pub fn parse_verification(path: &str, source: &str) -> Result<Verification, Vec<
             path: path.to_string(),
             checks,
             bindings,
-            qualifications,
+            method_qualifications,
+            applicability_decisions,
             claim_judgments,
             challengers,
             challenge_plans,
@@ -519,7 +616,8 @@ fn declaration_heading(text: &str) -> Option<(&'static str, &str)> {
     for kind in [
         "Check",
         "Evidence Binding",
-        "Qualification",
+        "Method Qualification",
+        "Applicability Decision",
         "Claim Judgment",
         "Challenger",
         "Challenge Plan",
@@ -569,8 +667,25 @@ fn parse_binding(
 ) -> Option<EvidenceBinding> {
     let check = required(block, path, line, "Evidence Binding", id, "Check", errors)?;
     validate_reference(path, line, "Check", &check, true, errors);
-    let claim = required(block, path, line, "Evidence Binding", id, "Claim", errors)?;
-    validate_claim_reference(path, line, &claim, errors);
+    let case = required(block, path, line, "Evidence Binding", id, "Case", errors)?;
+    validate_case_reference(path, line, &case, errors);
+    let method_qualification = required(
+        block,
+        path,
+        line,
+        "Evidence Binding",
+        id,
+        "Method qualification",
+        errors,
+    )?;
+    validate_reference(
+        path,
+        line,
+        "Method Qualification",
+        &method_qualification,
+        true,
+        errors,
+    );
     let proposition = required(
         block,
         path,
@@ -578,36 +693,6 @@ fn parse_binding(
         "Evidence Binding",
         id,
         "Proposition",
-        errors,
-    )?;
-    let scope = parse_closed(
-        block,
-        path,
-        line,
-        id,
-        "Scope",
-        Scope::parse,
-        "unit, component or e2e",
-        errors,
-    )?;
-    let quantification = parse_closed(
-        block,
-        path,
-        line,
-        id,
-        "Quantification",
-        Quantification::parse,
-        "example or universal",
-        errors,
-    )?;
-    let oracle = parse_closed(
-        block,
-        path,
-        line,
-        id,
-        "Oracle",
-        Oracle::parse,
-        "direct, golden, relational, metamorphic, model-based or contract",
         errors,
     )?;
     let context_text = required(block, path, line, "Evidence Binding", id, "Context", errors)?;
@@ -628,11 +713,9 @@ fn parse_binding(
     Some(EvidenceBinding {
         id: id.to_string(),
         check,
-        claim,
+        case,
+        method_qualification,
         proposition,
-        scope,
-        quantification,
-        oracle,
         context,
         challenge_domain,
         policy,
@@ -714,19 +797,97 @@ fn parse_claim_judgment(
     })
 }
 
-fn parse_qualification(
+fn parse_method_qualification(
     path: &str,
     line: usize,
     id: &str,
     block: &Block,
     errors: &mut Vec<Diag>,
-) -> Option<Qualification> {
-    let verdict_text = required(block, path, line, "Qualification", id, "Verdict", errors)?;
-    let verdict = QualificationVerdict::parse(&verdict_text).or_else(|| {
+) -> Option<MethodQualification> {
+    let check = required(
+        block,
+        path,
+        line,
+        "Method Qualification",
+        id,
+        "Check",
+        errors,
+    )?;
+    validate_reference(path, line, "Check", &check, true, errors);
+    let scope = parse_closed(
+        block,
+        path,
+        line,
+        id,
+        "Scope",
+        Scope::parse,
+        "unit, component or e2e",
+        errors,
+    )?;
+    let quantification = parse_closed(
+        block,
+        path,
+        line,
+        id,
+        "Quantification",
+        Quantification::parse,
+        "example or universal",
+        errors,
+    )?;
+    let oracle = parse_closed(
+        block,
+        path,
+        line,
+        id,
+        "Oracle",
+        Oracle::parse,
+        "direct, golden, relational, metamorphic, model-based or contract",
+        errors,
+    )?;
+    let context_text = required(
+        block,
+        path,
+        line,
+        "Method Qualification",
+        id,
+        "Context",
+        errors,
+    )?;
+    let context = parse_context(path, line, &context_text, errors)?;
+    let domain_text = required(
+        block,
+        path,
+        line,
+        "Method Qualification",
+        id,
+        "Challenge domain",
+        errors,
+    )?;
+    let challenge_domain = parse_challenge_domain(path, line, &domain_text, errors)?;
+    let policy = required(
+        block,
+        path,
+        line,
+        "Method Qualification",
+        id,
+        "Policy",
+        errors,
+    )?;
+    validate_reference(path, line, "Decision Policy", &policy, true, errors);
+    let verdict_text = required(
+        block,
+        path,
+        line,
+        "Method Qualification",
+        id,
+        "Verdict",
+        errors,
+    )?;
+    let verdict = MethodQualificationVerdict::parse(&verdict_text).or_else(|| {
         errors.push(Diag::expecting(
             path,
             line,
-            format!("unknown Qualification verdict `{verdict_text}`"),
+            format!("unknown Method Qualification verdict `{verdict_text}`"),
             "qualified or rejected",
         ));
         None
@@ -735,7 +896,7 @@ fn parse_qualification(
         block,
         path,
         line,
-        "Qualification",
+        "Method Qualification",
         id,
         "Fingerprint",
         errors,
@@ -744,27 +905,131 @@ fn parse_qualification(
         errors.push(Diag::expecting(
             path,
             line,
-            format!("invalid Qualification fingerprint `{fingerprint}`"),
+            format!("invalid Method Qualification fingerprint `{fingerprint}`"),
             "sha256: followed by 64 lowercase hexadecimal digits",
         ));
     }
-    let qualified = required(block, path, line, "Qualification", id, "Qualified", errors)?;
+    let qualified = required(
+        block,
+        path,
+        line,
+        "Method Qualification",
+        id,
+        "Qualified",
+        errors,
+    )?;
     if !valid_iso_date(&qualified) {
         errors.push(Diag::expecting(
             path,
             line,
-            format!("invalid Qualification date `{qualified}`"),
+            format!("invalid Method Qualification date `{qualified}`"),
             "an ISO date in YYYY-MM-DD form",
         ));
     }
-    let qualifier = required(block, path, line, "Qualification", id, "Qualifier", errors)?;
-    require_rationale(path, line, "Qualification", id, block, errors);
-    Some(Qualification {
+    let qualifier = required(
+        block,
+        path,
+        line,
+        "Method Qualification",
+        id,
+        "Qualifier",
+        errors,
+    )?;
+    require_rationale(path, line, "Method Qualification", id, block, errors);
+    Some(MethodQualification {
         id: id.to_string(),
+        check,
+        scope,
+        quantification,
+        oracle,
+        context,
+        challenge_domain,
+        policy,
         verdict,
         fingerprint,
         qualified,
         qualifier,
+        rationale: block.prose.clone(),
+        path: path.to_string(),
+        line,
+    })
+}
+
+fn parse_applicability_decision(
+    path: &str,
+    line: usize,
+    id: &str,
+    block: &Block,
+    errors: &mut Vec<Diag>,
+) -> Option<ApplicabilityDecision> {
+    let verdict_text = required(
+        block,
+        path,
+        line,
+        "Applicability Decision",
+        id,
+        "Verdict",
+        errors,
+    )?;
+    let verdict = ApplicabilityVerdict::parse(&verdict_text).or_else(|| {
+        errors.push(Diag::expecting(
+            path,
+            line,
+            format!("unknown Applicability Decision verdict `{verdict_text}`"),
+            "applicable or rejected",
+        ));
+        None
+    })?;
+    let fingerprint = required(
+        block,
+        path,
+        line,
+        "Applicability Decision",
+        id,
+        "Fingerprint",
+        errors,
+    )?;
+    if !valid_fingerprint(&fingerprint) {
+        errors.push(Diag::expecting(
+            path,
+            line,
+            format!("invalid Applicability Decision fingerprint `{fingerprint}`"),
+            "sha256: followed by 64 lowercase hexadecimal digits",
+        ));
+    }
+    let decided = required(
+        block,
+        path,
+        line,
+        "Applicability Decision",
+        id,
+        "Decided",
+        errors,
+    )?;
+    if !valid_iso_date(&decided) {
+        errors.push(Diag::expecting(
+            path,
+            line,
+            format!("invalid Applicability Decision date `{decided}`"),
+            "an ISO date in YYYY-MM-DD form",
+        ));
+    }
+    let decider = required(
+        block,
+        path,
+        line,
+        "Applicability Decision",
+        id,
+        "Decider",
+        errors,
+    )?;
+    require_rationale(path, line, "Applicability Decision", id, block, errors);
+    Some(ApplicabilityDecision {
+        id: id.to_string(),
+        verdict,
+        fingerprint,
+        decided,
+        decider,
         rationale: block.prose.clone(),
         path: path.to_string(),
         line,
@@ -1095,21 +1360,41 @@ pub fn parse_selector(
         return None;
     }
     let selector = match (decision, relation) {
-        ("qualification", "binding") => {
-            validate_reference(path, line, "binding", id, true, errors);
-            Selector::QualificationFromBinding(id.to_string())
+        ("method-qualification", "method-qualification") => {
+            validate_reference(path, line, "Method Qualification", id, true, errors);
+            Selector::MethodQualificationFromMethodQualification(id.to_string())
         }
-        ("qualification", "check") => {
+        ("method-qualification", "check") => {
             validate_reference(path, line, "Check", id, true, errors);
-            Selector::QualificationFromCheck(id.to_string())
+            Selector::MethodQualificationFromCheck(id.to_string())
         }
-        ("qualification", "realization") => {
+        ("method-qualification", "realization") => {
             validate_source_identity(path, line, id, errors);
-            Selector::QualificationFromRealization(id.to_string())
+            Selector::MethodQualificationFromRealization(id.to_string())
         }
-        ("qualification", "mechanism") => {
+        ("method-qualification", "mechanism") => {
             validate_composite(path, line, "mechanism", id, errors);
-            Selector::QualificationFromMechanism(id.to_string())
+            Selector::MethodQualificationFromMechanism(id.to_string())
+        }
+        ("applicability-decision", "binding") => {
+            validate_reference(path, line, "binding", id, true, errors);
+            Selector::ApplicabilityDecisionFromBinding(id.to_string())
+        }
+        ("applicability-decision", "case") => {
+            validate_case_reference(path, line, id, errors);
+            Selector::ApplicabilityDecisionFromCase(id.to_string())
+        }
+        ("applicability-decision", "check") => {
+            validate_reference(path, line, "Check", id, true, errors);
+            Selector::ApplicabilityDecisionFromCheck(id.to_string())
+        }
+        ("applicability-decision", "realization") => {
+            validate_source_identity(path, line, id, errors);
+            Selector::ApplicabilityDecisionFromRealization(id.to_string())
+        }
+        ("applicability-decision", "mechanism") => {
+            validate_composite(path, line, "mechanism", id, errors);
+            Selector::ApplicabilityDecisionFromMechanism(id.to_string())
         }
         ("claim-judgment", "claim") => {
             validate_claim_reference(path, line, id, errors);
@@ -1498,7 +1783,7 @@ fn parse_closed<T>(
     expected: &str,
     errors: &mut Vec<Diag>,
 ) -> Option<T> {
-    let value = required(block, path, line, "Evidence Binding", id, key, errors)?;
+    let value = required(block, path, line, "Method Qualification", id, key, errors)?;
     parse(&value).or_else(|| {
         errors.push(Diag::expecting(
             path,
@@ -1525,6 +1810,40 @@ fn validate_reference(
 
 fn validate_claim_reference(path: &str, line: usize, id: &str, errors: &mut Vec<Diag>) {
     validate_composite(path, line, "Claim", id, errors);
+}
+
+fn validate_case_reference(path: &str, line: usize, id: &str, errors: &mut Vec<Diag>) {
+    let Some((owner, address)) = id.split_once('#') else {
+        errors.push(Diag::expecting(
+            path,
+            line,
+            format!("invalid Case id `{id}`"),
+            "`<spec-id>#<claim-id>/<case-id>`",
+        ));
+        return;
+    };
+    let Some((claim, case)) = address.split_once('/') else {
+        errors.push(Diag::expecting(
+            path,
+            line,
+            format!("invalid Case id `{id}`"),
+            "`<spec-id>#<claim-id>/<case-id>`",
+        ));
+        return;
+    };
+    if id.matches('#').count() != 1
+        || address.matches('/').count() != 1
+        || validate_id(owner, true).is_err()
+        || validate_id(claim, false).is_err()
+        || validate_id(case, false).is_err()
+    {
+        errors.push(Diag::expecting(
+            path,
+            line,
+            format!("invalid Case id `{id}`"),
+            "`<spec-id>#<claim-id>/<case-id>` using lower kebab ids",
+        ));
+    }
 }
 
 fn validate_composite(path: &str, line: usize, kind: &str, id: &str, errors: &mut Vec<Diag>) {

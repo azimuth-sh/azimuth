@@ -519,7 +519,7 @@ def rehearse_publication(account):
     }
 
 
-def source_entry(scenario, site, file, fingerprint):
+def source_entry(claim, site, file, fingerprint):
     language = {
         ".json": "github-actions-receipt",
         ".py": "python",
@@ -527,7 +527,7 @@ def source_entry(scenario, site, file, fingerprint):
     }.get(Path(file).suffix, "release-orchestration")
     return {
         "spec": SPEC,
-        "scenario": scenario,
+        "claim": claim,
         "site": site,
         "file": file,
         "lang": language,
@@ -543,38 +543,23 @@ def write_linkage(root, output_root, ordinary_receipt=None, release_receipt=None
     orchestrator_fingerprint = digest(orchestrator)
     candidates_fingerprint = digest(candidates)
     workflow_fingerprint = digest(workflow)
-    realization_sites = {
-        "ordinary-ci-excludes-release-only-matrix":
-            ("workflow_account", "release/orchestrate.py", orchestrator_fingerprint),
-        "selected-lanes-are-independent":
-            ("release_rehearsal_dag", ".github/workflows/release.yml", workflow_fingerprint),
-        "complete-account-needs-every-lane":
-            ("assemble", "release/orchestrate.py", orchestrator_fingerprint),
-        "tag-catalog-and-revision-agree":
-            ("verify_tag", "release/orchestrate.py", orchestrator_fingerprint),
-        "retained-downloads-have-checksums":
-            ("verify", "release/orchestrate.py", orchestrator_fingerprint),
-        "executable-subjects-have-provenance":
-            ("release_provenance", ".github/workflows/release.yml", workflow_fingerprint),
-        "packed-packages-install":
-            ("smoke_packages", "release/candidates.py", candidates_fingerprint),
-        "native-binaries-run":
-            ("build_native", "release/candidates.py", candidates_fingerprint),
-        "selected-image-platforms-start":
-            ("smoke_image", "release/candidates.py", candidates_fingerprint),
-        "exact-existing-target-is-preserved":
-            ("plan_publication", "release/orchestrate.py", orchestrator_fingerprint),
-        "absent-target-is-selected":
-            ("plan_publication", "release/orchestrate.py", orchestrator_fingerprint),
-        "conflicting-target-fails":
-            ("plan_publication", "release/orchestrate.py", orchestrator_fingerprint),
-        "completion-needs-public-retrieval":
-            ("validate_completion", "release/orchestrate.py", orchestrator_fingerprint),
-    }
+    realization_sites = [
+        ("qualification-lanes-converge", "workflow_account", "release/orchestrate.py", orchestrator_fingerprint),
+        ("qualification-lanes-converge", "release_rehearsal_dag", ".github/workflows/release.yml", workflow_fingerprint),
+        ("qualification-lanes-converge", "assemble", "release/orchestrate.py", orchestrator_fingerprint),
+        ("tagged-candidates-are-verifiable", "verify_tag", "release/orchestrate.py", orchestrator_fingerprint),
+        ("tagged-candidates-are-verifiable", "verify", "release/orchestrate.py", orchestrator_fingerprint),
+        ("tagged-candidates-are-verifiable", "release_provenance", ".github/workflows/release.yml", workflow_fingerprint),
+        ("qualified-candidates-compose", "smoke_packages", "release/candidates.py", candidates_fingerprint),
+        ("qualified-candidates-compose", "build_native", "release/candidates.py", candidates_fingerprint),
+        ("qualified-candidates-compose", "smoke_image", "release/candidates.py", candidates_fingerprint),
+        ("partial-publication-resumes-safely", "plan_publication", "release/orchestrate.py", orchestrator_fingerprint),
+        ("partial-publication-resumes-safely", "validate_completion", "release/orchestrate.py", orchestrator_fingerprint),
+    ]
     linkage = {
         "realizes": [
-            source_entry(scenario, site, file, fingerprint)
-            for scenario, (site, file, fingerprint) in realization_sites.items()
+            source_entry(claim, site, file, fingerprint)
+            for claim, site, file, fingerprint in realization_sites
         ],
         "check_implementations": [],
         "mechanism_implementations": [],
