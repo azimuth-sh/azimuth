@@ -1,48 +1,73 @@
-# Release qualification
+# Release qualification and publication
 
-The candidate-verification workflow builds real retained candidates and GitHub attestations but never publishes them. A pull-request run is verification-only because its account is bound to GitHub's synthetic merge revision and a local synthetic tag. A successful run on `main` is promotable after the catalog's annotated tag is pushed at that exact revision: publication downloads the run's candidates and account by run id and does not rebuild them. No version change or registry write is needed to exercise the complete workflow on a pull request.
+`.github/workflows/ci.yml` is the reusable build-and-qualification graph. Pull requests run it
+against GitHub's synthetic merge revision, pushes to `main` run it against the resulting repository
+revision, and `.github/workflows/publish.yml` calls it once more at an annotated version tag. The
+same source, Assurance, package, native, image-platform, deployment, image-assembly and release
+qualification lanes therefore guard every context.
 
-The workflow is one dependency graph of isolated jobs. Source, Assurance and candidate production run in parallel. Package qualification downloads and revalidates the package job's retained archives instead of rebuilding them. Image platforms build independently on matching native GitHub runners, with one BuildKit cache scope per image and architecture. The deployment job validates and imports the exact amd64 platform fragments, then exercises those images with Compose builds disabled. The image assembly jobs independently combine the same fragments into the final multi-platform OCI candidates and attest only those final archives. A cache can accelerate production, but only immutable workflow artifacts cross job boundaries and establish candidate identity.
+Each job retains immutable workflow artifacts for downstream jobs in the same run. Package
+qualification consumes the package job's archives instead of rebuilding them. Deployment imports
+the exact amd64 image fragments with Compose builds disabled. Multi-platform image assembly consumes
+the same platform fragments. BuildKit caches are scoped by image and architecture, but caches never
+establish artifact identity.
 
-The Assurance API builder keeps locked external Rust dependencies in a manifest-only layer so source-only changes rebuild the local crates rather than the complete graph. Platform archives remain intermediate inputs: deployment may exercise them, but publication retains only the assembled multi-platform image subjects.
+The tag-triggered workflow publishes only after the reusable graph succeeds and the protected
+`release` environment is approved. It derives the expected artifact population directly from
+`release/artifacts.json`, rejects missing, duplicate and unexpected files, and writes
+`SHA256SUMS`. No manifest or promotion record crosses workflow runs.
 
-Use `gh` for every hosted execution account:
+## Hosted evidence
+
+Use `gh` to inspect hosted runs:
 
 ```sh
-gh run list --workflow "candidate verification" --branch "$(git branch --show-current)" \
-  --event pull_request --limit 5
-gh run watch RUN_ID
-gh run view RUN_ID --json conclusion,headSha,jobs,url
-gh pr view --json headRefOid
+gh run list --workflow "continuous integration" --branch BRANCH --limit 5
+gh run view RUN_ID --json conclusion,event,headSha,jobs,url
 gh run download RUN_ID --dir DOWNLOAD_DIRECTORY
 ```
 
-For `.azimuth/release/release-workflow-receipt.json`, record the pull request's `headRefOid` as `sourceRevision` and confirm that it equals the run's `headSha`. Record the downloaded candidate account's `revision` as `executionRevision`, then confirm that revision against every signed attestation. Derive `jobs` and `subjects` from `release/artifacts.json`; hash the downloaded `candidates.json` for `candidateAccountSha256`. Hash `.github/workflows/ci.yml`, `release/orchestrate.py` and `release/candidates.py` for their named SHA-256 fields. Query each downloaded subject digest with `gh api repos/azimuth-sh/azimuth/attestations/sha256:DIGEST`, decode the signed statement and record `attestedSubjects` only after every exact subject names the workflow and execution revision.
+For `.azimuth/release/ordinary-workflow-receipt.json`, record the pull request head revision as
+`sourceRevision`, the successful run's revision as `executionRevision`, its URL and duration, and
+the current hashes of `.github/workflows/ci.yml` and `scripts/check.sh`.
 
-For `.azimuth/release/ordinary-workflow-receipt.json`, record the same revision identities, compute the successful candidate-verification workflow duration, and hash `.github/workflows/ci.yml` plus `scripts/check.sh`. A running workflow cannot honestly validate a receipt for its own future conclusion, so its release-qualification lane explicitly defers hosted receipts. Refresh both receipts only from the completed successful run; local qualification then validates them normally. Copy each accepted receipt into the active change before archiving it; if the change is already archived, retain the corrected historical copy beside its outcome. Then validate the records with:
+For `.azimuth/release/release-workflow-receipt.json`, use the successful tag run. Derive `jobs` and
+`subjects` from `release/artifacts.json`; record the SHA-256 of the run's `SHA256SUMS` as
+`artifactSetSha256`. Confirm every exact subject's GitHub attestation names the tag revision before
+recording `attestedSubjects`. Hash `.github/workflows/ci.yml`, `release/orchestrate.py` and
+`release/candidates.py` for their named receipt fields. A running workflow cannot honestly attest
+its own future conclusion, so qualification may defer these hosted receipts until the run completes.
+
+Validate refreshed records with Azimuth's release qualification commands. A failed run is diagnostic
+information only and cannot replace a successful receipt.
+
+## Publishing a version
+
+Before tagging, update every native manifest and lockfile, `release/artifacts.json`,
+`release/acceptance.py`, the resource manifest, migration inventory, contracts, accepted model and
+adopter/operator documentation to one version. Review the bundled skills as consumer workflows;
+`.agents/skills/` is development input and never a release source.
+
+Configure the protected `release` environment with `CARGO_REGISTRY_TOKEN`, `NUGET_API_KEY` and
+`NPM_TOKEN`. The npm identity must administer the `@azimuth-sh` organization. The workflow's bounded
+GitHub token owns GitHub Release and GHCR writes.
+
+Create and push one annotated tag at the intended `main` revision:
 
 ```sh
-./release/check.sh --experiments-executed
+git tag --annotate v0.1.0-alpha.6 --message "Azimuth 0.1.0-alpha.6"
+git push origin v0.1.0-alpha.6
+gh run list --workflow release --branch v0.1.0-alpha.6 --limit 1
+gh run watch RUN_ID --exit-status
 ```
 
-A failed run is diagnostic information only. It cannot replace either successful receipt. These release gates are ordinary engineering checks for routine framework Claims, not enrolled Azimuth Checks or repository Qualifications.
+The workflow verifies that the annotated tag matches the catalog and names a commit in `main`
+history. After the same-run build succeeds, publication reads all public targets, rejects immutable
+conflicts, publishes only absent targets and normalizes required npm distribution tags. A rerun on
+the same tag preserves exact public targets and resumes absent ones. Completion retrieves every
+package, native archive and image publicly, validates provenance and platforms, and uploads a
+`public-release-completion` artifact.
 
-## Public alpha publication
-
-The catalog is the complete release cohort: CLI/core, supported annotations and emitters, images, native binaries, bundled consumer resources, the migration-line identity and independently versioned protocols. Publishing a package version without the matching resource manifest is not a valid Azimuth release. Every incompatible account-format release must add a migration edge within the current line or declare a new no-migration line boundary before qualification.
-
-Before rehearsal, update every native manifest and lockfile, `release/artifacts.json`, `release/acceptance.py`, resource manifest, migration inventory, contracts, accepted model and adopter/operator documentation to the same candidate account. The bundled skills must be reviewed as consumer workflows; `.agents/skills/` is never a release source.
-
-`.github/workflows/publish.yml` is owner-dispatched and accepts one successful rehearsal run id. It downloads that run's retained candidates and account; it does not build candidates. A dry run reads all public targets, derives the absent/exact/conflicting plan and records credential readiness with zero writes.
-
-Configure the `release` environment with `CARGO_REGISTRY_TOKEN`, `NUGET_API_KEY` and `NPM_TOKEN`. The npm identity must administer the `@azimuth-sh` organization. The workflow's bounded GitHub token owns GitHub Release and GHCR access. A crates.io token restricted to `publish-new` cannot use the legacy identity endpoint. NuGet, GitHub Release and GHCR likewise expose no non-writing probe that proves the right to create an unused identity, so the preflight records those limitations and learns authorization from the first write. npm organization administration is checked directly.
-
-After the publication change is merged, use the successful candidate-verification run on `main`, create the annotated catalog tag at that same main revision and push the tag. Use `gh` to dispatch the no-write preflight against the tag:
-
-```sh
-gh workflow run publish.yml --ref v0.1.0-alpha.5 \
-  -f rehearsal_run_id=RUN_ID -f dry_run=true
-gh run watch PUBLICATION_RUN_ID --exit-status
-```
-
-Inspect the retained `publication-preflight` artifact before dispatching with `dry_run=false`. The write run re-reads every registry, rederives the plan and publishes only its absent set. A rerun after interruption preserves exact public targets. The workflow emits `public-release-completion` only after post-publication retrieval validates all ten targets, GitHub Release support assets, GHCR platform sets and provenance against the retained account. GHCR inspection always uses `skopeo --no-creds`, and the completion job configures no registry login, so an organization member or workflow token cannot make a private image satisfy public retrieval.
+If a transient failure leaves the tagged source and release bytes unchanged, rerun the workflow. If
+the correction changes source or artifacts, keep the failed tag immutable, advance the version and
+create a new tag. Any partially published version is permanently consumed.

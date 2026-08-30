@@ -1,27 +1,25 @@
-name: publish first alpha
+name: release
 
 on:
-  workflow_dispatch:
-    inputs:
-      rehearsal_run_id:
-        description: Successful candidate-verification run built from the tagged revision
-        required: true
-        type: string
-      candidate_tag:
-        description: Annotated candidate tag when publication runs from a repair revision
-        required: false
-        type: string
-      dry_run:
-        description: Stop after public-state and credential preflight
-        required: true
-        default: true
-        type: boolean
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: read
+  id-token: write
+  attestations: write
 
 jobs:
+  build:
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/ci.yml
+
   publish:
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: release
@@ -67,79 +65,47 @@ jobs:
           pattern: candidates-*
           path: dist/candidates
           merge-multiple: true
-          github-token: ${{ github.token }}
-          run-id: ${{ inputs.rehearsal_run_id }}
-      - uses: actions/download-artifact@v8
-        with:
-          name: candidate-account
-          path: dist/account
-          github-token: ${{ github.token }}
-          run-id: ${{ inputs.rehearsal_run_id }}
-      - id: rehearsal
-        name: Verify rehearsal run
-        shell: bash
-        env:
-          RUN_ID: ${{ inputs.rehearsal_run_id }}
-        run: |
-          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || {
-            echo "rehearsal_run_id must be numeric" >&2
-            exit 2
-          }
-          gh run view "$RUN_ID" --json conclusion,event,headSha,workflowName,url \
-            > dist/rehearsal-run.json
-          [[ "$(jq -r .conclusion dist/rehearsal-run.json)" == success ]]
-          [[ "$(jq -r .workflowName dist/rehearsal-run.json)" == "candidate verification" ]]
-          echo "revision=$(jq -r .headSha dist/rehearsal-run.json)" >> "$GITHUB_OUTPUT"
       - id: matrix
         shell: bash
         run: |
           echo "images=$(python3 release/orchestrate.py matrix image)" >> "$GITHUB_OUTPUT"
-      - name: Read public state and prove the no-write boundary
+      - name: Read public state and validate the release boundary
         shell: bash
         env:
-          RELEASE_TAG: ${{ inputs.candidate_tag || github.ref_name }}
-          PUBLICATION_REVISION: ${{ github.sha }}
-          REHEARSAL_REVISION: ${{ steps.rehearsal.outputs.revision }}
-          REHEARSAL_RUN: ${{ inputs.rehearsal_run_id }}
-          REQUIRE_CREDENTIALS: ${{ !inputs.dry_run }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REVISION: ${{ github.sha }}
         run: |
-          credential_args=()
-          if [[ "$REQUIRE_CREDENTIALS" == true ]]; then
-            credential_args+=(--require-credentials)
-          fi
           python3 release/publication.py preflight \
-            --account dist/account/candidates.json \
             --candidates dist/candidates \
-            --sums dist/account/SHA256SUMS \
             --tag "$RELEASE_TAG" \
-            --run-revision "$REHEARSAL_REVISION" \
-            --publication-revision "$PUBLICATION_REVISION" \
-            --rehearsal-run "$REHEARSAL_RUN" \
+            --revision "$RELEASE_REVISION" \
+            --sums-out dist/publication/SHA256SUMS \
             --state-out dist/publication/public-state.json \
             --plan-out dist/publication/publication-plan.json \
             --receipt-out dist/publication/preflight.json \
-            "${credential_args[@]}"
-      - name: Publish planner-selected retained targets
-        if: ${{ !inputs.dry_run }}
+            --require-credentials
+      - name: Publish planner-selected targets
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REVISION: ${{ github.sha }}
         run: |
           python3 release/publication.py publish \
-            --account dist/account/candidates.json \
             --candidates dist/candidates \
-            --sums dist/account/SHA256SUMS \
+            --tag "$RELEASE_TAG" \
+            --revision "$RELEASE_REVISION" \
+            --sums dist/publication/SHA256SUMS \
             --state dist/publication/public-state.json \
             --plan dist/publication/publication-plan.json \
             --out dist/publication/publication-result.json
       - uses: actions/upload-artifact@v7
         if: ${{ always() }}
         with:
-          name: publication-preflight
-          path: |
-            dist/publication/*
-            dist/rehearsal-run.json
+          name: publication-records
+          path: dist/publication/*
           if-no-files-found: error
 
   image-provenance:
-    if: ${{ !inputs.dry_run }}
     needs: publish
     strategy:
       fail-fast: false
@@ -174,22 +140,22 @@ jobs:
           pattern: candidates-*
           path: dist/candidates
           merge-multiple: true
-          github-token: ${{ github.token }}
-          run-id: ${{ inputs.rehearsal_run_id }}
       - uses: actions/download-artifact@v8
         with:
-          name: candidate-account
-          path: dist/account
-          github-token: ${{ github.token }}
-          run-id: ${{ inputs.rehearsal_run_id }}
+          name: publication-records
+          path: dist/publication
       - id: image
         shell: bash
         env:
           IMAGE_ID: ${{ matrix.id }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REVISION: ${{ github.sha }}
         run: |
           python3 release/publication.py image-state \
-            --account dist/account/candidates.json \
             --candidates dist/candidates \
+            --tag "$RELEASE_TAG" \
+            --revision "$RELEASE_REVISION" \
+            --sums dist/publication/SHA256SUMS \
             --id "$IMAGE_ID" > dist/image-state.json
           echo "name=$(jq -r .name dist/image-state.json)" >> "$GITHUB_OUTPUT"
           echo "digest=$(jq -r .digest dist/image-state.json)" >> "$GITHUB_OUTPUT"
@@ -200,7 +166,6 @@ jobs:
           push-to-registry: true
 
   complete:
-    if: ${{ !inputs.dry_run }}
     needs: [publish, image-provenance]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -228,29 +193,24 @@ jobs:
           pattern: candidates-*
           path: dist/candidates
           merge-multiple: true
-          github-token: ${{ github.token }}
-          run-id: ${{ inputs.rehearsal_run_id }}
       - uses: actions/download-artifact@v8
         with:
-          name: candidate-account
-          path: dist/account
-          github-token: ${{ github.token }}
-          run-id: ${{ inputs.rehearsal_run_id }}
+          name: publication-records
+          path: dist/publication
       - name: Retrieve every public target
         shell: bash
         env:
-          PUBLICATION_REVISION: ${{ github.sha }}
           PUBLICATION_RUN: ${{ github.run_id }}
-          REHEARSAL_RUN: ${{ inputs.rehearsal_run_id }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REVISION: ${{ github.sha }}
         run: |
           for attempt in {1..20}; do
             if python3 release/publication.py complete \
-              --account dist/account/candidates.json \
               --candidates dist/candidates \
-              --sums dist/account/SHA256SUMS \
-              --rehearsal-run "$REHEARSAL_RUN" \
+              --tag "$RELEASE_TAG" \
+              --revision "$RELEASE_REVISION" \
+              --sums dist/publication/SHA256SUMS \
               --publication-run "$PUBLICATION_RUN" \
-              --publication-revision "$PUBLICATION_REVISION" \
               --out dist/publication/completion.json; then
               exit 0
             fi

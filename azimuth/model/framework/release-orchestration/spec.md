@@ -3,48 +3,44 @@
 ## Claim: qualification-lanes-converge
 Criticality: routine
 
-The first-alpha release SHALL qualify independent artifact lanes before one complete candidate
-account can pass.
+The release workflow SHALL qualify independent artifact lanes before publication can begin.
 
-### Case: candidate-verification-reuses-retained-results
-- Event: the canonical pull request or main candidate verification runs
-- Required outcome: source, Assurance and candidate production execute in isolated parallel jobs
-- Additional condition or outcome: downstream qualification consumes exact retained package and image artifacts without rebuilding them
+### Case: continuous-integration-reuses-retained-results
+- Event: the canonical pull request, main or tag build runs
+- Required outcome: source, Assurance and release artifact production execute in isolated parallel jobs
+- Additional condition or outcome: downstream qualification consumes exact same-run package and image artifacts without rebuilding them
 
 ### Case: selected-lanes-are-independent
-- Event: first-alpha candidates are qualified
+- Event: release artifacts are qualified
 - Required outcome: packages, native binaries and assurance images execute in separate failure boundaries
 - Additional condition or outcome: a successful lane retains its immutable outputs when another lane fails
-- Additional condition or outcome: one final verification job observes every required source, deployment, qualification and candidate-account outcome
+- Additional condition or outcome: one final verification job observes every required source, artifact, deployment and qualification outcome
 
-### Case: complete-account-needs-every-lane
-- Event: release qualification converges
+### Case: complete-release-needs-every-lane
+- Event: tag-triggered release qualification converges
 - Required outcome: the selected population is derived from the release catalog
-- Additional condition or outcome: no missing, duplicate or unexpected candidate is accepted
+- Additional condition or outcome: no missing, duplicate or unexpected release artifact is accepted
 
 ## Claim: tagged-candidates-are-verifiable
 Criticality: routine
 
-Every retained first-alpha candidate SHALL remain attributable to one tagged source revision until
-public verification completes.
-
-*(revised)* Attribution may be direct or may chain a retained candidate to a separately attested
-publication operation when immutable provider state forces an orchestration repair.
+Every published release artifact SHALL remain attributable to the source revision named by its
+release tag until public verification completes.
 
 ### Case: tag-catalog-and-revision-agree
-- Event: a release candidate account is assembled
-- Required outcome: its tag and version match the release catalog
-- Additional condition or outcome: its full source revision is the commit named by that tag
+- Event: a tag-triggered release begins
+- Required outcome: the tag and version match the release catalog
+- Additional condition or outcome: the full source revision is the commit named by that annotated tag and belongs to main history
 
 ### Case: retained-downloads-have-checksums
-- Event: a downloadable candidate enters the retained account
-- Required outcome: its filename, byte size and SHA-256 checksum are recorded
+- Event: a downloadable release artifact is selected
+- Required outcome: its filename, byte size and SHA-256 checksum are derived from the catalog and built bytes
 - Additional condition or outcome: later use rejects any byte change
 
 ### Case: executable-subjects-have-provenance
-- Event: a downloadable candidate or container image is published
+- Event: a downloadable release artifact or container image is published
 - Required outcome: GitHub build provenance identifies its exact checksum or image digest
-- Additional condition or outcome: direct provenance or a retained-to-published provenance chain names the tagged source revision
+- Additional condition or outcome: direct provenance or an archive-to-published-image provenance chain names the tagged source revision
 
 ## Claim: qualified-candidates-compose
 Criticality: routine

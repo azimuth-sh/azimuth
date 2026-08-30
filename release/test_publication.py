@@ -12,7 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from release.orchestrate import assemble, exact_registry_state, expected_subjects, write_account
+from release.orchestrate import expected_subjects, release_artifacts
 from release.publication import (
     PublicationError,
     annotated_tag_revision,
@@ -26,15 +26,16 @@ from release.publication import (
     nuget_payload_digest,
     package_bytes,
     preflight,
-    public_account,
+    public_release,
     publish,
     publish_crate,
     publish_target,
-    publication_workflow_account,
+    publication_workflow_structure,
     qualify,
     registry_publication_plan,
     subject_provenance,
     validate_registry_completion,
+    write_checksums,
     verify_nuget_repository_signature,
 )
 
@@ -74,7 +75,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 member.size = len(content)
                 archive.addfile(member, io.BytesIO(content))
 
-    def retained_account(self, directory):
+    def retained_release(self, directory):
         candidates = directory / "candidates"
         candidates.mkdir()
         for index, subject in enumerate(expected_subjects(self.catalog)):
@@ -86,13 +87,32 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                     package.writestr(f"payload-{index}.txt", f"candidate-{index}")
             else:
                 path.write_bytes(f"candidate-{index}".encode())
-        account = assemble(candidates, REVISION, self.catalog["release"]["tag"], self.root)
-        account_path = directory / "candidates.json"
-        write_account(account, account_path)
-        return account, candidates, account_path, directory / "SHA256SUMS"
+        release = release_artifacts(
+            candidates, REVISION, self.catalog["release"]["tag"], self.root
+        )
+        sums_path = directory / "SHA256SUMS"
+        write_checksums(release, sums_path)
+        return release, candidates, sums_path
+
+    def exact_registry_state(self, release):
+        return {
+            "targets": {
+                subject["key"]: {
+                    "identity": subject["identity"],
+                    "sha256": subject["sha256"],
+                    "provenance": True,
+                    **(
+                        {"platforms": subject["platforms"]}
+                        if "platforms" in subject
+                        else {}
+                    ),
+                }
+                for subject in release["subjects"]
+            }
+        }
 
     def exact_public_state(self, account):
-        state = exact_registry_state(account)
+        state = self.exact_registry_state(account)
         for subject in account["subjects"]:
             if subject.get("ecosystem") == "npm":
                 # With no stable version, an exact state also has `latest` on this prerelease:
@@ -172,10 +192,10 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             self.assertEqual(annotated_tag_revision(root, "v0.1.0-alpha.2"), REVISION)
         self.assertEqual([call.kwargs["cwd"] for call in git.call_args_list], [root, root])
 
-    def test_public_account_binds_each_image_index_digest_to_its_retained_archive(self):
+    def test_public_release_binds_each_image_index_digest_to_its_retained_archive(self):
         with tempfile.TemporaryDirectory() as temporary:
-            retained, candidates, _, _ = self.retained_account(Path(temporary))
-            account = public_account(retained, candidates)
+            retained, candidates, _ = self.retained_release(Path(temporary))
+            account = public_release(retained, candidates)
             images = [subject for subject in account["subjects"] if subject["kind"] == "image"]
             self.assertEqual(len(images), 2)
             self.assertTrue(all(subject["registryDigest"].startswith("sha256:") for subject in images))
@@ -191,7 +211,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 member.size = len(changed)
                 package.addfile(member, io.BytesIO(changed))
             with self.assertRaisesRegex(PublicationError, "checksum differs"):
-                public_account(retained, candidates)
+                public_release(retained, candidates)
 
     def test_nuget_repository_signature_preserves_payload_identity(self):
         retained = io.BytesIO()
@@ -319,13 +339,10 @@ class PublicAlphaPublicationTests(unittest.TestCase):
 
     def test_public_state_accounts_for_every_exact_registry_target(self):
         with tempfile.TemporaryDirectory() as temporary:
-            retained, candidates, account_path, sums_path = self.retained_account(Path(temporary))
-            account = public_account(retained, candidates)
+            retained, candidates, sums_path = self.retained_release(Path(temporary))
+            account = public_release(retained, candidates)
             by_name = {subject["filename"]: subject for subject in account["subjects"]}
-            support = {
-                "candidates.json": account_path.read_bytes(),
-                "SHA256SUMS": sums_path.read_bytes(),
-            }
+            support = {"SHA256SUMS": sums_path.read_bytes()}
             assets = [
                 {"name": name, "url": name, "browser_download_url": f"https://example/{name}"}
                 for name in support
@@ -371,66 +388,65 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 "release.publication.npm_registry_metadata",
                 return_value={"dist-tags": {"alpha": account["version"]}},
             ), patch("release.publication.has_provenance", return_value=True):
-                state = collect_state(account, account_path, sums_path)
+                state = collect_state(account, sums_path)
             self.assertEqual(state["missingReleaseAssets"], [])
             self.assertEqual(len(state["targets"]), 10)
             self.assertEqual(
                 {key: value["sha256"] for key, value in state["targets"].items()},
                 {
                     key: value["sha256"]
-                    for key, value in exact_registry_state(account)["targets"].items()
+                    for key, value in self.exact_registry_state(account)["targets"].items()
                 },
             )
     def test_conflicting_release_support_asset_fails_before_planning(self):
         with tempfile.TemporaryDirectory() as temporary:
-            retained, candidates, account_path, sums_path = self.retained_account(Path(temporary))
-            account = public_account(retained, candidates)
+            retained, candidates, sums_path = self.retained_release(Path(temporary))
+            account = public_release(retained, candidates)
             with patch(
                 "release.publication.github_release",
                 return_value={
                     "tag_name": account["tag"],
                     "prerelease": True,
-                    "assets": [{"name": "candidates.json", "url": "candidate"}],
+                    "assets": [{"name": "SHA256SUMS", "url": "checksums"}],
                 },
             ), patch("release.publication.github_asset_bytes", return_value=b"different"):
                 with self.assertRaisesRegex(PublicationError, "support asset"):
-                    collect_state(account, account_path, sums_path)
+                    collect_state(account, sums_path)
 
     def test_preflight_records_zero_writes_and_credentials_gate_publication(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
-            retained, candidates, account_path, sums_path = self.retained_account(directory)
-            account = public_account(retained, candidates)
+            retained, candidates, sums_path = self.retained_release(directory)
+            account = public_release(retained, candidates)
             exact = self.exact_public_state(account)
             arguments = argparse.Namespace(
-                account=account_path,
                 candidates=candidates,
-                sums=sums_path,
+                sums_out=sums_path,
                 root=self.root,
                 repository="azimuth-sh/azimuth",
                 tag=account["tag"],
-                run_revision=REVISION,
-                rehearsal_run="123",
-                publication_revision="d" * 40,
+                revision=REVISION,
                 state_out=directory / "state.json",
                 plan_out=directory / "plan.json",
                 receipt_out=directory / "preflight.json",
                 require_credentials=False,
             )
-            with patch("release.publication.verify_tag"), patch(
-                "release.publication.annotated_tag_revision", return_value=REVISION
+            with patch(
+                "release.publication.retained_tagged_release", return_value=retained
             ), patch("release.publication.collect_state", return_value=exact), patch(
                 "release.publication.credential_account", return_value={"ready": False}
             ):
                 preflight(arguments)
             receipt = json.loads(arguments.receipt_out.read_text())
             self.assertEqual(receipt["writes"], 0)
-            self.assertEqual(receipt["publicationRevision"], "d" * 40)
+            self.assertEqual(receipt["artifactSetSha256"], hashlib.sha256(
+                sums_path.read_bytes()
+            ).hexdigest())
             self.assertEqual(receipt["plan"]["publish"], [])
 
             arguments.require_credentials = True
-            with patch("release.publication.verify_tag"), patch(
-                "release.publication.annotated_tag_revision", return_value=REVISION
+            with patch(
+                "release.publication.retained_tagged_release", return_value=retained
             ), patch("release.publication.collect_state", return_value=exact), patch(
                 "release.publication.credential_account", return_value={"ready": False}
             ):
@@ -440,8 +456,8 @@ class PublicAlphaPublicationTests(unittest.TestCase):
     def test_publish_consumes_only_the_planner_selected_absent_target(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
-            retained, candidates, account_path, sums_path = self.retained_account(directory)
-            account = public_account(retained, candidates)
+            retained, candidates, sums_path = self.retained_release(directory)
+            account = public_release(retained, candidates)
             state = self.exact_public_state(account)
             selected = next(
                 subject["key"]
@@ -455,8 +471,9 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             state_path.write_text(json.dumps(state))
             plan_path.write_text(json.dumps(registry_publication_plan(account, state)))
             arguments = argparse.Namespace(
-                account=account_path,
                 candidates=candidates,
+                tag=account["tag"],
+                revision=REVISION,
                 sums=sums_path,
                 root=self.root,
                 repository="azimuth-sh/azimuth",
@@ -465,6 +482,8 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 out=directory / "result.json",
             )
             with patch(
+                "release.publication.retained_tagged_release", return_value=retained
+            ), patch(
                 "release.publication.credential_account", return_value={"ready": True}
             ), patch("release.publication.publish_target") as publish_one:
                 publish(arguments)
@@ -525,8 +544,8 @@ class PublicAlphaPublicationTests(unittest.TestCase):
 
     def test_first_npm_prerelease_accepts_the_registry_required_latest_tag(self):
         with tempfile.TemporaryDirectory() as temporary:
-            retained, candidates, _, _ = self.retained_account(Path(temporary))
-            account = public_account(retained, candidates)
+            retained, candidates, _ = self.retained_release(Path(temporary))
+            account = public_release(retained, candidates)
             subject = next(
                 item for item in account["subjects"] if item.get("ecosystem") == "npm"
             )
@@ -542,8 +561,8 @@ class PublicAlphaPublicationTests(unittest.TestCase):
         # The alpha.1 -> alpha.2 case: publishing a second prerelease leaves `latest` behind on the
         # first, so a plain `npm install` would keep resolving the older alpha.
         with tempfile.TemporaryDirectory() as temporary:
-            retained, candidates, _, _ = self.retained_account(Path(temporary))
-            account = public_account(retained, candidates)
+            retained, candidates, _ = self.retained_release(Path(temporary))
+            account = public_release(retained, candidates)
             state = self.exact_public_state(account)
             npm_subjects = [
                 item for item in account["subjects"] if item.get("ecosystem") == "npm"
@@ -591,8 +610,8 @@ class PublicAlphaPublicationTests(unittest.TestCase):
 
     def test_npm_latest_prerelease_with_a_stable_version_blocks_completion(self):
         with tempfile.TemporaryDirectory() as temporary:
-            retained, candidates, _, _ = self.retained_account(Path(temporary))
-            account = public_account(retained, candidates)
+            retained, candidates, _ = self.retained_release(Path(temporary))
+            account = public_release(retained, candidates)
             subject = next(
                 item for item in account["subjects"] if item.get("ecosystem") == "npm"
             )
@@ -673,7 +692,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             ],
         )
 
-    def test_image_state_verifies_the_complete_retained_account(self):
+    def test_image_state_verifies_the_complete_retained_release(self):
         root = Path("/requested/checkout")
         candidates = Path("/retained/candidates")
         retained = {"version": "0.1.0-alpha.2"}
@@ -690,21 +709,25 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             ],
         }
         arguments = argparse.Namespace(
-            account=Path("/retained/candidates.json"),
             candidates=candidates,
             root=root,
+            tag="v0.1.0-alpha.2",
+            revision=REVISION,
+            sums=Path("/retained/SHA256SUMS"),
             id="api",
         )
-        with patch("release.publication.read_json", return_value=retained), patch(
-            "release.publication.verify", return_value=retained
-        ) as verify_account, patch(
-            "release.publication.public_account", return_value=account
+        with patch(
+            "release.publication.retained_tagged_release", return_value=retained
+        ) as load_release, patch(
+            "release.publication.verify_checksums"
+        ), patch(
+            "release.publication.public_release", return_value=account
         ), patch(
             "release.publication.image_manifest",
             return_value=("b" * 64, ["linux/amd64", "linux/arm64"]),
         ):
             image_state(arguments)
-        verify_account.assert_called_once_with(retained, candidates, root)
+        load_release.assert_called_once_with(candidates, REVISION, "v0.1.0-alpha.2", root)
 
     def test_provenance_requires_both_digest_and_tagged_revision(self):
         def payload(checksum, revision):
@@ -758,25 +781,26 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 (False, None),
             )
 
-    def test_publication_workflow_is_owner_dispatched_and_never_rebuilds(self):
-        account = publication_workflow_account(self.root)
-        self.assertEqual(account["trigger"], "workflow_dispatch")
-        self.assertEqual(account["candidateBuilds"], 0)
+    def test_publication_workflow_builds_and_publishes_from_the_tag_run(self):
+        structure = publication_workflow_structure(self.root)
+        self.assertEqual(structure["trigger"], "tag-push")
+        self.assertEqual(structure["artifactBuilds"], "same-run")
         source = (self.root / ".github/workflows/publish.yml").read_text()
-        self.assertEqual(source.count("--publication-revision"), 2)
+        self.assertEqual(source.count("uses: ./.github/workflows/ci.yml"), 1)
+        self.assertNotIn("run-id:", source)
 
     def test_publication_workflow_scopes_tokens_and_supplies_complete_image_inputs(self):
         source = (self.root / ".github/workflows/publish.yml").read_text()
         self.assertEqual(source.count("persist-credentials: false"), 3)
         self.assertEqual(source.count("docker/login-action@v4"), 2)
-        self.assertEqual(source.count("attestations: write"), 1)
-        self.assertIn("permissions:\n  contents: read\n\njobs:", source)
+        self.assertEqual(source.count("attestations: write"), 3)
+        self.assertIn("permissions:\n  contents: read\n  id-token: write", source)
         self.assertEqual(source.count("pattern: candidates-*"), 3)
 
     def test_publication_workflow_fails_static_credential_and_provenance_mutations(self):
         source = (self.root / ".github/workflows/publish.yml").read_text()
         mutations = {
-            "credential": source.replace("credential_args+=(--require-credentials)", "true"),
+            "credential": source.replace("            --require-credentials", ""),
             "cargo-secret": source.replace(
                 "CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}",
                 "CARGO_REGISTRY_TOKEN: ''",
@@ -785,9 +809,9 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 "      contents: write", "      contents: read", 1
             ),
             "provenance": source.replace("push-to-registry: true", "push-to-registry: false"),
-            "rebuild": source.replace(
-                "python3 release/publication.py publish",
-                "python3 release/candidates.py packages && python3 release/publication.py publish",
+            "build": source.replace(
+                "uses: ./.github/workflows/ci.yml",
+                "uses: octo-org/example/.github/workflows/ci.yml@main",
             ),
         }
         for name, changed in mutations.items():
@@ -797,7 +821,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 workflow.mkdir(parents=True)
                 (workflow / "publish.yml").write_text(changed)
                 with self.assertRaises(PublicationError):
-                    publication_workflow_account(root)
+                    publication_workflow_structure(root)
 
     def test_qualification_declares_realization_without_fabricating_operational_evidence(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -818,7 +842,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                     ),
                     (
                         "tagged-candidates-are-verifiable",
-                        "retained_candidate_verifier",
+                        "tagged_release_artifact_validator",
                         "release/publication.py",
                     ),
                     (

@@ -9,21 +9,19 @@ from unittest.mock import patch
 
 from release.orchestrate import (
     OrchestrationError,
-    assemble,
     expected_subjects,
     image_matrix,
     native_matrix,
     plan_publication,
-    rehearse_publication,
+    release_artifacts,
     digest,
     expected_release_jobs,
     validate_completion,
     validate_ordinary_receipt,
     validate_release_receipt,
-    verify,
     verify_tag,
     write_linkage,
-    workflow_account,
+    workflow_structure,
 )
 from release.candidates import CandidateError, published_port
 
@@ -42,7 +40,7 @@ class ReleaseOrchestrationTests(unittest.TestCase):
 
     def account(self, root):
         self.candidates(root)
-        return assemble(root, REVISION, self.catalog["release"]["tag"], self.root)
+        return release_artifacts(root, REVISION, self.catalog["release"]["tag"], self.root)
 
     def exact_state(self, account, provenance=True):
         return {
@@ -91,7 +89,7 @@ class ReleaseOrchestrationTests(unittest.TestCase):
             "jobs": expected_release_jobs(self.catalog),
             "subjects": filenames,
             "attestedSubjects": filenames,
-            "candidateAccountSha256": "c" * 64,
+            "artifactSetSha256": "c" * 64,
         }
 
     def test_selected_matrices_derive_from_the_catalog(self):
@@ -151,12 +149,11 @@ class ReleaseOrchestrationTests(unittest.TestCase):
                     else:
                         validate_release_receipt(changed, self.root, ancestor)
 
-    def test_exact_candidate_population_assembles_and_verifies(self):
+    def test_exact_release_artifact_population_is_derived(self):
         with tempfile.TemporaryDirectory() as temporary:
             candidate_root = Path(temporary)
             account = self.account(candidate_root)
             self.assertEqual(len(account["subjects"]), 10)
-            self.assertEqual(verify(account, candidate_root, self.root), account)
 
     def test_each_missing_and_duplicate_candidate_and_an_unexpected_candidate_fail(self):
         for subject in expected_subjects(self.catalog):
@@ -173,7 +170,7 @@ class ReleaseOrchestrationTests(unittest.TestCase):
                         duplicate.mkdir()
                         (duplicate / filename).write_bytes(b"duplicate")
                     with self.assertRaises(OrchestrationError):
-                        assemble(
+                        release_artifacts(
                             candidate_root,
                             REVISION,
                             self.catalog["release"]["tag"],
@@ -184,23 +181,35 @@ class ReleaseOrchestrationTests(unittest.TestCase):
             self.candidates(candidate_root)
             (candidate_root / "unexpected.bin").write_bytes(b"unexpected")
             with self.assertRaisesRegex(OrchestrationError, "unexpected"):
-                assemble(candidate_root, REVISION, self.catalog["release"]["tag"], self.root)
+                release_artifacts(
+                    candidate_root, REVISION, self.catalog["release"]["tag"], self.root
+                )
 
-    def test_tag_revision_and_each_candidate_byte_set_fail_independently(self):
+    def test_tag_revision_and_each_artifact_byte_set_are_derived_independently(self):
         with tempfile.TemporaryDirectory() as temporary:
             candidate_root = Path(temporary)
             account = self.account(candidate_root)
             with self.assertRaisesRegex(OrchestrationError, "tag"):
-                assemble(candidate_root, REVISION, "v0.0.0-drift", self.root)
+                release_artifacts(candidate_root, REVISION, "v0.0.0-drift", self.root)
             with self.assertRaisesRegex(OrchestrationError, "revision"):
-                assemble(candidate_root, "short", self.catalog["release"]["tag"], self.root)
+                release_artifacts(
+                    candidate_root, "short", self.catalog["release"]["tag"], self.root
+                )
             for subject in account["subjects"]:
                 with self.subTest(subject=subject["key"]):
                     path = candidate_root / subject["filename"]
                     original = path.read_bytes()
                     path.write_bytes(original + b"changed")
-                    with self.assertRaisesRegex(OrchestrationError, "byte size|checksum"):
-                        verify(account, candidate_root, self.root)
+                    changed = release_artifacts(
+                        candidate_root,
+                        REVISION,
+                        self.catalog["release"]["tag"],
+                        self.root,
+                    )
+                    changed_subject = next(
+                        item for item in changed["subjects"] if item["key"] == subject["key"]
+                    )
+                    self.assertNotEqual(changed_subject["sha256"], subject["sha256"])
                     path.write_bytes(original)
 
     def test_annotated_tag_must_name_the_candidate_revision(self):
@@ -307,24 +316,15 @@ class ReleaseOrchestrationTests(unittest.TestCase):
                         with self.assertRaisesRegex(OrchestrationError, "conflicts"):
                             validate_completion(account, changed)
 
-    def test_publication_rehearsal_ranges_over_every_target_and_registry_kind(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            account = self.account(Path(temporary))
-            result = rehearse_publication(account)
-            self.assertEqual(len(result["preserved"]), 10)
-            self.assertEqual(len(result["individuallyAbsent"]), 10)
-            self.assertEqual(len(result["rejectedConflictKinds"]), 3)
-            self.assertEqual(result["completion"], "passed")
-
-    def test_candidate_workflow_keeps_isolated_reusable_lanes(self):
-        account = workflow_account(self.root)
-        self.assertFalse(account["releaseImagesInOrdinaryGate"])
+    def test_continuous_integration_keeps_isolated_reusable_lanes(self):
+        structure = workflow_structure(self.root)
+        self.assertFalse(structure["releaseImagesInOrdinaryGate"])
         self.assertEqual(
-            account["releaseLanes"],
+            structure["releaseLanes"],
             [
                 "prepare", "source", "assurance", "packages", "native",
                 "image-platforms", "deployment", "images", "release_check",
-                "account", "check",
+                "check",
             ],
         )
 
@@ -351,25 +351,12 @@ class ReleaseOrchestrationTests(unittest.TestCase):
             )
         )
 
-    def test_pull_request_rehearsal_isolates_its_synthetic_tag(self):
-        workflow = (self.root / ".github/workflows/ci.yml").read_text()
-        gate = (self.root / "scripts/check.sh").read_text()
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            (root / ".github/workflows").mkdir(parents=True)
-            (root / "scripts").mkdir()
-            (root / "scripts/check.sh").write_text(gate)
-            changed = workflow.replace("tag --force --annotate", "tag --annotate", 1)
-            (root / ".github/workflows/ci.yml").write_text(changed)
-            with self.assertRaisesRegex(OrchestrationError, "synthetic tag"):
-                workflow_account(root)
-
-    def test_each_release_lane_is_required_by_the_workflow_account(self):
+    def test_each_release_lane_is_required_by_the_workflow_structure(self):
         workflow = (self.root / ".github/workflows/ci.yml").read_text()
         gate = (self.root / "scripts/check.sh").read_text()
         for lane in (
             "source", "assurance", "packages", "native", "image-platforms",
-            "deployment", "images", "release_check", "account", "check",
+            "deployment", "images", "release_check", "check",
         ):
             with self.subTest(lane=lane), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
@@ -379,9 +366,9 @@ class ReleaseOrchestrationTests(unittest.TestCase):
                 changed = workflow.replace(f"  {lane}:\n", "", 1)
                 (root / ".github/workflows/ci.yml").write_text(changed)
                 with self.assertRaisesRegex(OrchestrationError, f"lane '{lane}'"):
-                    workflow_account(root)
+                    workflow_structure(root)
 
-    def test_workflow_account_accepts_folded_run_and_additional_isolated_matrix(self):
+    def test_workflow_structure_accepts_folded_run_and_additional_isolated_matrix(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / ".github/workflows").mkdir(parents=True)
@@ -395,7 +382,9 @@ class ReleaseOrchestrationTests(unittest.TestCase):
             (root / "scripts/check.sh").write_text(
                 (self.root / "scripts/check.sh").read_text()
             )
-            self.assertEqual(workflow_account(root)["ordinaryCommand"], "./scripts/check.sh source")
+            self.assertEqual(
+                workflow_structure(root)["ordinaryCommand"], "./scripts/check.sh source"
+            )
 
     def test_each_selected_matrix_must_disable_fail_fast(self):
         workflow = (self.root / ".github/workflows/ci.yml").read_text()
@@ -412,7 +401,7 @@ class ReleaseOrchestrationTests(unittest.TestCase):
                     prefix + f"  {lane}:\n" + selected
                 )
                 with self.assertRaisesRegex(OrchestrationError, "does not isolate failures"):
-                    workflow_account(root)
+                    workflow_structure(root)
 
 
 if __name__ == "__main__":
