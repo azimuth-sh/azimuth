@@ -233,8 +233,7 @@ def initialize(root: pathlib.Path) -> None:
         "Criticality: standard\n\n"
         "The synthetic component SHALL expose one observable behavior.\n\n"
         "### Case: works\n"
-        "WHEN the synthetic behavior is checked\n"
-        "THEN the behavior is observable\n",
+        "The synthetic behavior is observable when checked.\n",
         encoding="utf-8",
     )
     (package / "verification.md").write_text(

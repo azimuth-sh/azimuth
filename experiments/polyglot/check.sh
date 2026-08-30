@@ -98,5 +98,5 @@ cargo run --quiet --manifest-path tools/azimuth/Cargo.toml -- validate \
 cargo run --quiet --manifest-path tools/azimuth/Cargo.toml -- export \
   --model experiments/polyglot/model "${MANIFESTS[@]}" --out "$OUTPUT_ROOT/model.json"
 python3 -c \
-  'import json, sys; model=json.load(open(sys.argv[1])); assert model["version"] == 3; retired={"co"+"vers", "mechanism_"+"co"+"vers", "obser"+"vations", "judg"+"ments"}; assert not retired.intersection(model)' \
+  'import json, sys; model=json.load(open(sys.argv[1])); assert model["version"] == 4; retired={"co"+"vers", "mechanism_"+"co"+"vers", "obser"+"vations", "judg"+"ments"}; assert not retired.intersection(model)' \
   "$OUTPUT_ROOT/model.json"

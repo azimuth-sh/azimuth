@@ -120,35 +120,12 @@ impl Oracle {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StepKind {
-    Given,
-    When,
-    Then,
-    And,
-}
-
-impl StepKind {
-    pub fn name(self) -> &'static str {
-        match self {
-            StepKind::Given => "given",
-            StepKind::When => "when",
-            StepKind::Then => "then",
-            StepKind::And => "and",
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Step {
-    pub kind: StepKind,
-    pub text: String,
-}
-
 #[derive(Debug, Clone)]
 pub struct Case {
     pub id: String,
-    pub steps: Vec<Step>,
+    /// Authoritative free-form Markdown. Core preserves and fingerprints it without interpreting
+    /// its natural-language or diagram semantics.
+    pub statement: String,
     pub line: usize,
 }
 
@@ -156,7 +133,7 @@ pub struct Case {
 /// domain arrived only when the demo produced evidence that the first could not carry it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Domain {
-    /// Executions of a behaviour — inputs matching the WHEN.
+    /// Executions of a behaviour described by one or more authored Cases.
     Behaviour,
     /// A set of sites. Membership is derived from what the code built, so a new site joins the
     /// class without anyone declaring it.
@@ -684,21 +661,7 @@ impl Model {
                     .map(Json::str)
                     .unwrap_or(Json::Null),
             ),
-            (
-                "steps",
-                Json::Arr(
-                    case.case
-                        .steps
-                        .iter()
-                        .map(|step| {
-                            Json::obj(vec![
-                                ("kind", Json::str(step.kind.name())),
-                                ("text", Json::str(&step.text)),
-                            ])
-                        })
-                        .collect(),
-                ),
-            ),
+            ("statement", Json::str(&case.case.statement)),
         ])))
     }
 
@@ -1831,20 +1794,10 @@ impl Model {
                             .cases
                             .iter()
                             .map(|sc| {
-                                let steps = sc
-                                    .steps
-                                    .iter()
-                                    .map(|st| {
-                                        Json::obj(vec![
-                                            ("kind", Json::str(st.kind.name())),
-                                            ("text", Json::str(&st.text)),
-                                        ])
-                                    })
-                                    .collect();
                                 Json::obj(vec![
                                     ("id", Json::str(&sc.id)),
                                     ("line", Json::Num(sc.line as f64)),
-                                    ("steps", Json::Arr(steps)),
+                                    ("statement", Json::str(&sc.statement)),
                                 ])
                             })
                             .collect();
@@ -1874,7 +1827,7 @@ impl Model {
             .collect();
 
         Json::obj(vec![
-            ("version", Json::Num(3.0)),
+            ("version", Json::Num(4.0)),
             ("specs", Json::Arr(specs)),
             (
                 "realizes",

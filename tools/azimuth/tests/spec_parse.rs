@@ -3,7 +3,7 @@
 //! Fixtures here are synthetic by decision. The moment this suite asserts against real demo
 //! specs, the tool and the fixture are welded together and neither can move independently.
 
-use azimuth::model::{Criticality, StepKind};
+use azimuth::model::Criticality;
 use azimuth::spec::parse_spec;
 use azimuth::validation::resolve_challenge_plan;
 use std::fs;
@@ -29,7 +29,7 @@ fn write_routine_spec(path: &Path, id: &str, scenario: &str) {
         path,
         format!(
             "# Spec: {id}\n\n## Claim: works\nCriticality: routine\n\n\
-             The system SHALL work.\n\n### Case: {scenario}\nWHEN invoked\nTHEN it works\n"
+             The system must work.\n\n### Case: {scenario}\nThe system works when invoked.\n"
         ),
     )
     .unwrap();
@@ -64,13 +64,14 @@ Prose that claims nothing.
 ## Claim: thing-holds
 Criticality: standard
 
-The system SHALL hold the thing.
+The system holds the thing.
 
 ### Case: thing-held
-GIVEN a thing
-WHEN it is examined
-THEN it is held
-AND nothing else changed
+When a thing is examined, it remains held and nothing else changes.
+
+| Input | Required result |
+|---|---|
+| held thing | remains held |
 ";
 
 #[test]
@@ -82,20 +83,20 @@ fn parses_a_minimal_spec() {
     let r = &spec.claims[0];
     assert_eq!(r.id, "thing-holds");
     assert_eq!(r.criticality, Some(Criticality::Standard));
-    assert_eq!(r.statement, "The system SHALL hold the thing.");
+    assert_eq!(r.statement, "The system holds the thing.");
     assert_eq!(r.cases.len(), 1);
 
     let s = &r.cases[0];
     assert_eq!(s.id, "thing-held");
-    assert_eq!(s.steps.len(), 4);
-    assert_eq!(s.steps[0].kind, StepKind::Given);
-    assert_eq!(s.steps[1].kind, StepKind::When);
-    assert_eq!(s.steps[3].kind, StepKind::And);
-    assert_eq!(s.steps[2].text, "it is held");
+    assert_eq!(
+        s.statement,
+        "When a thing is examined, it remains held and nothing else changes.\n\n\
+         | Input | Required result |\n|---|---|\n| held thing | remains held |"
+    );
 }
 
 #[test]
-fn prose_before_the_first_requirement_is_not_a_statement() {
+fn prose_before_the_first_claim_is_not_a_statement() {
     let spec = parse_spec("t.md", MINIMAL).unwrap();
     assert!(!spec.claims[0].statement.contains("claims nothing"));
 }
@@ -140,30 +141,38 @@ fn slash_is_only_allowed_in_spec_ids() {
 }
 
 #[test]
-fn a_scenario_needs_a_when_and_a_then() {
-    let message = err(&MINIMAL.replace("WHEN it is examined\n", ""));
-    assert!(message.contains("has no WHEN"), "{message}");
-
-    let message = err(&MINIMAL.replace("THEN it is held\n", ""));
-    assert!(message.contains("has no THEN"), "{message}");
-}
-
-#[test]
-fn steps_must_be_ordered() {
-    let source = MINIMAL.replace("AND nothing else changed", "GIVEN a late precondition");
+fn a_case_needs_non_empty_free_form_text() {
+    let source = MINIMAL.replace(
+        "When a thing is examined, it remains held and nothing else changes.\n\n\
+         | Input | Required result |\n|---|---|\n| held thing | remains held |\n",
+        "",
+    );
     let message = err(&source);
     assert!(
-        message.contains("`GIVEN` after a WHEN or THEN"),
+        message.contains("case `thing-held` has no statement"),
         "{message}"
     );
 }
 
 #[test]
-fn unrecognized_lines_in_a_scenario_fail_loudly() {
-    let source = MINIMAL.replace("AND nothing else changed", "BUT something else did");
-    let message = err(&source);
-    assert!(message.contains("unrecognized line"), "{message}");
-    assert!(message.contains("GIVEN, WHEN, THEN or AND"), "{message}");
+fn case_text_has_no_required_natural_language_shape() {
+    let source = MINIMAL.replace(
+        "When a thing is examined, it remains held and nothing else changes.",
+        "Вещь остаётся удержанной при проверке.",
+    );
+    assert!(parse_spec("t.md", &source).is_ok());
+}
+
+#[test]
+fn fenced_markdown_inside_a_case_is_preserved() {
+    let source = MINIMAL.replace(
+        "| held thing | remains held |",
+        "| held thing | remains held |\n\n```text\n### this is content\n```",
+    );
+    let spec = parse_spec("t.md", &source).unwrap();
+    assert!(spec.claims[0].cases[0]
+        .statement
+        .contains("### this is content"));
 }
 
 #[test]
@@ -182,7 +191,7 @@ The system SHALL do something unfalsifiable.
 }
 
 #[test]
-fn a_requirement_needs_a_statement() {
+fn a_claim_needs_a_statement() {
     let source = "\
 # Spec: alpha
 
@@ -190,8 +199,7 @@ fn a_requirement_needs_a_statement() {
 Criticality: standard
 
 ### Case: something
-WHEN a thing happens
-THEN another thing happens
+Something happens.
 ";
     let message = err(source);
     assert!(message.contains("has no statement"), "{message}");
@@ -250,8 +258,7 @@ Criticality: standard
 A SHALL.
 
 ### Case: shared
-WHEN a thing happens
-THEN another thing happens
+The first behavior occurs.
 
 ## Claim: second
 Criticality: standard
@@ -259,8 +266,7 @@ Criticality: standard
 Another SHALL.
 
 ### Case: shared
-WHEN a thing happens
-THEN another thing happens
+The second behavior occurs.
 ";
     let spec = parse_spec("t.md", source).unwrap();
     assert_eq!(spec.claims[0].cases[0].id, "shared");
@@ -268,16 +274,15 @@ THEN another thing happens
 }
 
 #[test]
-fn requirement_ids_are_unique() {
+fn claim_ids_are_unique() {
     let source = format!(
         "{MINIMAL}\n## Claim: thing-holds\nCriticality: standard\n\nA SHALL.\n\n\
-         ### Case: other\nWHEN a thing happens\nTHEN another thing happens\n"
+         ### Case: other\nAnother behavior occurs.\n"
     );
     assert!(err(&source).contains("declared twice"));
 }
 
-/// A diagram either illustrates and claims nothing, or it is the source of claims and nothing
-/// restates it. Fenced blocks take the first reading and are never parsed.
+/// Fenced blocks outside a Claim remain non-normative orientation and are never parsed.
 #[test]
 fn fenced_blocks_are_not_parsed() {
     let source = "\
@@ -294,8 +299,7 @@ Criticality: routine
 A SHALL.
 
 ### Case: real-scenario
-WHEN a thing happens
-THEN another thing happens
+The real behavior occurs.
 ";
     let spec = parse_spec("t.md", source).expect("parses");
     assert_eq!(spec.id, "alpha");
@@ -323,12 +327,11 @@ Criticality: enormous
 A SHALL.
 
 ### Case: also-bad
-THEN an outcome with no trigger
+An outcome exists.
 ";
     let message = err(source);
     assert!(message.contains("invalid claim id"), "{message}");
     assert!(message.contains("unknown criticality"), "{message}");
-    assert!(message.contains("has no WHEN"), "{message}");
 }
 
 #[test]

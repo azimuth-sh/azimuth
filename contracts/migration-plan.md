@@ -7,8 +7,8 @@
   "format": "azimuth-migration-plan",
   "schemaVersion": 1,
   "migrationLine": "alpha-claim-case",
-  "fromRelease": "0.1.0-alpha.3",
-  "toRelease": "0.1.0-alpha.4",
+  "fromRelease": "0.1.0-alpha.4",
+  "toRelease": "0.1.0-alpha.5",
   "installation": "azimuth/installation.json",
   "installationSha256": "<64 lowercase hexadecimal characters>",
   "disposition": "automatic",
@@ -18,6 +18,6 @@
 }
 ```
 
-Disposition is exactly `automatic | review-required | unsupported`. Findings are deterministic human-readable accounts of semantic work that prevents automatic application. Edits are a release-edge-specific closed schema; an apply implementation rejects every edit form it does not understand. The alpha.3-to-alpha.4 edge has no semantic edits.
+Disposition is exactly `automatic | review-required | unsupported`. Findings are deterministic human-readable accounts of semantic work that prevents automatic application. Edits are a release-edge-specific closed schema; an apply implementation rejects every edit form it does not understand. The alpha.4-to-alpha.5 edge has no authored semantic account edits: existing bodies remain valid free-form Markdown. Body preservation and Case fingerprint representation change, so normal validation may require reviewed decisions to be authored again. Derived JSON consumers must separately adopt model-export and traceability version 4.
 
 The fingerprint is canonical SHA-256 over every field except `fingerprint`, with recursively sorted object keys. Apply requires `automatic`, a current fingerprint, the exact installation digest and a wholly supported edit set before writing. Review-required and unsupported plans are read-only accounts and never authorize placeholder or partial output.

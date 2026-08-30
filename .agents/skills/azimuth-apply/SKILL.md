@@ -17,12 +17,12 @@ Implement the approved target without treating proposal prose as source truth.
 6. Add Realizes only where required and where the production site genuinely establishes part of a named case-level Claim. An unmarked native test remains ordinary engineering work.
 7. Build and run focused tests while iterating, then affected component and composed suites. Emit every relevant language manifest and run `azimuth validate` over their union.
 8. When the change alters an enumerated surface, run its real enumerator and validate the negative path with a temporary representative untagged member. Remove the temporary member afterward.
-9. Run `azimuth report traceability` when relationships change and inspect version 2 export when a public graph shape changes.
+9. Run `azimuth report traceability` when relationships change and inspect version 4 export when a public graph shape changes.
 10. For Run-bundle work, verify every relevant correction set with `azimuth run verify --bundle <file>...`, then inspect the same set with `azimuth run inspect --bundle <file>...`. Follow the strict [Run bundle format](../../../contracts/run-bundle.md); protocol validity is not current model acceptance or Assurance State.
 11. For adapter work, verify configured descriptions, create Check-only, Challenge-only and mixed launch plans as applicable from the complete model, and exercise the relevant execute or import path. Test candidate dispositions, required-form coverage, lanes, scope, launch inputs, content and descriptor drift, process bounds, response validation, valid adverse facts, scheduled omission diagnostics and failure without output. Follow the strict [adapter](../../../contracts/adapter.md) and [launch-plan](../../../contracts/run-launch-plan.md) formats.
 12. Complete plan and work-package statuses, write `outcome.md`, and leave the proposal at `implemented` until acceptance is genuinely established.
 
-## Alpha-2 boundaries
+## Current alpha boundaries
 
 - Azimuth is an evidence control plane; repository declarations own intent and reviewed meaning.
 - Current non-routine verification follows Check → Evidence Binding → Qualification. One current Claim Judgment binds the total applicable composition for each non-routine case Claim.
@@ -42,6 +42,6 @@ Implement the approved target without treating proposal prose as source truth.
 - `model.extract` is a declared capability class, not a current Run or extraction command.
 - Ledger ingest, authorization, retention and Assurance State remain deferred. Current planning defines no cache-validity, cross-Subject reuse or historical applicability inference.
 - Adapters are bounded short-lived processes, not daemons, webhook hosts or long-running supervisors.
-- The alpha 1 service wire remains isolated, and no Assurance Service export command exists.
+- The legacy service API and version 2 project-snapshot wire remain isolated, and no Assurance Service export command exists.
 - Use `azimuth validate`, `azimuth report traceability` and `azimuth export` for the current model.
 - Do not archive; `azimuth-archive` owns the acceptance boundary.

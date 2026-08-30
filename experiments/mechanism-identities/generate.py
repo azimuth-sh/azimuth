@@ -656,12 +656,10 @@ def model(root: pathlib.Path, phase: str) -> None:
             package / "spec.md",
             f"# Spec: {spec}\n\n## Claim: stable\nCriticality: standard\n\n"
             f"The {family} implementation SHALL retain its semantic mechanism identity.\n\n"
-            "### Case: relocation\nWHEN the declared project root moves\n"
-            "THEN its semantic identity remains stable\n\n"
+            "### Case: relocation\nMoving the declared project root preserves semantic identity.\n\n"
             "## Claim: profiles\nCriticality: routine\n\n"
             "The language fixture SHALL expose its additional semantic identity profiles.\n\n"
-            "### Case: language-profiles\nWHEN the fixture is extracted\n"
-            "THEN overload, nesting, receiver, trait, generic, or module identity is exact\n",
+            "### Case: language-profiles\nExtraction preserves exact overload, nesting, receiver, trait, generic, or module identity.\n",
         )
         primary = PRIMARY_MECHANISMS[family]
         design = (
@@ -818,8 +816,7 @@ def collision_model(root: pathlib.Path) -> None:
             package / "spec.md",
             f"# Spec: {spec}\n\n## Claim: stable\nCriticality: routine\n\n"
             "The synthetic collision site SHALL remain distinguishable by area.\n\n"
-            "### Case: assembled-identity\nWHEN equal raw sites are assembled\n"
-            "THEN their area-qualified SourceIdentity keys remain distinct\n",
+            "### Case: assembled-identity\nEqual raw sites retain distinct area-qualified SourceIdentity keys after assembly.\n",
         )
         write(
             package / "design.md",

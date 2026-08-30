@@ -1183,7 +1183,7 @@ mod tests {
         let spec = crate::spec::parse_spec(
             "spec.md",
             "# Spec: example\n\n## Claim: works\nCriticality: standard\n\nThe example \
-             SHALL work.\n\n### Case: succeeds\nWHEN invoked\nTHEN it succeeds\n",
+             SHALL work.\n\n### Case: succeeds\nIt succeeds when invoked.\n",
         )
         .unwrap();
         let model = Model {
@@ -1219,7 +1219,7 @@ mod tests {
         let spec = crate::spec::parse_spec(
             "spec.md",
             "# Spec: example\n\n## Claim: works\nCriticality: standard\n\nThe example \
-             SHALL work.\n\n### Case: succeeds\nWHEN invoked\nTHEN it succeeds\n",
+             SHALL work.\n\n### Case: succeeds\nIt succeeds when invoked.\n",
         )
         .unwrap();
         assert!(needs_standards(&Model {

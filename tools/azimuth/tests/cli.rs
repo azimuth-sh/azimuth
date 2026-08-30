@@ -33,8 +33,8 @@ fn write_model(root: &std::path::Path, criticality: &str) -> PathBuf {
              Criticality: {criticality}\n\n\
              The system SHALL expose its state.\n\n\
              ### Case: state-is-visible\n\
-             WHEN the state is requested\n\
-             THEN the state is exposed\n"
+             Event: the state is requested\n\
+             Required: the state is exposed\n"
         ),
     )
     .unwrap();
@@ -77,7 +77,7 @@ fn removed_commands_and_positional_validator_ids_fail_closed() {
 }
 
 #[test]
-fn export_is_recursively_v3_without_retired_evidence_keys() {
+fn export_is_recursively_v4_without_retired_evidence_keys() {
     let root = root();
     let model = write_model(&root, "routine");
     let output = azimuth(&["export", "--model", model.to_str().unwrap()]);
@@ -86,7 +86,7 @@ fn export_is_recursively_v3_without_retired_evidence_keys() {
     let json = azimuth::json::parse(&rendered).unwrap();
     assert_eq!(
         json.get("version").and_then(azimuth::json::Json::as_num),
-        Some(3.0)
+        Some(4.0)
     );
     assert_no_retired_keys(&json);
     fs::remove_dir_all(root).unwrap();

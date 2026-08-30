@@ -14,7 +14,7 @@
 //! into something a reviewer never sees in the matrix.
 
 use crate::diag::{validate_id, Diag};
-use crate::model::{Case, Claim, Criticality, Domain, Spec, Step, StepKind};
+use crate::model::{Case, Claim, Criticality, Domain, Spec};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -207,7 +207,7 @@ impl<'a> SpecParser<'a> {
 
     /// A claim whose domain is a set of sites (contracts/spec.md, site-domain invariants).
     ///
-    /// It carries no cases: there is no WHEN, because the claim does not range over executions.
+    /// It carries no authored cases because the claim does not range over executions.
     /// One implicit case is synthesized so every derived relation keys it exactly as it does a
     /// behavioural Claim — one Claim type, parameterized by domain, means one identity downstream.
     fn invariant(&mut self, rest: &str, line_no: usize, lines: &[&str], start: usize) -> usize {
@@ -270,35 +270,20 @@ impl<'a> SpecParser<'a> {
                     self.path,
                     ln,
                     "prose directly under an invariant heading",
-                    "labelled lines first, then a blank line, then the SHALL statement",
+                    "labelled lines first, then a blank line, then the normative Markdown body",
                 ));
             }
             i += 1;
         }
 
-        let mut statement = String::new();
-        while i < lines.len() {
-            let trimmed = lines[i].trim();
-            if trimmed.starts_with("## ")
-                || trimmed.starts_with("# ")
-                || trimmed.starts_with("### ")
-            {
-                break;
-            }
-            if !trimmed.is_empty() && !trimmed.starts_with('>') {
-                if !statement.is_empty() {
-                    statement.push(' ');
-                }
-                statement.push_str(trimmed);
-            }
-            i += 1;
-        }
+        let (statement, next) = markdown_body(lines, i);
+        i = next;
         if statement.is_empty() {
             self.errors.push(Diag::expecting(
                 self.path,
                 line_no,
                 format!("invariant `{id}` has no statement"),
-                "a SHALL statement in prose",
+                "non-empty free-form normative Markdown",
             ));
         }
 
@@ -308,7 +293,7 @@ impl<'a> SpecParser<'a> {
             statement,
             cases: vec![Case {
                 id,
-                steps: Vec::new(),
+                statement: String::new(),
                 line: line_no,
             }],
             line: line_no,
@@ -388,39 +373,21 @@ impl<'a> SpecParser<'a> {
                     self.path,
                     ln,
                     "prose directly under a claim heading",
-                    "labelled lines first, then a blank line, then the SHALL statement",
+                    "labelled lines first, then a blank line, then the normative Markdown body",
                 ));
                 i += 1;
             }
         }
 
-        // Statement prose, until the first case or the next claim.
-        let mut statement = String::new();
-        let mut fenced = false;
-        while i < lines.len() {
-            let trimmed = lines[i].trim();
-            if trimmed.starts_with("```") {
-                fenced = !fenced;
-                i += 1;
-                continue;
-            }
-            if !fenced && (trimmed.starts_with("## ") || trimmed.starts_with("### ")) {
-                break;
-            }
-            if !fenced && !trimmed.is_empty() && !trimmed.starts_with('>') {
-                if !statement.is_empty() {
-                    statement.push(' ');
-                }
-                statement.push_str(trimmed);
-            }
-            i += 1;
-        }
+        // Normative free-form Markdown, until the first Case or the next Claim.
+        let (statement, next) = markdown_body(lines, i);
+        i = next;
         if statement.is_empty() {
             self.errors.push(Diag::expecting(
                 self.path,
                 line_no,
                 format!("claim `{id}` has no statement"),
-                "a SHALL statement in prose",
+                "non-empty free-form normative Markdown",
             ));
         }
 
@@ -496,90 +463,20 @@ impl<'a> SpecParser<'a> {
             ));
         }
 
-        let mut steps: Vec<Step> = Vec::new();
-        let mut i = start + 1;
-        while i < lines.len() {
-            let trimmed = lines[i].trim();
-            if trimmed.is_empty() || trimmed.starts_with('#') {
-                break;
-            }
-            let ln = i + 1;
-            match step_kind(trimmed) {
-                Some((kind, text)) => {
-                    if text.is_empty() {
-                        self.errors.push(Diag::at(
-                            self.path,
-                            ln,
-                            format!("`{}` has no text", kind.name().to_uppercase()),
-                        ));
-                    }
-                    if kind == StepKind::And && steps.is_empty() {
-                        self.errors.push(Diag::expecting(
-                            self.path,
-                            ln,
-                            "`AND` with nothing to continue",
-                            "a GIVEN, WHEN or THEN before it",
-                        ));
-                    }
-                    if kind == StepKind::Given
-                        && steps
-                            .iter()
-                            .any(|s| s.kind == StepKind::When || s.kind == StepKind::Then)
-                    {
-                        self.errors.push(Diag::expecting(
-                            self.path,
-                            ln,
-                            "`GIVEN` after a WHEN or THEN",
-                            "GIVEN clauses before the WHEN",
-                        ));
-                    }
-                    if kind == StepKind::When && steps.iter().any(|s| s.kind == StepKind::Then) {
-                        self.errors.push(Diag::expecting(
-                            self.path,
-                            ln,
-                            "`WHEN` after a THEN",
-                            "every WHEN before the first THEN",
-                        ));
-                    }
-                    steps.push(Step {
-                        kind,
-                        text: text.to_string(),
-                    });
-                    i += 1;
-                }
-                None => {
-                    self.errors.push(Diag::expecting(
-                        self.path,
-                        ln,
-                        format!("unrecognized line in case `{id}`"),
-                        "GIVEN, WHEN, THEN or AND",
-                    ));
-                    i += 1;
-                }
-            }
-        }
-
-        if !steps.iter().any(|s| s.kind == StepKind::When) {
+        let (statement, i) = markdown_body(lines, start + 1);
+        if statement.is_empty() {
             self.errors.push(Diag::expecting(
                 self.path,
                 line_no,
-                format!("case `{id}` has no WHEN"),
-                "exactly what triggers the behaviour",
-            ));
-        }
-        if !steps.iter().any(|s| s.kind == StepKind::Then) {
-            self.errors.push(Diag::expecting(
-                self.path,
-                line_no,
-                format!("case `{id}` has no THEN"),
-                "an observable outcome — a claim with no outcome cannot be satisfied or not",
+                format!("case `{id}` has no statement"),
+                "non-empty free-form normative Markdown",
             ));
         }
 
         (
             Some(Case {
                 id,
-                steps,
+                statement,
                 line: line_no,
             }),
             i,
@@ -624,26 +521,34 @@ fn split_label(line: &str) -> Option<(&str, &str)> {
     Some((label, rest[1..].trim()))
 }
 
-fn step_kind(line: &str) -> Option<(StepKind, &str)> {
-    for (word, kind) in [
-        ("GIVEN ", StepKind::Given),
-        ("WHEN ", StepKind::When),
-        ("THEN ", StepKind::Then),
-        ("AND ", StepKind::And),
-    ] {
-        if let Some(rest) = line.strip_prefix(word) {
-            return Some((kind, rest.trim()));
+/// Collects one authoritative Markdown body while reserving the top three heading levels for the
+/// Spec, Claim and Case structure. Fenced headings remain content. Outer blank lines are removed;
+/// every other byte after newline normalization is preserved because Markdown whitespace can be
+/// meaningful and participates in semantic fingerprints.
+fn markdown_body(lines: &[&str], start: usize) -> (String, usize) {
+    let mut fenced = false;
+    let mut end = start;
+    while end < lines.len() {
+        let trimmed = lines[end].trim();
+        if trimmed.starts_with("```") {
+            fenced = !fenced;
+        } else if !fenced
+            && (trimmed.starts_with("# ")
+                || trimmed.starts_with("## ")
+                || trimmed.starts_with("### "))
+        {
+            break;
         }
+        end += 1;
     }
-    for (word, kind) in [
-        ("GIVEN", StepKind::Given),
-        ("WHEN", StepKind::When),
-        ("THEN", StepKind::Then),
-        ("AND", StepKind::And),
-    ] {
-        if line == word {
-            return Some((kind, ""));
-        }
+
+    let mut first = start;
+    while first < end && lines[first].trim().is_empty() {
+        first += 1;
     }
-    None
+    let mut last = end;
+    while last > first && lines[last - 1].trim().is_empty() {
+        last -= 1;
+    }
+    (lines[first..last].join("\n"), end)
 }

@@ -32,7 +32,7 @@ to several Cases only when its terminal outcome is atomic and honestly bears on 
 
 ## Current repository boundary
 
-The implemented alpha 4 extension seam is repository-owned:
+The implemented alpha 5 extension seam is repository-owned:
 
 - `verification.md` declares Checks, Evidence Bindings, Method Qualifications, Applicability
   Decisions, Challengers and Challenge Plans plus one Claim Judgment per applicable parent Claim;
@@ -41,7 +41,7 @@ The implemented alpha 4 extension seam is repository-owned:
 - extractors emit implementation identity and source fingerprints, never evidentiary meaning;
 - Challenge Plans use twelve selector forms for exact current decision fingerprints and preserve
   every candidate disposition; and
-- `azimuth export` version 3 exposes the derived repository graph and Findings.
+- `azimuth export` version 4 exposes the derived repository graph and Findings.
 
 Ordinary tests, analyzer rules and monitors remain outside Azimuth until deliberately enrolled. This prevents thousands of native test cases from becoming accidental assurance authority. It is independent of storage capacity: a future ledger may retain very large execution volumes while the semantic Check graph remains sparse.
 
@@ -120,7 +120,7 @@ The synthetic [Challenge-planning conformance](../experiments/challenge-planning
 
 The replacement Assurance Service is deferred with the Run ledger. Its intended authority is accepted execution facts and derived Subject-specific state, not repository semantics or provider integrations. The standalone bundle contract supplies the protocol meaning a future ledger must preserve; it does not authorize or ingest the Run.
 
-The alpha 1 claim-contract and project-snapshot wire remains isolated inside the existing service boundary until the replacement is implemented. It receives no bridge into the alpha 4 repository graph. There is no assurance-specific export command: `azimuth export` emits only the version 3 repository model and no runtime ledger records.
+The legacy claim-contract and project-snapshot wire remains isolated inside the existing service boundary until the replacement is implemented. It receives no bridge into the alpha 5 repository graph. There is no assurance-specific export command: `azimuth export` emits only the version 4 repository model and no runtime ledger records.
 
 ## Acceptance boundary for future extensions
 

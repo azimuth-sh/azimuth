@@ -61,7 +61,7 @@ fn rejects_unknown_enforcement_and_duplicate_mechanism_ids() {
 }
 
 #[test]
-fn a_requirement_may_carry_several_mechanisms() {
+fn a_claim_may_carry_several_mechanisms() {
     let source = "# Design: alpha\n\n\
 ## Claim: matters\n\
 Mechanism: transition-writer\n\

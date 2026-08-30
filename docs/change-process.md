@@ -81,7 +81,7 @@ azimuth export --out model.json
 ```
 
 Validation reports categorized Findings. Traceability is a derived, deterministic view over Cases
-and stable graph relations. Export writes model version 3. None of these commands executes native
+and stable graph relations. Export writes model version 4. None of these commands executes native
 tests or creates an execution fact.
 
 Run focused engineering tests while iterating, then affected component and composed suites. As a working practice, exercise an enumerated surface against its real enumerator and a temporary untagged negative member before acceptance; no artifact enforces that rehearsal.

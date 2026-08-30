@@ -6,7 +6,7 @@
 
 use crate::json::Json;
 use crate::labels::read_block;
-use crate::model::{Criticality, Model, StepKind};
+use crate::model::{Criticality, Model};
 use crate::spec::parse_spec;
 use crate::validation::{self, Finding};
 use std::fs;
@@ -25,7 +25,7 @@ pub struct Addition {
 #[derive(Debug, Clone)]
 pub struct AddedCase {
     pub id: String,
-    pub steps: Vec<(StepKind, String)>,
+    pub statement: String,
 }
 
 #[derive(Debug, Clone)]
@@ -309,11 +309,7 @@ fn parse_delta(
             .iter()
             .map(|case| AddedCase {
                 id: case.id.clone(),
-                steps: case
-                    .steps
-                    .iter()
-                    .map(|step| (step.kind, step.text.clone()))
-                    .collect(),
+                statement: case.statement.clone(),
             })
             .collect();
         let applied = model.specs.iter().any(|candidate| {
@@ -323,15 +319,10 @@ fn parse_delta(
                         && existing.criticality == Some(criticality)
                         && existing.statement == claim.statement
                         && cases.iter().all(|case| {
-                            existing.cases.iter().any(|item| {
-                                item.id == case.id
-                                    && item.steps.len() == case.steps.len()
-                                    && item.steps.iter().zip(&case.steps).all(
-                                        |(current, target)| {
-                                            current.kind == target.0 && current.text == target.1
-                                        },
-                                    )
-                            })
+                            existing
+                                .cases
+                                .iter()
+                                .any(|item| item.id == case.id && item.statement == case.statement)
                         })
                 })
         });
@@ -577,12 +568,12 @@ mod tests {
         fs::write(root.join("plan.md"), "- [ ] Apply it.\n").unwrap();
         fs::write(
             root.join("specs/alpha.md"),
-            "# Intent delta: alpha\n\n## Add claim: added\nCriticality: routine\n\nText.\n\n### Add case: visible\nWHEN x\nTHEN y\n",
+            "# Intent delta: alpha\n\n## Add claim: added\nCriticality: routine\n\nText.\n\n### Add case: visible\nY occurs when X occurs.\n",
         )
         .unwrap();
         let current = parse_spec(
             "alpha.md",
-            "# Spec: alpha\n\n## Claim: old\nCriticality: routine\n\nOld.\n\n### Case: existing\nWHEN x\nTHEN y\n",
+            "# Spec: alpha\n\n## Claim: old\nCriticality: routine\n\nOld.\n\n### Case: existing\nY occurs when X occurs.\n",
         )
         .unwrap();
         let model = Model {
@@ -597,19 +588,19 @@ mod tests {
     }
 
     #[test]
-    fn an_applied_addition_requires_the_same_statement_and_steps() {
+    fn an_applied_addition_requires_the_same_claim_and_case_statements() {
         let root = temp_change();
         fs::create_dir_all(root.join("specs")).unwrap();
         fs::write(root.join("proposal.md"), "# Change: x\n\nStatus: active\n").unwrap();
         fs::write(root.join("plan.md"), "- [ ] Apply it.\n").unwrap();
         fs::write(
             root.join("specs/alpha.md"),
-            "# Intent delta: alpha\n\n## Add claim: added\nCriticality: routine\n\nTarget statement.\n\n### Add case: visible\nWHEN x\nTHEN target behavior\n",
+            "# Intent delta: alpha\n\n## Add claim: added\nCriticality: routine\n\nTarget statement.\n\n### Add case: visible\nThe target behavior occurs.\n",
         )
         .unwrap();
         let current = parse_spec(
             "alpha.md",
-            "# Spec: alpha\n\n## Claim: added\nCriticality: routine\n\nDifferent statement.\n\n### Case: visible\nWHEN x\nTHEN different behavior\n",
+            "# Spec: alpha\n\n## Claim: added\nCriticality: routine\n\nDifferent statement.\n\n### Case: visible\nDifferent behavior occurs.\n",
         )
         .unwrap();
         let model = Model {
@@ -724,7 +715,7 @@ mod tests {
         fs::create_dir_all(root.join("specs")).unwrap();
         fs::write(
             root.join("specs/alpha.md"),
-            "# Intent delta: alpha\n\n## Add claim: added\nCriticality: routine\n\nText.\n\n### Add case: visible\nWHEN x\nTHEN y\n",
+            "# Intent delta: alpha\n\n## Add claim: added\nCriticality: routine\n\nText.\n\n### Add case: visible\nY occurs when X occurs.\n",
         )
         .unwrap();
 
@@ -810,7 +801,7 @@ mod tests {
         let current = parse_spec(
             "alpha.md",
             &format!(
-                "# Spec: alpha\n\n## Claim: existing\nCriticality: {}\n\nOld.\n\n### Case: visible\nWHEN x\nTHEN y\n",
+                "# Spec: alpha\n\n## Claim: existing\nCriticality: {}\n\nOld.\n\n### Case: visible\nY occurs when X occurs.\n",
                 criticality.name()
             ),
         )

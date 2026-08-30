@@ -208,7 +208,7 @@ fn model(root: &Path, checks: &[&str]) -> (PathBuf, PathBuf, PathBuf) {
     fs::write(
         package.join("spec.md"),
         "# Spec: demo\n\n## Claim: works\nCriticality: routine\n\n\
-         The demo SHALL work.\n\n### Case: works\nWHEN invoked\nTHEN it works\n",
+         The demo SHALL work.\n\n### Case: works\nEvent: invoked\nRequired: it works\n",
     )
     .unwrap();
     let declarations = checks
@@ -267,7 +267,7 @@ fn challenge_model(root: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     fs::write(
         model.join("demo/spec.md"),
         "# Spec: demo\n\n## Claim: works\nCriticality: standard\n\n\
-         The demo SHALL work.\n\n### Case: works\nWHEN invoked\nTHEN it works\n",
+         The demo SHALL work.\n\n### Case: works\nEvent: invoked\nRequired: it works\n",
     )
     .unwrap();
     let standards = root.join("standards.md");

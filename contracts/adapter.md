@@ -23,7 +23,7 @@ The default path is `azimuth/adapters.json`. Its exact root shape is:
   "id": "synthetic",
   "provider_family": "synthetic/provider",
   "protocol_version": 1,
-  "adapter_version": "0.1.0-alpha.4",
+  "adapter_version": "0.1.0-alpha.5",
   "build": "synthetic-build-1",
   "content": {
     "executable": {
@@ -103,7 +103,7 @@ Configuration implies one exact expected description. The adapter returns that d
   "protocol_version": 1,
   "id": "synthetic",
   "provider_family": "synthetic/provider",
-  "adapter_version": "0.1.0-alpha.4",
+  "adapter_version": "0.1.0-alpha.5",
   "build": "synthetic-build-1",
   "content": {
     "executable_digest": "sha256:<64-lowercase-hex>",

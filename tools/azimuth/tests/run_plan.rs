@@ -92,7 +92,7 @@ fn implementation(id: &str, address: &str) -> CheckImplementation {
 fn model(checks: &[&str]) -> Model {
     let spec = parse_spec(
         "synthetic/spec.md",
-        "# Spec: synthetic\n\n## Claim: works\nCriticality: standard\n\nThe synthetic subject SHALL work.\n\n### Case: works\nWHEN checked\nTHEN it works\n",
+        "# Spec: synthetic\n\n## Claim: works\nCriticality: standard\n\nThe synthetic subject SHALL work.\n\n### Case: works\nEvent: checked\nRequired: it works\n",
     )
     .unwrap();
     Model {
@@ -196,7 +196,7 @@ fn configuration() -> AdapterConfiguration {
 fn challenge_model() -> Model {
     let spec = parse_spec(
         "alpha/spec.md",
-        "# Spec: alpha\n\n## Claim: behavior\nCriticality: standard\n\nThe system SHALL work.\n\n### Case: works\nWHEN invoked\nTHEN it works\n",
+        "# Spec: alpha\n\n## Claim: behavior\nCriticality: standard\n\nThe system SHALL work.\n\n### Case: works\nEvent: invoked\nRequired: it works\n",
     )
     .unwrap();
     let verification = parse_verification(
@@ -226,12 +226,12 @@ fn challenge_model() -> Model {
 fn rich_challenge_model() -> Model {
     let alpha = parse_spec(
         "alpha/spec.md",
-        "# Spec: alpha\n\n## Claim: behavior\nCriticality: standard\n\nThe system SHALL work.\n\n### Case: works\nWHEN invoked\nTHEN it works\n",
+        "# Spec: alpha\n\n## Claim: behavior\nCriticality: standard\n\nThe system SHALL work.\n\n### Case: works\nEvent: invoked\nRequired: it works\n",
     )
     .unwrap();
     let surface = parse_spec(
         "surface/spec.md",
-        "# Spec: surface\n\n## Claim: routes\nCriticality: routine\n\nEvery route SHALL exist.\n\n### Case: tagged\nWHEN built\nTHEN it exists\n",
+        "# Spec: surface\n\n## Claim: routes\nCriticality: routine\n\nEvery route SHALL exist.\n\n### Case: tagged\nEvent: built\nRequired: it exists\n",
     )
     .unwrap();
     let verification = parse_verification(
@@ -1194,7 +1194,7 @@ fn challenge_planning_uses_complete_model_identity_and_required_form_union() {
     expanded.specs.push(
         parse_spec(
             "extra/spec.md",
-            "# Spec: extra\n\n## Claim: behavior\nCriticality: routine\n\nThe system SHALL remain explicit.\n\n### Case: stable\nWHEN inspected\nTHEN it remains explicit\n",
+            "# Spec: extra\n\n## Claim: behavior\nCriticality: routine\n\nThe system SHALL remain explicit.\n\n### Case: stable\nEvent: inspected\nRequired: it remains explicit\n",
         )
         .unwrap(),
     );

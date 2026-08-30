@@ -19,6 +19,8 @@ Follow the dependency order in `plan.md`. Keep changes inside scope, preserve ex
 
 Update current `spec.md` and `design.md` facets only to the state actually established by the implementation. Preserve archived decisions and unrelated accepted intent.
 
+An accepted behavioral spec uses `# Spec: <spec-id>`, `## Claim: <claim-id>`, one `Criticality: critical | standard | routine`, a non-empty free-form normative Markdown Claim body, and one or more `### Case: <case-id>` blocks with non-empty free-form normative Markdown bodies. Bodies may use any human language, EARS, unrestricted prose, tables, diagrams or code fences. Core preserves and fingerprints them without interpreting keywords, translations or notation. The top three structural headings are reserved for Spec, Claim or Invariant, and Case declarations; use level-four headings or fenced content inside a body. Keep rationale and generated duplicate views outside normative bodies, preserve exact accepted ids, and never derive normative wording from implementation or tests.
+
 ## Verify and stop
 
 Perform only engineering checks permitted by repository instructions. Run `azimuth change check <id>`, the normal `azimuth validate`, and relevant reports or exports. Inspect the final diff and record residuals, unperformed checks and rollout-dependent conditions honestly. Leave the change ready for finalization and ask for the next action. Do not finalize, archive or commit implicitly.

@@ -1,6 +1,6 @@
 use azimuth::assurance::{
-    ClaimContract, ContractArea, ContractContribution, ContractMount, ContractStep,
-    ContractSurface, ContractVerification, ProjectSnapshot, FORMAT, VERSION,
+    ClaimContract, ContractArea, ContractContribution, ContractMount, ContractSurface,
+    ContractVerification, ProjectSnapshot, FORMAT, VERSION,
 };
 
 fn contract(spec: &str, claim: &str) -> ClaimContract {
@@ -10,10 +10,7 @@ fn contract(spec: &str, claim: &str) -> ClaimContract {
         requirement: "behavior".into(),
         criticality: "standard".into(),
         statement: "The system SHALL work.".into(),
-        steps: vec![ContractStep {
-            kind: "then".into(),
-            text: "it works".into(),
-        }],
+        case_statement: "The system works under the addressed condition.".into(),
         domain: "behaviour".into(),
         verification: ContractVerification {
             strength: Some("demonstration".into()),
@@ -67,7 +64,7 @@ fn contract(spec: &str, claim: &str) -> ClaimContract {
 }
 
 #[test]
-fn alpha_one_wire_types_keep_deterministic_contract_identity() {
+fn isolated_wire_types_keep_deterministic_contract_identity() {
     let left = contract("zeta", "works");
     let mut reordered = left.clone();
     reordered.surface.as_mut().unwrap().contributions.reverse();
@@ -95,18 +92,20 @@ fn snapshot_wire_shape_and_fingerprint_remain_service_compatible() {
     assert_eq!(left.id, left.fingerprint());
     assert_eq!(left.claims[0].identity(), "alpha#works");
     assert_eq!(FORMAT, "azimuth-assurance-project-snapshot");
-    assert_eq!(VERSION, 1);
+    assert_eq!(VERSION, 2);
 
     let json = left.to_json();
     assert_eq!(
         json.get("version").and_then(|value| value.as_num()),
-        Some(1.0)
+        Some(2.0)
     );
     assert!(json.get("modelFingerprint").is_some());
     assert!(json.get("claims").is_some());
     assert!(json.get("bindings").is_none());
     let rendered = json.to_string_pretty();
     assert!(rendered.contains("contractFingerprint"));
+    assert!(rendered.contains("caseStatement"));
+    assert!(!rendered.contains("\"steps\""));
     assert!(!rendered.contains("method_qualification_fingerprint"));
 }
 

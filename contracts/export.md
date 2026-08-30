@@ -8,7 +8,7 @@ Output goes to stdout, or to `--out <file>` when given. The rendering is determi
 
 ```json
 {
-  "version": 3,
+  "version": 4,
   "specs": [],
   "realizes": [],
   "workspace": {},
@@ -33,9 +33,9 @@ Output goes to stdout, or to `--out <file>` when given. The rendering is determi
 ```
 
 These are the only root keys, in exactly this order. Every one is always present. `version` has
-exactly the value `3`.
+exactly the value `4`.
 
-The export root carries no `format` identifier. A consumer distinguishes version 3 export from
+The export root carries no `format` identifier. A consumer distinguishes version 4 export from
 traceability by root keys: the export has `specs`, the projection has `cases` and
 `decision_impacts`.
 
@@ -45,7 +45,7 @@ traceability by root keys: the export has `specs`, the projection has `cases` an
 
 Ordering is derivation order, not a canonical sort, except where stated:
 
-- `specs` follow sorted spec file paths; Claims, Cases and steps follow declaration order within their file.
+- `specs` follow sorted spec file paths; Claims and Cases follow declaration order within their file.
 - `checks`, `evidence_bindings`, `method_qualifications`, `applicability_decisions`,
   `claim_judgments`, `challengers` and `challenge_plans` follow sorted `verification.md` paths, then
   declaration order within each file.
@@ -77,7 +77,7 @@ Ordering is derivation order, not a canonical sort, except where stated:
         {
           "id": "rounds-half-to-even",
           "line": 18,
-          "steps": [{ "kind": "given", "text": "a two-line invoice" }]
+          "statement": "For a two-line invoice, ties round to the nearest even minor unit."
         }
       ]
     }
@@ -87,13 +87,14 @@ Ordering is derivation order, not a canonical sort, except where stated:
 
 `criticality` is `critical | standard | routine`, or `null` when the Claim declares none. `line` is
 the one-based source line of the heading. `domain` is `behaviour | sites`; `over` is a surface id
-for the sites domain and `null` otherwise. Step `kind` is `given | when | then | and`.
+for the sites domain and `null` otherwise. Claim and Case `statement` values preserve their
+free-form normative Markdown after outer blank lines and newline encoding are normalized.
 
 A site-domain Claim—one written as `## Invariant:`—appears here with exactly one synthesized Case
-whose id equals the Claim id and whose `steps` array is empty.
+whose id equals the Claim id and whose `statement` is empty.
 
 Every Claim digest includes its domain, `over` value and the complete ordered Case set. Every Case
-digest includes the parent Claim statement and domain plus that Case's steps.
+digest includes the parent Claim statement and domain plus that Case's free-form statement.
 
 ## Realizes
 

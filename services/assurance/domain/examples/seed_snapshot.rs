@@ -1,6 +1,6 @@
 use azimuth_assurance_domain::{
-    ClaimContract, ContractStep, ContractVerification, ProjectModelSnapshot,
-    PROJECT_SNAPSHOT_FORMAT, PROJECT_SNAPSHOT_VERSION,
+    ClaimContract, ContractVerification, ProjectModelSnapshot, PROJECT_SNAPSHOT_FORMAT,
+    PROJECT_SNAPSHOT_VERSION,
 };
 
 fn main() {
@@ -11,10 +11,7 @@ fn main() {
         requirement: "performance".into(),
         criticality: "standard".into(),
         statement: "Checkout latency remains bounded.".into(),
-        steps: vec![ContractStep {
-            kind: "then".into(),
-            text: "p95 latency stays below the qualified threshold".into(),
-        }],
+        case_statement: "P95 latency stays below the qualified threshold.".into(),
         domain: "behaviour".into(),
         verification: ContractVerification {
             strength: Some("demonstration".into()),

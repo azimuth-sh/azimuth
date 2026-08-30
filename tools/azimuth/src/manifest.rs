@@ -1,4 +1,4 @@
-//! Strict source-linkage manifest reader for the alpha 4 model.
+//! Strict source-linkage manifest reader for the alpha 5 model.
 
 use crate::diag::{validate_id, Diag};
 use crate::json::{self, Json};
