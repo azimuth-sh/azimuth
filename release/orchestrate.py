@@ -99,6 +99,32 @@ def image_matrix(catalog):
     ]
 
 
+def image_platform_matrix(catalog):
+    runners = {
+        "linux/amd64": ("ubuntu-24.04", "amd64"),
+        "linux/arm64": ("ubuntu-24.04-arm", "arm64"),
+    }
+    matrix = []
+    for image in catalog["images"]:
+        for platform in sorted(image["platforms"]):
+            require(platform in runners, f"image platform {platform!r} has no selected runner")
+            runner, architecture = runners[platform]
+            matrix.append(
+                {
+                    "id": image["id"],
+                    "identity": image["identity"],
+                    "version": catalog["release"]["version"],
+                    "context": image["context"],
+                    "dockerfile": image["dockerfile"],
+                    "platform": platform,
+                    "architecture": architecture,
+                    "runner": runner,
+                    "archive": f"{image['id']}-{architecture}.oci.tar",
+                }
+            )
+    return matrix
+
+
 def expected_subjects(catalog):
     version = catalog["release"]["version"]
     subjects = []
@@ -208,11 +234,29 @@ def workflow_account(root=ROOT):
         gate.count("qualify.py --images") == 1,
         "root gate does not isolate one release-only image entry point",
     )
-    for lane in ("packages", "native", "images", "account"):
+    for lane in ("packages", "native", "image-platforms", "images", "account"):
         require(lane in release_jobs, f"release lane {lane!r} is absent")
-    for lane in ("native", "images"):
+    for lane in ("native", "image-platforms", "images"):
         fail_fast = re.findall(r"^\s+fail-fast:\s*(\S+)\s*$", release_jobs[lane], re.MULTILINE)
         require(fail_fast == ["false"], f"release matrix {lane!r} does not isolate failures")
+    require(
+        "needs: [prepare, image-platforms]" in release_jobs["images"],
+        "release image assembly does not require every native platform build",
+    )
+    platform_job = release_jobs["image-platforms"]
+    require(
+        "runs-on: ${{ matrix.runner }}" in platform_job
+        and "platforms: ${{ matrix.platform }}" in platform_job,
+        "release image platform build is not bound to its selected native runner",
+    )
+    require(
+        "docker/setup-qemu-action" not in platform_job,
+        "release image platform build reintroduces emulation",
+    )
+    require(
+        "scope=release-${{ matrix.id }}-${{ matrix.architecture }}" in platform_job,
+        "release image cache is not isolated by image and architecture",
+    )
     require(
         "needs: [packages, native, images]" in release and "always()" in release,
         "release account does not observe every lane outcome",
@@ -615,6 +659,7 @@ def qualify_orchestration(root=ROOT, output_root=OUTPUT_ROOT):
         "schemaVersion": 1,
         "workflow": account,
         "nativeMatrix": native_matrix(catalog),
+        "imagePlatformMatrix": image_platform_matrix(catalog),
         "imageMatrix": image_matrix(catalog),
         "subjects": expected_subjects(catalog),
         "ordinaryExecution": ordinary_receipt or {"status": "pending"},
@@ -640,7 +685,12 @@ def write_account(account, output):
 
 def command_matrix(arguments):
     catalog = catalog_at(arguments.root)
-    matrix = native_matrix(catalog) if arguments.kind == "native" else image_matrix(catalog)
+    if arguments.kind == "native":
+        matrix = native_matrix(catalog)
+    elif arguments.kind == "image-platform":
+        matrix = image_platform_matrix(catalog)
+    else:
+        matrix = image_matrix(catalog)
     print(json.dumps({"include": matrix}, separators=(",", ":")))
 
 
@@ -684,6 +734,7 @@ def command_qualify(arguments):
     print(
         f"qualified {len(result['subjects'])} retained subject(s), "
         f"{len(result['nativeMatrix'])} native runner(s), and "
+        f"{len(result['imagePlatformMatrix'])} native image build(s) across "
         f"{len(result['imageMatrix'])} image lane(s)"
     )
 
@@ -693,7 +744,7 @@ def parser():
     commands = root.add_subparsers(dest="command", required=True)
 
     matrix = commands.add_parser("matrix")
-    matrix.add_argument("kind", choices=("native", "image"))
+    matrix.add_argument("kind", choices=("native", "image-platform", "image"))
     matrix.add_argument("--root", type=Path, default=ROOT)
     matrix.set_defaults(run=command_matrix)
 

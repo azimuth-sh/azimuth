@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       native: ${{ steps.matrix.outputs.native }}
+      image_platform: ${{ steps.matrix.outputs.image_platform }}
       image: ${{ steps.matrix.outputs.image }}
     steps:
       - uses: actions/checkout@v7
@@ -29,6 +30,7 @@ jobs:
         shell: bash
         run: |
           echo "native=$(python3 release/orchestrate.py matrix native)" >> "$GITHUB_OUTPUT"
+          echo "image_platform=$(python3 release/orchestrate.py matrix image-platform)" >> "$GITHUB_OUTPUT"
           echo "image=$(python3 release/orchestrate.py matrix image)" >> "$GITHUB_OUTPUT"
 
   packages:
@@ -94,13 +96,42 @@ jobs:
           path: dist/native/${{ matrix.archive }}
           if-no-files-found: error
 
-  images:
+  image-platforms:
     needs: prepare
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.image_platform) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - run: mkdir -p dist
+      - uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platform }}
+          tags: ${{ matrix.identity }}:${{ matrix.version }}
+          outputs: type=oci,dest=${{ github.workspace }}/dist/${{ matrix.archive }}
+          cache-from: type=gha,scope=release-${{ matrix.id }}-${{ matrix.architecture }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.id }}-${{ matrix.architecture }}
+          provenance: mode=max
+      - uses: actions/upload-artifact@v7
+        with:
+          name: image-platform-${{ matrix.id }}-${{ matrix.architecture }}
+          path: dist/${{ matrix.archive }}
+          if-no-files-found: error
+
+  images:
+    needs: [prepare, image-platforms]
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.image) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write
@@ -108,21 +139,23 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-qemu-action@v4
-      - uses: docker/setup-buildx-action@v4
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: image-platform-${{ matrix.id }}-*
+          path: dist/image-platforms
+          merge-multiple: true
       - run: |
           mkdir -p dist/images
           sudo apt-get update
           sudo apt-get install --yes skopeo
-      - uses: docker/build-push-action@v7
-        with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
-          platforms: ${{ matrix.platforms }}
-          tags: ${{ matrix.identity }}:${{ matrix.version }}
-          outputs: type=oci,dest=${{ github.workspace }}/dist/images/${{ matrix.archive }}
-          cache-from: type=gha,scope=release-${{ matrix.id }}
-          cache-to: type=gha,mode=max,scope=release-${{ matrix.id }}
-          provenance: mode=max
+      - run: >-
+          python3 release/candidates.py assemble-image
+          --id "$IMAGE_ID"
+          --platforms dist/image-platforms
+          --out "dist/images/$IMAGE_ARCHIVE"
+        env:
+          IMAGE_ID: ${{ matrix.id }}
+          IMAGE_ARCHIVE: ${{ matrix.archive }}
       - run: >-
           python3 release/candidates.py smoke-image
           --id "$IMAGE_ID"

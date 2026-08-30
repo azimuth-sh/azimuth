@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 
 import argparse
+import hashlib
+import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -50,6 +53,10 @@ ROOT = Path(__file__).resolve().parent.parent
 
 class CandidateError(Exception):
     pass
+
+
+OCI_INDEX_MEDIA_TYPE = "application/vnd.oci.image.index.v1+json"
+OCI_BLOB = re.compile(r"blobs/sha256/([0-9a-f]{64})")
 
 
 def require(condition, message):
@@ -318,6 +325,251 @@ def image_contract(root, image_id):
     return next((item for item in catalog["images"] if item["id"] == image_id), None)
 
 
+def read_archive_json(candidate, members, name, archive):
+    member = members.get(name)
+    require(member is not None, f"{archive.name}: OCI archive omits {name}")
+    content = candidate.extractfile(member)
+    require(content is not None, f"{archive.name}: cannot read {name}")
+    try:
+        return json.load(content)
+    except json.JSONDecodeError as error:
+        raise CandidateError(f"{archive.name}: {name} is malformed JSON: {error}") from error
+
+
+def copy_oci_blobs(archive, blob_root):
+    archive = Path(archive)
+    with tarfile.open(archive) as candidate:
+        members = {}
+        for member in candidate.getmembers():
+            if member.isdir():
+                require(
+                    member.name.rstrip("/") in ("blobs", "blobs/sha256"),
+                    f"{archive.name}: unexpected OCI directory {member.name!r}",
+                )
+                continue
+            require(member.isfile(), f"{archive.name}: unexpected OCI member {member.name!r}")
+            require(
+                member.name in ("index.json", "oci-layout") or OCI_BLOB.fullmatch(member.name),
+                f"{archive.name}: unexpected OCI member {member.name!r}",
+            )
+            require(member.name not in members, f"{archive.name}: duplicate OCI member {member.name!r}")
+            members[member.name] = member
+
+        layout = read_archive_json(candidate, members, "oci-layout", archive)
+        require(
+            layout == {"imageLayoutVersion": "1.0.0"},
+            f"{archive.name}: unsupported OCI layout",
+        )
+        index = read_archive_json(candidate, members, "index.json", archive)
+
+        for name, member in sorted(members.items()):
+            match = OCI_BLOB.fullmatch(name)
+            if match is None:
+                continue
+            expected_digest = match.group(1)
+            source = candidate.extractfile(member)
+            require(source is not None, f"{archive.name}: cannot read {name}")
+            destination = blob_root / expected_digest
+            checksum = hashlib.sha256()
+            temporary = blob_root / f".{expected_digest}.incoming"
+            sink = None if destination.is_file() else temporary.open("wb")
+            try:
+                for block in iter(lambda: source.read(1024 * 1024), b""):
+                    checksum.update(block)
+                    if sink is not None:
+                        sink.write(block)
+            finally:
+                if sink is not None:
+                    sink.close()
+            require(
+                checksum.hexdigest() == expected_digest,
+                f"{archive.name}: blob {expected_digest} checksum differs",
+            )
+            if destination.is_file():
+                require(
+                    destination.stat().st_size == member.size,
+                    f"{archive.name}: duplicate blob {expected_digest} size differs",
+                )
+            else:
+                temporary.replace(destination)
+    return index
+
+
+def descriptor_content(descriptor, blob_root, archive):
+    require(isinstance(descriptor, dict), f"{archive.name}: OCI descriptor is not an object")
+    digest = descriptor.get("digest", "")
+    require(
+        re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is not None,
+        f"{archive.name}: OCI descriptor digest is invalid",
+    )
+    content = blob_root / digest.removeprefix("sha256:")
+    require(content.is_file(), f"{archive.name}: OCI descriptor blob {digest} is absent")
+    require(
+        descriptor.get("size") == content.stat().st_size,
+        f"{archive.name}: OCI descriptor {digest} size differs",
+    )
+    return content
+
+
+def platform_manifests(archive, blob_root):
+    index = copy_oci_blobs(archive, blob_root)
+    require(isinstance(index, dict), f"{archive.name}: OCI index is not an object")
+    require(index.get("schemaVersion") == 2, f"{archive.name}: OCI index schema differs")
+    require(index.get("mediaType") == OCI_INDEX_MEDIA_TYPE, f"{archive.name}: OCI index type differs")
+    roots = index.get("manifests", [])
+    require(len(roots) == 1, f"{archive.name}: OCI archive must contain one tagged index")
+    root = roots[0]
+    require(root.get("mediaType") == OCI_INDEX_MEDIA_TYPE, f"{archive.name}: tagged root is not an index")
+    root_content = descriptor_content(root, blob_root, archive)
+    try:
+        selected = json.loads(root_content.read_text())
+    except json.JSONDecodeError as error:
+        raise CandidateError(f"{archive.name}: tagged index is malformed JSON: {error}") from error
+    require(isinstance(selected, dict), f"{archive.name}: tagged index is not an object")
+    require(selected.get("schemaVersion") == 2, f"{archive.name}: tagged index schema differs")
+    require(selected.get("mediaType") == OCI_INDEX_MEDIA_TYPE, f"{archive.name}: tagged index type differs")
+    manifests = selected.get("manifests", [])
+    require(isinstance(manifests, list) and manifests, f"{archive.name}: tagged index is empty")
+    for descriptor in manifests:
+        descriptor_content(descriptor, blob_root, archive)
+    return manifests
+
+
+def add_tar_directory(candidate, name):
+    member = tarfile.TarInfo(name)
+    member.type = tarfile.DIRTYPE
+    member.mode = 0o755
+    member.mtime = 0
+    candidate.addfile(member)
+
+
+def add_tar_bytes(candidate, name, content):
+    member = tarfile.TarInfo(name)
+    member.size = len(content)
+    member.mode = 0o644
+    member.mtime = 0
+    candidate.addfile(member, io.BytesIO(content))
+
+
+def write_oci_archive(output, blob_root, index):
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(prefix=f".{output.name}.", dir=output.parent, delete=False) as staged:
+        staged_path = Path(staged.name)
+    try:
+        with tarfile.open(staged_path, "w") as candidate:
+            add_tar_directory(candidate, "blobs/")
+            add_tar_directory(candidate, "blobs/sha256/")
+            for blob in sorted(blob_root.iterdir(), key=lambda item: item.name):
+                require(not blob.name.startswith("."), "incomplete OCI blob remained during assembly")
+                member = tarfile.TarInfo(f"blobs/sha256/{blob.name}")
+                member.size = blob.stat().st_size
+                member.mode = 0o644
+                member.mtime = 0
+                with blob.open("rb") as content:
+                    candidate.addfile(member, content)
+            add_tar_bytes(candidate, "index.json", index)
+            add_tar_bytes(candidate, "oci-layout", b'{"imageLayoutVersion":"1.0.0"}')
+        staged_path.replace(output)
+    finally:
+        staged_path.unlink(missing_ok=True)
+
+
+def assemble_image(root, image_id, platform_root, output):
+    image = image_contract(root, image_id)
+    require(image is not None, f"image {image_id!r} is absent")
+    expected_platforms = sorted(image["platforms"])
+    archives = sorted(Path(platform_root).glob("*.oci.tar"))
+    require(
+        len(archives) == len(expected_platforms),
+        f"{image_id}: platform archive population differs",
+    )
+
+    with tempfile.TemporaryDirectory(prefix=f"azimuth-{image_id}-oci-") as temporary:
+        blob_root = Path(temporary) / "blobs"
+        blob_root.mkdir()
+        selected = {}
+        attestations = {}
+        for archive in archives:
+            manifests = platform_manifests(archive, blob_root)
+            platform_descriptors = []
+            unknown_descriptors = []
+            for descriptor in manifests:
+                require(
+                    isinstance(descriptor, dict),
+                    f"{archive.name}: OCI descriptor is not an object",
+                )
+                platform = descriptor.get("platform", {})
+                require(
+                    isinstance(platform, dict),
+                    f"{archive.name}: OCI descriptor platform is not an object",
+                )
+                operating_system = platform.get("os")
+                architecture = platform.get("architecture")
+                if (operating_system, architecture) == ("unknown", "unknown"):
+                    unknown_descriptors.append(descriptor)
+                else:
+                    platform_descriptors.append(descriptor)
+            require(
+                len(platform_descriptors) == 1,
+                f"{archive.name}: expected exactly one concrete platform manifest",
+            )
+            descriptor = platform_descriptors[0]
+            platform = descriptor["platform"]
+            identity = f"{platform.get('os')}/{platform.get('architecture')}"
+            require(identity in expected_platforms, f"{archive.name}: unexpected platform {identity!r}")
+            require(identity not in selected, f"{image_id}: duplicate platform {identity!r}")
+            for attestation in unknown_descriptors:
+                annotations = attestation.get("annotations", {})
+                require(
+                    isinstance(annotations, dict),
+                    f"{archive.name}: attestation annotations are not an object",
+                )
+                reference = annotations.get("vnd.docker.reference.digest")
+                require(
+                    reference == descriptor.get("digest"),
+                    f"{archive.name}: attestation does not name its platform manifest",
+                )
+            selected[identity] = descriptor
+            attestations[identity] = unknown_descriptors
+
+        require(sorted(selected) == expected_platforms, f"{image_id}: assembled platform account differs")
+
+        merged_manifests = [selected[platform] for platform in expected_platforms]
+        for platform in expected_platforms:
+            merged_manifests.extend(attestations[platform])
+        merged = {
+            "schemaVersion": 2,
+            "mediaType": OCI_INDEX_MEDIA_TYPE,
+            "manifests": merged_manifests,
+        }
+        merged_content = (json.dumps(merged, indent=2) + "\n").encode()
+        merged_digest = hashlib.sha256(merged_content).hexdigest()
+        (blob_root / merged_digest).write_bytes(merged_content)
+
+        catalog = catalog_at(root)
+        version = catalog["release"]["version"]
+        tagged = {
+            "schemaVersion": 2,
+            "mediaType": OCI_INDEX_MEDIA_TYPE,
+            "manifests": [
+                {
+                    "mediaType": OCI_INDEX_MEDIA_TYPE,
+                    "digest": f"sha256:{merged_digest}",
+                    "size": len(merged_content),
+                    "annotations": {
+                        "io.containerd.image.name": f"{image['identity']}:{version}",
+                        "org.opencontainers.image.ref.name": version,
+                    },
+                }
+            ],
+        }
+        index_content = json.dumps(tagged, separators=(",", ":")).encode()
+        write_oci_archive(output, blob_root, index_content)
+    inspect_image(root, image_id, output)
+    return Path(output)
+
+
 def inspect_image(root, image_id, archive):
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
@@ -441,6 +693,12 @@ def parser():
     native.add_argument("--out", type=Path, required=True)
     native.add_argument("--target", required=True)
 
+    assemble = commands.add_parser("assemble-image")
+    assemble.add_argument("--root", type=Path, default=ROOT)
+    assemble.add_argument("--id", required=True)
+    assemble.add_argument("--platforms", type=Path, required=True)
+    assemble.add_argument("--out", type=Path, required=True)
+
     inspect = commands.add_parser("inspect-image")
     inspect.add_argument("--root", type=Path, default=ROOT)
     inspect.add_argument("--id", required=True)
@@ -461,6 +719,9 @@ def main():
     elif arguments.command == "native":
         archive = build_native(arguments.root, arguments.out, arguments.target)
         print(f"retained and exercised {archive.name}")
+    elif arguments.command == "assemble-image":
+        archive = assemble_image(arguments.root, arguments.id, arguments.platforms, arguments.out)
+        print(f"assembled every selected platform in {archive.name}")
     elif arguments.command == "inspect-image":
         inspect_image(arguments.root, arguments.id, arguments.archive)
         print(f"verified selected platforms in {arguments.archive.name}")
@@ -472,5 +733,11 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except (CandidateError, QualificationError, subprocess.CalledProcessError) as error:
+    except (
+        CandidateError,
+        QualificationError,
+        OSError,
+        subprocess.CalledProcessError,
+        tarfile.TarError,
+    ) as error:
         raise SystemExit(f"release candidate failed: {error}") from error

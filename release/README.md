@@ -2,6 +2,8 @@
 
 The rehearsal workflow produces candidates and GitHub attestations but does not publish them. Its tracked receipts record hosted execution, not files that local code can derive without GitHub. Refresh a receipt only after the changed executable inputs are committed and the corresponding pull-request workflow succeeds.
 
+Image platforms build independently on matching native GitHub runners. Each image and architecture has its own BuildKit cache scope. The Assurance API builder keeps locked external Rust dependencies in a manifest-only layer so source-only changes rebuild the local crates rather than the complete graph. The platform archives are intermediate inputs only: the `images` jobs validate and merge them into one OCI index per catalog image, exercise every selected platform, and attest only that final multi-platform candidate. Publication therefore retains the same image subjects and never treats a platform fragment as a releasable artifact.
+
 Use `gh` for every hosted execution account:
 
 ```sh

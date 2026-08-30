@@ -2,9 +2,26 @@ ARG AZIMUTH_VERSION=0.1.0-alpha.5
 
 FROM rust:1.87-bookworm AS build
 WORKDIR /source
+
+COPY tools/azimuth/Cargo.toml tools/azimuth/Cargo.lock tools/azimuth/
+COPY services/assurance/Cargo.toml services/assurance/Cargo.lock services/assurance/
+COPY services/assurance/domain/Cargo.toml services/assurance/domain/
+COPY services/assurance/server/Cargo.toml services/assurance/server/
+# Keep the locked third-party graph in an exported layer that source-only changes do not replace.
+RUN mkdir -p tools/azimuth/src services/assurance/domain/src services/assurance/server/src \
+    && printf 'pub fn dependency_cache_seed() {}\n' > tools/azimuth/src/lib.rs \
+    && printf 'fn main() {}\n' > tools/azimuth/src/main.rs \
+    && printf 'pub fn dependency_cache_seed() {}\n' > services/assurance/domain/src/lib.rs \
+    && printf 'fn main() {}\n' > services/assurance/server/src/main.rs \
+    && cargo build --locked --release --manifest-path services/assurance/Cargo.toml \
+        -p azimuth-assurance-server
+
 COPY tools/azimuth tools/azimuth
 COPY services/assurance services/assurance
-RUN cargo build --release --manifest-path services/assurance/Cargo.toml -p azimuth-assurance-server
+RUN cargo clean --release --manifest-path services/assurance/Cargo.toml \
+        -p azimuth -p azimuth-assurance-domain -p azimuth-assurance-server \
+    && cargo build --locked --release --manifest-path services/assurance/Cargo.toml \
+        -p azimuth-assurance-server
 
 FROM debian:bookworm-slim AS runtime
 ARG AZIMUTH_VERSION
