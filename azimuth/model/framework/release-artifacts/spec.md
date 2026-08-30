@@ -8,7 +8,7 @@ contract before publication.
 
 ### Case: one-source-version
 - Event: a selected first-alpha artifact exposes a version or source tag
-- Required outcome: it matches version `0.1.0-alpha.5` and tag `v0.1.0-alpha.5`
+- Required outcome: it matches version `0.1.0-alpha.6` and tag `v0.1.0-alpha.6`
 - Additional condition or outcome: the release catalog and bundled resource account name migration line `alpha-claim-case`
 
 ### Case: registry-identities-match-contract

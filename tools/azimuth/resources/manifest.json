@@ -1,7 +1,7 @@
 {
   "format": "azimuth-cli-resources",
   "schemaVersion": 1,
-  "releaseVersion": "0.1.0-alpha.5",
+  "releaseVersion": "0.1.0-alpha.6",
   "migrationLine": "alpha-claim-case",
   "skills": [
     "azimuth-explore",
@@ -31,6 +31,7 @@
   ],
   "migrations": [
     "0.1.0-alpha.3-to-0.1.0-alpha.4",
-    "0.1.0-alpha.4-to-0.1.0-alpha.5"
+    "0.1.0-alpha.4-to-0.1.0-alpha.5",
+    "0.1.0-alpha.5-to-0.1.0-alpha.6"
   ]
 }

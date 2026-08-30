@@ -94,7 +94,7 @@ The complete shape is:
   "plan": {},
   "adapter": {
     "id": "synthetic",
-    "adapter_version": "0.1.0-alpha.5",
+    "adapter_version": "0.1.0-alpha.6",
     "adapter_fingerprint": "sha256:<adapter-fingerprint>",
     "descriptor_fingerprint": "sha256:<descriptor-fingerprint>",
     "configuration_fingerprint": "sha256:<configuration-fingerprint>"

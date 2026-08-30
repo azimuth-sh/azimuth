@@ -9,7 +9,7 @@
     <AssemblyName>azimuth-emit-dotnet</AssemblyName>
     <RootNamespace>Azimuth.Emit</RootNamespace>
     <PackageId>Azimuth.Emit</PackageId>
-    <Version>0.1.0-alpha.5</Version>
+    <Version>0.1.0-alpha.6</Version>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <Description>Extracts Azimuth linkage tags from compiled .NET assemblies.</Description>
     <PackageProjectUrl>https://azimuth.sh</PackageProjectUrl>

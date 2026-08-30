@@ -28,9 +28,9 @@ if __package__:
         file_index,
         plan_publication,
         read_json,
+        release_artifacts,
         source_entry,
         validate_completion,
-        verify,
         verify_tag,
         workflow_jobs,
     )
@@ -42,9 +42,9 @@ else:
         file_index,
         plan_publication,
         read_json,
+        release_artifacts,
         source_entry,
         validate_completion,
-        verify,
         verify_tag,
         workflow_jobs,
     )
@@ -52,8 +52,8 @@ else:
 
 ROOT = Path(__file__).resolve().parent.parent
 REPOSITORY = "azimuth-sh/azimuth"
-USER_AGENT = "azimuth-release/0.1.0-alpha.5 (https://github.com/azimuth-sh/azimuth)"
-SUPPORT_ASSETS = ("candidates.json", "SHA256SUMS")
+USER_AGENT = "azimuth-release/0.1.0-alpha.6 (https://github.com/azimuth-sh/azimuth)"
+SUPPORT_ASSETS = ("SHA256SUMS",)
 PUBLICATION_WORKFLOW = ROOT / ".github/workflows/publish.yml"
 UNSET = object()
 
@@ -170,9 +170,9 @@ def verify_nuget_repository_signature(content):
     require(b"Signature type: Repository" in output, "NuGet repository signature is absent")
 
 
-def public_account(retained_account, candidate_root):
-    account = copy.deepcopy(retained_account)
-    for subject in account["subjects"]:
+def public_release(retained_release, candidate_root):
+    release = copy.deepcopy(retained_release)
+    for subject in release["subjects"]:
         retained = candidate_path(candidate_root, subject)
         if subject["kind"] == "image":
             retained_checksum = subject["sha256"]
@@ -182,7 +182,7 @@ def public_account(retained_account, candidate_root):
             subject["registryDigest"] = registry_checksum
         elif subject.get("ecosystem") == "nuget":
             subject["payloadSha256"] = nuget_payload_digest(retained.read_bytes())
-    return account
+    return release
 
 
 def annotated_tag_revision(root, tag):
@@ -191,6 +191,15 @@ def annotated_tag_revision(root, tag):
     revision = run(["git", "rev-list", "-n", "1", tag], cwd=root).stdout.decode().strip()
     require(re.fullmatch(r"[0-9a-f]{40}", revision) is not None, "tag revision is invalid")
     return revision
+
+
+def require_main_revision(root, revision):
+    result = run(
+        ["git", "merge-base", "--is-ancestor", revision, "origin/main"],
+        check=False,
+        cwd=root,
+    )
+    require(result.returncode == 0, "tagged revision is not in main history")
 
 
 def publication_run_commands(job):
@@ -223,16 +232,18 @@ def publication_run_commands(job):
     return commands
 
 
-def publication_workflow_account(root=ROOT):
+def publication_workflow_structure(root=ROOT):
     source = (Path(root) / PUBLICATION_WORKFLOW.relative_to(ROOT)).read_text()
     trigger = source.split("permissions:", 1)[0]
-    require("workflow_dispatch:" in trigger, "publication workflow has no owner dispatch")
-    require("candidate_tag:" in trigger, "publication workflow cannot name an immutable candidate")
+    require("push:" in trigger and "tags:" in trigger, "publication workflow has no tag push")
     require("pull_request:" not in trigger, "publication workflow runs on pull requests")
-    require("push:" not in trigger, "publication workflow publishes from a push trigger")
+    require("workflow_dispatch:" not in trigger, "publication workflow has a manual dispatch")
     jobs = workflow_jobs(source)
-    for name in ("publish", "image-provenance", "complete"):
+    for name in ("build", "publish", "image-provenance", "complete"):
         require(name in jobs, f"publication workflow omits {name!r}")
+    require("uses: ./.github/workflows/ci.yml" in jobs["build"],
+            "publication does not call the complete build workflow")
+    for name in ("publish", "image-provenance", "complete"):
         require("environment: release" in jobs[name], f"publication job {name!r} is unbounded")
     for secret in ("CARGO_REGISTRY_TOKEN", "NPM_TOKEN", "NUGET_API_KEY"):
         require(
@@ -246,22 +257,19 @@ def publication_workflow_account(root=ROOT):
     require("packages: write" in jobs["publish"],
             "publication workflow cannot write GHCR")
     require("actions/download-artifact@v8" in source, "publication omits retained downloads")
-    require("run-id: ${{ inputs.rehearsal_run_id }}" in source,
-            "publication does not bind the rehearsal run")
-    require("release/candidates.py" not in source, "publication rebuilds candidates")
-    require("docker/build-push-action" not in source, "publication rebuilds images")
+    require("run-id:" not in source, "publication downloads artifacts from another run")
+    require("needs: build" in jobs["publish"], "publication does not wait for the build")
     publish_commands = publication_run_commands(jobs["publish"])
     commands = "\n".join(publish_commands)
     require("publication.py preflight" in commands, "publication omits preflight")
     require("--require-credentials" in commands, "publication omits the credential gate")
     require("publication.py publish" in commands, "publication omits the selected write step")
-    require("--publication-revision" in commands,
-            "publication preflight omits the executing revision")
+    require("--revision" in commands, "publication preflight omits the tagged revision")
     require(
         commands.index("publication.py preflight") < commands.index("publication.py publish"),
         "publication writes before preflight",
     )
-    for expression in ("${{ inputs.", "${{ matrix."):
+    for expression in ("${{ github.", "${{ matrix."):
         require(
             not any(expression in command for command in publish_commands),
             "publication expands untrusted values directly in a shell command",
@@ -272,14 +280,13 @@ def publication_workflow_account(root=ROOT):
             "published image provenance is not attached to GHCR")
     require("needs: [publish, image-provenance]" in jobs["complete"],
             "completion does not wait for publication and provenance")
-    require("--publication-revision" in jobs["complete"],
-            "completion omits the executing revision")
+    require("--revision" in jobs["complete"], "completion omits the tagged revision")
     require("docker/login-action" not in jobs["complete"],
             "completion authenticates before public image retrieval")
     return {
-        "trigger": "workflow_dispatch",
-        "candidateBuilds": 0,
-        "jobs": ["publish", "image-provenance", "complete"],
+        "trigger": "tag-push",
+        "artifactBuilds": "same-run",
+        "jobs": ["build", "publish", "image-provenance", "complete"],
     }
 
 
@@ -447,16 +454,35 @@ def image_manifest(subject, version):
     return checksum, platforms
 
 
-def support_asset_account(account_path, sums_path):
-    return {
-        "candidates.json": digest(account_path),
-        "SHA256SUMS": digest(sums_path),
-    }
+def support_asset_checksums(sums_path):
+    return {"SHA256SUMS": digest(sums_path)}
+
+
+def write_checksums(release, output):
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        "".join(
+            f"{subject['sha256']}  {subject['filename']}\n"
+            for subject in release["subjects"]
+        )
+    )
+
+
+def verify_checksums(release, sums_path):
+    expected = "".join(
+        f"{subject['sha256']}  {subject['filename']}\n"
+        for subject in release["subjects"]
+    )
+    try:
+        observed = Path(sums_path).read_text()
+    except OSError as error:
+        raise PublicationError(f"cannot read {sums_path}: {error}") from error
+    require(observed == expected, "release artifact checksums differ")
 
 
 def collect_state(
     account,
-    account_path,
     sums_path,
     repository=REPOSITORY,
     publication_revision=None,
@@ -482,7 +508,7 @@ def collect_state(
         require(release.get("prerelease") is True, "GitHub Release is not a prerelease")
         state["releaseExists"] = True
         assets = {asset["name"]: asset for asset in release.get("assets", [])}
-        expected_support = support_asset_account(account_path, sums_path)
+        expected_support = support_asset_checksums(sums_path)
         missing = []
         for name, checksum in expected_support.items():
             if name not in assets:
@@ -632,28 +658,31 @@ def write_json(path, value):
     path.write_text(json.dumps(value, indent=2) + "\n")
 
 
+def retained_tagged_release(candidate_root, revision, tag, root):
+    release = release_artifacts(candidate_root, revision, tag, root)
+    verify_tag(root, tag, release["revision"])
+    require(
+        annotated_tag_revision(root, tag) == release["revision"],
+        "annotated tag revision differs from release revision",
+    )
+    require_main_revision(root, release["revision"])
+    return release
+
+
 def preflight(arguments):
-    account_path = Path(arguments.account)
-    retained_account = verify(read_json(account_path), arguments.candidates, arguments.root)
-    account = public_account(retained_account, arguments.candidates)
-    require(arguments.tag == account["tag"], "requested tag differs from retained account")
-    verify_tag(arguments.root, arguments.tag, account["revision"])
-    require(
-        annotated_tag_revision(arguments.root, arguments.tag) == account["revision"],
-        "annotated tag revision differs from retained account",
+    retained_release = retained_tagged_release(
+        arguments.candidates,
+        arguments.revision,
+        arguments.tag,
+        arguments.root,
     )
-    require(arguments.run_revision == account["revision"], "rehearsal run revision differs")
-    publication_revision = getattr(arguments, "publication_revision", None) or account["revision"]
-    require(
-        re.fullmatch(r"[0-9a-f]{40}", publication_revision) is not None,
-        "publication revision is invalid",
-    )
+    write_checksums(retained_release, arguments.sums_out)
+    account = public_release(retained_release, arguments.candidates)
     state = collect_state(
         account,
-        account_path,
-        arguments.sums,
+        arguments.sums_out,
         arguments.repository,
-        publication_revision,
+        account["revision"],
     )
     plan = registry_publication_plan(account, state)
     credentials = credential_account()
@@ -663,9 +692,7 @@ def preflight(arguments):
         "observedAt": now(),
         "tag": account["tag"],
         "revision": account["revision"],
-        "publicationRevision": publication_revision,
-        "rehearsalRun": arguments.rehearsal_run,
-        "candidateAccountSha256": digest(account_path),
+        "artifactSetSha256": digest(arguments.sums_out),
         "stateSha256": None,
         "plan": plan,
         "credentials": credentials,
@@ -763,7 +790,7 @@ def release_notes(account):
     )
 
 
-def ensure_github_release(account, state, account_path, sums_path, repository=REPOSITORY):
+def ensure_github_release(account, state, sums_path, repository=REPOSITORY):
     if not state["releaseExists"]:
         run(
             [
@@ -772,7 +799,7 @@ def ensure_github_release(account, state, account_path, sums_path, repository=RE
                 "--notes", release_notes(account),
             ]
         )
-    support = {"candidates.json": account_path, "SHA256SUMS": sums_path}
+    support = {"SHA256SUMS": sums_path}
     for name in state["missingReleaseAssets"]:
         run(["gh", "release", "upload", account["tag"], support[name], "--repo", repository])
 
@@ -904,9 +931,14 @@ def publish_target(subject, path, account, repository=REPOSITORY):
 
 
 def publish(arguments):
-    account_path = Path(arguments.account)
-    retained_account = verify(read_json(account_path), arguments.candidates, arguments.root)
-    account = public_account(retained_account, arguments.candidates)
+    retained_release = retained_tagged_release(
+        arguments.candidates,
+        arguments.revision,
+        arguments.tag,
+        arguments.root,
+    )
+    verify_checksums(retained_release, arguments.sums)
+    account = public_release(retained_release, arguments.candidates)
     state = read_json(arguments.state)
     supplied_plan = read_json(arguments.plan)
     expected_plan = registry_publication_plan(account, state)
@@ -916,7 +948,7 @@ def publish(arguments):
     subjects = {subject["key"]: subject for subject in account["subjects"]}
     native_selected = any(subjects[key]["kind"] == "native" for key in supplied_plan["publish"])
     if native_selected or state["missingReleaseAssets"]:
-        ensure_github_release(account, state, account_path, arguments.sums, arguments.repository)
+        ensure_github_release(account, state, arguments.sums, arguments.repository)
     published = []
     for key in supplied_plan["publish"]:
         subject = subjects[key]
@@ -951,8 +983,14 @@ def publish(arguments):
 
 
 def image_state(arguments):
-    retained_account = verify(read_json(arguments.account), arguments.candidates, arguments.root)
-    account = public_account(retained_account, arguments.candidates)
+    retained_release = retained_tagged_release(
+        arguments.candidates,
+        arguments.revision,
+        arguments.tag,
+        arguments.root,
+    )
+    verify_checksums(retained_release, arguments.sums)
+    account = public_release(retained_release, arguments.candidates)
     subject = next(
         (
             item
@@ -961,7 +999,7 @@ def image_state(arguments):
         ),
         None,
     )
-    require(subject is not None, f"image {arguments.id!r} is absent from the account")
+    require(subject is not None, f"image {arguments.id!r} is absent from the release")
     observed = image_manifest(subject, account["version"])
     require(observed is not None, f"image {arguments.id!r} is not public")
     checksum, platforms = observed
@@ -972,20 +1010,19 @@ def image_state(arguments):
 
 
 def complete(arguments):
-    account_path = Path(arguments.account)
-    retained_account = verify(read_json(account_path), arguments.candidates, arguments.root)
-    account = public_account(retained_account, arguments.candidates)
-    publication_revision = getattr(arguments, "publication_revision", None) or account["revision"]
-    require(
-        re.fullmatch(r"[0-9a-f]{40}", publication_revision) is not None,
-        "publication revision is invalid",
+    retained_release = retained_tagged_release(
+        arguments.candidates,
+        arguments.revision,
+        arguments.tag,
+        arguments.root,
     )
+    verify_checksums(retained_release, arguments.sums)
+    account = public_release(retained_release, arguments.candidates)
     state = collect_state(
         account,
-        account_path,
         arguments.sums,
         arguments.repository,
-        publication_revision,
+        account["revision"],
     )
     require(not state["missingReleaseAssets"], "GitHub Release support assets are incomplete")
     completion = validate_registry_completion(account, state)
@@ -995,10 +1032,8 @@ def complete(arguments):
         "observedAt": now(),
         "tag": account["tag"],
         "revision": account["revision"],
-        "publicationRevision": publication_revision,
-        "rehearsalRun": arguments.rehearsal_run,
         "publicationRun": arguments.publication_run,
-        "candidateAccountSha256": digest(account_path),
+        "artifactSetSha256": digest(arguments.sums),
         "state": state,
         "completion": completion,
     }
@@ -1011,14 +1046,14 @@ def qualify(arguments):
     output = Path(arguments.out)
     workflow = root / PUBLICATION_WORKFLOW.relative_to(ROOT)
     implementation = root / "release/publication.py"
-    workflow_account = publication_workflow_account(root)
+    workflow_structure = publication_workflow_structure(root)
     output.mkdir(parents=True, exist_ok=True)
     write_json(
         output / "publication.json",
         {
             "format": "azimuth-publication-qualification",
             "schemaVersion": 1,
-            "workflow": workflow_account,
+            "workflow": workflow_structure,
             "operationalEvidence": "pending",
         },
     )
@@ -1033,7 +1068,7 @@ def qualify(arguments):
         ),
         (
             "tagged-candidates-are-verifiable",
-            "retained_candidate_verifier",
+            "tagged_release_artifact_validator",
             "release/publication.py",
             implementation_fingerprint,
         ),
@@ -1070,7 +1105,7 @@ def qualify(arguments):
             "artifacts": [],
         },
     )
-    print("qualified owner-dispatched public publication with operational evidence pending")
+    print("qualified tag-triggered public publication with operational evidence pending")
 
 
 def parser():
@@ -1080,22 +1115,20 @@ def parser():
     commands = root.add_subparsers(dest="command", required=True)
 
     preflight_parser = commands.add_parser("preflight")
-    preflight_parser.add_argument("--account", type=Path, required=True)
     preflight_parser.add_argument("--candidates", type=Path, required=True)
-    preflight_parser.add_argument("--sums", type=Path, required=True)
+    preflight_parser.add_argument("--sums-out", type=Path, required=True)
     preflight_parser.add_argument("--tag", required=True)
-    preflight_parser.add_argument("--run-revision", required=True)
-    preflight_parser.add_argument("--rehearsal-run", required=True)
+    preflight_parser.add_argument("--revision", required=True)
     preflight_parser.add_argument("--state-out", type=Path, required=True)
     preflight_parser.add_argument("--plan-out", type=Path, required=True)
     preflight_parser.add_argument("--receipt-out", type=Path, required=True)
-    preflight_parser.add_argument("--publication-revision")
     preflight_parser.add_argument("--require-credentials", action="store_true")
     preflight_parser.set_defaults(run=preflight)
 
     publish_parser = commands.add_parser("publish")
-    publish_parser.add_argument("--account", type=Path, required=True)
     publish_parser.add_argument("--candidates", type=Path, required=True)
+    publish_parser.add_argument("--tag", required=True)
+    publish_parser.add_argument("--revision", required=True)
     publish_parser.add_argument("--sums", type=Path, required=True)
     publish_parser.add_argument("--state", type=Path, required=True)
     publish_parser.add_argument("--plan", type=Path, required=True)
@@ -1103,18 +1136,19 @@ def parser():
     publish_parser.set_defaults(run=publish)
 
     image_parser = commands.add_parser("image-state")
-    image_parser.add_argument("--account", type=Path, required=True)
     image_parser.add_argument("--candidates", type=Path, required=True)
+    image_parser.add_argument("--tag", required=True)
+    image_parser.add_argument("--revision", required=True)
+    image_parser.add_argument("--sums", type=Path, required=True)
     image_parser.add_argument("--id", required=True)
     image_parser.set_defaults(run=image_state)
 
     complete_parser = commands.add_parser("complete")
-    complete_parser.add_argument("--account", type=Path, required=True)
     complete_parser.add_argument("--candidates", type=Path, required=True)
+    complete_parser.add_argument("--tag", required=True)
+    complete_parser.add_argument("--revision", required=True)
     complete_parser.add_argument("--sums", type=Path, required=True)
-    complete_parser.add_argument("--rehearsal-run", required=True)
     complete_parser.add_argument("--publication-run", required=True)
-    complete_parser.add_argument("--publication-revision")
     complete_parser.add_argument("--out", type=Path, required=True)
     complete_parser.set_defaults(run=complete)
 

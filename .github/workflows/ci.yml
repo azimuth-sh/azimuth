@@ -1,10 +1,11 @@
-name: candidate verification
+name: continuous integration
 
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -268,57 +269,8 @@ jobs:
           --candidates dist/packages
           --defer-hosted-receipts
 
-  account:
-    needs: [packages, native, images]
-    if: ${{ always() && !cancelled() }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: candidates-*
-          path: dist/candidates
-          merge-multiple: true
-      - name: Require every candidate lane
-        if: >-
-          ${{ !success() || needs.packages.result != 'success' ||
-              needs.native.result != 'success' || needs.images.result != 'success' }}
-        run: exit 1
-      - name: Assemble tagged candidate account
-        shell: bash
-        run: |
-          tag=$(python3 -c \
-            "import json; print(json.load(open('release/artifacts.json'))['release']['tag'])")
-          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-            git -c user.name=Azimuth -c user.email=azimuth@example.test \
-              tag --force --annotate "$tag" --message rehearsal "$GITHUB_SHA"
-          elif ! git rev-parse "$tag" >/dev/null 2>&1; then
-            git -c user.name=Azimuth -c user.email=azimuth@example.test \
-              tag --annotate "$tag" --message rehearsal "$GITHUB_SHA"
-          fi
-          python3 release/orchestrate.py assemble \
-            --candidates dist/candidates \
-            --revision "$GITHUB_SHA" \
-            --tag "$tag" \
-            --verify-tag \
-            --out dist/account/candidates.json
-          python3 release/orchestrate.py verify \
-            --candidates dist/candidates \
-            --account dist/account/candidates.json
-          python3 release/orchestrate.py rehearse \
-            --account dist/account/candidates.json \
-            --out dist/account/publication-rehearsal.json
-      - uses: actions/upload-artifact@v7
-        with:
-          name: candidate-account
-          path: dist/account/*
-          if-no-files-found: error
-
   check:
-    needs: [source, assurance, deployment, release_check, account]
+    needs: [source, assurance, packages, native, deployment, images, release_check]
     if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -327,12 +279,16 @@ jobs:
         env:
           SOURCE_RESULT: ${{ needs.source.result }}
           ASSURANCE_RESULT: ${{ needs.assurance.result }}
+          PACKAGES_RESULT: ${{ needs.packages.result }}
+          NATIVE_RESULT: ${{ needs.native.result }}
           DEPLOYMENT_RESULT: ${{ needs.deployment.result }}
+          IMAGES_RESULT: ${{ needs.images.result }}
           RELEASE_RESULT: ${{ needs.release_check.result }}
-          ACCOUNT_RESULT: ${{ needs.account.result }}
         run: |
           [[ "$SOURCE_RESULT" == success ]]
           [[ "$ASSURANCE_RESULT" == success ]]
+          [[ "$PACKAGES_RESULT" == success ]]
+          [[ "$NATIVE_RESULT" == success ]]
           [[ "$DEPLOYMENT_RESULT" == success ]]
+          [[ "$IMAGES_RESULT" == success ]]
           [[ "$RELEASE_RESULT" == success ]]
-          [[ "$ACCOUNT_RESULT" == success ]]

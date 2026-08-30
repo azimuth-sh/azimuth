@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import argparse
-import copy
 import hashlib
 import json
 import re
@@ -219,7 +218,7 @@ def workflow_run_commands(job):
     return commands
 
 
-def workflow_account(root=ROOT):
+def workflow_structure(root=ROOT):
     root = Path(root)
     workflow = (root / ORDINARY_WORKFLOW.relative_to(ROOT)).read_text()
     gate = (root / ROOT_GATE.relative_to(ROOT)).read_text()
@@ -231,7 +230,7 @@ def workflow_account(root=ROOT):
     )
     lanes = (
         "prepare", "source", "assurance", "packages", "native", "image-platforms",
-        "deployment", "images", "release_check", "account", "check",
+        "deployment", "images", "release_check", "check",
     )
     for lane in lanes:
         require(lane in jobs, f"candidate lane {lane!r} is absent")
@@ -266,21 +265,12 @@ def workflow_account(root=ROOT):
         "scope=candidate-${{ matrix.id }}-${{ matrix.architecture }}" in platform_job,
         "release image cache is not isolated by image and architecture",
     )
-    require(
-        "needs: [packages, native, images]" in jobs["account"] and "always()" in jobs["account"],
-        "release account does not observe every lane outcome",
-    )
     require("cache-from: type=gha" in workflow, "release image lane has no BuildKit cache input")
     require(
         "cache-to: type=gha,mode=max" in workflow,
         "release image lane has no BuildKit cache output",
     )
     require("actions/attest-build-provenance@v4" in workflow, "release workflow omits provenance")
-    require(
-        '[[ "$GITHUB_EVENT_NAME" == "pull_request" ]]' in jobs["account"]
-        and 'tag --force --annotate "$tag"' in jobs["account"],
-        "release pull request does not isolate its synthetic tag",
-    )
     for subject_path in (
         "dist/packages/*",
         "dist/native/${{ matrix.archive }}",
@@ -308,8 +298,9 @@ def workflow_account(root=ROOT):
         "release qualification does not reuse retained packages after source checks",
     )
     require(
-        "needs: [source, assurance, deployment, release_check, account]" in jobs["check"],
-        "final candidate check does not observe every verification lane",
+        "needs: [source, assurance, packages, native, deployment, images, release_check]"
+        in jobs["check"],
+        "final check does not observe every verification lane",
     )
     return {
         "ordinaryCommand": source_commands[0],
@@ -367,7 +358,7 @@ def expected_release_jobs(catalog):
         "packages",
         *(f"native:{item['target']}" for item in native_matrix(catalog)),
         *(f"image:{item['id']}" for item in image_matrix(catalog)),
-        "account",
+        "check",
     ]
 
 
@@ -426,12 +417,12 @@ def validate_release_receipt(receipt, root=ROOT, ancestor=git_revision_is_ancest
             "release receipt subject population differs")
     require(receipt.get("attestedSubjects") == expected_names,
             "release receipt provenance population differs")
-    require(re.fullmatch(r"[0-9a-f]{64}", receipt.get("candidateAccountSha256", "")) is not None,
-            "release receipt candidate account digest is invalid")
+    require(re.fullmatch(r"[0-9a-f]{64}", receipt.get("artifactSetSha256", "")) is not None,
+            "release receipt artifact-set digest is invalid")
     return receipt
 
 
-def assemble(candidate_root, revision, tag, root=ROOT):
+def release_artifacts(candidate_root, revision, tag, root=ROOT):
     require(re.fullmatch(r"[0-9a-f]{40}", revision) is not None, "revision is not a full Git id")
     catalog = catalog_at(root)
     release = catalog["release"]
@@ -440,13 +431,13 @@ def assemble(candidate_root, revision, tag, root=ROOT):
     expected = expected_subjects(catalog)
     expected_names = {subject["filename"] for subject in expected}
     unexpected = sorted(set(files) - expected_names)
-    require(not unexpected, f"candidate account contains unexpected files {unexpected}")
+    require(not unexpected, f"release artifacts contain unexpected files {unexpected}")
 
     subjects = []
     for expected_subject in expected:
         matches = files.get(expected_subject["filename"], [])
-        require(matches, f"candidate account omits {expected_subject['filename']}")
-        require(len(matches) == 1, f"candidate account duplicates {expected_subject['filename']}")
+        require(matches, f"release artifacts omit {expected_subject['filename']}")
+        require(len(matches) == 1, f"release artifacts duplicate {expected_subject['filename']}")
         path = matches[0]
         subjects.append(
             {
@@ -456,45 +447,11 @@ def assemble(candidate_root, revision, tag, root=ROOT):
             }
         )
     return {
-        "format": "azimuth-release-candidate-account",
-        "schemaVersion": 1,
         "version": release["version"],
         "tag": tag,
         "revision": revision,
         "subjects": subjects,
     }
-
-
-def verify(account, candidate_root, root=ROOT):
-    catalog = catalog_at(root)
-    release = catalog["release"]
-    require(account.get("format") == "azimuth-release-candidate-account", "account format differs")
-    require(account.get("schemaVersion") == 1, "account schema differs")
-    require(account.get("version") == release["version"], "account version differs")
-    require(account.get("tag") == release["tag"], "account tag differs")
-    require(
-        re.fullmatch(r"[0-9a-f]{40}", account.get("revision", "")) is not None,
-        "account revision is not a full Git id",
-    )
-    expected = {subject["key"]: subject for subject in expected_subjects(catalog)}
-    observed = account.get("subjects", [])
-    require(len(observed) == len(expected), "account subject count differs")
-    require(
-        len({subject.get("key") for subject in observed}) == len(observed),
-        "account duplicates a key",
-    )
-    files = file_index(candidate_root)
-    for subject in observed:
-        key = subject.get("key")
-        require(key in expected, f"account contains unexpected subject {key!r}")
-        for field, value in expected[key].items():
-            require(subject.get(field) == value, f"{key}: {field} differs")
-        matches = files.get(subject["filename"], [])
-        require(len(matches) == 1, f"{key}: retained file population differs")
-        path = matches[0]
-        require(subject.get("size") == path.stat().st_size, f"{key}: byte size differs")
-        require(subject.get("sha256") == digest(path), f"{key}: checksum differs")
-    return account
 
 
 def publication_targets(account):
@@ -546,53 +503,6 @@ def validate_completion(account, registry_state):
     return {"outcome": "complete", "targets": plan["preserve"]}
 
 
-def exact_registry_state(account):
-    return {
-        "targets": {
-            target["key"]: {
-                "identity": target["identity"],
-                "sha256": target["sha256"],
-                "provenance": True,
-                **({"platforms": target["platforms"]} if "platforms" in target else {}),
-            }
-            for target in publication_targets(account)
-        }
-    }
-
-
-def rehearse_publication(account):
-    exact = exact_registry_state(account)
-    preserved = plan_publication(account, exact)
-    require(not preserved["publish"], "exact registry state selected a publication")
-    absent = []
-    for key in exact["targets"]:
-        state = copy.deepcopy(exact)
-        del state["targets"][key]
-        plan = plan_publication(account, state)
-        require(plan["publish"] == [key], f"absent target {key!r} was not isolated")
-        absent.append(key)
-    conflicts = []
-    for kind in ("package", "native", "image"):
-        subject = next(item for item in account["subjects"] if item["kind"] == kind)
-        state = copy.deepcopy(exact)
-        state["targets"][subject["key"]]["sha256"] = "f" * 64
-        try:
-            plan_publication(account, state)
-        except OrchestrationError:
-            conflicts.append(subject["key"])
-        else:
-            raise OrchestrationError(f"{kind} conflict produced a publication plan")
-    validate_completion(account, exact)
-    return {
-        "format": "azimuth-release-publication-rehearsal",
-        "schemaVersion": 1,
-        "preserved": preserved["preserve"],
-        "individuallyAbsent": absent,
-        "rejectedConflictKinds": conflicts,
-        "completion": "passed",
-    }
-
-
 def source_entry(claim, site, file, fingerprint):
     language = {
         ".json": "github-actions-receipt",
@@ -618,11 +528,11 @@ def write_linkage(root, output_root, ordinary_receipt=None, release_receipt=None
     candidates_fingerprint = digest(candidates)
     workflow_fingerprint = digest(workflow)
     realization_sites = [
-        ("qualification-lanes-converge", "workflow_account", "release/orchestrate.py", orchestrator_fingerprint),
-        ("qualification-lanes-converge", "release_rehearsal_dag", ".github/workflows/ci.yml", workflow_fingerprint),
-        ("qualification-lanes-converge", "assemble", "release/orchestrate.py", orchestrator_fingerprint),
+        ("qualification-lanes-converge", "workflow_structure", "release/orchestrate.py", orchestrator_fingerprint),
+        ("qualification-lanes-converge", "release_build_dag", ".github/workflows/ci.yml", workflow_fingerprint),
+        ("qualification-lanes-converge", "release_artifacts", "release/orchestrate.py", orchestrator_fingerprint),
         ("tagged-candidates-are-verifiable", "verify_tag", "release/orchestrate.py", orchestrator_fingerprint),
-        ("tagged-candidates-are-verifiable", "verify", "release/orchestrate.py", orchestrator_fingerprint),
+        ("tagged-candidates-are-verifiable", "release_artifacts", "release/orchestrate.py", orchestrator_fingerprint),
         ("tagged-candidates-are-verifiable", "release_provenance", ".github/workflows/ci.yml", workflow_fingerprint),
         ("qualified-candidates-compose", "smoke_packages", "release/candidates.py", candidates_fingerprint),
         ("qualified-candidates-compose", "build_native", "release/candidates.py", candidates_fingerprint),
@@ -641,13 +551,13 @@ def write_linkage(root, output_root, ordinary_receipt=None, release_receipt=None
         "enumerations": [],
         "artifacts": [
             {
-                "id": "release-rehearsal-account",
+                "id": "release-build-dag",
                 "kind": "hosted-workflow-dag",
                 "file": ".github/workflows/ci.yml",
             },
             {
-                "id": "release-candidate-manifest",
-                "kind": "candidate-account-guard",
+                "id": "release-artifact-validator",
+                "kind": "artifact-population-guard",
                 "file": "release/orchestrate.py",
             },
             {
@@ -670,7 +580,7 @@ def write_linkage(root, output_root, ordinary_receipt=None, release_receipt=None
 def qualify_orchestration(root=ROOT, output_root=OUTPUT_ROOT, validate_receipts=True):
     root = Path(root)
     output_root = Path(output_root)
-    account = workflow_account(root)
+    structure = workflow_structure(root)
     ordinary_path = output_root / ORDINARY_RECEIPT.name
     release_path = output_root / RELEASE_RECEIPT.name
     ordinary_receipt = (
@@ -687,7 +597,7 @@ def qualify_orchestration(root=ROOT, output_root=OUTPUT_ROOT, validate_receipts=
     qualification = {
         "format": "azimuth-release-orchestration-qualification",
         "schemaVersion": 1,
-        "workflow": account,
+        "workflow": structure,
         "nativeMatrix": native_matrix(catalog),
         "imagePlatformMatrix": image_platform_matrix(catalog),
         "imageMatrix": image_matrix(catalog),
@@ -703,16 +613,6 @@ def qualify_orchestration(root=ROOT, output_root=OUTPUT_ROOT, validate_receipts=
     return qualification
 
 
-def write_account(account, output):
-    output = Path(output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(account, indent=2) + "\n")
-    checksums = output.with_name("SHA256SUMS")
-    checksums.write_text(
-        "".join(f"{subject['sha256']}  {subject['filename']}\n" for subject in account["subjects"])
-    )
-
-
 def command_matrix(arguments):
     catalog = catalog_at(arguments.root)
     if arguments.kind == "native":
@@ -724,39 +624,9 @@ def command_matrix(arguments):
     print(json.dumps({"include": matrix}, separators=(",", ":")))
 
 
-def command_assemble(arguments):
-    if arguments.verify_tag:
-        verify_tag(arguments.root, arguments.tag, arguments.revision)
-    account = assemble(arguments.candidates, arguments.revision, arguments.tag, arguments.root)
-    write_account(account, arguments.out)
-    print(f"assembled {len(account['subjects'])} retained release candidate(s)")
-
-
-def command_verify(arguments):
-    account = verify(read_json(arguments.account), arguments.candidates, arguments.root)
-    print(f"verified {len(account['subjects'])} retained release candidate(s)")
-
-
-def command_plan(arguments):
-    plan = plan_publication(read_json(arguments.account), read_json(arguments.state))
-    Path(arguments.out).write_text(json.dumps(plan, indent=2) + "\n")
-    print(f"publication plan: publish={len(plan['publish'])} preserve={len(plan['preserve'])}")
-
-
-def command_complete(arguments):
-    result = validate_completion(read_json(arguments.account), read_json(arguments.state))
-    print(f"public release complete: targets={len(result['targets'])}")
-
-
-def command_rehearse(arguments):
-    result = rehearse_publication(read_json(arguments.account))
-    Path(arguments.out).write_text(json.dumps(result, indent=2) + "\n")
-    print(f"rehearsed {len(result['individuallyAbsent'])} resumable target(s)")
-
-
 def command_workflows(arguments):
-    account = workflow_account(arguments.root)
-    print(json.dumps(account, indent=2))
+    structure = workflow_structure(arguments.root)
+    print(json.dumps(structure, indent=2))
 
 
 def command_qualify(arguments):
@@ -781,37 +651,6 @@ def parser():
     matrix.add_argument("kind", choices=("native", "image-platform", "image"))
     matrix.add_argument("--root", type=Path, default=ROOT)
     matrix.set_defaults(run=command_matrix)
-
-    assemble_parser = commands.add_parser("assemble")
-    assemble_parser.add_argument("--root", type=Path, default=ROOT)
-    assemble_parser.add_argument("--candidates", type=Path, required=True)
-    assemble_parser.add_argument("--revision", required=True)
-    assemble_parser.add_argument("--tag", required=True)
-    assemble_parser.add_argument("--out", type=Path, required=True)
-    assemble_parser.add_argument("--verify-tag", action="store_true")
-    assemble_parser.set_defaults(run=command_assemble)
-
-    verify_parser = commands.add_parser("verify")
-    verify_parser.add_argument("--root", type=Path, default=ROOT)
-    verify_parser.add_argument("--candidates", type=Path, required=True)
-    verify_parser.add_argument("--account", type=Path, required=True)
-    verify_parser.set_defaults(run=command_verify)
-
-    plan = commands.add_parser("plan")
-    plan.add_argument("--account", type=Path, required=True)
-    plan.add_argument("--state", type=Path, required=True)
-    plan.add_argument("--out", type=Path, required=True)
-    plan.set_defaults(run=command_plan)
-
-    complete = commands.add_parser("complete")
-    complete.add_argument("--account", type=Path, required=True)
-    complete.add_argument("--state", type=Path, required=True)
-    complete.set_defaults(run=command_complete)
-
-    rehearse = commands.add_parser("rehearse")
-    rehearse.add_argument("--account", type=Path, required=True)
-    rehearse.add_argument("--out", type=Path, required=True)
-    rehearse.set_defaults(run=command_rehearse)
 
     workflows = commands.add_parser("workflows")
     workflows.add_argument("--root", type=Path, default=ROOT)

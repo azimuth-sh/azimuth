@@ -1,7 +1,7 @@
 {
   "format": "azimuth-installation",
   "schemaVersion": 1,
-  "releaseVersion": "0.1.0-alpha.5",
+  "releaseVersion": "0.1.0-alpha.6",
   "migrationLine": "alpha-claim-case",
   "agents": [],
   "components": [],

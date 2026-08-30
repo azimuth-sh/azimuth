@@ -294,12 +294,12 @@ Every actual entry resolves to the plan entry with the same identity. Units are 
   },
   "normalizer": {
     "id": "adapter/synthetic",
-    "version": "0.1.0-alpha.5",
+    "version": "0.1.0-alpha.6",
     "build_fingerprint": "sha256:<adapter-fingerprint>"
   },
   "adapter": {
     "id": "synthetic",
-    "adapter_version": "0.1.0-alpha.5",
+    "adapter_version": "0.1.0-alpha.6",
     "adapter_fingerprint": "sha256:<adapter-fingerprint>",
     "descriptor_fingerprint": "sha256:<descriptor-fingerprint>",
     "configuration_fingerprint": "sha256:<configuration-fingerprint>",

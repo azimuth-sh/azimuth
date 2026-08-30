@@ -145,7 +145,7 @@ Alpha. Formats may change incompatibly between prereleases, and alpha 5 does not
 
 The published alpha 5 tag supports the Rust CLI and core including federation, the bundled consumer skills, templates, references and migrations, the .NET and TypeScript annotations and extractors, and the assurance API and diagnostic web images defined at that tag. Protocol and schema versions remain independent and are declared in the release catalog.
 
-Qualified CLI targets are Linux x64, macOS ARM64 and Windows x64; qualified image platforms are Linux AMD64 and Linux ARM64. The C++, Go, JVM, Python and Rust annotation and extractor integrations, and everything under `experiments/`, are experimental source: CI exercises them, but `0.1.0-alpha.5` assigns them no package identity or support promise.
+Qualified CLI targets are Linux x64, macOS ARM64 and Windows x64; qualified image platforms are Linux AMD64 and Linux ARM64. The C++, Go, JVM, Python and Rust annotation and extractor integrations, and everything under `experiments/`, are experimental source: CI exercises them, but `0.1.0-alpha.6` assigns them no package identity or support promise.
 
 ## This repository
 
