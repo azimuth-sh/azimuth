@@ -15,7 +15,7 @@ EVIDENCE_RUN_URL = re.compile(
 )
 CATALOG_FILE = ROOT / "release/artifacts.json"
 ORDINARY_WORKFLOW = ROOT / ".github/workflows/ci.yml"
-RELEASE_WORKFLOW = ROOT / ".github/workflows/release.yml"
+RELEASE_WORKFLOW = ORDINARY_WORKFLOW
 ROOT_GATE = ROOT / "scripts/check.sh"
 OUTPUT_ROOT = ROOT / ".azimuth/release"
 ORDINARY_RECEIPT = OUTPUT_ROOT / "ordinary-workflow-receipt.json"
@@ -221,29 +221,38 @@ def workflow_run_commands(job):
 
 def workflow_account(root=ROOT):
     root = Path(root)
-    ordinary = (root / ORDINARY_WORKFLOW.relative_to(ROOT)).read_text()
+    workflow = (root / ORDINARY_WORKFLOW.relative_to(ROOT)).read_text()
     gate = (root / ROOT_GATE.relative_to(ROOT)).read_text()
-    release = (root / RELEASE_WORKFLOW.relative_to(ROOT)).read_text()
-    ordinary_jobs = workflow_jobs(ordinary)
-    release_jobs = workflow_jobs(release)
-    require("check" in ordinary_jobs, "ordinary CI has no check job")
-    ordinary_commands = workflow_run_commands(ordinary_jobs["check"])
-    require(ordinary_commands == ["./scripts/check.sh"], "ordinary CI has a non-canonical command")
+    jobs = workflow_jobs(workflow)
     require("--release-images" in gate, "root gate has no explicit release-image entry point")
     require(
         gate.count("qualify.py --images") == 1,
         "root gate does not isolate one release-only image entry point",
     )
-    for lane in ("packages", "native", "image-platforms", "images", "account"):
-        require(lane in release_jobs, f"release lane {lane!r} is absent")
+    lanes = (
+        "prepare", "source", "assurance", "packages", "native", "image-platforms",
+        "deployment", "images", "release_check", "account", "check",
+    )
+    for lane in lanes:
+        require(lane in jobs, f"candidate lane {lane!r} is absent")
+    source_commands = workflow_run_commands(jobs["source"])
+    require(
+        source_commands == ["./scripts/check.sh source"],
+        "candidate source lane has a non-canonical command",
+    )
+    assurance_commands = workflow_run_commands(jobs["assurance"])
+    require(
+        assurance_commands == ["./scripts/check.sh assurance"],
+        "candidate assurance lane has a non-canonical command",
+    )
     for lane in ("native", "image-platforms", "images"):
-        fail_fast = re.findall(r"^\s+fail-fast:\s*(\S+)\s*$", release_jobs[lane], re.MULTILINE)
+        fail_fast = re.findall(r"^\s+fail-fast:\s*(\S+)\s*$", jobs[lane], re.MULTILINE)
         require(fail_fast == ["false"], f"release matrix {lane!r} does not isolate failures")
     require(
-        "needs: [prepare, image-platforms]" in release_jobs["images"],
+        "needs: [prepare, image-platforms]" in jobs["images"],
         "release image assembly does not require every native platform build",
     )
-    platform_job = release_jobs["image-platforms"]
+    platform_job = jobs["image-platforms"]
     require(
         "runs-on: ${{ matrix.runner }}" in platform_job
         and "platforms: ${{ matrix.platform }}" in platform_job,
@@ -254,22 +263,22 @@ def workflow_account(root=ROOT):
         "release image platform build reintroduces emulation",
     )
     require(
-        "scope=release-${{ matrix.id }}-${{ matrix.architecture }}" in platform_job,
+        "scope=candidate-${{ matrix.id }}-${{ matrix.architecture }}" in platform_job,
         "release image cache is not isolated by image and architecture",
     )
     require(
-        "needs: [packages, native, images]" in release and "always()" in release,
+        "needs: [packages, native, images]" in jobs["account"] and "always()" in jobs["account"],
         "release account does not observe every lane outcome",
     )
-    require("cache-from: type=gha" in release, "release image lane has no BuildKit cache input")
+    require("cache-from: type=gha" in workflow, "release image lane has no BuildKit cache input")
     require(
-        "cache-to: type=gha,mode=max" in release,
+        "cache-to: type=gha,mode=max" in workflow,
         "release image lane has no BuildKit cache output",
     )
-    require("actions/attest-build-provenance@v4" in release, "release workflow omits provenance")
+    require("actions/attest-build-provenance@v4" in workflow, "release workflow omits provenance")
     require(
-        '[[ "$GITHUB_EVENT_NAME" == "pull_request" ]]' in release_jobs["account"]
-        and 'tag --force --annotate "$tag"' in release_jobs["account"],
+        '[[ "$GITHUB_EVENT_NAME" == "pull_request" ]]' in jobs["account"]
+        and 'tag --force --annotate "$tag"' in jobs["account"],
         "release pull request does not isolate its synthetic tag",
     )
     for subject_path in (
@@ -278,12 +287,32 @@ def workflow_account(root=ROOT):
         "dist/images/${{ matrix.archive }}",
     ):
         require(
-            f"subject-path: {subject_path}" in release,
+            f"subject-path: {subject_path}" in workflow,
             f"release workflow omits provenance subject {subject_path!r}",
         )
+    deployment = jobs["deployment"]
+    require(
+        "needs: image-platforms" in deployment
+        and "pattern: image-platform-*-amd64" in deployment
+        and deployment.count("release/candidates.py import-image") == 2
+        and "--prebuilt-images" in deployment
+        and "--build" not in deployment,
+        "deployment lane does not consume both retained amd64 image fragments",
+    )
+    release_check = jobs["release_check"]
+    require(
+        "needs: [source, packages]" in release_check
+        and "--candidates dist/packages" in release_check
+        and "--defer-hosted-receipts" in release_check,
+        "release qualification does not reuse retained packages after source checks",
+    )
+    require(
+        "needs: [source, assurance, deployment, release_check, account]" in jobs["check"],
+        "final candidate check does not observe every verification lane",
+    )
     return {
-        "ordinaryCommand": ordinary_commands[0],
-        "releaseLanes": ["packages", "native", "images", "account"],
+        "ordinaryCommand": source_commands[0],
+        "releaseLanes": list(lanes),
         "releaseImagesInOrdinaryGate": False,
     }
 
@@ -373,9 +402,9 @@ def validate_release_receipt(receipt, root=ROOT, ancestor=git_revision_is_ancest
     expected = {
         "format": "azimuth-release-workflow-receipt",
         "schemaVersion": 1,
-        "workflow": ".github/workflows/release.yml",
+        "workflow": ".github/workflows/ci.yml",
         "conclusion": "success",
-        "workflowSha256": digest(root / ".github/workflows/release.yml"),
+        "workflowSha256": digest(root / ".github/workflows/ci.yml"),
         "accountSha256": digest(root / "release/orchestrate.py"),
         "consumerSha256": digest(root / "release/candidates.py"),
     }
@@ -583,17 +612,17 @@ def write_linkage(root, output_root, ordinary_receipt=None, release_receipt=None
     root = Path(root)
     orchestrator = root / "release/orchestrate.py"
     candidates = root / "release/candidates.py"
-    workflow = root / ".github/workflows/release.yml"
+    workflow = root / ".github/workflows/ci.yml"
     orchestrator_fingerprint = digest(orchestrator)
     candidates_fingerprint = digest(candidates)
     workflow_fingerprint = digest(workflow)
     realization_sites = [
         ("qualification-lanes-converge", "workflow_account", "release/orchestrate.py", orchestrator_fingerprint),
-        ("qualification-lanes-converge", "release_rehearsal_dag", ".github/workflows/release.yml", workflow_fingerprint),
+        ("qualification-lanes-converge", "release_rehearsal_dag", ".github/workflows/ci.yml", workflow_fingerprint),
         ("qualification-lanes-converge", "assemble", "release/orchestrate.py", orchestrator_fingerprint),
         ("tagged-candidates-are-verifiable", "verify_tag", "release/orchestrate.py", orchestrator_fingerprint),
         ("tagged-candidates-are-verifiable", "verify", "release/orchestrate.py", orchestrator_fingerprint),
-        ("tagged-candidates-are-verifiable", "release_provenance", ".github/workflows/release.yml", workflow_fingerprint),
+        ("tagged-candidates-are-verifiable", "release_provenance", ".github/workflows/ci.yml", workflow_fingerprint),
         ("qualified-candidates-compose", "smoke_packages", "release/candidates.py", candidates_fingerprint),
         ("qualified-candidates-compose", "build_native", "release/candidates.py", candidates_fingerprint),
         ("qualified-candidates-compose", "smoke_image", "release/candidates.py", candidates_fingerprint),
@@ -613,7 +642,7 @@ def write_linkage(root, output_root, ordinary_receipt=None, release_receipt=None
             {
                 "id": "release-rehearsal-account",
                 "kind": "hosted-workflow-dag",
-                "file": ".github/workflows/release.yml",
+                "file": ".github/workflows/ci.yml",
             },
             {
                 "id": "release-candidate-manifest",
@@ -637,7 +666,7 @@ def write_linkage(root, output_root, ordinary_receipt=None, release_receipt=None
     )
 
 
-def qualify_orchestration(root=ROOT, output_root=OUTPUT_ROOT):
+def qualify_orchestration(root=ROOT, output_root=OUTPUT_ROOT, validate_receipts=True):
     root = Path(root)
     output_root = Path(output_root)
     account = workflow_account(root)
@@ -645,12 +674,12 @@ def qualify_orchestration(root=ROOT, output_root=OUTPUT_ROOT):
     release_path = output_root / RELEASE_RECEIPT.name
     ordinary_receipt = (
         validate_ordinary_receipt(read_json(ordinary_path), root)
-        if ordinary_path.is_file()
+        if validate_receipts and ordinary_path.is_file()
         else None
     )
     release_receipt = (
         validate_release_receipt(read_json(release_path), root)
-        if release_path.is_file()
+        if validate_receipts and release_path.is_file()
         else None
     )
     catalog = catalog_at(root)
@@ -730,7 +759,11 @@ def command_workflows(arguments):
 
 
 def command_qualify(arguments):
-    result = qualify_orchestration(arguments.root, arguments.out)
+    result = qualify_orchestration(
+        arguments.root,
+        arguments.out,
+        validate_receipts=not arguments.defer_hosted_receipts,
+    )
     print(
         f"qualified {len(result['subjects'])} retained subject(s), "
         f"{len(result['nativeMatrix'])} native runner(s), and "
@@ -786,6 +819,7 @@ def parser():
     qualify = commands.add_parser("qualify")
     qualify.add_argument("--root", type=Path, default=ROOT)
     qualify.add_argument("--out", type=Path, default=OUTPUT_ROOT)
+    qualify.add_argument("--defer-hosted-receipts", action="store_true")
     qualify.set_defaults(run=command_qualify)
     return root
 

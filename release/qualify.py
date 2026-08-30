@@ -416,10 +416,56 @@ def validate_archive_metadata(package, metadata, release):
         )
 
 
-def qualify_packages(catalog, root, allow_dirty):
+def qualify_package_files(catalog, candidates):
     results = []
+    remaining = set(candidates)
+    metadata_by_candidate = {}
+    extensions = {"cargo": ".crate", "nuget": ".nupkg", "npm": ".tgz"}
+    for package in catalog["packages"]:
+        ecosystem = package["ecosystem"]
+        matches = []
+        for candidate in sorted(remaining):
+            if not candidate.name.endswith(extensions[ecosystem]):
+                continue
+            metadata = metadata_by_candidate.setdefault(
+                candidate, archive_metadata(candidate, ecosystem)
+            )
+            if metadata.get("identity") == package["identity"]:
+                matches.append((candidate, metadata))
+        require(matches, f"{package['id']}: retained package archive is absent")
+        require(
+            len(matches) == 1,
+            f"{package['id']}: retained package archive is ambiguous",
+        )
+        candidate, metadata = matches[0]
+        remaining.remove(candidate)
+        files = archive_files(candidate, ecosystem)
+        validate_file_set(package, files)
+        validate_archive_metadata(package, metadata, catalog["release"])
+        results.append(
+            {
+                "id": package["id"],
+                "identity": package["identity"],
+                "ecosystem": ecosystem,
+                "archive": candidate.name,
+                "metadata": metadata,
+                "contents": stable_content_account(package, files),
+            }
+        )
+    unexpected = sorted(path.name for path in remaining)
+    require(not unexpected, f"unexpected retained package archives: {unexpected}")
+    return results
+
+
+def qualify_packages(catalog, root, allow_dirty, candidate_root=None):
+    if candidate_root is not None:
+        candidates = [path for path in Path(candidate_root).rglob("*") if path.is_file()]
+        require(candidates, "retained package directory is empty")
+        return qualify_package_files(catalog, candidates)
+
     with tempfile.TemporaryDirectory(prefix="azimuth-release-") as temporary:
         destination = Path(temporary)
+        candidates = []
         for package in catalog["packages"]:
             ecosystem = package["ecosystem"]
             if ecosystem == "cargo":
@@ -428,22 +474,12 @@ def qualify_packages(catalog, root, allow_dirty):
                 candidate = nuget_candidate(package, root, destination)
             else:
                 candidate = npm_candidate(package, root, destination)
-            require(candidate.is_file(), f"{package['id']}: package archive does not exist")
-            files = archive_files(candidate, ecosystem)
-            validate_file_set(package, files)
-            metadata = archive_metadata(candidate, ecosystem)
-            validate_archive_metadata(package, metadata, catalog["release"])
-            results.append(
-                {
-                    "id": package["id"],
-                    "identity": package["identity"],
-                    "ecosystem": ecosystem,
-                    "archive": candidate.name,
-                    "metadata": metadata,
-                    "contents": stable_content_account(package, files),
-                }
+            require(
+                candidate.is_file(),
+                f"{package['id']}: package archive does not exist",
             )
-    return results
+            candidates.append(candidate)
+        return qualify_package_files(catalog, candidates)
 
 
 def write_linkage(root, output_root):
@@ -478,12 +514,12 @@ def write_linkage(root, output_root):
     (output_root / "linkage.json").write_text(json.dumps(linkage, indent=2) + "\n")
 
 
-def qualify(root, output_root, allow_dirty):
+def qualify(root, output_root, allow_dirty, candidate_root=None):
     catalog = catalog_at(root)
     validate_catalog(catalog, root)
     validate_approved_contract(catalog)
     validate_source_metadata(catalog, root)
-    packages = qualify_packages(catalog, root, allow_dirty)
+    packages = qualify_packages(catalog, root, allow_dirty, candidate_root)
     output_root.mkdir(parents=True, exist_ok=True)
     qualification = {
         "format": "azimuth-release-qualification",
@@ -507,10 +543,15 @@ def main():
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent.parent)
     parser.add_argument("--out", type=Path)
     parser.add_argument("--allow-dirty", action="store_true")
+    parser.add_argument("--candidates", type=Path)
     arguments = parser.parse_args()
     root = arguments.root.resolve()
     output = arguments.out or root / ".azimuth/release"
-    qualification = qualify(root, output, arguments.allow_dirty)
+    require(
+        not arguments.allow_dirty or arguments.candidates is None,
+        "--allow-dirty cannot be combined with --candidates",
+    )
+    qualification = qualify(root, output, arguments.allow_dirty, arguments.candidates)
     print(
         f"qualified {len(qualification['packages'])} package candidate(s), "
         f"{len(qualification['images'])} image contract(s), and "

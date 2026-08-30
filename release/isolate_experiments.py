@@ -247,6 +247,12 @@ def derive_root_account(catalog, root, tracked, source_overrides=None):
 
 
 def validate_workflow(source):
+    source_job = re.search(
+        r"(?ms)^  source:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+        source,
+    )
+    require(source_job is not None, "CI must contain the canonical source job")
+    source = source_job.group(1)
     checkout_steps = re.findall(
         r"^\s*-\s+uses:\s*actions/checkout@\S+\s*$",
         source,
@@ -263,8 +269,8 @@ def validate_workflow(source):
     )
     run_steps = re.findall(r"^\s*-\s+run:\s*(.+?)\s*$", source, re.MULTILINE)
     require(
-        run_steps == ["./scripts/check.sh"],
-        "CI must execute only the canonical ./scripts/check.sh command",
+        run_steps == ["./scripts/check.sh source"],
+        "CI source job must execute only the canonical ./scripts/check.sh source command",
     )
     return {"file": str(WORKFLOW), "command": run_steps[0]}
 

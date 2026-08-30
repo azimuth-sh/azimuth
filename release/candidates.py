@@ -427,12 +427,56 @@ def platform_manifests(archive, blob_root):
         raise CandidateError(f"{archive.name}: tagged index is malformed JSON: {error}") from error
     require(isinstance(selected, dict), f"{archive.name}: tagged index is not an object")
     require(selected.get("schemaVersion") == 2, f"{archive.name}: tagged index schema differs")
-    require(selected.get("mediaType") == OCI_INDEX_MEDIA_TYPE, f"{archive.name}: tagged index type differs")
+    require(
+        selected.get("mediaType") == OCI_INDEX_MEDIA_TYPE,
+        f"{archive.name}: tagged index type differs",
+    )
     manifests = selected.get("manifests", [])
     require(isinstance(manifests, list) and manifests, f"{archive.name}: tagged index is empty")
     for descriptor in manifests:
         descriptor_content(descriptor, blob_root, archive)
     return manifests
+
+
+def platform_archive_manifest(archive, blob_root):
+    manifests = platform_manifests(archive, blob_root)
+    platform_descriptors = []
+    unknown_descriptors = []
+    for descriptor in manifests:
+        require(
+            isinstance(descriptor, dict),
+            f"{archive.name}: OCI descriptor is not an object",
+        )
+        platform = descriptor.get("platform", {})
+        require(
+            isinstance(platform, dict),
+            f"{archive.name}: OCI descriptor platform is not an object",
+        )
+        operating_system = platform.get("os")
+        architecture = platform.get("architecture")
+        if (operating_system, architecture) == ("unknown", "unknown"):
+            unknown_descriptors.append(descriptor)
+        else:
+            platform_descriptors.append(descriptor)
+    require(
+        len(platform_descriptors) == 1,
+        f"{archive.name}: expected exactly one concrete platform manifest",
+    )
+    descriptor = platform_descriptors[0]
+    platform = descriptor["platform"]
+    identity = f"{platform.get('os')}/{platform.get('architecture')}"
+    for attestation in unknown_descriptors:
+        annotations = attestation.get("annotations", {})
+        require(
+            isinstance(annotations, dict),
+            f"{archive.name}: attestation annotations are not an object",
+        )
+        reference = annotations.get("vnd.docker.reference.digest")
+        require(
+            reference == descriptor.get("digest"),
+            f"{archive.name}: attestation does not name its platform manifest",
+        )
+    return identity, descriptor, unknown_descriptors
 
 
 def add_tar_directory(candidate, name):
@@ -491,49 +535,24 @@ def assemble_image(root, image_id, platform_root, output):
         selected = {}
         attestations = {}
         for archive in archives:
-            manifests = platform_manifests(archive, blob_root)
-            platform_descriptors = []
-            unknown_descriptors = []
-            for descriptor in manifests:
-                require(
-                    isinstance(descriptor, dict),
-                    f"{archive.name}: OCI descriptor is not an object",
-                )
-                platform = descriptor.get("platform", {})
-                require(
-                    isinstance(platform, dict),
-                    f"{archive.name}: OCI descriptor platform is not an object",
-                )
-                operating_system = platform.get("os")
-                architecture = platform.get("architecture")
-                if (operating_system, architecture) == ("unknown", "unknown"):
-                    unknown_descriptors.append(descriptor)
-                else:
-                    platform_descriptors.append(descriptor)
-            require(
-                len(platform_descriptors) == 1,
-                f"{archive.name}: expected exactly one concrete platform manifest",
+            identity, descriptor, unknown_descriptors = platform_archive_manifest(
+                archive, blob_root
             )
-            descriptor = platform_descriptors[0]
-            platform = descriptor["platform"]
-            identity = f"{platform.get('os')}/{platform.get('architecture')}"
-            require(identity in expected_platforms, f"{archive.name}: unexpected platform {identity!r}")
-            require(identity not in selected, f"{image_id}: duplicate platform {identity!r}")
-            for attestation in unknown_descriptors:
-                annotations = attestation.get("annotations", {})
-                require(
-                    isinstance(annotations, dict),
-                    f"{archive.name}: attestation annotations are not an object",
-                )
-                reference = annotations.get("vnd.docker.reference.digest")
-                require(
-                    reference == descriptor.get("digest"),
-                    f"{archive.name}: attestation does not name its platform manifest",
-                )
+            require(
+                identity in expected_platforms,
+                f"{archive.name}: unexpected platform {identity!r}",
+            )
+            require(
+                identity not in selected,
+                f"{image_id}: duplicate platform {identity!r}",
+            )
             selected[identity] = descriptor
             attestations[identity] = unknown_descriptors
 
-        require(sorted(selected) == expected_platforms, f"{image_id}: assembled platform account differs")
+        require(
+            sorted(selected) == expected_platforms,
+            f"{image_id}: assembled platform account differs",
+        )
 
         merged_manifests = [selected[platform] for platform in expected_platforms]
         for platform in expected_platforms:
@@ -603,6 +622,33 @@ def wait_for_url(url):
 
 def imported_tag(image_id, platform):
     return f"azimuth-rehearsal/{image_id}:{platform.rsplit('/', 1)[-1]}"
+
+
+def import_image(root, image_id, archive, platform, tag):
+    image = image_contract(root, image_id)
+    require(image is not None, f"image {image_id!r} is absent")
+    require(platform in image["platforms"], f"{image_id}: unexpected platform {platform!r}")
+    archive = Path(archive)
+    with tempfile.TemporaryDirectory(prefix=f"azimuth-{image_id}-import-") as temporary:
+        blob_root = Path(temporary) / "blobs"
+        blob_root.mkdir()
+        observed, _, _ = platform_archive_manifest(archive, blob_root)
+    require(
+        observed == platform,
+        f"{archive.name}: platform is {observed!r}, expected {platform!r}",
+    )
+    catalog = catalog_at(root)
+    source_tag = f"{image['identity']}:{catalog['release']['version']}"
+    run(["docker", "load", "--input", archive])
+    if source_tag != tag:
+        run(["docker", "tag", source_tag, tag])
+    inspected = run(
+        ["docker", "image", "inspect", tag, "--format", "{{.Os}}/{{.Architecture}}"],
+        capture=True,
+    )
+    require(inspected.stdout.strip() == platform, f"{tag}: imported platform differs")
+    if source_tag != tag:
+        run(["docker", "image", "rm", source_tag])
 
 
 def smoke_api(tag, platform, suffix):
@@ -704,6 +750,13 @@ def parser():
     inspect.add_argument("--id", required=True)
     inspect.add_argument("--archive", type=Path, required=True)
 
+    import_parser = commands.add_parser("import-image")
+    import_parser.add_argument("--root", type=Path, default=ROOT)
+    import_parser.add_argument("--id", required=True)
+    import_parser.add_argument("--archive", type=Path, required=True)
+    import_parser.add_argument("--platform", required=True)
+    import_parser.add_argument("--tag", required=True)
+
     smoke = commands.add_parser("smoke-image")
     smoke.add_argument("--root", type=Path, default=ROOT)
     smoke.add_argument("--id", required=True)
@@ -725,6 +778,15 @@ def main():
     elif arguments.command == "inspect-image":
         inspect_image(arguments.root, arguments.id, arguments.archive)
         print(f"verified selected platforms in {arguments.archive.name}")
+    elif arguments.command == "import-image":
+        import_image(
+            arguments.root,
+            arguments.id,
+            arguments.archive,
+            arguments.platform,
+            arguments.tag,
+        )
+        print(f"imported {arguments.id} {arguments.platform} as {arguments.tag}")
     else:
         smoke_image(arguments.root, arguments.id, arguments.archive)
         print(f"exercised every selected platform in {arguments.archive.name}")

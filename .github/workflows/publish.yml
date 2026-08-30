@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       rehearsal_run_id:
-        description: Successful release-rehearsal run built from the tagged revision
+        description: Successful candidate-verification run built from the tagged revision
         required: true
         type: string
       candidate_tag:
@@ -88,7 +88,7 @@ jobs:
           gh run view "$RUN_ID" --json conclusion,event,headSha,workflowName,url \
             > dist/rehearsal-run.json
           [[ "$(jq -r .conclusion dist/rehearsal-run.json)" == success ]]
-          [[ "$(jq -r .workflowName dist/rehearsal-run.json)" == "release rehearsal" ]]
+          [[ "$(jq -r .workflowName dist/rehearsal-run.json)" == "candidate verification" ]]
           echo "revision=$(jq -r .headSha dist/rehearsal-run.json)" >> "$GITHUB_OUTPUT"
       - id: matrix
         shell: bash

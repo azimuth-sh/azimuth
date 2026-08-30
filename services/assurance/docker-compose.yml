@@ -14,6 +14,7 @@ services:
       - assurance-data:/var/lib/postgresql/data
 
   api:
+    image: "${ASSURANCE_API_IMAGE:-azimuth-assurance-api:local}"
     build:
       context: ../..
       dockerfile: services/assurance/server/Dockerfile
@@ -27,6 +28,7 @@ services:
       - "127.0.0.1:${ASSURANCE_API_PORT:-8080}:8080"
 
   web:
+    image: "${ASSURANCE_WEB_IMAGE:-azimuth-assurance-web:local}"
     build:
       context: ./web
     environment:
