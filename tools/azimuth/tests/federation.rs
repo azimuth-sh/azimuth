@@ -33,8 +33,8 @@ Criticality: routine
 The receipt SHALL carry the capture identifier.
 
 ### Case: identifier-returned
-WHEN a captured payment is requested
-THEN its capture identifier is returned
+Event: a captured payment is requested
+Required: its capture identifier is returned
 ";
 
 const EXPERIENCE_SPEC: &str = "# Spec: experience/receipt
@@ -45,8 +45,8 @@ Criticality: routine
 The rider receipt SHALL show the capture identifier.
 
 ### Case: identifier-shown
-WHEN a rider opens a captured trip receipt
-THEN its capture identifier is shown
+Event: a rider opens a captured trip receipt
+Required: its capture identifier is shown
 ";
 
 const SYSTEM_DESIGN: &str = "# Design: payments/receipt
@@ -68,8 +68,8 @@ Criticality: routine
 The rider application SHALL remember the selected display density in the browser.
 
 ### Case: density-survives-reload
-WHEN the rider selects a display density and reloads the page
-THEN the selected density remains active
+Event: the rider selects a display density and reloads the page
+Required: the selected density remains active
 ";
 
 const OPERATIONS_SPEC: &str = "# Spec: operations/dashboard
@@ -80,8 +80,8 @@ Criticality: routine
 The dashboard SHALL have a readable title.
 
 ### Case: title-is-present
-WHEN an operator opens the dashboard
-THEN its title identifies the ride system
+Event: an operator opens the dashboard
+Required: its title identifies the ride system
 
 ## Claim: delivery-backlog-is-alerted
 Criticality: routine
@@ -89,9 +89,9 @@ Criticality: routine
 The monitoring system SHALL alert on a persistent delivery backlog.
 
 ### Case: backlog-alert-fires
-GIVEN delivery remains backlogged beyond its threshold
-WHEN the monitoring rules are evaluated
-THEN the backlog alert is active
+Context: delivery remains backlogged beyond its threshold
+Event: the monitoring rules are evaluated
+Required: the backlog alert is active
 ";
 
 struct Repo {
@@ -496,7 +496,7 @@ fn project_acceptance_binds_the_archive_to_pre_and_post_evidence() {
         &lab.backend
             .root
             .join(format!("{active_path}/specs/payments-receipt.md")),
-        "# Intent delta: payments/receipt\n\n## Add claim: caption-is-stable\nCriticality: routine\n\nThe receipt caption SHALL be stable.\n\n### Add case: caption-remains\nWHEN a receipt is rendered\nTHEN its caption remains stable\n",
+        "# Intent delta: payments/receipt\n\n## Add claim: caption-is-stable\nCriticality: routine\n\nThe receipt caption SHALL be stable.\n\n### Add case: caption-remains\nEvent: a receipt is rendered\nRequired: its caption remains stable\n",
     );
     write(
         &lab.backend.root.join(format!("{active_path}/outcome.md")),
@@ -507,7 +507,7 @@ fn project_acceptance_binds_the_archive_to_pre_and_post_evidence() {
             .root
             .join("azimuth/model/payments/receipt/spec.md"),
         format!(
-            "{SYSTEM_SPEC}\n## Claim: caption-is-stable\nCriticality: routine\n\nThe receipt caption SHALL be stable.\n\n### Case: caption-remains\nWHEN a receipt is rendered\nTHEN its caption remains stable\n"
+            "{SYSTEM_SPEC}\n## Claim: caption-is-stable\nCriticality: routine\n\nThe receipt caption SHALL be stable.\n\n### Case: caption-remains\nEvent: a receipt is rendered\nRequired: its caption remains stable\n"
         ),
     )
     .unwrap();
@@ -764,7 +764,7 @@ fn split_and_monorepo_controls_derive_the_same_assurance_relations() {
 }
 
 #[test]
-fn repository_envelope_normalizes_check_linkage_and_exports_only_v3_keys() {
+fn repository_envelope_normalizes_check_linkage_and_exports_only_v4_keys() {
     let lab = Lab::new();
     let flat = lab.root.join("artifacts/backend-flat.json");
     write(&flat, FLAT_BACKEND_LINKAGE);
@@ -809,7 +809,7 @@ fn repository_envelope_normalizes_check_linkage_and_exports_only_v3_keys() {
     assert_eq!(source.mount, "tests");
 
     let export = loaded.model.to_json(&[]).to_string_pretty();
-    assert!(export.contains("\"version\": 3"));
+    assert!(export.contains("\"version\": 4"));
     assert!(export.contains("\"check_implementations\""));
     assert!(!export.contains("\"covers\""));
     assert!(!export.contains("\"mechanism_covers\""));
@@ -1690,7 +1690,7 @@ fn assembly_scales_to_fifty_real_repositories_and_five_thousand_sources() {
         let model_source = format!("intent-{index}");
         let repo_root = root.join(&id);
         let spec = format!(
-            "# Spec: scale/repo-{index}\n\n## Claim: remains-routine\nCriticality: routine\n\nThe fixture SHALL remain routine.\n\n### Case: remains\nWHEN it is checked\nTHEN it remains routine\n"
+            "# Spec: scale/repo-{index}\n\n## Claim: remains-routine\nCriticality: routine\n\nThe fixture SHALL remain routine.\n\n### Case: remains\nEvent: it is checked\nRequired: it remains routine\n"
         );
         write(
             &repo_root.join(format!("azimuth/model/scale/repo-{index}/spec.md")),

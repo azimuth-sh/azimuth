@@ -17,8 +17,8 @@ const SPEC: &str = "# Spec: alpha\n\n\
 Criticality: standard\n\n\
 The system SHALL work.\n\n\
 ### Case: works\n\
-WHEN invoked\n\
-THEN it works\n";
+Event: invoked\n\
+Required: it works\n";
 const STANDARDS: &str = "# Decision policies and Challenge schedule\n\n\
 ## Decision Policy: credible\n\
 Required challenge: mutation\n\n\

@@ -36,7 +36,7 @@ Configure the `release` environment with `CARGO_REGISTRY_TOKEN`, `NUGET_API_KEY`
 After the publication change is merged, run the release rehearsal on `main`, wait for its complete account, create the annotated catalog tag at that same main revision and push the tag. Use `gh` to dispatch the no-write preflight against the tag:
 
 ```sh
-gh workflow run publish.yml --ref v0.1.0-alpha.4 \
+gh workflow run publish.yml --ref v0.1.0-alpha.5 \
   -f rehearsal_run_id=RUN_ID -f dry_run=true
 gh run watch PUBLICATION_RUN_ID --exit-status
 ```

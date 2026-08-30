@@ -7,7 +7,7 @@ use crate::fingerprint::sha256;
 use crate::json::Json;
 
 pub const FORMAT: &str = "azimuth-assurance-project-snapshot";
-pub const VERSION: u64 = 1;
+pub const VERSION: u64 = 2;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractMount {
@@ -36,12 +36,6 @@ pub struct ContractSurface {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ContractStep {
-    pub kind: String,
-    pub text: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractVerification {
     pub strength: Option<String>,
     pub scope: String,
@@ -59,7 +53,7 @@ pub struct ClaimContract {
     pub requirement: String,
     pub criticality: String,
     pub statement: String,
-    pub steps: Vec<ContractStep>,
+    pub case_statement: String,
     pub domain: String,
     pub verification: ContractVerification,
     pub surface: Option<ContractSurface>,
@@ -183,19 +177,8 @@ fn contract_json(contract: &ClaimContract, include_fingerprint: bool) -> Json {
         ("criticality".to_string(), Json::str(&contract.criticality)),
         ("statement".to_string(), Json::str(&contract.statement)),
         (
-            "steps".to_string(),
-            Json::Arr(
-                contract
-                    .steps
-                    .iter()
-                    .map(|step| {
-                        Json::obj(vec![
-                            ("kind", Json::str(&step.kind)),
-                            ("text", Json::str(&step.text)),
-                        ])
-                    })
-                    .collect(),
-            ),
+            "caseStatement".to_string(),
+            Json::str(&contract.case_statement),
         ),
         ("domain".to_string(), Json::str(&contract.domain)),
         (

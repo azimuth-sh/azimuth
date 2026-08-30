@@ -1,5 +1,5 @@
 use azimuth_assurance_lifecycle::{
-    AssuranceAccount, Challenge, ChallengeOutcome, ClaimContract, ContractStep,
+    AssuranceAccount, Challenge, ChallengeOutcome, ClaimContract,
     ContractVerification, EvidenceDefinition, ExecutionSubject, GateReason, GateRequest,
     GateStatus, LifecycleStage, Observation, ObservationOutcome, ProjectModelSnapshot,
     Qualification, QualificationVerdict, WorkKind, PROJECT_SNAPSHOT_FORMAT,
@@ -456,10 +456,7 @@ fn claim_contract() -> ClaimContract {
         requirement: "performance".into(),
         criticality: "standard".into(),
         statement: "Checkout latency remains bounded.".into(),
-        steps: vec![ContractStep {
-            kind: "then".into(),
-            text: "p95 latency is below the qualified threshold".into(),
-        }],
+        case_statement: "P95 latency is below the qualified threshold.".into(),
         domain: "behaviour".into(),
         verification: ContractVerification {
             strength: Some("demonstration".into()),

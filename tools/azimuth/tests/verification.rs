@@ -101,8 +101,8 @@ const SPEC: &str = "# Spec: payments/recovery\n\n\
 Criticality: standard\n\n\
 The system SHALL replay accepted writes.\n\n\
 ### Case: accepted-write-replayed\n\
-WHEN the broker recovers\n\
-THEN the accepted write is replayed exactly once\n";
+Event: the broker recovers\n\
+Required: the accepted write is replayed exactly once\n";
 
 fn judgment_model() -> Model {
     Model {
@@ -840,12 +840,12 @@ fn surface_contributions_use_the_authoritative_tuple_order() {
     );
     assert_eq!(
         fingerprint,
-        "sha256:56adf7a21ea12c7f469498fb9e4753982d1bfeef844c695606d47265bf0b5900"
+        "sha256:5c792428dc24ff2afe3fc66b80e18ecc1ece2bd597dde94b999beec4670cd875"
     );
 }
 
 #[test]
-fn model_enforces_project_cardinality_and_exports_only_version_three_fields() {
+fn model_enforces_project_cardinality_and_exports_only_version_four_fields() {
     let mut second = parse_verification("other/verification.md", DECLARATIONS).unwrap();
     second.bindings.clear();
     second.method_qualifications.clear();
@@ -870,7 +870,7 @@ fn model_enforces_project_cardinality_and_exports_only_version_three_fields() {
     let exported = model.to_json(&[]);
     assert_eq!(
         exported.get("version").and_then(|value| value.as_num()),
-        Some(3.0)
+        Some(4.0)
     );
     for key in ["covers", "mechanism_covers", "observations"] {
         assert!(exported.get(key).is_none(), "retired export key `{key}`");

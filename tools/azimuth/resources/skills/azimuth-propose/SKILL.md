@@ -25,6 +25,29 @@ Create the smallest transition that can be reviewed, implemented and accepted in
 6. Write a dependency-ordered `plan.md`. Add `work-packages.md` only for independently implementable, non-overlapping path ownership.
 7. Keep `proposal.md` at `Status: proposed` throughout authoring.
 
+For an intent delta, author only whole Claim additions or supported criticality changes. A Claim
+addition uses:
+
+```markdown
+# Intent delta: <spec-id>
+
+## Add claim: <claim-id>
+Criticality: routine
+
+Non-empty free-form normative Markdown stating this Claim.
+
+### Add case: <case-id>
+Non-empty free-form normative Markdown stating this Case.
+```
+
+Claim and Case bodies may use any human language, EARS, unrestricted prose, tables, diagrams or
+code fences. Core preserves and fingerprints their Markdown but does not interpret keywords,
+translations or notation. Reserve the top three structural headings for Spec, Claim or Invariant,
+and Case declarations; use level-four headings or fenced content inside a body. Keep orientation,
+rationale and generated duplicate views outside normative bodies. Use lower-kebab declarative ids,
+put universal meaning in the Claim, make each Case stand alone, and never author test mechanics as
+intent. The installed `intent-delta` reference remains the complete release-matched operation set.
+
 ## Validate and hand off
 
 Run `azimuth change check <id>`, `azimuth change work-packages <id>` when present, the repository's normal `azimuth validate`, and `azimuth change show <id>`. Inspect the working diff and ask whether an implementer can proceed without inventing product behavior, ownership, compatibility, migration, failure or completion decisions. Present the actual files for explicit approval. Do not implement, finalize, archive or commit implicitly.

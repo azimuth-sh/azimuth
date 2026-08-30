@@ -22,9 +22,11 @@ Concepts arrive in the order you use them. Each step depends on the one before i
 
 ### 1. Declare the Claim and its Cases
 
-A Claim is one independently governed SHALL proposition. Under it sit normative Cases, written as
-GIVEN/WHEN/THEN clauses and independently addressable for evidence and execution. Ids are declared
-rather than derived from file paths, so reorganising files changes nothing.
+A Claim is one independently governed proposition. Under it sit normative Cases with free-form
+Markdown bodies, independently addressable for evidence and execution. Prose, tables, diagrams and
+domain notations are all permitted; Azimuth preserves and fingerprints them without pretending to
+understand their meaning. Ids are declared rather than derived from file paths, so reorganising
+files changes nothing.
 
 Every Claim declares its criticality: `critical`, `standard` or `routine`. Cases inherit it and do
 not become separate governance centres.
@@ -139,11 +141,11 @@ Open design questions are recorded under `azimuth/explorations/`, including thes
 
 ## Maturity
 
-Alpha. Formats may change incompatibly between prereleases, and alpha 4 does not load an alpha 1 model. Evaluate it on a bounded pilot, not on a critical path you cannot revisit.
+Alpha. Formats may change incompatibly between prereleases, and alpha 5 does not load an alpha 1 model. Evaluate it on a bounded pilot, not on a critical path you cannot revisit.
 
-The published alpha 4 tag supports the Rust CLI and core including federation, the bundled consumer skills, templates, references and migrations, the .NET and TypeScript annotations and extractors, and the assurance API and diagnostic web images defined at that tag. Protocol and schema versions remain independent and are declared in the release catalog.
+The published alpha 5 tag supports the Rust CLI and core including federation, the bundled consumer skills, templates, references and migrations, the .NET and TypeScript annotations and extractors, and the assurance API and diagnostic web images defined at that tag. Protocol and schema versions remain independent and are declared in the release catalog.
 
-Qualified CLI targets are Linux x64, macOS ARM64 and Windows x64; qualified image platforms are Linux AMD64 and Linux ARM64. The C++, Go, JVM, Python and Rust annotation and extractor integrations, and everything under `experiments/`, are experimental source: CI exercises them, but `0.1.0-alpha.4` assigns them no package identity or support promise.
+Qualified CLI targets are Linux x64, macOS ARM64 and Windows x64; qualified image platforms are Linux AMD64 and Linux ARM64. The C++, Go, JVM, Python and Rust annotation and extractor integrations, and everything under `experiments/`, are experimental source: CI exercises them, but `0.1.0-alpha.5` assigns them no package identity or support promise.
 
 ## This repository
 

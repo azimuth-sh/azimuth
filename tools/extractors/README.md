@@ -127,7 +127,7 @@ azimuth-emit-ts --output manifest.json --root . src
 - Rust requires one compiler-accepted conventional Cargo target and reachable conventional module graph. Its site includes target kind, target and compiler crate names, module, receiver or trait and a normalized declared signature. Parameter patterns are excluded, generic parameters are positional and declared type-path spelling remains identity. Ambiguous or custom targets, `#[path]`, generated or included source and unreachable files fail.
 - C++ consumes Clang's semantic AST and `clang::annotate` metadata. Alpha 2 accepts only program-global external-linkage, non-module, non-template and unconstrained declarations, using qualified name plus canonical function type. Internal linkage, anonymous namespaces, local or module-attached declarations, templates, constraints and source-locator-bearing types fail until a build/module identity account exists.
 
-`experiments/polyglot/check.sh` builds all seven language fixtures, runs ordinary tests, emits seven strict manifests, validates their union and asserts export version 3.
+`experiments/polyglot/check.sh` builds all seven language fixtures, runs ordinary tests, emits seven strict manifests, validates their union and asserts export version 4.
 
 ## Tests
 

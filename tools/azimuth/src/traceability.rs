@@ -1,7 +1,7 @@
 //! Pure derived Claim, realization, and verification traceability projection.
 
 use crate::json::Json;
-use crate::model::{Criticality, Model, Site, StepKind};
+use crate::model::{Criticality, Model, Site};
 use crate::validation::{resolve_challenge_plan, ChallengeResolution, DecisionKind};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -18,16 +18,10 @@ pub struct TraceabilityCase {
     pub parent_claim: String,
     pub criticality: Option<Criticality>,
     pub statement: String,
-    pub steps: Vec<TraceabilityStep>,
+    pub case_statement: String,
     pub realizations: Vec<String>,
     pub verification: Vec<TraceabilityVerification>,
     pub judgment: TraceabilityJudgment,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TraceabilityStep {
-    pub kind: StepKind,
-    pub text: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -186,15 +180,7 @@ pub fn project(model: &Model) -> TraceabilityReport {
                 parent_claim: format!("{}#{}", claim.spec.id, claim.claim.id),
                 criticality: claim.claim.criticality,
                 statement: claim.claim.statement.clone(),
-                steps: claim
-                    .case
-                    .steps
-                    .iter()
-                    .map(|step| TraceabilityStep {
-                        kind: step.kind,
-                        text: step.text.clone(),
-                    })
-                    .collect(),
+                case_statement: claim.case.statement.clone(),
                 realizations: realizations
                     .get(&relation_key)
                     .cloned()
@@ -483,7 +469,7 @@ fn insert_edge(
 impl TraceabilityReport {
     pub fn to_json(&self) -> Json {
         Json::obj(vec![
-            ("version", Json::Num(3.0)),
+            ("version", Json::Num(4.0)),
             (
                 "cases",
                 Json::Arr(self.cases.iter().map(TraceabilityCase::to_json).collect()),
@@ -514,10 +500,7 @@ impl TraceabilityCase {
                     .unwrap_or(Json::Null),
             ),
             ("statement", Json::str(&self.statement)),
-            (
-                "steps",
-                Json::Arr(self.steps.iter().map(TraceabilityStep::to_json).collect()),
-            ),
+            ("case_statement", Json::str(&self.case_statement)),
             (
                 "realizations",
                 Json::Arr(self.realizations.iter().map(Json::str).collect()),
@@ -598,15 +581,6 @@ impl DecisionImpactEdge {
         Json::obj(vec![
             ("from", self.from.to_json()),
             ("to", self.to.to_json()),
-        ])
-    }
-}
-
-impl TraceabilityStep {
-    fn to_json(&self) -> Json {
-        Json::obj(vec![
-            ("kind", Json::str(self.kind.name())),
-            ("text", Json::str(&self.text)),
         ])
     }
 }

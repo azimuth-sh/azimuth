@@ -346,12 +346,10 @@ def initialize(root: pathlib.Path) -> None:
     (package / "spec.md").write_text(
         "# Spec: synthetic\n\n## Claim: behavior\nCriticality: standard\n\n"
         "The synthetic unit SHALL preserve its declared behavior.\n\n"
-        "### Case: works\nWHEN the analyzer and mutation search run\n"
-        "THEN each emits its own bounded fact\n\n"
+        "### Case: works\nThe analyzer and mutation search each emit their own bounded fact.\n\n"
         "## Claim: critical-behavior\nCriticality: critical\n\n"
         "The critical synthetic unit SHALL preserve its declared behavior.\n\n"
-        "### Case: critical-works\nWHEN the critical analyzer runs\n"
-        "THEN it emits one bounded fact\n",
+        "### Case: critical-works\nThe critical analyzer emits one bounded fact.\n",
         encoding="utf-8",
     )
     (package / "design.md").write_text(

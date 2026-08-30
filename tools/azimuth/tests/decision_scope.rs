@@ -91,13 +91,13 @@ fn model() -> Model {
     let alpha = parse_spec(
         "alpha/spec.md",
         "# Spec: alpha\n\n## Claim: behavior\nCriticality: standard\n\n\
-         The system SHALL work.\n\n### Case: works\nWHEN invoked\nTHEN it works\n",
+         The system SHALL work.\n\n### Case: works\nEvent: invoked\nRequired: it works\n",
     )
     .unwrap();
     let surface = parse_spec(
         "surface/spec.md",
         "# Spec: surface\n\n## Claim: routes\nCriticality: routine\n\n\
-         Every route SHALL exist.\n\n### Case: tagged\nWHEN built\nTHEN it exists\n",
+         Every route SHALL exist.\n\n### Case: tagged\nEvent: built\nRequired: it exists\n",
     )
     .unwrap();
     let mut model = Model {
@@ -274,8 +274,8 @@ fn export_resolutions_match_validation_order_and_an_independent_golden() {
         "target": {
           "kind": "claim-judgment",
           "id": "alpha#behavior",
-          "expected_fingerprint": "sha256:9ba8840747b7797530579ec06410a06d24960d77dcc9ae848fb02697c32cc31f",
-          "authored_fingerprint": "sha256:9ba8840747b7797530579ec06410a06d24960d77dcc9ae848fb02697c32cc31f"
+          "expected_fingerprint": "sha256:92cefc23047b1c5a5171550e0386a93f55ee3f645285d9d2e5e1ffc0601c7d1e",
+          "authored_fingerprint": "sha256:92cefc23047b1c5a5171550e0386a93f55ee3f645285d9d2e5e1ffc0601c7d1e"
         },
         "disposition": "selected"
       }
@@ -301,8 +301,8 @@ fn export_resolutions_match_validation_order_and_an_independent_golden() {
         "target": {
           "kind": "claim-judgment",
           "id": "alpha#behavior",
-          "expected_fingerprint": "sha256:9ba8840747b7797530579ec06410a06d24960d77dcc9ae848fb02697c32cc31f",
-          "authored_fingerprint": "sha256:9ba8840747b7797530579ec06410a06d24960d77dcc9ae848fb02697c32cc31f"
+          "expected_fingerprint": "sha256:92cefc23047b1c5a5171550e0386a93f55ee3f645285d9d2e5e1ffc0601c7d1e",
+          "authored_fingerprint": "sha256:92cefc23047b1c5a5171550e0386a93f55ee3f645285d9d2e5e1ffc0601c7d1e"
         },
         "disposition": "selected"
       }
@@ -529,14 +529,14 @@ fn selected_view_retains_exact_plan_dependencies_and_resolution_bytes() {
     fs::write(
         model_dir.join("alpha/spec.md"),
         "# Spec: alpha\n\n## Claim: works\nCriticality: standard\n\nA SHALL work.\n\n\
-         ### Case: yes\nWHEN invoked\nTHEN it works\n",
+         ### Case: yes\nEvent: invoked\nRequired: it works\n",
     )
     .unwrap();
     fs::write(
         model_dir.join("beta/spec.md"),
         "# Spec: beta\n\n## Claim: works\nCriticality: standard\n\nB SHALL work.\n\n\
-         ### Case: yes\nWHEN invoked\nTHEN it works\n\n\
-         ### Case: unrelated\nWHEN invoked elsewhere\nTHEN the sibling works\n",
+         ### Case: yes\nEvent: invoked\nRequired: it works\n\n\
+         ### Case: unrelated\nEvent: invoked elsewhere\nRequired: the sibling works\n",
     )
     .unwrap();
     fs::write(
@@ -673,7 +673,7 @@ fn local_marker_relocation_preserves_semantics_and_changes_only_locator_accounts
     fs::write(
         model_dir.join("alpha/spec.md"),
         "# Spec: alpha\n\n## Claim: behavior\nCriticality: standard\n\n\
-         The system SHALL work.\n\n### Case: works\nWHEN invoked\nTHEN it works\n",
+         The system SHALL work.\n\n### Case: works\nEvent: invoked\nRequired: it works\n",
     )
     .unwrap();
     fs::write(

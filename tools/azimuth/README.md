@@ -2,7 +2,7 @@
 
 The dependency-free Rust core for Azimuth's evidence control plane. It derives repository-owned
 Claims, their normative Cases and assurance graph, validates that graph, reports traceability,
-exports version 3 JSON and plans and hosts bounded adapter exchanges for provider-neutral Run
+exports version 4 JSON and plans and hosts bounded adapter exchanges for provider-neutral Run
 bundles.
 
 Install a checkout with `cargo install --path tools/azimuth`.
@@ -63,7 +63,7 @@ azimuth project accept-change --project project.json --before active.json \
 options. Exit code `0` means clean, `1` means Findings were reported and `2` means the account could
 not be derived. `azimuth report traceability` is a pure projection over selected Cases with
 inherited parent context; it creates no authored authority or execution fact. `azimuth export`
-writes model version 3.
+writes model version 4.
 
 `azimuth explore archive` requires an active lower-kebab id, a real Gregorian date and exactly one `Status: approved` field in the exploration preamble. It moves the complete package to `archive/YYYY-MM-DD-<id>/` without rewriting content and rejects an occupied destination.
 
@@ -146,7 +146,7 @@ globs are not semantic selectors, and zero selection never widens to a suite.
 - `adapter.rs` parses strict configuration and derives adapter and capability identities.
 - `run_plan.rs` resolves complete-model Checks and Challenges and builds semantic and launch plans.
 - `adapter_host.rs` stages content, hosts bounded processes and validates returned bundles.
-- `model.rs` owns the graph and export version 3.
+- `model.rs` owns the graph and export version 4.
 - `change.rs` handles change projection, finalization and archive gates.
 - `federation.rs` assembles revision-bound repository accounts.
 - `workflow.rs` scaffolds changes and validates path-isolated work packages.

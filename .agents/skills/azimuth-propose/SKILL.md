@@ -55,13 +55,10 @@ Add an intent delta only for an observable obligation that will become accepted 
 ## Add claim: <falsifiable-claim-id>
 Criticality: routine
 
-The product SHALL establish one singular normative proposition.
+Non-empty free-form normative Markdown stating this Claim.
 
 ### Add case: <standalone-case-id>
-GIVEN <precondition>
-WHEN <trigger>
-THEN <observable outcome>
-AND <further observable outcome>
+Non-empty free-form normative Markdown stating this Case.
 ```
 
 Follow these rules:
@@ -69,10 +66,10 @@ Follow these rules:
 - Use `## Add claim:` and `### Add case:` exactly. Never use the removed `Requirement`/`Scenario` vocabulary.
 - Give every added Claim `Criticality: routine` during the current fast-moving alpha.
 - Give each Claim one or more Cases. A Claim owns governance and criticality; Cases express distinct normative conditions within its predicate.
-- Write one independently governable SHALL proposition per Claim. Split conjunctions that carry different consequences, owners or acceptance decisions.
+- Write one independently governable, falsifiable proposition per Claim. Split conjunctions that carry different consequences, owners or acceptance decisions.
 - Make Claim and Case ids lower-kebab, proposition-like and visibly distinct. Cases must stand alone in traceability output.
-- Put universal meaning in the Claim and conditional examples in Cases. Cases describe behavior, never test mechanics, source paths or implementation structure.
-- Use GIVEN only for a real precondition, WHEN for the trigger and THEN/AND for observable outcomes. Do not encode alternatives, rationale or design prose as normative steps.
+- Put universal meaning in the Claim and materially distinct normative conditions in Cases. Cases describe behavior, never test mechanics, source paths or implementation structure.
+- Claim and Case bodies are non-empty free-form normative Markdown in any human language. Core preserves and fingerprints their prose, tables, diagrams and code fences without interpreting natural-language keywords, translations or notation. Reserve `# Spec:`, `## Claim:` or `## Invariant:` and `### Case:` for structure; use level-four headings or fenced content inside a body. Keep orientation, rationale and generated duplicate views outside normative bodies.
 - Do not add package `verification.md`, Checks, Evidence Bindings, Qualifications or Claim Judgments for routine Claims. Ordinary engineering checks remain outside the Azimuth evidence graph.
 - The current delta parser machine-projects whole Claim additions and criticality changes. Do not invent modify, remove, rename or add-Case-to-existing-Claim operations. If the transition requires one, surface the parser/model limitation and resolve it explicitly before proceeding.
 

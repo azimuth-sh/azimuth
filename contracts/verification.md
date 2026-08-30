@@ -1,6 +1,6 @@
 # Verification declarations
 
-The repository-owned decision facet for alpha 4. This file declares what a Check means, how its
+The repository-owned decision facet for alpha 5. This file declares what a Check means, how its
 terminal result bears on a Case, whether the shared method is credible, whether it applies to each
 exact Check-to-Case edge and whether one Claim's total assurance composition is accepted. It never
 records an execution result.
@@ -61,7 +61,7 @@ Case- or edge-specific requirements. Shared method context belongs to the Method
 
 There is no Strength field. Executable Checks demonstrate sampled behavior. Structural proof remains in design mechanisms and contributes to Claim Judgment rather than becoming a fictitious Observation.
 
-`Context:` is a required JSON object from string keys to uninterpreted string values. `{}` is explicit and valid. Equality is exact in alpha 4: values have no range, wildcard or provider-expression semantics.
+`Context:` is a required JSON object from string keys to uninterpreted string values. `{}` is explicit and valid. Equality is exact in alpha 5: values have no range, wildcard or provider-expression semantics.
 
 `Challenge domain:` is a non-empty JSON array drawn from the closed set `realization | mechanism | check-implementation | oracle | context`. Values are sorted and deduplicated semantically. It constrains relation-based challenge traversal; it is not a list of tools.
 
@@ -149,7 +149,7 @@ Required scope: ["check-implementation","realization"]
 Surviving changes are objections to credibility, not product outcomes.
 ```
 
-`Form:` is an open lower kebab path id interpreted by Decision Policy and adapter capabilities. `Searches for:` is the objection proposition. `Required scope:` is a non-empty JSON array sorted and unique over the closed semantic scope kinds listed below. Core tests coverage by kind and never infers scope from the open form. It uses the same fixed kind order as semantic scope. A Challenger never directly evaluates a product Claim and is not recursively qualified in alpha 4.
+`Form:` is an open lower kebab path id interpreted by Decision Policy and adapter capabilities. `Searches for:` is the objection proposition. `Required scope:` is a non-empty JSON array sorted and unique over the closed semantic scope kinds listed below. Core tests coverage by kind and never infers scope from the open form. It uses the same fixed kind order as semantic scope. A Challenger never directly evaluates a product Claim and is not recursively qualified in alpha 5.
 
 ## Challenge Plan
 
@@ -549,7 +549,7 @@ These are the only fields on a raw MechanismImplementation. `spec` is a lower-ke
 
 `site` is a non-empty qualified identity under the closed ecosystem profiles below. Except for the narrow C++ alpha profile, it contains a module, package or compilation-target identity and a declaring type or receiver. Where supported, it also contains the overload signature or generic arity needed to distinguish declarations. For example, a .NET extractor may emit `Payments.CaptureService.CompleteAsync(Payments.CompletionId,System.Threading.CancellationToken)`. A short method such as `CompleteAsync`, a path-plus-symbol such as `src/Capture.cs#CompleteAsync`, and a source path used only to distinguish overloads are invalid. The accountable emitter establishes those semantic facts. Core treats `site` as opaque: it can require a non-empty trimmed string without control characters or `|`, but it cannot prove from bytes that a module, receiver or overload is genuinely compiler-qualified.
 
-The address-kind mapping for marker-derived mechanisms is closed in alpha 4:
+The address-kind mapping for marker-derived mechanisms is closed in alpha 5:
 
 - `csharp` maps to `dotnet-symbol`; and
 - `cpp | go | java | javascript | kotlin | python | rust | typescript` maps to `<lang>-symbol`.

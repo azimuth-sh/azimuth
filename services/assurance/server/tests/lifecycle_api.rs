@@ -1,9 +1,8 @@
 use azimuth_assurance_domain::{
-    Challenge, ChallengeOutcome, ClaimContract, ContractArea, ContractMount, ContractStep,
-    ContractVerification, EvidenceDefinition, ExecutionSubject, GateReason, GateRequest,
-    GateStatus, LifecycleStage, Observation, ObservationOutcome, ProjectModelSnapshot,
-    Qualification, QualificationVerdict, WorkKind, PROJECT_SNAPSHOT_FORMAT,
-    PROJECT_SNAPSHOT_VERSION,
+    Challenge, ChallengeOutcome, ClaimContract, ContractArea, ContractMount, ContractVerification,
+    EvidenceDefinition, ExecutionSubject, GateReason, GateRequest, GateStatus, LifecycleStage,
+    Observation, ObservationOutcome, ProjectModelSnapshot, Qualification, QualificationVerdict,
+    WorkKind, PROJECT_SNAPSHOT_FORMAT, PROJECT_SNAPSHOT_VERSION,
 };
 use azimuth_assurance_server::{app, connect, migrate, AppState, GateDecisionRecord, Project};
 use reqwest::{Client, StatusCode};
@@ -588,10 +587,7 @@ fn claim_contract() -> ClaimContract {
         requirement: "performance".into(),
         criticality: "standard".into(),
         statement: "Checkout latency remains bounded.".into(),
-        steps: vec![ContractStep {
-            kind: "then".into(),
-            text: "p95 latency stays below the qualified threshold".into(),
-        }],
+        case_statement: "P95 latency stays below the qualified threshold.".into(),
         domain: "behaviour".into(),
         verification: ContractVerification {
             strength: Some("demonstration".into()),

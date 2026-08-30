@@ -92,7 +92,7 @@ fn model() -> Model {
     let spec = parse_spec(
         "spec.md",
         "# Spec: alpha\n\n## Claim: works\nCriticality: standard\n\nA SHALL work.\n\n\
-         ### Case: observed\nWHEN invoked\nTHEN it works\n",
+         ### Case: observed\nEvent: invoked\nRequired: it works\n",
     )
     .unwrap();
     let mut model = Model {
@@ -314,7 +314,7 @@ fn report_is_deterministic_and_creates_no_execution_or_authority_fields() {
     let left = project(&model()).to_json().to_string_pretty();
     let right = project(&model()).to_json().to_string_pretty();
     assert_eq!(left, right);
-    assert!(left.contains("\"version\": 3"));
+    assert!(left.contains("\"version\": 4"));
     assert!(!left.contains("observations"));
     assert!(!left.contains("challenge_results"));
     assert!(!left.contains("assurance_state"));

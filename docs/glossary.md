@@ -13,7 +13,10 @@ criticality, production realization, total Claim Judgment and Claim Assurance St
 Evidence Bindings, Runs, Observations and Challenger impact, but owns no independent criticality,
 realization, Judgment or Assurance State. Its exact id is `<spec>#<claim>/<case>`.
 
-**Predicate** — what must hold, written in prose. *Narrowing:* it is not a formal predicate and has no machine-evaluable semantics. Azimuth checks the structure of an assurance account, not the truth of its prose.
+**Predicate** — what must hold, written as free-form normative Markdown in a Claim and its Cases.
+*Narrowing:* core does not interpret its natural language, tables, diagrams, code fences or domain
+notation. Azimuth preserves and fingerprints the authored content and checks the structure of its
+assurance account, not the truth of the content.
 
 **Spec** — a named group of Claims with a declared, path-independent id. Specs are organized by
 problem domain rather than by service.
@@ -125,7 +128,7 @@ Claim's predicate. It is keyed by `(spec-id, claim-id)` and carries no Case or e
 
 **Fan-out** — one Claim realized at several sites across components or languages.
 
-**Exemption** — a deliberate, attributable and reviewable opt-out from an applicable obligation. *No exemption record, block or Finding kind exists in alpha 4*; the term is reserved. An ordinary unenrolled test asserts no Azimuth evidence and therefore has nothing to exempt.
+**Exemption** — a deliberate, attributable and reviewable opt-out from an applicable obligation. *No exemption record, block or Finding kind exists in alpha 5*; the term is reserved. An ordinary unenrolled test asserts no Azimuth evidence and therefore has nothing to exempt.
 
 ## Areas and derived domains
 
@@ -148,7 +151,7 @@ Claim's predicate. It is keyed by `(spec-id, claim-id)` and carries no Case or e
 **Traceability report** — a pure derived view of selected Cases, inherited parent realizations,
 Check relationships, Challenge resolutions and decision-impact edges.
 
-**Export** — the complete derived repository model serialized as format version 3 by `azimuth
+**Export** — the complete derived repository model serialized as format version 4 by `azimuth
 export`. It includes Claims, Cases, decisions, Challenge resolutions and Findings, but no runtime
 ledger data.
 
@@ -237,4 +240,4 @@ negative search, not positive product evidence.
 
 A protocol-valid adapter-returned `timed-out` Run is an execution fact and exits zero only when its complete response arrives within that deadline. A host-enforced deadline is a transport timeout, exits one and publishes no bundle.
 
-**Assurance Service** — the optional future durable ledger for accepted Runs and derived Assurance State. The alpha 1 service wire remains isolated until the Run-ledger replacement; it is neither the alpha 4 repository-model format nor the Run-bundle protocol. No current adapter is a long-running service or webhook bridge.
+**Assurance Service** — the optional future durable ledger for accepted Runs and derived Assurance State. The legacy service API and version 2 project-snapshot wire remain isolated until the Run-ledger replacement; they are neither the alpha 5 repository-model format nor the Run-bundle protocol. No current adapter is a long-running service or webhook bridge.

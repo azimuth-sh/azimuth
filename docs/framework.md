@@ -25,7 +25,7 @@ Each Claim can have three facets:
 Criticality decides which facets are applicable. A routine Claim stops at intent and owes no
 realization, mechanism, Evidence Binding, Method Qualification, Applicability Decision or Claim
 Judgment. Standard and critical Claims add the applicable obligations. Every active Claim in this
-repository is routine during the fast-moving alpha 4 phase. Its ordinary tests and release checks
+repository is routine during the fast-moving alpha 5 phase. Its ordinary tests and release checks
 remain engineering safeguards; they are not Azimuth evidence.
 
 ## Intent and mechanism
@@ -35,7 +35,12 @@ id, criticality and one or more Cases. Case ids are local to their parent Claim;
 is `<spec>#<claim>/<case>`. Specs are organized by problem domain rather than by service because
 one Claim may be realized across several components and languages.
 
-The Claim predicate is prose. It has no machine-evaluable semantics, and Azimuth never infers that an implementation is correct merely because it is linked.
+Claim and Case bodies are non-empty free-form normative Markdown. They may use prose, tables,
+diagrams, code fences or a domain notation in any natural language. Core preserves their content
+and includes it in semantic fingerprints, but does not interpret natural-language keywords or
+notation. Structural validation establishes identity and assurance relationships; human and agent
+review owns clarity, consistency and truth. Azimuth never infers that an implementation is correct
+merely because it is linked.
 
 A design entry declares a stable mechanism identity, enforcement kind and rationale, then resolves it to one current artifact. Code can identify an implementation with `implements-mechanism`, from which the extractor derives the binding; a non-code artifact uses an explicit `Binding:` instead. The design identity survives deletion of its implementation, making the broken relation visible.
 
@@ -49,7 +54,7 @@ The facets must also separate cleanly at N=1. If intent, mechanism and evidence 
 
 ## Repository evidence graph
 
-The alpha 4 repository graph is deliberately sparse:
+The alpha 5 repository graph is deliberately sparse:
 
 ```text
 production site --Realizes---------------------------> Claim
@@ -159,7 +164,7 @@ Qualification fans out through every dependent binding; a challenged Applicabili
 local to its Case edge. Both reach the parent Claim and current Claim Judgment without fabricating
 another Challenge Result.
 
-A Challenger is not recursively qualified in alpha 4. Its quality is an ordinary tool-release, conformance and review concern.
+A Challenger is not recursively qualified in alpha 5. Its quality is an ordinary tool-release, conformance and review concern.
 
 ## Linkage and domains
 
@@ -212,7 +217,7 @@ report traceability` is a pure projection over selected Cases with inherited par
 derived Check relationships, Challenge resolution accounts and decision-impact edges. It creates
 no authored authority or execution fact.
 
-`azimuth export` writes the complete derived model as format version 3. The export includes Claims,
+`azimuth export` writes the complete derived model as format version 4. The export includes Claims,
 Cases, workspace data, realization and implementation linkage, mechanisms, Checks, Evidence
 Bindings, Method Qualifications, Applicability Decisions, Claim Judgments, Decision Policies, the
 Challenge Schedule, Challengers, Challenge Plans, candidate resolutions and Findings.
@@ -295,7 +300,7 @@ The synthetic [Challenge-planning conformance](../experiments/challenge-planning
 the public commands and exercises all twelve selector forms, mixed planning, exact scope and routes,
 scheduled omission, import provenance and selection mismatch without creating persistent state.
 
-The optional Assurance Service is likewise awaiting the Run-ledger replacement. The alpha 1 claim-contract and project-snapshot wire remains isolated inside the existing service boundary until that replacement removes it. It is not the alpha 4 repository model or Run-bundle protocol, is not emitted by `azimuth export`, and receives no compatibility bridge. Authorization, durable ingest, retention and Subject-specific Assurance State remain ledger work.
+The optional Assurance Service is likewise awaiting the Run-ledger replacement. Its legacy service API and version 2 project-snapshot wire remain isolated inside the existing service boundary until that replacement removes them. A snapshot Case is opaque `caseStatement` text, but the protocol is not the alpha 5 repository model or Run-bundle protocol, is not emitted by `azimuth export`, and receives no compatibility bridge. Authorization, durable ingest, retention and Subject-specific Assurance State remain ledger work.
 
 The authority split is current: repositories own Claims, Checks, Evidence Bindings and reviewed decisions; Run producers own execution facts about exact Subjects. A standalone valid bundle does not establish that its model or decision fingerprints are current.
 

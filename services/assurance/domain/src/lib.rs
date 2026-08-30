@@ -80,13 +80,6 @@ pub struct ContractSurface {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ContractStep {
-    pub kind: String,
-    pub text: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ContractVerification {
     pub strength: Option<String>,
     pub scope: String,
@@ -106,7 +99,7 @@ pub struct ClaimContract {
     pub requirement: String,
     pub criticality: String,
     pub statement: String,
-    pub steps: Vec<ContractStep>,
+    pub case_statement: String,
     pub domain: String,
     pub verification: ContractVerification,
     pub surface: Option<ContractSurface>,
@@ -133,14 +126,7 @@ impl ClaimContract {
             requirement: self.requirement.clone(),
             criticality: self.criticality.clone(),
             statement: self.statement.clone(),
-            steps: self
-                .steps
-                .iter()
-                .map(|step| azimuth::assurance::ContractStep {
-                    kind: step.kind.clone(),
-                    text: step.text.clone(),
-                })
-                .collect(),
+            case_statement: self.case_statement.clone(),
             domain: self.domain.clone(),
             verification: azimuth::assurance::ContractVerification {
                 strength: self.verification.strength.clone(),
@@ -627,10 +613,7 @@ mod tests {
             requirement: "performance".into(),
             criticality: "standard".into(),
             statement: "Checkout latency remains bounded.".into(),
-            steps: vec![azimuth::assurance::ContractStep {
-                kind: "then".into(),
-                text: "latency is below the threshold".into(),
-            }],
+            case_statement: "Latency is below the threshold.".into(),
             domain: "behaviour".into(),
             verification: azimuth::assurance::ContractVerification {
                 strength: Some("demonstration".into()),

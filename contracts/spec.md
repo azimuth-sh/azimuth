@@ -12,14 +12,23 @@ Optional non-normative ownership prose.
 ## Claim: <claim-id>
 Criticality: critical | standard | routine
 
-A singular SHALL statement.
+Non-empty free-form normative Markdown stating the Claim.
 
 ### Case: <case-id>
-GIVEN <precondition>          (optional, repeatable with AND)
-WHEN <trigger>
-THEN <observable outcome>
-AND <further outcome>         (optional, repeatable)
+Non-empty free-form normative Markdown stating this Case.
 ```
+
+The parser reserves `# Spec:`, `## Claim:` or `## Invariant:` and `### Case:` headings for the
+semantic structure. A Claim or Case body ends at the next unfenced heading at one of those levels.
+Headings inside a triple-backtick fence and headings at level four or below remain body content.
+Outer blank lines are removed; all other Markdown, including line breaks, tables, blockquotes,
+lists, diagrams and code fences, is preserved and participates in fingerprints.
+
+Core validates that each authored body is non-empty but does not interpret its natural language,
+diagram, table or formal notation. Authors may use any human language, EARS, another notation or
+unrestricted prose; none is a parser requirement and no language declaration changes core
+behavior. Human and agent review own clarity, falsifiability, internal consistency and the honesty
+of the Claim-to-Case composition.
 
 ## Claim and Case
 
@@ -65,6 +74,8 @@ The parser retains non-routine levels so a later accepted change can raise criti
 - No source path. Production linkage is extracted from Realizes markers.
 - No execution state. Runs and their Subjects belong to the deferred execution plane.
 - No cross-cutting role labels. Add notation only after structurally different prose concerns establish the need.
+- No required natural-language shape. Core does not recognize `GIVEN`, `WHEN`, `THEN`, `shall` or
+  translated equivalents as semantic keywords.
 
 ## Site-domain invariants
 
@@ -87,9 +98,11 @@ failed contribution or undischarged member becomes a distinct Finding.
 - Ids are declarative, never imperative.
 - Case ids must stand alone wherever traceability reports them.
 - Claim and Case ids should remain visibly distinct.
-- SHALL statements are singular and normative.
-- Cases describe observable behavior, never test mechanics.
+- Claim and Case bodies are normative even when they use prose, tables, diagrams or a domain
+  notation. Orientation and rationale belong outside their bodies.
+- Prefer singular, falsifiable statements and observable behavior over test mechanics.
 - Universal meaning belongs in the proposition, not in a test example.
-- Diagrams are non-normative and ignored by the parser.
+- A table, diagram or code fence inside a Claim or Case body is normative content. A generated view
+  must remain outside the body unless it deliberately becomes the sole authored authority.
 
 Specs are organized by domain area rather than service topology. If one file grows too broad, split it into specs with new declared ids instead of inventing a multi-file spec.
