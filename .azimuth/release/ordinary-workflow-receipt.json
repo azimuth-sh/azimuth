@@ -2,11 +2,11 @@
   "format": "azimuth-ordinary-workflow-receipt",
   "schemaVersion": 1,
   "workflow": ".github/workflows/ci.yml",
-  "sourceRevision": "740a2e9771a52df2af2eeb50b36aaa6228424ba6",
-  "executionRevision": "740a2e9771a52df2af2eeb50b36aaa6228424ba6",
-  "runUrl": "https://github.com/azimuth-sh/azimuth/actions/runs/33299324873",
+  "sourceRevision": "0b209349c97109e2933e29e085a6c82d16e3ace1",
+  "executionRevision": "4184e9cafe6ce72b1048101e1d8e426f364036da",
+  "runUrl": "https://github.com/azimuth-sh/azimuth/actions/runs/33308414173",
   "conclusion": "success",
-  "durationSeconds": 609,
-  "workflowSha256": "ee4ac64493b31536918b7d620f89a3c00d288e95bc459c6148e9b4ca2c3a9c85",
-  "rootGateSha256": "4fa218a86118cbb5324869f24ecfc4d20dfcd095baa3c481e13b78af7bb9fbe3"
+  "durationSeconds": 319,
+  "workflowSha256": "2a81ba274cf7263688b7037fc1be4449af2e7ce69b9417efae1f8166b22ced95",
+  "rootGateSha256": "f59c69bfdec0979dbbad3f4c9f359aa0bae46dcd618a7983cbf294e1e42fc2b2"
 }

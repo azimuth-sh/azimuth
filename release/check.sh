@@ -37,11 +37,11 @@ python3 -m unittest -v \
   release.test_isolate_experiments \
   release.test_orchestrate \
   release.test_publication
-ORCHESTRATION_ARGS=()
 if [[ "$DEFER_HOSTED_RECEIPTS" == true ]]; then
-  ORCHESTRATION_ARGS+=(--defer-hosted-receipts)
+  python3 release/orchestrate.py qualify --defer-hosted-receipts
+else
+  python3 release/orchestrate.py qualify
 fi
-python3 release/orchestrate.py qualify "${ORCHESTRATION_ARGS[@]}"
 python3 release/publication.py qualify --out .azimuth/release
 if [[ -n "$CANDIDATES" ]]; then
   python3 release/qualify.py --candidates "$CANDIDATES"
