@@ -294,6 +294,7 @@ def workflow_account(root=ROOT):
     require(
         "needs: image-platforms" in deployment
         and "pattern: image-platform-*-amd64" in deployment
+        and "sudo apt-get install --yes skopeo" in deployment
         and deployment.count("release/candidates.py import-image") == 2
         and "--prebuilt-images" in deployment
         and "--build" not in deployment,

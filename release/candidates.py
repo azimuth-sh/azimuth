@@ -637,18 +637,19 @@ def import_image(root, image_id, archive, platform, tag):
         observed == platform,
         f"{archive.name}: platform is {observed!r}, expected {platform!r}",
     )
-    catalog = catalog_at(root)
-    source_tag = f"{image['identity']}:{catalog['release']['version']}"
-    run(["docker", "load", "--input", archive])
-    if source_tag != tag:
-        run(["docker", "tag", source_tag, tag])
+    operating_system, architecture = platform.split("/", 1)
+    run(
+        [
+            "skopeo", "copy", "--override-os", operating_system,
+            "--override-arch", architecture, f"oci-archive:{archive}",
+            f"docker-daemon:{tag}",
+        ]
+    )
     inspected = run(
         ["docker", "image", "inspect", tag, "--format", "{{.Os}}/{{.Architecture}}"],
         capture=True,
     )
     require(inspected.stdout.strip() == platform, f"{tag}: imported platform differs")
-    if source_tag != tag:
-        run(["docker", "image", "rm", source_tag])
 
 
 def smoke_api(tag, platform, suffix):
