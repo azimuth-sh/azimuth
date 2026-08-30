@@ -1,11 +1,15 @@
 # Release qualification
 
-The rehearsal workflow produces candidates and GitHub attestations but does not publish them. Its tracked receipts record hosted execution, not files that local code can derive without GitHub. Refresh a receipt only after the changed executable inputs are committed and the corresponding pull-request workflow succeeds.
+The candidate-verification workflow builds real retained candidates and GitHub attestations but never publishes them. A pull-request run is verification-only because its account is bound to GitHub's synthetic merge revision and a local synthetic tag. A successful run on `main` is promotable after the catalog's annotated tag is pushed at that exact revision: publication downloads the run's candidates and account by run id and does not rebuild them. No version change or registry write is needed to exercise the complete workflow on a pull request.
+
+The workflow is one dependency graph of isolated jobs. Source, Assurance and candidate production run in parallel. Package qualification downloads and revalidates the package job's retained archives instead of rebuilding them. Image platforms build independently on matching native GitHub runners, with one BuildKit cache scope per image and architecture. The deployment job validates and imports the exact amd64 platform fragments, then exercises those images with Compose builds disabled. The image assembly jobs independently combine the same fragments into the final multi-platform OCI candidates and attest only those final archives. A cache can accelerate production, but only immutable workflow artifacts cross job boundaries and establish candidate identity.
+
+The Assurance API builder keeps locked external Rust dependencies in a manifest-only layer so source-only changes rebuild the local crates rather than the complete graph. Platform archives remain intermediate inputs: deployment may exercise them, but publication retains only the assembled multi-platform image subjects.
 
 Use `gh` for every hosted execution account:
 
 ```sh
-gh run list --workflow "release rehearsal" --branch "$(git branch --show-current)" \
+gh run list --workflow "candidate verification" --branch "$(git branch --show-current)" \
   --event pull_request --limit 5
 gh run watch RUN_ID
 gh run view RUN_ID --json conclusion,headSha,jobs,url
@@ -13,9 +17,9 @@ gh pr view --json headRefOid
 gh run download RUN_ID --dir DOWNLOAD_DIRECTORY
 ```
 
-For `.azimuth/release/release-workflow-receipt.json`, record the pull request's `headRefOid` as `sourceRevision` and confirm that it equals the run's `headSha`. Record the downloaded candidate account's `revision` as `executionRevision`, then confirm that revision against every signed attestation. Derive `jobs` and `subjects` from `release/artifacts.json`; hash the downloaded `candidates.json` for `candidateAccountSha256`. Hash `.github/workflows/release.yml`, `release/orchestrate.py` and `release/candidates.py` for their named SHA-256 fields. Query each downloaded subject digest with `gh api repos/azimuth-sh/azimuth/attestations/sha256:DIGEST`, decode the signed statement and record `attestedSubjects` only after every exact subject names the workflow and execution revision.
+For `.azimuth/release/release-workflow-receipt.json`, record the pull request's `headRefOid` as `sourceRevision` and confirm that it equals the run's `headSha`. Record the downloaded candidate account's `revision` as `executionRevision`, then confirm that revision against every signed attestation. Derive `jobs` and `subjects` from `release/artifacts.json`; hash the downloaded `candidates.json` for `candidateAccountSha256`. Hash `.github/workflows/ci.yml`, `release/orchestrate.py` and `release/candidates.py` for their named SHA-256 fields. Query each downloaded subject digest with `gh api repos/azimuth-sh/azimuth/attestations/sha256:DIGEST`, decode the signed statement and record `attestedSubjects` only after every exact subject names the workflow and execution revision.
 
-For `.azimuth/release/ordinary-workflow-receipt.json`, record the same revision identities, compute the successful `check` job duration from its `startedAt` and `completedAt` values, and hash `.github/workflows/ci.yml` plus `scripts/check.sh`. Copy each accepted receipt into the active change before archiving it; if the change is already archived, retain the corrected historical copy beside its outcome. Then validate the records with:
+For `.azimuth/release/ordinary-workflow-receipt.json`, record the same revision identities, compute the successful candidate-verification workflow duration, and hash `.github/workflows/ci.yml` plus `scripts/check.sh`. A running workflow cannot honestly validate a receipt for its own future conclusion, so its release-qualification lane explicitly defers hosted receipts. Refresh both receipts only from the completed successful run; local qualification then validates them normally. Copy each accepted receipt into the active change before archiving it; if the change is already archived, retain the corrected historical copy beside its outcome. Then validate the records with:
 
 ```sh
 ./release/check.sh --experiments-executed
@@ -33,7 +37,7 @@ Before rehearsal, update every native manifest and lockfile, `release/artifacts.
 
 Configure the `release` environment with `CARGO_REGISTRY_TOKEN`, `NUGET_API_KEY` and `NPM_TOKEN`. The npm identity must administer the `@azimuth-sh` organization. The workflow's bounded GitHub token owns GitHub Release and GHCR access. A crates.io token restricted to `publish-new` cannot use the legacy identity endpoint. NuGet, GitHub Release and GHCR likewise expose no non-writing probe that proves the right to create an unused identity, so the preflight records those limitations and learns authorization from the first write. npm organization administration is checked directly.
 
-After the publication change is merged, run the release rehearsal on `main`, wait for its complete account, create the annotated catalog tag at that same main revision and push the tag. Use `gh` to dispatch the no-write preflight against the tag:
+After the publication change is merged, use the successful candidate-verification run on `main`, create the annotated catalog tag at that same main revision and push the tag. Use `gh` to dispatch the no-write preflight against the tag:
 
 ```sh
 gh workflow run publish.yml --ref v0.1.0-alpha.5 \

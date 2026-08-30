@@ -80,12 +80,12 @@ class ReleaseOrchestrationTests(unittest.TestCase):
         return {
             "format": "azimuth-release-workflow-receipt",
             "schemaVersion": 1,
-            "workflow": ".github/workflows/release.yml",
+            "workflow": ".github/workflows/ci.yml",
             "sourceRevision": REVISION,
             "executionRevision": "b" * 40,
             "runUrl": "https://github.com/azimuth-sh/azimuth/actions/runs/123",
             "conclusion": "success",
-            "workflowSha256": digest(self.root / ".github/workflows/release.yml"),
+            "workflowSha256": digest(self.root / ".github/workflows/ci.yml"),
             "accountSha256": digest(self.root / "release/orchestrate.py"),
             "consumerSha256": digest(self.root / "release/candidates.py"),
             "jobs": expected_release_jobs(self.catalog),
@@ -316,10 +316,17 @@ class ReleaseOrchestrationTests(unittest.TestCase):
             self.assertEqual(len(result["rejectedConflictKinds"]), 3)
             self.assertEqual(result["completion"], "passed")
 
-    def test_workflows_separate_ordinary_and_release_image_accounts(self):
+    def test_candidate_workflow_keeps_isolated_reusable_lanes(self):
         account = workflow_account(self.root)
         self.assertFalse(account["releaseImagesInOrdinaryGate"])
-        self.assertEqual(account["releaseLanes"], ["packages", "native", "images", "account"])
+        self.assertEqual(
+            account["releaseLanes"],
+            [
+                "prepare", "source", "assurance", "packages", "native",
+                "image-platforms", "deployment", "images", "release_check",
+                "account", "check",
+            ],
+        )
 
     def test_linkage_uses_only_v2_collections_and_fingerprints(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -345,34 +352,33 @@ class ReleaseOrchestrationTests(unittest.TestCase):
         )
 
     def test_pull_request_rehearsal_isolates_its_synthetic_tag(self):
-        release = (self.root / ".github/workflows/release.yml").read_text()
-        ordinary = (self.root / ".github/workflows/ci.yml").read_text()
+        workflow = (self.root / ".github/workflows/ci.yml").read_text()
         gate = (self.root / "scripts/check.sh").read_text()
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / ".github/workflows").mkdir(parents=True)
             (root / "scripts").mkdir()
-            (root / ".github/workflows/ci.yml").write_text(ordinary)
             (root / "scripts/check.sh").write_text(gate)
-            changed = release.replace("tag --force --annotate", "tag --annotate", 1)
-            (root / ".github/workflows/release.yml").write_text(changed)
+            changed = workflow.replace("tag --force --annotate", "tag --annotate", 1)
+            (root / ".github/workflows/ci.yml").write_text(changed)
             with self.assertRaisesRegex(OrchestrationError, "synthetic tag"):
                 workflow_account(root)
 
     def test_each_release_lane_is_required_by_the_workflow_account(self):
-        release = (self.root / ".github/workflows/release.yml").read_text()
-        ordinary = (self.root / ".github/workflows/ci.yml").read_text()
+        workflow = (self.root / ".github/workflows/ci.yml").read_text()
         gate = (self.root / "scripts/check.sh").read_text()
-        for lane in ("packages", "native", "images", "account"):
+        for lane in (
+            "source", "assurance", "packages", "native", "image-platforms",
+            "deployment", "images", "release_check", "account", "check",
+        ):
             with self.subTest(lane=lane), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 (root / ".github/workflows").mkdir(parents=True)
                 (root / "scripts").mkdir()
-                (root / ".github/workflows/ci.yml").write_text(ordinary)
                 (root / "scripts/check.sh").write_text(gate)
-                changed = release.replace(f"  {lane}:\n", "", 1)
-                (root / ".github/workflows/release.yml").write_text(changed)
-                with self.assertRaisesRegex(OrchestrationError, f"lane {lane!r}"):
+                changed = workflow.replace(f"  {lane}:\n", "", 1)
+                (root / ".github/workflows/ci.yml").write_text(changed)
+                with self.assertRaisesRegex(OrchestrationError, f"lane '{lane}'"):
                     workflow_account(root)
 
     def test_workflow_account_accepts_folded_run_and_additional_isolated_matrix(self):
@@ -380,33 +386,29 @@ class ReleaseOrchestrationTests(unittest.TestCase):
             root = Path(temporary)
             (root / ".github/workflows").mkdir(parents=True)
             (root / "scripts").mkdir()
-            ordinary = (self.root / ".github/workflows/ci.yml").read_text().replace(
-                "      - run: ./scripts/check.sh\n",
-                "      - run: >-\n          ./scripts/check.sh\n",
+            workflow = (self.root / ".github/workflows/ci.yml").read_text().replace(
+                "      - run: ./scripts/check.sh source\n",
+                "      - run: >-\n          ./scripts/check.sh source\n",
             )
-            release = (self.root / ".github/workflows/release.yml").read_text()
-            release += "  diagnostic:\n    strategy:\n      fail-fast: false\n"
-            (root / ".github/workflows/ci.yml").write_text(ordinary)
-            (root / ".github/workflows/release.yml").write_text(release)
+            workflow += "  diagnostic:\n    strategy:\n      fail-fast: false\n"
+            (root / ".github/workflows/ci.yml").write_text(workflow)
             (root / "scripts/check.sh").write_text(
                 (self.root / "scripts/check.sh").read_text()
             )
-            self.assertEqual(workflow_account(root)["ordinaryCommand"], "./scripts/check.sh")
+            self.assertEqual(workflow_account(root)["ordinaryCommand"], "./scripts/check.sh source")
 
     def test_each_selected_matrix_must_disable_fail_fast(self):
-        ordinary = (self.root / ".github/workflows/ci.yml").read_text()
-        release = (self.root / ".github/workflows/release.yml").read_text()
+        workflow = (self.root / ".github/workflows/ci.yml").read_text()
         gate = (self.root / "scripts/check.sh").read_text()
         for lane in ("native", "images"):
             with self.subTest(lane=lane), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 (root / ".github/workflows").mkdir(parents=True)
                 (root / "scripts").mkdir()
-                (root / ".github/workflows/ci.yml").write_text(ordinary)
                 (root / "scripts/check.sh").write_text(gate)
-                prefix, selected = release.split(f"  {lane}:\n", 1)
+                prefix, selected = workflow.split(f"  {lane}:\n", 1)
                 selected = selected.replace("      fail-fast: false", "      fail-fast: true", 1)
-                (root / ".github/workflows/release.yml").write_text(
+                (root / ".github/workflows/ci.yml").write_text(
                     prefix + f"  {lane}:\n" + selected
                 )
                 with self.assertRaisesRegex(OrchestrationError, "does not isolate failures"):

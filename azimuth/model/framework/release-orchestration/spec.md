@@ -6,15 +6,16 @@ Criticality: routine
 The first-alpha release SHALL qualify independent artifact lanes before one complete candidate
 account can pass.
 
-### Case: ordinary-ci-excludes-release-only-matrix
-- Event: the canonical pull request or main repository check runs
-- Required outcome: it executes the complete ordinary repository gate below its hosted-job limit
-- Additional condition or outcome: it does not build the release-only multi-platform image matrix
+### Case: candidate-verification-reuses-retained-results
+- Event: the canonical pull request or main candidate verification runs
+- Required outcome: source, Assurance and candidate production execute in isolated parallel jobs
+- Additional condition or outcome: downstream qualification consumes exact retained package and image artifacts without rebuilding them
 
 ### Case: selected-lanes-are-independent
 - Event: first-alpha candidates are qualified
 - Required outcome: packages, native binaries and assurance images execute in separate failure boundaries
 - Additional condition or outcome: a successful lane retains its immutable outputs when another lane fails
+- Additional condition or outcome: one final verification job observes every required source, deployment, qualification and candidate-account outcome
 
 ### Case: complete-account-needs-every-lane
 - Event: release qualification converges

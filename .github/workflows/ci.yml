@@ -1,17 +1,33 @@
-name: check
+name: candidate verification
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  check:
+  prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    outputs:
+      native: ${{ steps.matrix.outputs.native }}
+      image_platform: ${{ steps.matrix.outputs.image_platform }}
+      image: ${{ steps.matrix.outputs.image }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: matrix
+        shell: bash
+        run: |
+          echo "native=$(python3 release/orchestrate.py matrix native)" >> "$GITHUB_OUTPUT"
+          echo "image_platform=$(python3 release/orchestrate.py matrix image-platform)" >> "$GITHUB_OUTPUT"
+          echo "image=$(python3 release/orchestrate.py matrix image)" >> "$GITHUB_OUTPUT"
+
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
@@ -36,6 +52,287 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "9.5.1"
-      - uses: docker/setup-qemu-action@v4
+      - run: ./scripts/check.sh source
+
+  assurance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: ./scripts/check.sh assurance
+
+  packages:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - run: python3 release/candidates.py packages --out dist/packages
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/packages/*
+      - uses: actions/upload-artifact@v7
+        with:
+          name: candidates-packages
+          path: dist/packages/*
+          if-no-files-found: error
+
+  native:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.native) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: >-
+          python release/candidates.py native
+          --out dist/native
+          --target "$TARGET"
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/native/${{ matrix.archive }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: candidates-native-${{ matrix.target }}
+          path: dist/native/${{ matrix.archive }}
+          if-no-files-found: error
+
+  image-platforms:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.image_platform) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
-      - run: ./scripts/check.sh
+      - run: mkdir -p dist
+      - uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platform }}
+          tags: ${{ matrix.identity }}:${{ matrix.version }}
+          outputs: type=oci,dest=${{ github.workspace }}/dist/${{ matrix.archive }}
+          cache-from: type=gha,scope=candidate-${{ matrix.id }}-${{ matrix.architecture }}
+          cache-to: type=gha,mode=max,scope=candidate-${{ matrix.id }}-${{ matrix.architecture }}
+          provenance: mode=max
+      - uses: actions/upload-artifact@v7
+        with:
+          name: image-platform-${{ matrix.id }}-${{ matrix.architecture }}
+          path: dist/${{ matrix.archive }}
+          if-no-files-found: error
+
+  deployment:
+    needs: image-platforms
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: image-platform-*-amd64
+          path: dist/images
+          merge-multiple: true
+      - name: Install OCI importer
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes skopeo
+      - name: Import validated candidate images
+        run: |
+          python3 release/candidates.py import-image \
+            --id assurance-api \
+            --archive dist/images/assurance-api-amd64.oci.tar \
+            --platform linux/amd64 \
+            --tag azimuth-assurance-api:candidate
+          python3 release/candidates.py import-image \
+            --id assurance-web \
+            --archive dist/images/assurance-web-amd64.oci.tar \
+            --platform linux/amd64 \
+            --tag azimuth-assurance-web:candidate
+      - name: Exercise the retained deployment
+        env:
+          ASSURANCE_API_IMAGE: azimuth-assurance-api:candidate
+          ASSURANCE_WEB_IMAGE: azimuth-assurance-web:candidate
+        run: >-
+          python3 services/assurance/deployment/qualify.py
+          --lifecycle
+          --prebuilt-images
+
+  images:
+    needs: [prepare, image-platforms]
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.image) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: image-platform-${{ matrix.id }}-*
+          path: dist/image-platforms
+          merge-multiple: true
+      - run: |
+          mkdir -p dist/images
+          sudo apt-get update
+          sudo apt-get install --yes skopeo
+      - run: >-
+          python3 release/candidates.py assemble-image
+          --id "$IMAGE_ID"
+          --platforms dist/image-platforms
+          --out "dist/images/$IMAGE_ARCHIVE"
+        env:
+          IMAGE_ID: ${{ matrix.id }}
+          IMAGE_ARCHIVE: ${{ matrix.archive }}
+      - run: >-
+          python3 release/candidates.py smoke-image
+          --id "$IMAGE_ID"
+          --archive "dist/images/$IMAGE_ARCHIVE"
+        env:
+          IMAGE_ID: ${{ matrix.id }}
+          IMAGE_ARCHIVE: ${{ matrix.archive }}
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/images/${{ matrix.archive }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: candidates-image-${{ matrix.id }}
+          path: dist/images/${{ matrix.archive }}
+          if-no-files-found: error
+
+  release_check:
+    needs: [source, packages]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - uses: actions/download-artifact@v8
+        with:
+          name: candidates-packages
+          path: dist/packages
+      - run: >-
+          ./release/check.sh
+          --experiments-executed
+          --candidates dist/packages
+          --defer-hosted-receipts
+
+  account:
+    needs: [packages, native, images]
+    if: ${{ always() && !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: candidates-*
+          path: dist/candidates
+          merge-multiple: true
+      - name: Require every candidate lane
+        if: >-
+          ${{ !success() || needs.packages.result != 'success' ||
+              needs.native.result != 'success' || needs.images.result != 'success' }}
+        run: exit 1
+      - name: Assemble tagged candidate account
+        shell: bash
+        run: |
+          tag=$(python3 -c \
+            "import json; print(json.load(open('release/artifacts.json'))['release']['tag'])")
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            git -c user.name=Azimuth -c user.email=azimuth@example.test \
+              tag --force --annotate "$tag" --message rehearsal "$GITHUB_SHA"
+          elif ! git rev-parse "$tag" >/dev/null 2>&1; then
+            git -c user.name=Azimuth -c user.email=azimuth@example.test \
+              tag --annotate "$tag" --message rehearsal "$GITHUB_SHA"
+          fi
+          python3 release/orchestrate.py assemble \
+            --candidates dist/candidates \
+            --revision "$GITHUB_SHA" \
+            --tag "$tag" \
+            --verify-tag \
+            --out dist/account/candidates.json
+          python3 release/orchestrate.py verify \
+            --candidates dist/candidates \
+            --account dist/account/candidates.json
+          python3 release/orchestrate.py rehearse \
+            --account dist/account/candidates.json \
+            --out dist/account/publication-rehearsal.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: candidate-account
+          path: dist/account/*
+          if-no-files-found: error
+
+  check:
+    needs: [source, assurance, deployment, release_check, account]
+    if: ${{ always() && !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every verification lane
+        env:
+          SOURCE_RESULT: ${{ needs.source.result }}
+          ASSURANCE_RESULT: ${{ needs.assurance.result }}
+          DEPLOYMENT_RESULT: ${{ needs.deployment.result }}
+          RELEASE_RESULT: ${{ needs.release_check.result }}
+          ACCOUNT_RESULT: ${{ needs.account.result }}
+        run: |
+          [[ "$SOURCE_RESULT" == success ]]
+          [[ "$ASSURANCE_RESULT" == success ]]
+          [[ "$DEPLOYMENT_RESULT" == success ]]
+          [[ "$RELEASE_RESULT" == success ]]
+          [[ "$ACCOUNT_RESULT" == success ]]

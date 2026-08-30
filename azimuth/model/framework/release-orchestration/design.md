@@ -5,10 +5,14 @@ Mechanism: retained-candidate-dag
 Enforcement: guard
 Binding: release-rehearsal-account
 
-The hosted release workflow derives package, native and image lanes from the catalog, uploads each
-lane's immutable outputs and lets a final account job accept only the exact selected population.
-Ordinary CI retains its one canonical root command but excludes the release-only image matrix.
-Removing the convergence guard would let a partial lane population look like a complete release.
+One hosted candidate-verification graph derives package, native and image lanes from the catalog
+and runs source and Assurance checks in parallel. Package qualification downloads the retained
+package archives. Deployment qualification validates and imports the retained amd64 image
+fragments, disables Compose builds and exercises those exact images. Multi-platform assembly
+independently consumes the same fragments, and the final account accepts only the exact selected
+population. One final check observes every required source, deployment, qualification and account
+outcome. Removing the convergence guard would let a partial lane population look like a complete
+release; rebuilding in a consumer would let the tested bytes differ from the retained candidate.
 
 ## Claim: tagged-candidates-are-verifiable
 Mechanism: tagged-subject-manifest

@@ -144,12 +144,12 @@ class ExperimentalIsolationTests(unittest.TestCase):
 
     def test_workflow_has_one_checkout_and_one_root_command(self):
         source = (self.root / WORKFLOW).read_text()
-        self.assertEqual(validate_workflow(source)["command"], "./scripts/check.sh")
+        self.assertEqual(validate_workflow(source)["command"], "./scripts/check.sh source")
         with self.assertRaisesRegex(IsolationError, "another repository"):
             validate_workflow(source.replace("with:", "with:\n          repository: other/repo", 1))
-        with self.assertRaisesRegex(IsolationError, "canonical ./scripts/check.sh"):
+        with self.assertRaisesRegex(IsolationError, "canonical ./scripts/check.sh source"):
             validate_workflow(
-                source.replace("./scripts/check.sh", "./experiments/polyglot/check.sh")
+                source.replace("./scripts/check.sh source", "./experiments/polyglot/check.sh")
             )
         with self.assertRaisesRegex(IsolationError, "retain history"):
             validate_workflow(source.replace("fetch-depth: 0", "fetch-depth: 1"))

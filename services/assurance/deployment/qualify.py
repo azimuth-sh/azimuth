@@ -196,7 +196,7 @@ def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
-def demonstrate_lifecycle():
+def demonstrate_lifecycle(prebuilt_images=False):
     api_port = free_loopback_port()
     web_port = free_loopback_port()
     project = f"azimuth-private-qualification-{os.getpid()}"
@@ -210,8 +210,14 @@ def demonstrate_lifecycle():
     web_url = f"http://127.0.0.1:{web_port}"
     transitions = []
     expected_migrations = migration_versions(migration_account())
+    if prebuilt_images:
+        require(
+            os.environ.get("ASSURANCE_API_IMAGE") and os.environ.get("ASSURANCE_WEB_IMAGE"),
+            "prebuilt lifecycle requires explicit API and web image identities",
+        )
     try:
-        compose_command(["up", "--detach", "--build"], environment)
+        build_mode = "--no-build" if prebuilt_images else "--build"
+        compose_command(["up", "--detach", build_mode], environment)
         get_json(f"{api_url}/health")
         wait_for_web(web_url)
         require(
@@ -330,7 +336,7 @@ def build_selected_images():
     return results
 
 
-def qualify(run_lifecycle, run_images):
+def qualify(run_lifecycle, run_images, prebuilt_images=False):
     configuration = resolved_configuration()
     validate_configuration(configuration, README_FILE.read_text())
     result = {
@@ -343,7 +349,9 @@ def qualify(run_lifecycle, run_images):
             "persistentVolume": "assurance-data",
         },
         "migrations": migration_account(),
-        "lifecycle": demonstrate_lifecycle() if run_lifecycle else {"outcome": "not-run"},
+        "lifecycle": (
+            demonstrate_lifecycle(prebuilt_images) if run_lifecycle else {"outcome": "not-run"}
+        ),
         "images": build_selected_images() if run_images else [],
     }
     OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -355,8 +363,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--lifecycle", action="store_true")
     parser.add_argument("--images", action="store_true")
+    parser.add_argument("--prebuilt-images", action="store_true")
     arguments = parser.parse_args()
-    result = qualify(arguments.lifecycle, arguments.images)
+    require(
+        not arguments.prebuilt_images or arguments.lifecycle,
+        "--prebuilt-images requires --lifecycle",
+    )
+    result = qualify(arguments.lifecycle, arguments.images, arguments.prebuilt_images)
     lifecycle = result["lifecycle"]["outcome"]
     print(
         "private deployment qualified: "
