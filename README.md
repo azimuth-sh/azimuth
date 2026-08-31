@@ -1,8 +1,10 @@
 # Azimuth
 
-**Azimuth answers one question about a codebase: what do we guarantee, and why do we believe it?**
+**Azimuth is an evidence control plane for software.**
 
-A green test suite does not answer it. It says some tests passed — not which requirements they bear on, not whether they would fail if the system were wrong, and not who decided any of that was enough. Azimuth keeps the answer in the repository, next to the code, reviewed like the code, and derived rather than hand-maintained.
+It answers one question about a codebase: **what do we guarantee, and why do we believe it?** The repository owns the durable answer: product intent, implementation linkage and the reviewed meaning of evidence. Test runners, CI systems, analyzers and monitoring providers can supply facts without becoming authoritative for what those facts establish.
+
+A green test suite does not answer that question. It says some tests passed — not which requirements they bear on, not whether they would fail if the system were wrong, and not who decided any of that was enough. Azimuth keeps the answer next to the code, reviewed like the code, and derived rather than hand-maintained.
 
 It is a command-line tool with no runtime dependencies and no hosted service. The canonical product site is <https://azimuth.sh>.
 
@@ -141,9 +143,9 @@ Open design questions are recorded under `azimuth/explorations/`, including thes
 
 ## Maturity
 
-Alpha. Formats may change incompatibly between prereleases, and alpha 5 does not load an alpha 1 model. Evaluate it on a bounded pilot, not on a critical path you cannot revisit.
+Alpha. Formats may change incompatibly between prereleases, and alpha 6 does not load an alpha 1 model. Evaluate it on a bounded pilot, not on a critical path you cannot revisit.
 
-The published alpha 5 tag supports the Rust CLI and core including federation, the bundled consumer skills, templates, references and migrations, the .NET and TypeScript annotations and extractors, and the assurance API and diagnostic web images defined at that tag. Protocol and schema versions remain independent and are declared in the release catalog.
+The published alpha 6 tag supports the Rust CLI and core including federation, the bundled consumer skills, templates, references and migrations, the .NET and TypeScript annotations and extractors, and the assurance API and diagnostic web images defined at that tag. Protocol and schema versions remain independent and are declared in the release catalog.
 
 Qualified CLI targets are Linux x64, macOS ARM64 and Windows x64; qualified image platforms are Linux AMD64 and Linux ARM64. The C++, Go, JVM, Python and Rust annotation and extractor integrations, and everything under `experiments/`, are experimental source: CI exercises them, but `0.1.0-alpha.6` assigns them no package identity or support promise.
 
