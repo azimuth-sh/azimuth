@@ -22,7 +22,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const REQUEST_FORMAT: &str = "azimuth-adapter-request";
-const VERSION: u64 = 1;
+const VERSION: u64 = crate::adapter::PROTOCOL_VERSION;
 static STAGE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

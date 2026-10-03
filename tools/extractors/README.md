@@ -10,7 +10,6 @@ The manifest has exactly six collections:
 {
   "realizes": [
     {
-      "spec": "payments/capture",
       "claim": "duplicate-completion-is-idempotent",
       "site": "capture::complete",
       "file": "src/capture.rs",
@@ -20,7 +19,7 @@ The manifest has exactly six collections:
   ],
   "check_implementations": [
     {
-      "check": "payments/duplicate-completion",
+      "check": "duplicate-completion",
       "site": "capture_tests::duplicate_completion",
       "file": "tests/capture.rs",
       "lang": "rust",
@@ -29,7 +28,6 @@ The manifest has exactly six collections:
   ],
   "mechanism_implementations": [
     {
-      "spec": "payments/capture",
       "mechanism": "completion-guard",
       "site": "cargo:lib:pay:pay::Capture::complete fn(&self)->bool",
       "binding": "rust-symbol:cargo:lib:pay:pay::Capture::complete fn(&self)->bool",
@@ -53,11 +51,11 @@ The manifest has exactly six collections:
 Every `source_fingerprint` is SHA-256 in the exact lexical form shown. Extractors fingerprint the smallest trustworthy enclosing semantic site. Ecosystems without a stable source span may use a complete-file boundary, but they may not invent a short or provider-specific fingerprint.
 
 `realizes` links production implementation to a parent Claim and carries no Case or verification
-form. `check_implementations` links source to one project-global Check id and carries no Case,
+form. `check_implementations` links source to one stable project-wide Check ID and carries no Case,
 form, context or decision. Workspace or project assembly attaches area, mount and semantic source
 address. Several implementation records may compose one Check.
 
-`mechanism_implementations` links source to a declared design mechanism. Its seven raw fields are all required: `spec` is a lower-kebab path id and `mechanism` is one lower-kebab segment. The old record without `site` is invalid. The extractor derives a qualified site under its closed semantic profile, exact typed binding and companion Artifact as one atomic account. Enumeration witnesses and class members establish complete site domains independently of linkage markers. Artifacts provide exact structural binding targets.
+`mechanism_implementations` links source to a declared design mechanism. Its six raw fields are all required; `mechanism` is a stable project-wide lowercase kebab ID. Module membership is not a source field. The old record without `site` is invalid. The extractor derives a qualified site under its closed semantic profile, exact typed binding and companion Artifact as one atomic account. Enumeration witnesses and class members establish complete site domains independently of linkage markers. Artifacts provide exact structural binding targets.
 
 For the marker-derived pair:
 
@@ -70,11 +68,11 @@ The marker address-kind mapping is `csharp` to `dotnet-symbol`; `cpp | go | java
 
 The raw companion requires `id`, `kind` and `file` and permits only optional typed `unique`, `columns` and `predicate`. It is paired by `(id, kind, file)`. A repeated or ambiguous triple fails; the same raw id in different files survives until area assembly only when every collision is an exact marker companion. An unmatched or ordinary Artifact collision fails. Assembly resolves the file to one area and mount, derives the SourceIdentity key and atomically rewrites both implementation binding and companion id to that key before model identity, resolution or fingerprinting. Optional properties are preserved; absence becomes `null`, `[]` and `null` in the canonical Artifact account.
 
-A raw companion is marker-only. Before rewrite, core rejects any explicit Design `Binding:` equal to its raw id or derived assembled key. One MechanismImplementation and companion resolve only the exact `spec` and `mechanism` named by that record; an artifact-id match cannot fan out to another target. Only ordinary non-companion Artifacts may be reused by several explicit Design bindings.
+A raw companion is marker-only. Before rewrite, core rejects any explicit Design `Binding:` equal to its raw id or derived assembled key. One MechanismImplementation and companion resolve only the exact stable `mechanism` named by that record; an artifact-id match cannot fan out to another target. Only ordinary non-companion Artifacts may be reused by several explicit Design bindings.
 
 The companion is the one Artifact identity exception. Its assembled id is already the SourceIdentity key and is not expanded again as `<area>|<kind>|<id>`. Other Artifacts, including explicit schema or index bindings, retain their authored kind and id as semantic input.
 
-One qualified site is unique within `(area, address-kind)` and belongs to one marker target. A duplicate target, another target at the same SourceIdentity, a conflicting qualified-site account or several distinct sites for one mechanism fails closed. The same kind/site in different areas is legal and produces different assembled binding and Artifact ids.
+One qualified site is unique within `(area, address-kind)` and belongs to one marker target. A repeated marker on one site, another target at the same SourceIdentity or a conflicting qualified-site account fails closed. Several distinct sites may name one mechanism. The same kind/site in different areas is legal and produces different assembled binding and Artifact ids.
 
 The accountable emitter derives compiler qualification and fails when its compiler or runtime account reports ambiguity. Core cannot prove qualification from opaque `site` bytes. It checks a non-empty trimmed site without control characters or `|`, exact raw binding and companion equality, then post-assembly uniqueness and consistency. Local and federated assembly use the same area-key rewrite and produce identical semantic ids; neither uses file, mount, repository or revision as a semantic disambiguator.
 
@@ -86,12 +84,12 @@ Unknown collections and removed alpha-era fields fail closed. There are no resul
 
 ## Source opt-in
 
-Production source uses `Realizes(<spec>, <claim>)`. A deliberately enrolled Check implementation
-uses `ImplementsCheck(<project-global-check-id>)`; language packages expose the idiomatic spelling
-for that ecosystem. The source marker says only which Check the site implements. Evidence Bindings
+Production source uses `Realizes(<claim>)`. A deliberately enrolled Check implementation
+uses `ImplementsCheck(<check>)`; language packages expose the idiomatic spelling
+for that ecosystem. Source markers require one stable project-wide lowercase kebab entity ID. Former module-qualified locators and two-argument Claim or Mechanism markers are rejected without inference or aliases. The source marker says only which Check the site implements. Evidence Bindings
 in `verification.md` own every Check-to-Case relationship.
 
-A mechanism implementation continues to use `ImplementsMechanism(<spec>, <mechanism>)` in the existing ecosystem spelling; no annotation argument is added. The extractor, not source authors, owns qualified `site`, typed `binding`, companion Artifact and source fingerprint derivation.
+A mechanism implementation continues to use `ImplementsMechanism(<mechanism>)` in the ecosystem spelling. The extractor, not source authors, owns qualified `site`, typed `binding`, companion Artifact and source fingerprint derivation.
 
 An unmarked native test emits nothing. This is the normal state for ordinary engineering tests and for every test of a routine Claim. All current framework Claims are routine, so canonical synthetic fixtures emit Realizes linkage only.
 
@@ -100,6 +98,8 @@ An unmarked native test emits nothing. This is the normal state for ordinary eng
 ### .NET
 
 The .NET extractor reflects over built assemblies. Compiled metadata resolves repeatable attributes, inheritance and generics; portable PDBs provide source paths where available. It also derives type and method symbols plus Entity Framework migration indexes. A mechanism site uses the namespace, declaring type, method and complete metadata parameter signature; a PDB path never disambiguates it.
+
+Ordinary .NET type and method Artifacts are emitted only when a source locator is available. Their ids include assembly name and the qualified type or complete method signature, so unrelated assemblies and overloads do not collide. Tagged mechanism sites retain their existing source identities and companion ids. An unlocatable derived database index is omitted with an emitter warning; a tagged mechanism without an exact source locator and fingerprint fails emission.
 
 ```text
 azimuth-emit-dotnet --output manifest.json --root . path/to/Assembly.dll
@@ -111,7 +111,7 @@ The TypeScript extractor uses one complete compiler Program from the selected so
 
 A mechanism site uses package plus compiler module specifier, exact `static | instance | none` receiver kind, qualified symbol and sorted canonical overload set. Generic parameters are positional and constraints, optional/rest modifiers and canonical parameter and return types are included. The checker recursively expands type aliases; extraction fails if canonical identity is unavailable or path-bearing. A module move is semantic. Relocation stability means moving the whole project root while preserving package, config meaning and module specifier.
 
-Only a call resolved to `@azimuth-sh/annotations`' `implementsMechanism` export is a mechanism marker. Direct, aliased and namespace imports are valid; local homonyms are ordinary code. Invalid marker arguments, ambiguous sites and relevant compiler diagnostics fail through the controlled CLI path before output. JavaScript retains `lang: javascript` and `javascript-symbol`; TypeScript uses `lang: typescript` and `typescript-symbol`. The public two-argument API and CLI stay unchanged.
+Only a call resolved to `@azimuth-sh/annotations`' `implementsMechanism` export is a mechanism marker. Direct, aliased and namespace imports are valid; local homonyms are ordinary code. Invalid marker arguments, ambiguous sites and relevant compiler diagnostics fail through the controlled CLI path before output. JavaScript retains `lang: javascript` and `javascript-symbol`; TypeScript uses `lang: typescript` and `typescript-symbol`. The source API takes one stable Mechanism ID; the CLI is unchanged.
 
 ```text
 azimuth-emit-ts --output manifest.json --root . src
@@ -127,7 +127,7 @@ azimuth-emit-ts --output manifest.json --root . src
 - Rust requires one compiler-accepted conventional Cargo target and reachable conventional module graph. Its site includes target kind, target and compiler crate names, module, receiver or trait and a normalized declared signature. Parameter patterns are excluded, generic parameters are positional and declared type-path spelling remains identity. Ambiguous or custom targets, `#[path]`, generated or included source and unreachable files fail.
 - C++ consumes Clang's semantic AST and `clang::annotate` metadata. Alpha 2 accepts only program-global external-linkage, non-module, non-template and unconstrained declarations, using qualified name plus canonical function type. Internal linkage, anonymous namespaces, local or module-attached declarations, templates, constraints and source-locator-bearing types fail until a build/module identity account exists.
 
-`experiments/polyglot/check.sh` builds all seven language fixtures, runs ordinary tests, emits seven strict manifests, validates their union and asserts export version 4.
+The current export contract is version 5. `experiments/polyglot/check.sh` builds all seven language fixtures, runs ordinary tests, emits seven strict manifests and validates their union. Its version-4 export assertion is stale and needs an update before this script can verify the version-5 export.
 
 ## Tests
 
@@ -150,7 +150,7 @@ Every ecosystem's mechanism tests also prove:
 - missing site, untyped or path-bearing binding, raw prequalified area key, prefix/address mismatch and companion id, kind or file mismatch are rejected;
 - an explicit Design binding to either a marker companion's raw id or assembled key, and two marker targets sharing one companion, are rejected before rewrite;
 - one ordinary non-companion Artifact may still serve several explicit Design bindings;
-- duplicate targets, same-area cross-manifest qualified-site conflicts and several sites for one mechanism fail, while the same kind/site in two areas produces distinct assembled ids;
+- repeated tags on one site and same-area cross-manifest qualified-site conflicts fail, while several distinct sites may support one mechanism and the same kind/site in two areas produces distinct assembled ids;
 - local and federated assembly produce the same atomic binding and companion-id rewrite; and
 - relocation inside one area preserves SourceIdentity, Claim Judgment and semantic scope while the complete-model and launch locator fingerprints change.
 

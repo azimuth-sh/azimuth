@@ -146,16 +146,16 @@ fn emit(inputs: &[PathBuf], root: &Path) -> Result<Vec<Marker>, String> {
 }
 
 fn validate_mechanism_sites(markers: &[Marker]) -> Result<(), String> {
-    let mut mechanism_sites = BTreeMap::<String, (String, String)>::new();
+    let mut mechanism_sites = BTreeMap::<String, String>::new();
     for marker in markers
         .iter()
         .filter(|marker| marker.kind == "implements_mechanism")
     {
-        let target = (marker.values[0].clone(), marker.values[1].clone());
+        let target = marker.values[0].clone();
         if let Some(prior) = mechanism_sites.insert(marker.site.clone(), target.clone()) {
             return Err(format!(
-                "{}: ambiguous mechanism site `{}` for {}#{} and {}#{}",
-                marker.file, marker.site, prior.0, prior.1, target.0, target.1
+                "{}: ambiguous mechanism site `{}` for {} and {}",
+                marker.file, marker.site, prior, target
             ));
         }
     }
@@ -950,11 +950,19 @@ fn marker_attribute(attribute: &Attribute) -> Result<Option<(String, Vec<String>
         .iter()
         .map(|value| value.value())
         .collect::<Vec<_>>();
-    let required = if name == "implements_check" { 1 } else { 2 };
+    let required = 1;
     if values.len() != required {
         return Err(format!("{name} needs exactly {required} arguments"));
     }
+    if !valid_entity_id(&values[0]) {
+        return Err("entity ID must be one lowercase kebab segment".into());
+    }
     Ok(Some((name.into(), values)))
+}
+
+fn valid_entity_id(id: &str) -> bool {
+    !id.is_empty() && !id.starts_with('-') && !id.ends_with('-')
+        && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
 fn source_segment(source: &str, start: LineColumn, end: LineColumn) -> Result<&str, String> {
@@ -1088,8 +1096,7 @@ fn check_json(marker: &Marker) -> String {
 fn implementation_json(marker: &Marker) -> String {
     let binding = format!("rust-symbol:{}", marker.site);
     object(&[
-        ("spec", &marker.values[0]),
-        ("mechanism", &marker.values[1]),
+        ("mechanism", &marker.values[0]),
         ("site", &marker.site),
         ("binding", &binding),
         ("file", &marker.file),
@@ -1117,8 +1124,7 @@ fn array_body(values: &str) -> String {
 
 fn relation_json(marker: &Marker) -> String {
     let fields = vec![
-        ("spec", marker.values[0].as_str()),
-        ("claim", marker.values[1].as_str()),
+        ("claim", marker.values[0].as_str()),
         ("site", marker.site.as_str()),
         ("file", marker.file.as_str()),
         ("lang", "rust"),

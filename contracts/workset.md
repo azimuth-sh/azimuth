@@ -13,7 +13,11 @@ A workset supplies the concrete inputs for one assembly: which repository checko
       "root": "../rides-backend",
       "revision": "9f1c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b",
       "manifest": "artifacts/backend.json",
-      "manifest_digest": "<64-lowercase-hex>"
+      "manifest_digest": "<64-lowercase-hex>",
+      "account_support": {
+        "path": "../rides-backend/azimuth/account-support.json",
+        "digest": "<64-lowercase-hex>"
+      }
     }
   ],
   "receipts": [
@@ -49,6 +53,7 @@ Parse violations are reported together and abort before any checkout is inspecte
 | `revision` | non-empty string | yes | the exact revision the checkout must be at |
 | `manifest` | non-empty string | yes | path to that repository's manifest |
 | `manifest_digest` | non-empty string | yes | SHA-256 of the manifest file, lowercase hex |
+| `account_support` | object with `path` and `digest` | no | exact emitted Claim-first support artifact, when this repository adopts it |
 
 Repository ids are unique within a workset; a repeated id is a violation.
 
@@ -69,7 +74,7 @@ Array order carries no meaning. Repository snapshots are sorted by id and change
 
 ## Digests
 
-`manifest_digest` and `digest` are the SHA-256 of the exact file bytes, lowercase hex with no algorithm prefix. They cover the whole file, including formatting and any field the reader ignores. A mismatch is `manifest-digest-mismatch` or `receipt-digest-mismatch` and fails assembly; nothing else is re-derived from a mismatching file.
+`manifest_digest` and `digest` are the SHA-256 of the exact file bytes, lowercase hex with no algorithm prefix. They cover the whole file, including formatting and any field the reader ignores. A mismatch is `manifest-digest-mismatch`, `account-support-digest-mismatch` or `receipt-digest-mismatch` and fails assembly; nothing else is re-derived from a mismatching file.
 
 ## Assembly
 
@@ -83,6 +88,8 @@ For each selected repository:
 - the checkout is recorded as dirty when `git status --porcelain --untracked-files=all` is non-empty, and also when that status cannot be read. Dirtiness does not fail assembly; it blocks finalization;
 - the manifest file's SHA-256 must equal `manifest_digest`;
 - the manifest's `project` must equal the catalog project, its `repository` must equal the entry's `id`, and its `revision` must equal the entry's `revision`.
+
+When either the workset or repository manifest names `account_support`, both must do so. The workset object supplies the filesystem `path` and the SHA-256 `digest` of the exact JSON bytes. The repository manifest supplies a normalized repository-relative `path`, the same `digest`, its `producer`, and its `revision`. Assembly requires the two paths to resolve to the same file within the selected checkout, the two digests to agree and match its bytes, the support producer to equal the manifest producer, and the support revision to equal the selected checkout and manifest revision. It then parses the support JSON and retains its repository, revision, producer and digest provenance alongside the support records. One-sided, missing, malformed or mismatched observations fail assembly. Repositories that have not adopted Claim-first support omit the object from both files; this omission never supplies verification support for an adopted Claim.
 
 ### Model sources and standards
 
@@ -104,7 +111,7 @@ Every linkage record in a manifest must carry a typed source identity, must name
 
 ### Manifest inputs
 
-Assembly reads each pinned repository manifest as strict JSON with format `azimuth-repository-manifest` and version `1`. It requires non-empty strings `project`, `repository`, `revision` and `producer`, an array `changes` whose entries carry non-empty `id`, `path` and `digest` and a `state` of exactly `active` or `archived`, and a `linkage` object. It accepts optional arrays `areas` of strings and `model_sources` of `{ id, digest }`, and an optional string `standards_digest`. Its `linkage` object is read by the same reader that reads a bare linkage manifest, and carries the same six collections. A repository manifest is produced by `azimuth project observe --project <file> --repository <id> --root <dir> --producer <name/version> --manifest <file>... --out <repository.json>`.
+Assembly reads each pinned repository manifest as strict JSON with format `azimuth-repository-manifest` and version `1`. It requires non-empty strings `project`, `repository`, `revision` and `producer`, an array `changes` whose entries carry non-empty `id`, `path` and `digest` and a `state` of exactly `active` or `archived`, and a `linkage` object. It accepts optional arrays `areas` of strings and `model_sources` of `{ id, digest }`, an optional string `standards_digest`, and optional `account_support` with `{ path, digest, producer, revision }`. Its `linkage` object is read by the same reader that reads a bare linkage manifest, and carries the same six collections. A repository manifest is produced by `azimuth project observe --project <file> --repository <id> --root <dir> --producer <name/version> --manifest <file>... --out <repository.json>`. The library entry point `observe_repository_with_support` can include an emitted support artifact; CLI wiring remains separate.
 
 ## Completeness
 

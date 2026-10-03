@@ -1,0 +1,122 @@
+--- azimuth/model/framework/change-lifecycle/spec.md (accepted)
++++ azimuth/model/framework/change-lifecycle/spec.md (target)
+... 13 unchanged leading line(s)
+ ### Case: missing-no-delta-declaration-is-rejected
+ - Event: a change with no supported intent delta reaches completion without the explicit declaration
+ - Required outcome: completion rejects the change as incomplete
++
++## Claim: proposed-intent-has-an-inspectable-target
++Criticality: routine
++
++A proposed intent delta has a reviewable target spec and before/after account without changing accepted intent.
++
++### Case: new-spec-target-is-visible-before-implementation
++When a change adds a Claim to a previously absent spec, preview shows the complete target spec and leaves the accepted model unchanged.
++
++### Case: existing-spec-surroundings-remain-visible
++When a change updates an existing spec, preview shows the resulting spec with unaffected Claims and non-normative text preserved.
++
++## Claim: accepted-intent-changes-only-through-reviewed-application
++Criticality: routine
++
++Accepted intent changes only when the explicit application command installs the target approved for that change; finalization and archival never perform that edit.
++
++### Case: reviewed-target-is-applied-at-acceptance
++When implementation supports an approved delta and application receives its current reviewed preview, the current spec becomes that target.
++
++### Case: unfinished-change-does-not-publish-intent
++When a change is proposed or implementation remains unfinished, preview and change inspection leave the accepted spec unchanged.
++
++## Claim: intent-removal-is-explicit-and-reference-safe
++Criticality: routine
++
++Removing a Claim or Case requires a named decision and does not leave current references to the removed identity.
++
++### Case: replacement-cannot-silently-drop-a-case
++When a replacement omits an accepted Case without naming it in `Remove cases:`, projection rejects the target.
++
++### Case: referenced-deletion-is-rejected
++When a current realization, design, verification or challenge-plan declaration still refers to a Claim or Case proposed for removal, projection refuses the removal.
++
++### Case: last-claim-removal-retires-the-spec
++When an explicitly removed Claim is the spec's last Claim and has no current references, the target retires that spec file.
++
++## Claim: stale-intent-decisions-are-rejected
++Criticality: routine
++
++Application refuses a reviewed intent decision when its accepted source or target preview has changed since review.
++
++### Case: accepted-block-changes-after-review
++When an accepted Claim or Case block differs from the replacement or removal's captured `From` value, application refuses to change it.
++
++### Case: target-preview-changes-after-review
++When a delta or surrounding accepted spec changes after a preview is saved, application refuses that saved preview and requires renewed review.
+# Target spec: azimuth/model/framework/change-lifecycle/spec.md
+# Spec: framework/change-lifecycle
+
+## Claim: framework-only-completion
+Criticality: routine
+
+A framework-only change SHALL distinguish a deliberate absence of accepted-intent change from an
+omitted intent delta.
+
+### Case: explicit-no-delta-is-reviewable
+- Event: a change with no supported intent delta reaches completion
+- Additional condition or outcome: its proposal explicitly declares no intent delta with a rationale
+- Required outcome: completion evaluates it without requiring an unrelated intent transition
+
+### Case: missing-no-delta-declaration-is-rejected
+- Event: a change with no supported intent delta reaches completion without the explicit declaration
+- Required outcome: completion rejects the change as incomplete
+
+## Claim: proposed-intent-has-an-inspectable-target
+Criticality: routine
+
+A proposed intent delta has a reviewable target spec and before/after account without changing accepted intent.
+
+### Case: new-spec-target-is-visible-before-implementation
+When a change adds a Claim to a previously absent spec, preview shows the complete target spec and leaves the accepted model unchanged.
+
+### Case: existing-spec-surroundings-remain-visible
+When a change updates an existing spec, preview shows the resulting spec with unaffected Claims and non-normative text preserved.
+
+## Claim: accepted-intent-changes-only-through-reviewed-application
+Criticality: routine
+
+Accepted intent changes only when the explicit application command installs the target approved for that change; finalization and archival never perform that edit.
+
+### Case: reviewed-target-is-applied-at-acceptance
+When implementation supports an approved delta and application receives its current reviewed preview, the current spec becomes that target.
+
+### Case: unfinished-change-does-not-publish-intent
+When a change is proposed or implementation remains unfinished, preview and change inspection leave the accepted spec unchanged.
+
+## Claim: intent-removal-is-explicit-and-reference-safe
+Criticality: routine
+
+Removing a Claim or Case requires a named decision and does not leave current references to the removed identity.
+
+### Case: replacement-cannot-silently-drop-a-case
+When a replacement omits an accepted Case without naming it in `Remove cases:`, projection rejects the target.
+
+### Case: referenced-deletion-is-rejected
+When a current realization, design, verification or challenge-plan declaration still refers to a Claim or Case proposed for removal, projection refuses the removal.
+
+### Case: last-claim-removal-retires-the-spec
+When an explicitly removed Claim is the spec's last Claim and has no current references, the target retires that spec file.
+
+## Claim: stale-intent-decisions-are-rejected
+Criticality: routine
+
+Application refuses a reviewed intent decision when its accepted source or target preview has changed since review.
+
+### Case: accepted-block-changes-after-review
+When an accepted Claim or Case block differs from the replacement or removal's captured `From` value, application refuses to change it.
+
+### Case: target-preview-changes-after-review
+When a delta or surrounding accepted spec changes after a preview is saved, application refuses that saved preview and requires renewed review.
+
+add framework/change-lifecycle#proposed-intent-has-an-inspectable-target: planned
+add framework/change-lifecycle#accepted-intent-changes-only-through-reviewed-application: planned
+add framework/change-lifecycle#intent-removal-is-explicit-and-reference-safe: planned
+add framework/change-lifecycle#stale-intent-decisions-are-rejected: planned

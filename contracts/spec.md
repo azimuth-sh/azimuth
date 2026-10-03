@@ -9,6 +9,10 @@ This is the strict parser contract for repository intent. Anything not described
 
 Optional non-normative ownership prose.
 
+## Term: <term-id>
+
+Non-empty module vocabulary definition in free-form Markdown. Repeat for each term.
+
 ## Claim: <claim-id>
 Criticality: critical | standard | routine
 
@@ -18,9 +22,10 @@ Non-empty free-form normative Markdown stating the Claim.
 Non-empty free-form normative Markdown stating this Case.
 ```
 
-The parser reserves `# Spec:`, `## Claim:` or `## Invariant:` and `### Case:` headings for the
+The parser reserves `# Spec:`, `## Term:`, `## Claim:` or `## Invariant:` and `### Case:` headings for the
 semantic structure. A Claim or Case body ends at the next unfenced heading at one of those levels.
-Headings inside a triple-backtick fence and headings at level four or below remain body content.
+A Term definition ends at the next unfenced level-one or level-two heading; lower headings remain
+part of its Markdown definition. Headings inside a triple-backtick fence remain body content.
 Outer blank lines are removed; all other Markdown, including line breaks, tables, blockquotes,
 lists, diagrams and code fences, is preserved and participates in fingerprints.
 
@@ -30,6 +35,18 @@ unrestricted prose; none is a parser requirement and no language declaration cha
 behavior. Human and agent review own clarity, falsifiability, internal consistency and the honesty
 of the Claim-to-Case composition.
 
+## Term
+
+A Term gives a stable local name to vocabulary shared by the module's Claims. It does not create a
+Claim, Case, evidence target or independently judged obligation. Term ids are unique within a spec
+and use lower kebab-case. Definitions are authored meaning, so core preserves their Markdown
+without interpreting it. A missing or duplicate definition is a parse error.
+
+A Term can affect the interpretation of any Claim or Case in its spec. Core cannot reliably infer
+which prose uses which Term, so the sorted set of all term ids and definitions participates in every
+Claim and Case semantic digest for that spec. Editing a definition therefore conservatively
+invalidates dependent qualifications and judgments; reordering Term blocks alone does not.
+
 ## Claim and Case
 
 A Claim states one independently governable product or operational proposition. It owns
@@ -37,18 +54,17 @@ criticality, production realization, total Claim Judgment and Claim Assurance St
 normative condition/outcome clause within that Claim's predicate. It is addressable for evidence,
 Run selection, Observations and Challenger impact but is not independently governed.
 
-Claim identity is `<spec>#<claim>`. Case identity is `<spec>#<claim>/<case>`. Evidence Bindings
-target Cases because one result must not appear to exhaust the broader Claim.
+Claims and Cases have stable project-wide lower-kebab IDs in separate typed namespaces. Module membership and Case parent relationships are authored separately. Evidence Bindings target stable Case IDs because one result must not appear to exhaust the broader Claim.
 
 ## Identity
 
 - Spec ids are declared, never derived from paths.
 - Hierarchical `/` segments are part of the id and support id selection.
 - Package layout is convention; a path/id mismatch is a warning.
-- Claim ids are unique within a spec.
-- Case ids are unique within their parent Claim.
-- Moving a Case between Claims changes its identity and requires explicit retargeting.
-- Ids use lower kebab path segments and name falsifiable propositions.
+- Claim ids are unique across the complete project.
+- Case ids are unique across the complete project, independently of parent Claim.
+- Moving an entity between modules or a Case between Claims preserves its ID; relationship changes are reviewed separately.
+- Entity IDs use one lower-kebab segment; module IDs may use lower-kebab path segments.
 
 ## Criticality
 

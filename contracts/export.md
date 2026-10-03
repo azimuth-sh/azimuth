@@ -8,7 +8,7 @@ Output goes to stdout, or to `--out <file>` when given. The rendering is determi
 
 ```json
 {
-  "version": 4,
+  "version": 5,
   "specs": [],
   "realizes": [],
   "workspace": {},
@@ -33,9 +33,9 @@ Output goes to stdout, or to `--out <file>` when given. The rendering is determi
 ```
 
 These are the only root keys, in exactly this order. Every one is always present. `version` has
-exactly the value `4`.
+exactly the value `5`.
 
-The export root carries no `format` identifier. A consumer distinguishes version 4 export from
+The export root carries no `format` identifier. A consumer distinguishes version 5 export from
 traceability by root keys: the export has `specs`, the projection has `cases` and
 `decision_impacts`.
 
@@ -45,7 +45,7 @@ traceability by root keys: the export has `specs`, the projection has `cases` an
 
 Ordering is derivation order, not a canonical sort, except where stated:
 
-- `specs` follow sorted spec file paths; Claims and Cases follow declaration order within their file.
+- `specs` follow sorted spec file paths; Claims and Cases follow declaration order within their file. Terms sort by local id in each spec export.
 - `checks`, `evidence_bindings`, `method_qualifications`, `applicability_decisions`,
   `claim_judgments`, `challengers` and `challenge_plans` follow sorted `verification.md` paths, then
   declaration order within each file.
@@ -61,10 +61,18 @@ Ordering is derivation order, not a canonical sort, except where stated:
 
 ## Specs
 
+Each spec carries `id`, `path`, `terms` and `claims` in that order. A Term has only `id` and `definition`; source line is retained by the parser but is not exported. An empty vocabulary is `[]`. Definitions preserve their authored Markdown. Term order in export is sorted by id, so moving an unchanged Term block does not change the model digest.
+
 ```json
 {
   "id": "billing/invoices",
   "path": "azimuth/model/billing/invoices/spec.md",
+  "terms": [
+    {
+      "id": "invoice-line",
+      "definition": "One chargeable line in an invoice."
+    }
+  ],
   "claims": [
     {
       "id": "invoice-totals-are-exact",
@@ -161,7 +169,7 @@ These are the only workspace keys, in this order. `path` is the workspace file p
 
 ```json
 {
-  "check": "billing/invoice-total-suite",
+  "check": "invoice-total-suite",
   "site": "Billing.Tests.TotalTests",
   "file": "services/billing/total_tests.cs",
   "lang": "csharp",
@@ -224,25 +232,26 @@ Evidence that a class was enumerated from a system-produced source. The optional
   "enforcement": "schema",
   "rung": 1,
   "binding": "billing.invoice_number_unique",
+  "bindings": ["billing.invoice_number_unique"],
   "expected_unique": true,
   "expected_columns": ["tenant_id", "invoice_number"],
   "expected_predicate": null
 }
 ```
 
-All eleven keys are always present in this order. `target_kind` is always `claim`. `cases` is the
-sorted local Case relevance list and is empty when the mechanism bears on the complete Claim.
+All twelve keys are always present in this order. `target_kind` is always `claim`. `cases` is the
+sorted stable Case relevance list and is empty when the mechanism bears on the complete Claim.
 `enforcement` is `type | schema | constraint | choke-point | middleware | guard`, and `rung` is the
 integer that enforcement maps to: `type` and `schema` are 1, `constraint` and `choke-point` are 2,
 `middleware` is 3, `guard` is 4.
 
-`binding` is the mechanism's single resolved artifact binding. The candidate set is the mechanism's own declared binding, if any, followed by the binding of every mechanism implementation naming that spec and mechanism. `binding` is the sole candidate when there is exactly one, and `null` when there are none or several. `expected_unique` and `expected_predicate` are `null` when the design declares none; `expected_columns` is an empty array when the design declares none.
+`bindings` is the sorted set of resolved Artifact bindings: either one explicit Design binding or all distinct extractor-resolved sites naming that spec and mechanism. `binding` retains the sole candidate when there is exactly one and is `null` when there are none or several; consumers of composed mechanisms use `bindings`. `expected_unique` and `expected_predicate` are `null` when the design declares none; `expected_columns` is an empty array when the design declares none.
 
 ## Checks
 
 ```json
 {
-  "id": "billing/invoice-total-suite",
+  "id": "invoice-total-suite",
   "methods": ["execution"],
   "terminal": "services/billing tests",
   "fingerprint": "sha256:<64-lowercase-hex>"
@@ -256,8 +265,8 @@ integer that enforcement maps to: `type` and `schema` are 1, `constraint` and `c
 ```json
 {
   "id": "billing/invoice-total-binding",
-  "check": "billing/invoice-total-suite",
-  "case": "billing/invoices#invoice-totals-are-exact/rounds-half-to-even",
+  "check": "invoice-total-suite",
+  "case": "rounds-half-to-even",
   "method_qualification": "billing/invoice-total-method",
   "proposition": "the suite exercises half-to-even rounding on two-line invoices",
   "context": { "locale": "en-US" },
@@ -282,7 +291,7 @@ derivable. Its absence marks incomplete composition, not a stale decision.
 ```json
 {
   "id": "billing/invoice-total-method",
-  "check": "billing/invoice-total-suite",
+  "check": "invoice-total-suite",
   "scope": "unit",
   "quantification": "example",
   "oracle": "direct",
@@ -320,7 +329,7 @@ present only when the binding, Case, policy and referenced Method Qualification 
 
 ```json
 {
-  "id": "billing/invoices#invoice-totals-are-exact",
+  "id": "invoice-totals-are-exact",
   "verdict": "accepted",
   "policy": "standard-evidence",
   "fingerprint": "sha256:<64-lowercase-hex>",
@@ -435,7 +444,8 @@ verification contract. `target` is `null` when no decision target was reached;
   "kind": "unbound-case",
   "category": "verification",
   "severity": "error",
-  "claim": "billing/invoices#invoice-totals-are-exact/rounds-half-to-even",
+  "subject_kind": "case",
+  "claim": "rounds-half-to-even",
   "criticality": "critical",
   "file": "azimuth/model/billing/invoices/spec.md",
   "line": 18,
@@ -444,7 +454,7 @@ verification contract. `target` is `null` when no decision target was reached;
 }
 ```
 
-All nine keys are always present in this order. `claim` and `criticality` are nullable. `help` is a fixed remediation sentence owned by the kind, not authored per finding. See `contracts/findings.md` for the closed category set, the exhaustive kind registry and the severity rule.
+All ten keys are always present in this order. `subject_kind`, `claim` and `criticality` are nullable. Typed kind accompanies the stable entity ID; it is never inferred from ID spelling. `help` is a fixed remediation sentence owned by the kind, not authored per finding. See `contracts/findings.md` for the closed category set, the exhaustive kind registry and the severity rule.
 
 Findings are part of the exported account and therefore part of the model digest.
 
@@ -465,3 +475,7 @@ azimuth export [--model <dir>] [--standards <file>] [--workspace <file>]
 Export exits zero whenever the model loads, including when it contains error-severity Findings: the Findings are the output, not a failure of the command. Exit two covers load failure — an unparsable spec, design, verification authority, Decision Standards file, workspace or manifest, a duplicate identity, or command usage — and emits diagnostics on stderr instead of a document. Load warnings are reported on stderr and do not change the exit code.
 
 `--out` writes with a plain file write rather than the atomic replacement used by the Run commands.
+
+## Stable entity identities: 2026-10-02
+
+Claim, Case, Mechanism and Check identities are stable project-wide lower-kebab IDs within their typed namespaces. Project context comes from the complete account; kind remains explicit. Module membership is navigation, not identity. Source references do not encode modules. Former qualified spellings are rejected without aliases. Regenerate current artifacts and fingerprints; historical bytes and facts remain immutable. See `contracts/entity-identity.md`.

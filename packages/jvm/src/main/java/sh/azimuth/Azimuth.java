@@ -13,8 +13,7 @@ public final class Azimuth {
     @Target({ElementType.TYPE, ElementType.METHOD})
     @Repeatable(Realizations.class)
     public @interface Realizes {
-        String spec();
-        String claim();
+        String value();
     }
 
     @Retention(RetentionPolicy.RUNTIME)
@@ -34,8 +33,7 @@ public final class Azimuth {
     @Target({ElementType.TYPE, ElementType.METHOD})
     @Repeatable(MechanismImplementations.class)
     public @interface ImplementsMechanism {
-        String spec();
-        String mechanism();
+        String value();
     }
 
     @Retention(RetentionPolicy.RUNTIME)

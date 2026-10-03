@@ -1,0 +1,9 @@
+# Design: Stable project-wide entity identities
+
+Use one lower-kebab stable ID per governed entity, unique per kind within the complete project. Claims and Cases retain their currently unique declared IDs. Declared module containers and Case nesting author current membership/parent links separately. References have explicit kind from typed declarations/fields; they never parse module or parent from the stable ID. A contextual locator carries project, kind, ID and optional revision; module navigation is a separate mutable path.
+
+Realizes takes one Claim stable ID; ImplementsMechanism takes one Mechanism stable ID; ImplementsCheck takes one Check stable ID. Extracted semantic source identity/fingerprint remains independent of organization. Manifest source records carry entity ID, not its module. Assembly may derive current module for navigation from the authoritative declarations, but it must not add that module into entity identity, source tag ownership or matching.
+
+Canonical and consumer accepted Claims/Cases are already unique across their complete respective project. Preserve those names; migrate qualified references through explicit declaration-based maps. Inspect current candidate/source IDs for collisions and author disambiguating descriptive IDs only where necessary; do not infer module ownership from an arbitrary final slash. Keep former bytes and superseded decisions as history rather than aliases. Case reparenting alters explicit relationships and applicable review dependencies, never Case identity.
+
+Existing Check syntax version bumps were unaccepted alpha work and are restored to previous baseline values without a compatibility reader. Historical immutable inputs may be incompatible with the current alpha reader; preserve history and produce fresh current extraction/planning rather than rewriting evidence.

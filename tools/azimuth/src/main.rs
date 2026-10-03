@@ -48,9 +48,18 @@ USAGE
     azimuth project accept-change --project <file> --before <workset> --after <workset>
         --change <id> --date <YYYY-MM-DD> --out <snapshot.json>
     azimuth project observe --project <file> --repository <id> --root <dir>
-        --producer <name/version> --manifest <file>... --out <repository.json>
+        --producer <name/version> --manifest <file>... [--support <file>] --out <repository.json>
     azimuth project locate --reference <project-reference.json>
     azimuth change check <dir> [options]
+    azimuth change intent-preview <id-or-dir> [options]
+    azimuth change intent-capture <id-or-dir> [options]
+    azimuth change intent-apply <id-or-dir> --preview <file> [options]
+    azimuth change account-capture <id-or-dir> [--model <dir>]
+    azimuth change account-preview <id-or-dir> [--model <dir>] [--out <file>]
+    azimuth change account-apply <id-or-dir> --preview <file> [--model <dir>]
+        [--workspace <file>] [--manifest <file>...] [--support <file>...]
+    azimuth change account-check <id-or-dir> [--model <dir>] [--workspace <file>]
+        [--manifest <file>...] [--support <file>...]
     azimuth change create <id> [--title <text>] [--changes <dir>]
     azimuth change list [--changes <dir>]
     azimuth change show|status <id-or-dir> [--changes <dir>] [options]
@@ -65,6 +74,7 @@ OPTIONS
                            (default: azimuth/standards/verification.md)
     --workspace <file>     areas, surfaces and obligations (default: workspace.json beside model/)
     --manifest <file>      a linkage manifest; repeatable
+    --support <file>       an account support manifest; repeatable for validate/export/report
     --only <pattern>       restrict to spec ids; `billing/**` or an exact id; repeatable
     --out <file>           export destination (default: stdout)
     -h, --help
@@ -112,6 +122,7 @@ struct Options {
     standards: PathBuf,
     workspace: PathBuf,
     manifests: Vec<PathBuf>,
+    supports: Vec<PathBuf>,
     only: Vec<String>,
     out: Option<PathBuf>,
 }
@@ -799,6 +810,7 @@ fn command_project_observe(args: &[String]) -> Result<ExitCode, String> {
     let mut root = None;
     let mut producer = None;
     let mut manifests = Vec::new();
+    let mut support = None;
     let mut out = None;
     let mut index = 0;
     while index < args.len() {
@@ -813,6 +825,12 @@ fn command_project_observe(args: &[String]) -> Result<ExitCode, String> {
             "--root" => root = Some(PathBuf::from(value("--root")?)),
             "--producer" => producer = Some(value("--producer")?),
             "--manifest" => manifests.push(PathBuf::from(value("--manifest")?)),
+            "--support" => {
+                if support.is_some() {
+                    return Err("project observe accepts one `--support <file>`".into());
+                }
+                support = Some(PathBuf::from(value("--support")?));
+            }
             "--out" => out = Some(PathBuf::from(value("--out")?)),
             other => return Err(format!("unknown project observe option `{other}`")),
         }
@@ -823,12 +841,13 @@ fn command_project_observe(args: &[String]) -> Result<ExitCode, String> {
     let root = root.ok_or("project observe needs `--root <dir>`")?;
     let producer = producer.ok_or("project observe needs `--producer <name/version>`")?;
     let out = out.ok_or("project observe needs `--out <repository.json>`")?;
-    let observation = match azimuth::federation::observe_repository(
+    let observation = match azimuth::federation::observe_repository_with_support(
         &project,
         &repository,
         &root,
         &producer,
         &manifests,
+        support.as_deref(),
     ) {
         Ok(observation) => observation,
         Err(diags) => {
@@ -849,6 +868,7 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
     let mut changes = PathBuf::from("azimuth/changes");
     let mut title = None;
     let mut package = None;
+    let mut preview_path = None;
     let mut option_args = Vec::new();
     let mut positional = Vec::new();
     let mut date = None;
@@ -871,9 +891,23 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
                 package = Some(argument_value(args, index, "--package")?);
                 index += 2;
             }
+            "--preview" => {
+                preview_path = Some(PathBuf::from(argument_value(args, index, "--preview")?));
+                index += 2;
+            }
             value if value.starts_with('-') => {
                 option_args.push(value.to_string());
-                if ["--model", "--standards", "--manifest", "--only", "--out"].contains(&value) {
+                if [
+                    "--model",
+                    "--standards",
+                    "--workspace",
+                    "--manifest",
+                    "--support",
+                    "--only",
+                    "--out",
+                ]
+                .contains(&value)
+                {
                     option_args.push(argument_value(args, index, value)?);
                     index += 2;
                 } else {
@@ -976,6 +1010,22 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
     let value = one_position(&positional, "change operation needs one id or directory")?;
     let root = azimuth::workflow::resolve_change(&changes, value)?;
     let options = parse_options(&option_args)?;
+    if matches!(
+        operation.as_str(),
+        "account-capture" | "account-preview" | "account-apply" | "account-check"
+    ) {
+        return command_account_change(operation, &root, &options, preview_path);
+    }
+    if !options.supports.is_empty() {
+        return Err("`--support` is available only for account-check and account-apply".into());
+    }
+    if matches!(
+        operation.as_str(),
+        "intent-capture" | "intent-preview" | "intent-apply"
+    ) && !options.only.is_empty()
+    {
+        return Err("intent commands require the complete current model; omit `--only`".into());
+    }
     let loaded = match azimuth::load(
         &options.model,
         &options.standards,
@@ -989,6 +1039,30 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
             return Ok(ExitCode::from(2));
         }
     };
+    if operation == "intent-capture" {
+        if root
+            .parent()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str())
+            != Some("changes")
+        {
+            return Err("intent-capture requires an active change, not an archived record".into());
+        }
+        match azimuth::intent::capture(&root, &loaded.model) {
+            Ok(paths) => {
+                for path in paths {
+                    println!("captured accepted block fingerprints in {}", path.display());
+                }
+                return Ok(ExitCode::SUCCESS);
+            }
+            Err(errors) => {
+                for error in errors {
+                    eprintln!("error: {error}");
+                }
+                return Ok(ExitCode::from(2));
+            }
+        }
+    }
     let report = match azimuth::change::inspect(&root, &loaded.model) {
         Ok(report) => report,
         Err(errors) => {
@@ -999,10 +1073,122 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
         }
     };
     let findings = validation::validate(&loaded.model);
+    let projection = match azimuth::intent::project(&root, &options.model, &loaded.model) {
+        Ok(projection) => projection,
+        Err(errors) => {
+            for error in errors {
+                eprintln!("error: {error}");
+            }
+            return Ok(ExitCode::from(2));
+        }
+    };
 
     match operation.as_str() {
+        "intent-preview" => {
+            let preview = projection.preview();
+            if let Some(out) = &options.out {
+                let model_dir = fs::canonicalize(&options.model)
+                    .map_err(|error| format!("{}: {error}", options.model.display()))?;
+                let parent = out
+                    .parent()
+                    .filter(|path| !path.as_os_str().is_empty())
+                    .unwrap_or_else(|| std::path::Path::new("."));
+                let output_parent = fs::canonicalize(parent)
+                    .map_err(|error| format!("{}: {error}", out.display()))?;
+                if output_parent.starts_with(&model_dir) {
+                    return Err("intent preview output must be outside the accepted model".into());
+                }
+                if let Ok(existing) = fs::read_to_string(out) {
+                    if existing != preview {
+                        return Err(format!(
+                            "{} already contains a different preview; choose a new review file",
+                            out.display()
+                        ));
+                    }
+                }
+                fs::write(out, preview).map_err(|error| format!("{}: {error}", out.display()))?;
+                println!("wrote intent preview to {}", out.display());
+            } else {
+                print!("{preview}");
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        "intent-apply" => {
+            if root
+                .parent()
+                .and_then(|path| path.file_name())
+                .and_then(|name| name.to_str())
+                != Some("changes")
+            {
+                return Err(
+                    "intent-apply requires an active change, not an archived record".into(),
+                );
+            }
+            let preview_path = preview_path.ok_or(
+                "intent-apply requires `--preview <file>` from the approved target-spec preview",
+            )?;
+            let reviewed = fs::read_to_string(&preview_path)
+                .map_err(|error| format!("{}: {error}", preview_path.display()))?;
+            if reviewed != projection.preview() {
+                eprintln!("error: intent preview is stale; rerun `azimuth change intent-preview` and review the new target");
+                return Ok(ExitCode::from(1));
+            }
+            let proposal = fs::read_to_string(root.join("proposal.md"))
+                .map_err(|error| format!("cannot read proposal.md: {error}"))?;
+            if !proposal.lines().any(|line| {
+                line.trim() == "Status: accepted and complete" || line.trim() == "Status: active"
+            }) {
+                return Err(
+                    "intent application requires an active or accepted-and-complete change".into(),
+                );
+            }
+            let mut staged = Vec::new();
+            for file in &projection.files {
+                if file.after.is_empty() {
+                    continue;
+                }
+                if let Some(parent) = file.path.parent() {
+                    fs::create_dir_all(parent)
+                        .map_err(|error| format!("{}: {error}", parent.display()))?;
+                }
+                let temporary = file
+                    .path
+                    .with_extension(format!("spec-azimuth-{}", std::process::id()));
+                fs::write(&temporary, &file.after)
+                    .map_err(|error| format!("{}: {error}", temporary.display()))?;
+                staged.push((temporary, file.path.clone()));
+            }
+            for (temporary, path) in staged {
+                fs::rename(&temporary, &path)
+                    .map_err(|error| format!("{}: {error}", path.display()))?;
+                println!("applied target spec: {}", path.display());
+            }
+            for file in &projection.files {
+                if file.after.is_empty() {
+                    fs::remove_file(&file.path)
+                        .map_err(|error| format!("{}: {error}", file.path.display()))?;
+                    println!("retired spec: {}", file.path.display());
+                }
+            }
+            Ok(ExitCode::SUCCESS)
+        }
         "check" | "status" => {
+            let account =
+                azimuth::account_delta::project_new_modules(&root.join("deltas"), &options.model)
+                    .map_err(|errors| errors.join("\n"))?;
             println!("change `{}`", report.id);
+            for file in &account.files {
+                println!(
+                    "  account {} {} · {}",
+                    file.module,
+                    file.facet.name(),
+                    if file.before.as_deref() == Some(file.after.as_str()) {
+                        "applied"
+                    } else {
+                        "planned"
+                    }
+                );
+            }
             for addition in &report.additions {
                 let state = if addition.applied {
                     "applied"
@@ -1029,12 +1215,20 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
                     change_obligations(change.to)
                 );
             }
+            for (operation, applied) in &projection.operations {
+                if !operation.starts_with("add ") && !operation.starts_with("criticality ") {
+                    println!(
+                        "  {operation} · {}",
+                        if *applied { "applied" } else { "planned" }
+                    );
+                }
+            }
             if let Some(reason) = &report.unchanged_intent_reason {
                 println!("  intent unchanged · {reason}");
             }
             println!(
                 "current {} claim(s) → target {} claim(s)",
-                report.current_claims, report.target_claims
+                report.current_claims, projection.target_claims
             );
             println!("{} incomplete plan item(s)", report.incomplete_plan_items);
             let summary = validation::summarize(&loaded.model, &findings);
@@ -1049,7 +1243,20 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
             })
         }
         "finalize" => {
-            let issues = azimuth::change::completion_issues(&root, &report);
+            let account =
+                azimuth::account_delta::project_new_modules(&root.join("deltas"), &options.model)
+                    .map_err(|errors| errors.join("\n"))?;
+            let mut issues = azimuth::change::completion_issues(&root, &report);
+            if account
+                .files
+                .iter()
+                .any(|file| file.before.as_deref() != Some(file.after.as_str()))
+            {
+                issues.push("account deltas have not been applied to current facets".into());
+            }
+            if !projection.files.is_empty() {
+                issues.push("intent delta has not been applied to current specs".into());
+            }
             let summary = validation::summarize(&loaded.model, &findings);
             if summary.errors > 0 || summary.warnings > 0 {
                 eprintln!(
@@ -1072,6 +1279,21 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
             Ok(ExitCode::SUCCESS)
         }
         "archive" => {
+            let account =
+                azimuth::account_delta::project_new_modules(&root.join("deltas"), &options.model)
+                    .map_err(|errors| errors.join("\n"))?;
+            if account
+                .files
+                .iter()
+                .any(|file| file.before.as_deref() != Some(file.after.as_str()))
+            {
+                eprintln!("error: account deltas have not been applied to current facets");
+                return Ok(ExitCode::from(1));
+            }
+            if !projection.files.is_empty() {
+                eprintln!("error: intent delta has not been applied to current specs");
+                return Ok(ExitCode::from(1));
+            }
             let Some(date) = date else {
                 return Err("change archive needs `--date <YYYY-MM-DD>`".into());
             };
@@ -1135,6 +1357,315 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
         }
         other => Err(format!("unknown change operation `{other}`")),
     }
+}
+
+fn command_account_change(
+    operation: &str,
+    root: &std::path::Path,
+    options: &Options,
+    preview_path: Option<PathBuf>,
+) -> Result<ExitCode, String> {
+    if !options.only.is_empty() {
+        return Err("account projection requires the complete model; omit `--only`".into());
+    }
+    if operation == "account-capture" {
+        if !options.supports.is_empty() {
+            return Err("account-capture does not accept `--support`".into());
+        }
+        if preview_path.is_some() || options.out.is_some() {
+            return Err("account-capture does not accept `--preview` or `--out`".into());
+        }
+        if root
+            .parent()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str())
+            != Some("changes")
+        {
+            return Err("account-capture requires an active change, not an archived record".into());
+        }
+        match azimuth::account_delta::capture_account_bases(&root.join("deltas"), &options.model) {
+            Ok(paths) => {
+                for path in paths {
+                    println!("captured accepted block fingerprints in {}", path.display());
+                }
+                return Ok(ExitCode::SUCCESS);
+            }
+            Err(errors) => {
+                for error in errors {
+                    eprintln!("error: {error}");
+                }
+                return Ok(ExitCode::from(2));
+            }
+        }
+    }
+    let projection =
+        match azimuth::account_delta::project_new_modules(&root.join("deltas"), &options.model) {
+            Ok(projection) => projection,
+            Err(errors) => {
+                for error in errors {
+                    eprintln!("error: {error}");
+                }
+                return Ok(ExitCode::from(2));
+            }
+        };
+    if projection.files.is_empty() {
+        return Err("change has no design, verification or judgments account deltas".into());
+    }
+    let preview = projection.preview();
+    if operation == "account-check" {
+        if preview_path.is_some() || options.out.is_some() {
+            return Err("account-check does not accept `--preview` or `--out`".into());
+        }
+        let report = inspect_account_projection(&projection, options)?;
+        print!("{}", report.render());
+        return Ok(if report.findings.is_empty() {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::from(1)
+        });
+    }
+    if operation == "account-preview" {
+        if !options.supports.is_empty() {
+            return Err("account-preview does not accept `--support`; use account-check".into());
+        }
+        if preview_path.is_some() {
+            return Err("account-preview does not accept `--preview`; use `--out`".into());
+        }
+        if let Some(out) = &options.out {
+            let model_dir = fs::canonicalize(&options.model)
+                .map_err(|error| format!("{}: {error}", options.model.display()))?;
+            let parent = out
+                .parent()
+                .filter(|path| !path.as_os_str().is_empty())
+                .unwrap_or_else(|| std::path::Path::new("."));
+            let output_parent =
+                fs::canonicalize(parent).map_err(|error| format!("{}: {error}", out.display()))?;
+            if output_parent.starts_with(&model_dir) {
+                return Err("account preview output must be outside the accepted model".into());
+            }
+            if let Ok(existing) = fs::read_to_string(out) {
+                if existing != preview {
+                    return Err(format!(
+                        "{} already contains a different preview; choose a new review file",
+                        out.display()
+                    ));
+                }
+            }
+            fs::write(out, preview).map_err(|error| format!("{}: {error}", out.display()))?;
+            println!("wrote account preview to {}", out.display());
+        } else {
+            print!("{preview}");
+        }
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    if options.out.is_some() {
+        return Err("account-apply does not accept `--out`".into());
+    }
+    if root
+        .parent()
+        .and_then(|path| path.file_name())
+        .and_then(|name| name.to_str())
+        != Some("changes")
+    {
+        return Err("account-apply requires an active change, not an archived record".into());
+    }
+    let preview_path = preview_path
+        .ok_or("account-apply requires `--preview <file>` from the reviewed account preview")?;
+    let reviewed = fs::read_to_string(&preview_path)
+        .map_err(|error| format!("{}: {error}", preview_path.display()))?;
+    if reviewed != preview {
+        eprintln!("error: account preview is stale; rerun `azimuth change account-preview` and review the new target");
+        return Ok(ExitCode::from(1));
+    }
+    let proposal = fs::read_to_string(root.join("proposal.md"))
+        .map_err(|error| format!("cannot read proposal.md: {error}"))?;
+    if !proposal.lines().any(|line| {
+        line.trim() == "Status: accepted and complete" || line.trim() == "Status: active"
+    }) {
+        return Err(
+            "account application requires an active or accepted-and-complete change".into(),
+        );
+    }
+
+    let inspection = inspect_account_projection(&projection, options)?;
+    print!("{}", inspection.render());
+
+    let mut staged = Vec::new();
+    for (index, file) in projection.files.iter().enumerate() {
+        let parent = file
+            .path
+            .parent()
+            .ok_or_else(|| format!("{}: no target parent", file.path.display()))?;
+        fs::create_dir_all(parent).map_err(|error| format!("{}: {error}", parent.display()))?;
+        let temporary = file
+            .path
+            .with_extension(format!("account-azimuth-{}-{index}", std::process::id()));
+        let mut output = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .map_err(|error| format!("{}: {error}", temporary.display()))?;
+        if let Err(error) = output.write_all(file.after.as_bytes()) {
+            let _ = fs::remove_file(&temporary);
+            for prior in &staged {
+                let _ = fs::remove_file(prior);
+            }
+            return Err(format!("{}: {error}", temporary.display()));
+        }
+        staged.push(temporary);
+    }
+    for (file, temporary) in projection.files.iter().zip(staged.iter()) {
+        if file.before.as_deref() == Some(file.after.as_str()) {
+            fs::remove_file(temporary)
+                .map_err(|error| format!("{}: {error}", temporary.display()))?;
+            println!("account facet already applied: {}", file.path.display());
+            continue;
+        }
+        let result = match &file.before {
+            Some(before) => {
+                let current = fs::read_to_string(&file.path)
+                    .map_err(|error| format!("{}: {error}", file.path.display()))?;
+                if &current != before {
+                    return Err(format!(
+                        "{}: accepted facet changed after preview; review a fresh projection",
+                        file.path.display()
+                    ));
+                }
+                fs::rename(temporary, &file.path)
+            }
+            None => fs::hard_link(temporary, &file.path),
+        };
+        if let Err(error) = result {
+            for remaining in &staged {
+                let _ = fs::remove_file(remaining);
+            }
+            return Err(format!(
+                "{}: cannot apply target facet: {error}",
+                file.path.display()
+            ));
+        }
+        if file.before.is_none() {
+            fs::remove_file(temporary).map_err(|error| {
+                format!(
+                    "{}: cannot remove staging file: {error}",
+                    temporary.display()
+                )
+            })?;
+        }
+        println!("applied target account facet: {}", file.path.display());
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn inspect_account_projection(
+    projection: &azimuth::account_delta::AccountProjection,
+    options: &Options,
+) -> Result<azimuth::account_model::AccountReport, String> {
+    let workspace = azimuth::workspace::load(&options.workspace).map_err(|diagnostics| {
+        diagnostics
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n")
+    })?;
+    let mut manifests = Vec::new();
+    for path in &options.manifests {
+        manifests.push(azimuth::manifest::load(path).map_err(|diagnostics| {
+            diagnostics
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+        })?);
+    }
+    let mut supports = Vec::new();
+    for path in &options.supports {
+        supports.push(azimuth::account_support::load(path).map_err(|diagnostics| {
+            diagnostics
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+        })?);
+    }
+    let stage = std::env::temp_dir().join(format!(
+        "azimuth-account-model-{}-{}",
+        std::process::id(),
+        OUTPUT_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&stage).map_err(|error| format!("{}: {error}", stage.display()))?;
+    let result = (|| {
+        copy_account_model(&options.model, &stage)?;
+        for file in &projection.files {
+            let relative = file
+                .path
+                .strip_prefix(&options.model)
+                .map_err(|_| format!("{}: target is outside model root", file.path.display()))?;
+            let target = stage.join(relative);
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|error| format!("{}: {error}", parent.display()))?;
+            }
+            fs::write(&target, &file.after)
+                .map_err(|error| format!("{}: {error}", target.display()))?;
+        }
+        azimuth::account_model::inspect_with_support(&stage, &workspace, &manifests, &supports)
+            .map(|mut report| {
+                for finding in &mut report.findings {
+                    if let Ok(relative) = std::path::Path::new(&finding.path).strip_prefix(&stage) {
+                        finding.path = options.model.join(relative).display().to_string();
+                    }
+                }
+                report
+            })
+            .map_err(|diagnostics| {
+                diagnostics
+                    .into_iter()
+                    .map(|mut diagnostic| {
+                        if let Ok(relative) =
+                            std::path::Path::new(&diagnostic.path).strip_prefix(&stage)
+                        {
+                            diagnostic.path = options.model.join(relative).display().to_string();
+                        }
+                        diagnostic.to_string()
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+    })();
+    fs::remove_dir_all(&stage).map_err(|error| {
+        format!(
+            "{}: cannot clean prospective model: {error}",
+            stage.display()
+        )
+    })?;
+    result
+}
+
+fn copy_account_model(source: &std::path::Path, target: &std::path::Path) -> Result<(), String> {
+    for entry in fs::read_dir(source).map_err(|error| format!("{}: {error}", source.display()))? {
+        let entry = entry.map_err(|error| format!("{}: {error}", source.display()))?;
+        let path = entry.path();
+        let destination = target.join(entry.file_name());
+        let kind = entry
+            .file_type()
+            .map_err(|error| format!("{}: {error}", path.display()))?;
+        if kind.is_dir() {
+            fs::create_dir(&destination)
+                .map_err(|error| format!("{}: {error}", destination.display()))?;
+            copy_account_model(&path, &destination)?;
+        } else if kind.is_file() {
+            fs::copy(&path, &destination)
+                .map_err(|error| format!("{}: {error}", path.display()))?;
+        } else {
+            return Err(format!(
+                "{}: model links and special files are unsupported for prospective inspection",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn one_position<'a>(values: &'a [String], error: &str) -> Result<&'a str, String> {
@@ -2020,6 +2551,7 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
         standards: PathBuf::from("azimuth/standards/verification.md"),
         workspace: PathBuf::new(),
         manifests: Vec::new(),
+        supports: Vec::new(),
         only: Vec::new(),
         out: None,
     };
@@ -2046,6 +2578,10 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
             }
             "--manifest" => {
                 o.manifests.push(PathBuf::from(value("--manifest")?));
+                i += 2;
+            }
+            "--support" => {
+                o.supports.push(PathBuf::from(value("--support")?));
                 i += 2;
             }
             "--only" => {
@@ -2116,11 +2652,12 @@ fn report_findings(model: &azimuth::model::Model, findings: &[validation::Findin
 }
 
 fn command_validate(options: Options) -> Result<ExitCode, String> {
-    let loaded = match azimuth::load(
+    let loaded = match azimuth::load_with_support(
         &options.model,
         &options.standards,
         &options.workspace,
         &options.manifests,
+        &options.supports,
         &options.only,
     ) {
         Ok(l) => l,
@@ -2151,11 +2688,12 @@ fn command_report(args: &[String]) -> Result<ExitCode, String> {
         return Err(format!("unknown report `{operation}`"));
     }
     let options = parse_options(&args[1..])?;
-    let loaded = match azimuth::load(
+    let loaded = match azimuth::load_with_support(
         &options.model,
         &options.standards,
         &options.workspace,
         &options.manifests,
+        &options.supports,
         &options.only,
     ) {
         Ok(loaded) => loaded,
@@ -2177,11 +2715,12 @@ fn command_report(args: &[String]) -> Result<ExitCode, String> {
 }
 
 fn command_export(options: Options) -> Result<ExitCode, String> {
-    let loaded = match azimuth::load(
+    let loaded = match azimuth::load_with_support(
         &options.model,
         &options.standards,
         &options.workspace,
         &options.manifests,
+        &options.supports,
         &options.only,
     ) {
         Ok(l) => l,

@@ -70,7 +70,7 @@ impl ClaimContract {
     }
 
     pub fn identity(&self) -> String {
-        format!("{}#{}", self.spec, self.claim)
+        self.claim.clone()
     }
 
     fn canonicalized(&self) -> Self {

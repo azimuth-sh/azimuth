@@ -14,9 +14,9 @@ Anything not described here is a parse error in the ecosystem that reads it.
 ## What the author writes
 
 ```text
-Realizes(<spec-id>, <claim-id>)
+Realizes(<claim-id>)
 ImplementsCheck(<project-global-check-id>)
-ImplementsMechanism(<spec-id>, <mechanism-id>)
+ImplementsMechanism(<mechanism-id>)
 ```
 
 Every argument is a string literal. A computed value, a constant reference, a keyword argument and a wrong argument count each fail extraction rather than emitting a weaker record.
@@ -53,13 +53,13 @@ An extractor that cannot prove a unique qualified declaration must reject that m
 
 ### .NET
 
-`Azimuth.Annotations` supplies `[Realizes(spec, claim)]`, `[ImplementsCheck(check)]` and `[ImplementsMechanism(spec, mechanism)]`. All three allow multiple instances on one target. `Realizes` and `ImplementsMechanism` target a class, struct, interface, enum or method; `ImplementsCheck` targets a method only. The targets match exactly what the extractor walks, so a marker cannot be placed where it would silently vanish.
+`Azimuth.Annotations` supplies `[Realizes(claim)]`, `[ImplementsCheck(check)]` and `[ImplementsMechanism(mechanism)]`. All three allow multiple instances on one target. `Realizes` and `ImplementsMechanism` target a class, struct, interface, enum or method; `ImplementsCheck` targets a method only. The targets match exactly what the extractor walks, so a marker cannot be placed where it would silently vanish.
 
 Attributes are matched by full attribute-type name, not CLR identity, so the emitter works when the target assembly references a differently located copy of the annotations package.
 
 ### JVM
 
-`sh.azimuth.Azimuth` supplies the repeatable runtime annotations `@Azimuth.Realizes(spec=, claim=)`, `@Azimuth.ImplementsCheck(<check>)` and `@Azimuth.ImplementsMechanism(spec=, mechanism=)`. `Realizes` and `ImplementsMechanism` target a type or a method; `ImplementsCheck` targets a method. Retention is `RUNTIME`, because the extractor reads compiled classes. Java and Kotlin share the annotations and are distinguished by the resolved source file's extension.
+`sh.azimuth.Azimuth` supplies the repeatable runtime annotations `@Azimuth.Realizes(claim=)`, `@Azimuth.ImplementsCheck(<check>)` and `@Azimuth.ImplementsMechanism(mechanism=)`. `Realizes` and `ImplementsMechanism` target a type or a method; `ImplementsCheck` targets a method. Retention is `RUNTIME`, because the extractor reads compiled classes. Java and Kotlin share the annotations and are distinguished by the resolved source file's extension.
 
 ### TypeScript and JavaScript
 
@@ -69,7 +69,7 @@ Attributes are matched by full attribute-type name, not CLR identity, so the emi
 
 ### Go
 
-`github.com/azimuth-sh/azimuth-go/azimuth` supplies the no-op calls `azimuth.Realizes(spec, claim)`, `azimuth.ImplementsCheck(check)` and `azimuth.ImplementsMechanism(spec, mechanism)`. A call counts only when `go/types` resolves it to a function in that package; identifier and selector forms both resolve. The enclosing AST function supplies the site, and a marker inside an anonymous function has no stable site and fails.
+`github.com/azimuth-sh/azimuth-go/azimuth` supplies the no-op calls `azimuth.Realizes(claim)`, `azimuth.ImplementsCheck(check)` and `azimuth.ImplementsMechanism(mechanism)`. A call counts only when `go/types` resolves it to a function in that package; identifier and selector forms both resolve. The enclosing AST function supplies the site, and a marker inside an anonymous function has no stable site and fails.
 
 ### Python
 
@@ -95,3 +95,7 @@ The kind token is kebab-case here, unlike every other ecosystem's identifier spe
 
 - `contracts/manifest.md` — the records these markers produce and the rules core applies to them.
 - `contracts/verification.md` — the exact per-ecosystem semantic-site profiles and Check linkage.
+
+## Stable entity identities: 2026-10-02
+
+Claim, Case, Mechanism and Check identities are stable project-wide lower-kebab IDs within their typed namespaces. Project context comes from the complete account; kind remains explicit. Module membership is navigation, not identity. Source references do not encode modules. Former qualified spellings are rejected without aliases. Regenerate current artifacts and fingerprints; historical bytes and facts remain immutable. See `contracts/entity-identity.md`.

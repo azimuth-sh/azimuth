@@ -6,6 +6,7 @@
 //! to be present would turn absence into a false green result, so completeness is part of the
 //! derived state rather than a caller convention.
 
+use crate::account_support::{self, AccountSupport};
 use crate::diag::Diag;
 use crate::fingerprint::sha256;
 use crate::json::{self, Json};
@@ -147,6 +148,13 @@ pub struct WorkRepository {
     pub revision: String,
     pub manifest: PathBuf,
     pub manifest_digest: String,
+    pub account_support: Option<WorkAccountSupport>,
+}
+
+#[derive(Debug, Clone)]
+pub struct WorkAccountSupport {
+    pub path: PathBuf,
+    pub digest: String,
 }
 
 #[derive(Debug, Clone)]
@@ -213,6 +221,24 @@ pub struct RepositoryManifest {
     pub standards_digest: Option<String>,
     pub changes: Vec<ChangeObservation>,
     pub linkage: Manifest,
+    pub account_support: Option<AccountSupportObservation>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AccountSupportObservation {
+    pub path: String,
+    pub digest: String,
+    pub producer: String,
+    pub revision: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct AssembledAccountSupport {
+    pub repository: String,
+    pub revision: String,
+    pub producer: String,
+    pub digest: String,
+    pub support: AccountSupport,
 }
 
 #[derive(Debug, Clone)]
@@ -251,6 +277,7 @@ pub struct Assembly {
     pub model_roots: Vec<PathBuf>,
     pub standards_path: Option<PathBuf>,
     pub manifests: Vec<Manifest>,
+    pub account_support: Vec<AssembledAccountSupport>,
     pub receipts: Vec<ExecutionReceipt>,
     pub changes: Vec<ChangeObservation>,
 }
@@ -533,6 +560,27 @@ pub fn load_workset(path: &Path) -> Result<Workset, Vec<Diag>> {
         .enumerate()
         .map(|(index, item)| {
             let where_ = format!("repositories[{index}]");
+            let account_support = match item.get("account_support") {
+                None => None,
+                Some(Json::Obj(_)) => {
+                    let support = item.get("account_support").unwrap();
+                    let location = format!("{where_}.account_support");
+                    Some(WorkAccountSupport {
+                        path: resolve(
+                            base,
+                            &nested_string(&display, &location, support, "path", &mut errors),
+                        ),
+                        digest: nested_string(&display, &location, support, "digest", &mut errors),
+                    })
+                }
+                Some(_) => {
+                    errors.push(Diag::file(
+                        &display,
+                        format!("{where_}.account_support must be an object"),
+                    ));
+                    None
+                }
+            };
             WorkRepository {
                 id: nested_string(&display, &where_, item, "id", &mut errors),
                 root: resolve(
@@ -551,6 +599,7 @@ pub fn load_workset(path: &Path) -> Result<Workset, Vec<Diag>> {
                     "manifest_digest",
                     &mut errors,
                 ),
+                account_support,
             }
         })
         .collect::<Vec<_>>();
@@ -574,6 +623,19 @@ pub fn load_workset(path: &Path) -> Result<Workset, Vec<Diag>> {
         repositories.iter().map(|repository| repository.id.as_str()),
         &mut errors,
     );
+    for repository in &repositories {
+        if let Some(support) = &repository.account_support {
+            if !digest_value(&support.digest) {
+                errors.push(Diag::file(
+                    &display,
+                    format!(
+                        "repository `{}` account_support.digest must be 64 lowercase hex characters",
+                        repository.id
+                    ),
+                ));
+            }
+        }
+    }
     if errors.is_empty() {
         Ok(Workset {
             project,
@@ -788,6 +850,14 @@ pub fn assemble(
         &mut errors,
     );
     validate_change_authority(&parsed, &mut errors);
+    let mut account_support = Vec::new();
+    for (entry, repository_manifest) in &parsed {
+        match load_account_support_observation(entry, repository_manifest, &display) {
+            Ok(Some(support)) => account_support.push(support),
+            Ok(None) => {}
+            Err(mut diagnostics) => errors.append(&mut diagnostics),
+        }
+    }
     let mut model_roots = Vec::new();
     let mut standards_path = None;
     for (entry, repository_manifest) in &parsed {
@@ -948,6 +1018,7 @@ pub fn assemble(
         model_roots,
         standards_path,
         manifests,
+        account_support,
         receipts,
         changes,
     })
@@ -1342,6 +1413,24 @@ pub fn observe_repository(
     producer: &str,
     linkage_paths: &[PathBuf],
 ) -> Result<String, Vec<Diag>> {
+    observe_repository_with_support(
+        project_path,
+        repository,
+        root,
+        producer,
+        linkage_paths,
+        None,
+    )
+}
+
+pub fn observe_repository_with_support(
+    project_path: &Path,
+    repository: &str,
+    root: &Path,
+    producer: &str,
+    linkage_paths: &[PathBuf],
+    support_path: Option<&Path>,
+) -> Result<String, Vec<Diag>> {
     let project = load_project(project_path)?;
     let display = project_path.display().to_string();
     let mut errors = Vec::new();
@@ -1368,6 +1457,51 @@ pub fn observe_repository(
             String::new()
         }
     };
+    let account_support = support_path.and_then(|path| {
+        let repository_root = fs::canonicalize(root);
+        let artifact = fs::canonicalize(path);
+        let (Ok(repository_root), Ok(artifact)) = (repository_root, artifact) else {
+            errors.push(Diag::file(
+                &path.display().to_string(),
+                "cannot resolve account support artifact or repository root",
+            ));
+            return None;
+        };
+        let Ok(relative) = artifact.strip_prefix(&repository_root) else {
+            errors.push(Diag::file(
+                &path.display().to_string(),
+                "account support artifact is outside the repository root",
+            ));
+            return None;
+        };
+        let relative = relative.to_string_lossy().replace('\\', "/");
+        if !repository_relative(&relative) {
+            errors.push(Diag::file(
+                &path.display().to_string(),
+                "account support artifact path is not normalized repository-relative",
+            ));
+            return None;
+        }
+        match (account_support::load(&artifact), fs::read(&artifact)) {
+            (Ok(_), Ok(bytes)) => Some(AccountSupportObservation {
+                path: relative,
+                digest: sha256(&bytes),
+                producer: producer.to_string(),
+                revision: revision.clone(),
+            }),
+            (Err(mut diagnostics), _) => {
+                errors.append(&mut diagnostics);
+                None
+            }
+            (_, Err(error)) => {
+                errors.push(Diag::file(
+                    &path.display().to_string(),
+                    format!("cannot read account support artifact: {error}"),
+                ));
+                None
+            }
+        }
+    });
     let areas = project
         .areas
         .iter()
@@ -1491,6 +1625,17 @@ pub fn observe_repository(
     if let Some(digest) = standards_digest {
         fields.push(("standards_digest".to_string(), Json::str(digest)));
     }
+    if let Some(support) = account_support {
+        fields.push((
+            "account_support".to_string(),
+            Json::obj(vec![
+                ("path", Json::str(&support.path)),
+                ("digest", Json::str(&support.digest)),
+                ("producer", Json::str(&support.producer)),
+                ("revision", Json::str(&support.revision)),
+            ]),
+        ));
+    }
     fields.push(("linkage".to_string(), linkage_json(&linkage)));
     Ok(Json::Obj(fields).to_string_pretty())
 }
@@ -1599,19 +1744,9 @@ fn assign_sources(
         artifact.id = key;
         artifact.source = Some(source);
     }
-    let mut targets = BTreeMap::new();
     let mut sources = BTreeMap::new();
     for item in &manifest.mechanism_implementations {
         let target = (item.spec.clone(), item.mechanism.clone());
-        if let Some(previous_file) = targets.insert(target.clone(), item.file.clone()) {
-            errors.push(Diag::file(
-                producer,
-                format!(
-                    "multiple marker implementations for mechanism `{}#{}` (first at `{previous_file}`)",
-                    target.0, target.1
-                ),
-            ));
-        }
         if let Some(source) = &item.source {
             let key = source.key();
             if let Some((previous_target, previous_file)) =
@@ -1716,6 +1851,8 @@ fn address_kind(language: &str, file: &str, site: &str) -> String {
         "next-route".into()
     } else if language == "typescript" {
         "typescript-symbol".into()
+    } else if language == "helm" {
+        "helm-resource".into()
     } else {
         format!("{language}-symbol")
     }
@@ -1851,6 +1988,36 @@ fn load_repository_manifest(path: &Path) -> Result<RepositoryManifest, Vec<Diag>
         .get("standards_digest")
         .and_then(Json::as_str)
         .map(str::to_string);
+    let account_support = match root.get("account_support") {
+        None => None,
+        Some(Json::Obj(_)) => {
+            let value = root.get("account_support").unwrap();
+            let where_ = "account_support";
+            let observation = AccountSupportObservation {
+                path: nested_string(&display, where_, value, "path", &mut errors),
+                digest: nested_string(&display, where_, value, "digest", &mut errors),
+                producer: nested_string(&display, where_, value, "producer", &mut errors),
+                revision: nested_string(&display, where_, value, "revision", &mut errors),
+            };
+            if !repository_relative(&observation.path) {
+                errors.push(Diag::file(
+                    &display,
+                    "account_support.path must be normalized repository-relative",
+                ));
+            }
+            if !digest_value(&observation.digest) {
+                errors.push(Diag::file(
+                    &display,
+                    "account_support.digest must be 64 lowercase hex characters",
+                ));
+            }
+            Some(observation)
+        }
+        Some(_) => {
+            errors.push(Diag::file(&display, "account_support must be an object"));
+            None
+        }
+    };
     let changes = object_array(&display, &root, "changes", &mut errors)
         .into_iter()
         .enumerate()
@@ -1903,10 +2070,124 @@ fn load_repository_manifest(path: &Path) -> Result<RepositoryManifest, Vec<Diag>
             standards_digest,
             changes,
             linkage: linkage.unwrap(),
+            account_support,
         })
     } else {
         Err(errors)
     }
+}
+
+fn load_account_support_observation(
+    entry: &WorkRepository,
+    manifest: &RepositoryManifest,
+    workset_path: &str,
+) -> Result<Option<AssembledAccountSupport>, Vec<Diag>> {
+    let (work, observed) = match (&entry.account_support, &manifest.account_support) {
+        (None, None) => return Ok(None),
+        (None, Some(_)) | (Some(_), None) => {
+            return Err(vec![Diag::file(
+                workset_path,
+                format!(
+                    "repository `{}` account support must be named by both workset and repository manifest",
+                    entry.id
+                ),
+            )]);
+        }
+        (Some(work), Some(observed)) => (work, observed),
+    };
+    let mut errors = Vec::new();
+    if observed.revision != entry.revision || observed.revision != manifest.revision {
+        errors.push(Diag::file(
+            &manifest.path.display().to_string(),
+            format!(
+                "account-support-revision-mismatch: repository `{}` support observes `{}`, selected revision is `{}`",
+                entry.id, observed.revision, entry.revision
+            ),
+        ));
+    }
+    if observed.producer != manifest.producer {
+        errors.push(Diag::file(
+            &manifest.path.display().to_string(),
+            format!(
+                "account-support-producer-mismatch: support producer `{}` differs from repository producer `{}`",
+                observed.producer, manifest.producer
+            ),
+        ));
+    }
+    if observed.digest != work.digest {
+        errors.push(Diag::file(
+            workset_path,
+            format!(
+                "account-support-digest-mismatch: repository `{}` workset pins {}, repository manifest observes {}",
+                entry.id, work.digest, observed.digest
+            ),
+        ));
+    }
+    let expected = match contained_path(&entry.root, &observed.path) {
+        Ok(path) => Some(path),
+        Err(error) => {
+            errors.push(Diag::file(
+                &manifest.path.display().to_string(),
+                format!("account support path is invalid: {error}"),
+            ));
+            None
+        }
+    };
+    let actual = match fs::canonicalize(&work.path) {
+        Ok(path) => Some(path),
+        Err(error) => {
+            errors.push(Diag::file(
+                workset_path,
+                format!(
+                    "cannot resolve repository `{}` account support artifact: {error}",
+                    entry.id
+                ),
+            ));
+            None
+        }
+    };
+    if let (Some(expected), Some(actual)) = (&expected, &actual) {
+        if expected != actual {
+            errors.push(Diag::file(
+                workset_path,
+                format!(
+                    "account-support-path-mismatch: repository `{}` workset artifact is not {}",
+                    entry.id, observed.path
+                ),
+            ));
+        }
+    }
+    if let Some(actual) = &actual {
+        match fs::read(actual) {
+            Ok(content) => {
+                let digest = sha256(&content);
+                if digest != observed.digest {
+                    errors.push(Diag::file(
+                        &actual.display().to_string(),
+                        format!(
+                            "account-support-digest-mismatch: observed {}, actual {digest}",
+                            observed.digest
+                        ),
+                    ));
+                }
+            }
+            Err(error) => errors.push(Diag::file(
+                &actual.display().to_string(),
+                format!("cannot read account support artifact: {error}"),
+            )),
+        }
+    }
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+    let support = account_support::load(&work.path)?;
+    Ok(Some(AssembledAccountSupport {
+        repository: entry.id.clone(),
+        revision: observed.revision.clone(),
+        producer: observed.producer.clone(),
+        digest: observed.digest.clone(),
+        support,
+    }))
 }
 
 fn load_receipt(path: &Path) -> Result<ExecutionReceipt, Vec<Diag>> {
@@ -2359,6 +2640,13 @@ fn repository_relative(path: &str) -> bool {
         && Path::new(&normalized)
             .components()
             .all(|component| matches!(component, std::path::Component::Normal(_)))
+}
+
+fn digest_value(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn contained_path(root: &Path, relative: &str) -> Result<PathBuf, String> {

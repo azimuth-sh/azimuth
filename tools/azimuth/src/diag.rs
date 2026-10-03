@@ -96,3 +96,58 @@ pub fn validate_id(id: &str, allow_slash: bool) -> Result<(), String> {
     }
     Ok(())
 }
+
+pub fn validate_entity_id(id: &str) -> Result<(), String> {
+    validate_id(id, false)
+}
+pub fn validate_check_id(id: &str) -> Result<(), String> {
+    validate_entity_id(id)
+}
+pub fn resolve_check_id(id: &str) -> Result<String, String> {
+    validate_entity_id(id)?;
+    Ok(id.to_string())
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum EntityKind {
+    Claim,
+    Case,
+    Mechanism,
+    Check,
+}
+impl EntityKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Claim => "claim",
+            Self::Case => "case",
+            Self::Mechanism => "mechanism",
+            Self::Check => "check",
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityLocator {
+    pub project: String,
+    pub kind: EntityKind,
+    pub id: String,
+    pub revision: Option<String>,
+}
+impl EntityLocator {
+    pub fn new(
+        project: &str,
+        kind: EntityKind,
+        id: &str,
+        revision: Option<&str>,
+    ) -> Result<Self, String> {
+        validate_id(project, true)?;
+        validate_entity_id(id)?;
+        if revision.is_some_and(|value| value.trim().is_empty() || value.trim() != value) {
+            return Err("entity locator revision must be a nonempty exact value".into());
+        }
+        Ok(Self {
+            project: project.to_string(),
+            kind,
+            id: id.to_string(),
+            revision: revision.map(str::to_string),
+        })
+    }
+}

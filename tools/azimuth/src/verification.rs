@@ -477,8 +477,23 @@ pub fn parse_verification(path: &str, source: &str) -> Result<Verification, Vec<
             i += 1;
             continue;
         };
+        let resolved_id = if kind == "Check" {
+            match crate::diag::resolve_check_id(id) {
+                Ok(id) => id,
+                Err(reason) => {
+                    errors.push(Diag::at(path, line, format!("invalid Check id: {reason}")));
+                    i += 1;
+                    continue;
+                }
+            }
+        } else {
+            id.to_string()
+        };
+        let id = resolved_id.as_str();
         if kind == "Claim Judgment" {
             validate_claim_reference(path, line, id, &mut errors);
+        } else if kind == "Check" {
+            validate_reference(path, line, "Check", id, false, &mut errors);
         } else if let Err(reason) = validate_id(id, true) {
             errors.push(Diag::at(path, line, format!("invalid {kind} id: {reason}")));
         }
@@ -493,7 +508,19 @@ pub fn parse_verification(path: &str, source: &str) -> Result<Verification, Vec<
             _ => unreachable!(),
         };
         let block_start = i + 1;
-        let (block, next) = read_block(&lines, block_start, labels);
+        let (mut block, next) = read_block(&lines, block_start, labels);
+        for field in &mut block.labels {
+            if field.key == "Check" {
+                match crate::diag::resolve_check_id(&field.value) {
+                    Ok(value) => field.value = value,
+                    Err(reason) => errors.push(Diag::at(
+                        path,
+                        line,
+                        format!("invalid Check reference: {reason}"),
+                    )),
+                }
+            }
+        }
         reject_unknown_label_like_lines(path, &lines, block_start, labels, kind, id, &mut errors);
         i = next;
         reject_stray_and_duplicates(path, line, kind, id, &block, &mut errors);
@@ -1803,7 +1830,12 @@ fn validate_reference(
     allow_slash: bool,
     errors: &mut Vec<Diag>,
 ) {
-    if let Err(reason) = validate_id(id, allow_slash) {
+    let validation = if kind == "Check" {
+        crate::diag::validate_check_id(id)
+    } else {
+        validate_id(id, allow_slash)
+    };
+    if let Err(reason) = validation {
         errors.push(Diag::at(path, line, format!("invalid {kind} id: {reason}")));
     }
 }
@@ -1813,58 +1845,15 @@ fn validate_claim_reference(path: &str, line: usize, id: &str, errors: &mut Vec<
 }
 
 fn validate_case_reference(path: &str, line: usize, id: &str, errors: &mut Vec<Diag>) {
-    let Some((owner, address)) = id.split_once('#') else {
-        errors.push(Diag::expecting(
-            path,
-            line,
-            format!("invalid Case id `{id}`"),
-            "`<spec-id>#<claim-id>/<case-id>`",
-        ));
-        return;
-    };
-    let Some((claim, case)) = address.split_once('/') else {
-        errors.push(Diag::expecting(
-            path,
-            line,
-            format!("invalid Case id `{id}`"),
-            "`<spec-id>#<claim-id>/<case-id>`",
-        ));
-        return;
-    };
-    if id.matches('#').count() != 1
-        || address.matches('/').count() != 1
-        || validate_id(owner, true).is_err()
-        || validate_id(claim, false).is_err()
-        || validate_id(case, false).is_err()
-    {
-        errors.push(Diag::expecting(
-            path,
-            line,
-            format!("invalid Case id `{id}`"),
-            "`<spec-id>#<claim-id>/<case-id>` using lower kebab ids",
-        ));
-    }
+    validate_composite(path, line, "Case", id, errors);
 }
-
 fn validate_composite(path: &str, line: usize, kind: &str, id: &str, errors: &mut Vec<Diag>) {
-    let Some((owner, member)) = id.split_once('#') else {
+    if let Err(reason) = crate::diag::validate_entity_id(id) {
         errors.push(Diag::expecting(
             path,
             line,
-            format!("invalid {kind} id `{id}`"),
-            "`<spec-id>#<member-id>`",
-        ));
-        return;
-    };
-    if id.matches('#').count() != 1
-        || validate_id(owner, true).is_err()
-        || validate_id(member, false).is_err()
-    {
-        errors.push(Diag::expecting(
-            path,
-            line,
-            format!("invalid {kind} id `{id}`"),
-            "`<spec-id>#<member-id>` using lower kebab ids",
+            format!("invalid {kind} ID `{id}`: {reason}"),
+            "a stable project-wide ID in its explicit kind",
         ));
     }
 }

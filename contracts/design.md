@@ -28,12 +28,11 @@ Required prose explaining why this mechanism matters and what fails if it change
 ```
 
 Every entry attaches to a Claim. A mechanism with no `Cases:` label bears on the complete Claim. A
-mechanism that bears only on some Cases names their local ids in a sorted, non-empty, duplicate-free
+mechanism that bears only on some Cases names their stable project-wide ids in a sorted, non-empty, duplicate-free
 JSON string array. This precision stays in the repository model; implementation markers still name
 only the Mechanism.
 
-A Claim may have several ordered mechanisms. Each mechanism id is stable and unique within its
-design. Reusable controls belong in concern-oriented specs instead of being copied into every
+A Claim may have several ordered mechanisms. Each mechanism id is stable and unique across the complete project. Reusable controls belong in concern-oriented specs instead of being copied into every
 consumer package.
 
 ## Enforcement kinds
@@ -51,9 +50,9 @@ Strength is derived from the kind and is never authored. Type, schema and constr
 
 ## Identity and binding
 
-`Mechanism:` is the conceptual anchor. Production code refers to it with `ImplementsMechanism(spec, mechanism)`, and extractors derive a semantic source binding. `Binding:` remains available for non-code artifacts such as an emitted database index.
+`Mechanism:` is the conceptual anchor. Production code refers to it with `ImplementsMechanism(mechanism)`, and extractors derive a semantic source binding. `Binding:` remains available for non-code artifacts such as an emitted database index.
 
-Exactly one structural binding must resolve. Zero produces `unresolved-design-binding`; several bindings are ambiguous, so a mechanism spanning independent atomic sites must be split.
+One explicit `Binding:` resolves one ordinary Artifact, or multiple distinct marker sites may jointly support the same Mechanism. The two routes cannot be mixed. Every marker site must have a unique semantic SourceIdentity and exact companion Artifact; zero support produces `unresolved-design-binding`. Linkage alone does not prove that the collection is complete or implements the prose.
 
 `Expect:` compares properties an extractor can derive exactly. Current database-index support may compare uniqueness, ordered columns and predicates:
 

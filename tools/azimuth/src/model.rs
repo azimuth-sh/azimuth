@@ -4,7 +4,7 @@
 //! addressable without becoming independent assurance centres.
 
 use crate::json::Json;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Criticality {
@@ -164,10 +164,36 @@ pub struct Claim {
 }
 
 #[derive(Debug, Clone)]
+pub struct Term {
+    pub id: String,
+    /// Authoritative vocabulary definition. Every definition in the module participates in
+    /// Claim and Case semantic digests because prose use cannot be resolved reliably by core.
+    pub definition: String,
+    pub line: usize,
+}
+
+#[derive(Debug, Clone)]
 pub struct Spec {
     pub id: String,
     pub path: String,
     pub claims: Vec<Claim>,
+    pub terms: Vec<Term>,
+}
+
+fn vocabulary_json(spec: &Spec) -> Json {
+    let mut terms = spec.terms.iter().collect::<Vec<_>>();
+    terms.sort_by(|left, right| left.id.cmp(&right.id));
+    Json::Arr(
+        terms
+            .into_iter()
+            .map(|term| {
+                Json::obj(vec![
+                    ("id", Json::str(&term.id)),
+                    ("definition", Json::str(&term.definition)),
+                ])
+            })
+            .collect(),
+    )
 }
 
 /// Stable identity of a compiler/schema source inside a federated Azimuth project.
@@ -361,6 +387,10 @@ impl SemanticChallengeScope {
 #[derive(Debug, Default)]
 pub struct Model {
     pub specs: Vec<Spec>,
+    pub account_designs: Vec<crate::account_design::AccountDesign>,
+    pub account_verifications: Vec<crate::account_verification::AccountVerification>,
+    pub account_supports: Vec<crate::account_support::AccountSupport>,
+    pub account_reviews: Vec<crate::account_model::ReviewFacet>,
     pub realizes: Vec<Site>,
     pub mechanism_implementations: Vec<MechanismImplementation>,
     pub check_implementations: Vec<CheckImplementation>,
@@ -384,7 +414,7 @@ pub struct CaseView<'a> {
 
 impl<'a> CaseView<'a> {
     pub fn id(&self) -> String {
-        format!("{}#{}/{}", self.spec.id, self.claim.id, self.case.id)
+        self.case.id.clone()
     }
 }
 
@@ -396,11 +426,478 @@ pub struct ClaimView<'a> {
 
 impl ClaimView<'_> {
     pub fn id(&self) -> String {
-        format!("{}#{}", self.spec.id, self.claim.id)
+        self.claim.id.clone()
     }
 }
 
 impl Model {
+    pub fn entity_declaration_issues(&self) -> Vec<crate::diag::Diag> {
+        let mut issues = Vec::new();
+        let mut identities = BTreeMap::<(String, String), String>::new();
+        fn record(
+            kind: &str,
+            id: &str,
+            path: &str,
+            line: usize,
+            identities: &mut BTreeMap<(String, String), String>,
+            issues: &mut Vec<crate::diag::Diag>,
+        ) {
+            if let Some(previous) =
+                identities.insert((kind.to_string(), id.to_string()), path.to_string())
+            {
+                issues.push(crate::diag::Diag::at(
+                    path,
+                    line,
+                    format!(
+                        "duplicate project-wide {kind} ID `{id}` (first declared in {previous})"
+                    ),
+                ));
+            }
+        }
+        fn mechanisms(
+            item: &crate::account_design::Declaration,
+            path: &str,
+            identities: &mut BTreeMap<(String, String), String>,
+            issues: &mut Vec<crate::diag::Diag>,
+        ) {
+            if item.kind == crate::account_design::DeclarationKind::Mechanism {
+                record("Mechanism", &item.id, path, item.line, identities, issues);
+            }
+            for child in &item.children {
+                mechanisms(child, path, identities, issues);
+            }
+        }
+        for spec in &self.specs {
+            for claim in &spec.claims {
+                record(
+                    "Claim",
+                    &claim.id,
+                    &spec.path,
+                    claim.line,
+                    &mut identities,
+                    &mut issues,
+                );
+                for case in &claim.cases {
+                    record(
+                        "Case",
+                        &case.id,
+                        &spec.path,
+                        case.line,
+                        &mut identities,
+                        &mut issues,
+                    );
+                }
+            }
+        }
+        for design in &self.designs {
+            for entry in &design.entries {
+                for mechanism in &entry.mechanisms {
+                    record(
+                        "Mechanism",
+                        &mechanism.id,
+                        &design.path,
+                        mechanism.line,
+                        &mut identities,
+                        &mut issues,
+                    );
+                }
+            }
+        }
+        for design in &self.account_designs {
+            for item in &design.declarations {
+                mechanisms(item, &design.path, &mut identities, &mut issues);
+            }
+        }
+        for document in &self.verifications {
+            for check in &document.checks {
+                record(
+                    "Check",
+                    &check.id,
+                    &document.path,
+                    check.line,
+                    &mut identities,
+                    &mut issues,
+                );
+            }
+        }
+        for document in &self.account_verifications {
+            for check in &document.checks {
+                record(
+                    "Check",
+                    &check.definition.id,
+                    &document.path,
+                    check.definition.line,
+                    &mut identities,
+                    &mut issues,
+                );
+            }
+        }
+        issues
+    }
+
+    pub fn resolve_source_membership(&mut self) {
+        let claims = self
+            .claims()
+            .map(|view| (view.claim.id.clone(), view.spec.id.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let mut mechanisms = self
+            .designs
+            .iter()
+            .flat_map(|design| {
+                design.entries.iter().flat_map(move |entry| {
+                    entry
+                        .mechanisms
+                        .iter()
+                        .map(move |mechanism| (mechanism.id.clone(), design.spec.clone()))
+                })
+            })
+            .collect::<BTreeMap<_, _>>();
+        fn collect(
+            item: &crate::account_design::Declaration,
+            module: &str,
+            targets: &mut BTreeMap<String, String>,
+        ) {
+            if item.kind == crate::account_design::DeclarationKind::Mechanism {
+                targets.insert(item.id.clone(), module.to_string());
+            }
+            for child in &item.children {
+                collect(child, module, targets);
+            }
+        }
+        for design in &self.account_designs {
+            for item in &design.declarations {
+                collect(item, &design.spec, &mut mechanisms);
+            }
+        }
+        for site in &mut self.realizes {
+            site.spec = claims.get(&site.claim).cloned().unwrap_or_default();
+        }
+        for implementation in &mut self.mechanism_implementations {
+            implementation.spec = mechanisms
+                .get(&implementation.mechanism)
+                .cloned()
+                .unwrap_or_default();
+        }
+    }
+
+    pub fn account_design_for_claim(
+        &self,
+        spec: &str,
+        claim: &str,
+    ) -> Option<(
+        &crate::account_design::AccountDesign,
+        &crate::account_design::Declaration,
+    )> {
+        let id = claim.to_string();
+        self.account_designs.iter().find_map(|design| {
+            (design.spec == spec)
+                .then(|| {
+                    design
+                        .declarations
+                        .iter()
+                        .find(|declaration| {
+                            declaration.kind == crate::account_design::DeclarationKind::Claim
+                                && declaration.id == id
+                        })
+                        .map(|declaration| (design, declaration))
+                })
+                .flatten()
+        })
+    }
+
+    pub fn realization_obligation(
+        &self,
+        spec: &str,
+        claim: &str,
+    ) -> Option<crate::workspace::RealizationObligation> {
+        if let Some((_, declaration)) = self.account_design_for_claim(spec, claim) {
+            return Some(crate::workspace::RealizationObligation {
+                spec: spec.to_string(),
+                claim: claim.to_string(),
+                areas: declaration.areas.clone(),
+            });
+        }
+        self.workspace.obligation(spec, claim).cloned()
+    }
+
+    pub fn realization_obligations(&self) -> Vec<crate::workspace::RealizationObligation> {
+        let mut obligations = self.workspace.realization_obligations.clone();
+        for design in &self.account_designs {
+            for declaration in &design.declarations {
+                if declaration.kind != crate::account_design::DeclarationKind::Claim {
+                    continue;
+                }
+                {
+                    obligations.retain(|item| item.claim != declaration.id);
+                    obligations.push(crate::workspace::RealizationObligation {
+                        spec: design.spec.clone(),
+                        claim: declaration.id.clone(),
+                        areas: declaration.areas.clone(),
+                    });
+                }
+            }
+        }
+        obligations
+    }
+
+    fn account_design_digest(&self, spec: &str, claim: &str) -> Option<String> {
+        let (design, declaration) = self.account_design_for_claim(spec, claim)?;
+        fn relationships(item: &crate::account_design::Declaration) -> Json {
+            Json::obj(vec![
+                ("kind", Json::str(&format!("{:?}", item.kind))),
+                ("id", Json::str(&item.id)),
+                (
+                    "cases",
+                    Json::Arr(item.cases.iter().map(Json::str).collect()),
+                ),
+                (
+                    "children",
+                    Json::Arr(item.children.iter().map(relationships).collect()),
+                ),
+            ])
+        }
+        Some(crate::fingerprint::canonical_sha256(&Json::obj(vec![
+            (
+                "relationships",
+                Json::Arr(
+                    design
+                        .declarations
+                        .iter()
+                        .filter(|item| {
+                            item.kind != crate::account_design::DeclarationKind::Claim
+                                || item.id == declaration.id
+                        })
+                        .map(relationships)
+                        .collect(),
+                ),
+            ),
+            ("introduction", Json::str(&design.introduction)),
+            (
+                "shared",
+                Json::Arr(
+                    design
+                        .declarations
+                        .iter()
+                        .filter(|item| item.kind != crate::account_design::DeclarationKind::Claim)
+                        .map(|item| Json::str(&item.source))
+                        .collect(),
+                ),
+            ),
+            ("claim", Json::str(&declaration.source)),
+        ])))
+    }
+
+    fn account_verification_digest(&self, spec: &str, claim: &str) -> Option<String> {
+        let id = claim.to_string();
+        let document = self
+            .account_verifications
+            .iter()
+            .find(|item| item.owner == spec)?;
+        let scope = document.claims.iter().find(|item| item.claim == id)?;
+        let sections = document
+            .sections
+            .iter()
+            .filter(|section| section.claim.as_deref().is_none_or(|owner| owner == id))
+            .map(|section| {
+                Json::obj(vec![
+                    ("id", Json::str(&section.id)),
+                    (
+                        "claim",
+                        section.claim.as_ref().map_or(Json::Null, Json::str),
+                    ),
+                    ("prose", Json::str(&section.prose)),
+                ])
+            })
+            .collect();
+        let elements = document
+            .elements
+            .iter()
+            .filter(|element| element.claim.as_deref().is_none_or(|owner| owner == id))
+            .map(|element| {
+                Json::obj(vec![
+                    ("id", Json::str(&element.id)),
+                    (
+                        "claim",
+                        element.claim.as_ref().map_or(Json::Null, Json::str),
+                    ),
+                    ("kind", Json::str(&element.kind)),
+                    ("case", element.case.as_ref().map_or(Json::Null, Json::str)),
+                    (
+                        "section",
+                        element.section.as_ref().map_or(Json::Null, Json::str),
+                    ),
+                    ("prose", Json::str(&element.prose)),
+                ])
+            })
+            .collect();
+        Some(crate::fingerprint::canonical_sha256(&Json::obj(vec![
+            ("introduction", Json::str(&document.introduction)),
+            ("scope", Json::str(&scope.prose)),
+            (
+                "cases",
+                Json::Arr(
+                    document
+                        .cases
+                        .iter()
+                        .filter(|case| case.claim == id)
+                        .map(|case| {
+                            Json::obj(vec![
+                                ("case", Json::str(&case.case)),
+                                ("prose", Json::str(&case.prose)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+            ("sections", Json::Arr(sections)),
+            ("elements", Json::Arr(elements)),
+            (
+                "checks",
+                Json::Arr(
+                    self.account_verifications
+                        .iter()
+                        .flat_map(|file| &file.checks)
+                        .filter(|check| {
+                            check.claim == id
+                                || check.cases.iter().any(|case| {
+                                    self.find_case(case).is_some_and(|view| view.claim.id == id)
+                                })
+                        })
+                        .map(|check| {
+                            Json::obj(vec![
+                                ("id", Json::str(&check.definition.id)),
+                                ("rationale", Json::str(&check.definition.rationale)),
+                                (
+                                    "definition",
+                                    Json::str(&crate::fingerprint::check_fingerprint(
+                                        &check.definition,
+                                        &self.check_implementations,
+                                    )),
+                                ),
+                                (
+                                    "cases",
+                                    Json::Arr(check.cases.iter().map(Json::str).collect()),
+                                ),
+                                (
+                                    "mechanisms",
+                                    Json::Arr(check.mechanisms.iter().map(Json::str).collect()),
+                                ),
+                                (
+                                    "proposition",
+                                    check.proposition.as_ref().map_or(Json::Null, Json::str),
+                                ),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+            (
+                "required_elements",
+                Json::Arr(scope.required_elements.iter().map(Json::str).collect()),
+            ),
+        ])))
+    }
+
+    fn account_support_digest(&self, _spec: &str, claim: &str) -> Option<String> {
+        let id = claim.to_string();
+        let case_ids = self
+            .find_claim(&id)
+            .map(|view| {
+                view.claim
+                    .cases
+                    .iter()
+                    .map(|case| case.id.as_str())
+                    .collect::<BTreeSet<_>>()
+            })
+            .unwrap_or_default();
+        let mut records = Vec::new();
+        for support in &self.account_supports {
+            let elements = support
+                .elements
+                .iter()
+                .filter(|item| item.claim == id)
+                .map(|item| {
+                    Json::obj(vec![
+                        ("element", Json::str(&item.element)),
+                        (
+                            "artifacts",
+                            Json::Arr(item.artifacts.iter().map(Json::str).collect()),
+                        ),
+                        (
+                            "depends_on",
+                            Json::Arr(item.depends_on.iter().map(Json::str).collect()),
+                        ),
+                    ])
+                })
+                .collect::<Vec<_>>();
+            let contributions = support
+                .contributions
+                .iter()
+                .filter(|item| case_ids.contains(item.case.as_str()))
+                .map(|item| {
+                    Json::obj(vec![
+                        ("check", Json::str(&item.check)),
+                        ("case", Json::str(&item.case)),
+                        ("element", Json::str(&item.element)),
+                        ("proposition", Json::str(&item.proposition)),
+                    ])
+                })
+                .collect::<Vec<_>>();
+            if elements.is_empty() && contributions.is_empty() {
+                continue;
+            }
+            records.push(Json::obj(vec![
+                ("elements", Json::Arr(elements)),
+                ("contributions", Json::Arr(contributions)),
+                (
+                    "checks",
+                    Json::Arr(
+                        support
+                            .checks
+                            .iter()
+                            .map(|item| {
+                                Json::obj(vec![
+                                    ("id", Json::str(&item.id)),
+                                    ("terminal", Json::str(&item.terminal)),
+                                    (
+                                        "artifacts",
+                                        Json::Arr(item.artifacts.iter().map(Json::str).collect()),
+                                    ),
+                                    (
+                                        "elements",
+                                        Json::Arr(item.elements.iter().map(Json::str).collect()),
+                                    ),
+                                ])
+                            })
+                            .collect(),
+                    ),
+                ),
+                (
+                    "artifacts",
+                    Json::Arr(
+                        support
+                            .artifacts
+                            .iter()
+                            .map(|item| {
+                                Json::obj(vec![
+                                    ("id", Json::str(&item.id)),
+                                    ("kind", Json::str(&item.kind)),
+                                    ("file", Json::str(&item.file)),
+                                    ("fingerprint", Json::str(&item.fingerprint)),
+                                    (
+                                        "site",
+                                        item.site.as_ref().map(Json::str).unwrap_or(Json::Null),
+                                    ),
+                                ])
+                            })
+                            .collect(),
+                    ),
+                ),
+            ]));
+        }
+        (!records.is_empty()).then(|| crate::fingerprint::canonical_sha256(&Json::Arr(records)))
+    }
+
     pub fn cases(&self) -> impl Iterator<Item = CaseView<'_>> {
         self.specs.iter().flat_map(|spec| {
             spec.claims.iter().flat_map(move |claim| {
@@ -420,10 +917,10 @@ impl Model {
         })
     }
 
-    pub fn has_claim(&self, spec: &str, claim: &str) -> bool {
+    pub fn has_claim(&self, claim: &str) -> bool {
         self.specs
             .iter()
-            .any(|s| s.id == spec && s.claims.iter().any(|candidate| candidate.id == claim))
+            .any(|s| s.claims.iter().any(|candidate| candidate.id == claim))
     }
 
     pub fn case_count(&self) -> usize {
@@ -434,9 +931,8 @@ impl Model {
         self.claims().count()
     }
 
-    pub fn find_claim(&self, spec: &str, claim: &str) -> Option<ClaimView<'_>> {
-        self.claims()
-            .find(|candidate| candidate.spec.id == spec && candidate.claim.id == claim)
+    pub fn find_claim(&self, claim: &str) -> Option<ClaimView<'_>> {
+        self.claims().find(|candidate| candidate.claim.id == claim)
     }
 
     pub fn find_case(&self, id: &str) -> Option<CaseView<'_>> {
@@ -484,6 +980,16 @@ impl Model {
     }
 
     /// Project-wide identity and cardinality checks run only after every authority is loaded.
+    pub fn account_check_issues(&self) -> Vec<crate::diag::Diag> {
+        crate::account_model::authored_check_issues(
+            self.account_verifications.iter(),
+            &self.specs,
+            self.checks(),
+            &self.account_supports,
+            &crate::account_model::mechanism_ids(self.account_designs.iter(), &self.designs),
+        )
+    }
+
     pub fn verification_declaration_issues(&self) -> Vec<crate::diag::Diag> {
         use crate::diag::Diag;
         use std::collections::{BTreeMap, BTreeSet};
@@ -649,8 +1155,10 @@ impl Model {
         let case = self.find_case(case_id)?;
         Some(crate::fingerprint::canonical_sha256(&Json::obj(vec![
             ("format", Json::str("azimuth-case-digest")),
-            ("version", Json::Num(1.0)),
+            ("version", Json::Num(2.0)),
             ("id", Json::str(case_id)),
+            ("parent_claim", Json::str(&case.claim.id)),
+            ("terms", vocabulary_json(case.spec)),
             ("claim", Json::str(&case.claim.statement)),
             ("domain", Json::str(case.claim.domain.name())),
             (
@@ -669,8 +1177,9 @@ impl Model {
         let claim = self.claims().find(|claim| claim.id() == claim_id)?;
         Some(crate::fingerprint::canonical_sha256(&Json::obj(vec![
             ("format", Json::str("azimuth-claim-digest")),
-            ("version", Json::Num(1.0)),
+            ("version", Json::Num(2.0)),
             ("id", Json::str(claim_id)),
+            ("terms", vocabulary_json(claim.spec)),
             ("predicate", Json::str(&claim.claim.statement)),
             ("domain", Json::str(claim.claim.domain.name())),
             (
@@ -690,7 +1199,7 @@ impl Model {
                         .cases
                         .iter()
                         .map(|case| {
-                            let id = format!("{}#{}/{}", claim.spec.id, claim.claim.id, case.id);
+                            let id = case.id.clone();
                             Json::obj(vec![
                                 ("id", Json::str(&id)),
                                 (
@@ -771,8 +1280,7 @@ impl Model {
             .find(|policy| policy.id == judgment.policy)?;
 
         let mut obligation_areas = self
-            .workspace
-            .obligation(&claim.spec.id, &claim.claim.id)
+            .realization_obligation(&claim.spec.id, &claim.claim.id)
             .map(|obligation| obligation.areas.clone())
             .unwrap_or_default();
         obligation_areas.sort();
@@ -788,7 +1296,7 @@ impl Model {
         let mut realization_sites = self
             .realizes
             .iter()
-            .filter(|site| site.spec == claim.spec.id && site.claim == claim.claim.id)
+            .filter(|site| site.claim == claim.claim.id)
             .collect::<Vec<_>>();
         if realization_sites.is_empty() {
             return None;
@@ -820,10 +1328,15 @@ impl Model {
 
         let mechanisms = self.mechanism_records(&claim)?;
 
-        let case_prefix = format!("{}/", judgment.id);
+        let case_ids = claim
+            .claim
+            .cases
+            .iter()
+            .map(|case| case.id.as_str())
+            .collect::<BTreeSet<_>>();
         let mut bindings = self
             .evidence_bindings()
-            .filter(|binding| binding.case.starts_with(&case_prefix))
+            .filter(|binding| case_ids.contains(binding.case.as_str()))
             .collect::<Vec<_>>();
         bindings.sort_by(|left, right| left.id.cmp(&right.id));
         if bindings.is_empty() || has_duplicates_by(&bindings, |binding| binding.id.clone()) {
@@ -888,25 +1401,32 @@ impl Model {
             })
             .collect();
 
+        let mut claim_fields = vec![
+            ("id", Json::str(&judgment.id)),
+            (
+                "semantic_digest",
+                Json::str(self.claim_digest(&judgment.id)?),
+            ),
+            ("criticality", Json::str(criticality.name())),
+            (
+                "realization_obligation_areas",
+                Json::Arr(obligation_areas.iter().map(Json::str).collect()),
+            ),
+            ("surface", surface),
+        ];
+        if let Some(digest) = self.account_design_digest(&claim.spec.id, &claim.claim.id) {
+            claim_fields.push(("design_digest", Json::str(digest)));
+        }
+        if let Some(digest) = self.account_verification_digest(&claim.spec.id, &claim.claim.id) {
+            claim_fields.push(("verification_digest", Json::str(digest)));
+        }
+        if let Some(digest) = self.account_support_digest(&claim.spec.id, &claim.claim.id) {
+            claim_fields.push(("support_digest", Json::str(digest)));
+        }
         Some(Json::obj(vec![
             ("format", Json::str("azimuth-claim-judgment-fingerprint")),
             ("version", Json::Num(1.0)),
-            (
-                "claim",
-                Json::obj(vec![
-                    ("id", Json::str(&judgment.id)),
-                    (
-                        "semantic_digest",
-                        Json::str(self.claim_digest(&judgment.id)?),
-                    ),
-                    ("criticality", Json::str(criticality.name())),
-                    (
-                        "realization_obligation_areas",
-                        Json::Arr(obligation_areas.iter().map(Json::str).collect()),
-                    ),
-                    ("surface", surface),
-                ]),
-            ),
+            ("claim", Json::obj(claim_fields)),
             ("realizations", Json::Arr(realizations)),
             ("mechanisms", Json::Arr(mechanisms)),
             ("bindings", Json::Arr(binding_records)),
@@ -976,11 +1496,10 @@ impl Model {
                 anchors.push(self.method_qualification_scope_component(qualification)?);
             }
             RelationKind::Mechanism => {
-                let (mechanism, artifact, implementation) =
+                let (mechanism, related_inputs) =
                     self.mechanism_scope_components(&candidate.selector.id)?;
                 anchors.push(mechanism);
-                inputs.push(artifact);
-                inputs.extend(implementation);
+                inputs.extend(related_inputs);
             }
             RelationKind::Realization => {
                 anchors.push(self.realization_scope_component(&candidate.selector.id)?);
@@ -1203,7 +1722,7 @@ impl Model {
             ),
             self.binding_scope_component(binding)?,
             self.case_scope_component(&binding.case)?,
-            self.claim_scope_component(binding.case.rsplit_once('/')?.0)?,
+            self.claim_scope_component(&self.find_case(&binding.case)?.claim.id)?,
             scope_component(
                 SemanticScopeKind::Context,
                 &binding.id,
@@ -1253,7 +1772,7 @@ impl Model {
         for site in self
             .realizes
             .iter()
-            .filter(|site| site.spec == claim.spec.id && site.claim == claim.claim.id)
+            .filter(|site| site.claim == claim.claim.id)
         {
             let identity = site.source.as_ref()?.key();
             components.push(source_scope_component(
@@ -1272,31 +1791,36 @@ impl Model {
                 .filter(|entry| entry.target.id() == claim.claim.id)
             {
                 for mechanism in &entry.mechanisms {
-                    let identity = format!("{}#{}", claim.spec.id, mechanism.id);
-                    let (mechanism, artifact, implementation) =
-                        self.mechanism_scope_components(&identity)?;
-                    components.extend([mechanism, artifact]);
-                    components.extend(implementation);
+                    let identity = mechanism.id.clone();
+                    let (mechanism, related_inputs) = self.mechanism_scope_components(&identity)?;
+                    components.push(mechanism);
+                    components.extend(related_inputs);
                 }
             }
         }
         for case in &claim.claim.cases {
-            components.push(self.case_scope_component(&format!(
-                "{}#{}/{}",
-                claim.spec.id, claim.claim.id, case.id
-            ))?);
+            components.push(self.case_scope_component(&case.id)?);
         }
-        let case_prefix = format!("{id}/");
+        let case_ids = self
+            .find_claim(&id)
+            .map(|view| {
+                view.claim
+                    .cases
+                    .iter()
+                    .map(|case| case.id.as_str())
+                    .collect::<BTreeSet<_>>()
+            })
+            .unwrap_or_default();
         for binding in self
             .evidence_bindings()
-            .filter(|binding| binding.case.starts_with(&case_prefix))
+            .filter(|binding| case_ids.contains(binding.case.as_str()))
         {
             components.extend(self.applicability_scope_components(binding)?);
         }
         if let Some(surface_id) = &claim.claim.over {
             components.extend(self.surface_scope_components(surface_id)?);
         }
-        if let Some(obligation) = self.workspace.obligation(&claim.spec.id, &claim.claim.id) {
+        if let Some(obligation) = self.realization_obligation(&claim.spec.id, &claim.claim.id) {
             let mut areas = obligation.areas.clone();
             areas.sort();
             if has_duplicates(&areas) {
@@ -1321,15 +1845,18 @@ impl Model {
     fn mechanism_scope_components(
         &self,
         identity: &str,
-    ) -> Option<(
-        SemanticScopeComponent,
-        SemanticScopeComponent,
-        Option<SemanticScopeComponent>,
-    )> {
+    ) -> Option<(SemanticScopeComponent, Vec<SemanticScopeComponent>)> {
         use crate::verification::SemanticScopeKind;
 
-        let (spec_id, mechanism_id) = identity.split_once('#')?;
-        let design = self.design_for(spec_id)?;
+        let mechanism_id = identity;
+        let design = self.designs.iter().find(|design| {
+            design.entries.iter().any(|entry| {
+                entry
+                    .mechanisms
+                    .iter()
+                    .any(|mechanism| mechanism.id == identity)
+            })
+        })?;
         let matches = design
             .entries
             .iter()
@@ -1345,61 +1872,55 @@ impl Model {
             return None;
         };
         let record = self.mechanism_record(design, entry, mechanism)?;
-        let artifact_account = record.get("artifact")?.clone();
-        let artifact_id = artifact_account.get("id")?.as_str()?;
-        let artifacts = self
-            .artifacts
-            .iter()
-            .filter(|artifact| artifact.id == artifact_id)
-            .collect::<Vec<_>>();
-        let [artifact] = artifacts.as_slice() else {
-            return None;
-        };
-        let artifact_identity = artifact.source.as_ref()?.key();
-        let artifact_component = SemanticScopeComponent {
-            kind: SemanticScopeKind::Artifact,
-            id: artifact.id.clone(),
-            fingerprint: crate::fingerprint::artifact_property_digest(&artifact_account),
-            locator: Some(SemanticScopeLocator::Artifact {
-                file: artifact.file.clone(),
-                artifact_kind: artifact.kind.clone(),
-                identity: artifact_identity,
-                unique: artifact.unique,
-                columns: artifact.columns.clone(),
-                predicate: artifact.predicate.clone(),
-            }),
-        };
-        let implementation = if mechanism.binding.is_none() {
-            let implementations = self
-                .mechanism_implementations
+        let mut inputs = Vec::new();
+        for artifact_account in record.get("artifacts")?.as_array()? {
+            let artifact_id = artifact_account.get("id")?.as_str()?;
+            let artifacts = self
+                .artifacts
                 .iter()
-                .filter(|implementation| {
-                    implementation.spec == spec_id && implementation.mechanism == mechanism_id
-                })
+                .filter(|artifact| artifact.id == artifact_id)
                 .collect::<Vec<_>>();
-            let [implementation] = implementations.as_slice() else {
+            let [artifact] = artifacts.as_slice() else {
                 return None;
             };
-            let source = implementation.source.as_ref()?;
-            Some(source_scope_component(
-                SemanticScopeKind::MechanismImplementation,
-                &source.key(),
-                &implementation.source_fingerprint,
-                &implementation.file,
-                &implementation.lang,
-                &implementation.site,
-            )?)
-        } else {
-            None
-        };
+            inputs.push(SemanticScopeComponent {
+                kind: SemanticScopeKind::Artifact,
+                id: artifact.id.clone(),
+                fingerprint: crate::fingerprint::artifact_property_digest(artifact_account),
+                locator: Some(SemanticScopeLocator::Artifact {
+                    file: artifact.file.clone(),
+                    artifact_kind: artifact.kind.clone(),
+                    identity: artifact.source.as_ref()?.key(),
+                    unique: artifact.unique,
+                    columns: artifact.columns.clone(),
+                    predicate: artifact.predicate.clone(),
+                }),
+            });
+        }
+        if mechanism.binding.is_none() {
+            for implementation in self
+                .mechanism_implementations
+                .iter()
+                .filter(|implementation| implementation.mechanism == mechanism_id)
+            {
+                let source = implementation.source.as_ref()?;
+                inputs.push(source_scope_component(
+                    SemanticScopeKind::MechanismImplementation,
+                    &source.key(),
+                    &implementation.source_fingerprint,
+                    &implementation.file,
+                    &implementation.lang,
+                    &implementation.site,
+                )?);
+            }
+        }
         Some((
             scope_component(
                 SemanticScopeKind::Mechanism,
                 identity,
                 crate::fingerprint::mechanism_record_digest(&record),
             ),
-            artifact_component,
-            implementation,
+            inputs,
         ))
     }
 
@@ -1519,11 +2040,11 @@ impl Model {
 
     fn mechanism_record(
         &self,
-        design: &crate::design::Design,
+        _design: &crate::design::Design,
         entry: &crate::design::DesignEntry,
         mechanism: &crate::design::Mechanism,
     ) -> Option<Json> {
-        let claim = self.find_claim(&design.spec, entry.target.id())?;
+        let claim = self.find_claim(entry.target.id())?;
         if mechanism.cases.iter().any(|case| {
             !claim
                 .claim
@@ -1536,46 +2057,88 @@ impl Model {
         let implementations = self
             .mechanism_implementations
             .iter()
-            .filter(|implementation| {
-                implementation.spec == design.spec && implementation.mechanism == mechanism.id
-            })
+            .filter(|implementation| implementation.mechanism == mechanism.id)
             .collect::<Vec<_>>();
-        let (artifact_id, implementation) = match &mechanism.binding {
-            Some(binding) if implementations.is_empty() => (binding.as_str(), Json::Null),
+        let (artifact_ids, implementation_records) = match &mechanism.binding {
+            Some(binding) if implementations.is_empty() => (vec![binding.as_str()], Vec::new()),
             Some(_) => return None,
-            None => {
-                let [implementation] = implementations.as_slice() else {
-                    return None;
-                };
-                let source = implementation.source.as_ref()?;
-                if implementation.source_fingerprint.is_empty() {
-                    return None;
-                }
-                (
-                    implementation.binding.as_str(),
-                    Json::obj(vec![
+            None if !implementations.is_empty() => {
+                let mut records = Vec::new();
+                for implementation in &implementations {
+                    let source = implementation.source.as_ref()?;
+                    if implementation.source_fingerprint.is_empty() {
+                        return None;
+                    }
+                    records.push(Json::obj(vec![
                         ("identity", Json::str(source.key())),
                         (
                             "source_fingerprint",
                             Json::str(&implementation.source_fingerprint),
                         ),
                         ("artifact", Json::str(&implementation.binding)),
-                    ]),
+                    ]));
+                }
+                (
+                    implementations
+                        .iter()
+                        .map(|item| item.binding.as_str())
+                        .collect(),
+                    records,
                 )
             }
+            None => return None,
         };
-        let artifacts = self
-            .artifacts
-            .iter()
-            .filter(|artifact| artifact.id == artifact_id)
-            .collect::<Vec<_>>();
-        let [artifact] = artifacts.as_slice() else {
-            return None;
-        };
-        let artifact_identity = artifact.source.as_ref()?.key();
+        let mut artifact_records = Vec::new();
+        for artifact_id in artifact_ids {
+            let artifacts = self
+                .artifacts
+                .iter()
+                .filter(|artifact| artifact.id == artifact_id)
+                .collect::<Vec<_>>();
+            let [artifact] = artifacts.as_slice() else {
+                return None;
+            };
+            let artifact_identity = artifact.source.as_ref()?.key();
+            artifact_records.push(Json::obj(vec![
+                ("id", Json::str(&artifact.id)),
+                ("kind", Json::str(&artifact.kind)),
+                ("identity", Json::str(artifact_identity)),
+                (
+                    "unique",
+                    artifact.unique.map(Json::Bool).unwrap_or(Json::Null),
+                ),
+                (
+                    "columns",
+                    Json::Arr(artifact.columns.iter().map(Json::str).collect()),
+                ),
+                (
+                    "predicate",
+                    artifact
+                        .predicate
+                        .as_ref()
+                        .map(Json::str)
+                        .unwrap_or(Json::Null),
+                ),
+            ]));
+        }
+        artifact_records.sort_by_key(|record| {
+            record
+                .get("identity")
+                .and_then(Json::as_str)
+                .unwrap_or("")
+                .to_string()
+        });
+        let mut implementation_records = implementation_records;
+        implementation_records.sort_by_key(|record| {
+            record
+                .get("identity")
+                .and_then(Json::as_str)
+                .unwrap_or("")
+                .to_string()
+        });
         let attachment_kind = "claim";
         Some(Json::obj(vec![
-            ("id", Json::str(format!("{}#{}", design.spec, mechanism.id))),
+            ("id", Json::str(mechanism.id.clone())),
             (
                 "attachment",
                 Json::obj(vec![
@@ -1612,31 +2175,8 @@ impl Model {
                     ),
                 ]),
             ),
-            (
-                "artifact",
-                Json::obj(vec![
-                    ("id", Json::str(&artifact.id)),
-                    ("kind", Json::str(&artifact.kind)),
-                    ("identity", Json::str(artifact_identity)),
-                    (
-                        "unique",
-                        artifact.unique.map(Json::Bool).unwrap_or(Json::Null),
-                    ),
-                    (
-                        "columns",
-                        Json::Arr(artifact.columns.iter().map(Json::str).collect()),
-                    ),
-                    (
-                        "predicate",
-                        artifact
-                            .predicate
-                            .as_ref()
-                            .map(Json::str)
-                            .unwrap_or(Json::Null),
-                    ),
-                ]),
-            ),
-            ("implementation", implementation),
+            ("artifacts", Json::Arr(artifact_records)),
+            ("implementations", Json::Arr(implementation_records)),
         ]))
     }
 
@@ -1761,7 +2301,7 @@ impl Model {
 
     pub fn mechanism_bindings<'a>(
         &'a self,
-        spec: &str,
+        _spec: &str,
         mechanism: &'a crate::design::Mechanism,
     ) -> Vec<&'a str> {
         let mut bindings = Vec::new();
@@ -1771,9 +2311,7 @@ impl Model {
         bindings.extend(
             self.mechanism_implementations
                 .iter()
-                .filter(|implementation| {
-                    implementation.spec == spec && implementation.mechanism == mechanism.id
-                })
+                .filter(|implementation| implementation.mechanism == mechanism.id)
                 .map(|implementation| implementation.binding.as_str()),
         );
         bindings
@@ -1821,13 +2359,14 @@ impl Model {
                 Json::obj(vec![
                     ("id", Json::str(&spec.id)),
                     ("path", Json::str(&spec.path)),
+                    ("terms", vocabulary_json(spec)),
                     ("claims", Json::Arr(claims)),
                 ])
             })
             .collect();
 
         Json::obj(vec![
-            ("version", Json::Num(4.0)),
+            ("version", Json::Num(5.0)),
             ("specs", Json::Arr(specs)),
             (
                 "realizes",
@@ -1845,13 +2384,41 @@ impl Model {
                         .collect(),
                 ),
             ),
-            ("workspace", workspace_json(&self.workspace)),
+            ("workspace", workspace_json(self)),
             (
                 "mechanism_implementations",
                 Json::Arr(
                     self.mechanism_implementations
                         .iter()
                         .map(mechanism_implementation_json)
+                        .collect(),
+                ),
+            ),
+            (
+                "account_checks",
+                Json::Arr(
+                    self.account_verifications
+                        .iter()
+                        .flat_map(|file| &file.checks)
+                        .map(|check| {
+                            Json::obj(vec![
+                                ("definition", check_json(self, &check.definition)),
+                                ("rationale", Json::str(&check.definition.rationale)),
+                                ("claim", Json::str(&check.claim)),
+                                (
+                                    "cases",
+                                    Json::Arr(check.cases.iter().map(Json::str).collect()),
+                                ),
+                                (
+                                    "mechanisms",
+                                    Json::Arr(check.mechanisms.iter().map(Json::str).collect()),
+                                ),
+                                (
+                                    "proposition",
+                                    check.proposition.as_ref().map_or(Json::Null, Json::str),
+                                ),
+                            ])
+                        })
                         .collect(),
                 ),
             ),
@@ -2027,7 +2594,8 @@ impl Model {
         for design in &self.designs {
             for entry in &design.entries {
                 for m in &entry.mechanisms {
-                    let bindings = self.mechanism_bindings(&design.spec, m);
+                    let mut bindings = self.mechanism_bindings(&design.spec, m);
+                    bindings.sort_unstable();
                     out.push(Json::obj(vec![
                         ("spec", Json::str(&design.spec)),
                         ("target_kind", Json::str("claim")),
@@ -2043,6 +2611,10 @@ impl Model {
                             } else {
                                 Json::Null
                             },
+                        ),
+                        (
+                            "bindings",
+                            Json::Arr(bindings.iter().map(|binding| Json::str(*binding)).collect()),
                         ),
                         (
                             "expected_unique",
@@ -2069,7 +2641,6 @@ impl Model {
 
 fn site_json(s: &Site, derived_area: Option<&str>) -> Json {
     let mut pairs = vec![
-        ("spec".to_string(), Json::str(&s.spec)),
         ("claim".to_string(), Json::str(&s.claim)),
         ("site".to_string(), Json::str(&s.site)),
         ("file".to_string(), Json::str(&s.file)),
@@ -2092,7 +2663,8 @@ fn site_json(s: &Site, derived_area: Option<&str>) -> Json {
     Json::Obj(pairs)
 }
 
-fn workspace_json(workspace: &crate::workspace::Workspace) -> Json {
+fn workspace_json(model: &Model) -> Json {
+    let workspace = &model.workspace;
     Json::Obj(vec![
         ("path".into(), Json::str(&workspace.path)),
         (
@@ -2156,8 +2728,8 @@ fn workspace_json(workspace: &crate::workspace::Workspace) -> Json {
         (
             "realization_obligations".into(),
             Json::Arr(
-                workspace
-                    .realization_obligations
+                model
+                    .realization_obligations()
                     .iter()
                     .map(|item| {
                         Json::Obj(vec![
@@ -2177,7 +2749,6 @@ fn workspace_json(workspace: &crate::workspace::Workspace) -> Json {
 
 fn mechanism_implementation_json(item: &MechanismImplementation) -> Json {
     let mut fields = vec![
-        ("spec".to_string(), Json::str(&item.spec)),
         ("mechanism".to_string(), Json::str(&item.mechanism)),
         ("site".to_string(), Json::str(&item.site)),
         ("binding".to_string(), Json::str(&item.binding)),

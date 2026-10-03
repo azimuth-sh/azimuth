@@ -82,6 +82,12 @@ public final class Main {
         return manifest(realizes, checks, implementations, artifacts);
     }
 
+    private static void validateEntityId(String id, String file, String site) {
+        if (!id.matches("[a-z0-9](?:[a-z0-9-]*[a-z0-9])?")) {
+            throw new IllegalArgumentException(file + ": " + site + ": entity ID must be one lowercase kebab segment");
+        }
+    }
+
     private static void collect(
             AnnotatedElement element,
             String site,
@@ -95,14 +101,18 @@ public final class Main {
             List<Entry> implementations,
             List<Entry> artifacts) {
         for (Azimuth.Realizes annotation : element.getAnnotationsByType(Azimuth.Realizes.class)) {
+            validateEntityId(annotation.value(), file, site);
             realizes.add(Entry.relation(
-                    annotation.spec(), annotation.claim(), site, file, lang, fileFingerprint));
+                    annotation.value(), site, file, lang, fileFingerprint));
         }
         for (Azimuth.ImplementsCheck annotation
                 : element.getAnnotationsByType(Azimuth.ImplementsCheck.class)) {
             if (siteFingerprint == null) {
                 throw new IllegalArgumentException(
                         site + ": ImplementsCheck requires an exact source fingerprint");
+            }
+            if (!annotation.value().matches("[a-z0-9](?:[a-z0-9-]*[a-z0-9])?")) {
+                throw new IllegalArgumentException(file + ": " + site + ": entity ID must be one lowercase kebab segment");
             }
             checks.add(Entry.checkImplementation(
                     annotation.value(), site, file, lang, siteFingerprint));
@@ -116,9 +126,10 @@ public final class Main {
                         mechanismSite
                                 + ": ImplementsMechanism requires an exact source fingerprint");
             }
+            validateEntityId(annotation.value(), file, mechanismSite);
             String kind = lang + "-symbol";
             String binding = kind + ":" + mechanismSite;
-            implementations.add(Entry.implementation(annotation.spec(), annotation.mechanism(),
+            implementations.add(Entry.implementation(annotation.value(),
                     mechanismSite, binding, file, lang, siteFingerprint));
             artifacts.add(Entry.artifact(binding, kind, file));
         }
@@ -357,8 +368,8 @@ public final class Main {
     record Entry(Map<String, String> fields) {
         static final Comparator<Entry> ORDER = Comparator.comparing(Entry::json);
 
-        static Entry relation(String spec, String claim, String site, String file, String lang, String fingerprint) {
-            return entry("spec", spec, "claim", claim, "site", site, "file", file,
+        static Entry relation(String claim, String site, String file, String lang, String fingerprint) {
+            return entry("claim", claim, "site", site, "file", file,
                     "lang", lang, "source_fingerprint", fingerprint);
         }
 
@@ -368,9 +379,9 @@ public final class Main {
                     "source_fingerprint", fingerprint);
         }
 
-        static Entry implementation(String spec, String mechanism, String site, String binding,
+        static Entry implementation(String mechanism, String site, String binding,
                 String file, String lang, String fingerprint) {
-            return entry("spec", spec, "mechanism", mechanism, "site", site, "binding", binding,
+            return entry("mechanism", mechanism, "site", site, "binding", binding,
                     "file", file, "lang", lang, "source_fingerprint", fingerprint);
         }
 

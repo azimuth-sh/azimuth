@@ -11,7 +11,7 @@ criticality, production realization, total Claim Judgment and Claim Assurance St
 
 **Case** — a normative condition/outcome clause within one Claim's predicate. It is addressable for
 Evidence Bindings, Runs, Observations and Challenger impact, but owns no independent criticality,
-realization, Judgment or Assurance State. Its exact id is `<spec>#<claim>/<case>`.
+realization, Judgment or Assurance State. Its stable project-wide ID is independent of its current module and parent Claim.
 
 **Predicate** — what must hold, written as free-form normative Markdown in a Claim and its Cases.
 *Narrowing:* core does not interpret its natural language, tables, diagrams, code fences or domain
@@ -122,7 +122,7 @@ Claim's predicate. It is keyed by `(spec-id, claim-id)` and carries no Case or e
 
 **`ImplementsCheck`** — source linkage from one resolved implementation site to one project-global Check id. The Evidence Binding remains repository-owned.
 
-**Design binding** — the single machine-addressable artifact resolved for a design mechanism. It may be explicit for a non-code artifact or derived with one implementation tag and its companion.
+**Design binding** — an explicit machine-addressable ordinary Artifact for a design mechanism. Without one, each tagged source site contributes its own derived binding and companion Artifact; several distinct sites may support one mechanism.
 
 **Delivery topology** — the exchange, bindings, queues and failure routes that connect a brokered producer to consumers. It is a realization site when correct routing is part of the Claim.
 

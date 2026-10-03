@@ -288,7 +288,7 @@ def scan(path: Path, root: Path, compiler: str, includes: list[Path]) -> dict[st
     relative = path.resolve().relative_to(root.resolve()).as_posix()
     source = path.read_bytes()
     manifest = empty_manifest()
-    mechanism_sites: dict[str, tuple[str, str]] = {}
+    mechanism_sites: dict[str, str] = {}
     for simple_site, semantic_site, parts, start, end in annotated_declarations(
         path, compiler, includes
     ):
@@ -299,6 +299,9 @@ def scan(path: Path, root: Path, compiler: str, includes: list[Path]) -> dict[st
         if kind == "implements-check":
             if len(parts) != 3:
                 raise ValueError(f"{relative}: implements-check needs exactly one argument")
+            if re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", parts[2]) is None:
+                line = source[:start].count(b"\n") + 1
+                raise ValueError(f"{relative}:{line}: entity ID must be one lowercase kebab segment")
             manifest["check_implementations"].append(
                 {
                     "check": parts[2],
@@ -309,26 +312,28 @@ def scan(path: Path, root: Path, compiler: str, includes: list[Path]) -> dict[st
                 }
             )
             continue
-        if len(parts) != 4:
-            raise ValueError(f"{relative}: {kind} needs exactly two arguments")
+        if len(parts) != 3:
+            raise ValueError(f"{relative}: {kind} needs exactly one argument")
+        if re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", parts[2]) is None:
+            line = source[:start].count(b"\n") + 1
+            raise ValueError(f"{relative}:{line}: entity ID must be one lowercase kebab segment")
         common = {
-            "spec": parts[2],
             "site": simple_site,
             "file": relative,
             "lang": "cpp",
             "source_fingerprint": fingerprint,
         }
         if kind == "realizes":
-            manifest["realizes"].append({**common, "claim": parts[3]})
+            manifest["realizes"].append({**common, "claim": parts[2]})
         elif kind == "implements-mechanism":
-            spec, mechanism = parts[2], parts[3]
+            mechanism = parts[2]
             if semantic_site in mechanism_sites:
                 prior = mechanism_sites[semantic_site]
                 raise ValueError(
                     f"{relative}: ambiguous mechanism site `{semantic_site}` for "
-                    f"{prior[0]}#{prior[1]} and {spec}#{mechanism}"
+                    f"{prior} and {mechanism}"
                 )
-            mechanism_sites[semantic_site] = (spec, mechanism)
+            mechanism_sites[semantic_site] = mechanism
             binding = f"cpp-symbol:{semantic_site}"
             manifest["mechanism_implementations"].append(
                 {
@@ -381,18 +386,18 @@ def emit(inputs: list[Path], root: Path, compiler: str, includes: list[Path]) ->
         partial = scan(path, semantic_root, compiler, includes)
         for key, values in partial.items():
             manifest[key].extend(values)
-    mechanism_sites: dict[str, tuple[str, str, str]] = {}
+    mechanism_sites: dict[str, tuple[str, str]] = {}
     for implementation in manifest["mechanism_implementations"]:
         site = str(implementation["site"])
-        target = (str(implementation["spec"]), str(implementation["mechanism"]))
+        target = str(implementation["mechanism"])
         file = str(implementation["file"])
         prior = mechanism_sites.get(site)
         if prior is not None:
             raise ValueError(
                 f"{file}: ambiguous mechanism site `{site}` for "
-                f"{prior[0]}#{prior[1]} in {prior[2]} and {target[0]}#{target[1]}"
+                f"{prior[0]} in {prior[1]} and {target}"
             )
-        mechanism_sites[site] = (*target, file)
+        mechanism_sites[site] = (target, file)
     for values in manifest.values():
         values.sort(key=lambda item: json.dumps(item, sort_keys=True))
     return manifest

@@ -14,7 +14,7 @@
 //! into something a reviewer never sees in the matrix.
 
 use crate::diag::{validate_id, Diag};
-use crate::model::{Case, Claim, Criticality, Domain, Spec};
+use crate::model::{Case, Claim, Criticality, Domain, Spec, Term};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -77,6 +77,20 @@ pub fn load_specs(root: &Path) -> Result<Loaded, Vec<Diag>> {
         }
     }
 
+    let mut claim_ids = std::collections::BTreeMap::new();
+    let mut case_ids = std::collections::BTreeMap::new();
+    for spec in &specs {
+        for claim in &spec.claims {
+            if let Some(previous) = claim_ids.insert(claim.id.clone(), spec.path.clone()) {
+                errors.push(Diag::at(&spec.path, claim.line, format!("Claim ID `{}` is already declared by {previous}; IDs are project-wide within their kind", claim.id)));
+            }
+            for case in &claim.cases {
+                if let Some(previous) = case_ids.insert(case.id.clone(), spec.path.clone()) {
+                    errors.push(Diag::at(&spec.path, case.line, format!("Case ID `{}` is already declared by {previous}; parent Claim does not disambiguate identity", case.id)));
+                }
+            }
+        }
+    }
     if errors.is_empty() {
         Ok(Loaded { specs, warnings })
     } else {
@@ -109,6 +123,7 @@ pub fn parse_spec(path: &str, source: &str) -> Result<Spec, Vec<Diag>> {
         errors: Vec::new(),
         id: None,
         claims: Vec::new(),
+        terms: Vec::new(),
         fenced: false,
     };
     p.run(source);
@@ -120,6 +135,7 @@ struct SpecParser<'a> {
     errors: Vec<Diag>,
     id: Option<String>,
     claims: Vec<Claim>,
+    terms: Vec<Term>,
     fenced: bool,
 }
 
@@ -147,6 +163,8 @@ impl<'a> SpecParser<'a> {
             if let Some(rest) = trimmed.strip_prefix("# ") {
                 self.spec_heading(rest, line_no);
                 i += 1;
+            } else if let Some(rest) = trimmed.strip_prefix("## Term:") {
+                i = self.term(rest, line_no, &lines, i);
             } else if let Some(rest) = trimmed.strip_prefix("## Invariant:") {
                 i = self.invariant(rest, line_no, &lines, i);
             } else if let Some(rest) = trimmed.strip_prefix("## ") {
@@ -164,7 +182,7 @@ impl<'a> SpecParser<'a> {
                     self.path,
                     line_no,
                     format!("unrecognized heading `{trimmed}`"),
-                    "`# Spec:`, `## Claim:` or `### Case:`",
+                    "`# Spec:`, `## Term:`, `## Claim:` or `### Case:`",
                 ));
                 i += 1;
             } else {
@@ -203,6 +221,40 @@ impl<'a> SpecParser<'a> {
             return;
         }
         self.id = Some(id.to_string());
+    }
+
+    fn term(&mut self, rest: &str, line_no: usize, lines: &[&str], start: usize) -> usize {
+        let id = rest.trim().to_string();
+        if let Err(reason) = validate_id(&id, false) {
+            self.errors.push(Diag::expecting(
+                self.path,
+                line_no,
+                format!("invalid term id: {reason}"),
+                "lowercase kebab-case",
+            ));
+        }
+        if self.terms.iter().any(|term| term.id == id) {
+            self.errors.push(Diag::at(
+                self.path,
+                line_no,
+                format!("term id `{id}` is declared twice in this spec"),
+            ));
+        }
+        let (definition, next) = term_body(lines, start + 1);
+        if definition.is_empty() {
+            self.errors.push(Diag::expecting(
+                self.path,
+                line_no,
+                format!("term `{id}` has no definition"),
+                "non-empty free-form Markdown",
+            ));
+        }
+        self.terms.push(Term {
+            id,
+            definition,
+            line: line_no,
+        });
+        next
     }
 
     /// A claim whose domain is a set of sites (contracts/spec.md, site-domain invariants).
@@ -505,6 +557,7 @@ impl<'a> SpecParser<'a> {
                 id,
                 path: self.path.to_string(),
                 claims: self.claims,
+                terms: self.terms,
             })
         } else {
             Err(errors)
@@ -519,6 +572,30 @@ fn split_label(line: &str) -> Option<(&str, &str)> {
         return None;
     }
     Some((label, rest[1..].trim()))
+}
+
+/// Terms reserve only top-level and peer headings. Subheadings are definition content.
+fn term_body(lines: &[&str], start: usize) -> (String, usize) {
+    let mut fenced = false;
+    let mut end = start;
+    while end < lines.len() {
+        let trimmed = lines[end].trim();
+        if trimmed.starts_with("```") {
+            fenced = !fenced;
+        } else if !fenced && (trimmed.starts_with("# ") || trimmed.starts_with("## ")) {
+            break;
+        }
+        end += 1;
+    }
+    let mut first = start;
+    while first < end && lines[first].trim().is_empty() {
+        first += 1;
+    }
+    let mut last = end;
+    while last > first && lines[last - 1].trim().is_empty() {
+        last -= 1;
+    }
+    (lines[first..last].join("\n"), end)
 }
 
 /// Collects one authoritative Markdown body while reserving the top three heading levels for the

@@ -48,7 +48,9 @@ A site-domain claim's `Over:` value names a surface id. Every contribution must 
 
 ## Realization obligations
 
-An optional realization obligation applies to one non-routine parent Claim. Every named area must
+For an adopted Claim-first design account, `Areas:` under a Claim design is the authoritative realization obligation. The workspace still declares Areas and mounts, but must not repeat that Claim's obligation in `realization_obligations`; duplicate authoring is an error. The derived obligation appears in model export and participates in missing-realization validation and Claim Judgment freshness.
+
+The workspace `realization_obligations` list remains available for modules that have not migrated to Claim-first design. An optional realization obligation applies to one non-routine parent Claim. Every named area must
 contain at least one `Realizes` site for the Claim. The site's area is derived from its source
 locator. The declaration has no role vocabulary and does not assign Case or evidentiary meaning.
 

@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,8 +26,9 @@ import (
 
 const annotationPackage = "github.com/azimuth-sh/azimuth-go/azimuth"
 
+var entityIDPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`)
+
 type relation struct {
-	Spec              string `json:"spec"`
 	Claim             string `json:"claim"`
 	Site              string `json:"site"`
 	File              string `json:"file"`
@@ -43,7 +45,6 @@ type checkImplementation struct {
 }
 
 type mechanismImplementation struct {
-	Spec              string `json:"spec"`
 	Mechanism         string `json:"mechanism"`
 	Site              string `json:"site"`
 	Binding           string `json:"binding"`
@@ -283,7 +284,7 @@ func scanPackage(directory string, selected []string, root string, result *manif
 	if _, checkErr := configuration.Check(packagePath, set, packageFiles, info); checkErr != nil {
 		return fmt.Errorf("%s: Go compiler rejected package: %w", directory, checkErr)
 	}
-	mechanismSites := map[string][2]string{}
+	mechanismSites := map[string]string{}
 	for absolutePath, parsed := range parsedByPath {
 		if !selectedSet[absolutePath] {
 			continue
@@ -417,7 +418,7 @@ func preflightMarkerCalls(
 				return false
 			}
 			required := map[string]int{
-				"Realizes": 2, "ImplementsCheck": 1, "ImplementsMechanism": 2,
+				"Realizes": 1, "ImplementsCheck": 1, "ImplementsMechanism": 1,
 			}
 			count, marker := required[name]
 			if !marker {
@@ -563,13 +564,11 @@ func validateMechanismSites(implementations []mechanismImplementation) error {
 	for _, implementation := range implementations {
 		if prior, present := sites[implementation.Site]; present {
 			return fmt.Errorf(
-				"%s: ambiguous mechanism site %q for %s#%s in %s and %s#%s",
+				"%s: ambiguous mechanism site %q for %s in %s and %s",
 				implementation.File,
 				implementation.Site,
-				prior.Spec,
 				prior.Mechanism,
 				prior.File,
-				implementation.Spec,
 				implementation.Mechanism,
 			)
 		}
@@ -765,9 +764,9 @@ func appendMarker(
 	semanticSite string,
 	file string,
 	fingerprint string,
-	mechanismSites map[string][2]string,
+	mechanismSites map[string]string,
 ) error {
-	requiredArguments := map[string]int{"Realizes": 2, "ImplementsCheck": 1, "ImplementsMechanism": 2}
+	requiredArguments := map[string]int{"Realizes": 1, "ImplementsCheck": 1, "ImplementsMechanism": 1}
 	required, marker := requiredArguments[name]
 	if !marker {
 		return nil
@@ -775,29 +774,30 @@ func appendMarker(
 	if len(values) != required {
 		return fmt.Errorf("%s needs exactly %d arguments", name, required)
 	}
+	if !entityIDPattern.MatchString(values[0]) {
+		return fmt.Errorf("entity ID must be one lowercase kebab segment")
+	}
 	switch name {
 	case "Realizes":
-		result.Realizes = append(result.Realizes, relation{Spec: values[0], Claim: values[1], Site: site, File: file, Lang: "go", SourceFingerprint: fingerprint})
+		result.Realizes = append(result.Realizes, relation{Claim: values[0], Site: site, File: file, Lang: "go", SourceFingerprint: fingerprint})
 	case "ImplementsCheck":
 		result.CheckImplementations = append(result.CheckImplementations, checkImplementation{Check: values[0], Site: site, File: file, Lang: "go", SourceFingerprint: fingerprint})
 	case "ImplementsMechanism":
 		if strings.Contains(semanticSite, "invalid type") {
 			return fmt.Errorf("Go type account could not resolve mechanism signature %s", site)
 		}
-		target := [2]string{values[0], values[1]}
+		target := values[0]
 		if prior, present := mechanismSites[semanticSite]; present {
 			return fmt.Errorf(
-				"ambiguous mechanism site %q for %s#%s and %s#%s",
+				"ambiguous mechanism site %q for %s and %s",
 				semanticSite,
-				prior[0],
-				prior[1],
-				target[0],
-				target[1],
+				prior,
+				target,
 			)
 		}
 		mechanismSites[semanticSite] = target
 		binding := "go-symbol:" + semanticSite
-		result.MechanismImplementations = append(result.MechanismImplementations, mechanismImplementation{Spec: values[0], Mechanism: values[1], Site: semanticSite, Binding: binding, File: file, Lang: "go", SourceFingerprint: fingerprint})
+		result.MechanismImplementations = append(result.MechanismImplementations, mechanismImplementation{Mechanism: values[0], Site: semanticSite, Binding: binding, File: file, Lang: "go", SourceFingerprint: fingerprint})
 		result.Artifacts = append(result.Artifacts, artifact{ID: binding, Kind: "go-symbol", File: file})
 	}
 	return nil

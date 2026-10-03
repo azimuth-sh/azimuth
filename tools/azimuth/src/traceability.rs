@@ -95,10 +95,10 @@ pub struct DecisionReference {
 }
 
 pub fn project(model: &Model) -> TraceabilityReport {
-    let mut realizations = BTreeMap::<(String, String), BTreeSet<String>>::new();
+    let mut realizations = BTreeMap::<String, BTreeSet<String>>::new();
     for site in &model.realizes {
         realizations
-            .entry((site.spec.clone(), site.claim.clone()))
+            .entry(site.claim.clone())
             .or_default()
             .extend(realization_identity(site));
     }
@@ -106,7 +106,7 @@ pub fn project(model: &Model) -> TraceabilityReport {
     let mut cases = BTreeMap::<String, TraceabilityCase>::new();
     for claim in model.cases() {
         let id = claim.id();
-        let relation_key = (claim.spec.id.clone(), claim.claim.id.clone());
+        let relation_key = claim.claim.id.clone();
         let mut verification = model
             .evidence_bindings()
             .filter(|binding| binding.case == id)
@@ -177,7 +177,7 @@ pub fn project(model: &Model) -> TraceabilityReport {
             id.clone(),
             TraceabilityCase {
                 id: id.clone(),
-                parent_claim: format!("{}#{}", claim.spec.id, claim.claim.id),
+                parent_claim: claim.claim.id.clone(),
                 criticality: claim.claim.criticality,
                 statement: claim.claim.statement.clone(),
                 case_statement: claim.case.statement.clone(),
@@ -190,7 +190,7 @@ pub fn project(model: &Model) -> TraceabilityReport {
                 verification,
                 judgment: traceability_judgment(
                     model,
-                    &format!("{}#{}", claim.spec.id, claim.claim.id),
+                    &claim.claim.id.clone(),
                     claim.claim.criticality,
                 ),
             },
@@ -269,9 +269,10 @@ pub fn project_decision_impacts(
                 let source = decision_node(target);
                 let binding_node = impact_node(ImpactNodeKind::Binding, &binding.id, None);
                 let case_node = impact_node(ImpactNodeKind::Case, &binding.case, None);
-                let Some((claim_id, _)) = binding.case.rsplit_once('/') else {
+                let Some(case) = model.find_case(&binding.case) else {
                     continue;
                 };
+                let claim_id = case.claim.id.as_str();
                 let claim_node = impact_node(ImpactNodeKind::Claim, claim_id, None);
                 insert_edge(&mut nodes, &mut edges, source, binding_node.clone());
                 insert_edge(&mut nodes, &mut edges, binding_node, case_node.clone());
@@ -302,9 +303,10 @@ pub fn project_decision_impacts(
                 {
                     let binding_node = impact_node(ImpactNodeKind::Binding, &binding.id, None);
                     let case_node = impact_node(ImpactNodeKind::Case, &binding.case, None);
-                    let Some((claim_id, _)) = binding.case.rsplit_once('/') else {
+                    let Some(case) = model.find_case(&binding.case) else {
                         continue;
                     };
+                    let claim_id = case.claim.id.as_str();
                     let claim_node = impact_node(ImpactNodeKind::Claim, claim_id, None);
                     let current_applicability = model
                         .applicability_decisions()

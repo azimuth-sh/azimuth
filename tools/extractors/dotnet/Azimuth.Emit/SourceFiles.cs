@@ -10,7 +10,8 @@ namespace Azimuth.Emit;
 
 /// <summary>
 /// Maps a method back to the source file it was compiled from, by reading the assembly's portable
-/// PDB.
+/// PDB. Missing paths prevent a tagged mechanism from being emitted, because the source account
+/// cannot be assembled without a stable locator.
 /// </summary>
 /// <remarks>
 /// The <c>file</c> field is what makes a finding navigable — a dangling tag reported against
@@ -65,7 +66,8 @@ internal sealed class SourceFiles : IDisposable
         catch (Exception)
         {
             // A native or Windows PDB, or a truncated file. Degrade to no paths rather than
-            // failing the emit: a manifest without file paths is still a correct manifest.
+            // failing the emit: tagged sites enforce their own source requirements, while
+            // unlocatable ordinary symbols are omitted.
             return new SourceFiles(null, null, root);
         }
     }

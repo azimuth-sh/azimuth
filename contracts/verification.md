@@ -13,20 +13,16 @@ Only standard and critical Claims may receive verification declarations. Routine
 # Verification: <owning-spec-id>
 ```
 
-At most one `verification.md` sits beside an owning `spec.md`. The header identifies repository authority and location; it is not a namespace.
+At most one `verification.md` sits beside an owning `spec.md`. The header declares mutable module membership; source location is not semantic identity.
 
-Check, Evidence Binding, Method Qualification, Challenger and Challenge Plan ids are
-project-global, path-independent lower kebab path ids. An Applicability Decision id is exactly its
-Evidence Binding id. A Claim Judgment id is exactly its parent Claim id `<spec-id>#<claim-id>`.
-Case ids use `<spec-id>#<claim-id>/<case-id>`. Mechanism ids are
-`<spec-id>#<mechanism-id>`. Moving this file or its package changes no identity.
+Claim, Case, Mechanism and Check IDs are stable project-wide lower-kebab names in separate typed namespaces. Module headers author membership; Case nesting authors the current parent relationship. Neither reconstructs identity. Evidence Binding, Method Qualification, Challenger and Challenge Plan IDs retain their separate project-global lower-kebab path grammar. An Applicability Decision ID is its Evidence Binding ID; a Claim Judgment ID is its stable Claim ID. Contextual lookup requires project, kind and ID, optionally an exact revision. See [entity identity](entity-identity.md).
 
 Declarations may appear in any order. Every id and referenced identity is validated over the complete project account before `--only` selection retains the closure for selected Claims.
 
 ## Check
 
 ```markdown
-## Check: payments/recovery-under-broker-loss
+## Check: recovery-under-broker-loss
 Method: inject broker loss after the accepted write
 Method: observe replay after broker recovery
 Terminal: the accepted write is replayed exactly once after recovery
@@ -42,8 +38,8 @@ Prose after the label block is required review rationale and does not enter the 
 
 ```markdown
 ## Evidence Binding: payments/recovery-replay-edge
-Check: payments/recovery-under-broker-loss
-Case: payments/recovery#accepted-write/replayed-after-broker-loss
+Check: recovery-under-broker-loss
+Case: replayed-after-broker-loss
 Method qualification: payments/recovery-method
 Proposition: replay after injected broker loss directly exercises the recovery predicate
 Context: {"platform":"linux-x86_64","storage":"postgres-17"}
@@ -73,7 +69,7 @@ The policy's required forms enter this binding's fingerprint. Capability coverag
 
 ```markdown
 ## Method Qualification: payments/recovery-method
-Check: payments/recovery-under-broker-loss
+Check: recovery-under-broker-loss
 Scope: component
 Quantification: example
 Oracle: relational
@@ -115,7 +111,7 @@ Qualification never implies edge applicability.
 ## Claim Judgment
 
 ```markdown
-## Claim Judgment: payments/recovery#accepted-write
+## Claim Judgment: accepted-write
 Verdict: accepted
 Policy: credible-executable
 Fingerprint: sha256:<64-lowercase-hex>
@@ -157,17 +153,17 @@ Surviving changes are objections to credibility, not product outcomes.
 ## Challenge Plan: payments/recovery-credibility
 Challenger: mutation/implementation-perturbation
 Select: method-qualification from method-qualification payments/recovery-method
-Select: method-qualification from check payments/recovery-under-broker-loss
+Select: method-qualification from check recovery-under-broker-loss
 Select: method-qualification from realization payments|rust-item|recovery::replay
-Select: method-qualification from mechanism payments/recovery#transactional-outbox
+Select: method-qualification from mechanism transactional-outbox
 Select: applicability-decision from binding payments/recovery-replay-edge
-Select: applicability-decision from case payments/recovery#accepted-write/replayed-after-broker-loss
-Select: applicability-decision from check payments/recovery-under-broker-loss
+Select: applicability-decision from case replayed-after-broker-loss
+Select: applicability-decision from check recovery-under-broker-loss
 Select: applicability-decision from realization payments|rust-item|recovery::replay
-Select: applicability-decision from mechanism payments/recovery#transactional-outbox
-Select: claim-judgment from claim payments/recovery#accepted-write
+Select: applicability-decision from mechanism transactional-outbox
+Select: claim-judgment from claim accepted-write
 Select: claim-judgment from realization payments|rust-item|recovery::replay
-Select: claim-judgment from mechanism payments/recovery#transactional-outbox
+Select: claim-judgment from mechanism transactional-outbox
 
 The plan states semantic reach; a Run freezes the exact resolved fingerprints.
 ```
@@ -245,7 +241,7 @@ The twelve mappings and their exact relation objects are total:
   whose challenge domain permits that relation;
 - Claim Judgment from Claim reaches that Claim with `{"kind":"claim","id":<claim-id>}`; an absent Claim retains the requested id in the same relation object and has no target;
 - Claim Judgment from realization reaches every related Claim, each with a Claim relation object, or one `{"kind":"realization","id":<SourceIdentity>}` unresolved relation when none exists; and
-- Claim Judgment from mechanism applies the preceding mapping with `{"kind":"mechanism","id":<spec-id#mechanism-id>}` only when no Claim relation exists.
+- Claim Judgment from mechanism applies the preceding mapping with `{"kind":"mechanism","id":<mechanism-id>}` only when no Claim relation exists.
 
 For a reached target, disposition precedence is exactly: routine criticality is `inapplicable`; no authored declaration is `missing-decision`; an unavailable expected fingerprint is `invalid-decision`; unequal expected and authored fingerprints is `stale-decision`; a current negative verdict is `rejected-decision`; otherwise a current positive verdict is `selected`.
 
@@ -476,7 +472,7 @@ Claim and may declare exact Case relevance. Its record is exactly:
 
 ```json
 {
-  "id": <spec-id#mechanism-id>,
+  "id": <mechanism-id>,
   "claim": <parent-claim-id>,
   "cases": <sorted-local-case-ids-or-empty-for-complete-claim>,
   "enforcement": <enforcement-kind>,
@@ -485,28 +481,27 @@ Claim and may declare exact Case relevance. Its record is exactly:
     "columns": <ordered-columns>,
     "predicate": <string-or-null>
   },
-  "artifact": {
+  "artifacts": [{
     "id": <artifact-id>,
     "kind": <artifact-kind>,
     "identity": <SourceIdentity>,
     "unique": <boolean-or-null>,
     "columns": <ordered-columns>,
     "predicate": <string-or-null>
-  },
-  "implementation": <mechanism-implementation-or-null>
+  }],
+  "implementations": [{
+    "identity": <SourceIdentity>,
+    "source_fingerprint": <fingerprint>,
+    "artifact": <artifact-id>
+  }]
 }
 ```
 
-An explicit Design `Binding:` yields `implementation: null`. A marker-derived binding yields
-exactly `{"identity": <SourceIdentity>, "source_fingerprint": <fingerprint>, "artifact":
-<artifact-id>}`. Both paths resolve exactly one artifact and always include its canonical derived
-properties and stable SourceIdentity. Zero or several marker relations, a marker without stable
-source identity or fingerprint, or zero or several matching artifacts makes the expected Judgment
-unavailable. Changing `cases` changes the mechanism record even when the Claim is unchanged.
+An explicit Design `Binding:` yields one Artifact and an empty `implementations` array. A marker-derived route yields one or more implementations with exact SourceIdentity and source fingerprint; each owns one companion Artifact. Both arrays sort by SourceIdentity. Zero marker relations, a marker without stable source identity or fingerprint, or a missing or duplicate companion makes the expected Judgment unavailable. Adding, removing or changing any participating site changes the record. Changing `cases` changes it even when the Claim is unchanged.
 
 The two routes are exclusive. An explicit Design binding that names a marker companion's raw id or derived assembled key is a structural error and never produces an explicit-binding mechanism record. Ordinary non-companion Artifacts may still be shared by several explicit Design bindings.
 
-For a marker-derived record, the manifest `site` is already represented by the assembled SourceIdentity address and its area-qualified `binding` is already represented by the rewritten resolved Artifact id. The raw typed binding never enters the preimage. Neither `site`, assembled `binding`, `lang` nor `file` is added as another Claim Judgment preimage field. Language determines the semantic address kind. File is an accountable locator only.
+For marker-derived records, each manifest `site` is already represented by its assembled SourceIdentity address and its area-qualified `binding` by its rewritten resolved Artifact id. The raw typed bindings never enter the preimage. Neither `site`, assembled `binding`, `lang` nor `file` is added as another Claim Judgment preimage field. Language determines the semantic address kind. File is an accountable locator only.
 
 The applicable surface account is exactly its `id`, sorted contribution `(area, mount, enumerator)` objects, one sorted witness per contribution and sorted member records. A contribution owns `area`, `mount` and `enumerator`; its nested witness has exactly enumeration `kind`, stable `identity` and `source_fingerprint`. A tagged member records its stable SourceIdentity and source fingerprint; an enumerated member records its file identity. Their tagged/enumerated variants cannot collapse. The mount id is an authored contribution identity; its path is excluded. The surface is `null` when the Claim has no `Over:`. The obligation areas are only the exact workspace obligation for the spec and Claim, or `[]`.
 
@@ -520,13 +515,12 @@ Judgment unavailable; stale authored fingerprints are never used.
 
 ### Mechanism implementation linkage
 
-Source keeps the existing two-argument marker `ImplementsMechanism(<spec-id>, <mechanism-id>)` in the idiomatic ecosystem spelling. The annotation neither accepts nor owns `site`, `binding` or an Artifact id. A language extractor derives this strict pair:
+Source uses the one-argument stable entity marker `ImplementsMechanism(<mechanism-id>)` in the idiomatic ecosystem spelling. The annotation neither accepts nor owns `site`, `binding` or an Artifact id. A language extractor derives this strict pair:
 
 ```json
 {
   "mechanism_implementations": [
     {
-      "spec": "payments/capture",
       "mechanism": "completion-guard",
       "site": "cargo:lib:pay:pay::Capture::complete fn(&self)->bool",
       "binding": "rust-symbol:cargo:lib:pay:pay::Capture::complete fn(&self)->bool",
@@ -545,7 +539,7 @@ Source keeps the existing two-argument marker `ImplementsMechanism(<spec-id>, <m
 }
 ```
 
-These are the only fields on a raw MechanismImplementation. `spec` is a lower-kebab path id and `mechanism` is one lower-kebab segment. `file` is one normalized workspace-relative locator, `lang` is one supported extractor language and `source_fingerprint` is exact `sha256:<64-lowercase-hex>`.
+These are the only fields on a raw MechanismImplementation. `mechanism` is a stable project-wide lower-kebab ID; no module field is emitted. `file` is one normalized workspace-relative locator, `lang` is one supported extractor language and `source_fingerprint` is exact `sha256:<64-lowercase-hex>`.
 
 `site` is a non-empty qualified identity under the closed ecosystem profiles below. Except for the narrow C++ alpha profile, it contains a module, package or compilation-target identity and a declaring type or receiver. Where supported, it also contains the overload signature or generic arity needed to distinguish declarations. For example, a .NET extractor may emit `Payments.CaptureService.CompleteAsync(Payments.CompletionId,System.Threading.CancellationToken)`. A short method such as `CompleteAsync`, a path-plus-symbol such as `src/Capture.cs#CompleteAsync`, and a source path used only to distinguish overloads are invalid. The accountable emitter establishes those semantic facts. Core treats `site` as opaque: it can require a non-empty trimmed string without control characters or `|`, but it cannot prove from bytes that a module, receiver or overload is genuinely compiler-qualified.
 
@@ -568,7 +562,6 @@ Project assembly resolves `file` to exactly one area and mount. It derives `<Sou
 {
   "mechanism_implementations": [
     {
-      "spec": "payments/capture",
       "mechanism": "completion-guard",
       "site": "cargo:lib:pay:pay::Capture::complete fn(&self)->bool",
       "binding": "payments|rust-symbol|cargo:lib:pay:pay::Capture::complete fn(&self)->bool",
@@ -601,7 +594,7 @@ Here, path-free means that the id is not derived from or extended with the works
 
 Normally an Artifact's semantic address is its authored id. The marker companion is the one exception: assembly replaces its raw id with the area-qualified SourceIdentity key and uses that key directly as its identity. An explicit Design Artifact and every unrelated Artifact retain their authored kind/id address and are never reinterpreted or rewritten as companions.
 
-Within one `(area, address-kind)`, a qualified site denotes one compiler declaration. Records for different marker targets may not reuse it. Repeating one `(spec, mechanism, SourceIdentity)`, naming another target at that SourceIdentity or supplying a conflicting source account is invalid. The same kind/site in two areas is legal and produces two distinct assembled binding and Artifact ids. One applicable mechanism still resolves zero or one qualified implementation; several distinct sites make its expected Claim Judgment unavailable.
+Within one `(area, address-kind)`, a qualified site denotes one compiler declaration. Records for different marker targets may not reuse it. Repeating one `(spec, mechanism, SourceIdentity)`, naming another target at that SourceIdentity or supplying a conflicting source account is invalid. The same kind/site in two areas is legal and produces two distinct assembled binding and Artifact ids. One applicable mechanism may resolve several distinct qualified sites; each site and its companion Artifact enters the expected Claim Judgment. Structural linkage cannot prove that the set is complete or adequate.
 
 An emitter fails before output when compiler or runtime metadata reports an ambiguous site in the compilation account for that record. Core does not reproduce that semantic proof. Local and federated assembly check syntax, raw binding equality, exact companion pairing, the atomic rewrite and uniqueness and consistency over each complete area. Both derive byte-identical assembled binding, Artifact id and SourceIdentity for the same area and raw record. Neither uses `file`, repository, revision or mount to repair an ambiguous semantic identity. Old records without `site`, path-bearing bindings and raw records carrying an assembled key are schema failures, not deprecated input. A marker companion referenced by an explicit Design binding is likewise rejected before rewrite, not reinterpreted as an ordinary Artifact.
 
@@ -685,7 +678,7 @@ Source uses `ImplementsCheck(<check-id>)`. A language extractor emits only:
 {
   "check_implementations": [
     {
-      "check": "payments/recovery-under-broker-loss",
+      "check": "recovery-under-broker-loss",
       "site": "recovery::replay_after_loss",
       "file": "src/recovery.rs",
       "lang": "rust",
@@ -703,3 +696,7 @@ Decision. A native test without the marker emits nothing.
 ## Rejected alpha 1 input
 
 The parser rejects old `## Claim`, `## Judgment` and residual headings, evidence floors, non-test evidence, Strength, detector fields, `Qualification policy:` and the plural `judgments.md` facet. Manifests reject `covers`, `mechanism_covers` and `observations`. Annotations reject Covers and CoversMechanism. Nothing is translated, deprecated or exported twice.
+
+## Stable entity identities: 2026-10-02
+
+Current Claim, Case, Mechanism and Check IDs are stable project-wide lower-kebab names. Typed declarations and selectors supply kind; account assembly supplies project context. Module headers and Case nesting separately author membership and relationships. Source tags use one stable target ID. Former qualified IDs are not aliases. Other verification declarations retain their separate grammar. See `contracts/entity-identity.md`.

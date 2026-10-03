@@ -7,7 +7,7 @@ P = ParamSpec("P")
 R = TypeVar("R")
 
 
-def _marker(*_values: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def _marker(_identity: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
     def decorate(target: Callable[P, R]) -> Callable[P, R]:
         return target
 

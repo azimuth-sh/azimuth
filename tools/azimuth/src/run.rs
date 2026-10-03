@@ -2,7 +2,7 @@
 //!
 //! Contracts: `contracts/run-bundle.md` and `contracts/run-launch-plan.md`.
 
-use crate::diag::validate_id;
+use crate::diag::{validate_check_id, validate_entity_id, validate_id};
 use crate::fingerprint::sha256;
 use crate::json::Json;
 use std::collections::{BTreeMap, BTreeSet};
@@ -1330,7 +1330,7 @@ fn parse_check_selection(value: &Json, where_: &str) -> Result<CheckSelection, S
     let implementations = parse_array(object, "implementations", where_, parse_implementation)?;
     let units = parse_array(object, "units", where_, parse_work_unit)?;
     Ok(CheckSelection {
-        id: id(object, "id", where_)?,
+        id: check_id(object, "id", where_)?,
         fingerprint: fingerprint(object, "fingerprint", where_)?,
         cases: string_set(object, "cases", where_)?,
         implementations,
@@ -1426,7 +1426,14 @@ fn parse_challenge_scope_item(value: &Json, where_: &str) -> Result<ChallengeSco
     };
     Ok(ChallengeScopeItem {
         kind,
-        id: nonempty(object, "id", where_)?,
+        id: match kind {
+            ChallengeScopeKind::Claim
+            | ChallengeScopeKind::Case
+            | ChallengeScopeKind::ClaimJudgment
+            | ChallengeScopeKind::Mechanism
+            | ChallengeScopeKind::Check => check_id(object, "id", where_)?,
+            _ => nonempty(object, "id", where_)?,
+        },
         fingerprint: fingerprint(object, "fingerprint", where_)?,
     })
 }
@@ -1609,7 +1616,10 @@ fn parse_launch_route(value: &Json, where_: &str) -> Result<LaunchRoute, String>
     let route = LaunchRoute {
         selection: RouteSelection {
             kind,
-            id: id(selection, "id", &selection_where)?,
+            id: match kind {
+                RouteSelectionKind::Check => check_id(selection, "id", &selection_where)?,
+                RouteSelectionKind::Challenge => id(selection, "id", &selection_where)?,
+            },
         },
         capability: RouteCapability {
             address,
@@ -1833,7 +1843,7 @@ fn parse_scope(value: &Json, where_: &str) -> Result<DiagnosticScope, String> {
         }
         "check-execution" => {
             let object = object(value, where_, &["kind", "check"])?;
-            Ok(DiagnosticScope::CheckExecution(id(
+            Ok(DiagnosticScope::CheckExecution(check_id(
                 object, "check", where_,
             )?))
         }
@@ -1909,7 +1919,7 @@ fn parse_check_execution(value: &Json, where_: &str) -> Result<CheckExecution, S
 fn parse_check_ref(value: &Json, where_: &str) -> Result<CheckRef, String> {
     let object = object(value, where_, &["id", "fingerprint"])?;
     Ok(CheckRef {
-        id: id(object, "id", where_)?,
+        id: check_id(object, "id", where_)?,
         fingerprint: fingerprint(object, "fingerprint", where_)?,
     })
 }
@@ -2174,6 +2184,12 @@ fn id(object: &[(String, Json)], field: &str, where_: &str) -> Result<String, St
     Ok(value)
 }
 
+fn check_id(object: &[(String, Json)], field: &str, where_: &str) -> Result<String, String> {
+    let value = nonempty(object, field, where_)?;
+    validate_check_id(&value).map_err(|reason| format!("{where_}.{field}: {reason}"))?;
+    Ok(value)
+}
+
 fn segment(object: &[(String, Json)], field: &str, where_: &str) -> Result<String, String> {
     let value = nonempty(object, field, where_)?;
     validate_id(&value, false).map_err(|reason| format!("{where_}.{field}: {reason}"))?;
@@ -2350,22 +2366,11 @@ fn validate_capability_address(value: &str) -> Result<(), String> {
 }
 
 fn validate_claim_id(value: &str) -> Result<(), String> {
-    let Some((spec, claim)) = value.split_once('#') else {
-        return Err("must have exact `<spec-id>#<claim-id>` form".into());
-    };
-    if value.matches('#').count() != 1 {
-        return Err("must contain exactly one `#`".into());
-    }
-    validate_id(spec, true)?;
-    validate_id(claim, false)
+    validate_entity_id(value)
 }
 
 fn validate_case_id(value: &str) -> Result<(), String> {
-    let Some((claim, case)) = value.rsplit_once('/') else {
-        return Err("must have exact `<spec-id>#<claim-id>/<case-id>` form".into());
-    };
-    validate_claim_id(claim)?;
-    validate_id(case, false)
+    validate_entity_id(value)
 }
 
 fn validate_implementation_identity(value: &str) -> Result<(), String> {
@@ -2841,7 +2846,11 @@ pub fn validate_launch_routes_against_plan(
 
 fn launch_route_structure_errors(route: &LaunchRoute, path: &str) -> Vec<SchemaError> {
     let mut errors = Vec::new();
-    if let Err(detail) = validate_id(&route.selection.id, true) {
+    let selection_validity = match route.selection.kind {
+        RouteSelectionKind::Check => validate_check_id(&route.selection.id),
+        RouteSelectionKind::Challenge => validate_id(&route.selection.id, true),
+    };
+    if let Err(detail) = selection_validity {
         errors.push(SchemaError {
             path: format!("{path}.selection.id"),
             detail,
@@ -3224,6 +3233,12 @@ fn collect_plan_array_errors(plan: &Plan, errors: &mut Vec<SchemaError>) {
         }
     }
     for check in &plan.checks {
+        if let Err(detail) = validate_check_id(&check.id) {
+            errors.push(SchemaError {
+                path: format!("$.checks.{}.id", check.id),
+                detail,
+            });
+        }
         if check.cases.is_empty() || check.implementations.is_empty() || check.units.is_empty() {
             errors.push(SchemaError {
                 path: format!("$.checks.{}", check.id),
@@ -3344,6 +3359,21 @@ fn challenge_scope_structure_errors(scope: &ChallengeScope, path: &str) -> Vec<S
             });
         }
         for item in items {
+            if matches!(
+                item.kind,
+                ChallengeScopeKind::Claim
+                    | ChallengeScopeKind::Case
+                    | ChallengeScopeKind::ClaimJudgment
+                    | ChallengeScopeKind::Mechanism
+                    | ChallengeScopeKind::Check
+            ) {
+                if let Err(detail) = validate_check_id(&item.id) {
+                    errors.push(SchemaError {
+                        path: format!("{path}.{name}"),
+                        detail: format!("{} `{}`: {detail}", item.kind.name(), item.id),
+                    });
+                }
+            }
             if item.id.is_empty() {
                 errors.push(SchemaError {
                     path: format!("{path}.{name}"),

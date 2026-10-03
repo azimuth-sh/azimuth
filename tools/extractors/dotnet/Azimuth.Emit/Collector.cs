@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
@@ -24,6 +25,12 @@ internal static class Collector
     private const string ImplementsCheckName = "Azimuth.Annotations.ImplementsCheckAttribute";
     private const string ImplementsMechanismName =
         "Azimuth.Annotations.ImplementsMechanismAttribute";
+    private const string SupportsVerificationElementName =
+        "Azimuth.Annotations.SupportsVerificationElementAttribute";
+    private const string DefinesVerificationCheckName =
+        "Azimuth.Annotations.DefinesVerificationCheckAttribute";
+    private const string ContributesCheckToCaseName =
+        "Azimuth.Annotations.ContributesCheckToCaseAttribute";
     private const BindingFlags Members = BindingFlags.Public
         | BindingFlags.NonPublic
         | BindingFlags.Instance
@@ -31,7 +38,6 @@ internal static class Collector
         | BindingFlags.DeclaredOnly;
 
     public sealed record Entry(
-        string Spec,
         string Claim,
         string Site,
         string File,
@@ -49,7 +55,6 @@ internal static class Collector
         string? Predicate = null);
 
     public sealed record MechanismImplementationEntry(
-        string Spec,
         string Mechanism,
         string Site,
         string Binding,
@@ -67,11 +72,48 @@ internal static class Collector
         List<CheckImplementationEntry> CheckImplementations,
         List<MechanismImplementationEntry> MechanismImplementations,
         List<Artifact> Artifacts,
-        List<string> Warnings);
+        List<string> Warnings)
+    {
+        public AccountSupportResult AccountSupport { get; } = new();
+    }
+
+    public sealed record SupportArtifact(
+        string Id,
+        string Kind,
+        string File,
+        string Fingerprint,
+        string Site);
+
+    public sealed record ElementSupport(
+        string Claim,
+        string Element,
+        IReadOnlyList<string> Artifacts,
+        IReadOnlyList<string> DependsOn);
+
+    public sealed record VerificationCheck(
+        string Id,
+        string Terminal,
+        IReadOnlyList<string> Artifacts,
+        IReadOnlyList<string> Elements);
+
+    public sealed record CaseContribution(
+        string Check,
+        string Case,
+        string Element,
+        string Proposition);
+
+    public sealed class AccountSupportResult
+    {
+        public List<SupportArtifact> Artifacts { get; } = [];
+        public List<ElementSupport> Elements { get; } = [];
+        public List<VerificationCheck> Checks { get; } = [];
+        public List<CaseContribution> Contributions { get; } = [];
+    }
 
     public static Result Collect(
         IEnumerable<Assembly> assemblies,
-        string root)
+        string root,
+        bool includeAccountSupport = false)
     {
         var result = new Result([], [], [], [], []);
 
@@ -87,7 +129,7 @@ internal static class Collector
 
             foreach (var type in Types(assembly, result.Warnings))
             {
-                CollectType(type, files, result);
+                CollectType(type, files, result, root, includeAccountSupport);
             }
         }
 
@@ -102,6 +144,7 @@ internal static class Collector
                 result.Artifacts.RemoveAt(index);
             }
         }
+        NormalizeAccountSupport(result.AccountSupport);
         return result;
     }
 
@@ -123,7 +166,9 @@ internal static class Collector
     private static void CollectType(
         Type type,
         SourceFiles files,
-        Result result)
+        Result result,
+        string root,
+        bool includeAccountSupport)
     {
         if (type.GetCustomAttributesData().Any(attribute =>
                 attribute.AttributeType.FullName ==
@@ -140,10 +185,13 @@ internal static class Collector
             .Where(attribute => FullName(attribute) == ImplementsMechanismName)
             .ToArray();
         EnsureOneMechanismTarget(mechanismTypeSite, typeMechanisms.Length);
-        if (typeMechanisms.Length == 0)
+        if (typeMechanisms.Length == 0 && typeFile.Length > 0)
         {
             result.Artifacts.Add(
-                new Artifact($"dotnet-symbol:{typeName}", "dotnet-type", typeFile));
+                new Artifact(
+                    $"dotnet-symbol:{type.Assembly.GetName().Name}!{mechanismTypeSite}",
+                    "dotnet-type",
+                    typeFile));
         }
 
         foreach (var attribute in type.GetCustomAttributesData())
@@ -151,10 +199,9 @@ internal static class Collector
             var name = FullName(attribute);
             if (name == RealizesName)
             {
-                var (spec, claim) = Pair(attribute);
+                var claim = EntityArgument(attribute, file: typeFile, site: typeName);
                 result.Realizes.Add(
                     new Entry(
-                        spec,
                         claim,
                         type.FullName ?? type.Name,
                         typeFile,
@@ -165,18 +212,25 @@ internal static class Collector
             }
             else if (name == ImplementsMechanismName)
             {
-                EnsureMechanismFingerprint(mechanismTypeSite, typeFingerprint);
-                var (spec, mechanism) = Pair(attribute);
+                EnsureMechanismFingerprint(mechanismTypeSite, typeFingerprint, typeFile);
+                var mechanism = EntityArgument(attribute, file: typeFile, site: mechanismTypeSite);
                 var binding = $"dotnet-symbol:{mechanismTypeSite}";
                 result.MechanismImplementations.Add(
                     new MechanismImplementationEntry(
-                        spec,
                         mechanism,
                         mechanismTypeSite,
                         binding,
                         typeFile,
                         typeFingerprint));
                 result.Artifacts.Add(new Artifact(binding, "dotnet-symbol", typeFile));
+            }
+            else if (includeAccountSupport && name == SupportsVerificationElementName)
+            {
+                AddElementSupport(
+                    result.AccountSupport, attribute,
+                    $"{type.Assembly.GetName().Name}!{mechanismTypeSite}",
+                    typeFile, typeFingerprint,
+                    root);
             }
         }
 
@@ -195,19 +249,22 @@ internal static class Collector
                 .Where(attribute => FullName(attribute) == ImplementsMechanismName)
                 .ToArray();
             EnsureOneMechanismTarget(mechanismSite, mechanismAttributes.Length);
-            if (mechanismAttributes.Length == 0)
+            if (mechanismAttributes.Length == 0 && file.Length > 0)
             {
                 result.Artifacts.Add(
-                    new Artifact($"dotnet-symbol:{site}", "dotnet-method", file));
+                    new Artifact(
+                        $"dotnet-symbol:{method.Module.Assembly.GetName().Name}!{mechanismSite}",
+                        "dotnet-method",
+                        file));
             }
             foreach (var attribute in data)
             {
                 var name = FullName(attribute);
                 if (name == RealizesName)
                 {
-                    var (spec, claim) = Pair(attribute);
+                    var claim = EntityArgument(attribute, file: file, site: site);
                     result.Realizes.Add(
-                        new Entry(spec, claim, site, file, sourceFingerprint, null, null, null));
+                        new Entry(claim, site, file, sourceFingerprint, null, null, null));
                 }
                 else if (name == ImplementsCheckName)
                 {
@@ -216,27 +273,49 @@ internal static class Collector
                         throw new InvalidOperationException(
                             $"{site}: ImplementsCheck requires an exact source fingerprint");
                     }
+                    var check = EntityArgument(attribute, file: file, site: site);
+                    EnsureEntityId(check, $"{file}: {site}");
                     result.CheckImplementations.Add(
                         new CheckImplementationEntry(
-                            FirstArgument(attribute),
+                            check,
                             site,
                             file,
                             sourceFingerprint));
                 }
                 else if (name == ImplementsMechanismName)
                 {
-                    EnsureMechanismFingerprint(mechanismSite, sourceFingerprint);
-                    var (spec, mechanism) = Pair(attribute);
+                    EnsureMechanismFingerprint(mechanismSite, sourceFingerprint, file);
+                    var mechanism = EntityArgument(attribute, file: file, site: mechanismSite);
                     var binding = $"dotnet-symbol:{mechanismSite}";
                     result.MechanismImplementations.Add(
                         new MechanismImplementationEntry(
-                            spec,
-                            mechanism,
+                                mechanism,
                             mechanismSite,
                             binding,
                             file,
                             sourceFingerprint));
                     result.Artifacts.Add(new Artifact(binding, "dotnet-symbol", file));
+                }
+                else if (includeAccountSupport && name == SupportsVerificationElementName)
+                {
+                    AddElementSupport(
+                        result.AccountSupport, attribute,
+                        $"{method.Module.Assembly.GetName().Name}!{mechanismSite}",
+                        file, sourceFingerprint,
+                        root);
+                }
+                else if (includeAccountSupport && name == DefinesVerificationCheckName)
+                {
+                    AddVerificationCheck(
+                        result.AccountSupport, attribute,
+                        $"{method.Module.Assembly.GetName().Name}!{mechanismSite}",
+                        file, sourceFingerprint);
+                }
+                else if (includeAccountSupport && name == ContributesCheckToCaseName)
+                {
+                    AddCaseContribution(
+                        result.AccountSupport, attribute,
+                        $"{method.Module.Assembly.GetName().Name}!{mechanismSite}", data);
                 }
             }
         }
@@ -299,12 +378,12 @@ internal static class Collector
         }
     }
 
-    private static void EnsureMechanismFingerprint(string site, string fingerprint)
+    private static void EnsureMechanismFingerprint(string site, string fingerprint, string file)
     {
-        if (fingerprint.Length == 0)
+        if (fingerprint.Length == 0 || file.Length == 0)
         {
             throw new InvalidOperationException(
-                $"{site}: ImplementsMechanism requires an exact source fingerprint");
+                $"{site}: ImplementsMechanism requires an exact source locator and fingerprint");
         }
     }
 
@@ -344,10 +423,17 @@ internal static class Collector
                 var columns = (string[])operationType.GetProperty("Columns")!.GetValue(operation)!;
                 var unique = (bool)operationType.GetProperty("IsUnique")!.GetValue(operation)!;
                 var predicate = operationType.GetProperty("Filter")!.GetValue(operation) as string;
+                var source = files.PathOf(type);
+                if (source.Length == 0)
+                {
+                    result.Warnings.Add(
+                        $"{type.FullName}: derived database index `{table}.{name}` has no source locator");
+                    continue;
+                }
                 result.Artifacts.Add(new Artifact(
                     $"postgres-index:{table}.{name}",
                     "database-index",
-                    files.PathOf(type),
+                    source,
                     unique,
                     columns,
                     predicate));
@@ -377,12 +463,11 @@ internal static class Collector
     private static string FullName(CustomAttributeData attribute) =>
         attribute.AttributeType.FullName ?? string.Empty;
 
-    private static (string Spec, string Claim) Pair(CustomAttributeData attribute)
+    private static string EntityArgument(CustomAttributeData attribute, string file, string site)
     {
-        var args = attribute.ConstructorArguments;
-        var spec = args.Count > 0 ? args[0].Value as string ?? string.Empty : string.Empty;
-        var claim = args.Count > 1 ? args[1].Value as string ?? string.Empty : string.Empty;
-        return (spec, claim);
+        var values = Arguments(attribute, 1, $"{file}: {site}");
+        EnsureEntityId(values[0], $"{file}: {site}");
+        return values[0];
     }
 
     private static string FirstArgument(CustomAttributeData attribute) =>
@@ -395,12 +480,6 @@ internal static class Collector
 
     private static int Compare(Entry a, Entry b)
     {
-        var bySpec = string.CompareOrdinal(a.Spec, b.Spec);
-        if (bySpec != 0)
-        {
-            return bySpec;
-        }
-
         var byClaim = string.CompareOrdinal(a.Claim, b.Claim);
         return byClaim != 0 ? byClaim : string.CompareOrdinal(a.Site, b.Site);
     }
@@ -409,12 +488,6 @@ internal static class Collector
         MechanismImplementationEntry a,
         MechanismImplementationEntry b)
     {
-        var bySpec = string.CompareOrdinal(a.Spec, b.Spec);
-        if (bySpec != 0)
-        {
-            return bySpec;
-        }
-
         var byMechanism = string.CompareOrdinal(a.Mechanism, b.Mechanism);
         return byMechanism != 0 ? byMechanism : string.CompareOrdinal(a.Binding, b.Binding);
     }
@@ -441,6 +514,232 @@ internal static class Collector
         }
 
         return string.CompareOrdinal(a.Site, b.Site);
+    }
+
+    private static void AddElementSupport(
+        AccountSupportResult support,
+        CustomAttributeData attribute,
+        string site,
+        string file,
+        string fingerprint,
+        string root)
+    {
+        var values = Arguments(attribute, 2, site);
+        EnsureEntityId(values[0], $"{file}: {site}");
+        var artifact = SourceArtifact(site, file, fingerprint);
+        support.Artifacts.Add(artifact);
+        var artifacts = new List<string> { artifact.Id };
+        var configuration = attribute.NamedArguments
+            .FirstOrDefault(argument => argument.MemberName == "ConfigurationFile")
+            .TypedValue.Value as string;
+        if (configuration is not null)
+        {
+            var path = ConfigurationPath(root, configuration, site);
+            var configurationArtifact = new SupportArtifact(
+                $"configuration/{Digest(path)}",
+                "configuration",
+                path,
+                $"sha256:{Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(
+                    Path.Combine(root, path)))).ToLowerInvariant()}",
+                $"configuration:{path}");
+            support.Artifacts.Add(configurationArtifact);
+            artifacts.Add(configurationArtifact.Id);
+        }
+        support.Elements.Add(new ElementSupport(values[0], values[1], artifacts, []));
+    }
+
+    private static void AddVerificationCheck(
+        AccountSupportResult support,
+        CustomAttributeData attribute,
+        string site,
+        string file,
+        string fingerprint)
+    {
+        var values = Arguments(attribute, 3, site);
+        EnsureEntityId(values[0], $"{file}: {site}");
+        var artifact = SourceArtifact(site, file, fingerprint);
+        support.Artifacts.Add(artifact);
+        support.Checks.Add(new VerificationCheck(values[0], values[1], [artifact.Id], [values[2]]));
+    }
+
+    private static void AddCaseContribution(
+        AccountSupportResult support,
+        CustomAttributeData attribute,
+        string site,
+        IList<CustomAttributeData> methodAttributes)
+    {
+        var values = Arguments(attribute, 4, site);
+        EnsureEntityId(values[0], site);
+        EnsureEntityId(values[1], site);
+        var localCheck = methodAttributes.Any(candidate =>
+            FullName(candidate) == DefinesVerificationCheckName
+            && FirstArgument(candidate) == values[0]
+            && candidate.ConstructorArguments.Count > 2
+            && candidate.ConstructorArguments[2].Value as string == values[2]);
+        if (!localCheck)
+        {
+            throw new InvalidOperationException(
+                $"{site}: Case contribution requires a Check definition on this method "
+                + $"for {values[0]} and {values[2]}");
+        }
+        support.Contributions.Add(
+            new CaseContribution(values[0], values[1], values[2], values[3]));
+    }
+
+    private static void EnsureEntityId(string check, string site)
+    {
+        if (!System.Text.RegularExpressions.Regex.IsMatch(check, @"\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z"))
+        {
+            throw new InvalidOperationException($"{site}: entity ID must be one lowercase kebab segment");
+        }
+    }
+
+    private static string[] Arguments(CustomAttributeData attribute, int count, string site)
+    {
+        var values = attribute.ConstructorArguments
+            .Select(argument => argument.Value as string ?? string.Empty)
+            .ToArray();
+        if (values.Length != count || values.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new InvalidOperationException(
+                $"{site}: {attribute.AttributeType.Name} requires {count} nonempty strings");
+        }
+        return values;
+    }
+
+    private static SupportArtifact SourceArtifact(
+        string site,
+        string file,
+        string fingerprint)
+    {
+        if (fingerprint.Length == 0 || !WorkspaceRelative(file))
+        {
+            throw new InvalidOperationException(
+                $"{site}: account support requires a PDB-resolved workspace source path "
+                + "and an exact source fingerprint");
+        }
+        return new SupportArtifact($"dotnet/{Digest(site)}", "source", file, fingerprint, site);
+    }
+
+    private static string ConfigurationPath(string root, string input, string site)
+    {
+        if (Path.IsPathRooted(input))
+        {
+            throw new InvalidOperationException(
+                $"{site}: configuration file must be workspace-relative");
+        }
+        var full = Path.GetFullPath(Path.Combine(root, input));
+        var relative = Path.GetRelativePath(root, full).Replace('\\', '/');
+        if (!WorkspaceRelative(relative) || !File.Exists(full))
+        {
+            throw new InvalidOperationException(
+                $"{site}: configuration file is missing or outside the workspace: {input}");
+        }
+        return relative;
+    }
+
+    private static bool WorkspaceRelative(string path) =>
+        path.Length > 0
+        && !Path.IsPathRooted(path)
+        && !path.Contains('\\')
+        && !path.Split('/').Any(part => part is "" or "." or "..");
+
+    private static string Digest(string value) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+
+    private static void NormalizeAccountSupport(AccountSupportResult support)
+    {
+        var artifacts = support.Artifacts
+            .GroupBy(item => item.Id, StringComparer.Ordinal)
+            .OrderBy(group => group.Key, StringComparer.Ordinal)
+            .Select(group =>
+            {
+                if (group.Distinct().Count() != 1)
+                {
+                    throw new InvalidOperationException(
+                        $"account Artifact {group.Key} has conflicting site or fingerprint");
+                }
+                return group.First();
+            }).ToArray();
+        support.Artifacts.Clear();
+        support.Artifacts.AddRange(artifacts);
+
+        var elements = support.Elements
+            .GroupBy(item => (item.Claim, item.Element))
+            .OrderBy(group => group.Key.Claim, StringComparer.Ordinal)
+            .ThenBy(group => group.Key.Element, StringComparer.Ordinal)
+            .Select(group => new ElementSupport(
+                group.Key.Claim,
+                group.Key.Element,
+                group.SelectMany(item => item.Artifacts)
+                    .Distinct(StringComparer.Ordinal)
+                    .Order(StringComparer.Ordinal).ToArray(),
+                group.SelectMany(item => item.DependsOn)
+                    .Distinct(StringComparer.Ordinal)
+                    .Order(StringComparer.Ordinal).ToArray()))
+            .ToArray();
+        support.Elements.Clear();
+        support.Elements.AddRange(elements);
+
+        var checks = support.Checks
+            .GroupBy(item => item.Id, StringComparer.Ordinal)
+            .OrderBy(group => group.Key, StringComparer.Ordinal)
+            .Select(group =>
+            {
+                var terminals = group.Select(item => item.Terminal)
+                    .Distinct(StringComparer.Ordinal).ToArray();
+                if (terminals.Length != 1)
+                {
+                    throw new InvalidOperationException(
+                        $"Check {group.Key} has conflicting terminal propositions");
+                }
+                return new VerificationCheck(
+                    group.Key,
+                    terminals[0],
+                    group.SelectMany(item => item.Artifacts)
+                        .Distinct(StringComparer.Ordinal)
+                        .Order(StringComparer.Ordinal).ToArray(),
+                    group.SelectMany(item => item.Elements)
+                        .Distinct(StringComparer.Ordinal)
+                        .Order(StringComparer.Ordinal).ToArray());
+            }).ToArray();
+        support.Checks.Clear();
+        support.Checks.AddRange(checks);
+
+        var contributions = support.Contributions
+            .GroupBy(item => (item.Check, item.Case))
+            .OrderBy(group => group.Key.Check, StringComparer.Ordinal)
+            .ThenBy(group => group.Key.Case, StringComparer.Ordinal)
+            .Select(group =>
+            {
+                if (group.Distinct().Count() != 1)
+                {
+                    throw new InvalidOperationException(
+                        $"Check {group.Key.Check} has conflicting contribution to {group.Key.Case}");
+                }
+                return group.First();
+            }).ToArray();
+        support.Contributions.Clear();
+        support.Contributions.AddRange(contributions);
+    }
+
+    public static string ToAccountSupportJson(Result result)
+    {
+        var body = new
+        {
+            format = "azimuth-account-support",
+            version = 1,
+            artifacts = result.AccountSupport.Artifacts,
+            elements = result.AccountSupport.Elements,
+            checks = result.AccountSupport.Checks,
+            contributions = result.AccountSupport.Contributions
+        };
+        var options = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+        };
+        return JsonSerializer.Serialize(body, options) + "\n";
     }
 
     public static string ToJson(Result result)
@@ -501,7 +800,6 @@ internal static class Collector
         foreach (var entry in entries)
         {
             writer.WriteStartObject();
-            writer.WriteString("spec", entry.Spec);
             writer.WriteString("claim", entry.Claim);
             writer.WriteString("site", entry.Site);
             writer.WriteString("file", entry.File);
@@ -542,7 +840,6 @@ internal static class Collector
         foreach (var entry in entries)
         {
             writer.WriteStartObject();
-            writer.WriteString("spec", entry.Spec);
             writer.WriteString("mechanism", entry.Mechanism);
             writer.WriteString("site", entry.Site);
             writer.WriteString("binding", entry.Binding);

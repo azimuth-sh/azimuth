@@ -63,6 +63,7 @@ define_finding_kinds! {
     Unrealized,
     DanglingRealization,
     DanglingDesignEntry,
+    DanglingVerificationCase,
     UndeclaredMechanism,
     UnresolvedDesignBinding,
     EnforcementMismatch,
@@ -87,6 +88,12 @@ define_finding_kinds! {
     RejectedApplicabilityDecision,
     StaleApplicabilityDecision,
     MissingClaimJudgment,
+    PendingClaimReview,
+    InvalidClaimReview,
+    VerificationElementSupportUnresolved,
+    CaseCheckContributionUnresolved,
+    CheckWithoutCaseContribution,
+    MechanismSupportUnresolved,
     RejectedClaimJudgment,
     StaleClaimJudgment,
     InvalidClaimJudgment,
@@ -114,6 +121,7 @@ impl FindingKind {
             Self::Unrealized => "unrealized",
             Self::DanglingRealization => "dangling-realization",
             Self::DanglingDesignEntry => "dangling-design-entry",
+            Self::DanglingVerificationCase => "dangling-verification-case",
             Self::UndeclaredMechanism => "undeclared-mechanism",
             Self::UnresolvedDesignBinding => "unresolved-design-binding",
             Self::EnforcementMismatch => "enforcement-mismatch",
@@ -138,6 +146,12 @@ impl FindingKind {
             Self::RejectedApplicabilityDecision => "rejected-applicability-decision",
             Self::StaleApplicabilityDecision => "stale-applicability-decision",
             Self::MissingClaimJudgment => "missing-claim-judgment",
+            Self::PendingClaimReview => "pending-claim-review",
+            Self::InvalidClaimReview => "invalid-claim-review",
+            Self::VerificationElementSupportUnresolved => "verification-element-support-unresolved",
+            Self::CaseCheckContributionUnresolved => "case-check-contribution-unresolved",
+            Self::CheckWithoutCaseContribution => "check-without-case-contribution",
+            Self::MechanismSupportUnresolved => "mechanism-support-unresolved",
             Self::RejectedClaimJudgment => "rejected-claim-judgment",
             Self::StaleClaimJudgment => "stale-claim-judgment",
             Self::InvalidClaimJudgment => "invalid-claim-judgment",
@@ -184,6 +198,8 @@ impl FindingKind {
             | Self::RejectedApplicabilityDecision
             | Self::StaleApplicabilityDecision
             | Self::MissingClaimJudgment
+            | Self::PendingClaimReview
+            | Self::InvalidClaimReview
             | Self::RejectedClaimJudgment
             | Self::StaleClaimJudgment
             | Self::InvalidClaimJudgment => FindingCategory::Judgment,
@@ -210,6 +226,7 @@ impl FindingKind {
                 "Retarget or remove the production link to the unknown Claim."
             }
             Self::DanglingDesignEntry => "Retarget or remove the design entry.",
+            Self::DanglingVerificationCase => "Retarget or remove the Case verification declaration.",
             Self::UndeclaredMechanism => "Declare how the critical Claim is enforced.",
             Self::UnresolvedDesignBinding => "Bind the mechanism to one extracted artifact.",
             Self::EnforcementMismatch => {
@@ -248,6 +265,12 @@ impl FindingKind {
                 "Review applicability against its current fingerprint."
             }
             Self::MissingClaimJudgment => "Record the Claim's total-composition Judgment.",
+            Self::PendingClaimReview => "Complete the pending Claim review against implementation and evidence before judgment.",
+            Self::InvalidClaimReview => "Repair the Claim review references before judgment.",
+            Self::VerificationElementSupportUnresolved => "Provide source/configuration support for the required verification element.",
+            Self::CaseCheckContributionUnresolved => "Declare a source-authored Check contribution to this Case.",
+            Self::CheckWithoutCaseContribution => "Declare what Case this Check contributes to, or remove the unsupported Check.",
+            Self::MechanismSupportUnresolved => "Provide implementation support for the selected mechanism.",
             Self::RejectedClaimJudgment => "Resolve the objection before accepting the Claim.",
             Self::StaleClaimJudgment => "Rejudge the Claim against its current composition.",
             Self::InvalidClaimJudgment => {
@@ -295,6 +318,7 @@ pub struct Finding {
     pub kind: FindingKind,
     pub severity: Severity,
     pub claim: Option<String>,
+    pub subject_kind: Option<crate::diag::EntityKind>,
     pub criticality: Option<Criticality>,
     pub path: String,
     pub line: usize,
@@ -307,6 +331,12 @@ impl Finding {
             ("kind", Json::str(self.kind.name())),
             ("category", Json::str(self.kind.category().name())),
             ("severity", Json::str(self.severity.name())),
+            (
+                "subject_kind",
+                self.subject_kind
+                    .map(|kind| Json::str(kind.name()))
+                    .unwrap_or(Json::Null),
+            ),
             (
                 "claim",
                 self.claim.as_ref().map(Json::str).unwrap_or(Json::Null),
@@ -773,17 +803,22 @@ fn claims_for_realization(model: &Model, identity: &str) -> BTreeSet<String> {
             site.source
                 .as_ref()
                 .is_some_and(|source| source.key() == identity)
-                && model.has_claim(&site.spec, &site.claim)
+                && model.has_claim(&site.claim)
         })
-        .map(|site| format!("{}#{}", site.spec, site.claim))
+        .map(|site| site.claim.clone())
         .collect()
 }
 
 fn claims_for_mechanism(model: &Model, identity: &str) -> BTreeSet<String> {
-    let Some((spec_id, mechanism_id)) = identity.split_once('#') else {
-        return BTreeSet::new();
-    };
-    let Some(design) = model.design_for(spec_id) else {
+    let mechanism_id = identity;
+    let Some(design) = model.designs.iter().find(|design| {
+        design.entries.iter().any(|entry| {
+            entry
+                .mechanisms
+                .iter()
+                .any(|mechanism| mechanism.id == identity)
+        })
+    }) else {
         return BTreeSet::new();
     };
     design
@@ -795,7 +830,7 @@ fn claims_for_mechanism(model: &Model, identity: &str) -> BTreeSet<String> {
                 .iter()
                 .any(|mechanism| mechanism.id == mechanism_id)
         })
-        .map(|entry| format!("{spec_id}#{}", entry.target.id()))
+        .map(|entry| entry.target.id().to_string())
         .collect()
 }
 
@@ -807,25 +842,26 @@ fn cases_for_realization(model: &Model, identity: &str) -> BTreeSet<String> {
                 .claims()
                 .find(|claim| claim.id() == claim_id)
                 .into_iter()
-                .flat_map(|claim| {
-                    claim.claim.cases.iter().map(move |case| {
-                        format!("{}#{}/{}", claim.spec.id, claim.claim.id, case.id)
-                    })
-                })
+                .flat_map(|claim| claim.claim.cases.iter().map(move |case| case.id.clone()))
         })
         .collect()
 }
 
 fn cases_for_mechanism(model: &Model, identity: &str) -> BTreeSet<String> {
-    let Some((spec_id, mechanism_id)) = identity.split_once('#') else {
-        return BTreeSet::new();
-    };
-    let Some(design) = model.design_for(spec_id) else {
+    let mechanism_id = identity;
+    let Some(design) = model.designs.iter().find(|design| {
+        design.entries.iter().any(|entry| {
+            entry
+                .mechanisms
+                .iter()
+                .any(|mechanism| mechanism.id == identity)
+        })
+    }) else {
         return BTreeSet::new();
     };
     let mut cases = BTreeSet::new();
     for entry in &design.entries {
-        let Some(claim) = model.find_claim(spec_id, entry.target.id()) else {
+        let Some(claim) = model.find_claim(entry.target.id()) else {
             continue;
         };
         for mechanism in entry
@@ -835,7 +871,7 @@ fn cases_for_mechanism(model: &Model, identity: &str) -> BTreeSet<String> {
         {
             for case in &claim.claim.cases {
                 if mechanism.cases.is_empty() || mechanism.cases.contains(&case.id) {
-                    cases.insert(format!("{spec_id}#{}/{}", claim.claim.id, case.id));
+                    cases.insert(case.id.clone());
                 }
             }
         }
@@ -1090,7 +1126,8 @@ pub fn validate(model: &Model) -> Vec<Finding> {
                 findings.push(Finding {
                     kind: FindingKind::Unclassified,
                     severity: Severity::Error,
-                    claim: Some(format!("{}#{}", spec.id, claim.id)),
+                    claim: Some(claim.id.clone()),
+                    subject_kind: Some(crate::diag::EntityKind::Claim),
                     criticality: None,
                     path: spec.path.clone(),
                     line: claim.line,
@@ -1106,12 +1143,13 @@ pub fn validate(model: &Model) -> Vec<Finding> {
         if !model
             .realizes
             .iter()
-            .any(|site| site.spec == claim.spec.id && site.claim == claim.claim.id)
+            .any(|site| site.claim == claim.claim.id)
         {
             findings.push(Finding {
                 kind: FindingKind::Unrealized,
                 severity: severity_for(claim.claim.criticality),
                 claim: Some(claim.id()),
+                subject_kind: Some(crate::diag::EntityKind::Claim),
                 criticality: claim.claim.criticality,
                 path: claim.spec.path.clone(),
                 line: claim.claim.line,
@@ -1120,11 +1158,12 @@ pub fn validate(model: &Model) -> Vec<Finding> {
         }
     }
     for site in &model.realizes {
-        if !model.has_claim(&site.spec, &site.claim) {
+        if !model.has_claim(&site.claim) {
             findings.push(Finding {
                 kind: FindingKind::DanglingRealization,
                 severity: Severity::Error,
-                claim: Some(format!("{}#{}", site.spec, site.claim)),
+                claim: Some(site.claim.clone()),
+                subject_kind: Some(crate::diag::EntityKind::Claim),
                 criticality: None,
                 path: site.file.clone(),
                 line: 0,
@@ -1133,23 +1172,24 @@ pub fn validate(model: &Model) -> Vec<Finding> {
         }
     }
     for implementation in &model.mechanism_implementations {
-        let declared = model
-            .design_for(&implementation.spec)
-            .is_some_and(|design| {
-                design
-                    .entries
-                    .iter()
-                    .flat_map(|entry| &entry.mechanisms)
-                    .any(|mechanism| mechanism.id == implementation.mechanism)
-            });
+        let declared = model.designs.iter().any(|design| {
+            design
+                .entries
+                .iter()
+                .flat_map(|entry| &entry.mechanisms)
+                .any(|mechanism| mechanism.id == implementation.mechanism)
+        }) || model.account_designs.iter().any(|design| {
+            design
+                .declarations
+                .iter()
+                .any(|item| account_mechanism_declared(item, &implementation.mechanism))
+        });
         if !declared {
             findings.push(Finding {
                 kind: FindingKind::DanglingMechanismImplementation,
                 severity: Severity::Error,
-                claim: Some(format!(
-                    "{}#{}",
-                    implementation.spec, implementation.mechanism
-                )),
+                claim: Some(implementation.mechanism.clone()),
+                subject_kind: Some(crate::diag::EntityKind::Mechanism),
                 criticality: None,
                 path: implementation.file.clone(),
                 line: 0,
@@ -1160,6 +1200,7 @@ pub fn validate(model: &Model) -> Vec<Finding> {
     findings.extend(verification_findings(model));
     findings.extend(design_findings(model));
     findings.extend(realization_obligation_findings(model));
+    findings.extend(account_findings(model));
     findings.extend(surface_findings(model));
     findings.sort_by(|left, right| {
         (
@@ -1198,6 +1239,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                     kind: FindingKind::InapplicableVerification,
                     severity: Severity::Warning,
                     claim: Some(case.id()),
+                    subject_kind: Some(crate::diag::EntityKind::Case),
                     criticality: case.claim.criticality,
                     path: binding.path.clone(),
                     line: binding.line,
@@ -1209,6 +1251,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                 kind: FindingKind::UnboundCase,
                 severity: severity_for(case.claim.criticality),
                 claim: Some(case.id()),
+                subject_kind: Some(crate::diag::EntityKind::Case),
                 criticality: case.claim.criticality,
                 path: case.spec.path.clone(),
                 line: case.case.line,
@@ -1226,6 +1269,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                     kind: FindingKind::InapplicableVerification,
                     severity: Severity::Warning,
                     claim: Some(claim.id()),
+                    subject_kind: Some(crate::diag::EntityKind::Claim),
                     criticality: claim.claim.criticality,
                     path: judgment.path.clone(),
                     line: judgment.line,
@@ -1244,15 +1288,39 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
             .claim_judgments()
             .find(|judgment| judgment.id == claim.id());
         match judgment {
-            None => findings.push(Finding {
-                kind: FindingKind::MissingClaimJudgment,
-                severity: Severity::Error,
-                claim: Some(claim.id()),
-                criticality: claim.claim.criticality,
-                path: claim.spec.path.clone(),
-                line: claim.claim.line,
-                detail: "non-routine Claim has no total-composition Judgment".into(),
-            }),
+            None => {
+                let review = model.account_reviews.iter().find_map(|facet| {
+                    facet
+                        .claims
+                        .iter()
+                        .find(|review| review.claim == claim.id())
+                        .map(|review| (facet, review))
+                });
+                let (kind, path, line, detail) = match review {
+                    Some((facet, review)) => (
+                        FindingKind::PendingClaimReview,
+                        facet.path.clone(),
+                        review.line,
+                        "Claim review is pending; no accepted total-composition Judgment exists",
+                    ),
+                    None => (
+                        FindingKind::MissingClaimJudgment,
+                        claim.spec.path.clone(),
+                        claim.claim.line,
+                        "non-routine Claim has no total-composition Judgment",
+                    ),
+                };
+                findings.push(Finding {
+                    kind,
+                    severity: Severity::Error,
+                    claim: Some(claim.id()),
+                    subject_kind: Some(crate::diag::EntityKind::Claim),
+                    criticality: claim.claim.criticality,
+                    path,
+                    line,
+                    detail: detail.into(),
+                });
+            }
             Some(judgment) => {
                 let expected = model.expected_claim_judgment_fingerprint(judgment);
                 if expected.is_none() {
@@ -1261,6 +1329,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                         &judgment.path,
                         judgment.line,
                         Some(claim.id()),
+                        Some(crate::diag::EntityKind::Claim),
                         format!(
                             "Claim Judgment `{}` has unavailable expected composition",
                             judgment.id
@@ -1272,6 +1341,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                         &judgment.path,
                         judgment.line,
                         Some(claim.id()),
+                        Some(crate::diag::EntityKind::Claim),
                         format!(
                             "Claim Judgment `{}` expected {}, found {}",
                             judgment.id,
@@ -1285,6 +1355,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                         &judgment.path,
                         judgment.line,
                         Some(claim.id()),
+                        Some(crate::diag::EntityKind::Claim),
                         format!("Claim Judgment `{}` is rejected", judgment.id),
                     ));
                 }
@@ -1300,6 +1371,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                 FindingKind::CheckWithoutBinding,
                 &check.path,
                 check.line,
+                None,
                 None,
                 format!("Check `{}` has no Evidence Binding", check.id),
             ));
@@ -1327,17 +1399,24 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                 &check.path,
                 check.line,
                 None,
+                None,
                 format!("Check `{}` has no source implementation", check.id),
             ));
         }
     }
     for implementation in &model.check_implementations {
-        let check_exists = model.checks().any(|check| check.id == implementation.check);
+        let check_exists = model.checks().any(|check| check.id == implementation.check)
+            || model
+                .account_verifications
+                .iter()
+                .flat_map(|file| &file.checks)
+                .any(|check| check.definition.id == implementation.check);
         if !check_exists {
             findings.push(simple(
                 FindingKind::DanglingCheckImplementation,
                 &implementation.file,
                 0,
+                None,
                 None,
                 format!(
                     "source implementation names unknown Check `{}`",
@@ -1367,6 +1446,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                 &implementation.file,
                 0,
                 None,
+                None,
                 format!(
                     "Check `{}` lacks stable semantic identity or source fingerprint",
                     implementation.check
@@ -1388,6 +1468,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                 &binding.path,
                 binding.line,
                 Some(binding.case.clone()),
+                Some(crate::diag::EntityKind::Case),
                 format!(
                     "binding `{}` names unknown Check `{}`",
                     binding.id, binding.check
@@ -1400,6 +1481,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                 &binding.path,
                 binding.line,
                 Some(binding.case.clone()),
+                Some(crate::diag::EntityKind::Case),
                 format!("binding `{}` names no current Case", binding.id),
             ));
         }
@@ -1409,6 +1491,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                 &binding.path,
                 binding.line,
                 Some(binding.case.clone()),
+                Some(crate::diag::EntityKind::Case),
                 format!(
                     "binding `{}` names unknown policy `{}`",
                     binding.id, binding.policy
@@ -1424,6 +1507,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                 &binding.path,
                 binding.line,
                 Some(binding.case.clone()),
+                Some(crate::diag::EntityKind::Case),
                 format!(
                     "binding `{}` names missing Method Qualification `{}`",
                     binding.id, binding.method_qualification
@@ -1437,6 +1521,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                 &binding.path,
                 binding.line,
                 Some(binding.case.clone()),
+                Some(crate::diag::EntityKind::Case),
                 format!(
                     "binding `{}` and Method Qualification `{}` name different Checks",
                     binding.id, method_qualification.id
@@ -1453,6 +1538,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                 &binding.path,
                 binding.line,
                 Some(binding.case.clone()),
+                Some(crate::diag::EntityKind::Case),
                 format!("binding `{}` has no Applicability Decision", binding.id),
             ));
             continue;
@@ -1464,6 +1550,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                     &decision.path,
                     decision.line,
                     Some(binding.case.clone()),
+                    Some(crate::diag::EntityKind::Case),
                     format!(
                         "Applicability Decision `{}` expected {}, found {}",
                         decision.id, expected, decision.fingerprint
@@ -1475,6 +1562,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                     &decision.path,
                     decision.line,
                     Some(binding.case.clone()),
+                    Some(crate::diag::EntityKind::Case),
                     format!("Applicability Decision `{}` is rejected", decision.id),
                 ));
             }
@@ -1490,6 +1578,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                 FindingKind::DanglingMethodQualification,
                 &qualification.path,
                 qualification.line,
+                None,
                 None,
                 format!(
                     "Method Qualification `{}` has no current Check-to-Case edge",
@@ -1507,6 +1596,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                 &qualification.path,
                 qualification.line,
                 None,
+                None,
                 format!(
                     "Method Qualification `{}` names unknown policy `{}`",
                     qualification.id, qualification.policy
@@ -1521,6 +1611,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                     &qualification.path,
                     qualification.line,
                     None,
+                    None,
                     format!(
                         "Method Qualification `{}` expected {}, found {}",
                         qualification.id, expected, qualification.fingerprint
@@ -1531,6 +1622,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                     FindingKind::RejectedMethodQualification,
                     &qualification.path,
                     qualification.line,
+                    None,
                     None,
                     format!("Method Qualification `{}` is rejected", qualification.id),
                 ));
@@ -1546,6 +1638,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                 FindingKind::DanglingApplicabilityDecision,
                 &decision.path,
                 decision.line,
+                None,
                 None,
                 format!(
                     "Applicability Decision `{}` names no Evidence Binding",
@@ -1564,6 +1657,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                 &plan.path,
                 plan.line,
                 None,
+                None,
                 format!(
                     "Challenge Plan `{}` names unknown Challenger `{}`",
                     plan.id, plan.challenger
@@ -1577,6 +1671,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                 &plan.path,
                 plan.line,
                 None,
+                None,
                 format!("Challenge Plan `{}`: {issue}", plan.id),
             ));
         }
@@ -1589,6 +1684,10 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                 &plan.path,
                 plan.line,
                 candidate_target_claim(model, candidate),
+                candidate
+                    .target
+                    .as_ref()
+                    .map(|target| decision_subject_kind(target.kind)),
                 format!(
                     "Challenge Plan `{}` selector `{} from {} {}` reaches {} `{}` as `{}`",
                     plan.id,
@@ -1606,6 +1705,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                 FindingKind::UnresolvedChallengePlan,
                 &plan.path,
                 plan.line,
+                None,
                 None,
                 format!(
                     "Challenge Plan `{}` resolves no current accepted decision",
@@ -1676,21 +1776,27 @@ pub fn challenge_plan_relevant_to_selection(
                 .iter()
                 .any(|claim| claims.contains(claim))
         }
-        Selector::ClaimJudgmentFromClaim(id) => claims
-            .iter()
-            .any(|case| case.starts_with(&format!("{id}/"))),
+        Selector::ClaimJudgmentFromClaim(id) => claims.iter().any(|case| {
+            model
+                .find_case(case)
+                .is_some_and(|view| view.claim.id == *id)
+        }),
         Selector::ClaimJudgmentFromRealization(identity) => claims_for_realization(model, identity)
             .iter()
             .any(|parent| {
-                claims
-                    .iter()
-                    .any(|case| case.starts_with(&format!("{parent}/")))
+                claims.iter().any(|case| {
+                    model
+                        .find_case(case)
+                        .is_some_and(|view| view.claim.id == *parent)
+                })
             }),
         Selector::ClaimJudgmentFromMechanism(identity) => {
             claims_for_mechanism(model, identity).iter().any(|parent| {
-                claims
-                    .iter()
-                    .any(|case| case.starts_with(&format!("{parent}/")))
+                claims.iter().any(|case| {
+                    model
+                        .find_case(case)
+                        .is_some_and(|view| view.claim.id == *parent)
+                })
             })
         }
     })
@@ -1775,6 +1881,7 @@ fn required_challenge_coverage_findings(model: &Model) -> Vec<Finding> {
                     &path,
                     line,
                     target_claim(model, &target),
+                    Some(decision_subject_kind(target.kind)),
                     format!(
                         "{} `{}` requires Challenge form `{form}`, which has no Challenger",
                         target.kind.name(),
@@ -1829,6 +1936,7 @@ fn required_challenge_coverage_findings(model: &Model) -> Vec<Finding> {
                     &path,
                     line,
                     target_claim(model, &target),
+                    Some(decision_subject_kind(target.kind)),
                     format!(
                         "{} `{}` has no Plan covering required form `{form}` with its declared \
                          scope",
@@ -1941,8 +2049,11 @@ pub fn challenge_candidate_scope_kinds(
             kinds.insert(SemanticScopeKind::ClaimJudgment);
             kinds.insert(SemanticScopeKind::Claim);
             kinds.insert(SemanticScopeKind::Policy);
-            if let Some((spec, claim)) = target.id.split_once('#') {
-                if model.workspace.obligation(spec, claim).is_some() {
+            if let Some(claim) = model.find_claim(&target.id) {
+                if model
+                    .realization_obligation(&claim.spec.id, &claim.claim.id)
+                    .is_some()
+                {
                     kinds.insert(SemanticScopeKind::RealizationObligation);
                     kinds.insert(SemanticScopeKind::Area);
                 }
@@ -1980,7 +2091,7 @@ pub fn challenge_candidate_scope_kinds(
                 if model
                     .realizes
                     .iter()
-                    .any(|site| site.spec == claim.spec.id && site.claim == claim.claim.id)
+                    .any(|site| site.claim == claim.claim.id)
                 {
                     if !stable_claim_realizations(model, &target.id) {
                         return None;
@@ -1991,11 +2102,7 @@ pub fn challenge_candidate_scope_kinds(
                     if let Some(entry) = design.for_claim(&claim.claim.id) {
                         for mechanism in &entry.mechanisms {
                             kinds.insert(SemanticScopeKind::Mechanism);
-                            if !add_mechanism_relation_kinds(
-                                model,
-                                &format!("{}#{}", claim.spec.id, mechanism.id),
-                                &mut kinds,
-                            ) {
+                            if !add_mechanism_relation_kinds(model, &mechanism.id, &mut kinds) {
                                 return None;
                             }
                         }
@@ -2059,10 +2166,15 @@ fn add_mechanism_relation_kinds(
     identity: &str,
     kinds: &mut BTreeSet<SemanticScopeKind>,
 ) -> bool {
-    let Some((spec_id, mechanism_id)) = identity.split_once('#') else {
-        return false;
-    };
-    let Some(design) = model.design_for(spec_id) else {
+    let mechanism_id = identity;
+    let Some(design) = model.designs.iter().find(|design| {
+        design.entries.iter().any(|entry| {
+            entry
+                .mechanisms
+                .iter()
+                .any(|mechanism| mechanism.id == identity)
+        })
+    }) else {
         return false;
     };
     let mechanisms = design
@@ -2074,17 +2186,16 @@ fn add_mechanism_relation_kinds(
     let [mechanism] = mechanisms.as_slice() else {
         return false;
     };
-    let bindings = model.mechanism_bindings(spec_id, mechanism);
-    let artifact_is_exact = if let [binding] = bindings.as_slice() {
-        let artifacts = model
-            .artifacts
-            .iter()
-            .filter(|artifact| artifact.id == *binding)
-            .collect::<Vec<_>>();
-        matches!(artifacts.as_slice(), [artifact] if artifact.source.is_some())
-    } else {
-        false
-    };
+    let bindings = model.mechanism_bindings(&design.spec, mechanism);
+    let artifact_is_exact = !bindings.is_empty()
+        && bindings.iter().all(|binding| {
+            let artifacts = model
+                .artifacts
+                .iter()
+                .filter(|artifact| artifact.id == *binding)
+                .collect::<Vec<_>>();
+            matches!(artifacts.as_slice(), [artifact] if artifact.source.is_some())
+        });
     if !artifact_is_exact {
         return false;
     }
@@ -2092,15 +2203,14 @@ fn add_mechanism_relation_kinds(
     let implementations = model
         .mechanism_implementations
         .iter()
-        .filter(|implementation| {
-            implementation.spec == spec_id && implementation.mechanism == mechanism_id
-        })
+        .filter(|implementation| implementation.mechanism == mechanism_id)
         .collect::<Vec<_>>();
     if mechanism.binding.is_none() {
-        let [implementation] = implementations.as_slice() else {
-            return false;
-        };
-        if implementation.source.is_none() || !valid_fingerprint(&implementation.source_fingerprint)
+        if implementations.is_empty()
+            || implementations.iter().any(|implementation| {
+                implementation.source.is_none()
+                    || !valid_fingerprint(&implementation.source_fingerprint)
+            })
         {
             return false;
         }
@@ -2135,14 +2245,12 @@ fn stable_realization_anchor(model: &Model, identity: &str) -> bool {
 }
 
 fn stable_claim_realizations(model: &Model, claim_id: &str) -> bool {
-    let Some((spec, claim)) = claim_id.split_once('#') else {
-        return false;
-    };
+    let claim = claim_id;
     let mut identities = BTreeMap::<String, String>::new();
     let sites = model
         .realizes
         .iter()
-        .filter(|site| site.spec == spec && site.claim == claim)
+        .filter(|site| site.claim == claim)
         .collect::<Vec<_>>();
     if sites.is_empty() {
         return false;
@@ -2188,16 +2296,27 @@ fn stable_check_implementations(model: &Model, check: &str) -> Option<bool> {
     Some(any)
 }
 
+fn decision_subject_kind(kind: DecisionKind) -> crate::diag::EntityKind {
+    match kind {
+        DecisionKind::ClaimJudgment => crate::diag::EntityKind::Claim,
+        DecisionKind::ApplicabilityDecision | DecisionKind::MethodQualification => {
+            crate::diag::EntityKind::Case
+        }
+    }
+}
+
 fn simple(
     kind: FindingKind,
     path: &str,
     line: usize,
     claim: Option<String>,
+    subject_kind: Option<crate::diag::EntityKind>,
     detail: String,
 ) -> Finding {
     Finding {
         kind,
         severity: Severity::Error,
+        subject_kind: claim.as_ref().and(subject_kind),
         claim,
         criticality: None,
         path: path.to_string(),
@@ -2223,7 +2342,8 @@ fn design_findings(model: &Model) -> Vec<Finding> {
             findings.push(Finding {
                 kind: FindingKind::DanglingDesignEntry,
                 severity: Severity::Error,
-                claim: Some(design.spec.clone()),
+                claim: None,
+                subject_kind: None,
                 criticality: None,
                 path: design.path.clone(),
                 line: 1,
@@ -2238,7 +2358,8 @@ fn design_findings(model: &Model) -> Vec<Finding> {
                 findings.push(Finding {
                     kind: FindingKind::DanglingDesignEntry,
                     severity: Severity::Error,
-                    claim: Some(format!("{}#{}", design.spec, id)),
+                    claim: Some(id.to_string()),
+                    subject_kind: Some(crate::diag::EntityKind::Claim),
                     criticality: None,
                     path: design.path.clone(),
                     line: entry.line,
@@ -2253,7 +2374,8 @@ fn design_findings(model: &Model) -> Vec<Finding> {
                             findings.push(Finding {
                                 kind: FindingKind::DanglingDesignEntry,
                                 severity: Severity::Error,
-                                claim: Some(format!("{}#{}", design.spec, id)),
+                                claim: Some(id.to_string()),
+                                subject_kind: Some(crate::diag::EntityKind::Claim),
                                 criticality: claim.criticality,
                                 path: design.path.clone(),
                                 line: mechanism.line,
@@ -2266,11 +2388,12 @@ fn design_findings(model: &Model) -> Vec<Finding> {
                     }
                 }
                 let bindings = model.mechanism_bindings(&design.spec, mechanism);
-                if bindings.len() != 1 {
+                if bindings.is_empty() || (mechanism.binding.is_some() && bindings.len() != 1) {
                     findings.push(Finding {
                         kind: FindingKind::UnresolvedDesignBinding,
                         severity: Severity::Error,
-                        claim: Some(format!("{}#{}", design.spec, id)),
+                        claim: Some(id.to_string()),
+                        subject_kind: Some(crate::diag::EntityKind::Claim),
                         criticality: None,
                         path: design.path.clone(),
                         line: mechanism.line,
@@ -2280,59 +2403,61 @@ fn design_findings(model: &Model) -> Vec<Finding> {
                                 mechanism.id
                             )
                         } else {
-                            format!(
-                                "mechanism `{}` resolves to {} bindings; declare one atomic mechanism per implementation site",
-                                mechanism.id,
-                                bindings.len()
-                            )
+                            format!("mechanism `{}` mixes an explicit binding with extractor-resolved sites", mechanism.id)
                         },
                     });
                     continue;
                 }
-                let binding = bindings[0];
-                let Some(artifact) = model.artifacts.iter().find(|a| a.id == binding) else {
-                    findings.push(Finding {
-                        kind: FindingKind::UnresolvedDesignBinding,
-                        severity: Severity::Error,
-                        claim: Some(format!("{}#{}", design.spec, id)),
-                        criticality: None,
-                        path: design.path.clone(),
-                        line: mechanism.line,
-                        detail: format!(
-                            "binding `{binding}` was not emitted by any compiler or schema extractor"
+                for binding in bindings {
+                    let artifacts = model
+                        .artifacts
+                        .iter()
+                        .filter(|a| a.id == binding)
+                        .collect::<Vec<_>>();
+                    let [artifact] = artifacts.as_slice() else {
+                        findings.push(Finding {
+                            kind: FindingKind::UnresolvedDesignBinding,
+                            severity: Severity::Error,
+                            claim: Some(id.to_string()),
+                            subject_kind: Some(crate::diag::EntityKind::Claim),
+                            criticality: None,
+                            path: design.path.clone(),
+                            line: mechanism.line,
+                            detail: format!(
+                            "binding `{binding}` does not resolve to exactly one emitted artifact"
                         ),
-                    });
-                    continue;
-                };
+                        });
+                        continue;
+                    };
 
-                let mut mismatches = Vec::new();
-                if let Some(expected) = mechanism.expected_unique {
-                    if artifact.unique != Some(expected) {
+                    let mut mismatches = Vec::new();
+                    if let Some(expected) = mechanism.expected_unique {
+                        if artifact.unique != Some(expected) {
+                            mismatches.push(format!(
+                                "expected unique={expected}, found {:?}",
+                                artifact.unique
+                            ));
+                        }
+                    }
+                    if !mechanism.expected_columns.is_empty()
+                        && artifact.columns != mechanism.expected_columns
+                    {
                         mismatches.push(format!(
-                            "expected unique={expected}, found {:?}",
-                            artifact.unique
+                            "expected columns {}, found {}",
+                            mechanism.expected_columns.join(","),
+                            artifact.columns.join(",")
                         ));
                     }
-                }
-                if !mechanism.expected_columns.is_empty()
-                    && artifact.columns != mechanism.expected_columns
-                {
-                    mismatches.push(format!(
-                        "expected columns {}, found {}",
-                        mechanism.expected_columns.join(","),
-                        artifact.columns.join(",")
-                    ));
-                }
-                if let Some(expected) = &mechanism.expected_predicate {
-                    if artifact.predicate.as_ref() != Some(expected) {
-                        mismatches.push(format!(
-                            "expected predicate `{expected}`, found `{}`",
-                            artifact.predicate.as_deref().unwrap_or("<none>")
-                        ));
+                    if let Some(expected) = &mechanism.expected_predicate {
+                        if artifact.predicate.as_ref() != Some(expected) {
+                            mismatches.push(format!(
+                                "expected predicate `{expected}`, found `{}`",
+                                artifact.predicate.as_deref().unwrap_or("<none>")
+                            ));
+                        }
                     }
-                }
 
-                let mismatch = match (mechanism.kind, artifact.kind.as_str()) {
+                    let mismatch = match (mechanism.kind, artifact.kind.as_str()) {
                     (crate::design::Enforcement::Constraint, "database-index") => (artifact.unique
                         != Some(true))
                     .then_some("a non-unique index does not reject duplicate state".to_string()),
@@ -2351,19 +2476,21 @@ fn design_findings(model: &Model) -> Vec<Finding> {
                     ),
                     _ => None,
                 };
-                if let Some(detail) = mismatch {
-                    mismatches.push(detail);
-                }
-                if !mismatches.is_empty() {
-                    findings.push(Finding {
-                        kind: FindingKind::EnforcementMismatch,
-                        severity: Severity::Error,
-                        claim: Some(format!("{}#{}", design.spec, id)),
-                        criticality: None,
-                        path: design.path.clone(),
-                        line: mechanism.line,
-                        detail: format!("binding `{}`: {}", binding, mismatches.join("; ")),
-                    });
+                    if let Some(detail) = mismatch {
+                        mismatches.push(detail);
+                    }
+                    if !mismatches.is_empty() {
+                        findings.push(Finding {
+                            kind: FindingKind::EnforcementMismatch,
+                            severity: Severity::Error,
+                            claim: Some(id.to_string()),
+                            subject_kind: Some(crate::diag::EntityKind::Claim),
+                            criticality: None,
+                            path: design.path.clone(),
+                            line: mechanism.line,
+                            detail: format!("binding `{}`: {}", binding, mismatches.join("; ")),
+                        });
+                    }
                 }
             }
         }
@@ -2392,7 +2519,8 @@ fn design_findings(model: &Model) -> Vec<Finding> {
                 findings.push(Finding {
                     kind: FindingKind::UndeclaredMechanism,
                     severity: Severity::Error,
-                    claim: Some(format!("{}#{}", spec.id, claim.id)),
+                    claim: Some(claim.id.clone()),
+                    subject_kind: Some(crate::diag::EntityKind::Claim),
                     criticality: claim.criticality,
                     path: spec.path.clone(),
                     line: claim.line,
@@ -2438,12 +2566,13 @@ fn surface_findings(model: &Model) -> Vec<Finding> {
             if claim.domain != crate::model::Domain::Sites {
                 continue;
             }
-            let claim_id = format!("{}#{}", spec.id, claim.id);
+            let claim_id = claim.id.clone();
             let Some(over) = &claim.over else {
                 findings.push(Finding {
                     kind: FindingKind::MissingSurface,
                     severity: severity_for(claim.criticality),
                     claim: Some(claim_id),
+                    subject_kind: Some(crate::diag::EntityKind::Claim),
                     criticality: claim.criticality,
                     path: spec.path.clone(),
                     line: claim.line,
@@ -2456,6 +2585,7 @@ fn surface_findings(model: &Model) -> Vec<Finding> {
                     kind: FindingKind::UnknownSurface,
                     severity: Severity::Error,
                     claim: Some(claim_id),
+                    subject_kind: Some(crate::diag::EntityKind::Claim),
                     criticality: claim.criticality,
                     path: spec.path.clone(),
                     line: claim.line,
@@ -2491,6 +2621,7 @@ fn surface_findings(model: &Model) -> Vec<Finding> {
                     kind: FindingKind::EnumeratorUnsoundOrUnderived,
                     severity: severity_for(claim.criticality),
                     claim: Some(claim_id),
+                    subject_kind: Some(crate::diag::EntityKind::Claim),
                     criticality: claim.criticality,
                     path: spec.path.clone(),
                     line: claim.line,
@@ -2538,7 +2669,7 @@ fn surface_findings(model: &Model) -> Vec<Finding> {
             let discharges: Vec<(&str, &str)> = model
                 .realizes
                 .iter()
-                .filter(|site| site.spec == spec.id && site.claim == claim.id)
+                .filter(|site| site.claim == claim.id)
                 .map(|site| (site.site.as_str(), site.file.as_str()))
                 .collect();
 
@@ -2554,7 +2685,8 @@ fn surface_findings(model: &Model) -> Vec<Finding> {
                 findings.push(Finding {
                     kind: FindingKind::InvariantBreach,
                     severity: severity_for(claim.criticality),
-                    claim: Some(format!("{}#{}", spec.id, claim.id)),
+                    claim: Some(claim.id.clone()),
+                    subject_kind: Some(crate::diag::EntityKind::Claim),
                     criticality: claim.criticality,
                     path: file.to_string(),
                     line: 0,
@@ -2569,15 +2701,42 @@ fn surface_findings(model: &Model) -> Vec<Finding> {
 
 fn realization_obligation_findings(model: &Model) -> Vec<Finding> {
     let mut findings = Vec::new();
-    for obligation in &model.workspace.realization_obligations {
-        let Some(claim) = model.find_claim(&obligation.spec, &obligation.claim) else {
+    for design in &model.account_designs {
+        for declaration in &design.declarations {
+            if declaration.kind != crate::account_design::DeclarationKind::Claim {
+                continue;
+            }
+            let spec = design.spec.as_str();
+            let claim = declaration.id.as_str();
+            if model.workspace.obligation(spec, claim).is_some() {
+                findings.push(Finding {
+                    kind: FindingKind::DanglingRealizationObligation,
+                    severity: Severity::Error,
+                    claim: Some(declaration.id.clone()),
+                    subject_kind: Some(crate::diag::EntityKind::Claim),
+                    criticality: model.find_claim(claim).and_then(|view| view.claim.criticality),
+                    path: design.path.clone(),
+                    line: declaration.line,
+                    detail: "Claim Areas are authored in both design and workspace; remove the workspace realization obligation".into(),
+                });
+            }
+        }
+    }
+    for obligation in &model.realization_obligations() {
+        let design_location = model.account_design_for_claim(&obligation.spec, &obligation.claim);
+        let path = design_location.map_or(model.workspace.path.as_str(), |(design, _)| {
+            design.path.as_str()
+        });
+        let line = design_location.map_or(0, |(_, declaration)| declaration.line);
+        let Some(claim) = model.find_claim(&obligation.claim) else {
             findings.push(Finding {
                 kind: FindingKind::DanglingRealizationObligation,
                 severity: Severity::Error,
-                claim: Some(format!("{}#{}", obligation.spec, obligation.claim)),
+                claim: Some(obligation.claim.clone()),
+                subject_kind: Some(crate::diag::EntityKind::Claim),
                 criticality: None,
-                path: model.workspace.path.clone(),
-                line: 0,
+                path: path.to_string(),
+                line,
                 detail: "realization obligation names a claim that does not exist".into(),
             });
             continue;
@@ -2592,9 +2751,10 @@ fn realization_obligation_findings(model: &Model) -> Vec<Finding> {
                 kind: FindingKind::DanglingRealizationObligation,
                 severity: Severity::Error,
                 claim: Some(claim.id()),
+                subject_kind: Some(crate::diag::EntityKind::Claim),
                 criticality: claim.claim.criticality,
-                path: model.workspace.path.clone(),
-                line: 0,
+                path: path.to_string(),
+                line,
                 detail: "area obligations apply only to standard or critical behavioral claims"
                     .into(),
             });
@@ -2603,8 +2763,7 @@ fn realization_obligation_findings(model: &Model) -> Vec<Finding> {
 
         for area in &obligation.areas {
             let realized = model.realizes.iter().any(|site| {
-                site.spec == obligation.spec
-                    && site.claim == obligation.claim
+                site.claim == obligation.claim
                     && site
                         .source
                         .as_ref()
@@ -2622,10 +2781,275 @@ fn realization_obligation_findings(model: &Model) -> Vec<Finding> {
                     kind: FindingKind::MissingRequiredRealization,
                     severity: severity_for(claim.claim.criticality),
                     claim: Some(claim.id()),
+                    subject_kind: Some(crate::diag::EntityKind::Claim),
                     criticality: claim.claim.criticality,
-                    path: model.workspace.path.clone(),
-                    line: 0,
+                    path: path.to_string(),
+                    line,
                     detail: format!("required area `{area}` has no realization of this claim"),
+                });
+            }
+        }
+    }
+    findings
+}
+
+fn account_mechanism_declared(item: &crate::account_design::Declaration, id: &str) -> bool {
+    (item.kind == crate::account_design::DeclarationKind::Mechanism && item.id == id)
+        || item
+            .children
+            .iter()
+            .any(|child| account_mechanism_declared(child, id))
+}
+
+fn account_mechanism_findings(
+    model: &Model,
+    design: &crate::account_design::AccountDesign,
+    item: &crate::account_design::Declaration,
+    enclosing_claim: Option<&str>,
+    findings: &mut Vec<Finding>,
+) {
+    if item.kind == crate::account_design::DeclarationKind::Case
+        && !model
+            .find_case(&item.id)
+            .is_some_and(|view| enclosing_claim == Some(view.claim.id.as_str()))
+    {
+        findings.push(Finding {
+            kind: FindingKind::DanglingDesignEntry,
+            severity: Severity::Error,
+            claim: Some(item.id.clone()),
+            subject_kind: Some(crate::diag::EntityKind::Case),
+            criticality: None,
+            path: design.path.clone(),
+            line: item.line,
+            detail: format!(
+                "Case design `{}` names no Case owned by its enclosing Claim",
+                item.id
+            ),
+        });
+    }
+    if item.kind == crate::account_design::DeclarationKind::Mechanism {
+        for case in &item.cases {
+            if model.find_case(case).is_none() {
+                findings.push(Finding {
+                    kind: FindingKind::DanglingDesignEntry,
+                    severity: Severity::Error,
+                    claim: Some(case.clone()),
+                    subject_kind: Some(crate::diag::EntityKind::Case),
+                    criticality: None,
+                    path: design.path.clone(),
+                    line: item.line,
+                    detail: format!("Mechanism `{}` names unknown Case `{case}`", item.id),
+                });
+            }
+        }
+        {
+            let mechanism = item.id.as_str();
+            let supported = model
+                .mechanism_implementations
+                .iter()
+                .any(|implementation| implementation.mechanism == mechanism);
+            if !supported {
+                findings.push(Finding {
+                    kind: FindingKind::MechanismSupportUnresolved,
+                    severity: Severity::Error,
+                    claim: None,
+                    subject_kind: None,
+                    criticality: None,
+                    path: design.path.clone(),
+                    line: item.line,
+                    detail: format!(
+                        "selected Mechanism `{}` has no extracted implementation",
+                        item.id
+                    ),
+                });
+            }
+        }
+    }
+    for child in &item.children {
+        let owner = if item.kind == crate::account_design::DeclarationKind::Claim {
+            Some(item.id.as_str())
+        } else {
+            enclosing_claim
+        };
+        account_mechanism_findings(model, design, child, owner, findings);
+    }
+}
+
+fn account_findings(model: &Model) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for design in &model.account_designs {
+        for item in &design.declarations {
+            account_mechanism_findings(model, design, item, None, &mut findings);
+        }
+    }
+    for verification in &model.account_verifications {
+        for check in &verification.checks {
+            if !crate::account_model::check_has_implementation(
+                check,
+                model.check_implementations.iter(),
+            ) {
+                findings.push(Finding {
+                    kind: FindingKind::UnimplementedCheck,
+                    severity: Severity::Error,
+                    claim: Some(check.claim.clone()),
+                    subject_kind: Some(crate::diag::EntityKind::Claim),
+                    criticality: None,
+                    path: verification.path.clone(),
+                    line: check.definition.line,
+                    detail: format!(
+                        "document-authored Check `{}` has no stable extracted implementation",
+                        check.definition.id
+                    ),
+                });
+            }
+        }
+        for scope in &verification.claims {
+            let Some(target) = model.find_claim(&scope.claim) else {
+                continue;
+            };
+            for case in verification
+                .cases
+                .iter()
+                .filter(|case| case.claim == scope.claim)
+            {
+                if !model
+                    .find_case(&case.case)
+                    .is_some_and(|view| view.claim.id == case.claim)
+                {
+                    findings.push(Finding {
+                        kind: FindingKind::DanglingVerificationCase,
+                        severity: Severity::Error,
+                        claim: Some(scope.claim.clone()),
+                        subject_kind: Some(crate::diag::EntityKind::Claim),
+                        criticality: target.claim.criticality,
+                        path: verification.path.clone(),
+                        line: case.line,
+                        detail: format!(
+                            "Case verification `{}` names no Case owned by Claim `{}`",
+                            case.case, case.claim
+                        ),
+                    });
+                }
+            }
+            for element in &scope.required_elements {
+                let qualified = format!("{}#{element}", verification.owner);
+                let supported = model
+                    .account_supports
+                    .iter()
+                    .flat_map(|support| &support.elements)
+                    .any(|support| support.claim == scope.claim && support.element == qualified);
+                if !supported {
+                    findings.push(Finding {
+                        kind: FindingKind::VerificationElementSupportUnresolved,
+                        severity: Severity::Error,
+                        claim: Some(scope.claim.clone()),
+                        subject_kind: Some(crate::diag::EntityKind::Claim),
+                        criticality: target.claim.criticality,
+                        path: verification.path.clone(),
+                        line: scope.line,
+                        detail: format!("required verification Element `{qualified}` has no extracted source/configuration support"),
+                    });
+                }
+            }
+            for case in &target.claim.cases {
+                let id = format!("{}/{}", scope.claim, case.id);
+                let contributed = model
+                    .account_verifications
+                    .iter()
+                    .flat_map(|file| &file.checks)
+                    .any(|check| {
+                        check.cases.contains(&id)
+                            && crate::account_model::check_has_implementation(
+                                check,
+                                model.check_implementations.iter(),
+                            )
+                    })
+                    || model
+                        .account_supports
+                        .iter()
+                        .flat_map(|support| &support.contributions)
+                        .any(|contribution| contribution.case == id);
+                if !contributed {
+                    findings.push(Finding {
+                        kind: FindingKind::CaseCheckContributionUnresolved,
+                        severity: Severity::Error,
+                        claim: Some(scope.claim.clone()),
+                        subject_kind: Some(crate::diag::EntityKind::Claim),
+                        criticality: target.claim.criticality,
+                        path: verification.path.clone(),
+                        line: scope.line,
+                        detail: format!("Case `{id}` has no extracted Check contribution"),
+                    });
+                }
+            }
+        }
+    }
+    for support in &model.account_supports {
+        for check in &support.checks {
+            if !model
+                .account_supports
+                .iter()
+                .flat_map(|item| &item.contributions)
+                .any(|contribution| contribution.check == check.id)
+            {
+                findings.push(Finding {
+                    kind: FindingKind::CheckWithoutCaseContribution,
+                    severity: Severity::Error,
+                    claim: None,
+                    subject_kind: None,
+                    criticality: None,
+                    path: support.path.clone(),
+                    line: 0,
+                    detail: format!("Check `{}` has no explicit Case contribution", check.id),
+                });
+            }
+        }
+    }
+    for review in &model.account_reviews {
+        for entry in &review.claims {
+            let Some(target) = model.find_claim(&entry.claim) else {
+                findings.push(Finding {
+                    kind: FindingKind::InvalidClaimReview,
+                    severity: Severity::Error,
+                    claim: Some(entry.claim.clone()),
+                    subject_kind: Some(crate::diag::EntityKind::Claim),
+                    criticality: None,
+                    path: review.path.clone(),
+                    line: entry.line,
+                    detail: format!("Claim review `{}` names no spec Claim", entry.claim),
+                });
+                continue;
+            };
+            let spec = target.spec.id.as_str();
+            let claim = target.claim.id.as_str();
+            let expected = target
+                .claim
+                .cases
+                .iter()
+                .map(|case| case.id.clone())
+                .collect::<BTreeSet<_>>();
+            let actual = entry.cases.iter().cloned().collect::<BTreeSet<_>>();
+            let has_design = entry.design == entry.claim
+                && model.account_design_for_claim(spec, claim).is_some();
+            let has_verification = entry.verification == entry.claim
+                && model.account_verifications.iter().any(|facet| {
+                    facet.owner == spec
+                        && facet.claims.iter().any(|scope| scope.claim == entry.claim)
+                });
+            if expected != actual
+                || actual.len() != entry.cases.len()
+                || !has_design
+                || !has_verification
+            {
+                findings.push(Finding {
+                    kind: FindingKind::InvalidClaimReview,
+                    severity: Severity::Error,
+                    claim: Some(entry.claim.clone()),
+                    subject_kind: Some(crate::diag::EntityKind::Claim),
+                    criticality: target.claim.criticality,
+                    path: review.path.clone(),
+                    line: entry.line,
+                    detail: format!("Claim review `{}` has mismatched Cases, Design, or Verification references", entry.claim),
                 });
             }
         }

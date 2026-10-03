@@ -1,0 +1,11 @@
+# Design: Reviewed intent transitions
+
+The change's `specs/` files are the authored transition. `tools/azimuth/src/intent.rs` derives a target spec from the current accepted source and supports the existing addition and criticality operations plus whole-Claim replacement and explicit removal. It parses every resulting spec through the accepted spec parser before writing. This is a CLI workflow boundary, not a new evidence or Assurance State mechanism.
+
+The accepted Markdown block is the concurrency unit. `intent-capture` records `From: sha256:<digest>` for replacement or removal and refuses to overwrite a changed value. Replacement declares every removed Case in `Remove cases:`. An independent Case removal fingerprints the Case block; a Claim removal fingerprints the Claim and all its Cases. A removal fails while the current model still has a realization obligation, realization site, design mechanism, evidence binding, Claim Judgment or direct Challenge Plan selector for that identity. Archived decisions remain untouched.
+
+`intent-preview --out` emits a complete target and before/after text without changing the model. It refuses to overwrite a different existing preview. `intent-apply --preview` recomputes the projection from current sources, compares it byte-for-byte with the reviewed preview, stages target files, then replaces or retires spec files. No preview match means no write. `change check` reports planned or applied operations. `finalize` and `archive` reject pending intent and never call apply. Accepted intent therefore follows implemented behavior at acceptance, not proposal approval.
+
+The source tree may span several spec files. Individual replacements are atomic filesystem renames, while the set of replacements is not a transaction. A partial I/O failure requires repair and a new reviewed preview. The CLI neither guesses a rename nor rewrites design, verification or workspace references; it blocks deletion until their owners deliberately update them.
+
+The four proposed `framework/change-lifecycle` Claims are routine. The corresponding engineering inspection is outside Azimuth's evidence graph. Existing unrelated design-binding Findings remain separate from this lifecycle transition.

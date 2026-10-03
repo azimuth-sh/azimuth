@@ -27,9 +27,9 @@ A Run launch plan binds one provider-neutral Run-bundle semantic Plan to explici
   },
   "checks": [
     {
-      "id": "payments/recovery-under-broker-loss",
+      "id": "recovery-under-broker-loss",
       "capability": "synthetic/checks",
-      "cases": ["payments/recovery#accepted-write/replayed-after-broker-loss"],
+      "cases": ["replayed-after-broker-loss"],
       "units": [
         {
           "id": "whole",
@@ -103,7 +103,7 @@ The complete shape is:
     {
       "selection": {
         "kind": "check",
-        "id": "payments/recovery-under-broker-loss"
+        "id": "recovery-under-broker-loss"
       },
       "capability": {
         "address": "synthetic/checks",
@@ -277,3 +277,7 @@ Configuration defaults to `azimuth/adapters.json`. Execute rejects an import lau
 Valid adverse or incomplete Run facts exit zero. Semantic, model, content, identity, transport or bundle-invariant mismatch exits one. CLI, configuration, planning-request, launch-plan or adapter- response schema failure exits two. Neither nonzero class leaves an output file. `run verify` and `run inspect` remain standalone protocol commands; `run ingest` remains unknown.
 
 This version replaces the unpublished Check-only request and Challenge-route shape in place. Both request arrays are required, and every Challenge route requires exact accountable inputs. Prior requests without `challenges` and prior Challenge routes without `inputs` are rejected; there is no compatibility reader.
+
+## Stable entity identities: 2026-10-02
+
+All current Claim, Case, Mechanism and Check references use stable project-wide IDs and retain explicit entity kind. Module membership and Case parent relationships do not determine identity. Other activities, units, adapters, capabilities and binding identities retain their contracts. Historical artifacts remain immutable; current alpha artifacts are regenerated without aliases or syntax-only version bumps. See `contracts/entity-identity.md`.

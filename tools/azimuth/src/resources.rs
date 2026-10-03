@@ -88,20 +88,18 @@ pub const REFERENCES: &[ReferenceDescriptor] = &[
     },
     ReferenceDescriptor {
         id: "intent-delta",
-        format_version: 3,
+        format_version: 4,
         accepted: &[
             "# Intent delta: <spec-id>",
             "## Add claim: <id>",
             "### Add case: <id>",
+            "## Replace claim: <id>",
+            "## Remove claim: <id>",
+            "## Remove case: <claim-id>/<case-id>",
+            "From: sha256:<digest>",
             "Criticality: routine",
         ],
-        rejected: &[
-            "Requirement",
-            "Scenario",
-            "remove",
-            "rename",
-            "add Case to existing Claim",
-        ],
+        rejected: &["Requirement", "Scenario", "rename", "silent Case removal"],
         prose: include_str!("../resources/references/intent-delta.md"),
     },
     ReferenceDescriptor {

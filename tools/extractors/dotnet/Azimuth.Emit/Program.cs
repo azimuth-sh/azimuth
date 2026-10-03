@@ -44,7 +44,17 @@ foreach (var path in options.Assemblies)
     assemblies.Add(context.LoadFromAssemblyPath(full));
 }
 
-var result = Collector.Collect(assemblies, options.Root);
+Collector.Result result;
+try
+{
+    result = Collector.Collect(
+        assemblies, options.Root, includeAccountSupport: options.AccountSupport is not null);
+}
+catch (InvalidOperationException error)
+{
+    Console.Error.WriteLine($"azimuth-emit: {error.Message}");
+    return 2;
+}
 
 foreach (var warning in result.Warnings)
 {
@@ -58,6 +68,19 @@ if (!string.IsNullOrEmpty(directory))
 }
 
 File.WriteAllText(options.Output, Collector.ToJson(result));
+if (options.AccountSupport is { } accountSupport)
+{
+    var supportDirectory = Path.GetDirectoryName(Path.GetFullPath(accountSupport));
+    if (!string.IsNullOrEmpty(supportDirectory))
+    {
+        Directory.CreateDirectory(supportDirectory);
+    }
+    File.WriteAllText(accountSupport, Collector.ToAccountSupportJson(result));
+    Console.Error.WriteLine(
+        $"{result.AccountSupport.Elements.Count} verification Element supports, "
+        + $"{result.AccountSupport.Checks.Count} Checks, "
+        + $"{result.AccountSupport.Contributions.Count} Case contributions → {accountSupport}");
+}
 Console.Error.WriteLine(
     $"{result.Realizes.Count} realizes, "
     + $"{result.CheckImplementations.Count} check implementations, "
@@ -67,16 +90,20 @@ return 0;
 internal readonly record struct Options(
     string Output,
     string Root,
+    string? AccountSupport,
     IReadOnlyList<string> Assemblies)
 {
     public const string Usage =
-        "usage: azimuth-emit-dotnet --output <path> [--root <dir>] <assembly.dll>...\n"
+        "usage: azimuth-emit-dotnet --output <path> [--account-support <path>] "
+        + "[--root <dir>] <assembly.dll>...\n"
         + "  --output       where the manifest is written\n"
+        + "  --account-support  emit Claim-first verification support separately\n"
         + "  --root         paths in the manifest are made relative to this (default: cwd)";
 
     public static Options? Parse(string[] args)
     {
         string? output = null;
+        string? accountSupport = null;
         var root = Directory.GetCurrentDirectory();
         var assemblies = new List<string>();
 
@@ -92,6 +119,10 @@ internal readonly record struct Options(
                     if (++i >= args.Length) return null;
                     root = Path.GetFullPath(args[i]);
                     break;
+                case "--account-support":
+                    if (++i >= args.Length) return null;
+                    accountSupport = args[i];
+                    break;
                 default:
                     if (args[i].StartsWith('-')) return null;
                     assemblies.Add(args[i]);
@@ -103,7 +134,12 @@ internal readonly record struct Options(
         {
             return null;
         }
+        if (accountSupport is not null
+            && Path.GetFullPath(accountSupport) == Path.GetFullPath(output))
+        {
+            return null;
+        }
 
-        return new Options(output, root, assemblies);
+        return new Options(output, root, accountSupport, assemblies);
     }
 }

@@ -11,6 +11,7 @@ use std::path::{Component, Path, PathBuf};
 pub const CONFIGURATION_FORMAT: &str = "azimuth-adapter-configuration";
 pub const DESCRIPTION_FORMAT: &str = "azimuth-adapter-description";
 pub const PROTOCOL_VERSION: u64 = 1;
+const CONFIGURATION_VERSION: u64 = 1;
 pub const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -337,7 +338,7 @@ fn parse_configuration_inner(path: &Path, source: &str) -> Result<AdapterConfigu
     reject_duplicate_keys(&root, "$".into())?;
     let fields = object(&root, "$", &["format", "version", "adapters"])?;
     exact_string(fields, "format", "$", CONFIGURATION_FORMAT)?;
-    exact_integer(fields, "version", "$", PROTOCOL_VERSION)?;
+    exact_integer(fields, "version", "$", CONFIGURATION_VERSION)?;
 
     let configured_directory = path
         .parent()
@@ -394,7 +395,9 @@ fn parse_adapter(
     let provider_family = path_id(fields, "provider_family", where_)?;
     let protocol_version = integer(fields, "protocol_version", where_)?;
     if protocol_version != PROTOCOL_VERSION {
-        return Err(format!("{where_}.protocol_version must be `1`"));
+        return Err(format!(
+            "{where_}.protocol_version must be `{PROTOCOL_VERSION}`"
+        ));
     }
     let adapter_version = nonempty(fields, "adapter_version", where_)?;
     let build = nonempty(fields, "build", where_)?;
@@ -954,7 +957,7 @@ pub fn describe_request_fingerprint(
     }
     Ok(jcs_sha256(&Json::obj(vec![
         ("format", Json::str("azimuth-adapter-request-fingerprint")),
-        ("version", Json::Num(PROTOCOL_VERSION)),
+        ("version", Json::Num(1)),
         ("operation", Json::str("describe")),
         (
             "adapter",
@@ -1015,7 +1018,7 @@ pub fn run_request_fingerprint(
     }
     Ok(jcs_sha256(&Json::obj(vec![
         ("format", Json::str("azimuth-adapter-request-fingerprint")),
-        ("version", Json::Num(PROTOCOL_VERSION)),
+        ("version", Json::Num(1)),
         ("operation", Json::str(operation.name())),
         ("launch_fingerprint", Json::str(launch_fingerprint)),
         (
@@ -1413,7 +1416,7 @@ fn adapter_fingerprint_from_identities(
 ) -> String {
     jcs_sha256(&Json::obj(vec![
         ("format", Json::str("azimuth-adapter-fingerprint")),
-        ("version", Json::Num(PROTOCOL_VERSION)),
+        ("version", Json::Num(1)),
         ("protocol_version", Json::Num(protocol_version)),
         ("id", Json::str(id)),
         ("provider_family", Json::str(provider_family)),
@@ -1464,7 +1467,7 @@ fn capability_fingerprint_from(
             "format",
             Json::str("azimuth-adapter-capability-fingerprint"),
         ),
-        ("version", Json::Num(PROTOCOL_VERSION)),
+        ("version", Json::Num(1)),
         ("adapter_fingerprint", Json::str(adapter_fingerprint)),
         ("id", Json::str(id)),
         (
@@ -1494,7 +1497,7 @@ fn descriptor_fingerprint_from(description: &AdapterDescription) -> String {
             "format",
             Json::str("azimuth-adapter-descriptor-fingerprint"),
         ),
-        ("version", Json::Num(PROTOCOL_VERSION)),
+        ("version", Json::Num(1)),
         ("descriptor", description_json(description, false)),
     ]))
 }
@@ -1523,7 +1526,7 @@ fn configuration_fingerprint_from(
             "format",
             Json::str("azimuth-adapter-configuration-fingerprint"),
         ),
-        ("version", Json::Num(PROTOCOL_VERSION)),
+        ("version", Json::Num(1)),
         ("adapter_fingerprint", Json::str(adapter_fingerprint)),
         ("descriptor_fingerprint", Json::str(descriptor_fingerprint)),
         ("semantic_settings", map_json(semantic_settings)),

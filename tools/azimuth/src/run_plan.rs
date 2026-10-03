@@ -5,7 +5,7 @@
 //! semantic Plan.
 
 use crate::adapter::{AdapterConfiguration, CapabilityClass};
-use crate::diag::validate_id;
+use crate::diag::{validate_check_id, validate_entity_id, validate_id};
 use crate::json::Json;
 use crate::model::{Model, SemanticChallengeScope, SemanticScopeComponent, SemanticScopeLocator};
 use crate::run::{
@@ -1251,7 +1251,7 @@ fn parse_requested_challenge(value: &Json, where_: &str) -> Result<RequestedChal
 fn parse_requested_check(value: &Json, where_: &str) -> Result<RequestedCheck, String> {
     let fields = object(value, where_, &["id", "capability", "cases", "units"])?;
     let id = nonempty(fields, where_, "id")?;
-    validate_id(&id, true).map_err(|detail| format!("{where_}.id {detail}"))?;
+    validate_check_id(&id).map_err(|detail| format!("{where_}.id {detail}"))?;
     let capability = nonempty(fields, where_, "capability")?;
     validate_capability_address(&capability)
         .map_err(|detail| format!("{where_}.capability {detail}"))?;
@@ -1365,7 +1365,7 @@ fn validate_request(request: &PlanRequest) -> Result<(), String> {
     }
     ensure_sorted_unique(&request.checks, |check| check.id.as_str(), "$.checks")?;
     for (index, check) in request.checks.iter().enumerate() {
-        validate_id(&check.id, true).map_err(|detail| format!("$.checks[{index}].id {detail}"))?;
+        validate_check_id(&check.id).map_err(|detail| format!("$.checks[{index}].id {detail}"))?;
         validate_capability_address(&check.capability)
             .map_err(|detail| format!("$.checks[{index}].capability {detail}"))?;
         validate_cases(&check.cases, &format!("$.checks[{index}].cases"))?;
@@ -1672,19 +1672,7 @@ fn validate_cases(cases: &[String], where_: &str) -> Result<(), String> {
     }
     ensure_sorted_unique(cases, String::as_str, where_)?;
     for case in cases {
-        let Some((claim, local_case)) = case.rsplit_once('/') else {
-            return Err(format!(
-                "{where_} Case `{case}` must have `<spec-id>#<claim-id>/<case-id>` form"
-            ));
-        };
-        let Some((spec, claim_id)) = claim.split_once('#') else {
-            return Err(format!(
-                "{where_} Case `{case}` must have `<spec-id>#<claim-id>/<case-id>` form"
-            ));
-        };
-        if !valid_path_id(spec) || !valid_segment(claim_id) || !valid_segment(local_case) {
-            return Err(format!("{where_} Case `{case}` has invalid ids"));
-        }
+        validate_entity_id(case).map_err(|reason| format!("{where_} Case `{case}`: {reason}"))?;
     }
     Ok(())
 }

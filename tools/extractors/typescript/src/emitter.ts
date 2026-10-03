@@ -33,7 +33,6 @@ const COMPILER_GLOBAL_TYPES = new Set([
 ]);
 
 export interface Entry {
-  spec: string;
   claim: string;
   site: string;
   file: string;
@@ -82,7 +81,6 @@ export interface Artifact {
 }
 
 export interface MechanismImplementation {
-  spec: string;
   mechanism: string;
   site: string;
   binding: string;
@@ -151,14 +149,12 @@ function scanSource(
 
     if (isMarkerCall(node, 'realizes')) {
       const args = stringArgs(node);
-      if (args.length < 2) {
-        result.warnings.push(warn(node, source, file, 'realizes needs a spec and a claim id'));
-        return;
+      if (args.length !== 1 || node.arguments.length !== 1 || !isEntityId(args[0])) {
+        throw checkMarkerError(node, source, 'realizes needs exactly one stable Claim ID');
       }
       const site = resolveSite(node, source);
       result.realizes.push({
-        spec: args[0],
-        claim: args[1],
+        claim: args[0],
         site: site.name,
         file,
         lang,
@@ -170,10 +166,10 @@ function scanSource(
     if (isMarkerCall(node, 'implementsCheck')) {
       const args = stringArgs(node);
       if (args.length !== 1 || node.arguments.length !== 1) {
-        result.warnings.push(
-          warn(node, source, file, 'implementsCheck needs exactly one string Check id'),
-        );
-        return;
+        throw checkMarkerError(node, source, 'implementsCheck needs exactly one string Check id');
+      }
+      if (!isEntityId(args[0])) {
+        throw checkMarkerError(node, source, 'Check ID must be one lowercase kebab segment');
       }
       const site = resolveSite(node, source);
       result.checkImplementations.push({
@@ -208,11 +204,11 @@ function scanSource(
         throw mechanismSiteError(node, source, 'requires a configured project account');
       }
       const args = stringArgs(node);
-      if (args.length !== 2 || node.arguments.length !== 2) {
+      if (args.length !== 1 || node.arguments.length !== 1 || !isEntityId(args[0])) {
         throw mechanismSiteError(
           node,
           source,
-          'needs exactly two string literal spec and mechanism arguments',
+          'needs exactly one stable Mechanism ID',
         );
       }
       const site = resolveMechanismSite(
@@ -230,8 +226,7 @@ function scanSource(
       }
       mechanismSites.add(siteKey);
       result.mechanismImplementations.push({
-        spec: args[0],
-        mechanism: args[1],
+        mechanism: args[0],
         site: site.name,
         binding: symbolBinding(lang, site.name),
         file,
@@ -1146,11 +1141,11 @@ function validateProjectMarkers(program: ts.Program, files: string[]): boolean {
         if (!isIntendedMechanismCall(node, checker, imports)) return;
         found = true;
         const args = stringArgs(node);
-        if (args.length !== 2 || node.arguments.length !== 2) {
+        if (args.length !== 1 || node.arguments.length !== 1 || !isEntityId(args[0])) {
           throw mechanismSiteError(
             node,
             source,
-            'needs exactly two string literal spec and mechanism arguments',
+            'needs exactly one stable Mechanism ID',
           );
         }
       });
@@ -1212,7 +1207,7 @@ function validateMechanismSites(implementations: MechanismImplementation[]): voi
     if (prior) {
       throw new Error(
         `${implementation.file}: mechanism site \`${implementation.site}\` is already owned by ` +
-          `${prior.spec}/${prior.mechanism} in ${prior.file}`,
+          `${prior.mechanism} in ${prior.file}`,
       );
     }
     sites.set(key, implementation);
@@ -1229,7 +1224,6 @@ function compareCheckImplementation(a: CheckImplementation, b: CheckImplementati
 
 function compare(a: Entry, b: Entry): number {
   return (
-    a.spec.localeCompare(b.spec) ||
     a.claim.localeCompare(b.claim) ||
     a.site.localeCompare(b.site)
   );
@@ -1237,7 +1231,6 @@ function compare(a: Entry, b: Entry): number {
 
 function compareMechanism(a: MechanismImplementation, b: MechanismImplementation): number {
   return (
-    a.spec.localeCompare(b.spec) ||
     a.mechanism.localeCompare(b.mechanism) ||
     a.binding.localeCompare(b.binding)
   );
@@ -1326,4 +1319,13 @@ export function nextRoutes(
     },
     warnings,
   };
+}
+
+export function isEntityId(id: string): boolean {
+  return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(id) && !/[\r\n]/.test(id);
+}
+
+function checkMarkerError(node: ts.Node, source: ts.SourceFile, message: string): Error {
+  const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
+  return new Error(`${source.fileName}:${line + 1}: ${message}`);
 }

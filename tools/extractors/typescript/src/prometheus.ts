@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
-import { Artifact, CheckImplementation, Entry } from './emitter';
+import { Artifact, CheckImplementation, Entry, isEntityId } from './emitter';
 
 export interface PrometheusLinkage {
   artifacts: Artifact[];
@@ -55,14 +55,29 @@ export function prometheusLinkage(
 }
 
 function taggedRules(source: string, file: string): Entry[] {
-  const pattern = /^\s*#\s*azimuth-realizes:\s+(\S+)\s+(\S+)\s*\n\s*-\s+alert:\s+([A-Za-z][A-Za-z0-9_]*)\s*$/gm;
-  return [...source.matchAll(pattern)].map((match) => entry(match[1], match[2], match[3], file, source));
+  const pattern = /^\s*#\s*azimuth-realizes:\s+(\S+)\s*\n\s*-\s+alert:\s+([A-Za-z][A-Za-z0-9_]*)\s*$/gm;
+  const markers = [...source.matchAll(/^\s*#\s*azimuth-realizes:[^\r\n]*$/gm)];
+  const matches = [...source.matchAll(pattern)];
+  if (markers.length !== matches.length) throw new Error(`${file}: azimuth-realizes needs one stable Claim ID and an alert rule`);
+  return matches.map((match) => {
+    if (!isEntityId(match[1])) {
+      const line = source.slice(0, match.index).split('\n').length;
+      throw new Error(`${file}:${line}: entity ID must be one lowercase kebab segment`);
+    }
+    return entry(match[1], match[2], file, source);
+  });
 }
 
 function taggedChecks(source: string, file: string): CheckImplementation[] {
   const pattern = /^\s*#\s*azimuth-implements-check:\s+(\S+)\s*\n\s*(?:-\s+)?alertname:\s+([A-Za-z][A-Za-z0-9_]*)\s*$/gm;
   const matches = [...source.matchAll(pattern)];
+  const markers = [...source.matchAll(/^\s*#\s*azimuth-implements-check:[^\r\n]*$/gm)];
+  if (markers.length !== matches.length) throw new Error(`${file}: azimuth-implements-check needs one stable Check ID and an alert rule`);
   const implementations = matches.map((match, index) => {
+    if (!isEntityId(match[1])) {
+      const line = source.slice(0, match.index).split('\n').length;
+      throw new Error(`${file}:${line}: entity ID must be one lowercase kebab segment`);
+    }
     const start = match.index ?? 0;
     const end = matches[index + 1]?.index ?? source.length;
     return {
@@ -77,9 +92,9 @@ function taggedChecks(source: string, file: string): CheckImplementation[] {
     left.check.localeCompare(right.check) || left.site.localeCompare(right.site));
 }
 
-function entry(spec: string, claim: string, site: string, file: string, source: string): Entry {
+function entry(claim: string, site: string, file: string, source: string): Entry {
   return {
-    spec, claim, site, file, lang: 'prometheus',
+    claim, site, file, lang: 'prometheus',
     source_fingerprint: fingerprint(source),
   };
 }

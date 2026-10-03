@@ -31,8 +31,7 @@ remain engineering safeguards; they are not Azimuth evidence.
 ## Intent and mechanism
 
 A spec is a named group of Claims with a declared, path-independent id. Every Claim has a declared
-id, criticality and one or more Cases. Case ids are local to their parent Claim; the exact nested id
-is `<spec>#<claim>/<case>`. Specs are organized by problem domain rather than by service because
+id, criticality and one or more Cases. Claim and Case IDs are stable project-wide lower-kebab names in separate typed namespaces. Module membership and Case parent relationships are mutable and separately declared. Specs are organized by problem domain rather than by service because
 one Claim may be realized across several components and languages.
 
 Claim and Case bodies are non-empty free-form normative Markdown. They may use prose, tables,
@@ -42,9 +41,9 @@ notation. Structural validation establishes identity and assurance relationships
 review owns clarity, consistency and truth. Azimuth never infers that an implementation is correct
 merely because it is linked.
 
-A design entry declares a stable mechanism identity, enforcement kind and rationale, then resolves it to one current artifact. Code can identify an implementation with `implements-mechanism`, from which the extractor derives the binding; a non-code artifact uses an explicit `Binding:` instead. The design identity survives deletion of its implementation, making the broken relation visible.
+A design entry declares a stable mechanism identity, enforcement kind and rationale, then resolves to either one explicitly bound artifact or a set of distinct tagged source sites. Code identifies each participating site with `implements-mechanism`; a non-code artifact uses an explicit `Binding:` instead. The design identity survives deletion of all implementations, making the broken relation visible. Extraction cannot establish whether the tagged set is complete or adequate for the rationale.
 
-A marker-derived implementation is one atomic implementation-and-companion account. Its seven raw fields are `spec`, `mechanism`, `site`, `binding`, `file`, `lang` and `source_fingerprint`; its raw binding is exactly `<address-kind>:<site>`. Project assembly resolves the file to one area and atomically rewrites the implementation binding and companion Artifact id to `<area>|<address-kind>|<site>`. The compiler- or runtime-qualified site is semantic; the file is only an accountable locator. Local and federated assembly use the same rewrite, and neither file, mount, repository nor revision can disambiguate semantic identity.
+A marker-derived implementation is one atomic implementation-and-companion account. Its six raw fields are `mechanism`, `site`, `binding`, `file`, `lang` and `source_fingerprint`; its raw binding is exactly `<address-kind>:<site>`. Project assembly resolves the file to one area and atomically rewrites the implementation binding and companion Artifact id to `<area>|<address-kind>|<site>`. The compiler- or runtime-qualified site is semantic; the file is only an accountable locator. Local and federated assembly use the same rewrite, and neither file, mount, repository nor revision can disambiguate semantic identity.
 
 The qualified-site account is deliberately ecosystem-specific. .NET uses namespace, declaring type, method and metadata parameter signature; Java and Kotlin use binary class, method and JVM descriptor. TypeScript and JavaScript use owning package, compiler module, receiver, symbol and canonical overload set. Go uses import path, receiver, function and `go/types` signature with positional generics. Python uses the one root-relative module and `__qualname__`. Rust binds one conventional Cargo target and reachable module to a normalized declared signature whose type-path spelling remains semantic. C++ accepts only a program-global, external-linkage, non-module, non-template and unconstrained declaration and uses qualified name plus canonical function type. Each emitter fails when that account is ambiguous rather than adding a path.
 
@@ -119,7 +118,7 @@ is executable. Cases own no separate Judgment. A Run never authors or repairs on
 The strict `verification.md` block is:
 
 ```text
-## Claim Judgment: <spec-id>#<claim-id>
+## Claim Judgment: <claim-id>
 Verdict: accepted | rejected
 Policy: <decision-policy-id>
 Fingerprint: sha256:<64-lowercase-hex>
@@ -217,7 +216,7 @@ report traceability` is a pure projection over selected Cases with inherited par
 derived Check relationships, Challenge resolution accounts and decision-impact edges. It creates
 no authored authority or execution fact.
 
-`azimuth export` writes the complete derived model as format version 4. The export includes Claims,
+`azimuth export` writes the complete derived model as format version 5. The export includes Claims,
 Cases, workspace data, realization and implementation linkage, mechanisms, Checks, Evidence
 Bindings, Method Qualifications, Applicability Decisions, Claim Judgments, Decision Policies, the
 Challenge Schedule, Challengers, Challenge Plans, candidate resolutions and Findings.

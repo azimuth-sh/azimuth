@@ -94,18 +94,11 @@ pub fn parse(path: &str, root: &Json) -> Result<Manifest, Vec<Diag>> {
                 path,
                 where_,
                 item,
-                &with_source(&[
-                    "spec",
-                    "claim",
-                    "site",
-                    "file",
-                    "lang",
-                    "source_fingerprint",
-                ]),
+                &with_source(&["claim", "site", "file", "lang", "source_fingerprint"]),
                 errors,
             );
             let value = Site {
-                spec: required_string(path, where_, item, "spec", errors),
+                spec: String::new(),
                 claim: required_string(path, where_, item, "claim", errors),
                 site: required_string(path, where_, item, "site", errors),
                 file: required_string(path, where_, item, "file", errors),
@@ -120,6 +113,13 @@ pub fn parse(path: &str, root: &Json) -> Result<Manifest, Vec<Diag>> {
                 )
                 .unwrap_or_default(),
             };
+            if let Err(reason) = crate::diag::validate_entity_id(&value.claim) {
+                errors.push(Diag::at(
+                    path,
+                    0,
+                    format!("{where_} has invalid Claim ID: {reason}"),
+                ));
+            }
             let identity = format!(
                 "{}|{}|{}|{}|{}",
                 value.spec, value.claim, value.site, value.file, value.lang
@@ -151,7 +151,7 @@ pub fn parse(path: &str, root: &Json) -> Result<Manifest, Vec<Diag>> {
                 errors,
             );
             let check = required_string(path, where_, item, "check", errors);
-            if let Err(reason) = validate_id(&check, true) {
+            if let Err(reason) = crate::diag::validate_check_id(&check) {
                 errors.push(Diag::at(
                     path,
                     0,
@@ -207,7 +207,6 @@ pub fn parse(path: &str, root: &Json) -> Result<Manifest, Vec<Diag>> {
                 where_,
                 item,
                 &with_source(&[
-                    "spec",
                     "mechanism",
                     "site",
                     "binding",
@@ -218,7 +217,7 @@ pub fn parse(path: &str, root: &Json) -> Result<Manifest, Vec<Diag>> {
                 errors,
             );
             let value = MechanismImplementation {
-                spec: required_string(path, where_, item, "spec", errors),
+                spec: String::new(),
                 mechanism: required_string(path, where_, item, "mechanism", errors),
                 site: required_string(path, where_, item, "site", errors),
                 binding: required_string(path, where_, item, "binding", errors),
@@ -233,6 +232,13 @@ pub fn parse(path: &str, root: &Json) -> Result<Manifest, Vec<Diag>> {
                     errors,
                 ),
             };
+            if let Err(reason) = crate::diag::validate_entity_id(&value.mechanism) {
+                errors.push(Diag::at(
+                    path,
+                    0,
+                    format!("{where_} has invalid Mechanism ID: {reason}"),
+                ));
+            }
             let identity = format!(
                 "{}|{}|{}|{}|{}|{}",
                 value.spec, value.mechanism, value.site, value.binding, value.file, value.lang
@@ -378,14 +384,7 @@ pub fn parse(path: &str, root: &Json) -> Result<Manifest, Vec<Diag>> {
 fn validate_mechanism_accounts(path: &str, manifest: &Manifest, errors: &mut Vec<Diag>) {
     let mut owned_artifacts = BTreeSet::new();
     let mut reserved_raw_ids = BTreeSet::new();
-    let mut targets = BTreeSet::new();
     for implementation in &manifest.mechanism_implementations {
-        if let Err(reason) = validate_id(&implementation.spec, true) {
-            errors.push(Diag::file(
-                path,
-                format!("mechanism implementation has invalid spec id: {reason}"),
-            ));
-        }
         if let Err(reason) = validate_id(&implementation.mechanism, false) {
             errors.push(Diag::file(
                 path,
@@ -396,18 +395,6 @@ fn validate_mechanism_accounts(path: &str, manifest: &Manifest, errors: &mut Vec
             errors.push(Diag::file(
                 path,
                 "mechanism implementation `file` must be a normalized workspace-relative path",
-            ));
-        }
-        if !targets.insert((
-            implementation.spec.clone(),
-            implementation.mechanism.clone(),
-        )) {
-            errors.push(Diag::file(
-                path,
-                format!(
-                    "multiple marker implementations for mechanism `#{}`",
-                    implementation.mechanism
-                ),
             ));
         }
         if implementation.site.trim() != implementation.site

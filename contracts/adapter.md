@@ -437,3 +437,7 @@ Before spawn, core validates configuration shape, canonical order, all fingerpri
 - Exit two means CLI, local configuration, plan or request schema failure, or malformed or schema-invalid adapter response.
 
 No nonzero exit publishes an output bundle. Standard error, exit status and failure messages are diagnostics only. Timeout, stream overflow or nonzero child exit is classified as exit one before response parsing. For an on-time zero child exit, extra non-whitespace standard output is exit one; a single malformed or schema-invalid JSON value is exit two; and a valid `failed` response is exit one. Execute is never retried automatically after timeout.
+
+## Stable entity identities: 2026-10-02
+
+All current Claim, Case, Mechanism and Check references use stable project-wide IDs and retain explicit entity kind. Module membership and Case parent relationships do not determine identity. Other activities, units, adapters, capabilities and binding identities retain their contracts. Historical artifacts remain immutable; current alpha artifacts are regenerated without aliases or syntax-only version bumps. See `contracts/entity-identity.md`.

@@ -46,8 +46,13 @@ Ordinary unit, component, integration and release tests remain normal software. 
 
 ### 5. Update current facets
 
-Apply accepted intent deltas to package `spec.md`. Distil only mechanisms that now exist into
-current `design.md`. Because every current Claim is routine, do not create package `verification.md`
+Keep intent deltas proposed while implementation is unfinished. During proposal review, run
+`azimuth change intent-capture` for replacements or removals, then
+`azimuth change intent-preview --out <file>` and inspect the target spec and diff. Near acceptance,
+refresh the preview and review any drift. When implemented behavior satisfies the reviewed intent,
+run `azimuth change intent-apply --preview <file>` to update package `spec.md` mechanically.
+`finalize` and `archive` only verify that application occurred; they do not apply intent.
+Distil only mechanisms that now exist into current `design.md`. Because every current Claim is routine, do not create package `verification.md`
 files or assurance decisions for this alpha transition.
 
 A non-routine change uses the current decision graph:
@@ -160,3 +165,7 @@ If the release changes accepted account format, inspect the bundled migration re
 Azimuth does not prescribe Git topology. One change may use several branches or repositories, and one branch may carry several accepted changes, provided authority and revision accounts remain explicit.
 
 Archiving accepts a codebase transition; it does not assert universal production exposure. Deploy immutable artifacts through the team's delivery system. Incidents, live measurements and rollout results may motivate a later change, but they do not silently rewrite the archived account.
+
+## Check locator transition
+
+The stable entity identity change preserves project-wide Claim, Case, Mechanism and Check IDs independently of module membership and Case parents. Typed references and source markers use stable names directly. Use explicit declaration-backed mappings, preserve unresolved stale targets and never add aliases or rewrite historical artifacts. Fresh extraction and planning produce current identities and fingerprints; an old decision or Run is not silently current. Entity kind remains explicit for explorer and protocol consumers. The existing test prohibition applies until tests are explicitly requested.

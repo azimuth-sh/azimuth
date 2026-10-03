@@ -160,9 +160,9 @@ Subject digests and revisions are opaque protocol values. Adapters define their 
   },
   "checks": [
     {
-      "id": "payments/recovery-under-broker-loss",
+      "id": "recovery-under-broker-loss",
       "fingerprint": "sha256:<check-fingerprint>",
-      "cases": ["payments/recovery#accepted-write/replayed-after-broker-loss"],
+      "cases": ["replayed-after-broker-loss"],
       "implementations": [
         {
           "identity": "payments|rust-symbol|recovery::replay-after-loss",
@@ -222,7 +222,7 @@ Subject digests and revisions are opaque protocol values. Adapters define their 
 `required_context` and every unit `parameters` value are exact JSON objects from non-empty strings to strings. Empty objects are valid. The combined Check and Challenge arrays are non-empty.
 
 Checks sort by `(id, fingerprint)` and ids are unique within a plan. `cases` is a non-empty,
-sorted, unique array of exact nested Case ids. Implementations sort by `(identity,
+sorted, unique array of stable Case ids. Implementations sort by `(identity,
 source_fingerprint)` and are non-empty. Units sort by id, are non-empty and have unique ids. One
 `whole` unit represents native work whose internal population is not separately planned. One Check
 selection may name several Cases without duplicating its physical execution.
@@ -234,7 +234,7 @@ Challenges sort by their plan-local id, which is unique. `lane` is exactly `gate
 The semantic tuple of Challenger fingerprint, target kind and target fingerprint is also unique
 within the plan. Target kind is exactly `method-qualification | applicability-decision |
 claim-judgment`. Method Qualification ids are project-global, Applicability Decision ids are exact
-Evidence Binding ids and Claim Judgment ids have parent Claim form `<spec-id>#<claim-id>`. The
+Evidence Binding ids retain their declared identity; Claim Judgment ids equal their stable Claim ids. The
 fingerprint, not the display id, is the exact decision target.
 
 Generated Challenge ids are `challenge/<64-lowercase-hex>`, where the suffix is the raw SHA-256 of RFC 8785 canonical UTF-8 for:
@@ -308,7 +308,7 @@ Every actual entry resolves to the plan entry with the same identity. Units are 
       {
         "selection": {
           "kind": "check",
-          "id": "payments/recovery-under-broker-loss"
+          "id": "recovery-under-broker-loss"
         },
         "capability": {
           "address": "synthetic/checks",
@@ -389,7 +389,7 @@ Diagnostic ids and codes are lower kebab path ids. Class is `objection | executi
 ```json
 {"kind":"run"}
 {"kind":"activity","id":"fault-probe/attempt-1"}
-{"kind":"check-execution","check":"payments/recovery-under-broker-loss"}
+{"kind":"check-execution","check":"recovery-under-broker-loss"}
 {
   "kind": "challenge-selection",
   "id": "challenge/71518eefaf1f73fa6fe99b690d178f71dd7b760d803ca361997dd9b697ec78e1"
@@ -428,7 +428,7 @@ Activity ids are unique lower kebab path ids. Status is `completed | failed | ti
 ```json
 {
   "check": {
-    "id": "payments/recovery-under-broker-loss",
+    "id": "recovery-under-broker-loss",
     "fingerprint": "sha256:<check-fingerprint>"
   },
   "units": [
@@ -439,7 +439,7 @@ Activity ids are unique lower kebab path ids. Status is `completed | failed | ti
           "ordinal": 1,
           "activity": "fault-probe/attempt-1",
           "outcomes": {
-            "payments/recovery#accepted-write/replayed-after-broker-loss": "satisfied"
+            "replayed-after-broker-loss": "satisfied"
           }
         }
       ]
@@ -447,7 +447,7 @@ Activity ids are unique lower kebab path ids. Status is `completed | failed | ti
   ],
   "observations": [
     {
-      "case": "payments/recovery#accepted-write/replayed-after-broker-loss",
+      "case": "replayed-after-broker-loss",
       "outcome": "satisfied",
       "observed_at_ms": 1787300019000,
       "fingerprint": "sha256:<observation-fingerprint>",
@@ -634,3 +634,7 @@ Inspect exits zero for a protocol-consistent set. A well-typed set with protocol
 This version deliberately replaces the earlier unpublished pre-release shape that lacked adapter provenance. A bundle without the required adapter account is rejected; there is no compatibility reader and no second interpretation of the current version 1 schema.
 
 It likewise replaces the unpublished Challenge shape in place. Every Challenge selection now has `lane` and `scope`, actual selection repeats both, and an omitted Challenge uses the strict selection-scoped diagnostic. A prior Challenge entry without those fields is rejected rather than upgraded or interpreted twice.
+
+## Stable entity identities: 2026-10-02
+
+All current Claim, Case, Mechanism and Check references use stable project-wide IDs and retain explicit entity kind. Module membership and Case parent relationships do not determine identity. Other activities, units, adapters, capabilities and binding identities retain their contracts. Historical artifacts remain immutable; current alpha artifacts are regenerated without aliases or syntax-only version bumps. See `contracts/entity-identity.md`.

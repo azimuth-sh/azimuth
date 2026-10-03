@@ -2,7 +2,7 @@
 
 The dependency-free Rust core for Azimuth's evidence control plane. It derives repository-owned
 Claims, their normative Cases and assurance graph, validates that graph, reports traceability,
-exports version 4 JSON and plans and hosts bounded adapter exchanges for provider-neutral Run
+exports version 5 JSON and plans and hosts bounded adapter exchanges for provider-neutral Run
 bundles.
 
 Install a checkout with `cargo install --path tools/azimuth`.
@@ -146,7 +146,7 @@ globs are not semantic selectors, and zero selection never widens to a suite.
 - `adapter.rs` parses strict configuration and derives adapter and capability identities.
 - `run_plan.rs` resolves complete-model Checks and Challenges and builds semantic and launch plans.
 - `adapter_host.rs` stages content, hosts bounded processes and validates returned bundles.
-- `model.rs` owns the graph and export version 4.
+- `model.rs` owns the graph and export version 5.
 - `change.rs` handles change projection, finalization and archive gates.
 - `federation.rs` assembles revision-bound repository accounts.
 - `workflow.rs` scaffolds changes and validates path-isolated work packages.

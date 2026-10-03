@@ -56,9 +56,9 @@ One entry per Case Observation in the bundle, sorted by Check id, Check fingerpr
 
 ```json
 {
-  "check": "billing/invoice-total-suite",
+  "check": "invoice-total-suite",
   "check_fingerprint": "sha256:<64-lowercase-hex>",
-  "case": "billing/invoices#totals/rounds-half-to-even",
+  "case": "rounds-half-to-even",
   "outcome": "satisfied",
   "fingerprint": "sha256:<64-lowercase-hex>"
 }
@@ -117,3 +117,7 @@ azimuth run inspect --bundle <file>... [--format text|json] [--out <file>]
 `--bundle` is repeatable and at least one is required. `--format` accepts exactly `text` or `json`; any other value is a command failure. The output path may not equal an input path.
 
 Inspect exits zero for a protocol-consistent set. A well-typed set with protocol Findings exits one and still emits its complete account, including those Findings — the account is the product, and a nonzero exit does not suppress it. Malformed JSON, schema failure or command usage exits two and emits no inspection account.
+
+## Stable entity identities: 2026-10-02
+
+All current Claim, Case, Mechanism and Check references use stable project-wide IDs and retain explicit entity kind. Module membership and Case parent relationships do not determine identity. Other activities, units, adapters, capabilities and binding identities retain their contracts. Historical artifacts remain immutable; current alpha artifacts are regenerated without aliases or syntax-only version bumps. See `contracts/entity-identity.md`.

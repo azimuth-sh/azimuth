@@ -7,8 +7,14 @@ import argparse
 import ast
 import hashlib
 import json
+import re
 from pathlib import Path
 import sys
+
+
+def validate_entity_id(identity: str, file: str, line: int) -> None:
+    if re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", identity) is None:
+        raise ValueError(f"{file}:{line}: entity ID must be one lowercase kebab segment")
 
 
 def module_identity(relative: str) -> tuple[str, bool]:
@@ -75,7 +81,7 @@ def scan(
     tree = ast.parse(source, filename=relative)
     manifest = empty_manifest()
     module, _ = module_identity(module_relative or relative)
-    mechanism_sites: dict[str, tuple[str, str]] = {}
+    mechanism_sites: dict[str, str] = {}
     ordinary_retired_names = {
         node.name
         for node in tree.body
@@ -120,10 +126,12 @@ def scan(
                         f"{relative}:{call.lineno}: retired alpha 1 marker {name} is not supported"
                     )
                 if name == "realizes":
-                    spec, claim, *_ = strings(call, 2, name, relative)
-                    manifest["realizes"].append(entry(spec, claim, site, relative, fingerprint))
+                    claim, = strings(call, 1, name, relative)
+                    validate_entity_id(claim, relative, call.lineno)
+                    manifest["realizes"].append(entry(claim, site, relative, fingerprint))
                 elif name == "implements_check":
                     check, = strings(call, 1, name, relative)
+                    validate_entity_id(check, relative, call.lineno)
                     manifest["check_implementations"].append(
                         {
                             "check": check,
@@ -134,20 +142,19 @@ def scan(
                         }
                     )
                 elif name == "implements_mechanism":
-                    spec, mechanism, *_ = strings(call, 2, name, relative)
+                    mechanism, = strings(call, 1, name, relative)
+                    validate_entity_id(mechanism, relative, call.lineno)
                     semantic_site = f"{module}.{site}"
                     if semantic_site in mechanism_sites:
                         prior = mechanism_sites[semantic_site]
                         raise ValueError(
                             f"{relative}:{call.lineno}: ambiguous mechanism site "
-                            f"`{semantic_site}` for {prior[0]}#{prior[1]} and "
-                            f"{spec}#{mechanism}"
+                            f"`{semantic_site}` for {prior} and {mechanism}"
                         )
-                    mechanism_sites[semantic_site] = (spec, mechanism)
+                    mechanism_sites[semantic_site] = mechanism
                     binding = f"python-symbol:{semantic_site}"
                     manifest["mechanism_implementations"].append(
                         {
-                            "spec": spec,
                             "mechanism": mechanism,
                             "site": semantic_site,
                             "binding": binding,
@@ -172,9 +179,8 @@ def scan(
     return manifest
 
 
-def entry(spec: str, claim: str, site: str, file: str, fingerprint: str) -> dict[str, object]:
+def entry(claim: str, site: str, file: str, fingerprint: str) -> dict[str, object]:
     return {
-        "spec": spec,
         "claim": claim,
         "site": site,
         "file": file,

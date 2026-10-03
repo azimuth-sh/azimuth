@@ -8,21 +8,19 @@
  */
 
 /**
- * Marks a production-code site as being on a claim's path, keyed by the stable
- * `(spec, claim)` pair.
+ * Marks a production-code site as being on a claim's path, keyed by its stable project-wide Claim ID.
  *
- * The pair identifies the independently governed Claim. Cases remain repository-owned evidence
+ * The ID identifies the independently governed Claim. Cases remain repository-owned evidence
  * addresses and never enter source markers.
  *
  * Carries no form — form is how a *test* checks, not a property of code.
  */
-export function realizes(spec: string, claim: string): void {
-  void spec;
+export function realizes(claim: string): void {
   void claim;
 }
 
 /**
- * Marks a source site as an implementation of one project-global Check identity.
+ * Marks a source site as an implementation of one stable project-wide Check identity.
  *
  * Claim linkage, evidence form and Qualification meaning remain repository declarations. The
  * marker supplies implementation identity only.
@@ -37,7 +35,6 @@ export function implementsCheck(check: string): void {
  * The emitter derives the symbol binding. If the symbol or marker disappears while the design
  * remains, Azimuth reports the mechanism as unresolved.
  */
-export function implementsMechanism(spec: string, mechanism: string): void {
-  void spec;
+export function implementsMechanism(mechanism: string): void {
   void mechanism;
 }

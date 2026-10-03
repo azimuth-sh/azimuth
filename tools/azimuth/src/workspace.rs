@@ -70,10 +70,10 @@ impl Workspace {
             .map(|(area, _)| area)
     }
 
-    pub fn obligation(&self, spec: &str, claim: &str) -> Option<&RealizationObligation> {
+    pub fn obligation(&self, _spec: &str, claim: &str) -> Option<&RealizationObligation> {
         self.realization_obligations
             .iter()
-            .find(|item| item.spec == spec && item.claim == claim)
+            .find(|item| item.claim == claim)
     }
 }
 
@@ -266,7 +266,7 @@ pub fn parse(path: &str, root: &Json) -> Result<Workspace, Vec<Diag>> {
         "realization obligation",
         realization_obligations
             .iter()
-            .map(|item| format!("{}#{}", item.spec, item.claim))
+            .map(|item| item.claim.clone())
             .collect::<Vec<_>>()
             .iter(),
         &mut errors,

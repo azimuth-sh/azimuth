@@ -1,0 +1,13 @@
+{
+  "name": "@azimuth-sh/emit-helm",
+  "version": "0.1.0-alpha.6",
+  "private": true,
+  "description": "Extracts Azimuth Realizes markers from rendered Helm resources.",
+  "license": "Apache-2.0",
+  "type": "commonjs",
+  "bin": { "azimuth-emit-helm": "dist/cli.js" },
+  "files": ["dist/*.js", "README.md"],
+  "scripts": { "build": "tsc -p tsconfig.json" },
+  "dependencies": { "yaml": "^2.9.0" },
+  "devDependencies": { "@types/node": "^22.10.0", "typescript": "^5.9.3" }
+}

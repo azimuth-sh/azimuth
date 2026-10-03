@@ -72,7 +72,6 @@ A production realization site for one parent Claim.
 
 ```json
 {
-  "spec": "payments/capture",
   "claim": "duplicate-completion-is-idempotent",
   "site": "capture::complete",
   "file": "src/capture.rs",
@@ -81,21 +80,21 @@ A production realization site for one parent Claim.
 }
 ```
 
-`spec`, `claim`, `site`, `file` and `lang` are required. `source_fingerprint` is optional; when present it must be a fingerprint. The four source-identity fields are permitted. No other field is.
+`claim`, `site`, `file` and `lang` are required. `source_fingerprint` is optional; when present it must be a fingerprint. The four source-identity fields are permitted. No other field is.
 
-Neither `spec` nor `claim` is id-validated by the reader; both are matched against the model, where an unknown pair becomes a dangling-linkage finding rather than a parse error. `lang` is accepted as written and selects the address kind (see [Address kinds](#address-kinds)).
+`claim` is a stable lower-kebab ID; an undeclared target becomes a dangling-linkage finding. The module is derived from the current Claim declaration, never emitted by the source marker. `lang` is accepted as written and selects the address kind (see [Address kinds](#address-kinds)).
 
-Within one manifest the identity is `spec|claim|site|file|lang`, and a repeat is a duplicate realization.
+Within one manifest the identity is `claim|site|file|lang`, and a repeat is a duplicate realization.
 
 ## `check_implementations`
 
-One source site that implements one project-global Check. The marker carries implementation
+One source site that implements one project-global Check, defined either by accepted verification or a document-authored candidate account. The marker carries implementation
 identity only: no Case, form, context, Method Qualification or Applicability Decision. Several
 records may implement one Check.
 
 ```json
 {
-  "check": "payments/duplicate-completion",
+  "check": "duplicate-completion",
   "site": "capture_tests::duplicate_completion",
   "file": "tests/capture.rs",
   "lang": "rust",
@@ -105,7 +104,7 @@ records may implement one Check.
 
 All five fields are required, including `source_fingerprint`. The four source-identity fields are permitted. No other field is.
 
-`check` is a lower-kebab path id. Within one manifest the identity is `check` plus the emitted source key `area|address_kind|address` when a source identity is present, and `check|file|site|lang` when it is not.
+`check` is a stable lower-kebab entity ID. Within one manifest the identity is `check` plus the emitted source key `area|address_kind|address` when a source identity is present, and `check|file|site|lang` when it is not.
 
 ## `mechanism_implementations`
 
@@ -113,7 +112,6 @@ One compiler-resolved site that implements one design-owned mechanism identity. 
 
 ```json
 {
-  "spec": "payments/capture",
   "mechanism": "completion-guard",
   "site": "cargo:lib:pay:pay::Capture::complete fn(&self)->bool",
   "binding": "rust-symbol:cargo:lib:pay:pay::Capture::complete fn(&self)->bool",
@@ -123,9 +121,9 @@ One compiler-resolved site that implements one design-owned mechanism identity. 
 }
 ```
 
-All seven fields are required. The four source-identity fields are permitted. No other field is. A record without `site` is the retired alpha-era shape and fails.
+All six fields are required. The four source-identity fields are permitted. No other field is. A record without `site` is the retired alpha-era shape and fails.
 
-`spec` is a lower-kebab path id and `mechanism` is one lower-kebab segment; both are id-validated here, unlike the ids in `realizes`. `file` must be a non-empty normalized workspace-relative path: not absolute, containing no `.`, `..` or empty component and no backslash.
+`mechanism` is a stable lower-kebab entity ID. Module membership is derived from its declaration. `file` must be a non-empty normalized workspace-relative path: not absolute, containing no `.`, `..` or empty component and no backslash.
 
 `site` is one trimmed, non-empty, path-free semantic identity. It contains no leading or trailing whitespace, no control character and no `|`. Core does not parse it further: qualification is the extractor's obligation, and `contracts/verification.md` fixes each ecosystem's exact site profile.
 
@@ -146,7 +144,7 @@ With an emitted source identity, `address_kind` must equal the address kind impl
 
 Either way the record requires exactly one companion Artifact in the same manifest whose `id` equals that same binding value, whose `kind` equals the address kind, whose `file` equals the implementation's `file`, and whose source identity is present or absent exactly as the implementation's is and equal to it when present. Zero matches, several matches, or one companion claimed by two implementations each fail.
 
-Within one manifest, `(spec, mechanism)` is unique: two marker implementations of one mechanism fail. The full duplicate identity is `spec|mechanism|site|binding|file|lang`.
+Several independent sites may implement one stable Mechanism. The full duplicate identity is `mechanism|site|binding|file|lang`; a repeated site or companion remains invalid even when it names the same mechanism. Site identity never falls back to file location.
 
 ## `class_members`
 
@@ -212,6 +210,7 @@ For `realizes` and `check_implementations` the first matching rule applies:
 - `lang` is `csharp`: kind `dotnet-symbol`, address `site`;
 - `lang` is `prometheus` and `file` ends `.rules.test.yml`: kind `prometheus-rule-test`, address `site`;
 - `lang` is `prometheus`: kind `prometheus-alert`, address `site`;
+- `lang` is `helm`: kind `helm-resource`, address `site`;
 - `lang` is `typescript`, `file` contains `/app/` and ends `/route.ts`, and `site` is one of `GET`, `POST`, `PUT`, `PATCH` or `DELETE`: kind `next-route`, address `<site> /<route>`, where `<route>` is the portion of `file` after the first `/app/` with a trailing `/route.ts` removed. Backslashes in `file` are normalized to `/` before both the match and the split, so a Windows-emitted locator derives the same address;
 - otherwise: kind `<lang>-symbol`, address `site`.
 
@@ -237,9 +236,9 @@ For a mechanism implementation, assembly atomically rewrites the implementation'
 
 Several manifests are read together. Duplicate detection inside one manifest is by the raw identity tuples above; after assembly the following must additionally hold across all manifests:
 
-- one realization per `(spec#claim, source key)`;
+- one realization per `(claim, source key)`;
 - one Check implementation per `(check, source key)`;
-- one marker implementation per `(spec, mechanism)`, and one marker target per mechanism source key;
+- any number of distinct marker sites per stable Mechanism, and one marker target per mechanism source key;
 - one enumeration witness per `(class, area, mount, kind)`;
 - one class member per `(class, file)`; and
 - one Artifact per `id`, with no ordinary Artifact colliding with a reserved raw marker id.
@@ -256,3 +255,7 @@ A manifest diagnostic names the manifest path and, for a record-level failure, t
 - `contracts/verification.md` — the exact per-ecosystem semantic-site profile each extractor must satisfy, and the Check linkage rules.
 - `contracts/workspace.md` — areas, mounts, surfaces and contributions used by assembly.
 - `contracts/design.md` — explicit mechanism `Binding:` declarations that resolve against Artifacts.
+
+## Stable entity identities: 2026-10-02
+
+Claim, Case, Mechanism and Check identities are stable project-wide lower-kebab IDs within their typed namespaces. Project context comes from the complete account; kind remains explicit. Module membership is navigation, not identity. Source references do not encode modules. Former qualified spellings are rejected without aliases. Regenerate current artifacts and fingerprints; historical bytes and facts remain immutable. See `contracts/entity-identity.md`.

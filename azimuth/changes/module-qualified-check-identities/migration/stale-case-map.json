@@ -1,0 +1,4 @@
+{
+  "api/ingress#private-api-requires-designated-service/authenticated-gateway-request": "authenticated-gateway-request",
+  "api/ingress#private-api-requires-designated-service/authenticated-bff-request": "authenticated-bff-request"
+}

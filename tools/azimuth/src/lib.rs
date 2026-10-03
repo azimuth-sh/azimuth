@@ -1,5 +1,10 @@
 //! Azimuth core model loading and selection.
 
+pub mod account_delta;
+pub mod account_design;
+pub mod account_model;
+pub mod account_support;
+pub mod account_verification;
 pub mod adapter;
 pub mod adapter_host;
 pub mod assurance;
@@ -9,6 +14,7 @@ pub mod diag;
 pub mod federation;
 pub mod fingerprint;
 pub mod installation;
+pub mod intent;
 pub mod json;
 pub mod labels;
 pub mod manifest;
@@ -51,6 +57,24 @@ pub fn load(
     manifests: &[PathBuf],
     only: &[String],
 ) -> Result<Loaded, Vec<Diag>> {
+    load_with_support(
+        model_dir,
+        standards_path,
+        workspace_path,
+        manifests,
+        &[],
+        only,
+    )
+}
+
+pub fn load_with_support(
+    model_dir: &Path,
+    standards_path: &Path,
+    workspace_path: &Path,
+    manifests: &[PathBuf],
+    supports: &[PathBuf],
+    only: &[String],
+) -> Result<Loaded, Vec<Diag>> {
     let loaded = spec::load_specs(model_dir)?;
     let mut model = Model {
         specs: loaded.specs,
@@ -69,15 +93,24 @@ pub fn load(
             Err(mut diagnostics) => errors.append(&mut diagnostics),
         }
     }
-    match design::load_designs(model_dir) {
-        Ok(designs) => model.designs = designs,
+    match load_design_facets(model_dir) {
+        Ok((legacy, accounts)) => {
+            model.designs = legacy;
+            model.account_designs = accounts;
+        }
         Err(mut diagnostics) => errors.append(&mut diagnostics),
     }
-    match load_verifications(model_dir) {
-        Ok(verifications) => model.verifications = verifications,
+    match load_verification_facets(model_dir) {
+        Ok((legacy, accounts)) => {
+            model.verifications = legacy;
+            model.account_verifications = accounts;
+        }
         Err(mut diagnostics) => errors.append(&mut diagnostics),
     }
-    reject_retired_judgment_facets(model_dir, &mut errors);
+    match load_review_facets(model_dir) {
+        Ok(reviews) => model.account_reviews = reviews,
+        Err(mut diagnostics) => errors.append(&mut diagnostics),
+    }
 
     for path in manifests {
         match manifest::load(path) {
@@ -85,9 +118,54 @@ pub fn load(
             Err(mut diagnostics) => errors.append(&mut diagnostics),
         }
     }
+    for path in supports {
+        match account_support::load(path) {
+            Ok(support) => model.account_supports.push(support),
+            Err(mut diagnostics) => errors.append(&mut diagnostics),
+        }
+    }
     normalize_local_sources(&mut model, &mut errors);
+    model.resolve_source_membership();
     errors.extend(verification_owner_issues(&model));
+    check_facet_owners(
+        model
+            .designs
+            .iter()
+            .map(|item| (&item.spec, &item.path))
+            .chain(
+                model
+                    .account_designs
+                    .iter()
+                    .map(|item| (&item.spec, &item.path)),
+            ),
+        "design",
+        &mut errors,
+    );
+    check_facet_owners(
+        model
+            .verifications
+            .iter()
+            .map(|item| (&item.owner, &item.path))
+            .chain(
+                model
+                    .account_verifications
+                    .iter()
+                    .map(|item| (&item.owner, &item.path)),
+            ),
+        "verification",
+        &mut errors,
+    );
+    check_facet_owners(
+        model
+            .account_reviews
+            .iter()
+            .map(|item| (&item.owner, &item.path)),
+        "review",
+        &mut errors,
+    );
+    errors.extend(model.entity_declaration_issues());
     errors.extend(model.verification_declaration_issues());
+    errors.extend(model.account_check_issues());
     errors.extend(merged_manifest_issues(&model));
     errors.extend(mechanism_route_issues(&model));
     if !errors.is_empty() {
@@ -129,29 +207,59 @@ pub fn load_assembly(
             }
             Err(mut diagnostics) => errors.append(&mut diagnostics),
         }
-        match design::load_designs(root) {
-            Ok(items) => extend_unique_facets(
-                &mut model.designs,
-                items,
-                |item| &item.spec,
-                |item| &item.path,
-                "design",
-                &mut errors,
-            ),
+        match load_design_facets(root) {
+            Ok((legacy, accounts)) => {
+                extend_unique_facets(
+                    &mut model.designs,
+                    legacy,
+                    |item| &item.spec,
+                    |item| &item.path,
+                    "design",
+                    &mut errors,
+                );
+                extend_unique_facets(
+                    &mut model.account_designs,
+                    accounts,
+                    |item| &item.spec,
+                    |item| &item.path,
+                    "account design",
+                    &mut errors,
+                );
+            }
             Err(mut diagnostics) => errors.append(&mut diagnostics),
         }
-        match load_verifications(root) {
-            Ok(items) => extend_unique_facets(
-                &mut model.verifications,
-                items,
+        match load_verification_facets(root) {
+            Ok((legacy, accounts)) => {
+                extend_unique_facets(
+                    &mut model.verifications,
+                    legacy,
+                    |item| &item.owner,
+                    |item| &item.path,
+                    "verification authority",
+                    &mut errors,
+                );
+                extend_unique_facets(
+                    &mut model.account_verifications,
+                    accounts,
+                    |item| &item.owner,
+                    |item| &item.path,
+                    "account verification",
+                    &mut errors,
+                );
+            }
+            Err(mut diagnostics) => errors.append(&mut diagnostics),
+        }
+        match load_review_facets(root) {
+            Ok(reviews) => extend_unique_facets(
+                &mut model.account_reviews,
+                reviews,
                 |item| &item.owner,
                 |item| &item.path,
-                "verification authority",
+                "account review",
                 &mut errors,
             ),
             Err(mut diagnostics) => errors.append(&mut diagnostics),
         }
-        reject_retired_judgment_facets(root, &mut errors);
     }
     if let Some(path) = &assembly.standards_path {
         match verification::load_standards(path) {
@@ -162,8 +270,61 @@ pub fn load_assembly(
     for manifest in &assembly.manifests {
         append_manifest(&mut model, manifest);
     }
+    for item in &assembly.account_support {
+        let mut support = item.support.clone();
+        let qualify = |id: &str| format!("{}/{}", item.repository, id);
+        for artifact in &mut support.artifacts {
+            artifact.id = qualify(&artifact.id);
+        }
+        for element in &mut support.elements {
+            element.artifacts = element.artifacts.iter().map(|id| qualify(id)).collect();
+        }
+        for check in &mut support.checks {
+            check.artifacts = check.artifacts.iter().map(|id| qualify(id)).collect();
+        }
+        model.account_supports.push(support);
+    }
+    model.resolve_source_membership();
     errors.extend(verification_owner_issues(&model));
+    check_facet_owners(
+        model
+            .designs
+            .iter()
+            .map(|item| (&item.spec, &item.path))
+            .chain(
+                model
+                    .account_designs
+                    .iter()
+                    .map(|item| (&item.spec, &item.path)),
+            ),
+        "design",
+        &mut errors,
+    );
+    check_facet_owners(
+        model
+            .verifications
+            .iter()
+            .map(|item| (&item.owner, &item.path))
+            .chain(
+                model
+                    .account_verifications
+                    .iter()
+                    .map(|item| (&item.owner, &item.path)),
+            ),
+        "verification",
+        &mut errors,
+    );
+    check_facet_owners(
+        model
+            .account_reviews
+            .iter()
+            .map(|item| (&item.owner, &item.path)),
+        "review",
+        &mut errors,
+    );
+    errors.extend(model.entity_declaration_issues());
     errors.extend(model.verification_declaration_issues());
+    errors.extend(model.account_check_issues());
     errors.extend(merged_manifest_issues(&model));
     errors.extend(mechanism_route_issues(&model));
     if !errors.is_empty() {
@@ -181,69 +342,140 @@ pub fn load_assembly(
     Ok(Loaded { model, warnings })
 }
 
-fn load_verifications(root: &Path) -> Result<Vec<Verification>, Vec<Diag>> {
-    if !root.exists() {
-        return Ok(Vec::new());
-    }
-    let mut paths = Vec::new();
-    collect_named(root, "verification.md", &mut paths).map_err(|error| {
-        vec![Diag::file(
-            &root.display().to_string(),
-            format!("cannot discover verification authorities: {error}"),
-        )]
-    })?;
-    paths.sort();
-    let mut declarations = Vec::new();
-    let mut errors = Vec::new();
-    for path in paths {
-        match verification::load_verification(&path) {
-            Ok(value) => {
-                if let Some(previous) = declarations
-                    .iter()
-                    .find(|previous: &&Verification| previous.owner == value.owner)
-                {
-                    errors.push(Diag::at(
-                        &value.path,
-                        1,
-                        format!(
-                            "verification authority `{}` is already declared by {}",
-                            value.owner, previous.path
-                        ),
-                    ));
-                } else {
-                    declarations.push(value);
-                }
-            }
-            Err(mut diagnostics) => errors.append(&mut diagnostics),
+fn check_facet_owners<'a>(
+    facets: impl Iterator<Item = (&'a String, &'a String)>,
+    kind: &str,
+    errors: &mut Vec<Diag>,
+) {
+    let mut seen = BTreeMap::<&str, &str>::new();
+    for (owner, path) in facets {
+        if let Some(previous) = seen.insert(owner, path) {
+            errors.push(Diag::at(path, 1, format!(
+                "model-source-ownership-conflict: {kind} `{owner}` is already declared by {previous}"
+            )));
         }
     }
+}
+
+fn load_design_facets(
+    root: &Path,
+) -> Result<(Vec<design::Design>, Vec<account_design::AccountDesign>), Vec<Diag>> {
+    let paths = named_paths(root, "design.md")?;
+    let (mut legacy, mut accounts, mut errors) = (Vec::new(), Vec::new(), Vec::new());
+    for path in paths {
+        let display = path.display().to_string();
+        match fs::read_to_string(&path) {
+            Ok(source)
+                if source
+                    .lines()
+                    .any(|line| line.starts_with("## Claim design: ")) =>
+            {
+                match account_design::parse_account_design(&display, &source) {
+                    Ok(item) => accounts.push(item),
+                    Err(mut diagnostics) => errors.append(&mut diagnostics),
+                }
+            }
+            Ok(source) => match design::parse_design(&display, &source) {
+                Ok(item) => legacy.push(item),
+                Err(mut diagnostics) => errors.append(&mut diagnostics),
+            },
+            Err(error) => errors.push(Diag::file(&display, format!("cannot read design: {error}"))),
+        }
+    }
+    check_facet_owners(
+        legacy
+            .iter()
+            .map(|item| (&item.spec, &item.path))
+            .chain(accounts.iter().map(|item| (&item.spec, &item.path))),
+        "design",
+        &mut errors,
+    );
     if errors.is_empty() {
-        Ok(declarations)
+        Ok((legacy, accounts))
     } else {
         Err(errors)
     }
 }
 
-fn reject_retired_judgment_facets(root: &Path, errors: &mut Vec<Diag>) {
+fn load_verification_facets(
+    root: &Path,
+) -> Result<
+    (
+        Vec<Verification>,
+        Vec<account_verification::AccountVerification>,
+    ),
+    Vec<Diag>,
+> {
+    let paths = named_paths(root, "verification.md")?;
+    let (mut legacy, mut accounts, mut errors) = (Vec::new(), Vec::new(), Vec::new());
+    for path in paths {
+        let display = path.display().to_string();
+        match fs::read_to_string(&path) {
+            Ok(source)
+                if source
+                    .lines()
+                    .any(|line| line.starts_with("## Claim verification: ")) =>
+            {
+                match account_verification::parse_account_verification(&display, &source) {
+                    Ok(item) => accounts.push(item),
+                    Err(mut diagnostics) => errors.append(&mut diagnostics),
+                }
+            }
+            Ok(_) => match verification::load_verification(&path) {
+                Ok(item) => legacy.push(item),
+                Err(mut diagnostics) => errors.append(&mut diagnostics),
+            },
+            Err(error) => errors.push(Diag::file(
+                &display,
+                format!("cannot read verification: {error}"),
+            )),
+        }
+    }
+    check_facet_owners(
+        legacy
+            .iter()
+            .map(|item| (&item.owner, &item.path))
+            .chain(accounts.iter().map(|item| (&item.owner, &item.path))),
+        "verification",
+        &mut errors,
+    );
+    if errors.is_empty() {
+        Ok((legacy, accounts))
+    } else {
+        Err(errors)
+    }
+}
+
+fn load_review_facets(root: &Path) -> Result<Vec<account_model::ReviewFacet>, Vec<Diag>> {
+    let paths = named_paths(root, "judgments.md")?;
+    let mut reviews = Vec::new();
+    let mut errors = Vec::new();
+    for path in paths {
+        match account_model::load_reviews(&path) {
+            Ok(review) => reviews.push(review),
+            Err(mut diagnostics) => errors.append(&mut diagnostics),
+        }
+    }
+    if errors.is_empty() {
+        Ok(reviews)
+    } else {
+        Err(errors)
+    }
+}
+
+fn named_paths(root: &Path, name: &str) -> Result<Vec<PathBuf>, Vec<Diag>> {
     if !root.exists() {
-        return;
+        return Ok(Vec::new());
     }
     let mut paths = Vec::new();
-    if let Err(error) = collect_named(root, "judgments.md", &mut paths) {
-        errors.push(Diag::file(
+    collect_named(root, name, &mut paths).map_err(|error| {
+        vec![Diag::file(
             &root.display().to_string(),
-            format!("cannot discover retired judgment facets: {error}"),
-        ));
-        return;
-    }
+            format!("cannot discover {name}: {error}"),
+        )]
+    })?;
     paths.sort();
-    errors.extend(paths.into_iter().map(|path| {
-        Diag::at(
-            &path.display().to_string(),
-            1,
-            "alpha 1 `judgments.md` is retired; use Claim Judgment blocks in `verification.md`",
-        )
-    }));
+    Ok(paths)
 }
 
 fn collect_named(dir: &Path, name: &str, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
@@ -297,10 +529,7 @@ fn merged_manifest_issues(model: &Model) -> Vec<Diag> {
         let Some(source) = realization.source.as_ref() else {
             continue;
         };
-        let key = (
-            format!("{}#{}", realization.spec, realization.claim),
-            source.key(),
-        );
+        let key = (realization.claim.clone(), source.key());
         if let Some((previous_file, previous_fingerprint)) = realizations.get(&key) {
             issues.push(Diag::file(
                 &realization.file,
@@ -337,26 +566,12 @@ fn merged_manifest_issues(model: &Model) -> Vec<Diag> {
         }
     }
 
-    let mut mechanism_implementations = BTreeMap::<(String, String), (&str, &str)>::new();
     let mut mechanism_sources = BTreeMap::<String, ((String, String), &str)>::new();
     for implementation in &model.mechanism_implementations {
         let key = (
             implementation.spec.clone(),
             implementation.mechanism.clone(),
         );
-        if let Some((previous_file, previous_binding)) = mechanism_implementations.get(&key) {
-            issues.push(Diag::file(
-                &implementation.file,
-                format!(
-                    "multiple marker implementations for mechanism `{}#{}` across manifests \
-                     (first at `{previous_file}` bound to `{previous_binding}`)",
-                    key.0, key.1
-                ),
-            ));
-        } else {
-            mechanism_implementations
-                .insert(key.clone(), (&implementation.file, &implementation.binding));
-        }
         if let Some(source) = &implementation.source {
             let source_key = source.key();
             if let Some((previous_target, previous_file)) = mechanism_sources.get(&source_key) {
@@ -531,16 +746,13 @@ fn apply_selection(model: &mut Model, only: &[String]) {
     }
     let selected_parent_claims = selected_claims
         .iter()
-        .filter_map(|case| case.rsplit_once('/').map(|(claim, _)| claim.to_string()))
+        .filter_map(|case| model.find_case(case).map(|view| view.claim.id.clone()))
         .collect::<BTreeSet<_>>();
-    // A Case is part of its parent Claim's identity. A selected Case therefore retains the
-    // complete Claim composition rather than manufacturing a partial parent.
+    // Retaining the parent composition prevents partial selection from inventing a narrower assurance account.
     selected_claims.extend(
         model
             .cases()
-            .filter(|case| {
-                selected_parent_claims.contains(&format!("{}#{}", case.spec.id, case.claim.id))
-            })
+            .filter(|case| selected_parent_claims.contains(&case.claim.id.clone()))
             .map(|case| case.id()),
     );
     let selected_bindings = model
@@ -581,7 +793,7 @@ fn apply_selection(model: &mut Model, only: &[String]) {
                                 mechanism.cases.is_empty()
                                     || mechanism.cases.contains(&claim.case.id)
                             })
-                            .map(|mechanism| format!("{}#{}", design.spec, mechanism.id)),
+                            .map(|mechanism| mechanism.id.clone()),
                     );
                 }
             }
@@ -590,7 +802,7 @@ fn apply_selection(model: &mut Model, only: &[String]) {
     let mut selected_artifacts = BTreeSet::new();
     for design in &model.designs {
         for mechanism in design.entries.iter().flat_map(|entry| &entry.mechanisms) {
-            let identity = format!("{}#{}", design.spec, mechanism.id);
+            let identity = mechanism.id.clone();
             if retained_mechanisms.contains(&identity) {
                 selected_artifacts.extend(
                     model
@@ -610,7 +822,7 @@ fn apply_selection(model: &mut Model, only: &[String]) {
         .realizes
         .iter()
         .filter(|site| {
-            selected_parent_claims.contains(&format!("{}#{}", site.spec, site.claim))
+            selected_parent_claims.contains(&site.claim.clone())
                 || selected_surfaces.contains(&site.spec)
                 || site
                     .source
@@ -622,9 +834,7 @@ fn apply_selection(model: &mut Model, only: &[String]) {
             model
                 .mechanism_implementations
                 .iter()
-                .filter(|item| {
-                    retained_mechanisms.contains(&format!("{}#{}", item.spec, item.mechanism))
-                })
+                .filter(|item| retained_mechanisms.contains(&item.mechanism.clone()))
                 .filter_map(|item| item.source.as_ref()),
         )
         .chain(
@@ -658,12 +868,9 @@ fn apply_selection(model: &mut Model, only: &[String]) {
         .map(|source| (source.area.clone(), source.mount.clone()))
         .collect::<BTreeSet<_>>();
     let obligation_areas = model
-        .workspace
-        .realization_obligations
+        .realization_obligations()
         .iter()
-        .filter(|obligation| {
-            selected_parent_claims.contains(&format!("{}#{}", obligation.spec, obligation.claim))
-        })
+        .filter(|obligation| selected_parent_claims.contains(&obligation.claim.clone()))
         .flat_map(|obligation| obligation.areas.iter().cloned())
         .collect::<BTreeSet<_>>();
     let surface_mounts = model
@@ -687,42 +894,46 @@ fn apply_selection(model: &mut Model, only: &[String]) {
             return false;
         }
         spec.claims.retain_mut(|claim| {
-            claim.cases.retain(|case| {
-                selected_claims.contains(&format!("{}#{}/{}", spec.id, claim.id, case.id))
-            });
+            claim
+                .cases
+                .retain(|case| selected_claims.contains(&case.id.clone()));
             !claim.cases.is_empty()
         });
         !spec.claims.is_empty()
     });
+    model
+        .account_designs
+        .retain(|design| selected_specs.contains(&design.spec));
+    model
+        .account_verifications
+        .retain(|item| selected_specs.contains(&item.owner));
+    model
+        .account_reviews
+        .retain(|item| selected_specs.contains(&item.owner));
     model.designs.retain_mut(|design| {
         design.entries.retain_mut(|entry| {
-            entry.mechanisms.retain(|mechanism| {
-                retained_mechanisms.contains(&format!("{}#{}", design.spec, mechanism.id))
-            });
+            entry
+                .mechanisms
+                .retain(|mechanism| retained_mechanisms.contains(&mechanism.id.clone()));
             !entry.mechanisms.is_empty()
         });
         !design.entries.is_empty()
     });
     model.realizes.retain(|site| {
-        selected_parent_claims.contains(&format!("{}#{}", site.spec, site.claim))
+        selected_parent_claims.contains(&site.claim.clone())
             || selected_surfaces.contains(&site.spec)
             || site
                 .source
                 .as_ref()
                 .is_some_and(|source| anchored_realizations.contains(&source.key()))
     });
-    model.mechanism_implementations.retain(|implementation| {
-        retained_mechanisms.contains(&format!(
-            "{}#{}",
-            implementation.spec, implementation.mechanism
-        ))
-    });
+    model
+        .mechanism_implementations
+        .retain(|implementation| retained_mechanisms.contains(&implementation.mechanism));
     model
         .workspace
         .realization_obligations
-        .retain(|obligation| {
-            selected_parent_claims.contains(&format!("{}#{}", obligation.spec, obligation.claim))
-        });
+        .retain(|obligation| selected_parent_claims.contains(&obligation.claim.clone()));
     model
         .check_implementations
         .retain(|implementation| selected_checks.contains(&implementation.check));
@@ -800,28 +1011,24 @@ fn selector_claims(model: &Model, selector: &Selector) -> BTreeSet<String> {
             .collect(),
         Selector::MethodQualificationFromRealization(identity)
         | Selector::ApplicabilityDecisionFromRealization(identity)
-        | Selector::ClaimJudgmentFromRealization(identity) => {
-            model
-                .realizes
-                .iter()
-                .filter(|site| {
-                    site.source
-                        .as_ref()
-                        .is_some_and(|source| source.key() == *identity)
-                })
-                .filter(|site| model.has_claim(&site.spec, &site.claim))
-                .flat_map(|site| {
-                    model
-                        .find_claim(&site.spec, &site.claim)
-                        .into_iter()
-                        .flat_map(move |claim| {
-                            claim.claim.cases.iter().map(move |case| {
-                                format!("{}#{}/{}", site.spec, site.claim, case.id)
-                            })
-                        })
-                })
-                .collect()
-        }
+        | Selector::ClaimJudgmentFromRealization(identity) => model
+            .realizes
+            .iter()
+            .filter(|site| {
+                site.source
+                    .as_ref()
+                    .is_some_and(|source| source.key() == *identity)
+            })
+            .filter(|site| model.has_claim(&site.claim))
+            .flat_map(|site| {
+                model
+                    .find_claim(&site.claim)
+                    .into_iter()
+                    .flat_map(move |claim| {
+                        claim.claim.cases.iter().map(move |case| case.id.clone())
+                    })
+            })
+            .collect(),
         Selector::MethodQualificationFromMechanism(identity)
         | Selector::ApplicabilityDecisionFromMechanism(identity)
         | Selector::ClaimJudgmentFromMechanism(identity) => {
@@ -839,7 +1046,7 @@ fn selector_claims(model: &Model, selector: &Selector) -> BTreeSet<String> {
                     .claim
                     .cases
                     .iter()
-                    .map(|case| format!("{}#{}/{}", claim.spec.id, claim.claim.id, case.id))
+                    .map(|case| case.id.clone())
                     .collect()
             })
             .unwrap_or_default(),
@@ -847,15 +1054,19 @@ fn selector_claims(model: &Model, selector: &Selector) -> BTreeSet<String> {
 }
 
 fn selected_mechanism_claims(model: &Model, identity: &str) -> BTreeSet<String> {
-    let Some((spec_id, mechanism_id)) = identity.split_once('#') else {
-        return BTreeSet::new();
-    };
-    let Some(design) = model.design_for(spec_id) else {
+    let mechanism_id = identity;
+    let Some(design) = model.designs.iter().find(|design| {
+        design.entries.iter().any(|entry| {
+            entry
+                .mechanisms
+                .iter()
+                .any(|mechanism| mechanism.id == identity)
+        })
+    }) else {
         return BTreeSet::new();
     };
     model
         .cases()
-        .filter(|claim| claim.spec.id == spec_id)
         .filter(|claim| {
             design
                 .entries

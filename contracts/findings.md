@@ -11,7 +11,8 @@ A Finding is never authored. Its kind, category, severity and remediation senten
   "kind": "unbound-case",
   "category": "verification",
   "severity": "error",
-  "claim": "billing/invoices#rounding/rounds-half-to-even",
+  "subject_kind": "case",
+  "claim": "rounds-half-to-even",
   "criticality": "critical",
   "file": "azimuth/model/billing/invoices/spec.md",
   "line": 18,
@@ -20,14 +21,13 @@ A Finding is never authored. Its kind, category, severity and remediation senten
 }
 ```
 
-These are the only keys, in exactly this order, and all nine are always present.
+These are the only keys, in exactly this order, and all ten are always present.
 
 - `kind` is one stable string from the registry below.
 - `category` is derived from `kind` and is never independent of it.
 - `severity` is `error | warning`.
-- `claim` retains its historical field name. Its value is the most exact affected parent Claim or
-  nested Case id (`<spec>#<claim>` or `<spec>#<claim>/<case>`), or `null` when no intent entity is
-  attributable. The key is not duplicated as `case`.
+- `subject_kind` is `claim | case | mechanism | check | null`, assigned from the finding’s typed emission context rather than inferred from ID text. It distinguishes equal stable ID names in different namespaces.
+- `claim` retains its historical field name and carries the stable ID named by `subject_kind`, or `null` when no entity is attributable. Module and parent paths do not form this reference.
 - `criticality` is `critical | standard | routine`, or `null`. It is `null` on every Finding raised through the shared error path, including ones whose subject does have a declared criticality.
 - `file` is the path of the artifact carrying the defect — a spec, design, verification authority, workspace or source file, depending on the kind.
 - `line` is the one-based source line, or `0` when the defect has no line — a manifest-derived relation or a workspace declaration.
@@ -117,9 +117,9 @@ The table lists kinds in registry declaration order, which is not the order Find
 - `unrealized` — a non-routine Claim has no production site realizing it.
 - `dangling-realization` — a `Realizes` site names a Claim that does not exist.
 - `dangling-design-entry` — a design entry targets a Claim that does not exist, or a mechanism's
-  explicit Case relevance names no local Case under that Claim.
+  explicit Case relevance names no declared project Case.
 - `undeclared-mechanism` — a critical Claim declares no enforcement mechanism. The whole pass is gated on the design artifact being in use at all: a project with no design file is never told that every critical Claim is a Finding.
-- `unresolved-design-binding` — a mechanism resolves to zero or several artifact bindings.
+- `unresolved-design-binding` — a mechanism has no artifact support or mixes an explicit binding with marker-derived sites.
 - `enforcement-mismatch` — a mechanism's declared enforcement contradicts the derived properties of the artifact it binds.
 - `missing-surface` — a site-domain Claim declares no `Over:` surface.
 - `unknown-surface` — a site-domain Claim's `Over:` value names no declared workspace surface.

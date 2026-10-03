@@ -1,4 +1,4 @@
-//! The change lifecycle is deliberately narrower than the accepted-state model.
+//! The change lifecycle projects reviewed intent without treating unfinished behavior as accepted.
 //!
 //! The machine derives additions and their obligations, and verifies that an accepted change was
 //! applied before archiving. Explanations of departures and residual acceptance remain authored
@@ -10,7 +10,9 @@ use crate::model::{Criticality, Model};
 use crate::spec::parse_spec;
 use crate::validation::{self, Finding};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(test)]
+use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub struct Addition {
@@ -44,6 +46,8 @@ pub struct Report {
     pub id: String,
     pub additions: Vec<Addition>,
     pub criticality_changes: Vec<CriticalityChange>,
+    pub mutations: usize,
+    pub unapplied_mutations: usize,
     pub unchanged_intent_reason: Option<String>,
     pub incomplete_plan_items: usize,
     pub current_claims: usize,
@@ -83,34 +87,52 @@ pub fn inspect(root: &Path, model: &Model) -> Result<Report, Vec<String>> {
 
     let mut additions = Vec::new();
     let mut criticality_changes = Vec::new();
-    let specs = root.join("specs");
-    if specs.exists() {
-        let mut files = Vec::new();
-        collect_markdown(&specs, &mut files, &mut errors);
-        files.sort();
-        for file in files {
-            match fs::read_to_string(&file) {
-                Ok(source) => parse_delta(
-                    &file,
-                    &source,
-                    model,
-                    &mut additions,
-                    &mut criticality_changes,
-                    &mut errors,
-                ),
-                Err(error) => errors.push(format!("cannot read {}: {error}", file.display())),
+    let mut mutations = 0;
+    match crate::intent::delta_paths(root) {
+        Ok(files) => {
+            for file in files {
+                match fs::read_to_string(&file) {
+                    Ok(source) => parse_delta(
+                        &file,
+                        &source,
+                        model,
+                        &mut additions,
+                        &mut criticality_changes,
+                        &mut mutations,
+                        &mut errors,
+                    ),
+                    Err(error) => errors.push(format!("cannot read {}: {error}", file.display())),
+                }
             }
         }
+        Err(mut diagnostics) => errors.append(&mut diagnostics),
     }
 
     if unchanged_intent_reason.is_some()
-        && (!additions.is_empty() || !criticality_changes.is_empty())
+        && (!additions.is_empty() || !criticality_changes.is_empty() || mutations > 0)
     {
         errors.push(
             "proposal declares unchanged intent but specs contain a supported intent delta".into(),
         );
     }
 
+    let unapplied_mutations = if mutations > 0 && errors.is_empty() {
+        match crate::intent::project(root, Path::new("azimuth/model"), model) {
+            Ok(projected) => projected
+                .operations
+                .iter()
+                .filter(|(name, applied)| {
+                    !*applied && !name.starts_with("add ") && !name.starts_with("criticality ")
+                })
+                .count(),
+            Err(projection_errors) => {
+                errors.extend(projection_errors);
+                0
+            }
+        }
+    } else {
+        0
+    };
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -122,6 +144,8 @@ pub fn inspect(root: &Path, model: &Model) -> Result<Report, Vec<String>> {
         id,
         additions,
         criticality_changes,
+        mutations,
+        unapplied_mutations,
         unchanged_intent_reason,
         incomplete_plan_items,
         current_claims: model.claim_count(),
@@ -191,30 +215,13 @@ fn parse_unchanged_intent_reason(
     Some(reason.to_string())
 }
 
-fn collect_markdown(root: &Path, files: &mut Vec<PathBuf>, errors: &mut Vec<String>) {
-    let entries = match fs::read_dir(root) {
-        Ok(entries) => entries,
-        Err(error) => {
-            errors.push(format!("cannot read {}: {error}", root.display()));
-            return;
-        }
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            collect_markdown(&path, files, errors);
-        } else if path.extension().and_then(|extension| extension.to_str()) == Some("md") {
-            files.push(path);
-        }
-    }
-}
-
 fn parse_delta(
     path: &Path,
     source: &str,
     model: &Model,
     additions: &mut Vec<Addition>,
     criticality_changes: &mut Vec<CriticalityChange>,
+    mutations: &mut usize,
     errors: &mut Vec<String>,
 ) {
     let mut normalized = String::new();
@@ -246,6 +253,11 @@ fn parse_delta(
             normalized.push_str("## Claim:");
             normalized.push_str(claim);
             has_addition = true;
+        } else if let Some(term) = trimmed.strip_prefix("## Add term:") {
+            normalized.push_str("## Term:");
+            normalized.push_str(term);
+            has_addition = true;
+            *mutations += 1;
         } else if let Some(case) = trimmed.strip_prefix("### Add case:") {
             normalized.push_str("### Case:");
             normalized.push_str(case);
@@ -263,6 +275,16 @@ fn parse_delta(
                 errors,
             );
             index = next;
+            continue;
+        } else if trimmed.starts_with("## Replace claim:")
+            || trimmed.starts_with("## Remove claim:")
+            || trimmed.starts_with("## Remove case:")
+        {
+            *mutations += 1;
+            index += 1;
+            while index < lines.len() && !lines[index].starts_with("## ") {
+                index += 1;
+            }
             continue;
         } else if trimmed.starts_with("## ") || trimmed.starts_with("### ") {
             errors.push(format!(
@@ -318,11 +340,9 @@ fn parse_delta(
                     existing.id == claim.id
                         && existing.criticality == Some(criticality)
                         && existing.statement == claim.statement
-                        && cases.iter().all(|case| {
-                            existing
-                                .cases
-                                .iter()
-                                .any(|item| item.id == case.id && item.statement == case.statement)
+                        && existing.cases.len() == cases.len()
+                        && cases.iter().zip(&existing.cases).all(|(case, item)| {
+                            item.id == case.id && item.statement == case.statement
                         })
                 })
         });
@@ -479,6 +499,7 @@ pub fn completion_issues(root: &Path, report: &Report) -> Vec<String> {
     let mut issues = Vec::new();
     if report.additions.is_empty()
         && report.criticality_changes.is_empty()
+        && report.mutations == 0
         && report.unchanged_intent_reason.is_none()
     {
         issues.push("change declares no supported intent delta".into());
@@ -507,6 +528,12 @@ pub fn completion_issues(root: &Path, report: &Report) -> Vec<String> {
                 change.to.name()
             ));
         }
+    }
+    if report.unapplied_mutations > 0 {
+        issues.push(format!(
+            "{} Claim or Case mutation(s) have not been applied to current specs",
+            report.unapplied_mutations
+        ));
     }
     let proposal = fs::read_to_string(root.join("proposal.md")).unwrap_or_default();
     if !proposal.lines().any(|line| {
