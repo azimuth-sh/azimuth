@@ -46,3 +46,11 @@ Assessment distinguishes `accepted`, `rejected`, `stale`, `invalid` and `missing
 A supported Claim requires complete current dependencies, accepted current qualifications and applicability decisions, satisfied applicable Observations, no structural gaps, and an independent current supported Judgment. A violated Claim requires an independent violated Judgment with credible applicable counterevidence; a failed Check alone is an adverse execution fact. Incomplete or conflicting support remains unresolved. Routine Claims report when independent review is not required without manufacturing a supported Judgment.
 
 The ledger retains immutable histories and computes exact Subject-specific state against the owner's selected authority. Evidence from other Subjects or changed model support remains visible and unjoined. See [run-ledger.md](run-ledger.md) for persistence and permissions.
+
+## Independent review input preparation
+
+`azimuth assurance review-input --project <id> --request <file> [--review <file>...] [--bundle <file>...] [model options] --out <file>` prepares an `azimuth-review-input` version 1 packet. A strict request identifies exactly one method (`kind`, `check`), applicability target (`kind`, `check`, `case`, `subject_fingerprint`) or Claim (`kind`, `claim`, `subject_fingerprint`). Routine Claims do not require independent Claim Judgment.
+
+The packet pins current authority and target dependencies, authored definitions, exact matching Subject descriptors, current relevant Observations and their active Run bundles, existing review assessments and visible gaps. Its fingerprint covers the complete packet. It is preparation, not a review record: it creates no reviewer, reviewed-at time, rationale, decision or conclusion. Unknown targets and malformed inputs fail; absent evidence produces explicit gaps.
+
+Record freshness follows relevant Check, Case, binding, mechanism, Claim and execution dependencies. Unrelated changes to the full authority projection do not independently stale a review. Changing only a Case contribution does not requalify an unchanged method; applicability still pins that binding and must be reviewed against its current meaning. A stale or invalid applicability dependency propagates into its dependent Judgment even when that Judgment previously concluded unresolved.

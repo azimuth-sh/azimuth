@@ -34,9 +34,9 @@ fn context() -> BTreeMap<String, String> {
 
 fn valid_bundle() -> RunBundle {
     let check = CheckSelection {
-        id: "payments/recovery".into(),
+        id: "recovery".into(),
         fingerprint: fp('b'),
-        cases: vec!["payments#recovery/works".into()],
+        cases: vec!["works".into()],
         implementations: vec![Implementation {
             identity: "payments|rust-symbol|recovery::replay".into(),
             source_fingerprint: fp('c'),
@@ -47,6 +47,7 @@ fn valid_bundle() -> RunBundle {
         }],
     };
     let mut bundle = RunBundle {
+        contributions: Vec::new(),
         run_id: fp('0'),
         bundle_revision: 0,
         corrects: None,
@@ -100,7 +101,7 @@ fn valid_bundle() -> RunBundle {
                 routes: vec![LaunchRoute {
                     selection: RouteSelection {
                         kind: RouteSelectionKind::Check,
-                        id: "payments/recovery".into(),
+                        id: "recovery".into(),
                     },
                     capability: RouteCapability {
                         address: "synthetic/checks".into(),
@@ -129,7 +130,7 @@ fn valid_bundle() -> RunBundle {
         }],
         check_executions: vec![CheckExecution {
             check: CheckRef {
-                id: "payments/recovery".into(),
+                id: "recovery".into(),
                 fingerprint: fp('b'),
             },
             units: vec![CheckExecutionUnit {
@@ -137,16 +138,13 @@ fn valid_bundle() -> RunBundle {
                 attempts: vec![CheckAttempt {
                     ordinal: 1,
                     activity: "check-attempt".into(),
-                    outcomes: [(
-                        "payments#recovery/works".into(),
-                        ObservationOutcome::Satisfied,
-                    )]
-                    .into_iter()
-                    .collect(),
+                    outcomes: [("works".into(), ObservationOutcome::Satisfied)]
+                        .into_iter()
+                        .collect(),
                 }],
             }],
             observations: vec![Observation {
-                case: "payments#recovery/works".into(),
+                case: "works".into(),
                 outcome: ObservationOutcome::Satisfied,
                 observed_at_ms: 3,
                 fingerprint: fp('0'),
@@ -235,10 +233,7 @@ fn verify_accepts_negative_and_partial_execution_facts() {
     let mut violated = valid_bundle();
     violated.check_executions[0].units[0].attempts[0]
         .outcomes
-        .insert(
-            "payments#recovery/works".into(),
-            ObservationOutcome::Violated,
-        );
+        .insert("works".into(), ObservationOutcome::Violated);
     violated.check_executions[0].observations[0].outcome = ObservationOutcome::Violated;
     refresh(&mut violated);
     write_bundle(&violated_path, &violated);

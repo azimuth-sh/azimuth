@@ -1246,7 +1246,19 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                     detail: format!("Evidence Binding `{}` targets a routine Case", binding.id),
                 });
             }
-        } else if case.claim.criticality.is_some() && bindings.is_empty() {
+        } else if case.claim.criticality.is_some()
+            && bindings.is_empty()
+            && !model
+                .account_verifications
+                .iter()
+                .flat_map(|file| &file.checks)
+                .any(|check| {
+                    check
+                        .bindings
+                        .iter()
+                        .any(|binding| binding.case == case.id())
+                })
+        {
             findings.push(Finding {
                 kind: FindingKind::UnboundCase,
                 severity: severity_for(case.claim.criticality),
@@ -2962,7 +2974,7 @@ fn account_findings(model: &Model) -> Vec<Finding> {
                 }
             }
             for case in &target.claim.cases {
-                let id = format!("{}/{}", scope.claim, case.id);
+                let id = case.id.clone();
                 let contributed = model
                     .account_verifications
                     .iter()

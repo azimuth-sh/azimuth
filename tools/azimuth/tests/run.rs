@@ -73,6 +73,7 @@ fn valid_bundle() -> RunBundle {
         &challenge.target.fingerprint,
     );
     let mut bundle = RunBundle {
+        contributions: Vec::new(),
         run_id: fp('0'),
         bundle_revision: 0,
         corrects: None,
@@ -1940,4 +1941,90 @@ fn correction_cannot_mutate_normalizer_build_fingerprint() {
         &verify_set(&[initial, correction]),
         "run/history-anchor-change"
     ));
+}
+
+fn coordinated_protocol_fixture() -> RunBundle {
+    let original = valid_bundle();
+    let mut check = original.clone();
+    check.plan.challenges.clear();
+    check.actual_selection.challenges.clear();
+    check.challenger_executions.clear();
+    check.diagnostics.clear();
+    check.activities[0].diagnostics.clear();
+    check
+        .provenance
+        .adapter
+        .routes
+        .retain(|r| r.selection.kind == RouteSelectionKind::Check);
+    let mut challenge = original.clone();
+    challenge.plan.checks.clear();
+    challenge.actual_selection.checks.clear();
+    challenge.check_executions.clear();
+    challenge
+        .provenance
+        .adapter
+        .routes
+        .retain(|r| r.selection.kind == RouteSelectionKind::Challenge);
+    for (bundle, id) in [(&mut check, "alpha"), (&mut challenge, "beta")] {
+        bundle.provenance.adapter.id = id.into();
+        bundle.provenance.normalizer.id = format!("adapter/{id}");
+        for route in &mut bundle.provenance.adapter.routes {
+            let (_, suffix) = route.capability.address.split_once('/').unwrap();
+            route.capability.address = format!("{id}/{suffix}");
+        }
+        refresh(bundle);
+        assert!(verify(bundle).is_empty(), "{:?}", verify(bundle));
+    }
+    coordinate_bundle(original, vec![check, challenge])
+}
+#[test]
+fn coordinated_challenge_objections_and_local_artifact_references_are_retained() {
+    let bundle = coordinated_protocol_fixture();
+    assert!(verify(&bundle).is_empty(), "{:?}", verify(&bundle));
+    assert_eq!(
+        bundle.challenger_executions[0].result.objections,
+        vec!["beta/mutation/survivor"]
+    );
+    assert_eq!(
+        bundle.challenger_executions[0].result.artifacts,
+        vec!["beta/native-report"]
+    );
+    assert_eq!(
+        bundle.check_executions[0].observations[0].artifacts,
+        vec!["alpha/native-report"]
+    );
+}
+#[test]
+fn coordinated_numeric_and_nesting_errors_return_findings_without_panicking() {
+    let mut bundle = coordinated_protocol_fixture();
+    bundle.contributions[0].check_executions[0].units[0].attempts[0].ordinal = u64::MAX;
+    let findings = std::panic::catch_unwind(|| verify(&bundle)).unwrap();
+    assert!(!findings.is_empty());
+    assert!(!verify_set(&[bundle]).is_empty());
+    let mut bundle = coordinated_protocol_fixture();
+    bundle.contributions[0].contributions = bundle.contributions.clone();
+    assert!(!std::panic::catch_unwind(|| verify(&bundle))
+        .unwrap()
+        .is_empty());
+    assert!(!verify_set(&[bundle]).is_empty());
+}
+#[test]
+fn coordinated_corrections_require_exact_per_adapter_history() {
+    let initial = coordinated_protocol_fixture();
+    let mut corrected = initial.clone();
+    corrected.bundle_revision = 1;
+    corrected.corrects = Some(initial.bundle_fingerprint.clone());
+    corrected.correction_reason = Some("fresh capture".into());
+    let mut children = initial.contributions.clone();
+    for child in &mut children {
+        child.bundle_revision = 1;
+        child.corrects = Some(fp('f'));
+        child.correction_reason = Some("fresh capture".into());
+        refresh(child);
+    }
+    let corrected = coordinate_bundle(corrected, children);
+    assert!(verify(&corrected).is_empty(), "{:?}", verify(&corrected));
+    assert!(verify_set(&[initial, corrected])
+        .iter()
+        .any(|f| f.code == "run/coordination-history"));
 }

@@ -329,7 +329,7 @@ Every actual entry resolves to the plan entry with the same identity. Units are 
 
 Mode is `execute | import`. `source.system` and `normalizer.id` are lower kebab path ids. `source.execution`, version and principal are non-empty strings. Source URI, principal and attributes are optional; no other fields are. Attributes are an exact string map. `generated_at_ms >= finished_at_ms`. Verification never dereferences the URI.
 
-`adapter` is required. Its identity and routes equal the strict launch plan from [run-launch-plan.md](run-launch-plan.md). Route shapes, ordering, capability classes, Challenge forms and fingerprints follow that format exactly. Every address uses the one adapter id. There is exactly one route for every semantic Plan selection and no other route.
+`adapter` is required. Its identity and routes equal the strict launch plan from [run-launch-plan.md](run-launch-plan.md). Route shapes, ordering, capability classes, Challenge forms and fingerprints follow that format exactly. A direct adapter bundle uses that adapter id. A coordinated bundle retains child provenance and uses the deterministic coordinator identity described below. There is exactly one route for every semantic Plan selection and no other route.
 
 `normalizer.id` is exactly `adapter/<configured-adapter-id>`. Its version equals the returned adapter description's `adapter_version` and `adapter.adapter_version`, and its required build fingerprint equals `adapter.adapter_fingerprint`. The distinct `source` object retains the native provider execution.
 
@@ -638,3 +638,13 @@ It likewise replaces the unpublished Challenge shape in place. Every Challenge s
 ## Stable entity identities: 2026-10-02
 
 All current Claim, Case, Mechanism and Check references use stable project-wide IDs and retain explicit entity kind. Module membership and Case parent relationships do not determine identity. Other activities, units, adapters, capabilities and binding identities retain their contracts. Historical artifacts remain immutable; current alpha artifacts are regenerated without aliases or syntax-only version bumps. See `contracts/entity-identity.md`.
+
+## Coordinated bounded contributions: 2026-10-06
+
+A coordinated Run adds `contributions`: two through 64 exact child Run bundles sorted by unique adapter id. A child cannot itself contain coordinated contributions. A direct single-adapter Run omits this field. The root fingerprint covers retained child records.
+
+Every child must pass standalone protocol verification and share the parent's exact Subject, model fingerprint, required context, planning time and operation. Their planned Check and Challenge selections partition the parent's global Plan exactly. Parent facts are the deterministic projection of all child facts: artifact, activity and diagnostic local IDs gain the adapter prefix; references follow those prefixes; Observation and result fingerprints are recomputed for the global account. Original child bundles remain intact for audit. Extra, duplicate, omitted, mismatched or excessive-depth contributions fail.
+
+The parent uses the deterministic `azimuth-coordinator` identity derived from all exact child adapter identities. It records the complete global routes, union of import input identities and global launch fingerprint. Parent status is complete only if every contribution is complete; otherwise it remains partial. Adverse facts remain adverse. Bounded exchange failures retain explicit execution diagnostics and missing selection without fabricating positive Observations.
+
+Corrections retain parent and corresponding child immediate-predecessor histories. No coordinated Run joins source, artifact and deployment Subjects or implies cross-Subject evidence applicability.

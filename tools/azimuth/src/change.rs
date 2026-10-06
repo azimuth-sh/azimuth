@@ -847,3 +847,50 @@ mod tests {
         root
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValidationFacet {
+    Structure,
+    Evidence,
+    Readiness,
+}
+impl ValidationFacet {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Structure => "structure",
+            Self::Evidence => "evidence",
+            Self::Readiness => "readiness",
+        }
+    }
+}
+
+pub fn validation_facet(kind: validation::FindingKind) -> ValidationFacet {
+    use validation::FindingKind::*;
+    match kind {
+        MissingClaimJudgment
+        | PendingClaimReview
+        | RejectedClaimJudgment
+        | StaleClaimJudgment
+        | MissingMethodQualification
+        | RejectedMethodQualification
+        | StaleMethodQualification
+        | MissingApplicabilityDecision
+        | RejectedApplicabilityDecision
+        | StaleApplicabilityDecision
+        | MissingChallengeDecision
+        | StaleChallengeDecision
+        | RejectedChallengeDecision
+        | MissingRequiredChallenge
+        | InsufficientChallengeScope => ValidationFacet::Readiness,
+        Unrealized
+        | UnresolvedDesignBinding
+        | MissingRequiredRealization
+        | UnimplementedCheck
+        | VerificationElementSupportUnresolved
+        | CaseCheckContributionUnresolved
+        | MechanismSupportUnresolved
+        | MissingChallenger
+        | InapplicableVerification => ValidationFacet::Evidence,
+        _ => ValidationFacet::Structure,
+    }
+}

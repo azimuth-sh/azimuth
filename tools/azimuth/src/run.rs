@@ -53,6 +53,7 @@ pub struct RunBundle {
     pub activities: Vec<Activity>,
     pub check_executions: Vec<CheckExecution>,
     pub challenger_executions: Vec<ChallengerExecution>,
+    pub contributions: Vec<RunBundle>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1066,6 +1067,10 @@ fn safe_integer_lexeme(text: &str) -> Option<u64> {
 }
 
 fn parse_root(root: &Json) -> Result<RunBundle, String> {
+    parse_root_depth(root, 0)
+}
+
+fn parse_root_depth(root: &Json, depth: usize) -> Result<RunBundle, String> {
     let object = object(
         root,
         "$",
@@ -1091,6 +1096,7 @@ fn parse_root(root: &Json) -> Result<RunBundle, String> {
             "activities",
             "check_executions",
             "challenger_executions",
+            "contributions",
         ],
     )?;
     exact_string(object, "format", "$", FORMAT)?;
@@ -1134,6 +1140,22 @@ fn parse_root(root: &Json) -> Result<RunBundle, String> {
         "$",
         parse_challenger_execution,
     )?;
+    let contributions = match object.iter().find(|(key, _)| key == "contributions") {
+        Some((_, value)) => {
+            if depth != 0 {
+                return Err("nested coordinated contributions are forbidden".into());
+            }
+            let values = value.as_array().ok_or("$.contributions must be an array")?;
+            if values.len() < 2 || values.len() > 64 {
+                return Err("contributions must contain between 2 and 64 adapter bundles".into());
+            }
+            values
+                .iter()
+                .map(|value| parse_root_depth(value, depth + 1))
+                .collect::<Result<Vec<_>, _>>()?
+        }
+        None => Vec::new(),
+    };
     Ok(RunBundle {
         run_id: fingerprint(object, "run_id", "$")?,
         bundle_revision,
@@ -1154,6 +1176,7 @@ fn parse_root(root: &Json) -> Result<RunBundle, String> {
         activities,
         check_executions,
         challenger_executions,
+        contributions,
     })
 }
 
@@ -2447,6 +2470,18 @@ fn unsafe_subject_number_paths(subject: &Subject) -> Vec<String> {
 }
 
 fn unsafe_number_paths(bundle: &RunBundle) -> Vec<String> {
+    let mut paths = unsafe_number_paths_shallow(bundle);
+    for (index, child) in bundle.contributions.iter().enumerate() {
+        paths.extend(
+            unsafe_number_paths_shallow(child)
+                .into_iter()
+                .map(|path| format!("contributions[{index}].{path}")),
+        );
+    }
+    paths
+}
+
+fn unsafe_number_paths_shallow(bundle: &RunBundle) -> Vec<String> {
     let mut paths = unsafe_subject_number_paths(&bundle.subject);
     record_unsafe_number(&mut paths, "bundle_revision", bundle.bundle_revision);
     record_unsafe_number(&mut paths, "planned_at_ms", bundle.planned_at_ms);
@@ -3675,6 +3710,12 @@ fn bundle_json(bundle: &RunBundle, include_fingerprint: bool) -> Json {
             ),
         ),
     ]);
+    if !bundle.contributions.is_empty() {
+        fields.push((
+            "contributions".into(),
+            Json::Arr(bundle.contributions.iter().map(to_json).collect()),
+        ));
+    }
     Json::Obj(fields)
 }
 
@@ -4414,6 +4455,17 @@ fn write_jcs_string(value: &str, out: &mut String) {
 }
 
 pub fn verify(bundle: &RunBundle) -> Vec<Finding> {
+    if bundle
+        .contributions
+        .iter()
+        .any(|child| !child.contributions.is_empty())
+    {
+        return vec![Finding {
+            run_id: bundle.run_id.clone(),
+            code: "run/coordination".into(),
+            detail: "nested coordinated contributions are forbidden".into(),
+        }];
+    }
     let mut findings = Vec::new();
     let unsafe_numbers = unsafe_number_paths(bundle);
     if !unsafe_numbers.is_empty() {
@@ -4451,6 +4503,7 @@ pub fn verify(bundle: &RunBundle) -> Vec<Finding> {
     validate_subject(bundle, &mut add);
     validate_canonical_arrays(bundle, &mut add);
     validate_provenance(bundle, &mut add);
+    validate_contributions(bundle, &mut add);
 
     let expected_subject = subject_fingerprint(&bundle.subject);
     if bundle.subject_fingerprint != expected_subject {
@@ -4967,7 +5020,9 @@ fn validate_provenance(bundle: &RunBundle, add: &mut impl FnMut(&str, String)) {
             );
         }
         let expected_prefix = format!("{}/", adapter.id);
-        if !route.capability.address.starts_with(&expected_prefix) {
+        if bundle.contributions.is_empty()
+            && !route.capability.address.starts_with(&expected_prefix)
+        {
             add(
                 "run/provenance-route-adapter",
                 format!(
@@ -5881,7 +5936,12 @@ pub fn verify_set(bundles: &[RunBundle]) -> Vec<Finding> {
     }
     let mut runs = BTreeMap::<String, Vec<&RunBundle>>::new();
     for bundle in exact {
-        if unsafe_number_paths(bundle).is_empty() {
+        if unsafe_number_paths(bundle).is_empty()
+            && bundle
+                .contributions
+                .iter()
+                .all(|child| child.contributions.is_empty())
+        {
             runs.entry(bundle.run_id.clone()).or_default().push(bundle);
         }
     }
@@ -6001,6 +6061,31 @@ pub fn verify_set(bundles: &[RunBundle]) -> Vec<Finding> {
             }
         }
     }
+    let mut children = BTreeMap::<(String, String), Vec<RunBundle>>::new();
+    for bundle in bundles {
+        if bundle
+            .contributions
+            .iter()
+            .any(|child| !child.contributions.is_empty())
+        {
+            continue;
+        }
+        for child in &bundle.contributions {
+            children
+                .entry((bundle.run_id.clone(), child.provenance.adapter.id.clone()))
+                .or_default()
+                .push(child.clone());
+        }
+    }
+    for ((parent, id), history) in children {
+        for finding in verify_set(&history) {
+            findings.push(Finding {
+                run_id: parent.clone(),
+                code: "run/coordination-history".into(),
+                detail: format!("{id}: {}: {}", finding.code, finding.detail),
+            });
+        }
+    }
     findings.sort();
     findings.dedup();
     findings
@@ -6049,4 +6134,324 @@ fn history_finding(findings: &mut Vec<Finding>, run_id: &str, code: &str, detail
         code: code.into(),
         detail,
     });
+}
+
+pub fn coordinator_identity(adapters: &[LaunchAdapterIdentity]) -> LaunchAdapterIdentity {
+    if adapters.len() == 1 {
+        return adapters[0].clone();
+    }
+    let values = adapters
+        .iter()
+        .map(|a| {
+            Json::obj(vec![
+                ("id", Json::str(&a.id)),
+                ("adapter_version", Json::str(&a.adapter_version)),
+                ("adapter_fingerprint", Json::str(&a.adapter_fingerprint)),
+                (
+                    "descriptor_fingerprint",
+                    Json::str(&a.descriptor_fingerprint),
+                ),
+                (
+                    "configuration_fingerprint",
+                    Json::str(&a.configuration_fingerprint),
+                ),
+            ])
+        })
+        .collect();
+    let digest = jcs_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-coordinator-identity")),
+        ("version", Json::Num(1.0)),
+        ("adapters", Json::Arr(values)),
+    ]));
+    LaunchAdapterIdentity {
+        id: "azimuth-coordinator".into(),
+        adapter_version: "1".into(),
+        adapter_fingerprint: digest.clone(),
+        descriptor_fingerprint: digest.clone(),
+        configuration_fingerprint: digest,
+    }
+}
+
+pub fn refresh_bundle(bundle: &mut RunBundle) {
+    bundle.actual_selection.fingerprint = selection_fingerprint(&bundle.actual_selection);
+    bundle.run_id = run_id(bundle);
+    for i in 0..bundle.check_executions.len() {
+        for j in 0..bundle.check_executions[i].observations.len() {
+            let fingerprint = observation_fingerprint(
+                bundle,
+                &bundle.check_executions[i],
+                &bundle.check_executions[i].observations[j],
+            );
+            bundle.check_executions[i].observations[j].fingerprint = fingerprint;
+        }
+    }
+    for i in 0..bundle.challenger_executions.len() {
+        bundle.challenger_executions[i].result.fingerprint =
+            challenge_result_fingerprint(bundle, &bundle.challenger_executions[i]);
+    }
+    bundle.bundle_fingerprint = bundle_fingerprint(bundle);
+}
+
+pub fn coordinate_bundle(mut bundle: RunBundle, contributions: Vec<RunBundle>) -> RunBundle {
+    bundle.contributions = contributions;
+    bundle.artifacts.clear();
+    bundle.activities.clear();
+    bundle.diagnostics.clear();
+    bundle.check_executions.clear();
+    bundle.challenger_executions.clear();
+    bundle.actual_selection.checks.clear();
+    bundle.actual_selection.challenges.clear();
+    bundle.actual_selection.context = bundle.plan.required_context.clone();
+    bundle.actual_selection.plan_fingerprint = bundle.plan.fingerprint.clone();
+    bundle.started_at_ms = bundle
+        .contributions
+        .iter()
+        .map(|b| b.started_at_ms)
+        .min()
+        .unwrap_or(bundle.planned_at_ms);
+    bundle.finished_at_ms = bundle
+        .contributions
+        .iter()
+        .map(|b| b.finished_at_ms)
+        .max()
+        .unwrap_or(bundle.planned_at_ms);
+    bundle.provenance.generated_at_ms = bundle
+        .contributions
+        .iter()
+        .map(|b| b.provenance.generated_at_ms)
+        .max()
+        .unwrap_or(bundle.finished_at_ms);
+    bundle.status = if bundle
+        .contributions
+        .iter()
+        .all(|b| b.status == RunStatus::Complete)
+    {
+        RunStatus::Complete
+    } else {
+        RunStatus::Partial
+    };
+    let identities = bundle
+        .contributions
+        .iter()
+        .map(|child| launch_adapter_identity(&child.provenance.adapter))
+        .collect::<Vec<_>>();
+    let coordinator = coordinator_identity(&identities);
+    bundle.provenance.normalizer = Normalizer {
+        id: format!("adapter/{}", coordinator.id),
+        version: coordinator.adapter_version.clone(),
+        build_fingerprint: coordinator.adapter_fingerprint.clone(),
+    };
+    bundle.provenance.source = SourceProvenance {
+        system: "azimuth/coordinator".into(),
+        execution: jcs_sha256(&Json::Arr(
+            bundle
+                .contributions
+                .iter()
+                .map(|b| Json::str(&b.run_id))
+                .collect(),
+        )),
+        uri: None,
+    };
+    bundle.provenance.principal = None;
+    bundle.provenance.attributes = None;
+    bundle.provenance.adapter = AdapterProvenance {
+        id: coordinator.id,
+        adapter_version: coordinator.adapter_version,
+        adapter_fingerprint: coordinator.adapter_fingerprint,
+        descriptor_fingerprint: coordinator.descriptor_fingerprint,
+        configuration_fingerprint: coordinator.configuration_fingerprint,
+        launch_fingerprint: String::new(),
+        routes: Vec::new(),
+        import_inputs: Vec::new(),
+    };
+    for child in &bundle.contributions {
+        let prefix = format!("{}/", child.provenance.adapter.id);
+        let refs = |values: &[String]| {
+            values
+                .iter()
+                .map(|id| format!("{prefix}{id}"))
+                .collect::<Vec<_>>()
+        };
+        bundle
+            .actual_selection
+            .checks
+            .extend(child.actual_selection.checks.clone());
+        bundle
+            .actual_selection
+            .challenges
+            .extend(child.actual_selection.challenges.clone());
+        bundle
+            .provenance
+            .adapter
+            .routes
+            .extend(child.provenance.adapter.routes.clone());
+        for input in &child.provenance.adapter.import_inputs {
+            if !bundle.provenance.adapter.import_inputs.contains(input) {
+                bundle.provenance.adapter.import_inputs.push(input.clone());
+            }
+        }
+        for artifact in &child.artifacts {
+            let mut a = artifact.clone();
+            a.id = format!("{prefix}{}", a.id);
+            bundle.artifacts.push(a);
+        }
+        for diagnostic in &child.diagnostics {
+            let mut d = diagnostic.clone();
+            d.id = format!("{prefix}{}", d.id);
+            d.artifacts = refs(&d.artifacts);
+            if let DiagnosticScope::Activity(id) = &mut d.scope {
+                *id = format!("{prefix}{id}");
+            }
+            bundle.diagnostics.push(d);
+        }
+        for activity in &child.activities {
+            let mut a = activity.clone();
+            a.id = format!("{prefix}{}", a.id);
+            a.artifacts = refs(&a.artifacts);
+            a.diagnostics = refs(&a.diagnostics);
+            bundle.activities.push(a);
+        }
+        for execution in &child.check_executions {
+            let mut e = execution.clone();
+            for unit in &mut e.units {
+                for attempt in &mut unit.attempts {
+                    attempt.activity = format!("{prefix}{}", attempt.activity);
+                }
+            }
+            for observation in &mut e.observations {
+                observation.artifacts = refs(&observation.artifacts);
+                observation.diagnostics = refs(&observation.diagnostics);
+            }
+            bundle.check_executions.push(e);
+        }
+        for execution in &child.challenger_executions {
+            let mut e = execution.clone();
+            for unit in &mut e.units {
+                for attempt in &mut unit.attempts {
+                    attempt.activity = format!("{prefix}{}", attempt.activity);
+                }
+            }
+            e.result.objections = refs(&e.result.objections);
+            e.result.artifacts = refs(&e.result.artifacts);
+            e.result.diagnostics = refs(&e.result.diagnostics);
+            bundle.challenger_executions.push(e);
+        }
+    }
+    bundle
+        .actual_selection
+        .checks
+        .sort_by(|a, b| a.id.cmp(&b.id));
+    bundle
+        .actual_selection
+        .challenges
+        .sort_by(|a, b| a.id.cmp(&b.id));
+    bundle.provenance.adapter.routes.sort_by(|a, b| {
+        (&a.selection.kind, &a.selection.id).cmp(&(&b.selection.kind, &b.selection.id))
+    });
+    bundle.provenance.adapter.import_inputs.sort();
+    bundle.artifacts.sort_by(|a, b| a.id.cmp(&b.id));
+    bundle.activities.sort_by(|a, b| a.id.cmp(&b.id));
+    bundle.diagnostics.sort_by(|a, b| a.id.cmp(&b.id));
+    bundle
+        .check_executions
+        .sort_by(|a, b| a.check.id.cmp(&b.check.id));
+    bundle
+        .challenger_executions
+        .sort_by(|a, b| a.challenge.cmp(&b.challenge));
+    bundle.provenance.adapter.launch_fingerprint = launch_fingerprint(
+        bundle.provenance.mode,
+        bundle.planned_at_ms,
+        &bundle.subject,
+        &bundle.subject_fingerprint,
+        &bundle.plan,
+        &launch_adapter_identity(&bundle.provenance.adapter),
+        &bundle.provenance.adapter.routes,
+    );
+    refresh_bundle(&mut bundle);
+    bundle
+}
+
+fn validate_contributions(bundle: &RunBundle, add: &mut impl FnMut(&str, String)) {
+    if bundle.contributions.is_empty() {
+        if bundle.provenance.adapter.id == "azimuth-coordinator" {
+            add(
+                "run/coordination",
+                "coordinator requires retained contributions".into(),
+            );
+        }
+        return;
+    }
+    if bundle.contributions.len() < 2 || bundle.contributions.len() > 64 {
+        add(
+            "run/coordination",
+            "coordinated Run requires 2 through 64 contributions".into(),
+        );
+        return;
+    }
+    if bundle
+        .contributions
+        .iter()
+        .any(|b| !b.contributions.is_empty())
+    {
+        add(
+            "run/coordination",
+            "nested coordinated contributions are forbidden".into(),
+        );
+        return;
+    }
+    let mut prior = None;
+    let mut checks = Vec::new();
+    let mut challenges = Vec::new();
+    for child in &bundle.contributions {
+        let id = child.provenance.adapter.id.as_str();
+        if prior.is_some_and(|value| value >= id) {
+            add(
+                "run/coordination",
+                "contributions must be sorted by unique adapter id".into(),
+            );
+        }
+        prior = Some(id);
+        if child.bundle_revision != bundle.bundle_revision {
+            add(
+                "run/coordination-history",
+                format!("contribution `{id}` revision must equal the coordinated revision"),
+            );
+        }
+        if child.subject != bundle.subject
+            || child.subject_fingerprint != bundle.subject_fingerprint
+            || child.planned_at_ms != bundle.planned_at_ms
+            || child.plan.model_fingerprint != bundle.plan.model_fingerprint
+            || child.plan.required_context != bundle.plan.required_context
+            || child.actual_selection.context != bundle.plan.required_context
+            || child.provenance.mode != bundle.provenance.mode
+        {
+            add(
+                "run/coordination",
+                format!("contribution `{id}` changes Subject, model, context, time or operation"),
+            );
+        }
+        for finding in verify(child) {
+            add(
+                "run/coordination-contribution",
+                format!("{id}: {}: {}", finding.code, finding.detail),
+            );
+        }
+        checks.extend(child.plan.checks.clone());
+        challenges.extend(child.plan.challenges.clone());
+    }
+    checks.sort_by(|a, b| a.id.cmp(&b.id));
+    challenges.sort_by(|a, b| a.id.cmp(&b.id));
+    if checks != bundle.plan.checks || challenges != bundle.plan.challenges {
+        add(
+            "run/coordination",
+            "contributions do not partition the complete Plan exactly".into(),
+        );
+    }
+    let expected = coordinate_bundle(bundle.clone(), bundle.contributions.clone());
+    if expected != *bundle {
+        add(
+            "run/coordination",
+            "coordinated projection must retain exactly every contribution fact".into(),
+        );
+    }
 }

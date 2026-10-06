@@ -3181,3 +3181,39 @@ fn git_output(root: &Path, args: &[&str]) -> Result<String, String> {
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
+
+/// A candidate must be the singular change observed in the pinned owning repository.
+pub fn validate_change_location(assembly: &Assembly, root: &Path) -> Result<(), Vec<Diag>> {
+    let root = fs::canonicalize(root)
+        .map_err(|error| vec![Diag::file(&root.display().to_string(), error.to_string())])?;
+    let id = root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    let matches = assembly
+        .changes
+        .iter()
+        .filter(|change| change.id == id && change.state == ChangeState::Active)
+        .collect::<Vec<_>>();
+    if matches.len() != 1 {
+        return Err(vec![Diag::file(
+            &root.display().to_string(),
+            format!("workset needs one active authority for change `{id}`"),
+        )]);
+    }
+    let change = matches[0];
+    let owner = assembly
+        .repositories
+        .iter()
+        .find(|repository| repository.id == change.repository)
+        .expect("assembled change owner exists");
+    let observed = fs::canonicalize(owner.root.join(&change.path))
+        .map_err(|error| vec![Diag::file(&root.display().to_string(), error.to_string())])?;
+    if observed != root {
+        return Err(vec![Diag::file(
+            &root.display().to_string(),
+            "candidate change does not match pinned workset authority",
+        )]);
+    }
+    Ok(())
+}

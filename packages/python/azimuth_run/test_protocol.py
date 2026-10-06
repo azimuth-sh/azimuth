@@ -22,6 +22,7 @@ def fixture():
               "routes": [{"selection": {"kind": "check", "id": "admission"},
                           "capability": {"address": "native/reports", "class": "check.import", "fingerprint": digest}}]}
     launch["fingerprint"] = fingerprint({"format": "azimuth-run-launch-fingerprint", "version": 1, **launch})
+    launch["adapters"] = [launch.pop("adapter")]
     activities = [{"id": identity, "status": "completed", "started_at_ms": 20,
                    "finished_at_ms": 30, "artifacts": [], "diagnostics": [], "attributes": {}}
                   for identity in ("measurement-a", "measurement-b")]
@@ -115,6 +116,14 @@ class RunConstruction(unittest.TestCase):
         for value in (-1, 9007199254740992, 1.0, float("nan"), "\ud800"):
             with self.subTest(value=repr(value)):
                 with self.assertRaises((ValueError, UnicodeError)): canonical_json(value)
+
+
+class PartitionedLaunchTests(unittest.TestCase):
+    def test_provider_builder_rejects_a_coordinated_parent_launch(self):
+        launch, arguments = fixture()
+        launch["adapters"].append(deepcopy(launch["adapters"][0]))
+        with self.assertRaisesRegex(ValueError, "partitioned adapter launch"):
+            build_check_bundle(launch, **arguments)
 
 
 if __name__ == "__main__":

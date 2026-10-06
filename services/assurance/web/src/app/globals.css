@@ -186,3 +186,9 @@ footer {
   .modelIdentity { grid-template-columns: 1fr; }
   footer { gap: 20px; }
 }
+
+pre { max-width: 100%; overflow: auto; padding: 1rem; background: var(--panel, #131b25); border-radius: 0.5rem; font-size: 0.8rem; }
+code { overflow-wrap: anywhere; }
+button { padding: 0.7rem 1rem; border-radius: 0.5rem; cursor: pointer; }
+button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+details { margin-block: 1rem; }

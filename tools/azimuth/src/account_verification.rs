@@ -649,7 +649,7 @@ fn validate_local(path: &str, line: usize, kind: &str, id: &str, errors: &mut Ve
     }
 }
 
-fn read_check(
+fn read_check_base(
     path: &str,
     line: usize,
     id: &str,
@@ -841,4 +841,41 @@ fn read_check(
         inputs: std::collections::BTreeMap::new(),
         selectors: std::collections::BTreeMap::new(),
     }
+}
+
+fn read_check(
+    path: &str,
+    line: usize,
+    id: &str,
+    claim: &str,
+    enclosing_case: Option<&str>,
+    block: &[&str],
+    errors: &mut Vec<Diag>,
+) -> AuthoredCheck {
+    let (filtered, execution) = crate::run_selection::extract_execution(path, line, block, errors);
+    let retained = filtered
+        .iter()
+        .enumerate()
+        .filter(|(_, text)| text.as_str() != "\u{0}")
+        .collect::<Vec<_>>();
+    let refs = retained
+        .iter()
+        .map(|(_, text)| text.as_str())
+        .collect::<Vec<_>>();
+    let remap = |number: usize| {
+        number
+            .checked_sub(line + 1)
+            .and_then(|index| retained.get(index))
+            .map_or(number, |(original, _)| line + original + 1)
+    };
+    let before = errors.len();
+    let mut check = read_check_base(path, line, id, claim, enclosing_case, &refs, errors);
+    for error in &mut errors[before..] {
+        error.line = remap(error.line);
+    }
+    for binding in &mut check.bindings {
+        binding.line = remap(binding.line);
+    }
+    check.inputs.extend(execution);
+    check
 }

@@ -1,6 +1,6 @@
 use axum::{
     body::Bytes,
-    extract::{DefaultBodyLimit, Path, State},
+    extract::{DefaultBodyLimit, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -17,6 +17,7 @@ enum Role {
     Producer,
     Reviewer,
     Owner,
+    Viewer,
 }
 
 #[derive(Deserialize)]
@@ -25,6 +26,8 @@ pub struct ProjectCredentials {
     pub producers: BTreeMap<String, String>,
     pub reviewers: BTreeMap<String, String>,
     pub owners: BTreeMap<String, String>,
+    #[serde(default)]
+    pub viewers: BTreeMap<String, String>,
 }
 
 struct Credential {
@@ -62,6 +65,7 @@ impl LedgerState {
                 (Role::Producer, roles.producers),
                 (Role::Reviewer, roles.reviewers),
                 (Role::Owner, roles.owners),
+                (Role::Viewer, roles.viewers),
             ] {
                 for (identity, token) in identities {
                     azimuth::diag::validate_id(&identity, false)
@@ -137,7 +141,8 @@ pub fn app(state: LedgerState) -> Router {
             "/v1/projects/{project}/reviews",
             post(ingest_review).get(review_history),
         )
-        .route("/v1/projects/{project}/runs", post(ingest))
+        .route("/v1/projects/{project}/runs", post(ingest).get(list_runs))
+        .route("/v1/projects/{project}/subjects", get(list_subjects))
         .route("/v1/projects/{project}/runs/{run_id}", get(history))
         .route(
             "/v1/projects/{project}/subjects/{subject}/state",
@@ -223,25 +228,48 @@ async fn ingest(
 async fn history(
     State(state): State<LedgerState>,
     Path((project, run_id)): Path<(String, String)>,
+    Query(page): Query<Page>,
     headers: HeaderMap,
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
+    let limit = page.limit()?;
+    let after = if page.after.is_empty() {
+        -1
+    } else {
+        page.after
+            .parse::<i64>()
+            .map_err(|_| LedgerError::invalid("Run cursor must be a nonnegative revision"))?
+    };
+    if after < -1 {
+        return Err(LedgerError::invalid(
+            "Run cursor must be a nonnegative revision",
+        ));
+    }
     let rows = sqlx::query(
-        "SELECT payload FROM run_bundles WHERE project = $1 AND run_id = $2 ORDER BY revision",
+        "SELECT revision, CASE WHEN sum(CASE WHEN ordinal < $4 THEN octet_length(payload::text) ELSE 0 END) OVER () > 33554432 THEN NULL WHEN ordinal < $4 THEN payload ELSE 'null'::jsonb END AS payload FROM (SELECT revision,payload,row_number() OVER (ORDER BY revision) AS ordinal FROM (SELECT revision,payload FROM run_bundles WHERE project = $1 AND run_id = $2 AND revision > $3 ORDER BY revision LIMIT $4) candidates) page ORDER BY revision",
     )
     .bind(&project)
     .bind(&run_id)
+    .bind(after)
+    .bind(limit + 1)
     .fetch_all(&state.pool)
     .await?;
+    require_bounded_payloads(&rows)?;
+    let next = rows
+        .get(limit as usize - 1)
+        .filter(|_| rows.len() > limit as usize)
+        .map(|r| r.try_get::<i64, _>("revision").map(|v| v.to_string()))
+        .transpose()?;
     let values = rows
         .into_iter()
+        .take(limit as usize)
         .map(|r| r.try_get::<Value, _>("payload"))
         .collect::<Result<Vec<_>, _>>()?;
     if values.is_empty() {
         return Err(LedgerError::not_found());
     }
     Ok(Json(
-        json!({"project":project,"run_id":run_id,"revisions":values}),
+        json!({"project":project,"run_id":run_id,"revisions":values,"next":next}),
     ))
 }
 
@@ -251,6 +279,16 @@ async fn subject_state(
     headers: HeaderMap,
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM run_bundles WHERE project=$1 AND subject_fingerprint=$2)",
+    )
+    .bind(&project)
+    .bind(&subject)
+    .fetch_one(&state.pool)
+    .await?;
+    if !exists {
+        return Err(LedgerError::not_found());
+    }
     let (authority, reviews, bundles) = load_snapshot(&state.pool, &project).await?;
     let result = assurance_review::subject_state(&authority, &reviews, &bundles, &subject);
     Ok(Json(to_value(&result)?))
@@ -382,15 +420,105 @@ async fn ingest_review(
 async fn review_history(
     State(state): State<LedgerState>,
     Path(project): Path<String>,
+    Query(page): Query<Page>,
     headers: HeaderMap,
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
-    let records = load_reviews(&state.pool, &project).await?;
-    let records = records
-        .iter()
-        .map(to_value)
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(Json(json!({"project":project,"records":records})))
+    let limit = page.limit()?;
+    let rows = sqlx::query("SELECT fingerprint, CASE WHEN sum(CASE WHEN ordinal < $3 THEN octet_length(payload::text) ELSE 0 END) OVER () > 33554432 THEN NULL WHEN ordinal < $3 THEN payload ELSE 'null'::jsonb END AS payload FROM (SELECT fingerprint,payload,row_number() OVER (ORDER BY fingerprint) AS ordinal FROM (SELECT fingerprint,payload FROM assurance_reviews WHERE project=$1 AND fingerprint > $2 ORDER BY fingerprint LIMIT $3) candidates) page ORDER BY fingerprint")
+        .bind(&project).bind(&page.after).bind(limit + 1).fetch_all(&state.pool).await?;
+    require_bounded_payloads(&rows)?;
+    let (authority, reviews, bundles) = load_snapshot(&state.pool, &project).await?;
+    let mut records = Vec::new();
+    let next = rows
+        .get(limit as usize - 1)
+        .filter(|_| rows.len() > limit as usize)
+        .map(|r| r.try_get::<String, _>("fingerprint"))
+        .transpose()?;
+    for row in rows.into_iter().take(limit as usize) {
+        let payload: Value = row.try_get("payload")?;
+        let record = core_json(payload.to_string().as_bytes())?;
+        let assessment = assurance_review::assess_record(&record, &authority, &reviews, &bundles);
+        records.push(json!({"record":payload,"assessment":assessment.status,"diagnostics":assessment.diagnostics}));
+    }
+    Ok(Json(
+        json!({"project":project,"records":records,"next":next}),
+    ))
+}
+
+fn require_bounded_payloads(rows: &[sqlx::postgres::PgRow]) -> Result<(), LedgerError> {
+    // Many individually valid records must not exhaust API memory when fetched together.
+    for row in rows {
+        if row.try_get::<Option<Value>, _>("payload")?.is_none() {
+            return Err(LedgerError::invalid(
+                "page exceeds 32 MiB; request a smaller limit",
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct Page {
+    limit: Option<i64>,
+    #[serde(default)]
+    after: String,
+}
+impl Page {
+    fn limit(&self) -> Result<i64, LedgerError> {
+        let limit = self.limit.unwrap_or(25);
+        if !(1..=100).contains(&limit) || self.after.len() > 1024 {
+            return Err(LedgerError::invalid(
+                "limit must be 1..100 and cursor at most 1024 bytes",
+            ));
+        }
+        Ok(limit)
+    }
+}
+
+async fn list_runs(
+    State(state): State<LedgerState>,
+    Path(project): Path<String>,
+    Query(page): Query<Page>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, LedgerError> {
+    state.authorize(&project, &headers, None)?;
+    let limit = page.limit()?;
+    let rows = sqlx::query("SELECT DISTINCT ON (run_id) run_id,revision,fingerprint,subject_fingerprint,model_fingerprint,payload->'status' AS status,payload->'subject' AS subject FROM run_bundles WHERE project=$1 AND run_id > $2 ORDER BY run_id,revision DESC LIMIT $3")
+        .bind(&project).bind(&page.after).bind(limit + 1).fetch_all(&state.pool).await?;
+    let next = rows
+        .get(limit as usize - 1)
+        .filter(|_| rows.len() > limit as usize)
+        .map(|r| r.try_get::<String, _>("run_id"))
+        .transpose()?;
+    let mut items = Vec::new();
+    for row in rows.into_iter().take(limit as usize) {
+        items.push(json!({"run_id":row.try_get::<String,_>("run_id")?,"revision":row.try_get::<i64,_>("revision")?,"fingerprint":row.try_get::<String,_>("fingerprint")?,"subject_fingerprint":row.try_get::<String,_>("subject_fingerprint")?,"model_fingerprint":row.try_get::<String,_>("model_fingerprint")?,"status":row.try_get::<Value,_>("status")?,"subject":row.try_get::<Value,_>("subject")?}));
+    }
+    Ok(Json(json!({"project":project,"items":items,"next":next})))
+}
+
+async fn list_subjects(
+    State(state): State<LedgerState>,
+    Path(project): Path<String>,
+    Query(page): Query<Page>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, LedgerError> {
+    state.authorize(&project, &headers, None)?;
+    let limit = page.limit()?;
+    let rows = sqlx::query("SELECT DISTINCT ON (subject_fingerprint) subject_fingerprint,payload->'subject' AS subject FROM run_bundles WHERE project=$1 AND subject_fingerprint > $2 ORDER BY subject_fingerprint,run_id,revision DESC LIMIT $3")
+        .bind(&project).bind(&page.after).bind(limit + 1).fetch_all(&state.pool).await?;
+    let next = rows
+        .get(limit as usize - 1)
+        .filter(|_| rows.len() > limit as usize)
+        .map(|r| r.try_get::<String, _>("subject_fingerprint"))
+        .transpose()?;
+    let mut items = Vec::new();
+    for row in rows.into_iter().take(limit as usize) {
+        items.push(json!({"fingerprint":row.try_get::<String,_>("subject_fingerprint")?,"subject":row.try_get::<Value,_>("subject")?}));
+    }
+    Ok(Json(json!({"project":project,"items":items,"next":next})))
 }
 
 async fn load_authority(pool: &PgPool, project: &str) -> Result<CoreJson, LedgerError> {
@@ -404,33 +532,32 @@ async fn load_authority(pool: &PgPool, project: &str) -> Result<CoreJson, Ledger
     )
 }
 
-async fn load_reviews(pool: &PgPool, project: &str) -> Result<Vec<CoreJson>, LedgerError> {
-    let rows =
-        sqlx::query("SELECT payload FROM assurance_reviews WHERE project=$1 ORDER BY fingerprint")
-            .bind(project)
-            .fetch_all(pool)
-            .await?;
-    rows.into_iter()
-        .map(|r| {
-            let value: Value = r.try_get("payload")?;
-            core_json(value.to_string().as_bytes())
-        })
-        .collect()
-}
-
 async fn load_snapshot(
     pool: &PgPool,
     project: &str,
 ) -> Result<(CoreJson, Vec<CoreJson>, Vec<run::RunBundle>), LedgerError> {
     // One database snapshot prevents a correction or authority selection from producing a torn assessment.
+    // A complete bounded snapshot is preferable to a misleading conclusion from truncated evidence.
     let value: Value = sqlx::query_scalar(r#"
-        SELECT jsonb_build_object(
+        WITH heads AS (SELECT DISTINCT ON (run_id) run_id,payload FROM run_bundles WHERE project=$1 ORDER BY run_id,revision DESC),
+        reviews AS (SELECT fingerprint,payload FROM assurance_reviews WHERE project=$1),
+        limits AS (SELECT
+            (SELECT count(*) FROM heads) + (SELECT count(*) FROM reviews) AS records,
+            COALESCE((SELECT sum(octet_length(payload::text)) FROM heads),0) +
+            COALESCE((SELECT sum(octet_length(payload::text)) FROM reviews),0) AS bytes)
+        SELECT CASE WHEN records > 5000 OR bytes > 33554432 THEN jsonb_build_object('too_large',true)
+        ELSE jsonb_build_object(
             'authority', (SELECT a.payload FROM assurance_authorities a JOIN current_authorities c
                 ON a.project=c.project AND a.fingerprint=c.fingerprint WHERE a.project=$1),
-            'reviews', COALESCE((SELECT jsonb_agg(payload ORDER BY fingerprint) FROM assurance_reviews WHERE project=$1), '[]'::jsonb),
-            'runs', COALESCE((SELECT jsonb_agg(payload ORDER BY run_id) FROM
-                (SELECT DISTINCT ON (run_id) run_id,payload FROM run_bundles WHERE project=$1 ORDER BY run_id,revision DESC) heads), '[]'::jsonb))
+            'reviews', COALESCE((SELECT jsonb_agg(payload ORDER BY fingerprint) FROM reviews), '[]'::jsonb),
+            'runs', COALESCE((SELECT jsonb_agg(payload ORDER BY run_id) FROM heads), '[]'::jsonb)) END
+        FROM limits
         "#).bind(project).fetch_one(pool).await?;
+    if value["too_large"] == true {
+        return Err(LedgerError::invalid(
+            "assessment exceeds 5000 records or 32 MiB; no partial Assurance State is inferred",
+        ));
+    }
     if value["authority"].is_null() {
         return Err(LedgerError::not_found());
     }

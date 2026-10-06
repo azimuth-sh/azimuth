@@ -28,7 +28,7 @@ A Run launch plan binds one provider-neutral Run-bundle semantic Plan to explici
   "checks": [
     {
       "id": "recovery-under-broker-loss",
-      "capability": "synthetic/checks",
+      "execution-capability": "synthetic/checks",
       "cases": ["replayed-after-broker-loss"],
       "units": [
         {
@@ -41,7 +41,7 @@ A Run launch plan binds one provider-neutral Run-bundle semantic Plan to explici
   "challenges": [
     {
       "id": "payments/recovery-credibility",
-      "capability": "synthetic/challenges",
+      "execution-capability": "synthetic/challenges",
       "max_candidates": 128,
       "units": [
         {
@@ -56,9 +56,7 @@ A Run launch plan binds one provider-neutral Run-bundle semantic Plan to explici
 
 Operation is `execute | import`. `planned_at_ms` is the non-negative integral safe Unix-millisecond time at which core creates the bounded execution plan. Subject has one exact Run-bundle Subject shape. `required_context` and unit parameters are exact objects from unique non-empty strings to strings; `{}` is valid. `checks` and `challenges` are both required arrays; either may be empty, but their combined selection is non-empty.
 
-Checks sort by unique project-global Check id. Every Check request has a non-empty sorted unique
-`cases` array of exact nested Case ids and must have exactly one Evidence Binding from that Check to
-each Case. Challenge requests sort by unique authored Challenge Plan id. Both name an exact
+Checks sort by unique project-global Check id. A Check request may omit `cases`; core derives all authored Check-to-Case bindings. An explicit nonempty sorted unique subset must resolve to exactly one binding per Case. A Check request may omit `units`; core supplies one `whole` unit with empty parameters. Explicit units remain finite, nonempty, sorted and unique. Neither default means internal Surface coverage is complete. Challenge requests sort by unique authored Challenge Plan id. Both name an exact
 configured `<adapter-id>/<capability-id>` address and non-empty units sorted by unique lower-kebab
 path id. `max_candidates` is required only for Challenge requests and is an integer from 1 through
 the Run-bundle safe-integer maximum. It counts unique candidate records from that authored Plan
@@ -77,7 +75,7 @@ of Run context and uses the one request context for execution. Check execution i
 explicit Check-to-Case bindings but not current positive repository decisions; it records an
 execution fact and does not infer evidentiary applicability.
 
-Core verifies that each explicit capability has the operation's Challenge class and the current Challenger's exact form. It never chooses a capability lexically or trusts a form in the request. The one-adapter prefix rule spans Check and Challenge requests. Duplicate selections with different capabilities or units fail. There is no complete-model broadening, partial-model or `--only` path.
+Core verifies that each explicit capability has the operation's Challenge class and the current Challenger's exact form. It never chooses a capability lexically or trusts a form in the request. Every route has an explicit configured adapter prefix; one Run may select several adapters for the same exact Subject. Duplicate selections with different capabilities or units fail. There is no complete-model broadening, partial-model or `--only` path.
 
 ## Launch plan
 
@@ -92,13 +90,13 @@ The complete shape is:
   "subject": {},
   "subject_fingerprint": "sha256:<subject-fingerprint>",
   "plan": {},
-  "adapter": {
+  "adapters": [{
     "id": "synthetic",
     "adapter_version": "0.1.0-alpha.6",
     "adapter_fingerprint": "sha256:<adapter-fingerprint>",
     "descriptor_fingerprint": "sha256:<descriptor-fingerprint>",
     "configuration_fingerprint": "sha256:<configuration-fingerprint>"
-  },
+  }],
   "routes": [
     {
       "selection": {
@@ -118,7 +116,7 @@ The complete shape is:
 
 Operation is `execute | import`. `planned_at_ms` equals the planning request and later equals the bundle field. Subject and Subject fingerprint obey the Run-bundle format. `plan` is the complete Plan object, including its supplied and recomputed fingerprint. The Plan is unchanged from the Run-bundle format: it contains no Subject, adapter, capability, launch or import-input field. Core supplies the separately carried Subject fingerprint when recomputing the Plan fingerprint.
 
-The adapter id is one lower-kebab segment. Adapter version is the exact non-empty configured version. Every fingerprint has exact `sha256:<64-lowercase-hex>` shape and equals the selected configuration entry.
+Each adapter id is one lower-kebab segment. Adapter version is the exact non-empty configured version. Every fingerprint has exact `sha256:<64-lowercase-hex>` shape and equals the selected configuration entry.
 
 ## Routes
 
@@ -167,9 +165,9 @@ A Challenge route is:
 
 The example addresses the exact `a`/`b` selection-identity vector in the Run-bundle format and projects both source-backed scope items. The Challenge selection id is its plan-local id. `challenge_form` is the producer-accountable open lower-kebab path form paired with that Challenger fingerprint. It is required on Challenge routes and forbidden on Check routes. `inputs` is required on Challenge routes and forbidden on Check routes. Standalone format validation proves capability coverage for the declared form and the launch-input shape; generated planning proves their current model authority.
 
-All addresses start with the launch adapter id followed by `/` and name one configured capability. For operation `execute`, route class is exactly `check.execute` or `challenge.execute` according to selection kind. For `import`, it is `check.import` or `challenge.import`. The capability declaration must contain that class and, for a Challenge, the exact form. Capability fingerprints equal the configured values. `model.extract` is never a Run route.
+Every address starts with one selected adapter id followed by `/` and names one configured capability. The adapters array is nonempty, sorted by unique id, and contains exactly the routed configured adapters. For operation `execute`, route class is exactly `check.execute` or `challenge.execute` according to selection kind. For `import`, it is `check.import` or `challenge.import`. The capability declaration must contain that class and, for a Challenge, the exact form. Capability fingerprints equal the configured values. `model.extract` is never a Run route.
 
-Several routes may name one capability, and several capabilities of the one adapter may occur. One physical activity may later support both Check and Challenge executions, but routes and result records remain separate. No launch may contain routes from two adapter ids.
+Several routes may name one capability, and several configured adapters and capabilities may occur. One physical activity may later support both Check and Challenge executions, but routes and result records remain separate. Core partitions a coordinated launch by adapter and retains each verified bounded contribution.
 
 ## Accountable launch inputs
 
@@ -281,3 +279,11 @@ This version replaces the unpublished Check-only request and Challenge-route sha
 ## Stable entity identities: 2026-10-02
 
 All current Claim, Case, Mechanism and Check references use stable project-wide IDs and retain explicit entity kind. Module membership and Case parent relationships do not determine identity. Other activities, units, adapters, capabilities and binding identities retain their contracts. Historical artifacts remain immutable; current alpha artifacts are regenerated without aliases or syntax-only version bumps. See `contracts/entity-identity.md`.
+
+## Coordinated Runs and scalable selection: 2026-10-06
+
+The public launch declares `adapters`, not a singular adapter alias. Single-adapter launches derive their fingerprint identity from that configured adapter. For multiple adapters, the launch fingerprint preimage's `adapter` is a deterministic coordinator identity: its id is `azimuth-coordinator`, version `1`, and all three fingerprints equal canonical SHA-256 of `{format:"azimuth-coordinator-identity",version:1,adapters:[exact sorted adapter identity objects]}`. The preimage otherwise retains the complete Subject, global Plan and global routes. This derived identity is not a configured provider.
+
+Core creates disjoint child launches, verifies their responses and retains exact child Run bundles in the coordinated Run. Every child pins the same Subject, complete-model fingerprint, required context, planning time and operation. Their selections must partition the global Plan exactly. Corrections carry the corresponding child histories. Different Subjects cannot join. See [run-bundle.md](run-bundle.md).
+
+Request selection fields use `execution-capability`; the former capability spelling is not an alias. Omitted Case lists derive authored bindings, and omitted unit lists default to whole. Explicit debug selections remain available. `azimuth run select --policy <file>` derives selection from declared execution requirements; `azimuth run plan --selection <report>` validates that report against the current model and adapter configuration before planning. Selection findings and missing routes remain visible and cannot silently produce a complete plan. See [run-selection.md](run-selection.md).

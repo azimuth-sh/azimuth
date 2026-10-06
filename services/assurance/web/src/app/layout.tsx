@@ -4,10 +4,13 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Azimuth Assurance',
-  description: 'Diagnostic view of qualification, execution, and lifecycle gates.',
+  description:
+    'Private inspection of exact-Subject Assurance State, independent reviews and Runs.',
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default function RootLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
       <body>
@@ -18,14 +21,16 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             </span>
             <span>
               <strong>Azimuth</strong>
-              <small>Assurance ledger</small>
+              <small>Assurance State</small>
             </span>
           </Link>
-          <p className="boundary">Repository meaning · execution facts · derived gates</p>
+          <p className="boundary">
+            Explicit authority · execution facts · independent reviews
+          </p>
         </header>
         <main>{children}</main>
         <footer>
-          <span>Reference service</span>
+          <span>Inspection only</span>
           <span>Decisions explain themselves.</span>
         </footer>
       </body>

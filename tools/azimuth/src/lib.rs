@@ -23,6 +23,7 @@ pub mod model;
 pub mod resources;
 pub mod run;
 pub mod run_plan;
+pub mod run_selection;
 pub mod spec;
 pub mod traceability;
 pub mod validation;

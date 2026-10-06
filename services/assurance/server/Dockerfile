@@ -12,16 +12,16 @@ RUN mkdir -p tools/azimuth/src services/assurance/domain/src services/assurance/
     && printf 'pub fn dependency_cache_seed() {}\n' > tools/azimuth/src/lib.rs \
     && printf 'fn main() {}\n' > tools/azimuth/src/main.rs \
     && printf 'pub fn dependency_cache_seed() {}\n' > services/assurance/domain/src/lib.rs \
-    && printf 'fn main() {}\n' > services/assurance/server/src/main.rs \
+    && printf 'fn main() {}\n' > services/assurance/server/src/run_ledger_main.rs \
     && cargo build --locked --release --manifest-path services/assurance/Cargo.toml \
-        -p azimuth-assurance-server
+        -p azimuth-assurance-server --bin run-ledger
 
 COPY tools/azimuth tools/azimuth
 COPY services/assurance services/assurance
 RUN cargo clean --release --manifest-path services/assurance/Cargo.toml \
         -p azimuth -p azimuth-assurance-domain -p azimuth-assurance-server \
     && cargo build --locked --release --manifest-path services/assurance/Cargo.toml \
-        -p azimuth-assurance-server
+        -p azimuth-assurance-server --bin run-ledger
 
 FROM debian:bookworm-slim AS runtime
 ARG AZIMUTH_VERSION
@@ -34,7 +34,8 @@ RUN apt-get update \
     && apt-get install --yes --no-install-recommends ca-certificates \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=build /source/services/assurance/target/release/azimuth-assurance-server /usr/local/bin/azimuth-assurance-server
-ENV ASSURANCE_ADDRESS=0.0.0.0:8080
-EXPOSE 8080
-ENTRYPOINT ["azimuth-assurance-server"]
+COPY --from=build /source/services/assurance/target/release/run-ledger /usr/local/bin/run-ledger
+ENV ASSURANCE_RUN_ADDRESS=0.0.0.0:8081
+EXPOSE 8081
+USER 65532:65532
+ENTRYPOINT ["run-ledger"]

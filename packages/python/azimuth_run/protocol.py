@@ -52,9 +52,12 @@ def build_check_bundle(launch, *, source, normalizer, generated_at_ms,
     predecessors contains the complete prior wire bundles for this same Run.
     """
     launch = deepcopy(launch)
-    expected_normalizer = {"id": "adapter/" + launch["adapter"]["id"],
-                           "version": launch["adapter"]["adapter_version"],
-                           "build_fingerprint": launch["adapter"]["adapter_fingerprint"]}
+    if len(launch.get("adapters", [])) != 1:
+        raise ValueError("provider bundle builder requires one partitioned adapter launch")
+    selected_adapter = launch["adapters"][0]
+    expected_normalizer = {"id": "adapter/" + selected_adapter["id"],
+                           "version": selected_adapter["adapter_version"],
+                           "build_fingerprint": selected_adapter["adapter_fingerprint"]}
     if normalizer != expected_normalizer:
         raise ValueError("normalizer must exactly identify the configured adapter")
     if launch["operation"] != "import" or launch["plan"]["challenges"]:
@@ -66,7 +69,8 @@ def build_check_bundle(launch, *, source, normalizer, generated_at_ms,
     if subject_fp != launch["subject_fingerprint"]:
         raise ValueError("Subject fingerprint mismatch")
     launch_payload = {key: launch[key] for key in (
-        "operation", "planned_at_ms", "subject", "subject_fingerprint", "plan", "adapter", "routes")}
+        "operation", "planned_at_ms", "subject", "subject_fingerprint", "plan", "routes")}
+    launch_payload["adapter"] = deepcopy(selected_adapter)
     launch_payload.update(format="azimuth-run-launch-fingerprint", version=1)
     if fingerprint(launch_payload) != launch["fingerprint"]:
         raise ValueError("launch fingerprint mismatch")
@@ -79,7 +83,7 @@ def build_check_bundle(launch, *, source, normalizer, generated_at_ms,
     for activity in activity_map.values():
         if not started_at_ms <= activity["started_at_ms"] <= activity["finished_at_ms"] <= finished_at_ms:
             raise ValueError("activity lies outside native execution interval")
-    adapter = deepcopy(launch["adapter"])
+    adapter = deepcopy(selected_adapter)
     adapter.update(launch_fingerprint=launch["fingerprint"], routes=launch["routes"],
                    import_inputs=sorted(deepcopy(import_inputs), key=lambda item: item["id"]))
     if not adapter["import_inputs"]:

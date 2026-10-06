@@ -217,7 +217,7 @@ fn model(root: &Path, checks: &[&str]) -> (PathBuf, PathBuf, PathBuf) {
             let suffix = id.rsplit('/').next().unwrap();
             format!(
                 "## Check: {id}\nMethod: invoke\nTerminal: works\n\nOne result.\n\n\
-                 ## Evidence Binding: demo/{suffix}-edge\nCheck: {id}\nCase: demo#works/works\n\
+                 ## Evidence Binding: demo/{suffix}-edge\nCheck: {id}\nCase: works\n\
                  Method qualification: demo/{suffix}-method\nProposition: direct\nContext: {{}}\n\
                  Challenge domain: [\"check-implementation\"]\nPolicy: credible\n\nReviewable.\n"
             )
@@ -263,7 +263,7 @@ fn model(root: &Path, checks: &[&str]) -> (PathBuf, PathBuf, PathBuf) {
 }
 
 fn challenge_model(root: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
-    let (model, workspace, manifest) = model(root, &["demo/check"]);
+    let (model, workspace, manifest) = model(root, &["check"]);
     fs::write(
         model.join("demo/spec.md"),
         "# Spec: demo\n\n## Claim: works\nCriticality: standard\n\n\
@@ -283,12 +283,12 @@ fn challenge_model(root: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     let render = |fingerprint: &str, verdict: &str, form: &str, selector: &str| {
         format!(
             "# Verification: demo\n\n\
-             ## Check: demo/check\nMethod: invoke\nTerminal: works\n\nOne result.\n\n\
-             ## Evidence Binding: demo/edge\nCheck: demo/check\nCase: demo#works/works\n\
+             ## Check: check\nMethod: invoke\nTerminal: works\n\nOne result.\n\n\
+             ## Evidence Binding: demo/edge\nCheck: check\nCase: works\n\
              Method qualification: demo/method\nProposition: direct\n\
              Context: {{\"platform\":\"linux\"}}\nChallenge domain: [\"realization\",\"mechanism\"]\n\
              Policy: credible\n\nReviewable.\n\n\
-             ## Method Qualification: demo/method\nCheck: demo/check\nScope: unit\n\
+             ## Method Qualification: demo/method\nCheck: check\nScope: unit\n\
              Quantification: example\nOracle: direct\nContext: {{\"platform\":\"linux\"}}\n\
              Challenge domain: [\"check-implementation\"]\nPolicy: credible\n\
              Verdict: {verdict}\nFingerprint: {fingerprint}\n\
@@ -350,7 +350,7 @@ fn request(path: &Path, operation: RunOperation, check: &str) {
         checks: vec![RequestedCheck {
             id: check.into(),
             capability: "synthetic/checks".into(),
-            cases: vec!["demo#works/works".into()],
+            cases: vec!["works".into()],
             units: vec![WorkUnit {
                 id: "whole".into(),
                 parameters: BTreeMap::new(),
@@ -385,9 +385,9 @@ fn challenge_request(
         required_context: BTreeMap::from([("platform".into(), context.into())]),
         checks: if checks {
             vec![RequestedCheck {
-                id: "demo/check".into(),
+                id: "check".into(),
                 capability: "synthetic/checks".into(),
-                cases: vec!["demo#works/works".into()],
+                cases: vec!["works".into()],
                 units: vec![WorkUnit {
                     id: "whole".into(),
                     parameters: BTreeMap::new(),
@@ -461,7 +461,7 @@ fn add_second_challenge_candidate(
         manifest_source.replacen(
             '{',
             &format!(
-                "{{\"realizes\":[{{\"spec\":\"demo\",\"claim\":\"works\",\
+                "{{\"realizes\":[{{\"claim\":\"works\",\
                  \"site\":\"demo::works\",\"file\":\"src/demo.rs\",\
                  \"lang\":\"rust-symbol\",\"source_fingerprint\":\"{}\"}}],",
                 fp('2')
@@ -478,7 +478,7 @@ fn add_second_challenge_candidate(
             &format!(
                 "## Applicability Decision: demo/edge\nVerdict: applicable\nFingerprint: {}\n\
                  Decided: 2026-08-22\nDecider: owner\n\nApplicable.\n\n\
-                 ## Claim Judgment: demo#works\nVerdict: accepted\nPolicy: credible\nFingerprint: {}\n\
+                 ## Claim Judgment: works\nVerdict: accepted\nPolicy: credible\nFingerprint: {}\n\
                  Judged: 2026-08-22\nJudge: owner\nBasis: the exact composition is accepted\n\
                  Residual risk: none identified\n\nAccepted.\n\n\
                  ## Challenger: mutation/search",
@@ -489,7 +489,7 @@ fn add_second_challenge_candidate(
         .replace(
             "Select: method-qualification from method-qualification demo/method",
             "Select: method-qualification from method-qualification demo/method\n\
-             Select: claim-judgment from claim demo#works",
+             Select: claim-judgment from claim works",
         );
     fs::write(&verification, source).unwrap();
     let loaded = azimuth::load(
@@ -647,6 +647,7 @@ fn adapter_bundle(
         RunOperation::Import => ProvenanceMode::Import,
     };
     let mut bundle = RunBundle {
+        contributions: Vec::new(),
         run_id: fp('0'),
         bundle_revision: 0,
         corrects: None,
@@ -836,6 +837,7 @@ fn challenge_adapter_bundle(
         RunOperation::Import => ProvenanceMode::Import,
     };
     let mut bundle = RunBundle {
+        contributions: Vec::new(),
         run_id: fp('0'),
         bundle_revision: 0,
         corrects: None,
@@ -984,9 +986,9 @@ fn nonempty_verify_and_execute_import_routes_publish_valid_bundles() {
     );
     assert!(verified.stdout.is_empty());
 
-    let (model, workspace, manifest) = model(&root, &["demo/selected"]);
+    let (model, workspace, manifest) = model(&root, &["selected"]);
     let request_path = root.join("request.json");
-    request(&request_path, RunOperation::Execute, "demo/selected");
+    request(&request_path, RunOperation::Execute, "selected");
     let planned = azimuth(&planning_arguments(
         &request_path,
         &model,
@@ -1078,7 +1080,7 @@ fn nonempty_verify_and_execute_import_routes_publish_valid_bundles() {
         correction
     );
 
-    request(&request_path, RunOperation::Import, "demo/selected");
+    request(&request_path, RunOperation::Import, "selected");
     let import_plan = azimuth(&planning_arguments(
         &request_path,
         &model,
@@ -1317,9 +1319,9 @@ fn challenge_execute_and_import_accept_terminal_and_scheduled_incomplete_facts()
 fn invoke_exit_classes_preserve_sentinel_and_leave_no_temporary_output() {
     let root = root();
     let fixture = ProtocolFixture::new(&root);
-    let (model, workspace, manifest) = model(&root, &["demo/selected"]);
+    let (model, workspace, manifest) = model(&root, &["selected"]);
     let request_path = root.join("request.json");
-    request(&request_path, RunOperation::Execute, "demo/selected");
+    request(&request_path, RunOperation::Execute, "selected");
     let planned = azimuth(&planning_arguments(
         &request_path,
         &model,
@@ -1377,9 +1379,9 @@ fn invoke_exit_classes_preserve_sentinel_and_leave_no_temporary_output() {
 fn plan_loads_the_complete_model_and_has_exact_stdout_file_parity() {
     let root = root();
     let config = configuration(&root);
-    let (model, workspace, manifest) = model(&root, &["demo/selected", "demo/unselected"]);
+    let (model, workspace, manifest) = model(&root, &["selected", "unselected"]);
     let request_path = root.join("request.json");
-    request(&request_path, RunOperation::Execute, "demo/selected");
+    request(&request_path, RunOperation::Execute, "selected");
     let arguments = planning_arguments(&request_path, &model, &workspace, &manifest, &config);
     let stdout = azimuth(&arguments);
     assert!(
@@ -1391,7 +1393,7 @@ fn plan_loads_the_complete_model_and_has_exact_stdout_file_parity() {
         run_plan::parse_launch_plan("stdout", std::str::from_utf8(&stdout.stdout).unwrap())
             .unwrap();
     assert_eq!(launch.plan.checks.len(), 1);
-    assert_eq!(launch.plan.checks[0].id, "demo/selected");
+    assert_eq!(launch.plan.checks[0].id, "selected");
 
     let output = root.join("launch.json");
     let mut file_arguments = arguments;
@@ -1630,7 +1632,7 @@ fn plan_rejects_partial_selection_and_duplicate_singleton_options() {
 fn planning_schema_and_resolution_failures_preserve_output_and_clean_temps() {
     let root = root();
     let config = configuration(&root);
-    let (model, workspace, manifest) = model(&root, &["demo/selected"]);
+    let (model, workspace, manifest) = model(&root, &["selected"]);
     let request_path = root.join("request.json");
     let output = root.join("launch.json");
     fs::write(&output, b"sentinel").unwrap();
@@ -1642,7 +1644,7 @@ fn planning_schema_and_resolution_failures_preserve_output_and_clean_temps() {
     assert_eq!(schema.status.code(), Some(2));
     assert_eq!(fs::read(&output).unwrap(), b"sentinel");
 
-    request(&request_path, RunOperation::Execute, "demo/missing");
+    request(&request_path, RunOperation::Execute, "missing");
     let resolution = azimuth(&arguments);
     assert_eq!(resolution.status.code(), Some(1));
     assert_eq!(fs::read(&output).unwrap(), b"sentinel");
@@ -1657,9 +1659,9 @@ fn planning_schema_and_resolution_failures_preserve_output_and_clean_temps() {
 fn invoke_parsing_sorts_inputs_and_rejects_duplicates_and_operation_mismatch() {
     let root = root();
     let config = configuration(&root);
-    let (model, workspace, manifest) = model(&root, &["demo/selected"]);
+    let (model, workspace, manifest) = model(&root, &["selected"]);
     let request_path = root.join("request.json");
-    request(&request_path, RunOperation::Import, "demo/selected");
+    request(&request_path, RunOperation::Import, "selected");
     let planned = azimuth(&planning_arguments(
         &request_path,
         &model,

@@ -1,113 +1,93 @@
-export type LifecycleStage = 'merge' | 'release' | 'canary' | 'rollout' | 'operation';
-export type GateStatus = 'open' | 'closed';
+import 'server-only';
+import { webConfig } from './config';
+import { requireViewer } from './auth';
 
-export interface Project {
-  id: string;
-  name: string;
-  createdAt: number;
+export interface Page<T> {
+  items: T[];
+  next: string | null;
 }
-export interface ExecutionSubject {
-  projectSnapshot: string;
-  revision: string;
-  artifactDigest: string | null;
-  deploymentId: string | null;
-  environment: string | null;
-  cohort: string | null;
+export interface RunSummary {
+  run_id: string;
+  revision: number;
+  fingerprint: string;
+  subject_fingerprint: string;
+  model_fingerprint: string;
+  status: string;
+  subject: unknown;
 }
-
-export interface GateDecisionRecord {
-  sequence: number;
-  id: string;
-  request: {
-    definitionId: string;
-    stage: LifecycleStage;
-    subject: ExecutionSubject;
-    at: number;
-  };
-  decision: {
-    status: GateStatus;
-    definitionFingerprint: string | null;
-    qualificationId: string | null;
-    observationId: string | null;
-    reasons: string[];
-    work: string[];
-  };
-  evaluatedAt: number;
+export interface SubjectSummary {
+  fingerprint: string;
+  subject: unknown;
 }
-
-export interface WorkItem {
-  decisionId: string;
-  definitionId: string;
-  stage: LifecycleStage;
-  subject: ExecutionSubject;
-  reasons: string[];
-  work: string[];
-  evaluatedAt: number;
+export interface Review {
+  record: Record<string, unknown>;
+  assessment: string;
+  diagnostics: string[];
 }
-
-export interface ClaimReference {
-  spec: string;
-  claim: string;
-  contractFingerprint: string;
+export interface ReviewPage {
+  records: Review[];
+  next: string | null;
 }
-
-export interface ProjectModelSnapshot {
-  id: string;
-  project: string;
-  modelFingerprint: string;
+export interface SubjectState {
+  authority_fingerprint: string;
+  model_fingerprint: string;
   claims: Array<{
-    contractFingerprint: string;
-    spec: string;
     claim: string;
-    criticality: string;
-    surface: { id: string } | null;
-    obligatedAreas: Array<{ id: string }>;
+    status: string;
+    judgment: string;
+    diagnostics: string[];
+    gaps: unknown;
+    bindings: unknown;
   }>;
+  method_qualifications: unknown;
 }
-
-export interface ProjectSnapshot {
-  project: Project;
-  account: {
-    projectSnapshots: ProjectModelSnapshot[];
-    definitions: Array<{
-      id: string;
-      claim: ClaimReference;
-      assertion: string;
-      stage: LifecycleStage;
-      declaredAt: number;
-    }>;
-    qualifications: Array<{ id: string }>;
-    observations: Array<{ id: string }>;
-    challenges: Array<{ id: string }>;
-  };
-  gateDecisions: GateDecisionRecord[];
-}
-
-const apiUrl = process.env.ASSURANCE_API_URL ?? 'http://127.0.0.1:8080';
-
-export async function getProjects(): Promise<Project[]> {
-  return get<Project[]>('/v1/projects');
-}
-
-export async function getProjectView(projectId: string): Promise<{
-  snapshot: ProjectSnapshot;
-  gates: GateDecisionRecord[];
-  workItems: WorkItem[];
-}> {
-  const root = `/v1/projects/${encodeURIComponent(projectId)}`;
-  const [snapshot, gates, workItems] = await Promise.all([
-    get<ProjectSnapshot>(`${root}/snapshot`),
-    get<GateDecisionRecord[]>(`${root}/gates`),
-    get<WorkItem[]>(`${root}/work-items`),
-  ]);
-  return { snapshot, gates, workItems };
-}
-
-async function get<T>(path: string): Promise<T> {
-  const response = await fetch(`${apiUrl}${path}`, { cache: 'no-store' });
-  if (!response.ok) {
-    const problem = (await response.json().catch(() => null)) as { detail?: string } | null;
-    throw new Error(problem?.detail ?? `Assurance API returned ${response.status}`);
-  }
+export async function readProject<T>(
+  project: string,
+  path: string,
+): Promise<T | null> {
+  await requireViewer(project);
+  const config = webConfig();
+  const token = config.projects[project]?.viewerToken;
+  if (!token) throw new Error('Project read credential is unavailable');
+  const response = await fetch(
+    `${process.env.ASSURANCE_API_URL}/v1/projects/${encodeURIComponent(project)}${path}`,
+    {
+      headers: { authorization: `Bearer ${token}` },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(15000),
+      redirect: 'error',
+    },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok)
+    throw new Error(
+      `Assurance API unavailable (${response.status}); no conclusion inferred`,
+    );
   return (await response.json()) as T;
+}
+export function cursor(value: string | string[] | undefined): string {
+  if (Array.isArray(value) || (value?.length ?? 0) > 1024)
+    throw new Error('Invalid pagination cursor');
+  return value ?? '';
+}
+export async function projectView(
+  project: string,
+  page: { runs?: string; subjects?: string; reviews?: string },
+) {
+  const [authority, runs, subjects, reviews] = await Promise.all([
+    readProject<Record<string, unknown>>(project, '/authority'),
+    readProject<Page<RunSummary>>(
+      project,
+      `/runs?after=${encodeURIComponent(page.runs ?? '')}`,
+    ),
+    readProject<Page<SubjectSummary>>(
+      project,
+      `/subjects?after=${encodeURIComponent(page.subjects ?? '')}`,
+    ),
+    readProject<ReviewPage>(
+      project,
+      `/reviews?after=${encodeURIComponent(page.reviews ?? '')}`,
+    ),
+  ]);
+  return { authority, runs, subjects, reviews };
 }

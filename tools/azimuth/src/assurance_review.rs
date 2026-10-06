@@ -1100,6 +1100,12 @@ pub fn assess_record(
         }
         let state = assess_record(application, authority, reviews, bundles);
         if state.status != "accepted" {
+            if matches!(state.status.as_str(), "stale" | "invalid") {
+                return assessed(
+                    &state.status,
+                    "Judgment applicability dependencies are no longer current",
+                );
+            }
             unresolved = true;
             if conclusion != "unresolved" {
                 return assessed(
@@ -1275,4 +1281,529 @@ pub fn subject_state(
         ("subject_fingerprint", Json::str(subject_fingerprint)),
         ("claims", Json::Arr(claims)),
     ])
+}
+
+pub fn review_input(
+    model: &Model,
+    project: &str,
+    request: &Json,
+    reviews: &[Json],
+    bundles: &[RunBundle],
+) -> Result<Json, String> {
+    let authority = authority(model, project)?;
+    let kind = text(request, "kind")?;
+    match kind {
+        "method-qualification" => object(request, &["kind", "check"]),
+        "applicability-decision" => object(request, &["kind", "check", "case", "subject_fingerprint"]),
+        "claim-judgment" => object(request, &["kind", "claim", "subject_fingerprint"]),
+        _ => return Err("review input kind requires method-qualification, applicability-decision or claim-judgment".into()),
+    }?;
+    for name in ["check", "case", "claim"] {
+        if request.get(name).is_some() {
+            crate::diag::validate_id(text(request, name)?, false)?;
+        }
+    }
+    let subject = if kind == "method-qualification" {
+        None
+    } else {
+        fingerprint(request, "subject_fingerprint")?;
+        Some(text(request, "subject_fingerprint")?)
+    };
+    for review in reviews {
+        validate_record(review)?;
+    }
+    let findings = crate::run::verify_set(bundles);
+    if let Some(finding) = findings.first() {
+        return Err(format!(
+            "review input Run history is invalid: {}",
+            finding.detail
+        ));
+    }
+    let heads = active_heads(bundles)?;
+    let mut check_ids = BTreeSet::new();
+    let mut case_ids = BTreeSet::new();
+    let mut claim_ids = BTreeSet::new();
+    let mut bindings = Vec::new();
+    if kind == "claim-judgment" {
+        let id = text(request, "claim")?;
+        let claim = authority_item(&authority, "claims", "id", id)
+            .ok_or_else(|| format!("unknown Claim {id}"))?;
+        if text(claim, "criticality")? == "routine" {
+            return Err("routine Claims do not require independent Claim Judgment".into());
+        }
+        claim_ids.insert(id.to_string());
+        for case in array(claim, "cases")? {
+            case_ids.insert(case.as_str().unwrap().to_string());
+        }
+        for pair in array(claim, "bindings")? {
+            let check = text(pair, "check")?;
+            let case = text(pair, "case")?;
+            check_ids.insert(check.to_string());
+            bindings.push(authority_binding(&authority, check, case).unwrap().clone());
+        }
+    } else {
+        let check = text(request, "check")?;
+        authority_item(&authority, "checks", "id", check)
+            .ok_or_else(|| format!("unknown Check {check}"))?;
+        check_ids.insert(check.to_string());
+        if kind == "applicability-decision" {
+            let case = text(request, "case")?;
+            let binding = authority_binding(&authority, check, case)
+                .ok_or_else(|| format!("unknown Check–Case binding {check}/{case}"))?;
+            case_ids.insert(case.to_string());
+            bindings.push(binding.clone());
+        }
+    }
+    let selected = |field: &str, ids: &BTreeSet<String>| -> Json {
+        Json::Arr(
+            array(&authority, field)
+                .unwrap()
+                .iter()
+                .filter(|value| ids.contains(text(value, "id").unwrap()))
+                .cloned()
+                .collect(),
+        )
+    };
+    let mut gaps = Vec::new();
+    let mut review_states = Vec::new();
+    let mut existing_reviews = Vec::new();
+    let mut targets = check_ids
+        .iter()
+        .map(|check| {
+            Json::obj(vec![
+                ("kind", Json::str("method-qualification")),
+                ("check", Json::str(check)),
+            ])
+        })
+        .collect::<Vec<_>>();
+    if let Some(subject) = subject {
+        for binding in &bindings {
+            targets.push(Json::obj(vec![
+                ("kind", Json::str("applicability-decision")),
+                ("check", binding.get("check").unwrap().clone()),
+                ("case", binding.get("case").unwrap().clone()),
+                ("subject_fingerprint", Json::str(subject)),
+            ]));
+        }
+        if kind == "claim-judgment" {
+            targets.push(request.clone());
+        }
+    }
+    for target in targets {
+        let (record, state) = match latest_review(reviews, &target) {
+            Ok(Some(record)) => (
+                Some(record),
+                assess_record(record, &authority, reviews, bundles),
+            ),
+            Ok(None) => (None, assessed("missing", "Independent review is absent")),
+            Err(error) => (None, assessed("invalid", error)),
+        };
+        if let Some(record) = record {
+            existing_reviews.push(record.clone());
+        }
+        if state.status != "accepted" {
+            gaps.push(Json::obj(vec![
+                ("target", target.clone()),
+                ("status", Json::str(&state.status)),
+                (
+                    "diagnostics",
+                    Json::Arr(state.diagnostics.iter().map(Json::str).collect()),
+                ),
+            ]));
+        }
+        review_states.push(Json::obj(vec![
+            ("target", target),
+            ("record_status", Json::str(&state.status)),
+            (
+                "record_fingerprint",
+                record
+                    .and_then(|v| v.get("fingerprint"))
+                    .cloned()
+                    .unwrap_or(Json::Null),
+            ),
+            (
+                "diagnostics",
+                Json::Arr(state.diagnostics.iter().map(Json::str).collect()),
+            ),
+        ]));
+    }
+    let mut observations = Vec::new();
+    let mut evidence_bundles = Vec::new();
+    let mut subjects = Vec::new();
+    if let Some(subject) = subject {
+        for bundle in heads {
+            if bundle.subject_fingerprint != subject {
+                continue;
+            }
+            let mut relevant = false;
+            for execution in &bundle.check_executions {
+                if !check_ids.contains(&execution.check.id) {
+                    continue;
+                }
+                let check =
+                    authority_item(&authority, "checks", "id", &execution.check.id).unwrap();
+                if text(check, "fingerprint")? != execution.check.fingerprint {
+                    continue;
+                }
+                for observation in &execution.observations {
+                    if !case_ids.contains(&observation.case)
+                        || !bindings.iter().any(|binding| {
+                            text(binding, "check").ok() == Some(execution.check.id.as_str())
+                                && text(binding, "case").ok() == Some(observation.case.as_str())
+                        })
+                    {
+                        continue;
+                    }
+                    relevant = true;
+                    observations.push(Json::obj(vec![
+                        ("check", Json::str(&execution.check.id)),
+                        ("case", Json::str(&observation.case)),
+                        ("run", Json::str(&bundle.run_id)),
+                        ("bundle_fingerprint", Json::str(&bundle.bundle_fingerprint)),
+                        ("observation", Json::str(&observation.fingerprint)),
+                        ("outcome", Json::str(observation.outcome.name())),
+                        (
+                            "observed_at_ms",
+                            Json::Num(observation.observed_at_ms as f64),
+                        ),
+                    ]));
+                }
+            }
+            if relevant {
+                let descriptor = crate::run::subject_to_json(&bundle.subject);
+                if !subjects.contains(&descriptor) {
+                    subjects.push(descriptor);
+                }
+                evidence_bundles.push(crate::run::to_json(bundle));
+            }
+        }
+        for binding in &bindings {
+            if !observations.iter().any(|observation| {
+                observation.get("check") == binding.get("check")
+                    && observation.get("case") == binding.get("case")
+            }) {
+                gaps.push(Json::obj(vec![
+                    ("check", binding.get("check").unwrap().clone()),
+                    ("case", binding.get("case").unwrap().clone()),
+                    ("status", Json::str("missing")),
+                    (
+                        "diagnostics",
+                        Json::Arr(vec![Json::str(
+                            "No current exact-Subject Observation exists",
+                        )]),
+                    ),
+                ]));
+            }
+        }
+    }
+    for claim in array(&authority, "claims")?
+        .iter()
+        .filter(|claim| claim_ids.contains(text(claim, "id").unwrap()))
+    {
+        for gap in array(claim, "gaps")? {
+            gaps.push(Json::obj(vec![
+                ("claim", claim.get("id").unwrap().clone()),
+                ("status", Json::str("structural-gap")),
+                ("diagnostics", Json::Arr(vec![gap.clone()])),
+            ]));
+        }
+    }
+    for check in &check_ids {
+        if !model.check_implementations.iter().any(|site| {
+            site.check == *check && site.source.is_some() && !site.source_fingerprint.is_empty()
+        }) {
+            gaps.push(Json::obj(vec![
+                ("check", Json::str(check)),
+                ("status", Json::str("structural-gap")),
+                (
+                    "diagnostics",
+                    Json::Arr(vec![Json::str("Check has no stable source implementation")]),
+                ),
+            ]));
+        }
+    }
+    let definitions = review_definitions(model, &check_ids, &case_ids, &claim_ids);
+    let mut output = Json::obj(vec![
+        ("format", Json::str("azimuth-review-input")),
+        ("version", Json::Num(1.0)),
+        ("project", Json::str(project)),
+        ("target", request.clone()),
+        (
+            "authority_fingerprint",
+            authority.get("fingerprint").unwrap().clone(),
+        ),
+        (
+            "model_fingerprint",
+            authority.get("model_fingerprint").unwrap().clone(),
+        ),
+        (
+            "dependencies",
+            Json::obj(vec![
+                ("checks", selected("checks", &check_ids)),
+                ("cases", selected("cases", &case_ids)),
+                ("claims", selected("claims", &claim_ids)),
+                ("bindings", Json::Arr(bindings)),
+            ]),
+        ),
+        ("definitions", definitions),
+        ("subjects", Json::Arr(subjects)),
+        ("observations", Json::Arr(observations)),
+        ("evidence_bundles", Json::Arr(evidence_bundles)),
+        ("review_states", Json::Arr(review_states)),
+        ("existing_reviews", Json::Arr(existing_reviews)),
+        ("gaps", Json::Arr(gaps)),
+    ]);
+    let fingerprint = record_fingerprint(&output)?;
+    if let Json::Obj(fields) = &mut output {
+        fields.push(("fingerprint".into(), Json::str(fingerprint)));
+    }
+    Ok(output)
+}
+
+fn review_definitions(
+    model: &Model,
+    check_ids: &BTreeSet<String>,
+    case_ids: &BTreeSet<String>,
+    claim_ids: &BTreeSet<String>,
+) -> Json {
+    let checks = model
+        .checks()
+        .filter(|check| check_ids.contains(&check.id))
+        .map(|check| {
+            let authored = model
+                .account_verifications
+                .iter()
+                .flat_map(|file| &file.checks)
+                .find(|item| item.definition.id == check.id);
+            Json::obj(vec![
+                ("id", Json::str(&check.id)),
+                (
+                    "methods",
+                    Json::Arr(check.methods.iter().map(Json::str).collect()),
+                ),
+                ("terminal", Json::str(&check.terminal)),
+                ("authored_rationale", Json::str(&check.rationale)),
+                (
+                    "verification_context",
+                    Json::Arr(
+                        model
+                            .account_verifications
+                            .iter()
+                            .filter(|file| {
+                                file.checks
+                                    .iter()
+                                    .any(|item| item.definition.id == check.id)
+                            })
+                            .map(|file| {
+                                Json::obj(vec![
+                                    ("introduction", Json::str(&file.introduction)),
+                                    (
+                                        "sections",
+                                        Json::Arr(
+                                            file.sections
+                                                .iter()
+                                                .filter(|section| {
+                                                    section.claim.is_none()
+                                                        || authored.is_some_and(|check| {
+                                                            section.claim.as_deref()
+                                                                == Some(&check.claim)
+                                                        })
+                                                })
+                                                .map(|section| Json::str(&section.prose))
+                                                .collect(),
+                                        ),
+                                    ),
+                                ])
+                            })
+                            .collect(),
+                    ),
+                ),
+                (
+                    "inputs",
+                    authored.map_or(Json::Null, |item| {
+                        crate::verification_packages::map_json(&item.inputs)
+                    }),
+                ),
+                (
+                    "selectors",
+                    authored.map_or(Json::Null, |item| {
+                        crate::verification_packages::map_json(&item.selectors)
+                    }),
+                ),
+                (
+                    "implementations",
+                    Json::Arr(
+                        model
+                            .check_implementations
+                            .iter()
+                            .filter(|site| site.check == check.id)
+                            .map(|site| {
+                                Json::obj(vec![
+                                    ("site", Json::str(&site.site)),
+                                    (
+                                        "source",
+                                        site.source
+                                            .as_ref()
+                                            .map_or(Json::Null, |source| Json::str(source.key())),
+                                    ),
+                                    ("fingerprint", Json::str(&site.source_fingerprint)),
+                                ])
+                            })
+                            .collect(),
+                    ),
+                ),
+            ])
+        })
+        .collect();
+    let cases = model
+        .cases()
+        .filter(|view| case_ids.contains(&view.case.id))
+        .map(|view| {
+            Json::obj(vec![
+                ("id", Json::str(&view.case.id)),
+                ("claim", Json::str(&view.claim.id)),
+                ("statement", Json::str(&view.case.statement)),
+                ("claim_statement", Json::str(&view.claim.statement)),
+                ("domain", Json::str(view.claim.domain.name())),
+                (
+                    "over",
+                    view.claim.over.as_ref().map_or(Json::Null, Json::str),
+                ),
+                (
+                    "terms",
+                    Json::Arr(
+                        view.spec
+                            .terms
+                            .iter()
+                            .map(|term| {
+                                Json::obj(vec![
+                                    ("id", Json::str(&term.id)),
+                                    ("definition", Json::str(&term.definition)),
+                                ])
+                            })
+                            .collect(),
+                    ),
+                ),
+            ])
+        })
+        .collect();
+    let claims = model
+        .claims()
+        .filter(|view| claim_ids.contains(&view.claim.id))
+        .map(|view| {
+            Json::obj(vec![
+                ("id", Json::str(&view.claim.id)),
+                ("statement", Json::str(&view.claim.statement)),
+                (
+                    "design",
+                    model
+                        .account_design_for_claim(&view.spec.id, &view.claim.id)
+                        .map_or(Json::Null, |(file, declaration)| {
+                            Json::obj(vec![
+                                ("context", Json::str(&file.introduction)),
+                                ("source", Json::str(&declaration.source)),
+                            ])
+                        }),
+                ),
+                (
+                    "verification",
+                    Json::Arr(
+                        model
+                            .account_verifications
+                            .iter()
+                            .filter(|file| file.owner == view.spec.id)
+                            .map(|file| {
+                                Json::obj(vec![
+                                    ("context", Json::str(&file.introduction)),
+                                    (
+                                        "claim_prose",
+                                        Json::Arr(
+                                            file.claims
+                                                .iter()
+                                                .filter(|claim| claim.claim == view.claim.id)
+                                                .map(|claim| Json::str(&claim.prose))
+                                                .collect(),
+                                        ),
+                                    ),
+                                ])
+                            })
+                            .collect(),
+                    ),
+                ),
+            ])
+        })
+        .collect();
+    let mechanism_ids = model
+        .account_verifications
+        .iter()
+        .flat_map(|file| &file.checks)
+        .filter(|check| check_ids.contains(&check.definition.id))
+        .flat_map(|check| check.mechanisms.iter().cloned())
+        .collect::<BTreeSet<_>>();
+    let mut mechanisms = Vec::new();
+    for file in &model.account_designs {
+        review_mechanisms(
+            model,
+            &file.declarations,
+            &file.introduction,
+            &mechanism_ids,
+            &mut mechanisms,
+        );
+    }
+    let input_ids = model
+        .account_verifications
+        .iter()
+        .flat_map(|file| &file.checks)
+        .filter(|check| check_ids.contains(&check.definition.id))
+        .flat_map(|check| check.inputs.values().cloned())
+        .collect::<BTreeSet<_>>();
+    let entities = model
+        .account_verifications
+        .iter()
+        .flat_map(|file| &file.package_entities)
+        .filter(|entity| input_ids.contains(&entity.id))
+        .cloned()
+        .collect::<Vec<_>>();
+    let producers = model
+        .package_producers
+        .iter()
+        .filter(|producer| input_ids.contains(&producer.entity))
+        .map(|producer| producer.to_json())
+        .collect();
+    Json::obj(vec![
+        ("checks", Json::Arr(checks)),
+        ("cases", Json::Arr(cases)),
+        ("claims", Json::Arr(claims)),
+        (
+            "package_entities",
+            crate::verification_packages::declarations_json(&entities),
+        ),
+        ("producers", Json::Arr(producers)),
+        ("mechanisms", Json::Arr(mechanisms)),
+    ])
+}
+
+fn review_mechanisms(
+    model: &Model,
+    declarations: &[crate::account_design::Declaration],
+    context: &str,
+    selected: &BTreeSet<String>,
+    output: &mut Vec<Json>,
+) {
+    for declaration in declarations {
+        if declaration.kind == crate::account_design::DeclarationKind::Mechanism
+            && selected.contains(&declaration.id)
+        {
+            output.push(Json::obj(vec![
+                ("id", Json::str(&declaration.id)),
+                ("context", Json::str(context)),
+                ("source", Json::str(&declaration.source)),
+                (
+                    "implementations",
+                    Json::Arr(implementation_records(model, &declaration.id)),
+                ),
+            ]));
+        }
+        review_mechanisms(model, &declaration.children, context, selected, output);
+    }
 }

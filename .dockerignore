@@ -7,3 +7,9 @@
 **/obj
 build
 dist
+**/.env*
+**/secrets
+**/projects.json
+**/web.json
+**/*.pem
+**/*.key

@@ -1031,10 +1031,6 @@ impl Model {
             crate::fingerprint::canonical_sha256(&Json::obj(vec![
                 ("definition", Json::str(base)),
                 (
-                    "bindings",
-                    crate::verification_packages::bindings_json(&authored.bindings),
-                ),
-                (
                     "inputs",
                     crate::verification_packages::map_json(&authored.inputs),
                 ),

@@ -77,7 +77,7 @@ fn removed_commands_and_positional_validator_ids_fail_closed() {
 }
 
 #[test]
-fn export_is_recursively_v4_without_retired_evidence_keys() {
+fn export_preserves_current_shape_without_retired_evidence_keys() {
     let root = root();
     let model = write_model(&root, "routine");
     let output = azimuth(&["export", "--model", model.to_str().unwrap()]);
@@ -86,7 +86,7 @@ fn export_is_recursively_v4_without_retired_evidence_keys() {
     let json = azimuth::json::parse(&rendered).unwrap();
     assert_eq!(
         json.get("version").and_then(azimuth::json::Json::as_num),
-        Some(4.0)
+        Some(5.0)
     );
     assert_no_retired_keys(&json);
     fs::remove_dir_all(root).unwrap();
@@ -138,7 +138,7 @@ fn only_export_is_a_populated_two_spec_graph_closure() {
     for (name, fingerprint) in [('a', 'a'), ('b', 'b')] {
         let id = if name == 'a' { "alpha" } else { "beta" };
         checks.push(format!(
-            "{{\"check\":\"{id}/check\",\"site\":\"{id}::check\",\"file\":\"{id}-src/check.rs\",\"lang\":\"rust\",\"source_fingerprint\":\"sha256:{}\"}}",
+            "{{\"check\":\"{id}-check\",\"site\":\"{id}::check\",\"file\":\"{id}-src/check.rs\",\"lang\":\"rust\",\"source_fingerprint\":\"sha256:{}\"}}",
             fingerprint.to_string().repeat(64)
         ));
         members.push(format!(
@@ -194,9 +194,10 @@ fn strict_manifest_ingestion_accepts_check_linkage_and_rejects_alpha_one_keys() 
     let root = root();
     let model = write_model(&root, "routine");
     let manifest = root.join("manifest.json");
+    fs::write(root.join("workspace.json"), r#"{"format":"azimuth-workspace","version":1,"areas":[{"id":"tests","mounts":[{"id":"source","path":"tests"}]}],"surfaces":[],"realization_obligations":[]}"#).unwrap();
     fs::write(
         &manifest,
-        "{\"check_implementations\":[{\"check\":\"sample/check\",\
+        "{\"check_implementations\":[{\"check\":\"sample-check\",\
          \"site\":\"tests::works\",\"file\":\"tests/works.rs\",\"lang\":\"rust\",\
          \"source_fingerprint\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\
          \"area\":\"tests\",\"address_kind\":\"rust-symbol\",\
@@ -210,7 +211,11 @@ fn strict_manifest_ingestion_accepts_check_linkage_and_rejects_alpha_one_keys() 
         "--manifest",
         manifest.to_str().unwrap(),
     ]);
-    assert!(accepted.status.success());
+    assert!(
+        accepted.status.success(),
+        "{}",
+        String::from_utf8_lossy(&accepted.stderr)
+    );
     assert!(String::from_utf8(accepted.stdout)
         .unwrap()
         .contains("\"check_implementations\""));
@@ -260,7 +265,7 @@ fn retired_verification_and_judgment_facets_fail_explicitly() {
     assert_eq!(old_judgment.status.code(), Some(2));
     assert!(String::from_utf8(old_judgment.stderr)
         .unwrap()
-        .contains("alpha 1 `judgments.md` is retired"));
+        .contains("unknown review declaration"));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -324,7 +329,7 @@ fn traceability_report_writes_only_when_out_is_supplied() {
     assert!(stdout_report.status.success());
     assert!(!stdout_report.stdout.is_empty());
     let expected = String::from_utf8(stdout_report.stdout).unwrap();
-    assert!(expected.contains("\"id\": \"sample#visible/state-is-visible\""));
+    assert!(expected.contains("\"id\": \"state-is-visible\""));
 
     let destination = root.join("traceability.json");
     let file_report = azimuth(&[
@@ -470,7 +475,7 @@ fn assurance_export_is_removed_until_the_run_ledger_replacement() {
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8(output.stderr)
         .unwrap()
-        .contains("unknown command `assurance`"));
+        .contains("expected assurance authority"));
 }
 
 #[test]
@@ -494,7 +499,7 @@ fn unchanged_intent_is_visible_and_finalizable() {
 
     let checked = azimuth(&[
         "change",
-        "check",
+        "validate",
         change.to_str().unwrap(),
         "--model",
         model.to_str().unwrap(),
@@ -510,7 +515,7 @@ fn unchanged_intent_is_visible_and_finalizable() {
     assert!(checked.status.success());
     assert!(String::from_utf8(checked.stdout)
         .unwrap()
-        .contains("intent unchanged · only the framework mechanism changes"));
+        .contains("Structural validity: valid"));
     assert!(finalized.status.success());
     assert!(change.join("finalization.json").is_file());
     fs::remove_dir_all(root).unwrap();

@@ -68,7 +68,7 @@ impl RunOperation {
         }
     }
 
-    fn check_class(self) -> CapabilityClass {
+    pub fn check_class(self) -> CapabilityClass {
         match self {
             Self::Execute => CapabilityClass::CheckExecute,
             Self::Import => CapabilityClass::CheckImport,
@@ -124,6 +124,7 @@ pub struct LaunchPlan {
     pub subject_fingerprint: String,
     pub plan: Plan,
     pub adapter: LaunchAdapter,
+    pub adapters: Vec<LaunchAdapter>,
     pub routes: Vec<LaunchRoute>,
     pub fingerprint: String,
 }
@@ -212,8 +213,20 @@ pub fn plan(
 
     let mut checks = Vec::new();
     let mut routes = Vec::new();
-    let mut selected_adapter = None;
+    let mut selected_adapters = BTreeSet::new();
     for requested in &request.checks {
+        let mut requested = requested.clone();
+        if requested.cases.is_empty() {
+            requested.cases = model
+                .cases()
+                .map(|case| case.id().to_string())
+                .filter(|id| model.check_binding_count(&requested.id, id) != 0)
+                .collect();
+            requested.cases.sort();
+        }
+        if requested.units.is_empty() {
+            requested.units = whole_units();
+        }
         let matching_checks = model
             .checks()
             .filter(|check| check.id == requested.id)
@@ -233,6 +246,35 @@ pub fn plan(
             }
         };
 
+        if let Some(authored) = model
+            .account_verifications
+            .iter()
+            .flat_map(|file| &file.checks)
+            .find(|item| item.definition.id == requested.id)
+        {
+            match crate::run_selection::execution_from_inputs(&authored.inputs) {
+                Ok(Some(eligibility))
+                    if !eligibility.subjects.iter().any(|kind| {
+                        kind == crate::run_selection::subject_kind(&request.subject)
+                    }) =>
+                {
+                    errors.push(format!(
+                        "Check `{}` is incompatible with Subject kind `{}`",
+                        requested.id,
+                        crate::run_selection::subject_kind(&request.subject)
+                    ));
+                    continue;
+                }
+                Err(detail) => {
+                    errors.push(format!(
+                        "Check `{}` has invalid Execution: {detail}",
+                        requested.id
+                    ));
+                    continue;
+                }
+                _ => {}
+            }
+        }
         let mut case_selection_valid = true;
         for case_id in &requested.cases {
             if model.find_case(case_id).is_none() {
@@ -303,14 +345,7 @@ pub fn plan(
             ));
             continue;
         }
-        if let Some(id) = &selected_adapter {
-            if id != &adapter.id {
-                errors.push("one launch plan cannot route through several adapters".into());
-                continue;
-            }
-        } else {
-            selected_adapter = Some(adapter.id.clone());
-        }
+        selected_adapters.insert(adapter.id.clone());
 
         checks.push(CheckSelection {
             id: check.id.clone(),
@@ -341,23 +376,40 @@ pub fn plan(
         resolve_requested_challenges(model, configuration, request);
     errors.extend(challenge_errors);
     if let Some(adapter) = challenge_adapter {
-        if let Some(check_adapter) = &selected_adapter {
-            if check_adapter != &adapter {
-                errors.push("one launch plan cannot route through several adapters".into());
-            }
-        } else {
-            selected_adapter = Some(adapter);
-        }
+        selected_adapters.insert(adapter);
+    }
+    for route in &challenge_routes {
+        selected_adapters.insert(
+            route
+                .capability
+                .address
+                .split_once('/')
+                .unwrap()
+                .0
+                .to_string(),
+        );
     }
     routes.extend(challenge_routes);
 
     if !errors.is_empty() {
         return Err(planning_errors(errors));
     }
-    let adapter_id = selected_adapter.expect("a valid request has a non-empty selection list");
-    let adapter = configuration
-        .adapter(&adapter_id)
-        .expect("selected capability belongs to a configured adapter");
+    let adapters = selected_adapters
+        .iter()
+        .map(|id| {
+            let adapter = configuration
+                .adapter(id)
+                .expect("selected adapter is configured");
+            LaunchAdapter {
+                id: adapter.id.clone(),
+                adapter_version: adapter.adapter_version.clone(),
+                adapter_fingerprint: adapter.adapter_fingerprint.clone(),
+                descriptor_fingerprint: adapter.descriptor_fingerprint.clone(),
+                configuration_fingerprint: adapter.configuration_fingerprint.clone(),
+            }
+        })
+        .collect::<Vec<_>>();
+    let adapter = coordinator_identity(&adapters);
     let subject_fingerprint = run::subject_fingerprint(&request.subject);
     let findings = crate::validation::validate(model);
     let model_fingerprint = format!(
@@ -384,13 +436,8 @@ pub fn plan(
         subject: request.subject.clone(),
         subject_fingerprint,
         plan: semantic_plan,
-        adapter: LaunchAdapter {
-            id: adapter.id.clone(),
-            adapter_version: adapter.adapter_version.clone(),
-            adapter_fingerprint: adapter.adapter_fingerprint.clone(),
-            descriptor_fingerprint: adapter.descriptor_fingerprint.clone(),
-            configuration_fingerprint: adapter.configuration_fingerprint.clone(),
-        },
+        adapter,
+        adapters,
         routes,
         fingerprint: zero_fingerprint(),
     };
@@ -528,10 +575,6 @@ fn resolve_requested_challenges(
                 required_class.name(),
                 challenger.form
             ));
-            continue;
-        }
-        if adapter_id.as_ref().is_some_and(|id| id != &adapter.id) {
-            errors.push("one launch plan cannot route through several adapters".into());
             continue;
         }
         adapter_id = Some(adapter.id.clone());
@@ -900,30 +943,33 @@ pub fn validate_launch_configuration(
     configuration: &AdapterConfiguration,
 ) -> Vec<String> {
     let mut errors = Vec::new();
-    let Some(adapter) = configuration.adapter(&launch.adapter.id) else {
-        return vec![format!(
-            "launch adapter `{}` is not configured",
-            launch.adapter.id
-        )];
-    };
-    let configured_identity = LaunchAdapter {
-        id: adapter.id.clone(),
-        adapter_version: adapter.adapter_version.clone(),
-        adapter_fingerprint: adapter.adapter_fingerprint.clone(),
-        descriptor_fingerprint: adapter.descriptor_fingerprint.clone(),
-        configuration_fingerprint: adapter.configuration_fingerprint.clone(),
-    };
-    if launch.adapter != configured_identity {
-        errors.push(format!(
-            "launch adapter identity differs from configured adapter `{}`",
-            adapter.id
-        ));
+    for identity in &launch.adapters {
+        let Some(adapter) = configuration.adapter(&identity.id) else {
+            return vec![format!(
+                "launch adapter `{}` is not configured",
+                identity.id
+            )];
+        };
+        let configured_identity = LaunchAdapter {
+            id: adapter.id.clone(),
+            adapter_version: adapter.adapter_version.clone(),
+            adapter_fingerprint: adapter.adapter_fingerprint.clone(),
+            descriptor_fingerprint: adapter.descriptor_fingerprint.clone(),
+            configuration_fingerprint: adapter.configuration_fingerprint.clone(),
+        };
+        if *identity != configured_identity {
+            errors.push(format!(
+                "launch adapter identity differs from configured adapter `{}`",
+                adapter.id
+            ));
+        }
     }
     for route in &launch.routes {
-        let Some(capability) = adapter.capability(&route.capability.address) else {
+        let Some((_adapter, capability)) = configuration.capability(&route.capability.address)
+        else {
             errors.push(format!(
                 "route capability `{}` is not configured for adapter `{}`",
-                route.capability.address, adapter.id
+                route.capability.address, launch.adapter.id
             ));
             continue;
         };
@@ -960,6 +1006,52 @@ pub fn validate_launch_configuration(
 
 pub fn validate_launch_plan(launch: &LaunchPlan) -> Vec<String> {
     let mut errors = Vec::new();
+    if launch.adapters.len() > 64 {
+        errors.push("launch has more than 64 adapters".into());
+    }
+    for identity in &launch.adapters {
+        if identity.id == "azimuth-coordinator"
+            || !valid_segment(&identity.id)
+            || identity.adapter_version.is_empty()
+            || [
+                &identity.adapter_fingerprint,
+                &identity.descriptor_fingerprint,
+                &identity.configuration_fingerprint,
+            ]
+            .iter()
+            .any(|fp| !valid_fingerprint(fp))
+        {
+            errors.push(
+                "launch adapters require configured nonreserved identities and valid fingerprints"
+                    .into(),
+            );
+        }
+    }
+    if launch.adapters.is_empty()
+        || launch
+            .adapters
+            .windows(2)
+            .any(|pair| pair[0].id >= pair[1].id)
+    {
+        errors.push("launch adapters must be nonempty, sorted and unique".into());
+    }
+    if launch.adapter != coordinator_identity(&launch.adapters) {
+        errors.push("launch coordinator identity differs from exact adapter identities".into());
+    }
+    let used = launch
+        .routes
+        .iter()
+        .filter_map(|r| r.capability.address.split_once('/').map(|(id, _)| id))
+        .collect::<BTreeSet<_>>();
+    if used
+        != launch
+            .adapters
+            .iter()
+            .map(|a| a.id.as_str())
+            .collect::<BTreeSet<_>>()
+    {
+        errors.push("launch adapters must match routed adapters exactly".into());
+    }
     let subject_errors = run::validate_subject_component(&launch.subject);
     let subject_is_valid = subject_errors.is_empty();
     errors.extend(
@@ -1059,7 +1151,11 @@ pub fn validate_launch_plan(launch: &LaunchPlan) -> Vec<String> {
             .address
             .split_once('/')
             .map(|parts| parts.0);
-        if prefix != Some(launch.adapter.id.as_str()) {
+        if !launch
+            .adapters
+            .iter()
+            .any(|adapter| prefix == Some(adapter.id.as_str()))
+        {
             errors.push(format!(
                 "routes[{index}] address must use adapter `{}`",
                 launch.adapter.id
@@ -1149,7 +1245,10 @@ fn launch_fields(launch: &LaunchPlan) -> Vec<(String, Json)> {
             Json::str(&launch.subject_fingerprint),
         ),
         ("plan".into(), run::plan_to_json(&launch.plan)),
-        ("adapter".into(), launch_adapter_json(&launch.adapter)),
+        (
+            "adapters".into(),
+            Json::Arr(launch.adapters.iter().map(launch_adapter_json).collect()),
+        ),
         (
             "routes".into(),
             Json::Arr(
@@ -1216,13 +1315,13 @@ fn parse_requested_challenge(value: &Json, where_: &str) -> Result<RequestedChal
     let fields = object(
         value,
         where_,
-        &["id", "capability", "max_candidates", "units"],
+        &["id", "execution-capability", "max_candidates", "units"],
     )?;
     let id = nonempty(fields, where_, "id")?;
     validate_id(&id, true).map_err(|detail| format!("{where_}.id {detail}"))?;
-    let capability = nonempty(fields, where_, "capability")?;
+    let capability = nonempty(fields, where_, "execution-capability")?;
     validate_capability_address(&capability)
-        .map_err(|detail| format!("{where_}.capability {detail}"))?;
+        .map_err(|detail| format!("{where_}.execution-capability {detail}"))?;
     let max_candidates = integer(fields, where_, "max_candidates")?;
     if max_candidates == 0 {
         return Err(format!("{where_}.max_candidates must be at least 1"));
@@ -1245,25 +1344,32 @@ fn parse_requested_challenge(value: &Json, where_: &str) -> Result<RequestedChal
 }
 
 fn parse_requested_check(value: &Json, where_: &str) -> Result<RequestedCheck, String> {
-    let fields = object(value, where_, &["id", "capability", "cases", "units"])?;
+    let fields = object(
+        value,
+        where_,
+        &["id", "execution-capability", "cases", "units"],
+    )?;
     let id = nonempty(fields, where_, "id")?;
     validate_check_id(&id).map_err(|detail| format!("{where_}.id {detail}"))?;
-    let capability = nonempty(fields, where_, "capability")?;
+    let capability = nonempty(fields, where_, "execution-capability")?;
     validate_capability_address(&capability)
-        .map_err(|detail| format!("{where_}.capability {detail}"))?;
-    let cases = parse_cases(
-        required(fields, "cases", where_)?,
-        &format!("{where_}.cases"),
-    )?;
-    let values = array(
-        required(fields, "units", where_)?,
-        &format!("{where_}.units"),
-    )?;
-    let mut units = Vec::new();
-    for (index, value) in values.iter().enumerate() {
-        units.push(parse_unit(value, &format!("{where_}.units[{index}]"))?);
-    }
-    validate_units(&units, &format!("{where_}.units"))?;
+        .map_err(|detail| format!("{where_}.execution-capability {detail}"))?;
+    let cases = match fields.iter().find(|(key, _)| key == "cases") {
+        Some((_, value)) => parse_cases(value, &format!("{where_}.cases"))?,
+        None => Vec::new(),
+    };
+    let units = match fields.iter().find(|(key, _)| key == "units") {
+        Some((_, value)) => {
+            let units = array(value, &format!("{where_}.units"))?
+                .iter()
+                .enumerate()
+                .map(|(index, value)| parse_unit(value, &format!("{where_}.units[{index}]")))
+                .collect::<Result<Vec<_>, _>>()?;
+            validate_units(&units, &format!("{where_}.units"))?;
+            units
+        }
+        None => whole_units(),
+    };
     Ok(RequestedCheck {
         id,
         capability,
@@ -1297,7 +1403,7 @@ fn parse_launch_value(value: &Json) -> Result<LaunchPlan, String> {
             "subject",
             "subject_fingerprint",
             "plan",
-            "adapter",
+            "adapters",
             "routes",
             "fingerprint",
         ],
@@ -1311,13 +1417,19 @@ fn parse_launch_value(value: &Json) -> Result<LaunchPlan, String> {
     for value in route_values {
         routes.push(run::launch_route_from_json(value)?);
     }
+    let adapters = array(required(fields, "adapters", "$")?, "$.adapters")?
+        .iter()
+        .map(parse_launch_adapter)
+        .collect::<Result<Vec<_>, _>>()?;
+    let adapter = coordinator_identity(&adapters);
     Ok(LaunchPlan {
         operation: operation(fields, "$", "operation")?,
         planned_at_ms: integer(fields, "$", "planned_at_ms")?,
         subject,
         subject_fingerprint: fingerprint(fields, "$", "subject_fingerprint")?,
         plan,
-        adapter: parse_launch_adapter(required(fields, "adapter", "$")?)?,
+        adapter,
+        adapters,
         routes,
         fingerprint: fingerprint(fields, "$", "fingerprint")?,
     })
@@ -1364,8 +1476,12 @@ fn validate_request(request: &PlanRequest) -> Result<(), String> {
         validate_check_id(&check.id).map_err(|detail| format!("$.checks[{index}].id {detail}"))?;
         validate_capability_address(&check.capability)
             .map_err(|detail| format!("$.checks[{index}].capability {detail}"))?;
-        validate_cases(&check.cases, &format!("$.checks[{index}].cases"))?;
-        validate_units(&check.units, &format!("$.checks[{index}].units"))?;
+        if !check.cases.is_empty() {
+            validate_cases(&check.cases, &format!("$.checks[{index}].cases"))?;
+        }
+        if !check.units.is_empty() {
+            validate_units(&check.units, &format!("$.checks[{index}].units"))?;
+        }
     }
     ensure_sorted_unique(
         &request.challenges,
@@ -1449,9 +1565,9 @@ fn launch_adapter_json(adapter: &LaunchAdapter) -> Json {
 }
 
 fn requested_check_json(check: &RequestedCheck) -> Json {
-    Json::obj(vec![
+    let mut fields = vec![
         ("id", Json::str(&check.id)),
-        ("capability", Json::str(&check.capability)),
+        ("execution-capability", Json::str(&check.capability)),
         (
             "cases",
             Json::Arr(check.cases.iter().map(Json::str).collect()),
@@ -1471,13 +1587,20 @@ fn requested_check_json(check: &RequestedCheck) -> Json {
                     .collect(),
             ),
         ),
-    ])
+    ];
+    if check.cases.is_empty() {
+        fields.retain(|(key, _)| *key != "cases");
+    }
+    if check.units.is_empty() {
+        fields.retain(|(key, _)| *key != "units");
+    }
+    Json::obj(fields)
 }
 
 fn requested_challenge_json(challenge: &RequestedChallenge) -> Json {
     Json::obj(vec![
         ("id", Json::str(&challenge.id)),
-        ("capability", Json::str(&challenge.capability)),
+        ("execution-capability", Json::str(&challenge.capability)),
         ("max_candidates", Json::Num(challenge.max_candidates as f64)),
         (
             "units",
@@ -1690,4 +1813,92 @@ fn planning_errors(items: impl IntoIterator<Item = String>) -> Vec<PlanningError
         .into_iter()
         .map(|detail| PlanningError { detail })
         .collect()
+}
+
+pub fn whole_units() -> Vec<WorkUnit> {
+    vec![WorkUnit {
+        id: "whole".into(),
+        parameters: BTreeMap::new(),
+    }]
+}
+
+pub fn coordinator_identity(adapters: &[LaunchAdapter]) -> LaunchAdapter {
+    if adapters.len() == 1 {
+        return adapters[0].clone();
+    }
+    let identities = adapters
+        .iter()
+        .map(|adapter| run::LaunchAdapterIdentity {
+            id: adapter.id.clone(),
+            adapter_version: adapter.adapter_version.clone(),
+            adapter_fingerprint: adapter.adapter_fingerprint.clone(),
+            descriptor_fingerprint: adapter.descriptor_fingerprint.clone(),
+            configuration_fingerprint: adapter.configuration_fingerprint.clone(),
+        })
+        .collect::<Vec<_>>();
+    let identity = run::coordinator_identity(&identities);
+    LaunchAdapter {
+        id: identity.id,
+        adapter_version: identity.adapter_version,
+        adapter_fingerprint: identity.adapter_fingerprint,
+        descriptor_fingerprint: identity.descriptor_fingerprint,
+        configuration_fingerprint: identity.configuration_fingerprint,
+    }
+}
+
+pub fn adapter_launch(launch: &LaunchPlan, adapter: &LaunchAdapter) -> LaunchPlan {
+    let routes = launch
+        .routes
+        .iter()
+        .filter(|route| {
+            route
+                .capability
+                .address
+                .starts_with(&format!("{}/", adapter.id))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let checks = launch
+        .plan
+        .checks
+        .iter()
+        .filter(|check| {
+            routes.iter().any(|r| {
+                r.selection.kind == RouteSelectionKind::Check && r.selection.id == check.id
+            })
+        })
+        .cloned()
+        .collect();
+    let challenges = launch
+        .plan
+        .challenges
+        .iter()
+        .filter(|check| {
+            routes.iter().any(|r| {
+                r.selection.kind == RouteSelectionKind::Challenge && r.selection.id == check.id
+            })
+        })
+        .cloned()
+        .collect();
+    let plan = run::construct_plan(
+        &launch.subject_fingerprint,
+        launch.plan.model_fingerprint.clone(),
+        launch.plan.required_context.clone(),
+        checks,
+        challenges,
+    )
+    .expect("valid route partition");
+    let mut child = LaunchPlan {
+        operation: launch.operation,
+        planned_at_ms: launch.planned_at_ms,
+        subject: launch.subject.clone(),
+        subject_fingerprint: launch.subject_fingerprint.clone(),
+        plan,
+        adapter: adapter.clone(),
+        adapters: vec![adapter.clone()],
+        routes,
+        fingerprint: zero_fingerprint(),
+    };
+    child.fingerprint = launch_fingerprint(&child);
+    child
 }

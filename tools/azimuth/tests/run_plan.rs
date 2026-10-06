@@ -16,6 +16,9 @@ mod model {
 mod run {
     pub use azimuth::run::*;
 }
+mod run_selection {
+    pub use azimuth::run_selection::{execution_from_inputs, subject_kind};
+}
 mod validation {
     pub use azimuth::validation::*;
 }
@@ -602,7 +605,7 @@ fn capability_class_and_adapter_address_are_exact() {
 }
 
 #[test]
-fn one_launch_cannot_route_checks_through_several_configured_adapters() {
+fn one_launch_routes_checks_through_explicitly_configured_adapters() {
     let mut config = configuration();
     let mut other = config.adapters[0].clone();
     other.id = "other".into();
@@ -612,10 +615,12 @@ fn one_launch_cannot_route_checks_through_several_configured_adapters() {
     config.adapters.push(other);
     let mut request = request(&["alpha", "beta"], RunOperation::Execute, "demo/alpha");
     request.checks[1].capability = "other/alpha".into();
-    let errors = plan(&model(&["alpha", "beta"]), &config, &request).unwrap_err();
-    assert!(errors
-        .iter()
-        .any(|error| error.detail.contains("several adapters")));
+    let launch = plan(&model(&["alpha", "beta"]), &config, &request).unwrap();
+    assert_eq!(launch.adapters.len(), 2);
+    assert_eq!(launch.adapter.id, "azimuth-coordinator");
+    assert!(validate_launch_configuration(&launch, &config).is_empty());
+    let encoded = run::canonical_json(&launch_plan_to_json(&launch)).unwrap();
+    assert_eq!(parse_launch_plan("launch.json", &encoded).unwrap(), launch);
 }
 
 #[test]
@@ -883,7 +888,8 @@ fn canonical_launch_vector_matches_the_frozen_vector() {
             digest: fp('4'),
         }],
     };
-    let launch = LaunchPlan {
+    let mut launch = LaunchPlan {
+        adapters: Vec::new(),
         operation: RunOperation::Execute,
         planned_at_ms: 1_787_300_000_000,
         subject,
@@ -928,6 +934,7 @@ fn canonical_launch_vector_matches_the_frozen_vector() {
         }],
         fingerprint: fp('0'),
     };
+    launch.adapters = vec![launch.adapter.clone()];
     assert_eq!(
         launch_fingerprint(&launch),
         "sha256:0ff31694270df0490a27d6e6cb251a561a5c70ce9279bdf1b474ee6d4ea306cd"
@@ -1360,7 +1367,7 @@ fn multi_target_context_and_adverse_siblings_fail_before_any_launch() {
 }
 
 #[test]
-fn mixed_check_challenge_routes_enforce_one_adapter_and_support_import() {
+fn mixed_check_challenge_routes_support_multiple_adapters_and_import() {
     let model = rich_challenge_model();
     let mut config = configuration();
     let mut other = config.adapters[0].clone();
@@ -1377,10 +1384,8 @@ fn mixed_check_challenge_routes_enforce_one_adapter_and_support_import() {
         units: vec![unit("whole")],
     });
     cross.challenges[0].capability = "other/challenge".into();
-    assert!(plan(&model, &config, &cross)
-        .unwrap_err()
-        .iter()
-        .any(|error| error.detail.contains("several adapters")));
+    let coordinated = plan(&model, &config, &cross).unwrap();
+    assert_eq!(coordinated.adapters.len(), 2);
 
     let mut import = challenge_request(RunOperation::Import);
     import.checks.push(RequestedCheck {

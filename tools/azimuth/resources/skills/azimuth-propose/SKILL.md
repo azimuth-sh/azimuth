@@ -76,11 +76,11 @@ Before validation, read each proposed Claim and its Cases as an independent revi
 - Prefer a Given/When/Then shape when it clarifies a Case: state the relevant starting condition, the request or event, and the observable result. Name a response status or other wire detail when it is a deliberate contract, and state the protected effect or absence of one on a denial. Split materially different conditions or outcomes into separate Cases instead of hiding them in one broad sentence. Keep test setup, probes and observation methods in verification.
 - Check Claim-to-Case composition: Cases sample the Claim without narrowing its universal meaning to one example or pretending that one result proves the whole Claim. Given/When/Then is authoring guidance, not parser syntax or a required template; use equivalent prose when it is clearer.
 
-Structural validation cannot perform this semantic review. Resolve weak or ambiguous wording before requesting approval, even if `azimuth change check` passes.
+Structural validation cannot perform this semantic review. Resolve weak or ambiguous wording before requesting approval, even if `azimuth change validate` passes.
 
 ## Validate and hand off
 
-Run `azimuth change check <id>`, `azimuth change work-packages <id>` when present, the repository's normal `azimuth validate`, and `azimuth change show <id>`. Inspect the working diff and ask whether an implementer can proceed without inventing product behavior, ownership, compatibility, migration, failure or completion decisions. Present the actual files for explicit approval. Do not implement, finalize, archive or commit implicitly.
+Run `azimuth change validate <id>`, `azimuth change work-packages <id>` when present, the repository's normal `azimuth validate`, and `azimuth change show <id>`. Inspect the working diff and ask whether an implementer can proceed without inventing product behavior, ownership, compatibility, migration, failure or completion decisions. Present the actual files for explicit approval. Do not implement, finalize, archive or commit implicitly.
 
 ## Author compact verification packages
 

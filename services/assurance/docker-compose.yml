@@ -20,19 +20,28 @@ services:
       dockerfile: services/assurance/server/Dockerfile
     environment:
       DATABASE_URL: "postgres://azimuth:${ASSURANCE_POSTGRES_PASSWORD:?set ASSURANCE_POSTGRES_PASSWORD}@postgres:5432/azimuth"
+      ASSURANCE_RUN_ADDRESS: 0.0.0.0:8081
+      ASSURANCE_RUN_TOKENS_FILE: /secrets/projects.json
       RUST_LOG: azimuth_assurance_server=info,tower_http=info
     depends_on:
       postgres:
         condition: service_healthy
     ports:
-      - "127.0.0.1:${ASSURANCE_API_PORT:-8080}:8080"
+      - "127.0.0.1:${ASSURANCE_API_PORT:-8081}:8081"
+    volumes:
+      - "${ASSURANCE_RUN_TOKENS_FILE:?set ASSURANCE_RUN_TOKENS_FILE}:/secrets/projects.json:ro"
 
   web:
     image: "${ASSURANCE_WEB_IMAGE:-azimuth-assurance-web:local}"
     build:
       context: ./web
     environment:
-      ASSURANCE_API_URL: http://api:8080
+      ASSURANCE_API_URL: http://api:8081
+      NEXTAUTH_URL: "${NEXTAUTH_URL:?set canonical HTTPS NEXTAUTH_URL}"
+      NEXTAUTH_SECRET: "${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET}"
+      ASSURANCE_WEB_CONFIG_FILE: /secrets/web.json
+    volumes:
+      - "${ASSURANCE_WEB_CONFIG_FILE:?set ASSURANCE_WEB_CONFIG_FILE}:/secrets/web.json:ro"
     depends_on:
       - api
     ports:

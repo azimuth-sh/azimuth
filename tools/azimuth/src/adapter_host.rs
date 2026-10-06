@@ -130,6 +130,15 @@ pub fn execute(
     launch: &LaunchPlan,
     predecessors: &[RunBundle],
 ) -> Result<HostedBundle, HostError> {
+    if launch.adapters.len() > 1 {
+        return invoke_coordinated(
+            configuration,
+            launch,
+            &[],
+            predecessors,
+            RunOperation::Execute,
+        );
+    }
     invoke_run(
         configuration,
         launch,
@@ -146,6 +155,15 @@ pub fn import(
     inputs: &[ImportInput],
     predecessors: &[RunBundle],
 ) -> Result<HostedBundle, HostError> {
+    if launch.adapters.len() > 1 {
+        return invoke_coordinated(
+            configuration,
+            launch,
+            inputs,
+            predecessors,
+            RunOperation::Import,
+        );
+    }
     invoke_run(
         configuration,
         launch,
@@ -1183,4 +1201,237 @@ fn valid_kebab_segment(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+}
+
+fn invoke_coordinated(
+    configuration: &adapter::AdapterConfiguration,
+    launch: &LaunchPlan,
+    inputs: &[ImportInput],
+    predecessors: &[RunBundle],
+    operation: RunOperation,
+) -> Result<HostedBundle, HostError> {
+    if launch.operation != operation {
+        return Err(HostError::semantic(
+            "launch operation differs from requested exchange",
+        ));
+    }
+    let canonical =
+        run::canonical_json(&run_plan::launch_plan_to_json(launch)).map_err(HostError::schema)?;
+    if run_plan::parse_launch_plan("coordinated launch", &canonical).map_err(|e| {
+        HostError::schema(
+            e.iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("; "),
+        )
+    })? != *launch
+    {
+        return Err(HostError::semantic(
+            "coordinated launch differs from strict canonical form",
+        ));
+    }
+    let errors = run_plan::validate_launch_configuration(launch, configuration);
+    if !errors.is_empty() {
+        return Err(HostError::semantic(errors.join("; ")));
+    }
+    let chain = prepare_predecessors(launch, predecessors)?;
+    validate_input_arguments(operation, inputs)?;
+    let mut stage = InvocationStage::new()?;
+    let staged = stage_inputs(stage.path(), inputs)?;
+    let shared_inputs = staged
+        .iter()
+        .map(|i| ImportInput {
+            id: i.identity.id.clone(),
+            path: i.path.clone(),
+        })
+        .collect::<Vec<_>>();
+    let identities = staged
+        .iter()
+        .map(|i| ImportInputIdentity {
+            id: i.identity.id.clone(),
+            digest: i.identity.digest.clone(),
+            size_bytes: i.identity.size_bytes,
+        })
+        .collect::<Vec<_>>();
+    let mut contributions = Vec::new();
+    for identity in &launch.adapters {
+        let child = run_plan::adapter_launch(launch, identity);
+        let child_chain = chain
+            .iter()
+            .map(|previous| {
+                previous
+                    .contributions
+                    .iter()
+                    .find(|b| b.provenance.adapter.id == identity.id)
+                    .cloned()
+                    .ok_or_else(|| HostError::semantic("predecessor omits a coordinated adapter"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let started = now_ms().map_err(HostError::semantic)?;
+        match invoke_run(
+            configuration,
+            &child,
+            &shared_inputs,
+            &child_chain,
+            operation,
+        ) {
+            Ok(result) => contributions.push(result.bundle),
+            Err(error) => contributions.push(failed_contribution(
+                &child,
+                &identities,
+                &child_chain,
+                started,
+                error,
+            )?),
+        }
+    }
+    let mut seed = contributions[0].clone();
+    seed.plan = launch.plan.clone();
+    seed.bundle_revision = chain.last().map_or(0, |b| b.bundle_revision + 1);
+    seed.corrects = chain.last().map(|b| b.bundle_fingerprint.clone());
+    seed.correction_reason = chain
+        .last()
+        .map(|_| "bounded coordinated correction".into());
+    let bundle = run::coordinate_bundle(seed, contributions);
+    if bundle.provenance.adapter.launch_fingerprint != launch.fingerprint {
+        return Err(HostError::semantic(
+            "coordinated bundle changes launch identity",
+        ));
+    }
+    let mut history = chain;
+    history.push(bundle.clone());
+    let findings = run::verify_set(&history);
+    if !findings.is_empty() {
+        return Err(HostError::semantic(format!(
+            "coordinated Run is invalid: {}",
+            join_findings(&findings)
+        )));
+    }
+    let canonical_json = run::canonical_json(&run::to_json(&bundle)).map_err(HostError::schema)?;
+    stage.cleanup()?;
+    Ok(HostedBundle {
+        bundle,
+        canonical_json,
+    })
+}
+
+fn failed_contribution(
+    launch: &LaunchPlan,
+    inputs: &[ImportInputIdentity],
+    previous: &[RunBundle],
+    started: u64,
+    error: HostError,
+) -> Result<RunBundle, HostError> {
+    let started = previous
+        .last()
+        .map_or(started, |bundle| bundle.started_at_ms);
+    let finished = now_ms().map_err(HostError::semantic)?;
+    let a = &launch.adapter;
+    let diagnostic = run::Diagnostic {
+        id: "adapter-exchange-failed".into(),
+        class: run::DiagnosticClass::Execution,
+        severity: run::Severity::Error,
+        code: "adapter/exchange-failed".into(),
+        message: error.detail,
+        scope: run::DiagnosticScope::Run,
+        artifacts: Vec::new(),
+        details: if error.stderr.is_empty() {
+            BTreeMap::new()
+        } else {
+            BTreeMap::from([("stderr".into(), error.stderr)])
+        },
+    };
+    let mut diagnostics = vec![diagnostic];
+    for challenge in &launch.plan.challenges {
+        diagnostics.push(run::Diagnostic {
+            id: format!("omitted-{}", challenge.id),
+            class: run::DiagnosticClass::Execution,
+            severity: run::Severity::Error,
+            code: "challenge/selection-omitted".into(),
+            message: "adapter exchange failed before a valid result".into(),
+            scope: run::DiagnosticScope::ChallengeSelection(challenge.id.clone()),
+            artifacts: Vec::new(),
+            details: BTreeMap::new(),
+        });
+    }
+    diagnostics.sort_by(|a, b| a.id.cmp(&b.id));
+    let source = previous
+        .last()
+        .map(|p| p.provenance.source.clone())
+        .unwrap_or_else(|| run::SourceProvenance {
+            system: "azimuth/adapter-host".into(),
+            execution: launch.fingerprint.clone(),
+            uri: None,
+        });
+    let mut bundle = RunBundle {
+        run_id: String::new(),
+        bundle_revision: previous.last().map_or(0, |b| b.bundle_revision + 1),
+        corrects: previous.last().map(|b| b.bundle_fingerprint.clone()),
+        correction_reason: previous.last().map(|_| "adapter exchange failure".into()),
+        bundle_fingerprint: String::new(),
+        subject: launch.subject.clone(),
+        subject_fingerprint: launch.subject_fingerprint.clone(),
+        planned_at_ms: launch.planned_at_ms,
+        started_at_ms: started,
+        finished_at_ms: finished,
+        status: run::RunStatus::Partial,
+        plan: launch.plan.clone(),
+        actual_selection: run::ActualSelection {
+            context: launch.plan.required_context.clone(),
+            plan_fingerprint: launch.plan.fingerprint.clone(),
+            checks: Vec::new(),
+            challenges: Vec::new(),
+            fingerprint: String::new(),
+        },
+        provenance: run::Provenance {
+            mode: match launch.operation {
+                RunOperation::Execute => ProvenanceMode::Execute,
+                RunOperation::Import => ProvenanceMode::Import,
+            },
+            source,
+            normalizer: run::Normalizer {
+                id: format!("adapter/{}", a.id),
+                version: a.adapter_version.clone(),
+                build_fingerprint: a.adapter_fingerprint.clone(),
+            },
+            adapter: run::AdapterProvenance {
+                id: a.id.clone(),
+                adapter_version: a.adapter_version.clone(),
+                adapter_fingerprint: a.adapter_fingerprint.clone(),
+                descriptor_fingerprint: a.descriptor_fingerprint.clone(),
+                configuration_fingerprint: a.configuration_fingerprint.clone(),
+                launch_fingerprint: launch.fingerprint.clone(),
+                routes: launch.routes.clone(),
+                import_inputs: inputs.to_vec(),
+            },
+            generated_at_ms: finished,
+            principal: None,
+            attributes: Some(BTreeMap::from([(
+                "capture".into(),
+                "core-transport-failure".into(),
+            )])),
+        },
+        artifacts: Vec::new(),
+        diagnostics,
+        activities: Vec::new(),
+        check_executions: Vec::new(),
+        challenger_executions: Vec::new(),
+        contributions: Vec::new(),
+    };
+    run::refresh_bundle(&mut bundle);
+    let findings = run::verify(&bundle);
+    if !findings.is_empty() {
+        return Err(HostError::semantic(format!(
+            "failed adapter contribution is invalid: {}",
+            join_findings(&findings)
+        )));
+    }
+    Ok(bundle)
+}
+
+fn now_ms() -> Result<u64, String> {
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?;
+    u64::try_from(elapsed.as_millis()).map_err(|_| "system time exceeds millisecond range".into())
 }

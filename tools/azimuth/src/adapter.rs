@@ -392,6 +392,9 @@ fn parse_adapter(
         ],
     )?;
     let id = segment(fields, "id", where_)?;
+    if id == "azimuth-coordinator" {
+        return Err(format!("{where_}.id is reserved for core Run coordination"));
+    }
     let provider_family = path_id(fields, "provider_family", where_)?;
     let protocol_version = integer(fields, "protocol_version", where_)?;
     if protocol_version != PROTOCOL_VERSION {

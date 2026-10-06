@@ -23,4 +23,4 @@ An accepted behavioral spec uses `# Spec: <spec-id>`, `## Claim: <claim-id>`, on
 
 ## Verify and stop
 
-Perform only engineering checks permitted by repository instructions. Run `azimuth change check <id>`, the normal `azimuth validate`, and relevant reports or exports. Inspect the final diff and record residuals, unperformed checks and rollout-dependent conditions honestly. Leave the change ready for finalization and ask for the next action. Do not finalize, archive or commit implicitly.
+Perform only engineering checks permitted by repository instructions. Run `azimuth change validate <id>`, the normal `azimuth validate`, and relevant reports or exports. Inspect the final diff and record residuals, unperformed checks and rollout-dependent conditions honestly. Leave the change ready for finalization and ask for the next action. Do not finalize, archive or commit implicitly.

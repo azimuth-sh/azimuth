@@ -1,57 +1,36 @@
 import Link from 'next/link';
-import { getProjects, Project } from '@/lib/assurance';
-
+import { requireViewer } from '@/lib/auth';
+import { SignOut } from './signout';
+export const dynamic = 'force-dynamic';
 export default async function Home() {
-  let projects: Project[];
-  let failure: string | null = null;
-  try {
-    projects = await getProjects();
-  } catch (error) {
-    projects = [];
-    failure = error instanceof Error ? error.message : 'The assurance API is unavailable.';
-  }
-
+  const session = await requireViewer();
   return (
     <div className="shell">
       <section className="hero">
-        <p className="eyebrow">Continuous assurance, without continuous Git churn</p>
-        <h1>What is justified for this exact thing, right now?</h1>
-        <p className="lede">
-          Qualified definitions stay stable. CI and production observations renew execution state.
-          Every closed gate names the missing fact or decision.
+        <p className="eyebrow">
+          Inspection only · GitHub ID {session.githubId}
         </p>
+        <h1>Assurance for exact Subjects</h1>
+        <p className="lede">
+          Inspect current authority, Runs and independent reviews. An accepted
+          execution does not establish a supported Claim.
+        </p>
+        <SignOut />
       </section>
-
-      <section className="section" aria-labelledby="projects-heading">
-        <div className="sectionHeading">
-          <div>
-            <p className="kicker">Projects</p>
-            <h2 id="projects-heading">Assurance accounts</h2>
-          </div>
-          <span className="count">{projects.length}</span>
+      <section className="section">
+        <h2>Your projects</h2>
+        <div className="projectGrid">
+          {session.projects.map((id) => (
+            <Link
+              className="projectCard"
+              href={`/projects/${encodeURIComponent(id)}`}
+              key={id}
+            >
+              <h3>{id}</h3>
+              <span className="projectAction">Inspect account →</span>
+            </Link>
+          ))}
         </div>
-
-        {failure ? (
-          <div className="notice noticeError">
-            <strong>Service unavailable</strong>
-            <p>{failure}</p>
-          </div>
-        ) : projects.length === 0 ? (
-          <div className="empty">
-            <p>No projects have been registered.</p>
-            <code>POST /v1/projects</code>
-          </div>
-        ) : (
-          <div className="projectGrid">
-            {projects.map((project) => (
-              <Link className="projectCard" href={`/projects/${encodeURIComponent(project.id)}`} key={project.id}>
-                <span className="projectId">{project.id}</span>
-                <h3>{project.name}</h3>
-                <span className="projectAction">Inspect account →</span>
-              </Link>
-            ))}
-          </div>
-        )}
       </section>
     </div>
   );

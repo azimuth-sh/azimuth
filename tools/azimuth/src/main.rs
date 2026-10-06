@@ -23,10 +23,13 @@ USAGE
     azimuth report traceability [options]
     azimuth export [options]
     azimuth surface verify --manifest <file>... --enumeration <file> --expectations <file>
+    azimuth assurance review-input --project <id> --request <file> [--review <file>...]
+        [--bundle <file>...] [options] [--catalog <file> --workset <file>] [--out <file>]
     azimuth assurance authority --project <id> [options] [--out <file>]
         [--catalog <project.json> --workset <workset.json>]
     azimuth adapter verify [--config <file>]
-    azimuth run plan --request <file> [--model <dir>] [--standards <file>]
+    azimuth run select --policy <file> [model options] [--config <file>] [--out <file>]
+    azimuth run plan --request <file>|--selection <file> [--model <dir>] [--standards <file>]
         [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
     azimuth run execute --plan <file> [--predecessor <bundle>...] [--config <file>] [--out <file>]
     azimuth run import --plan <file> --input <id>=<file>... [--predecessor <bundle>...]
@@ -53,7 +56,7 @@ USAGE
     azimuth project observe --project <file> --repository <id> --root <dir>
         --producer <name/version> --manifest <file>... [--support <file>] --out <repository.json>
     azimuth project locate --reference <project-reference.json>
-    azimuth change check <dir> [options]
+    azimuth change validate <id-or-dir> [options]
     azimuth change intent-preview <id-or-dir> [options]
     azimuth change intent-capture <id-or-dir> [options]
     azimuth change intent-apply <id-or-dir> --preview <file> [options]
@@ -61,8 +64,6 @@ USAGE
     azimuth change account-preview <id-or-dir> [--model <dir>] [--out <file>]
     azimuth change account-apply <id-or-dir> --preview <file> [--model <dir>]
         [--workspace <file>] [--manifest <file>...] [--support <file>...]
-    azimuth change account-check <id-or-dir> [--model <dir>] [--workspace <file>]
-        [--manifest <file>...] [--support <file>...]
     azimuth change create <id> [--title <text>] [--changes <dir>]
     azimuth change list [--changes <dir>]
     azimuth change show|status <id-or-dir> [--changes <dir>] [options]
@@ -72,6 +73,8 @@ USAGE
     azimuth change archive <dir> --date <YYYY-MM-DD> [options]
 
 OPTIONS
+    --project <file>      project catalog; requires --workset
+    --workset <file>      exact federated assessment inputs
     --model <dir>          current model packages (default: azimuth/model)
     --standards <file>     decision policies and Challenge schedule
                            (default: azimuth/standards/verification.md)
@@ -90,7 +93,8 @@ RUN PLAN REQUESTS
 
 const RUN_USAGE: &str = "\
 USAGE
-    azimuth run plan --request <file> [--model <dir>] [--standards <file>]
+    azimuth run select --policy <file> [model options] [--config <file>] [--out <file>]
+    azimuth run plan --request <file>|--selection <file> [--model <dir>] [--standards <file>]
         [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
     azimuth run execute --plan <file> [--predecessor <bundle>...]
         [--config <file>] [--out <file>]
@@ -121,6 +125,8 @@ fn main() -> ExitCode {
 }
 
 struct Options {
+    project: Option<PathBuf>,
+    workset: Option<PathBuf>,
     model: PathBuf,
     standards: PathBuf,
     workspace: PathBuf,
@@ -907,6 +913,8 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
             value if value.starts_with('-') => {
                 option_args.push(value.to_string());
                 if [
+                    "--project",
+                    "--workset",
                     "--model",
                     "--standards",
                     "--workspace",
@@ -1016,17 +1024,32 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
         _ => {}
     }
 
+    if matches!(operation.as_str(), "check" | "account-check") {
+        return Err(
+            "use `azimuth change validate`; change check and account-check have been removed"
+                .into(),
+        );
+    }
     let value = one_position(&positional, "change operation needs one id or directory")?;
     let root = azimuth::workflow::resolve_change(&changes, value)?;
     let options = parse_options(&option_args)?;
+    if operation == "validate" {
+        if preview_path.is_some() {
+            return Err("change validate does not accept --preview".into());
+        }
+        return command_change_validate(&root, &options);
+    }
+    if options.project.is_some() {
+        return Err("project/workset inputs are supported by change validate".into());
+    }
     if matches!(
         operation.as_str(),
-        "account-capture" | "account-preview" | "account-apply" | "account-check"
+        "account-capture" | "account-preview" | "account-apply"
     ) {
         return command_account_change(operation, &root, &options, preview_path);
     }
     if !options.supports.is_empty() {
-        return Err("`--support` is available only for account-check and account-apply".into());
+        return Err("`--support` is available only for change validate and account-apply".into());
     }
     if matches!(
         operation.as_str(),
@@ -1181,7 +1204,7 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
             }
             Ok(ExitCode::SUCCESS)
         }
-        "check" | "status" => {
+        "status" => {
             let account =
                 azimuth::account_delta::project_new_modules(&root.join("deltas"), &options.model)
                     .map_err(|errors| errors.join("\n"))?;
@@ -1421,21 +1444,9 @@ fn command_account_change(
         return Err("change has no design, verification or judgments account deltas".into());
     }
     let preview = projection.preview();
-    if operation == "account-check" {
-        if preview_path.is_some() || options.out.is_some() {
-            return Err("account-check does not accept `--preview` or `--out`".into());
-        }
-        let report = inspect_account_projection(&projection, options)?;
-        print!("{}", report.render());
-        return Ok(if report.findings.is_empty() {
-            ExitCode::SUCCESS
-        } else {
-            ExitCode::from(1)
-        });
-    }
     if operation == "account-preview" {
         if !options.supports.is_empty() {
-            return Err("account-preview does not accept `--support`; use account-check".into());
+            return Err("account-preview does not accept `--support`; use change validate".into());
         }
         if preview_path.is_some() {
             return Err("account-preview does not accept `--preview`; use `--out`".into());
@@ -1715,6 +1726,7 @@ struct RunOptions {
 }
 
 struct RunPlanOptions {
+    selection: bool,
     request: PathBuf,
     model: PathBuf,
     standards: PathBuf,
@@ -1802,7 +1814,7 @@ fn command_run(args: &[String]) -> Result<ExitCode, String> {
     {
         if matches!(
             operation.as_str(),
-            "plan" | "execute" | "import" | "verify" | "inspect"
+            "select" | "plan" | "execute" | "import" | "verify" | "inspect"
         ) && args.len() == 2
         {
             print!("{RUN_USAGE}");
@@ -1810,6 +1822,25 @@ fn command_run(args: &[String]) -> Result<ExitCode, String> {
         }
     }
     match operation.as_str() {
+        "select" => {
+            if args[1..]
+                .iter()
+                .any(|arg| matches!(arg.as_str(), "--request" | "--selection"))
+            {
+                return Err("run select takes --policy, not --request".into());
+            }
+            let arguments = args[1..]
+                .iter()
+                .map(|arg| {
+                    if arg == "--policy" {
+                        "--request".to_string()
+                    } else {
+                        arg.clone()
+                    }
+                })
+                .collect::<Vec<_>>();
+            command_run_select(parse_run_plan_options(&arguments)?)
+        }
         "plan" => command_run_plan(parse_run_plan_options(&args[1..])?),
         "execute" => command_run_invoke(parse_run_invoke_options(&args[1..], false)?, false),
         "import" => command_run_invoke(parse_run_invoke_options(&args[1..], true)?, true),
@@ -1821,6 +1852,7 @@ fn command_run(args: &[String]) -> Result<ExitCode, String> {
 
 fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
     let mut request = None;
+    let mut selection = false;
     let mut model = None;
     let mut standards = None;
     let mut workspace = None;
@@ -1831,11 +1863,14 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
     while index < args.len() {
         let option = args[index].as_str();
         match option {
-            "--request" => set_once_path(
-                &mut request,
-                PathBuf::from(argument_value(args, index, option)?),
-                option,
-            )?,
+            "--request" | "--selection" => {
+                set_once_path(
+                    &mut request,
+                    PathBuf::from(argument_value(args, index, option)?),
+                    "--request/--selection",
+                )?;
+                selection = option == "--selection";
+            }
             "--model" => set_once_path(
                 &mut model,
                 PathBuf::from(argument_value(args, index, option)?),
@@ -1888,6 +1923,7 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
     reject_output_input_equality(out.as_ref(), input_paths, "run plan")?;
     reject_model_output_descendant(out.as_ref(), &model)?;
     Ok(RunPlanOptions {
+        selection,
         request,
         model,
         standards,
@@ -1975,11 +2011,45 @@ fn parse_run_invoke_options(args: &[String], import: bool) -> Result<RunInvokeOp
     })
 }
 
-fn command_run_plan(options: RunPlanOptions) -> Result<ExitCode, String> {
-    let request = match azimuth::run_plan::load_plan_request(&options.request) {
-        Ok(request) => request,
+fn command_run_select(options: RunPlanOptions) -> Result<ExitCode, String> {
+    let source = fs::read_to_string(&options.request)
+        .map_err(|error| format!("{}: {error}", options.request.display()))?;
+    let policy =
+        match azimuth::run_selection::parse_policy(&options.request.display().to_string(), &source)
+        {
+            Ok(policy) => policy,
+            Err(errors) => return Ok(report_schema_errors(&errors)),
+        };
+    let configuration = match azimuth::adapter::load_configuration(&options.config) {
+        Ok(configuration) => configuration,
         Err(errors) => return Ok(report_schema_errors(&errors)),
     };
+    let loaded = azimuth::load(
+        &options.model,
+        &options.standards,
+        &options.workspace,
+        &options.manifests,
+        &[],
+    )
+    .map_err(render_diagnostics)?;
+    report(&loaded.warnings, "warning");
+    let selection = azimuth::run_selection::select(&loaded.model, &configuration, &policy);
+    publish_output(
+        azimuth::run_selection::to_json(&selection)
+            .to_string_pretty()
+            .as_bytes(),
+        options.out.as_ref(),
+    )?;
+    Ok(
+        if selection.findings.is_empty() && selection.request.is_some() {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::from(1)
+        },
+    )
+}
+
+fn command_run_plan(options: RunPlanOptions) -> Result<ExitCode, String> {
     let configuration = match azimuth::adapter::load_configuration(&options.config) {
         Ok(configuration) => configuration,
         Err(errors) => return Ok(report_schema_errors(&errors)),
@@ -1998,6 +2068,24 @@ fn command_run_plan(options: RunPlanOptions) -> Result<ExitCode, String> {
         }
     };
     report(&loaded.warnings, "warning");
+    let request = if options.selection {
+        let source = fs::read_to_string(&options.request)
+            .map_err(|error| format!("{}: {error}", options.request.display()))?;
+        match azimuth::run_selection::request_from_selection(
+            &loaded.model,
+            &configuration,
+            &options.request.display().to_string(),
+            &source,
+        ) {
+            Ok(request) => request,
+            Err(errors) => return Ok(report_schema_errors(&errors)),
+        }
+    } else {
+        match azimuth::run_plan::load_plan_request(&options.request) {
+            Ok(request) => request,
+            Err(errors) => return Ok(report_schema_errors(&errors)),
+        }
+    };
     let launch = match azimuth::run_plan::plan(&loaded.model, &configuration, &request) {
         Ok(launch) => launch,
         Err(errors) => {
@@ -2556,6 +2644,8 @@ fn run_inspection_json(
 
 fn parse_options(args: &[String]) -> Result<Options, String> {
     let mut o = Options {
+        project: None,
+        workset: None,
         model: PathBuf::from("azimuth/model"),
         standards: PathBuf::from("azimuth/standards/verification.md"),
         workspace: PathBuf::new(),
@@ -2573,6 +2663,22 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
                 .ok_or_else(|| format!("`{name}` needs a value"))
         };
         match arg.as_str() {
+            "--project" => {
+                set_once_path(
+                    &mut o.project,
+                    PathBuf::from(value("--project")?),
+                    "--project",
+                )?;
+                i += 2;
+            }
+            "--workset" => {
+                set_once_path(
+                    &mut o.workset,
+                    PathBuf::from(value("--workset")?),
+                    "--workset",
+                )?;
+                i += 2;
+            }
             "--model" => {
                 o.model = PathBuf::from(value("--model")?);
                 i += 2;
@@ -2604,6 +2710,19 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
             other if other.starts_with('-') => return Err(format!("unknown option `{other}`")),
             other => return Err(format!("unexpected positional argument `{other}`")),
         }
+    }
+    if o.project.is_some() != o.workset.is_some() {
+        return Err("--project and --workset are required together".into());
+    }
+    if o.project.is_some()
+        && args.iter().any(|arg| {
+            matches!(
+                arg.as_str(),
+                "--model" | "--workspace" | "--standards" | "--manifest" | "--support" | "--only"
+            )
+        })
+    {
+        return Err("project validation derives complete model, standards, mounts and support from the workset; omit local model options".into());
     }
     if o.workspace.as_os_str().is_empty() {
         o.workspace = o
@@ -2661,28 +2780,350 @@ fn report_findings(model: &azimuth::model::Model, findings: &[validation::Findin
 }
 
 fn command_validate(options: Options) -> Result<ExitCode, String> {
-    let loaded = match azimuth::load_with_support(
-        &options.model,
-        &options.standards,
-        &options.workspace,
-        &options.manifests,
-        &options.supports,
-        &options.only,
-    ) {
-        Ok(l) => l,
-        Err(diags) => {
-            report(&diags, "error");
-            eprintln!("\n{} parse error(s); no model was derived", diags.len());
-            return Ok(ExitCode::from(2));
-        }
-    };
+    reject_validation_output(&options, None)?;
+    let loaded = load_validation_inputs(&options)?;
     report(&loaded.warnings, "warning");
-
     let findings = validation::validate(&loaded.model);
-    let summary = validation::summarize(&loaded.model, &findings);
-    report_findings(&loaded.model, &findings);
+    render_validation(&loaded.model, &findings, &[], options.out.as_deref())
+}
 
-    Ok(if summary.errors > 0 {
+fn reject_validation_output(
+    options: &Options,
+    change: Option<&std::path::Path>,
+) -> Result<(), String> {
+    let inputs = options
+        .manifests
+        .iter()
+        .chain(options.supports.iter())
+        .chain(options.project.iter())
+        .chain(options.workset.iter())
+        .chain(std::iter::once(&options.workspace))
+        .chain(std::iter::once(&options.standards));
+    reject_output_input_equality(options.out.as_ref(), inputs, "validation")?;
+    if let (Some(project), Some(workset)) = (&options.project, &options.workset) {
+        let assembly =
+            azimuth::federation::assemble(project, workset, None).map_err(render_diagnostics)?;
+        for root in assembly.model_roots {
+            reject_model_output_descendant(options.out.as_ref(), &root)?;
+        }
+        let workset = azimuth::federation::load_workset(workset).map_err(render_diagnostics)?;
+        for repository in workset.repositories {
+            reject_output_input_equality(
+                options.out.as_ref(),
+                std::iter::once(&repository.manifest),
+                "validation",
+            )?;
+            if let Some(support) = repository.account_support {
+                reject_output_input_equality(
+                    options.out.as_ref(),
+                    std::iter::once(&support.path),
+                    "validation",
+                )?;
+            }
+        }
+    } else {
+        reject_model_output_descendant(options.out.as_ref(), &options.model)?;
+    }
+    if let Some(change) = change {
+        reject_model_output_descendant(options.out.as_ref(), &change.to_path_buf())?;
+    }
+    Ok(())
+}
+
+fn load_validation_inputs(options: &Options) -> Result<azimuth::Loaded, String> {
+    if let (Some(project), Some(workset)) = (&options.project, &options.workset) {
+        let assembly =
+            azimuth::federation::assemble(project, workset, None).map_err(render_diagnostics)?;
+        if !assembly.complete {
+            return Err(format!(
+                "incomplete workset: {}",
+                assembly.missing_inputs.join(", ")
+            ));
+        }
+        azimuth::load_assembly(&assembly, &[]).map_err(render_diagnostics)
+    } else {
+        azimuth::load_with_support(
+            &options.model,
+            &options.standards,
+            &options.workspace,
+            &options.manifests,
+            &options.supports,
+            &options.only,
+        )
+        .map_err(render_diagnostics)
+    }
+}
+
+fn render_diagnostics(diagnostics: Vec<Diag>) -> String {
+    diagnostics
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+struct ValidationStage(PathBuf);
+impl Drop for ValidationStage {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+fn command_change_validate(root: &std::path::Path, options: &Options) -> Result<ExitCode, String> {
+    reject_validation_output(options, Some(root))?;
+    if !options.only.is_empty() {
+        return Err("change validation requires the complete account; omit --only".into());
+    }
+    let stage = ValidationStage(std::env::temp_dir().join(format!(
+        "azimuth-change-validate-{}-{}",
+        std::process::id(),
+        OUTPUT_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    )));
+    fs::create_dir(&stage.0).map_err(|error| format!("{}: {error}", stage.0.display()))?;
+    let mut assembly = if let (Some(project), Some(workset)) = (&options.project, &options.workset)
+    {
+        let assembly =
+            azimuth::federation::assemble(project, workset, None).map_err(render_diagnostics)?;
+        if !assembly.complete {
+            return Err("change validation needs a complete workset".into());
+        }
+        azimuth::federation::validate_change_location(&assembly, root)
+            .map_err(render_diagnostics)?;
+        Some(assembly)
+    } else {
+        None
+    };
+    let original_roots = assembly
+        .as_ref()
+        .map(|assembly| assembly.model_roots.clone())
+        .unwrap_or_else(|| vec![options.model.clone()]);
+    if let Some(assembly) = &assembly {
+        for source in &assembly.model_roots {
+            merge_validation_model(source, &stage.0)?;
+        }
+    } else {
+        copy_account_model(&options.model, &stage.0)?;
+    }
+    let mut staged_options = Options {
+        project: None,
+        workset: None,
+        model: stage.0.clone(),
+        standards: options.standards.clone(),
+        workspace: options.workspace.clone(),
+        manifests: options.manifests.clone(),
+        supports: options.supports.clone(),
+        only: Vec::new(),
+        out: None,
+    };
+    if let Some(assembly) = &mut assembly {
+        assembly.model_roots = vec![stage.0.clone()];
+    }
+    let accepted = if let Some(assembly) = &mut assembly {
+        let manifests = std::mem::take(&mut assembly.manifests);
+        let supports = std::mem::take(&mut assembly.account_support);
+        let loaded = azimuth::load_assembly(assembly, &[]).map_err(render_diagnostics);
+        assembly.manifests = manifests;
+        assembly.account_support = supports;
+        loaded?
+    } else {
+        let manifests = std::mem::take(&mut staged_options.manifests);
+        let supports = std::mem::take(&mut staged_options.supports);
+        let loaded = load_validation_inputs(&staged_options);
+        staged_options.manifests = manifests;
+        staged_options.supports = supports;
+        loaded?
+    };
+    let change =
+        azimuth::change::inspect(root, &accepted.model).map_err(|errors| errors.join("\n"))?;
+    let intent = azimuth::intent::project(root, &stage.0, &accepted.model)
+        .map_err(|errors| errors.join("\n"))?;
+    let account = azimuth::account_delta::project_new_modules(&root.join("deltas"), &stage.0)
+        .map_err(|errors| errors.join("\n"))?;
+    for file in &intent.files {
+        if file.after.is_empty() {
+            fs::remove_file(&file.path).map_err(|error| error.to_string())?;
+        } else {
+            write_staged_facet(&file.path, &file.after)?;
+        }
+    }
+    for file in &account.files {
+        write_staged_facet(&file.path, &file.after)?;
+    }
+    staged_options.model = stage.0.clone();
+    let prospective = if let Some(assembly) = &assembly {
+        azimuth::load_assembly(assembly, &[]).map_err(render_diagnostics)?
+    } else {
+        load_validation_inputs(&staged_options)?
+    };
+    report(&prospective.warnings, "warning");
+    let mut findings = validation::validate(&prospective.model);
+    for finding in &mut findings {
+        if let Ok(relative) = std::path::Path::new(&finding.path).strip_prefix(&stage.0) {
+            finding.path = original_roots
+                .iter()
+                .map(|source| source.join(relative))
+                .find(|path| path.exists())
+                .unwrap_or_else(|| root.join("deltas").join(relative))
+                .display()
+                .to_string();
+        }
+    }
+    let blockers = azimuth::change::completion_issues(root, &change);
+    println!(
+        "change `{}`: current {} Claim(s) → prospective {} Claim(s)",
+        change.id,
+        accepted.model.claim_count(),
+        prospective.model.claim_count()
+    );
+    render_validation(
+        &prospective.model,
+        &findings,
+        &blockers,
+        options.out.as_deref(),
+    )
+}
+
+fn write_staged_facet(path: &std::path::Path, content: &str) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    fs::write(path, content).map_err(|error| format!("{}: {error}", path.display()))
+}
+
+fn merge_validation_model(
+    source: &std::path::Path,
+    target: &std::path::Path,
+) -> Result<(), String> {
+    for entry in fs::read_dir(source).map_err(|error| format!("{}: {error}", source.display()))? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let source = entry.path();
+        let target = target.join(entry.file_name());
+        let kind = entry.file_type().map_err(|error| error.to_string())?;
+        if kind.is_dir() {
+            fs::create_dir_all(&target).map_err(|error| error.to_string())?;
+            merge_validation_model(&source, &target)?;
+        } else if kind.is_file() {
+            if target.exists() {
+                return Err(format!(
+                    "duplicate federated model facet: {}",
+                    source.display()
+                ));
+            }
+            fs::copy(&source, &target).map_err(|error| error.to_string())?;
+        } else {
+            return Err(format!(
+                "{}: model links and special files are unsupported",
+                source.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn render_validation(
+    model: &azimuth::model::Model,
+    findings: &[validation::Finding],
+    blockers: &[String],
+    out: Option<&std::path::Path>,
+) -> Result<ExitCode, String> {
+    use azimuth::change::ValidationFacet;
+    use azimuth::json::Json;
+    let structural = findings
+        .iter()
+        .filter(|finding| {
+            azimuth::change::validation_facet(finding.kind) == ValidationFacet::Structure
+        })
+        .collect::<Vec<_>>();
+    let evidence = findings
+        .iter()
+        .filter(|finding| {
+            azimuth::change::validation_facet(finding.kind) == ValidationFacet::Evidence
+        })
+        .collect::<Vec<_>>();
+    let reviews = findings
+        .iter()
+        .filter(|finding| {
+            azimuth::change::validation_facet(finding.kind) == ValidationFacet::Readiness
+        })
+        .collect::<Vec<_>>();
+    let errors = structural
+        .iter()
+        .filter(|finding| finding.severity == validation::Severity::Error)
+        .count();
+    let readiness = errors == 0 && findings.is_empty() && blockers.is_empty();
+    if let Some(out) = out {
+        let report = Json::obj(vec![
+            ("format", Json::str("azimuth-validation")),
+            ("version", Json::Num(1.0)),
+            (
+                "structural_validity",
+                Json::str(if errors == 0 { "valid" } else { "invalid" }),
+            ),
+            (
+                "evidence_completeness",
+                Json::str(if evidence.is_empty() && reviews.is_empty() {
+                    "no-declared-gaps"
+                } else {
+                    "incomplete"
+                }),
+            ),
+            (
+                "acceptance_readiness",
+                Json::str(if readiness {
+                    "no-declared-blockers"
+                } else {
+                    "blocked"
+                }),
+            ),
+            (
+                "findings",
+                Json::Arr(
+                    findings
+                        .iter()
+                        .map(|finding| {
+                            Json::obj(vec![
+                                (
+                                    "facet",
+                                    Json::str(
+                                        azimuth::change::validation_facet(finding.kind).name(),
+                                    ),
+                                ),
+                                ("finding", finding.to_json()),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+            (
+                "acceptance_blockers",
+                Json::Arr(blockers.iter().map(Json::str).collect()),
+            ),
+        ]);
+        publish_output(
+            report.to_string_pretty().as_bytes(),
+            Some(&out.to_path_buf()),
+        )?;
+    } else {
+        report_findings(model, findings);
+        println!(
+            "Structural validity: {} ({} error(s))",
+            if errors == 0 { "valid" } else { "invalid" },
+            errors
+        );
+        println!("Evidence completeness: {} evidence gap(s), {} review obligation(s); execution assurance is evaluated separately", evidence.len(), reviews.len());
+        println!(
+            "Acceptance readiness: {}",
+            if readiness {
+                "no declared blockers"
+            } else {
+                "blocked"
+            }
+        );
+        for blocker in blockers {
+            println!("  acceptance blocker: {blocker}");
+        }
+    }
+    Ok(if errors > 0 {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS
@@ -2819,16 +3260,29 @@ fn command_surface(args: &[String]) -> Result<ExitCode, String> {
 }
 
 fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
-    if args.first().map(String::as_str) != Some("authority") {
+    let operation = args.first().map(String::as_str).unwrap_or_default();
+    if !matches!(operation, "authority" | "review-input") {
         return Err("expected assurance authority --project <id> [model options] [--catalog <file> --workset <file>]".into());
     }
     let mut project = None;
     let mut catalog = None;
     let mut workset = None;
+    let mut request = None;
+    let mut reviews = Vec::new();
+    let mut bundles = Vec::new();
     let mut options = Vec::new();
     let mut cursor = 1;
     while cursor < args.len() {
         match args[cursor].as_str() {
+            "--request" | "--review" | "--bundle" if operation == "review-input" => {
+                let value = PathBuf::from(argument_value(args, cursor, &args[cursor])?);
+                match args[cursor].as_str() {
+                    "--request" => set_once_path(&mut request, value, "--request")?,
+                    "--review" => reviews.push(value),
+                    _ => bundles.push(value),
+                }
+                cursor += 2;
+            }
             "--project" | "--catalog" | "--workset" => {
                 let value = args
                     .get(cursor + 1)
@@ -2892,10 +3346,40 @@ fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
             .join("\n")
     })?;
     report(&loaded.warnings, "warning");
-    let authority = azimuth::assurance_review::authority(&loaded.model, &project)?;
+    let authority = if operation == "review-input" {
+        let request = request.ok_or("review-input needs --request <file>")?;
+        let request = azimuth::json::parse(
+            &fs::read_to_string(&request)
+                .map_err(|error| format!("{}: {error}", request.display()))?,
+        )
+        .map_err(|error| error.to_string())?;
+        let reviews = reviews
+            .iter()
+            .map(|path| {
+                azimuth::json::parse(
+                    &fs::read_to_string(path)
+                        .map_err(|error| format!("{}: {error}", path.display()))?,
+                )
+                .map_err(|error| error.to_string())
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let bundles = match load_run_bundles(&bundles) {
+            Ok(bundles) => bundles,
+            Err(code) => return Ok(code),
+        };
+        azimuth::assurance_review::review_input(
+            &loaded.model,
+            &project,
+            &request,
+            &reviews,
+            &bundles,
+        )?
+    } else {
+        azimuth::assurance_review::authority(&loaded.model, &project)?
+    };
     let output = authority.to_string_pretty();
     if let Some(path) = options.out {
-        fs::write(&path, output).map_err(|error| format!("{}: {error}", path.display()))?;
+        publish_output(output.as_bytes(), Some(&path))?;
     } else {
         println!("{output}");
     }

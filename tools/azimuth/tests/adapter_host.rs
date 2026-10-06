@@ -210,6 +210,7 @@ impl Fixture {
             inputs: Vec::new(),
         };
         let mut launch = LaunchPlan {
+            adapters: Vec::new(),
             operation,
             planned_at_ms: 10,
             subject,
@@ -225,6 +226,7 @@ impl Fixture {
             routes: vec![route],
             fingerprint: fp('0'),
         };
+        launch.adapters = vec![launch.adapter.clone()];
         launch.fingerprint = run_plan::launch_fingerprint(&launch);
 
         let input = if operation == RunOperation::Import {
@@ -355,6 +357,7 @@ impl Fixture {
             RunOperation::Import => ProvenanceMode::Import,
         };
         let mut bundle = RunBundle {
+            contributions: Vec::new(),
             run_id: fp('0'),
             bundle_revision: 0,
             corrects: None,
@@ -1328,8 +1331,8 @@ activities = [{'id': 'measurement', 'status': 'completed', 'started_at_ms': 11,
 units = {check['id']: [{'id': 'whole', 'attempts': [{'ordinal': 0, 'activity': 'measurement',
           'outcomes': {case: 'satisfied' for case in check['cases']}}]}]} if covered else {}
 bundle = build_check_bundle(launch, source={'system': 'native-builder', 'execution': 'execution-1'},
-    normalizer={'id': 'adapter/' + launch['adapter']['id'], 'version': launch['adapter']['adapter_version'],
-                'build_fingerprint': launch['adapter']['adapter_fingerprint']},
+    normalizer={'id': 'adapter/' + launch['adapters'][0]['id'], 'version': launch['adapters'][0]['adapter_version'],
+                'build_fingerprint': launch['adapters'][0]['adapter_fingerprint']},
     generated_at_ms=13, started_at_ms=11, finished_at_ms=12,
     actual_context=launch['plan']['required_context'], activities=activities, units_by_check=units,
     artifacts=[], diagnostics=[], import_inputs=identities)
@@ -1371,4 +1374,205 @@ print(json.dumps(bundle))
             outcome
         );
     }
+}
+
+fn identify_fixture(fixture: &mut Fixture, id: &str, check: &str) {
+    let configured = &mut fixture.configuration.adapters[0];
+    configured.id = id.into();
+    configured.adapter_fingerprint = adapter::adapter_fingerprint(configured);
+    for capability in &mut configured.capabilities {
+        capability.fingerprint =
+            adapter::capability_fingerprint(&configured.adapter_fingerprint, capability);
+    }
+    configured.descriptor_fingerprint =
+        adapter::descriptor_fingerprint(&configured.expected_description());
+    configured.configuration_fingerprint = adapter::configuration_fingerprint(configured);
+    fixture.launch.adapter = LaunchAdapter {
+        id: configured.id.clone(),
+        adapter_version: configured.adapter_version.clone(),
+        adapter_fingerprint: configured.adapter_fingerprint.clone(),
+        descriptor_fingerprint: configured.descriptor_fingerprint.clone(),
+        configuration_fingerprint: configured.configuration_fingerprint.clone(),
+    };
+    fixture.launch.adapters = vec![fixture.launch.adapter.clone()];
+    fixture.launch.plan.checks[0].id = check.into();
+    fixture.launch.plan.fingerprint =
+        run::plan_fingerprint(&fixture.launch.subject_fingerprint, &fixture.launch.plan);
+    fixture.launch.routes[0].selection.id = check.into();
+    fixture.launch.routes[0].capability.address = format!("{id}/checks");
+    fixture.launch.routes[0].capability.fingerprint =
+        configured.capabilities[0].fingerprint.clone();
+    fixture.launch.fingerprint = run_plan::launch_fingerprint(&fixture.launch);
+}
+fn coordinated_fixture_launch(
+    first: &Fixture,
+    second: &Fixture,
+) -> (AdapterConfiguration, LaunchPlan) {
+    let mut configuration = first.configuration.clone();
+    configuration
+        .adapters
+        .extend(second.configuration.adapters.clone());
+    let mut launch = first.launch.clone();
+    launch.adapters.extend(second.launch.adapters.clone());
+    launch.adapter = run_plan::coordinator_identity(&launch.adapters);
+    launch.plan.checks.extend(second.launch.plan.checks.clone());
+    launch.plan.fingerprint = run::plan_fingerprint(&launch.subject_fingerprint, &launch.plan);
+    launch.routes.extend(second.launch.routes.clone());
+    launch.fingerprint = run_plan::launch_fingerprint(&launch);
+    assert!(run_plan::validate_launch_configuration(&launch, &configuration).is_empty());
+    assert!(run_plan::validate_launch_plan(&launch).is_empty());
+    (configuration, launch)
+}
+#[test]
+fn coordinated_execute_retains_exact_adverse_facts_and_rejects_projection_tampering() {
+    let _guard = test_lock();
+    let mut first = Fixture::new(RunOperation::Execute, 1000, 128 * 1024, 4096);
+    let mut second = Fixture::new(RunOperation::Execute, 1000, 128 * 1024, 4096);
+    identify_fixture(&mut first, "alpha", "alpha-check");
+    identify_fixture(&mut second, "beta", "beta-check");
+    let first_bundle = first.violated_bundle();
+    let second_bundle = second.violated_bundle();
+    first.set_bundle_response(&first_bundle, &[]);
+    second.set_bundle_response(&second_bundle, &[]);
+    let (configuration, launch) = coordinated_fixture_launch(&first, &second);
+    let result = adapter_host::execute(&configuration, &launch, &[]).unwrap();
+    assert_eq!(
+        result.bundle.contributions,
+        vec![first_bundle, second_bundle]
+    );
+    assert_eq!(result.bundle.status, RunStatus::Complete);
+    assert_eq!(result.bundle.check_executions.len(), 2);
+    assert!(result
+        .bundle
+        .check_executions
+        .iter()
+        .all(|e| e.observations[0].outcome == ObservationOutcome::Violated));
+    assert!(run::verify(&result.bundle).is_empty());
+    assert_eq!(
+        run::parse("coordinated.json", &result.canonical_json).unwrap(),
+        result.bundle
+    );
+    let mut tampered = result.bundle.clone();
+    tampered.check_executions[0].observations[0].outcome = ObservationOutcome::Satisfied;
+    run::refresh_bundle(&mut tampered);
+    assert!(run::verify(&tampered)
+        .iter()
+        .any(|f| f.code == "run/coordination"));
+    let mut omitted = result.bundle.clone();
+    omitted.contributions.pop();
+    run::refresh_bundle(&mut omitted);
+    assert!(!run::verify(&omitted).is_empty());
+    let mut nested = result.bundle.clone();
+    nested.contributions[0].contributions = result.bundle.contributions.clone();
+    assert!(run::parse(
+        "nested.json",
+        &run::canonical_json(&run::to_json(&nested)).unwrap()
+    )
+    .is_err());
+}
+#[test]
+fn coordinated_import_preserves_partials_and_corrects_the_complete_run() {
+    let _guard = test_lock();
+    let mut first = Fixture::new(RunOperation::Import, 1000, 128 * 1024, 4096);
+    let mut second = Fixture::new(RunOperation::Import, 1000, 128 * 1024, 4096);
+    identify_fixture(&mut first, "alpha", "alpha-check");
+    identify_fixture(&mut second, "beta", "beta-check");
+    let first_bundle = first.violated_bundle();
+    let second_bundle = second.bundle();
+    first.set_bundle_response(&first_bundle, &[]);
+    second.set_bundle_response(&second_bundle, &[]);
+    let (configuration, launch) = coordinated_fixture_launch(&first, &second);
+    let input = std::slice::from_ref(first.input.as_ref().unwrap());
+    let prior = adapter_host::import(&configuration, &launch, input, &[]).unwrap();
+    assert_eq!(prior.bundle.status, RunStatus::Partial);
+    assert_eq!(prior.bundle.check_executions.len(), 1);
+    assert_eq!(
+        prior.bundle.contributions[1].actual_selection.checks.len(),
+        0
+    );
+    for (fixture, previous) in [(&first, &first_bundle), (&second, &second_bundle)] {
+        let mut correction = fixture.violated_bundle();
+        correction.provenance.source = previous.provenance.source.clone();
+        correction.bundle_revision = 1;
+        correction.corrects = Some(previous.bundle_fingerprint.clone());
+        correction.correction_reason = Some("complete native capture".into());
+        refresh(&mut correction);
+        fixture.set_bundle_response(&correction, std::slice::from_ref(previous));
+    }
+    let corrected = adapter_host::import(
+        &configuration,
+        &launch,
+        input,
+        std::slice::from_ref(&prior.bundle),
+    )
+    .unwrap();
+    assert_eq!(corrected.bundle.run_id, prior.bundle.run_id);
+    assert_eq!(corrected.bundle.bundle_revision, 1);
+    assert_eq!(corrected.bundle.status, RunStatus::Complete);
+    assert_eq!(
+        corrected.bundle.corrects.as_deref(),
+        Some(prior.bundle.bundle_fingerprint.as_str())
+    );
+    assert!(run::verify_set(&[prior.bundle, corrected.bundle]).is_empty());
+}
+#[test]
+fn coordinated_exchange_failure_retains_successful_adapter_observations() {
+    let _guard = test_lock();
+    let mut first = Fixture::new(RunOperation::Execute, 1000, 128 * 1024, 4096);
+    let mut second = Fixture::new(RunOperation::Execute, 1000, 128 * 1024, 4096);
+    identify_fixture(&mut first, "alpha", "alpha-check");
+    identify_fixture(&mut second, "beta", "beta-check");
+    first.set_bundle_response(&first.violated_bundle(), &[]);
+    second.set_mode("malformed");
+    let (configuration, launch) = coordinated_fixture_launch(&first, &second);
+    let result = adapter_host::execute(&configuration, &launch, &[]).unwrap();
+    assert_eq!(result.bundle.status, RunStatus::Partial);
+    assert_eq!(result.bundle.check_executions.len(), 1);
+    assert_eq!(
+        result.bundle.check_executions[0].observations[0].outcome,
+        ObservationOutcome::Violated
+    );
+    assert!(result.bundle.contributions[1].check_executions.is_empty());
+    assert!(result
+        .bundle
+        .diagnostics
+        .iter()
+        .any(|d| d.code == "adapter/exchange-failed"));
+    assert!(run::verify(&result.bundle).is_empty());
+}
+
+#[test]
+fn coordinated_correction_failure_preserves_start_and_other_adapter_facts() {
+    let _guard = test_lock();
+    let mut first = Fixture::new(RunOperation::Execute, 1000, 128 * 1024, 4096);
+    let mut second = Fixture::new(RunOperation::Execute, 1000, 128 * 1024, 4096);
+    identify_fixture(&mut first, "alpha", "alpha-check");
+    identify_fixture(&mut second, "beta", "beta-check");
+    let first_bundle = first.violated_bundle();
+    let second_bundle = second.violated_bundle();
+    first.set_bundle_response(&first_bundle, &[]);
+    second.set_bundle_response(&second_bundle, &[]);
+    let (configuration, launch) = coordinated_fixture_launch(&first, &second);
+    let initial = adapter_host::execute(&configuration, &launch, &[])
+        .unwrap()
+        .bundle;
+    let mut first_corrected = first_bundle.clone();
+    first_corrected.bundle_revision = 1;
+    first_corrected.corrects = Some(first_bundle.bundle_fingerprint.clone());
+    first_corrected.correction_reason = Some("recapture".into());
+    refresh(&mut first_corrected);
+    first.set_bundle_response(&first_corrected, std::slice::from_ref(&first_bundle));
+    second.set_mode("malformed");
+    let corrected = adapter_host::execute(&configuration, &launch, std::slice::from_ref(&initial))
+        .unwrap()
+        .bundle;
+    assert_eq!(corrected.status, RunStatus::Partial);
+    assert_eq!(corrected.started_at_ms, initial.started_at_ms);
+    assert_eq!(
+        corrected.contributions[1].started_at_ms,
+        initial.contributions[1].started_at_ms
+    );
+    assert_eq!(corrected.contributions[0], first_corrected);
+    assert_eq!(corrected.check_executions.len(), 1);
+    assert!(run::verify_set(&[initial, corrected]).is_empty());
 }
