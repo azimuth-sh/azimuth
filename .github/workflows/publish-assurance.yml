@@ -2,6 +2,12 @@ name: publish assurance images
 
 on:
   workflow_dispatch:
+    inputs:
+      image:
+        description: Assurance image to publish
+        type: choice
+        default: all
+        options: [all, api, web]
 
 permissions:
   contents: read
@@ -11,20 +17,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  select:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    outputs:
+      images: ${{ steps.images.outputs.images }}
+    steps:
+      - id: images
+        env:
+          SELECTED_IMAGE: ${{ inputs.image }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          images = [
+              {"id": "api", "name": "ghcr.io/azimuth-sh/azimuth-assurance-api", "context": ".", "dockerfile": "services/assurance/server/Dockerfile"},
+              {"id": "web", "name": "ghcr.io/azimuth-sh/azimuth-assurance-web", "context": "services/assurance/web", "dockerfile": "services/assurance/web/Dockerfile"},
+          ]
+          selected = os.environ["SELECTED_IMAGE"]
+          if selected not in ("all", "api", "web"):
+              raise SystemExit("Unsupported image selection")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write("images=" + json.dumps([image for image in images if selected == "all" or image["id"] == selected]) + "\n")
+          PYTHON
+
   build:
+    needs: select
     if: github.ref == 'refs/heads/main'
     strategy:
       fail-fast: false
       matrix:
-        image:
-          - id: api
-            name: ghcr.io/azimuth-sh/azimuth-assurance-api
-            context: .
-            dockerfile: services/assurance/server/Dockerfile
-          - id: web
-            name: ghcr.io/azimuth-sh/azimuth-assurance-web
-            context: services/assurance/web
-            dockerfile: services/assurance/web/Dockerfile
+        image: ${{ fromJSON(needs.select.outputs.images) }}
         platform:
           - name: linux/amd64
             architecture: amd64
@@ -77,15 +99,11 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: build
+    needs: [select, build]
     strategy:
       fail-fast: false
       matrix:
-        image:
-          - id: api
-            name: ghcr.io/azimuth-sh/azimuth-assurance-api
-          - id: web
-            name: ghcr.io/azimuth-sh/azimuth-assurance-web
+        image: ${{ fromJSON(needs.select.outputs.images) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: assurance-images

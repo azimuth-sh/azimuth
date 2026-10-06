@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireViewer } from '@/lib/auth';
-import { cursor, readProject } from '@/lib/assurance';
+import { cursor, readProject, routeFingerprint } from '@/lib/assurance';
 export const dynamic = 'force-dynamic';
 export default async function RunPage({
   params,
@@ -10,8 +10,10 @@ export default async function RunPage({
   params: Promise<{ projectId: string; run: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { projectId, run } = await params;
+  const { projectId, run: segment } = await params;
+  const run = routeFingerprint(segment);
   await requireViewer(projectId);
+  if (!run) notFound();
   const after = cursor((await searchParams).after);
   const history = await readProject<Record<string, unknown>>(
     projectId,

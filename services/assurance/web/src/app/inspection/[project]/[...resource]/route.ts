@@ -1,12 +1,22 @@
 import type { NextRequest } from 'next/server';
 import { viewer } from '@/lib/auth';
-import { readProject } from '@/lib/assurance';
+import { readProject, routeFingerprint } from '@/lib/assurance';
 export const dynamic = 'force-dynamic';
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ project: string; resource: string[] }> },
 ) {
   const { project, resource } = await params;
+  if (resource[0] === 'runs' && resource.length === 2) {
+    const id = routeFingerprint(resource[1]);
+    if (!id) return Response.json({ error: 'Not found' }, { status: 404 });
+    resource[1] = id;
+  }
+  if (resource[0] === 'subjects' && resource.length === 3) {
+    const id = routeFingerprint(resource[1]);
+    if (!id) return Response.json({ error: 'Not found' }, { status: 404 });
+    resource[1] = id;
+  }
   const session = await viewer();
   if (!session)
     return Response.json({ error: 'Authentication required' }, { status: 401 });

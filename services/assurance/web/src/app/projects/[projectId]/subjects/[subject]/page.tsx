@@ -1,16 +1,21 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireViewer } from '@/lib/auth';
-import { readProject, type SubjectState } from '@/lib/assurance';
+import {
+  readProject,
+  routeFingerprint,
+  type SubjectState,
+} from '@/lib/assurance';
 export const dynamic = 'force-dynamic';
 export default async function SubjectPage({
   params,
 }: {
   params: Promise<{ projectId: string; subject: string }>;
 }) {
-  const { projectId, subject } = await params;
+  const { projectId, subject: segment } = await params;
+  const subject = routeFingerprint(segment);
   await requireViewer(projectId);
-  if (!/^sha256:[a-f0-9]{64}$/.test(subject)) notFound();
+  if (!subject) notFound();
   const state = await readProject<SubjectState>(
     projectId,
     `/subjects/${encodeURIComponent(subject)}/state`,

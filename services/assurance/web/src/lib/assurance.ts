@@ -91,3 +91,12 @@ export async function projectView(
   ]);
   return { authority, runs, subjects, reviews };
 }
+
+export function routeFingerprint(value: string): string | null {
+  try {
+    const decoded = decodeURIComponent(value);
+    return /^sha256:[a-f0-9]{64}$/.test(decoded) ? decoded : null;
+  } catch {
+    return null;
+  }
+}
