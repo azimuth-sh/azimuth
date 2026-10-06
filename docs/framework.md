@@ -51,9 +51,21 @@ Residue belongs outside the Claim graph: orientation, danger zones, deliberately
 
 The facets must also separate cleanly at N=1. If intent, mechanism and evidence only make sense when three different people author them, the separation is decorative and the framework cannot be dogfooded by a single maintainer. Ownership is therefore a removable layer rather than part of the model.
 
-## Repository evidence graph
+## Compact verification account
 
-The alpha 5 repository graph is deliberately sparse:
+The compact Claim-first account separates authored meaning, machine execution and independent review. `verification.md` owns Check method prose and inline Evidence Bindings. The typed Check–Case pair identifies each binding, and its Contribution describes what that method may establish for that Case. Source markers identify implementations; they cannot author binding meaning or approve a review. Compact method prose is retained as prose, without a synthesized `Terminal` field.
+
+Explicit packages add shared concepts without changing Claim kinds. `azimuth.surface` supplies Surfaces, independent Expectation Sets, typed producer descriptors and deterministic report validation. `azimuth.network` supplies named Probes and origins. .NET attributes and Python annotations use their package namespaces. A Surface publishes field names; its emitter derives language types and supported values from the enumerator's output. `azimuth surface verify` checks exact Subjects, producer support, completion, schema, unique keys, membership fingerprints and joins in both directions. It does not establish runtime behavior from registration metadata.
+
+Separate strict review records assess the exact Check method, exact Check–Case contribution for one Subject, and complete Claim composition. Their vocabulary and dependency rules are in [assurance-reviews.md](../contracts/assurance-reviews.md). Method Qualification and Applicability Decision use `accepted | rejected`; Claim Judgment concludes `supported | violated | unresolved`. The ledger reports missing, rejected, stale, invalid and accepted assessments without authoring positive reviews. Decision Policies and challenge scheduling for this lane remain deferred.
+
+`azimuth assurance authority` exports a complete unselected authority projection whose model identity matches Run planning. The owner explicitly selects it in the project-scoped Run ledger. Selection of a candidate projection is not change acceptance. The ledger retains Runs, correction chains, independently authenticated reviews and authority selections, then computes exact-Subject state against the selected authority. See [run-ledger.md](../contracts/run-ledger.md).
+
+## Earlier repository decision graph
+
+The older declaration lane in `contracts/verification.md` remains implemented. Its repository-owned decision blocks and Challenge planning retain their existing policy, context and scheduling semantics. The following sections describe that lane; they do not add those fields to compact bindings.
+
+Its graph is deliberately sparse:
 
 ```text
 production site --Realizes---------------------------> Claim
@@ -168,7 +180,7 @@ A Challenger is not recursively qualified in alpha 5. Its quality is an ordinary
 ## Linkage and domains
 
 Production code uses `realizes` to identify a site on a parent Claim's realization path. The
-relation is keyed by `(spec-id, claim-id)` and carries no Case or evidence form. A tagged site may
+relation names the project-global Claim ID and carries no Case or evidence form. A tagged site may
 be code or declared delivery topology when routing is part of the behavior.
 
 Routine Claims owe no realization linkage. For applicable non-routine Claims, several sites may realize one Claim across components and languages. This fan-out is why the model must derive traceability rather than maintain a second hand-written matrix.
@@ -293,15 +305,15 @@ The current Run bundle version 1 requires this adapter provenance. It replaces t
 
 Generated plans currently represent Check and Challenge routes with model authority. Challenge Results are exactly `clean | findings | inconclusive`. Clean means only that the configured search found no objection; it creates no evidence or credibility. Every planned Challenge omitted from a partial, cancelled or timed-out Run has exactly one execution diagnostic scoped to its selection id and no fabricated Result. Scheduled omission is allowed deferral; gate omission records an honest execution failure. Added or substituted target, context, scope or units is a mismatch.
 
-`model.extract` execution remains absent. Durable ingestion, authorization, retention and Subject-specific Assurance State remain Run-ledger work. Current planning defines no cache validity, cadence, historical-applicability or cross-Subject reuse semantics. Adapters remain bounded short-lived processes; there is no daemon, webhook, event gateway or long-running adapter boundary.
+`model.extract` execution remains absent. The current Run ledger supplies authenticated durable ingestion, immutable histories and compact exact-Subject Assurance State. Current planning defines no cache validity, cadence, historical-applicability or cross-Subject reuse semantics. Adapters remain bounded short-lived processes; there is no daemon, webhook, event gateway or long-running adapter boundary.
 
 The synthetic [Challenge-planning conformance](../experiments/challenge-planning/README.md) uses only
 the public commands and exercises all twelve selector forms, mixed planning, exact scope and routes,
 scheduled omission, import provenance and selection mismatch without creating persistent state.
 
-The optional Assurance Service is likewise awaiting the Run-ledger replacement. Its legacy service API and version 2 project-snapshot wire remain isolated inside the existing service boundary until that replacement removes them. A snapshot Case is opaque `caseStatement` text, but the protocol is not the alpha 5 repository model or Run-bundle protocol, is not emitted by `azimuth export`, and receives no compatibility bridge. Authorization, durable ingest, retention and Subject-specific Assurance State remain ledger work.
+The earlier Assurance Service remains isolated beside the current Run ledger. Its earlier service API and version 2 project-snapshot wire remain isolated inside that separate service boundary. A snapshot Case is opaque `caseStatement` text, but the protocol is not the alpha 5 repository model or Run-bundle protocol, is not emitted by `azimuth export`, and receives no compatibility bridge. The current ledger supplies authorization, durable ingest, immutable history and compact Subject-specific Assurance State.
 
-The authority split is current: repositories own Claims, Checks, Evidence Bindings and reviewed decisions; Run producers own execution facts about exact Subjects. A standalone valid bundle does not establish that its model or decision fingerprints are current.
+The authority split is current: repositories own Claims, Checks and binding meaning; Run producers own execution facts about exact Subjects, and independently authenticated reviewers own compact review records. The older declaration lane retains its repository-owned decisions. A standalone valid bundle does not establish that its model or decision fingerprints are current.
 
 Historical consumer feedback is retained only as an [immutable provenance citation][historical-consumer-provenance]. The citation is documentary; no build, test, release or acceptance step reads that repository.
 
@@ -311,4 +323,4 @@ Historical consumer feedback is retained only as an [immutable provenance citati
 
 One falsifier stays open and is cheap to run once the export carries non-routine content: if the intent, mechanism and evidence views over the export turn out to be substantially the same view, the three-facet split is decorative and the artifacts should collapse into fewer.
 
-Azimuth does not prove prose predicates, infer honest linkage from source, turn a clean Challenger search into positive product evidence, create a repository decision from execution facts or enroll native tests automatically. Its current outputs are a versioned repository account, derived traceability and validated bounded adapter exchanges. Durable ingestion and Subject-specific assurance remain deferred rather than simulated through repository records or protocol validity.
+Azimuth does not prove prose predicates, infer honest linkage from source, turn a clean Challenger search into positive product evidence, create a repository decision from execution facts or enroll native tests automatically. Its current outputs are a versioned repository account, derived traceability and validated bounded adapter exchanges. The current ledger adds durable ingestion and independently reviewed Subject-specific assurance. Protocol validity alone still supplies no positive Claim conclusion.

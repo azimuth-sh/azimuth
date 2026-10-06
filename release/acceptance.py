@@ -47,6 +47,7 @@ APPROVED_CONTRACT = {
             "packages/rust",
             "tools/extractors/cpp",
             "tools/extractors/go",
+            "tools/extractors/helm",
             "tools/extractors/jvm",
             "tools/extractors/python",
             "tools/extractors/rust",

@@ -16,6 +16,7 @@ pub struct AccountVerification {
     pub cases: Vec<CaseVerification>,
     pub elements: Vec<VerificationElement>,
     pub checks: Vec<AuthoredCheck>,
+    pub package_entities: Vec<crate::verification_packages::Declaration>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,6 +42,9 @@ pub struct AuthoredCheck {
     pub cases: Vec<String>,
     pub mechanisms: Vec<String>,
     pub proposition: Option<String>,
+    pub bindings: Vec<crate::verification_packages::Binding>,
+    pub inputs: std::collections::BTreeMap<String, String>,
+    pub selectors: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,6 +97,7 @@ pub fn parse_account_verification(
     let mut cases = Vec::new();
     let mut elements = Vec::new();
     let mut checks = Vec::new();
+    let mut package_entities = Vec::new();
     let mut ancestors: Vec<usize> = Vec::new();
 
     for (index, heading) in headings.iter().enumerate() {
@@ -164,6 +169,9 @@ pub fn parse_account_verification(
         if heading.label.is_empty() {
             let caption = lines[heading.line - 1..end].join("\n");
             let target = match structural_parent {
+                Some("Surface" | "Expectation set" | "Probe") => package_entities.last_mut().map(
+                    |entity: &mut crate::verification_packages::Declaration| &mut entity.prose,
+                ),
                 Some("Check") => checks
                     .last_mut()
                     .map(|check: &mut AuthoredCheck| &mut check.definition.rationale),
@@ -190,6 +198,16 @@ pub fn parse_account_verification(
             continue;
         }
         match (heading.level, heading.label) {
+            (3, "Surface" | "Expectation set" | "Probe") => {
+                if active_claim.is_some() {
+                    errors.push(Diag::at(path, heading.line, "package declarations must be shared outside a Claim"));
+                }
+                let declaration = crate::verification_packages::read_declaration(path, heading.line, heading.label, heading.id, block, &mut errors);
+                if package_entities.iter().any(|item: &crate::verification_packages::Declaration| item.kind == declaration.kind && item.id == declaration.id) {
+                    errors.push(Diag::at(path, heading.line, "duplicate package declaration"));
+                }
+                package_entities.push(declaration);
+            }
             (2, "Claim verification") => {
                 if let Err(reason) = validate_id(heading.id, false) {
                     errors.push(Diag::expecting(
@@ -421,6 +439,7 @@ pub fn parse_account_verification(
             cases,
             elements,
             checks,
+            package_entities,
         })
     } else {
         Err(errors)
@@ -470,6 +489,9 @@ fn collect_headings<'a>(path: &str, lines: &'a [&str], errors: &mut Vec<Diag>) -
             "Section",
             "Check",
             "Element",
+            "Surface",
+            "Expectation set",
+            "Probe",
         ];
         let (label, id) = match rest.split_once(": ") {
             Some((label, id)) if declarations.contains(&label) => (label, id),
@@ -636,6 +658,20 @@ fn read_check(
     block: &[&str],
     errors: &mut Vec<Diag>,
 ) -> AuthoredCheck {
+    if block
+        .iter()
+        .any(|line| line.starts_with("- Evidence bindings:"))
+    {
+        return crate::verification_packages::read_check(
+            path,
+            line,
+            id,
+            claim,
+            enclosing_case,
+            block,
+            errors,
+        );
+    }
     let mut methods = Vec::new();
     let mut terminal = None;
     let mut proposition = None;
@@ -801,5 +837,8 @@ fn read_check(
         cases,
         mechanisms,
         proposition,
+        bindings: Vec::new(),
+        inputs: std::collections::BTreeMap::new(),
+        selectors: std::collections::BTreeMap::new(),
     }
 }

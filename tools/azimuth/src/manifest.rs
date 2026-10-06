@@ -17,11 +17,13 @@ const TOP_LEVEL: &[&str] = &[
     "class_members",
     "enumerations",
     "artifacts",
+    "extensions",
 ];
 const SOURCE_FIELDS: &[&str] = &["area", "address_kind", "address", "mount"];
 
 #[derive(Debug, Default, Clone)]
 pub struct Manifest {
+    pub extensions: Vec<crate::verification_packages::Producer>,
     pub realizes: Vec<Site>,
     pub check_implementations: Vec<CheckImplementation>,
     pub mechanism_implementations: Vec<MechanismImplementation>,
@@ -373,6 +375,7 @@ pub fn parse(path: &str, root: &Json) -> Result<Manifest, Vec<Diag>> {
     );
 
     validate_mechanism_accounts(path, &out, &mut errors);
+    out.extensions = crate::verification_packages::parse_producers(path, root, &mut errors);
 
     if errors.is_empty() {
         Ok(out)
@@ -510,7 +513,7 @@ fn validate_mechanism_accounts(path: &str, manifest: &Manifest, errors: &mut Vec
     }
 }
 
-fn normalized_relative_path(value: &str) -> bool {
+pub(crate) fn normalized_relative_path(value: &str) -> bool {
     !value.is_empty()
         && !Path::new(value).is_absolute()
         && Path::new(value)
@@ -668,7 +671,7 @@ fn validate_fingerprint(path: &str, where_: &str, key: &str, value: &str, errors
     }
 }
 
-fn source_identity(
+pub(crate) fn source_identity(
     path: &str,
     where_: &str,
     item: &Json,

@@ -39,16 +39,14 @@ its identity. Cases inherit it but do not own it.
 **Mechanism** — what makes a Claim true. Recorded in `design.md` when applicable.
 
 **Evidence facet** — the repository-owned account of which deliberately enrolled methods bear on
-which Cases and why. Recorded through Checks, Evidence Bindings, Method Qualifications,
-Applicability Decisions and total parent Claim Judgments in `verification.md`.
+which Cases and why. Compact `verification.md` owns Checks and inline Evidence Bindings; independently authored Method Qualifications, exact-Subject Applicability Decisions and Claim Judgments are separate strict review records. The older declaration lane records those decisions in `verification.md`.
 
 **Residue** — knowledge that belongs to no Claim, such as orientation, danger zones and deliberately absent behavior. It is outside the model and creates no assurance relation.
 
 **Facet owner** — whoever is accountable for the sufficiency of one facet. Intent owner, mechanism owner and evidence owner describe accountabilities, not required job titles or exclusive authorship rights.
 
 **Repository authority** — durable model meaning owned and reviewed with source: Claims, Cases,
-criticality, mechanisms, Checks, Evidence Bindings, Method Qualifications, Applicability Decisions,
-Challengers, Challenge Plans, Claim Judgments, Decision Policies and the Challenge Schedule.
+criticality, mechanisms, Checks and authored Evidence Bindings. The older declaration lane also owns Method Qualifications, Applicability Decisions, Challengers, Challenge Plans, Claim Judgments, Decision Policies and the Challenge Schedule in repository documents. Compact reviews remain separate accountable records over exact repository definitions.
 
 ## Verification graph
 
@@ -57,9 +55,9 @@ directly evaluates one or more Cases through explicit Evidence Bindings.
 
 **Check implementation** — one compiler- or extractor-resolved source site linked to a Check by `ImplementsCheck(<check-id>)`. It supplies implementation identity and an exact source fingerprint, but declares no Claim relation or evidence form. Several sites may compose one Check.
 
-**Evidence Binding** — one repository-owned relation from a Check's atomic terminal proposition to
-one Case. It states the edge proposition, exact edge context, challenge domain, policy and referenced
-Method Qualification. Each `(Check, Case)` pair is unique.
+**Evidence Binding** — one authored relation from a Check's proposition to one Case. The unique typed `(Check, Case)` pair identifies a compact binding; its inline Contribution states the narrower evidentiary meaning. It has no separate authored binding ID, Context, Decision Policy or Method Qualification field. The older declaration lane additionally records those fields.
+
+The following form/context/policy fields belong to the older declaration lane; they are not implicit compact binding fields.
 
 **Scope** — defined by what must be real for the Check rather than by how many processes happen to execute. The closed rungs are in [`contracts/verification.md`](../contracts/verification.md).
 
@@ -71,11 +69,9 @@ Method Qualification. Each `(Check, Case)` pair is unique.
 
 **Challenge domain** — the relations a Challenger may traverse from an Evidence Binding. It is not a list of provider products; the closed set is in [`contracts/verification.md`](../contracts/verification.md).
 
-**Method Qualification** — the `qualified | rejected` decision about exact shared Check-method
-inputs: implementation, form, oracle, common context, challenge domain and policy.
+**Method Qualification** — an independent review of the credibility of an exact Check method. Compact records pin the Check fingerprint and use `accepted | rejected`; shared bindings may rely on the same current qualification. The older declaration lane uses `qualified | rejected` and pins its declared form, oracle, context, challenge domain and policy.
 
-**Applicability Decision** — the `applicable | rejected` decision that one qualified method bears
-on one exact Evidence Binding and Case under edge context. Its id is the binding id.
+**Applicability Decision** — the independent review that qualified evidence bears on one Check–Case contribution. Compact records use `accepted | rejected`, pin the exact Subject, current binding and qualification, and reference exact Run/bundle/Observation basis. The older declaration lane uses `applicable | rejected` and the authored binding ID.
 
 **Decision Policy** — a project standard naming open Challenger forms required for a Method
 Qualification, Applicability Decision or Claim Judgment.
@@ -92,14 +88,25 @@ fingerprints.
 
 **Challenge candidate disposition** — how one resolved candidate stands. Only a current positive decision is selected, and adverse siblings remain visible. The closed dispositions are in [`contracts/verification.md`](../contracts/verification.md).
 
-**Claim Judgment** — the repository-owned `accepted | rejected` decision about one standard or
-critical parent Claim's total composition, including every Case and evidence edge.
+**Claim Judgment** — the independent assessment of a parent Claim's complete Case, mechanism and applicable-evidence composition. Compact records pin an exact Subject and complete current dependencies, with `supported | violated | unresolved` conclusions and residual risks. The older declaration lane uses a repository-owned `accepted | rejected` decision.
 
 **Decision impact edge** — the pure projection from a challenged decision through its exact
 dependants to the parent Claim and current Claim Judgment. Method impact fans out; applicability
 impact stays local. It never creates another Challenge Result.
 
 **Ordinary engineering test** — an unenrolled native test used to build confidence in the implementation. It creates no Azimuth evidence relation and needs no exemption. All tests for the current routine Claims are in this category.
+
+## Verification packages
+
+**Verification package** — shared authoring concepts, source contracts and validation rules that extend the core Check–Case account. Packages may compose; they are not alternative Claim types or competing evidence authorities.
+
+**Surface** — a declared finite inventory domain with published field names. A package-owned enumerator derives actual members and their language-independent descriptor from source. This verification Surface is distinct from the older workspace surface/domain declaration.
+
+**Expectation Set** — independently authored expected records over one Surface. Several Sets may support different Checks over the same enumeration. Equality and coverage Checks do not generate the expected policy from the metadata they inspect.
+
+**Probe** — a package-owned measurement implementation used by Checks for declared origins. It supplies measurement provenance and health, not automatic Case meaning or a Claim verdict.
+
+**Authority projection** — the full unselected model's pinned Checks, Cases, bindings, Claims, mechanisms and structural gaps. The ledger owner explicitly selects it; exporting or registering a candidate does not accept a change.
 
 ## Mechanism and linkage
 
@@ -112,13 +119,13 @@ impact stays local. It never creates another Challenge Result.
 **Tag** — a machine-readable source annotation. Current tags express realization, mechanism implementation or Check implementation only. They do not assign evidence meaning.
 
 **`realizes`** — a production relation saying that the source site establishes some part of a parent
-Claim's predicate. It is keyed by `(spec-id, claim-id)` and carries no Case or evidence form.
+Claim's predicate. It names the project-global Claim ID and carries no Case or evidence form.
 
-**`implements-mechanism`** — a production relation binding a compiler-resolved symbol to one declared design mechanism. Its source annotation retains exactly the spec and mechanism arguments; the extractor derives qualified identity.
+**`implements-mechanism`** — a production relation binding a compiler-resolved symbol to one declared design mechanism. Its source annotation names the project-global Mechanism ID; the extractor derives qualified identity.
 
 **Mechanism implementation site** — the ecosystem-semantic qualified `site` emitted with one marker-derived mechanism implementation. .NET uses namespace/type/method/metadata signature; JVM uses binary class/method/descriptor; TypeScript and JavaScript use package/module/receiver/symbol and canonical overloads; Go uses import path/receiver/function/typed signature with positional generics; Python uses the one root-relative module and `__qualname__`; Rust uses a conventional Cargo target, reachable module and normalized declared signature whose type-path spelling remains semantic; C++ accepts only an external-linkage, non-module, non-template, unconstrained program-global declaration and uses its qualified name and canonical function type. Ambiguity fails rather than consulting a file.
 
-**Marker companion** — the exact Artifact paired with one raw mechanism implementation by `(id, kind, file)`. The raw implementation has exactly seven fields and binding `<address-kind>:<site>`; companion id equals that binding. Assembly atomically rewrites both ids to `<area>|<address-kind>|<site>`. It is marker-only and cannot also satisfy an explicit Design binding.
+**Marker companion** — the exact Artifact paired with one raw mechanism implementation by `(id, kind, file)`. The raw implementation has exactly six fields and binding `<address-kind>:<site>`; companion id equals that binding. Assembly atomically rewrites both ids to `<area>|<address-kind>|<site>`. It is marker-only and cannot also satisfy an explicit Design binding.
 
 **`ImplementsCheck`** — source linkage from one resolved implementation site to one project-global Check id. The Evidence Binding remains repository-owned.
 
@@ -240,4 +247,4 @@ negative search, not positive product evidence.
 
 A protocol-valid adapter-returned `timed-out` Run is an execution fact and exits zero only when its complete response arrives within that deadline. A host-enforced deadline is a transport timeout, exits one and publishes no bundle.
 
-**Assurance Service** — the optional future durable ledger for accepted Runs and derived Assurance State. The legacy service API and version 2 project-snapshot wire remain isolated until the Run-ledger replacement; they are neither the alpha 5 repository-model format nor the Run-bundle protocol. No current adapter is a long-running service or webhook bridge.
+**Assurance Service** — the current project-scoped `run-ledger` persists valid Run histories, explicit model authority selections and independent compact reviews, then derives exact-Subject state. Its producer, reviewer and owner roles authorize different actions. The earlier service API and version 2 project-snapshot wire stay isolated with no compatibility bridge. A bounded adapter is not this ledger or a long-running webhook host.

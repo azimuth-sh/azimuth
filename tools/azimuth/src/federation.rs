@@ -68,6 +68,7 @@ pub struct ReceiptRequirement {
 
 #[derive(Debug, Clone)]
 pub struct Project {
+    pub packages: Vec<String>,
     pub id: String,
     pub repositories: Vec<RepositoryDecl>,
     pub areas: Vec<AreaDecl>,
@@ -440,6 +441,7 @@ pub fn load_project(path: &Path) -> Result<Project, Vec<Diag>> {
     let mut errors = Vec::new();
     require_format(&display, &root, "azimuth-project", &mut errors);
     let id = required_string(&display, &root, "project", &mut errors).unwrap_or_default();
+    let packages = crate::verification_packages::packages(&display, &root, &mut errors);
     let repositories = object_array(&display, &root, "repositories", &mut errors)
         .into_iter()
         .enumerate()
@@ -536,6 +538,7 @@ pub fn load_project(path: &Path) -> Result<Project, Vec<Diag>> {
     );
     if errors.is_empty() {
         Ok(Project {
+            packages,
             id,
             repositories,
             areas,
@@ -1641,6 +1644,7 @@ pub fn observe_repository_with_support(
 }
 
 fn merge_manifest(target: &mut Manifest, source: Manifest) {
+    target.extensions.extend(source.extensions);
     target.realizes.extend(source.realizes);
     target
         .check_implementations
@@ -1670,6 +1674,16 @@ fn assign_sources(
         );
     }
     for item in &mut manifest.check_implementations {
+        item.source = locate_source(
+            areas,
+            &item.file,
+            address_kind(&item.lang, &item.file, &item.site),
+            address_value(&item.lang, &item.file, &item.site),
+            errors,
+            producer,
+        );
+    }
+    for item in &mut manifest.extensions {
         item.source = locate_source(
             areas,
             &item.file,
@@ -1873,6 +1887,7 @@ fn address_value(language: &str, file: &str, site: &str) -> String {
 
 fn linkage_json(manifest: &Manifest) -> Json {
     let model = crate::model::Model {
+        package_producers: manifest.extensions.clone(),
         realizes: manifest.realizes.clone(),
         check_implementations: manifest.check_implementations.clone(),
         mechanism_implementations: manifest.mechanism_implementations.clone(),
@@ -1890,6 +1905,7 @@ fn linkage_json(manifest: &Manifest) -> Json {
             "class_members",
             "enumerations",
             "artifacts",
+            "extensions",
         ]
         .into_iter()
         .map(|key| {

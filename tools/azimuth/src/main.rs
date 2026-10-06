@@ -22,6 +22,9 @@ USAGE
     azimuth validate [options]
     azimuth report traceability [options]
     azimuth export [options]
+    azimuth surface verify --manifest <file>... --enumeration <file> --expectations <file>
+    azimuth assurance authority --project <id> [options] [--out <file>]
+        [--catalog <project.json> --workset <workset.json>]
     azimuth adapter verify [--config <file>]
     azimuth run plan --request <file> [--model <dir>] [--standards <file>]
         [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
@@ -167,6 +170,12 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
     }
     if command == "report" {
         return command_report(&args[1..]);
+    }
+    if command == "assurance" {
+        return command_assurance(&args[1..]);
+    }
+    if command == "surface" {
+        return command_surface(&args[1..]);
     }
     if command == "run" {
         return command_run(&args[1..]);
@@ -2738,6 +2747,157 @@ fn command_export(options: Options) -> Result<ExitCode, String> {
         Some(path) => std::fs::write(&path, json)
             .map_err(|e| format!("cannot write {}: {e}", path.display()))?,
         None => print!("{json}"),
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn command_surface(args: &[String]) -> Result<ExitCode, String> {
+    if args.first().map(String::as_str) != Some("verify") {
+        return Err("expected surface verify --manifest <file>... --enumeration <file> --expectations <file>".into());
+    }
+    let mut manifests = Vec::new();
+    let mut enumeration = None;
+    let mut expectations = None;
+    let mut cursor = 1;
+    while cursor < args.len() {
+        let flag = &args[cursor];
+        let value = args
+            .get(cursor + 1)
+            .ok_or_else(|| format!("{flag} requires a file"))?;
+        match flag.as_str() {
+            "--manifest" => manifests.push(value),
+            "--enumeration" => {
+                if enumeration.replace(value).is_some() {
+                    return Err("duplicate --enumeration".into());
+                }
+            }
+            "--expectations" => {
+                if expectations.replace(value).is_some() {
+                    return Err("duplicate --expectations".into());
+                }
+            }
+            _ => return Err(format!("unknown surface option {flag}")),
+        }
+        cursor += 2;
+    }
+    if manifests.is_empty() {
+        return Err("surface verify requires source-linked --manifest".into());
+    }
+    let mut producers = Vec::new();
+    for path in manifests {
+        let manifest = azimuth::manifest::load(&PathBuf::from(path)).map_err(|errors| {
+            errors
+                .iter()
+                .map(|error| format!("{error}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })?;
+        producers.extend(manifest.extensions);
+    }
+    let read = |path: &str| -> Result<azimuth::json::Json, String> {
+        let source = fs::read_to_string(path).map_err(|error| format!("{path}: {error}"))?;
+        azimuth::run::strict_json(path, &source)
+            .map_err(|error| format!("{}: {}", error.path, error.detail))
+    };
+    let enumeration = read(enumeration.ok_or("missing --enumeration")?)?;
+    let expectations = read(expectations.ok_or("missing --expectations")?)?;
+    let errors = azimuth::verification_packages::verify_surface_reports(
+        "surface verification",
+        &enumeration,
+        &expectations,
+        &producers,
+    );
+    if errors.is_empty() {
+        println!("Surface records, exact producer schemas, completion and expectation membership agree; Check assertions and assurance remain separate.");
+        Ok(ExitCode::SUCCESS)
+    } else {
+        for error in errors {
+            eprintln!("{error}");
+        }
+        Ok(ExitCode::from(1))
+    }
+}
+
+fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
+    if args.first().map(String::as_str) != Some("authority") {
+        return Err("expected assurance authority --project <id> [model options] [--catalog <file> --workset <file>]".into());
+    }
+    let mut project = None;
+    let mut catalog = None;
+    let mut workset = None;
+    let mut options = Vec::new();
+    let mut cursor = 1;
+    while cursor < args.len() {
+        match args[cursor].as_str() {
+            "--project" | "--catalog" | "--workset" => {
+                let value = args
+                    .get(cursor + 1)
+                    .ok_or_else(|| format!("{} requires value", args[cursor]))?;
+                let slot = match args[cursor].as_str() {
+                    "--project" => &mut project,
+                    "--catalog" => &mut catalog,
+                    _ => &mut workset,
+                };
+                if slot.replace(value.clone()).is_some() {
+                    return Err("duplicate assurance option".into());
+                }
+                cursor += 2;
+            }
+            "--only" | "--local" => {
+                return Err("authority requires a complete unselected model".into())
+            }
+            _ => {
+                options.push(args[cursor].clone());
+                cursor += 1;
+            }
+        }
+    }
+    let project = project.ok_or("authority requires --project <id>")?;
+    let options = parse_options(&options)?;
+    if !options.only.is_empty() {
+        return Err("authority does not permit selection".into());
+    }
+    let loaded = if let (Some(catalog), Some(workset)) = (catalog.as_ref(), workset.as_ref()) {
+        let assembly =
+            azimuth::federation::assemble(&PathBuf::from(catalog), &PathBuf::from(workset), None)
+                .map_err(|errors| {
+                errors
+                    .iter()
+                    .map(|error| format!("{error}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })?;
+        if !assembly.complete || assembly.project.id != project {
+            return Err("authority requires complete matching project assembly".into());
+        }
+        azimuth::load_assembly(&assembly, &[])
+    } else {
+        if catalog.is_some() || workset.is_some() {
+            return Err("--catalog and --workset are required together".into());
+        }
+        azimuth::load_with_support(
+            &options.model,
+            &options.standards,
+            &options.workspace,
+            &options.manifests,
+            &options.supports,
+            &[],
+        )
+    }
+    .map_err(|errors| {
+        errors
+            .iter()
+            .map(|error| format!("{error}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    })?;
+    report(&loaded.warnings, "warning");
+    let authority = azimuth::assurance_review::authority(&loaded.model, &project)?;
+    let output = authority.to_string_pretty();
+    if let Some(path) = options.out {
+        fs::write(&path, output).map_err(|error| format!("{}: {error}", path.display()))?;
+    } else {
+        println!("{output}");
     }
     Ok(ExitCode::SUCCESS)
 }

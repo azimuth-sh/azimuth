@@ -64,7 +64,7 @@ Any record may carry a pre-assembled source identity as four sibling fields:
 
 All four are required together. Any proper non-empty subset is a partial source identity and fails. All four are omitted in the ordinary case, and an extractor that cannot resolve area and mount from its own inputs must omit them rather than guess.
 
-An emitted source identity does not survive assembly except on an Artifact. Both local checking and federated workset assembly derive `area`, `address_kind`, `address` and `mount` from the source locator and the declared area mounts, and overwrite whatever the manifest carried, for `realizes`, `check_implementations`, `mechanism_implementations`, `class_members` and `enumerations`. An Artifact's emitted source identity is kept and is derived only when absent. The derivation is described under [Assembly](#assembly).
+Local loading preserves a supplied, structurally valid source identity on realization, Check, mechanism, class-member, enumeration, Artifact and package-producer records. Its Area must be declared; where the local Area declares mounts, its mount ID must be declared too. Area-only local declarations with empty mount arrays support already qualified inputs without interpreting another repository's file locator against this checkout. Records without identities are derived from local area mounts. Full federated workset assembly derives repository ownership from the catalog's mounts for the actual emitting repository; qualified local loading does not create a Git observation or finalize a federation account. See [Assembly](#assembly).
 
 ## `realizes`
 
@@ -226,11 +226,11 @@ Unlike `mechanism_implementations`, these records accept any `lang` string: an u
 
 ## Assembly
 
-Core resolves each record's locator — `file`, or `source` for an enumeration — against the declared area mounts and takes the longest containing mount. Locally the mounts come from `azimuth/workspace.json`; in a federated workset they come from the project catalog's areas for the emitting repository. Local and federated assembly use the same rewrite and produce identical semantic ids. Neither uses file, mount, repository or revision as a semantic disambiguator.
+For an unqualified record, core resolves its locator — `file`, or `source` for an enumeration — against the declared area mounts and takes the longest containing mount. Locally the mounts come from `azimuth/workspace.json`; in a federated workset they come from the project catalog's areas for the emitting repository. Local and federated assembly use the same rewrite and produce identical semantic ids. Neither uses file, mount, repository or revision as a semantic disambiguator.
 
 A locator matching no mount yields no source identity locally, and is an error in a federated workset, as is a locator matching two mounts of equal path length. A `mechanism_implementations` record whose locator matches no mount is an error in both.
 
-For a mechanism implementation, assembly atomically rewrites the implementation's `binding` and its companion Artifact's `id` to the source key `area|address_kind|address`, and sets both source identities. The companion is the one Artifact identity that is not further expanded: its assembled id is already the source key. Every other Artifact retains its authored kind and id as semantic input.
+For an unqualified mechanism implementation, assembly atomically rewrites the implementation's `binding` and its companion Artifact's `id` to the source key `area|address_kind|address`, and sets both source identities. The companion is the one Artifact identity that is not further expanded: its assembled id is already the source key. Every other Artifact retains its authored kind and id as semantic input. A qualified local mechanism retains its exact typed binding and qualified companion; strict manifest validation requires that pair to agree rather than rewriting it from a raw marker ID.
 
 ## Merged manifests
 
@@ -259,3 +259,7 @@ A manifest diagnostic names the manifest path and, for a record-level failure, t
 ## Stable entity identities: 2026-10-02
 
 Claim, Case, Mechanism and Check identities are stable project-wide lower-kebab IDs within their typed namespaces. Project context comes from the complete account; kind remains explicit. Module membership is navigation, not identity. Source references do not encode modules. Former qualified spellings are rejected without aliases. Regenerate current artifacts and fingerprints; historical bytes and facts remain immutable. See `contracts/entity-identity.md`.
+
+## Namespaced package producers
+
+The optional `extensions` collection follows [verification-packages.md](verification-packages.md). Records identify canonical package/contract/entity, a fingerprinted semantic producer and its source-derived output descriptor. Surface expectation producers may declare exact `inputs` of normalized workspace-relative `{file, fingerprint}` records for independent oracle data. Their content changes alter Check fingerprints. Probe implementations carry no member schema. Unknown contracts, descriptor fields, duplicate producers and disabled package participation fail. These records are source support, never execution observations or accepted reviews.

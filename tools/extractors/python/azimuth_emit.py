@@ -43,6 +43,7 @@ def empty_manifest() -> dict[str, list[dict[str, object]]]:
         "class_members": [],
         "enumerations": [],
         "artifacts": [],
+        "extensions": [],
     }
 
 
@@ -81,6 +82,31 @@ def scan(
     tree = ast.parse(source, filename=relative)
     manifest = empty_manifest()
     module, _ = module_identity(module_relative or relative)
+    probe_aliases: set[str] = set()
+    probe_modules: set[str] = set()
+    for imported in tree.body:
+        if isinstance(imported, ast.ImportFrom) and imported.module == "azimuth_network.annotations":
+            for alias in imported.names:
+                if alias.name == "implements_probe": probe_aliases.add(alias.asname or alias.name)
+        if isinstance(imported, ast.Import):
+            for alias in imported.names:
+                if alias.name == "azimuth_network.annotations": probe_modules.add(alias.asname or alias.name)
+    protected = probe_aliases | {name.split(".")[0] for name in probe_modules}
+    for bound in ast.walk(tree):
+        name = bound.id if isinstance(bound, ast.Name) and isinstance(bound.ctx, ast.Store) else bound.arg if isinstance(bound, ast.arg) else bound.name if isinstance(bound, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) else None
+        if name in protected:
+            raise ValueError(f"{relative}:{bound.lineno}: package marker import is shadowed")
+    def qualified_probe(decorator: ast.expr) -> ast.Call | None:
+        if not isinstance(decorator, ast.Call): return None
+        target=decorator.func
+        if isinstance(target, ast.Name) and target.id in probe_aliases: return decorator
+        if isinstance(target, ast.Attribute) and target.attr == "implements_probe":
+            parts=[]
+            while isinstance(target, ast.Attribute): parts.append(target.attr); target=target.value
+            if isinstance(target, ast.Name): parts.append(target.id)
+            name=".".join(reversed(parts))
+            if any(name == alias + ".implements_probe" for alias in probe_modules): return decorator
+        return None
     mechanism_sites: dict[str, str] = {}
     ordinary_retired_names = {
         node.name
@@ -115,6 +141,12 @@ def scan(
             segment = ast.get_source_segment(source, node) or source
             fingerprint = "sha256:" + hashlib.sha256(segment.encode()).hexdigest()
             for decorator in node.decorator_list:
+                probe = qualified_probe(decorator)
+                if probe is not None:
+                    entity, = strings(probe, 1, "implements_probe", relative)
+                    validate_entity_id(entity, relative, probe.lineno)
+                    manifest["extensions"].append({"package":"azimuth.network","contract":"probe-implementation","entity":entity,"site":f"{module}.{site}","file":relative,"lang":"python","source_fingerprint":fingerprint})
+                    continue
                 found = marker(decorator)
                 if found is None:
                     continue

@@ -55,7 +55,11 @@ run `azimuth change intent-apply --preview <file>` to update package `spec.md` m
 Distil only mechanisms that now exist into current `design.md`. Because every current Claim is routine, do not create package `verification.md`
 files or assurance decisions for this alpha transition.
 
-A non-routine change uses the current decision graph:
+A compact non-routine change authors Checks and inline Check–Case contributions in `verification.md`, and enables any required packages explicitly. Surface field declarations, independent Expectation Sets and Probe origins describe module-specific verification without duplicating package mechanics. Source tags identify actual implementations. Emitters produce typed descriptors; `azimuth surface verify` checks runtime enumeration/expectation completeness and schema against those exact producers.
+
+Plan against the full intended account before executing native verification. Preserve actual measurement timestamps; merely importing an old report must not renew its freshness. Run protocol validation and successful execution do not create a qualification, applicability decision or Claim Judgment. Separate independent review records assess the pinned method, exact-Subject Observation basis and full Claim composition. Export its authority with `azimuth assurance authority`; explicitly select accepted authority in the ledger, while candidate authority remains separate until change acceptance. Compact Decision Policies and challenge scheduling remain deferred.
+
+The older declaration lane retains the following decision graph:
 
 ```text
 Check -> Evidence Binding -> Case
@@ -150,9 +154,9 @@ A valid violated Observation, Challenge finding, partial or cancelled Run, or ad
 
 Challenge Results are exactly `clean | findings | inconclusive`. Clean is only a negative search fact and creates no credibility or product evidence. Every planned Challenge omitted from a partial, cancelled or timed-out Run has one exact execution diagnostic and no fabricated Result; omitting scheduled work is allowed deferral, while gate omission records execution failure. Added or substituted targets, context, units or scope are selection mismatches and publish nothing.
 
-`model.extract` execution is absent. Durable ingestion, authorization, retention and Subject-specific Assurance State belong to the future Run ledger. Current planning defines no cache validity, cadence, historical-applicability or cross-Subject reuse semantics. Adapters are bounded short-lived processes; there is no daemon, webhook, inbound gateway or long-running adapter boundary.
+`model.extract` execution is absent. The current Run ledger provides project-role authorization, append-only Run/review histories, explicit authority selection and exact-Subject compact Assurance State. Current planning defines no cache validity, cadence, historical-applicability or cross-Subject reuse semantics. Adapters are bounded short-lived processes; there is no daemon, webhook, inbound gateway or long-running adapter boundary.
 
-The optional Assurance Service remains isolated on its alpha 1 wire until the Run-ledger replacement is accepted. It does not ingest Run bundles, and there is no compatibility bridge or Assurance Service export command.
+The earlier Assurance Service remains isolated on its alpha 1 wire; it does not ingest current Run bundles and has no compatibility bridge. The separate current `run-ledger` accepts those bundles and compact independent review records. `azimuth assurance authority` exports the full model projection, not persisted runtime records.
 
 ## Upgrading a consumer repository
 

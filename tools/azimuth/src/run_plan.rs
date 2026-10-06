@@ -240,18 +240,14 @@ pub fn plan(
                 case_selection_valid = false;
                 continue;
             }
-            let bindings = model
-                .evidence_bindings()
-                .filter(|binding| binding.check == requested.id && binding.case == *case_id)
-                .collect::<Vec<_>>();
-            let [_binding] = bindings.as_slice() else {
+            if model.check_binding_count(&requested.id, case_id) != 1 {
                 errors.push(format!(
                     "Check `{}` does not have exactly one Evidence Binding to Case `{case_id}`",
                     requested.id
                 ));
                 case_selection_valid = false;
                 continue;
-            };
+            }
         }
         if !case_selection_valid {
             continue;
@@ -318,7 +314,7 @@ pub fn plan(
 
         checks.push(CheckSelection {
             id: check.id.clone(),
-            fingerprint: crate::fingerprint::check_fingerprint(check, &model.check_implementations),
+            fingerprint: model.check_execution_fingerprint(check),
             cases: requested.cases.clone(),
             implementations: resolved_implementations,
             units: requested.units.clone(),

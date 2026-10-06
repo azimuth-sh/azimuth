@@ -245,7 +245,7 @@ sorted stable Case relevance list and is empty when the mechanism bears on the c
 integer that enforcement maps to: `type` and `schema` are 1, `constraint` and `choke-point` are 2,
 `middleware` is 3, `guard` is 4.
 
-`bindings` is the sorted set of resolved Artifact bindings: either one explicit Design binding or all distinct extractor-resolved sites naming that spec and mechanism. `binding` retains the sole candidate when there is exactly one and is `null` when there are none or several; consumers of composed mechanisms use `bindings`. `expected_unique` and `expected_predicate` are `null` when the design declares none; `expected_columns` is an empty array when the design declares none.
+`bindings` is the sorted set of resolved Artifact bindings: either one explicit Design binding or all distinct extractor-resolved sites naming that project-global mechanism. `binding` retains the sole candidate when there is exactly one and is `null` when there are none or several; consumers of composed mechanisms use `bindings`. `expected_unique` and `expected_predicate` are `null` when the design declares none; `expected_columns` is an empty array when the design declares none.
 
 ## Checks
 

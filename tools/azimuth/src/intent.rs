@@ -112,14 +112,11 @@ pub fn project(change: &Path, model_root: &Path, model: &Model) -> Result<Projec
         .iter()
         .filter(|operation| matches!(operation.kind, Kind::Add | Kind::Replace))
         .flat_map(|operation| {
-            operation
-                .source
-                .lines()
-                .filter_map(|line| {
-                    line.strip_prefix("### Case: ")
-                        .or_else(|| line.strip_prefix("### Add case: "))
-                        .map(str::to_string)
-                })
+            operation.source.lines().filter_map(|line| {
+                line.strip_prefix("### Case: ")
+                    .or_else(|| line.strip_prefix("### Add case: "))
+                    .map(str::to_string)
+            })
         })
         .collect::<BTreeSet<_>>();
     let mut grouped: BTreeMap<String, Vec<Operation>> = BTreeMap::new();

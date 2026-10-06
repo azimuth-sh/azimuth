@@ -8,6 +8,7 @@ pub mod account_verification;
 pub mod adapter;
 pub mod adapter_host;
 pub mod assurance;
+pub mod assurance_review;
 pub mod change;
 pub mod design;
 pub mod diag;
@@ -26,6 +27,7 @@ pub mod spec;
 pub mod traceability;
 pub mod validation;
 pub mod verification;
+pub mod verification_packages;
 pub mod workflow;
 pub mod workspace;
 
@@ -166,6 +168,7 @@ pub fn load_with_support(
     errors.extend(model.entity_declaration_issues());
     errors.extend(model.verification_declaration_issues());
     errors.extend(model.account_check_issues());
+    errors.extend(verification_packages::validate_model(&model));
     errors.extend(merged_manifest_issues(&model));
     errors.extend(mechanism_route_issues(&model));
     if !errors.is_empty() {
@@ -189,6 +192,24 @@ pub fn load_assembly(
     only: &[String],
 ) -> Result<Loaded, Vec<Diag>> {
     let mut model = Model::default();
+    model.workspace.packages = assembly.project.packages.clone();
+    model.workspace.areas = assembly
+        .project
+        .areas
+        .iter()
+        .map(|area| workspace::Area {
+            id: area.id.clone(),
+            mounts: area
+                .mounts
+                .iter()
+                .map(|mount| workspace::Mount {
+                    id: mount.id.clone(),
+                    path: mount.path.clone(),
+                })
+                .collect(),
+        })
+        .collect();
+
     let mut warnings = Vec::new();
     let mut errors = Vec::new();
 
@@ -325,6 +346,7 @@ pub fn load_assembly(
     errors.extend(model.entity_declaration_issues());
     errors.extend(model.verification_declaration_issues());
     errors.extend(model.account_check_issues());
+    errors.extend(verification_packages::validate_model(&model));
     errors.extend(merged_manifest_issues(&model));
     errors.extend(mechanism_route_issues(&model));
     if !errors.is_empty() {
@@ -667,6 +689,7 @@ fn merged_manifest_issues(model: &Model) -> Vec<Diag> {
 }
 
 fn append_manifest(model: &mut Model, manifest: &manifest::Manifest) {
+    model.package_producers.extend(manifest.extensions.clone());
     model.realizes.extend(manifest.realizes.clone());
     model
         .check_implementations
@@ -1085,7 +1108,23 @@ fn selected_mechanism_claims(model: &Model, identity: &str) -> BTreeSet<String> 
 
 fn normalize_local_sources(model: &mut Model, errors: &mut Vec<Diag>) {
     let workspace = model.workspace.clone();
+    for item in &mut model.package_producers {
+        if let Some(source) = &item.source {
+            validate_supplied_source(&workspace, source, &item.file, errors);
+            continue;
+        }
+        item.source = local_source(
+            &workspace,
+            &item.file,
+            address_kind(&item.lang, &item.file, &item.site),
+            address_value(&item.lang, &item.file, &item.site),
+        );
+    }
     for item in &mut model.realizes {
+        if let Some(source) = &item.source {
+            validate_supplied_source(&workspace, source, &item.file, errors);
+            continue;
+        }
         item.source = local_source(
             &workspace,
             &item.file,
@@ -1094,6 +1133,10 @@ fn normalize_local_sources(model: &mut Model, errors: &mut Vec<Diag>) {
         );
     }
     for item in &mut model.check_implementations {
+        if let Some(source) = &item.source {
+            validate_supplied_source(&workspace, source, &item.file, errors);
+            continue;
+        }
         item.source = local_source(
             &workspace,
             &item.file,
@@ -1105,6 +1148,10 @@ fn normalize_local_sources(model: &mut Model, errors: &mut Vec<Diag>) {
     let mut paired_artifacts = BTreeSet::new();
     let mut reserved_raw_ids = BTreeSet::new();
     for (implementation_index, item) in model.mechanism_implementations.iter().enumerate() {
+        if let Some(source) = &item.source {
+            validate_supplied_source(&workspace, source, &item.file, errors);
+            continue;
+        }
         let Some(kind) = manifest::mechanism_address_kind(&item.lang) else {
             continue;
         };
@@ -1169,6 +1216,10 @@ fn normalize_local_sources(model: &mut Model, errors: &mut Vec<Diag>) {
         artifact.source = Some(source);
     }
     for item in &mut model.class_members {
+        if let Some(source) = &item.source {
+            validate_supplied_source(&workspace, source, &item.file, errors);
+            continue;
+        }
         item.source = local_source(
             &workspace,
             &item.file,
@@ -1177,6 +1228,10 @@ fn normalize_local_sources(model: &mut Model, errors: &mut Vec<Diag>) {
         );
     }
     for item in &mut model.enumerations {
+        if let Some(source) = &item.identity {
+            validate_supplied_source(&workspace, source, &item.source, errors);
+            continue;
+        }
         item.identity = local_source(
             &workspace,
             &item.source,
@@ -1185,9 +1240,35 @@ fn normalize_local_sources(model: &mut Model, errors: &mut Vec<Diag>) {
         );
     }
     for item in &mut model.artifacts {
-        if item.source.is_none() {
+        if let Some(source) = &item.source {
+            validate_supplied_source(&workspace, source, &item.file, errors);
+        } else {
             item.source = local_source(&workspace, &item.file, item.kind.clone(), item.id.clone());
         }
+    }
+}
+
+fn validate_supplied_source(
+    workspace: &workspace::Workspace,
+    source: &SourceIdentity,
+    file: &str,
+    errors: &mut Vec<Diag>,
+) {
+    let Some(area) = workspace.areas.iter().find(|area| area.id == source.area) else {
+        errors.push(Diag::file(
+            file,
+            format!("qualified source names unknown Area `{}`", source.area),
+        ));
+        return;
+    };
+    if !area.mounts.is_empty() && !area.mounts.iter().any(|mount| mount.id == source.mount) {
+        errors.push(Diag::file(
+            file,
+            format!(
+                "qualified source names unknown mount `{}` in Area `{}`",
+                source.mount, source.area
+            ),
+        ));
     }
 }
 

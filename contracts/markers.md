@@ -1,13 +1,12 @@
 # Source marker format
 
-Three markers, and only three, put source on the map. `Realizes` names a parent Claim,
+Three core identity markers put source on the map. Package-owned source relations are declared separately in `contracts/verification-packages.md`. `Realizes` names a parent Claim,
 `ImplementsCheck` names a project-global Check identity and `ImplementsMechanism` names a
 design-owned mechanism identity. Every language package spells the same three in its own idiom,
 and every extractor turns them into the records described in `contracts/manifest.md`.
 
 A marker carries only the identities listed here. It carries no Case, verification form, scope,
-oracle, Method Qualification, Applicability Decision or evidence relationship. Those live in
-`verification.md` declarations. An extra argument is an extraction failure, not an extension point.
+oracle, Method Qualification, Applicability Decision or evidence relationship. Authored binding meaning lives in `verification.md`; compact independent reviews live in separate strict records. An extra argument is an extraction failure, not an extension point.
 
 Anything not described here is a parse error in the ecosystem that reads it.
 
@@ -21,7 +20,7 @@ ImplementsMechanism(<mechanism-id>)
 
 Every argument is a string literal. A computed value, a constant reference, a keyword argument and a wrong argument count each fail extraction rather than emitting a weaker record.
 
-`Realizes` takes the `(spec, claim)` pair. It deliberately carries no Case id: production sites
+`Realizes` takes one project-global Claim ID. It deliberately carries no Case id: production sites
 realize the independently governed proposition, while exact Case relevance remains in the
 repository evidence and design facets.
 
@@ -30,7 +29,7 @@ implements. Every Check-to-Case edge and its applicability account are declared 
 `verification.md`. An unmarked test emits nothing, which is the normal state for ordinary
 engineering tests and for every test of a routine Claim.
 
-`ImplementsMechanism` takes the same two-argument shape it has always had. No annotation argument was added for the qualified site, the binding or the companion Artifact.
+`ImplementsMechanism` takes one project-global Mechanism ID. The qualified site, binding and companion Artifact are derived, never extra annotation arguments.
 
 ## What the extractor derives
 
@@ -55,7 +54,7 @@ An extractor that cannot prove a unique qualified declaration must reject that m
 
 `Azimuth.Annotations` supplies `[Realizes(claim)]`, `[ImplementsCheck(check)]` and `[ImplementsMechanism(mechanism)]`. All three allow multiple instances on one target. `Realizes` and `ImplementsMechanism` target a class, struct, interface, enum or method; `ImplementsCheck` targets a method only. The targets match exactly what the extractor walks, so a marker cannot be placed where it would silently vanish.
 
-Attributes are matched by full attribute-type name, not CLR identity, so the emitter works when the target assembly references a differently located copy of the annotations package.
+Attributes are matched by full attribute-type name, not CLR identity, so the emitter works when the target assembly references a differently located copy of the annotations package. Untagged generic source artifacts are omitted when their PDB source is external or not physically materialized (such as generated `obj` sources). Tagged source must be an existing regular file within the root, including symlink resolution; unavailable or escaping tagged source fails extraction.
 
 ### JVM
 
@@ -63,7 +62,7 @@ Attributes are matched by full attribute-type name, not CLR identity, so the emi
 
 ### TypeScript and JavaScript
 
-`@azimuth-sh/annotations` exports the typed no-op functions `realizes(spec, claim)`, `implementsCheck(check)` and `implementsMechanism(spec, mechanism)`. They are function calls rather than decorators because the marked units are functions — route handlers, server components, hooks — and decorators are class-member-only. The call's enclosing named declaration is the site.
+`@azimuth-sh/annotations` exports the typed no-op functions `realizes(claim)`, `implementsCheck(check)` and `implementsMechanism(mechanism)`. They are function calls rather than decorators because the marked units are functions — route handlers, server components, hooks — and decorators are class-member-only. The call's enclosing named declaration is the site.
 
 `implementsMechanism` emits only when its compiler symbol resolves to that package's export through a direct, aliased or namespace import; a local homonym is ordinary source. `realizes` and `implementsCheck` are recognized by call name.
 
@@ -73,20 +72,20 @@ Attributes are matched by full attribute-type name, not CLR identity, so the emi
 
 ### Python
 
-`azimuth_annotations` supplies the no-op decorators `@realizes(spec, claim)`, `@implements_check(check)` and `@implements_mechanism(spec, mechanism)`, applied to a class or a function. Decorators are matched by bare name, so the import must bind the name directly. Arguments must be string literals and keyword arguments are rejected.
+`azimuth_annotations` supplies the no-op decorators `@realizes(claim)`, `@implements_check(check)` and `@implements_mechanism(mechanism)`, applied to a class or a function. Decorators are matched by bare name, so the import must bind the name directly. Arguments must be string literals and keyword arguments are rejected.
 
 ### Rust
 
-`azimuth-annotations` supplies the attribute macros `#[realizes(spec, claim)]`, `#[implements_check(check)]` and `#[implements_mechanism(spec, mechanism)]`. The attribute path is accepted bare or qualified by exactly one of `azimuth` or `azimuth_annotations`; any other path is ordinary code. Arguments must be string literals.
+`azimuth-annotations` supplies the attribute macros `#[realizes(claim)]`, `#[implements_check(check)]` and `#[implements_mechanism(mechanism)]`. The attribute path is accepted bare or qualified by exactly one of `azimuth` or `azimuth_annotations`; any other path is ordinary code. Arguments must be string literals.
 
 ### C++
 
-`azimuth.hpp` supplies the macros `AZIMUTH_REALIZES(spec, claim)`, `AZIMUTH_IMPLEMENTS_CHECK(check)` and `AZIMUTH_IMPLEMENTS_MECHANISM(spec, mechanism)`, each expanding to a `[[clang::annotate(...)]]` attribute whose payload is pipe-separated:
+`azimuth.hpp` supplies the macros `AZIMUTH_REALIZES(claim)`, `AZIMUTH_IMPLEMENTS_CHECK(check)` and `AZIMUTH_IMPLEMENTS_MECHANISM(mechanism)`, each expanding to a `[[clang::annotate(...)]]` attribute whose payload is pipe-separated:
 
 ```text
-azimuth|realizes|<spec>|<claim>
+azimuth|realizes|<claim>
 azimuth|implements-check|<check>
-azimuth|implements-mechanism|<spec>|<mechanism>
+azimuth|implements-mechanism|<mechanism>
 ```
 
 The kind token is kebab-case here, unlike every other ecosystem's identifier spelling. A payload that does not begin `azimuth|` with a known kind and the exact argument count is malformed and fails.

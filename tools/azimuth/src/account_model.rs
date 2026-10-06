@@ -291,6 +291,52 @@ pub fn inspect_with_support(
     for design in designs.values() {
         inspect_design(design, &loaded.specs, workspace, manifests, &mut report);
     }
+    let package_accounts = verifications.values().cloned().collect::<Vec<_>>();
+    let mut package_producers = manifests
+        .iter()
+        .flat_map(|manifest| manifest.extensions.iter().cloned())
+        .collect::<Vec<_>>();
+    for producer in &mut package_producers {
+        if producer.source.is_none() {
+            producer.source = crate::local_source(
+                workspace,
+                &producer.file,
+                crate::address_kind(&producer.lang, &producer.file, &producer.site),
+                crate::address_value(&producer.lang, &producer.file, &producer.site),
+            );
+        }
+    }
+    errors.extend(crate::verification_packages::validate_accounts(
+        &package_accounts,
+        workspace,
+        &package_producers,
+    ));
+    for account in &package_accounts {
+        for entity in &account.package_entities {
+            let contract = match entity.kind.as_str() {
+                "Surface" => "surface-enumerator",
+                "Expectation set" => "surface-expectations",
+                _ => "probe-implementation",
+            };
+            if !package_producers.iter().any(|producer| {
+                producer.package == entity.package()
+                    && producer.contract == contract
+                    && producer.entity == entity.id
+                    && producer.source.is_some()
+            }) {
+                report.findings.push(AccountFinding::new(
+                    AccountFindingKind::CheckImplementationUnresolved,
+                    &account.path,
+                    entity.line,
+                    None,
+                    format!(
+                        "{} `{}` has no source-linked producer",
+                        entity.kind, entity.id
+                    ),
+                ));
+            }
+        }
+    }
     let authored_checks = verifications
         .values()
         .flat_map(|file| &file.checks)

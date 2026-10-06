@@ -510,7 +510,6 @@ def source_entry(claim, site, file, fingerprint):
         ".yml": "yaml",
     }.get(Path(file).suffix, "release-orchestration")
     return {
-        "spec": SPEC,
         "claim": claim,
         "site": site,
         "file": file,

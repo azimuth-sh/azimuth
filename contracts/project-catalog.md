@@ -112,3 +112,7 @@ Assembly fingerprints the catalog file as read: `catalog_digest` is the SHA-256 
 A project reference names this catalog and one of its repositories. A workset supplies checkouts for its repositories and paths to execution receipts. A repository manifest observes the areas, model sources and changes the catalog assigns to one repository. A project snapshot restates the catalog id, its digest and its area topology.
 
 Completeness is declared here and never inferred from what a workset happens to contain. A complete account selects every required repository, the repository owning every required model source, the standards repository, every declared area and every required receipt. Anything else is a partial local account, which cannot be finalized.
+
+## Verification packages
+
+Optional `packages` explicitly enables `azimuth.surface` and `azimuth.network`; see [verification-packages.md](verification-packages.md). Federation propagates this selection to the assembled workspace. Entity declaration and producer contracts fail when their owning package is absent. No package selection derives from source directory names.

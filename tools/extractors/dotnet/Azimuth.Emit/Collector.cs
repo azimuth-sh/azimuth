@@ -75,6 +75,7 @@ internal static class Collector
         List<string> Warnings)
     {
         public AccountSupportResult AccountSupport { get; } = new();
+        public List<PackageProducer> Extensions { get; } = [];
     }
 
     public sealed record SupportArtifact(
@@ -110,6 +111,60 @@ internal static class Collector
         public List<CaseContribution> Contributions { get; } = [];
     }
 
+    public sealed record PackageProducer(string Package, string Contract, string Entity, string Site, string File, string Lang, string SourceFingerprint, System.Text.Json.Nodes.JsonObject? Schema, IReadOnlyList<ProducerInput> Inputs);
+    public sealed record ProducerInput(string File, string Fingerprint);
+
+    private static void CollectPackage(MemberInfo member, IList<CustomAttributeData> attributes, string site, string file, string fingerprint, Result result, string root)
+    {
+        foreach (var attribute in attributes)
+        {
+            var name = FullName(attribute);
+            var contract = name switch
+            {
+                "Azimuth.Surface.Annotations.SurfaceEnumeratorAttribute" => "surface-enumerator",
+                "Azimuth.Surface.Annotations.SurfaceExpectationsAttribute" => "surface-expectations",
+                "Azimuth.Network.Annotations.ImplementsProbeAttribute" => "probe-implementation",
+                _ => null
+            };
+            if (contract is null) continue;
+            var entity = EntityArgument(attribute, file, site);
+            EnsureMechanismFingerprint(site, fingerprint, file);
+            System.Text.Json.Nodes.JsonObject? schema = null;
+            if (contract != "probe-implementation")
+            {
+                var method = member as MethodInfo;
+                if (method is null && member is Type type)
+                {
+                    var candidates = type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
+                        .Where(candidate => candidate.Name == "Enumerate" && !candidate.IsGenericMethod).ToArray();
+                    if (candidates.Length != 1) throw new InvalidOperationException($"{site}: producer class requires exactly one public Enumerate method");
+                    method = candidates[0];
+                }
+                if (method is null) throw new InvalidOperationException($"{site}: unsupported producer site");
+                var descriptor = PackageProducers.Schema(PackageProducers.MemberType(method.ReturnType));
+                schema = new System.Text.Json.Nodes.JsonObject { ["fields"] = descriptor["fields"]!.DeepClone() };
+            }
+            var inputs = new List<ProducerInput>();
+            var configuration = attribute.NamedArguments.FirstOrDefault(argument => argument.MemberName == "ConfigurationFile").TypedValue.Value as string;
+            if (configuration is not null)
+            {
+                if (contract != "surface-expectations" || configuration.Length == 0 || Path.IsPathRooted(configuration) || configuration.Contains("\\") || configuration.Split('/').Any(segment => segment is "" or "." or ".."))
+                    throw new InvalidOperationException($"{site}: ConfigurationFile requires a normalized repository-relative file");
+                var path = Path.GetFullPath(configuration, Path.GetFullPath(root));
+                if (!File.Exists(path)) throw new InvalidOperationException($"{site}: missing configuration input {configuration}");
+                FileSystemInfo current = new DirectoryInfo(Path.GetFullPath(root));
+                foreach (var segment in configuration.Split('/'))
+                {
+                    var next = Path.Combine(current.FullName, segment);
+                    current = Directory.Exists(next) ? new DirectoryInfo(next) : new FileInfo(next);
+                    if (current.LinkTarget is not null) throw new InvalidOperationException($"{site}: symlink configuration inputs are not supported");
+                }
+                inputs.Add(new ProducerInput(configuration, "sha256:" + Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant()));
+            }
+            result.Extensions.Add(new PackageProducer(contract == "probe-implementation" ? "azimuth.network" : "azimuth.surface", contract, entity, site, file, Lang, fingerprint, schema, inputs));
+        }
+    }
+
     public static Result Collect(
         IEnumerable<Assembly> assemblies,
         string root,
@@ -133,6 +188,7 @@ internal static class Collector
             }
         }
 
+        result.Extensions.Sort((left, right) => StringComparer.Ordinal.Compare($"{left.Package}|{left.Contract}|{left.Entity}|{left.Site}", $"{right.Package}|{right.Contract}|{right.Entity}|{right.Site}"));
         result.Realizes.Sort(Compare);
         result.CheckImplementations.Sort(CompareCheckImplementation);
         result.MechanismImplementations.Sort(CompareMechanismImplementation);
@@ -146,6 +202,37 @@ internal static class Collector
         }
         NormalizeAccountSupport(result.AccountSupport);
         return result;
+    }
+
+    private static bool AvailableWorkspaceSource(string file, string root)
+    {
+        if (!WorkspaceRelative(file)) return false;
+        var rootPath = Path.GetFullPath(root);
+        var current = rootPath;
+        var segments = file.Split('/');
+        for (var index = 0; index < segments.Length; index++)
+        {
+            current = Path.Combine(current, segments[index]);
+            FileSystemInfo entry = index == segments.Length - 1
+                ? new FileInfo(current) : new DirectoryInfo(current);
+            if (!entry.Exists) return false;
+            if (entry.LinkTarget is not null)
+            {
+                current = entry.ResolveLinkTarget(true)?.FullName ?? string.Empty;
+                if (current.Length == 0 || !WorkspaceRelative(Path.GetRelativePath(rootPath, current)))
+                    return false;
+            }
+        }
+        return File.Exists(current);
+    }
+
+    private static void EnsureSourceRoot(IList<CustomAttributeData> attributes, string file, string site, string root)
+    {
+        if (attributes.Any(attribute => FullName(attribute).StartsWith("Azimuth.", StringComparison.Ordinal))
+            && !AvailableWorkspaceSource(file, root))
+        {
+            throw new InvalidOperationException($"{site}: annotated source requires an existing regular file inside the workspace root");
+        }
     }
 
     private static IEnumerable<Type> Types(Assembly assembly, List<string> warnings)
@@ -181,11 +268,13 @@ internal static class Collector
         var mechanismTypeSite = MetadataTypeName(type);
         var typeFile = files.PathOf(type);
         var typeFingerprint = ManifestFingerprint(files.FingerprintOf(type));
+        EnsureSourceRoot(type.GetCustomAttributesData(), typeFile, mechanismTypeSite, root);
+        CollectPackage(type, type.GetCustomAttributesData(), mechanismTypeSite, typeFile, typeFingerprint, result, root);
         var typeMechanisms = type.GetCustomAttributesData()
             .Where(attribute => FullName(attribute) == ImplementsMechanismName)
             .ToArray();
         EnsureOneMechanismTarget(mechanismTypeSite, typeMechanisms.Length);
-        if (typeMechanisms.Length == 0 && typeFile.Length > 0)
+        if (typeMechanisms.Length == 0 && AvailableWorkspaceSource(typeFile, root))
         {
             result.Artifacts.Add(
                 new Artifact(
@@ -245,11 +334,13 @@ internal static class Collector
             var file = files.PathOf(method);
             var sourceFingerprint = ManifestFingerprint(files.FingerprintOf(method));
             var data = method.GetCustomAttributesData();
+            EnsureSourceRoot(data, file, mechanismSite, root);
+            CollectPackage(method, data, MethodSite(method), files.PathOf(method), ManifestFingerprint(files.FingerprintOf(method)), result, root);
             var mechanismAttributes = data
                 .Where(attribute => FullName(attribute) == ImplementsMechanismName)
                 .ToArray();
             EnsureOneMechanismTarget(mechanismSite, mechanismAttributes.Length);
-            if (mechanismAttributes.Length == 0 && file.Length > 0)
+            if (mechanismAttributes.Length == 0 && AvailableWorkspaceSource(file, root))
             {
                 result.Artifacts.Add(
                     new Artifact(
@@ -753,6 +844,8 @@ internal static class Collector
             WriteCheckImplementations(writer, result.CheckImplementations);
             WriteMechanismImplementations(writer, result.MechanismImplementations);
             WriteArtifacts(writer, result.Artifacts);
+            writer.WritePropertyName("extensions");
+            JsonSerializer.Serialize(writer, result.Extensions, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
             writer.WriteEndObject();
         }
 

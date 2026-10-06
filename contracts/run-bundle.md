@@ -578,7 +578,7 @@ Canonical JSON is the JSON Canonicalization Scheme defined by RFC 8785. It uses 
 }
 ```
 
-For the complete launch vector in [run-launch-plan.md](run-launch-plan.md), source system `synthetic` and source execution `run-1`, the canonical Run-id preimage is:
+For the fixed opaque launch and plan fingerprints below, source system `synthetic` and source execution `run-1`, the canonical Run-id preimage is:
 
 ```json
 {"format":"azimuth-run-identity","launch_fingerprint":"sha256:980dc9e544f41414e3a2735e84a6d9733aee85b2961899bb538f1f34c4347237","plan_fingerprint":"sha256:b75606956b9c1857f8b401d9bad207253b90f6948efddb5532a769b9f488fbfb","source_execution":"run-1","source_system":"synthetic","subject_fingerprint":"sha256:22478698e6731ce5984658e366386e466fe173216bc7cb721168e1638d2dee02","version":1}

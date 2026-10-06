@@ -24,9 +24,9 @@ fn valid_bundle() -> RunBundle {
     };
     let context = map(&[("platform", "linux")]);
     let check = CheckSelection {
-        id: "payments/recovery".into(),
+        id: "recovery".into(),
         fingerprint: fp('b'),
-        cases: vec!["payments#recovery/works".into()],
+        cases: vec!["works".into()],
         implementations: vec![Implementation {
             identity: "payments|rust-symbol|recovery::replay".into(),
             source_fingerprint: fp('c'),
@@ -121,7 +121,7 @@ fn valid_bundle() -> RunBundle {
                     LaunchRoute {
                         selection: RouteSelection {
                             kind: RouteSelectionKind::Check,
-                            id: "payments/recovery".into(),
+                            id: "recovery".into(),
                         },
                         capability: RouteCapability {
                             address: "synthetic/checks".into(),
@@ -207,7 +207,7 @@ fn valid_bundle() -> RunBundle {
         }],
         check_executions: vec![CheckExecution {
             check: CheckRef {
-                id: "payments/recovery".into(),
+                id: "recovery".into(),
                 fingerprint: fp('b'),
             },
             units: vec![CheckExecutionUnit {
@@ -215,16 +215,13 @@ fn valid_bundle() -> RunBundle {
                 attempts: vec![CheckAttempt {
                     ordinal: 1,
                     activity: "fault-probe".into(),
-                    outcomes: [(
-                        "payments#recovery/works".into(),
-                        ObservationOutcome::Satisfied,
-                    )]
-                    .into_iter()
-                    .collect(),
+                    outcomes: [("works".into(), ObservationOutcome::Satisfied)]
+                        .into_iter()
+                        .collect(),
                 }],
             }],
             observations: vec![Observation {
-                case: "payments#recovery/works".into(),
+                case: "works".into(),
                 outcome: ObservationOutcome::Satisfied,
                 observed_at_ms: 3,
                 fingerprint: fp('0'),
@@ -617,7 +614,7 @@ fn claim_judgment_targets_and_semantic_implementation_identities_are_strict() {
         &mut claim_target.actual_selection.challenges[0],
     ] {
         challenge.target.kind = ChallengeTargetKind::ClaimJudgment;
-        challenge.target.id = "payments/recovery#accepted-write".into();
+        challenge.target.id = "accepted-write".into();
         challenge.id = challenge_selection_id(
             &challenge.challenger.fingerprint,
             challenge.target.kind,
@@ -628,7 +625,7 @@ fn claim_judgment_targets_and_semantic_implementation_identities_are_strict() {
         claim_target.plan.challenges[0].id.clone();
     claim_target.challenger_executions[0].challenge = claim_target.plan.challenges[0].id.clone();
     claim_target.challenger_executions[0].target.kind = ChallengeTargetKind::ClaimJudgment;
-    claim_target.challenger_executions[0].target.id = "payments/recovery#accepted-write".into();
+    claim_target.challenger_executions[0].target.id = "accepted-write".into();
     refresh(&mut claim_target);
     assert!(parse(
         "claim-target.json",
@@ -696,7 +693,7 @@ fn challenge_identity_scope_order_conflicts_and_fingerprints_fail_closed() {
         .anchors
         .push(ChallengeScopeItem {
             kind: ChallengeScopeKind::Claim,
-            id: "payments/recovery#accepted-write".into(),
+            id: "accepted-write".into(),
             fingerprint: fp('8'),
         });
     unsorted.plan.challenges[0].scope.fingerprint =
@@ -859,7 +856,7 @@ fn published_launch_fingerprint_vector_stays_stable() {
     "checks": [
       {
         "fingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
-        "id": "demo/check",
+        "id": "check",
         "implementations": [
           {
             "identity": "demo|rust-symbol|demo::check",
@@ -881,7 +878,7 @@ fn published_launch_fingerprint_vector_stays_stable() {
         "class": "check.execute",
         "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
       },
-      "selection": {"id": "demo/check", "kind": "check"}
+      "selection": {"id": "check", "kind": "check"}
     }
   ],
   "subject": {
@@ -900,7 +897,7 @@ fn published_launch_fingerprint_vector_stays_stable() {
     let launch = strict_json("launch-vector.json", source).unwrap();
     assert_eq!(
         canonical_fingerprint(&launch).unwrap(),
-        "sha256:980dc9e544f41414e3a2735e84a6d9733aee85b2961899bb538f1f34c4347237"
+        "sha256:d462a72c83f1e17096c03de4b5872bb61dabb26f6c73098def320c3cde213955"
     );
 }
 
@@ -1312,12 +1309,9 @@ fn retry_reduction_recovers_technical_inconclusion_but_preserves_violation() {
         CheckAttempt {
             ordinal: 1,
             activity: "earlier".into(),
-            outcomes: [(
-                "payments#recovery/works".into(),
-                ObservationOutcome::Inconclusive,
-            )]
-            .into_iter()
-            .collect(),
+            outcomes: [("works".into(), ObservationOutcome::Inconclusive)]
+                .into_iter()
+                .collect(),
         },
     );
     recovered.check_executions[0].units[0].attempts[1].ordinal = 2;
@@ -1326,10 +1320,7 @@ fn retry_reduction_recovers_technical_inconclusion_but_preserves_violation() {
 
     recovered.check_executions[0].units[0].attempts[0]
         .outcomes
-        .insert(
-            "payments#recovery/works".into(),
-            ObservationOutcome::Violated,
-        );
+        .insert("works".into(), ObservationOutcome::Violated);
     refresh(&mut recovered);
     assert!(has(&verify(&recovered), "run/observation-reduction"));
 }
@@ -1339,10 +1330,7 @@ fn violated_observations_are_valid_terminal_facts() {
     let mut bundle = valid_bundle();
     bundle.check_executions[0].units[0].attempts[0]
         .outcomes
-        .insert(
-            "payments#recovery/works".into(),
-            ObservationOutcome::Violated,
-        );
+        .insert("works".into(), ObservationOutcome::Violated);
     bundle.check_executions[0].observations[0].outcome = ObservationOutcome::Violated;
     refresh(&mut bundle);
     assert!(verify(&bundle).is_empty());
@@ -1356,12 +1344,9 @@ fn attempts_cannot_repeat_activity_and_noncompleted_activity_is_inconclusive() {
         .push(CheckAttempt {
             ordinal: 2,
             activity: "fault-probe".into(),
-            outcomes: [(
-                "payments#recovery/works".into(),
-                ObservationOutcome::Satisfied,
-            )]
-            .into_iter()
-            .collect(),
+            outcomes: [("works".into(), ObservationOutcome::Satisfied)]
+                .into_iter()
+                .collect(),
         });
     bundle.activities[0].status = ActivityStatus::Failed;
     refresh(&mut bundle);
@@ -1781,7 +1766,7 @@ fn adapter_routes_match_every_semantic_selection_in_exact_launch_order() {
     assert!(has(&verify(&missing), "run/provenance-route-cardinality"));
 
     let mut spoofed = valid_bundle();
-    spoofed.provenance.adapter.routes[0].selection.id = "payments/other".into();
+    spoofed.provenance.adapter.routes[0].selection.id = "other".into();
     refresh(&mut spoofed);
     assert!(has(&verify(&spoofed), "run/provenance-route-selection"));
 

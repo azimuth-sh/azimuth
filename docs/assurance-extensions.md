@@ -1,9 +1,8 @@
 # Assurance extensions
 
-Status: **decision-aware planning and bounded adapter exchange implemented; Run ledger deferred**.
+Status: **compact verification packages, independent review records and the current Run ledger implemented; compact Decision Policies and challenge scheduling deferred**.
 
-Azimuth is an evidence control plane, not a catalog of testing and analysis products. Alpha 2
-implements the repository graph from Checks through Case Evidence Bindings to shared Method
+Azimuth is an evidence control plane, not a catalog of testing and analysis products. Compact package contracts preserve authored Check methods and inline contributions; separate review records qualify methods, assess exact-Subject applicability and judge Claims. The older declaration lane also implements the repository graph from Checks through Case Evidence Bindings to shared Method
 Qualifications and edge Applicability Decisions, plus total parent Claim Judgments, Challengers,
 Challenge Plans, Decision Policies and one current Challenge Schedule.
 
@@ -32,7 +31,9 @@ to several Cases only when its terminal outcome is atomic and honestly bears on 
 
 ## Current repository boundary
 
-The implemented alpha 5 extension seam is repository-owned:
+The compact extension seam is package-owned authoring and extraction over the shared Check–Case graph. `azimuth.surface` declares Surfaces and independent Expectation Sets; `azimuth.network` declares Probes and origins. Packages expose canonical namespaces, descriptors and validators without making providers authoritative for Case meaning. See [verification-packages.md](../contracts/verification-packages.md) and [assurance-reviews.md](../contracts/assurance-reviews.md).
+
+The older declaration lane remains repository-owned:
 
 - `verification.md` declares Checks, Evidence Bindings, Method Qualifications, Applicability
   Decisions, Challengers and Challenge Plans plus one Claim Judgment per applicable parent Claim;
@@ -43,7 +44,7 @@ The implemented alpha 5 extension seam is repository-owned:
   every candidate disposition; and
 - `azimuth export` version 5 exposes the derived repository graph and Findings.
 
-Ordinary tests, analyzer rules and monitors remain outside Azimuth until deliberately enrolled. This prevents thousands of native test cases from becoming accidental assurance authority. It is independent of storage capacity: a future ledger may retain very large execution volumes while the semantic Check graph remains sparse.
+Ordinary tests, analyzer rules and monitors remain outside Azimuth until deliberately enrolled. This prevents thousands of native test cases from becoming accidental assurance authority. It is independent of storage capacity: the current ledger may retain large execution volumes while the semantic Check graph remains sparse.
 
 Every Claim in the accepted model under `azimuth/model/` is routine. They therefore have no current
 Checks, Evidence Bindings or decisions. The parser, extractor and release suites are ordinary
@@ -118,9 +119,9 @@ The synthetic [Challenge-planning conformance](../experiments/challenge-planning
 
 ## Service and wire boundary
 
-The replacement Assurance Service is deferred with the Run ledger. Its intended authority is accepted execution facts and derived Subject-specific state, not repository semantics or provider integrations. The standalone bundle contract supplies the protocol meaning a future ledger must preserve; it does not authorize or ingest the Run.
+The current `run-ledger` accepts strict Run bundles and independently authored compact review records under project-scoped producer, reviewer and owner credentials. Owners explicitly select a complete authority projection exported with `azimuth assurance authority`; registering a candidate does not accept a change. A snapshot joins that selected authority, immutable reviews and current correction heads for an exact Subject. No passing Run fabricates a supported Judgment. Stale, rejected, missing and ambiguous support remains visible.
 
-The legacy claim-contract and project-snapshot wire remains isolated inside the existing service boundary until the replacement is implemented. It receives no bridge into the alpha 5 repository graph. There is no assurance-specific export command: `azimuth export` emits only the version 5 repository model and no runtime ledger records.
+The older claim-contract/project-snapshot service stays isolated, with no compatibility bridge into current Run state. `azimuth export` emits repository model content; the authority command emits its pinned full-model review projection, neither exporting runtime ledger history. Provider-specific event hosting remains outside the ledger. See [run-ledger.md](../contracts/run-ledger.md).
 
 ## Acceptance boundary for future extensions
 
@@ -135,4 +136,4 @@ A future provider package or ledger integration is composable only if it preserv
 - monitoring silence is not interpreted as a satisfied product result; and
 - equivalent normalized bundles work locally and through the optional ledger.
 
-Current adapter transport stops before durable ingestion. There is no authorization, retention, cache-validity, cross-Subject reuse or Subject-specific Assurance State authority. Active guidance must not simulate those missing authorities or dynamic assurance with checked-in records.
+Adapter transport stops before durable ingestion; the separate current ledger supplies authorization, immutable history and Subject-specific compact Assurance State. No cache-validity, automatic expiry, cross-Subject reuse or historical applicability inference is defined. Compact challenge policies and scheduling remain deferred. Guidance must not simulate those missing authorities or turn checked-in records into fresh measurements.

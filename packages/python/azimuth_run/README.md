@@ -1,0 +1,11 @@
+# Azimuth Run construction
+
+Expose `packages/python` through the installed distribution or an explicitly configured `PYTHONPATH`; this package uses only the Python standard library.
+
+`azimuth_run.build_check_bundle` constructs Check-only import bundles from an exact CLI launch and an independently normalized native account. It accepts real source execution identity, normalizer identity, execution interval, context, activities, per-unit attempts and Case outcomes, artifacts, diagnostics and import-input identities. The provider wrapper owns native interpretation, controls, completeness and input provenance. The builder never interprets an exit code as a satisfied proposition.
+
+`units_by_check` maps each Check ID to records shaped as `{id, attempts: [{ordinal, activity, outcomes: {case_id: outcome}}]}`. Outcomes are `satisfied`, `violated` or `inconclusive`. Activities, artifacts and diagnostics follow the Run wire contract. Native attempt ordinals start at zero; the helper emits the Run protocol’s ordinals starting at one. Attempts reference distinct activities. Every attempt covers exactly the selected Cases. Missing planned units produce explicit normalization diagnostics and inconclusive attempts.
+
+The helper preserves the supplied launch's plan, Subject, source identities and execution interval. `normalizer` must exactly identify the configured adapter: ID `adapter/<adapter-id>`, version equal to `adapter_version`, and build fingerprint equal to `adapter_fingerprint`; mismatches are rejected before construction. It reduces unit outcomes according to the core Run protocol and constructs its canonical fingerprints. `predecessors` contains prior complete wire bundles; corrections require an explicit reason and unchanged execution anchors. Native reports and descriptor/configuration equality remain the adapter wrapper's responsibility. The CLI's strict parser, launch equality and Run verification remain required before publishing a bundle.
+
+`canonical_json` and `fingerprint` implement the Run protocol's RFC 8785 subset: valid Unicode, UTF-16 object-key ordering, and nonnegative safe integers. Floating-point inputs are rejected. No review record or Claim Judgment is inferred from a constructed Run.

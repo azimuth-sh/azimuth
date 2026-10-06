@@ -55,3 +55,7 @@ contain at least one `Realizes` site for the Claim. The site's area is derived f
 locator. The declaration has no role vocabulary and does not assign Case or evidentiary meaning.
 
 An area obligation is not an evidence obligation. Evidence follows explicit Evidence Bindings. One Check may bear on several areas when each Check-to-Claim edge is declared separately. Test-file location does not establish evidence scope, and ordinary tests emit no Check linkage.
+
+## Package enablement
+
+Optional `packages` enables the verification package contracts described in [verification-packages.md](verification-packages.md). Package Surfaces publish member fields and source producer linkage; they are distinct from the existing workspace quantification `surfaces` collection. No authored enumerator ID or duplicate endpoint annotation is required for package Surfaces.

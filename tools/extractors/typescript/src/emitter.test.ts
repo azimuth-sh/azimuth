@@ -13,24 +13,23 @@ import { emit, nextRoutes, scanText } from './emitter';
 test('resolves a site to its enclosing function', () => {
   const result = scanText(
     `import { realizes } from '@azimuth-sh/annotations';
-     export function handler() { realizes('alpha', 'route-thing'); }`,
+     export function handler() { realizes('route-thing'); }`,
     'a.ts',
   );
   assert.equal(result.realizes.length, 1);
   assert.deepEqual(
     {
-      spec: result.realizes[0].spec,
       claim: result.realizes[0].claim,
       site: result.realizes[0].site,
     },
-    { spec: 'alpha', claim: 'route-thing', site: 'handler' },
+    { claim: 'route-thing', site: 'handler' },
   );
   assert.equal(result.realizes[0].lang, 'typescript');
 });
 
 test('resolves a site to a named binding an arrow was assigned to', () => {
   const result = scanText(
-    `export const projection = () => { realizes('alpha', 'thing'); };`,
+    `export const projection = () => { realizes('thing'); };`,
     'a.ts',
   );
   assert.equal(result.realizes[0].site, 'projection');
@@ -38,7 +37,7 @@ test('resolves a site to a named binding an arrow was assigned to', () => {
 
 test('resolves a site to a class method', () => {
   const result = scanText(
-    `class Trip { complete() { realizes('alpha', 'thing'); } }`,
+    `class Trip { complete() { realizes('thing'); } }`,
     'a.ts',
   );
   assert.equal(result.realizes[0].site, 'complete');
@@ -46,7 +45,7 @@ test('resolves a site to a class method', () => {
 
 test('a site may realize several claims', () => {
   const result = scanText(
-    `function f() { realizes('alpha', 'first'); realizes('alpha', 'second'); }`,
+    `function f() { realizes('first'); realizes('second'); }`,
     'a.ts',
   );
   assert.deepEqual(
@@ -58,11 +57,11 @@ test('a site may realize several claims', () => {
 
 test('a Check implementation carries only its enclosing source facts', () => {
   const result = scanText(
-    `test('the route answers', () => { implementsCheck('alpha/route-answer'); });`,
+    `test('the route answers', () => { implementsCheck('route-answer'); });`,
     'a.test.ts',
   );
   assert.deepEqual(result.checkImplementations[0], {
-    check: 'alpha/route-answer',
+    check: 'route-answer',
     site: 'the route answers',
     file: 'a.test.ts',
     lang: 'typescript',
@@ -73,13 +72,13 @@ test('a Check implementation carries only its enclosing source facts', () => {
 
 test('a site fingerprint changes only when that site changes', () => {
   const before = scanText(
-    `test('first', () => { implementsCheck('alpha/shared'); assert(1); });
-     test('second', () => { implementsCheck('alpha/shared'); assert(2); });`,
+    `test('first', () => { implementsCheck('shared'); assert(1); });
+     test('second', () => { implementsCheck('shared'); assert(2); });`,
     'a.test.ts',
   );
   const after = scanText(
-    `test('first', () => { implementsCheck('alpha/shared'); assert(1); });
-     test('second', () => { implementsCheck('alpha/shared'); assert(3); });`,
+    `test('first', () => { implementsCheck('shared'); assert(1); });
+     test('second', () => { implementsCheck('shared'); assert(3); });`,
     'a.test.ts',
   );
 
@@ -95,26 +94,25 @@ test('a site fingerprint changes only when that site changes', () => {
 
 test('several source sites may implement one Check', () => {
   const result = scanText(
-    `function first() { implementsCheck('alpha/shared'); }
-     function second() { implementsCheck('alpha/shared'); }`,
+    `function first() { implementsCheck('shared'); }
+     function second() { implementsCheck('shared'); }`,
     'a.test.ts',
   );
   assert.deepEqual(
     result.checkImplementations.map((entry) => [entry.check, entry.site]),
-    [['alpha/shared', 'first'], ['alpha/shared', 'second']],
+    [['shared', 'first'], ['shared', 'second']],
   );
 });
 
 test('a mechanism implementation emits the exact raw record and companion', () => {
   const dir = sourcePackage('@fixture/control', {
     'src/branch.ts':
-      `export function selectBranch() { implementsMechanism('alpha', 'branch-selection'); }`,
+      `export function selectBranch() { implementsMechanism('branch-selection'); }`,
   });
   const manifest = emit([path.join(dir, 'src')], dir).manifest;
   const implementation = manifest.mechanism_implementations[0];
 
   assert.deepEqual(implementation, {
-    spec: 'alpha',
     mechanism: 'branch-selection',
     site: '@fixture/control::./src/branch::none::selectBranch():void',
     binding: 'typescript-symbol:@fixture/control::./src/branch::none::selectBranch():void',
@@ -123,7 +121,6 @@ test('a mechanism implementation emits the exact raw record and companion', () =
     source_fingerprint: implementation.source_fingerprint,
   });
   assert.deepEqual(Object.keys(implementation), [
-    'spec',
     'mechanism',
     'site',
     'binding',
@@ -142,12 +139,12 @@ test('a mechanism implementation emits the exact raw record and companion', () =
 test('a complete manifest uses the exact fingerprint lexical contract', () => {
   const dir = sourcePackage('@fixture/account', {
     'fixture.ts':
-    `declare function realizes(spec: string, claim: string): void;
+    `declare function realizes(claim: string): void;
      declare function implementsCheck(check: string): void;
-     export function behavior() { realizes('alpha', 'behavior'); }
-     export function mechanism() { implementsMechanism('alpha', 'guard'); }
+     export function behavior() { realizes('behavior'); }
+     export function mechanism() { implementsMechanism('guard'); }
      declare function test(name: string, body: () => void): void;
-     test('check', () => { implementsCheck('alpha/check'); });`,
+     test('check', () => { implementsCheck('check'); });`,
   });
 
   const parsed = JSON.parse(JSON.stringify(emit([dir], dir).manifest)) as Record<string, unknown>;
@@ -172,7 +169,7 @@ test('a package, nested receiver and overload set form compiler-semantic identit
           choose(value: string): number;
           choose(value: number): number;
           choose(value: string | number): number {
-            implementsMechanism('routing', 'branch-selection');
+            implementsMechanism('branch-selection');
             return typeof value === 'string' ? value.length : value;
           }
         }
@@ -192,7 +189,7 @@ test('a package, nested receiver and overload set form compiler-semantic identit
 test('a generic callable identity includes compiler-resolved generic arity and signature', () => {
   const dir = sourcePackage('@fixture/generic', {
     'src/identity.ts': `export function retain<Value>(value: Value): Value {
-      implementsMechanism('routing', 'generic-guard');
+      implementsMechanism('generic-guard');
       return value;
     }`,
   });
@@ -208,13 +205,13 @@ test('a generic callable identity includes compiler-resolved generic arity and s
 test('generic renaming preserves an unrelated property key with the old generic spelling', () => {
   const before = sourcePackage('@fixture/generic-property', {
     'src/guard.ts': `export function guard<T>(value: { T: T }): T {
-      implementsMechanism('routing', 'generic-property');
+      implementsMechanism('generic-property');
       return value.T;
     }`,
   });
   const after = sourcePackage('@fixture/generic-property', {
     'src/guard.ts': `export function guard<U>(value: { T: U }): U {
-      implementsMechanism('routing', 'generic-property');
+      implementsMechanism('generic-property');
       return value.T;
     }`,
   });
@@ -230,13 +227,13 @@ test('generic renaming preserves an unrelated property key with the old generic 
 test('a property key matching generic spelling remains semantic identity', () => {
   const before = sourcePackage('@fixture/generic-key', {
     'src/guard.ts': `export function guard<T>(value: { T: T }): T {
-      implementsMechanism('routing', 'generic-key');
+      implementsMechanism('generic-key');
       return value.T;
     }`,
   });
   const after = sourcePackage('@fixture/generic-key', {
     'src/guard.ts': `export function guard<U>(value: { U: U }): U {
-      implementsMechanism('routing', 'generic-key');
+      implementsMechanism('generic-key');
       return value.U;
     }`,
   });
@@ -255,7 +252,7 @@ test('mapped indexed and conditional type binders do not capture callable generi
     'src/guard.ts': `export function guard<T>(value: {
       [Key in keyof T]: T[Key] extends infer Item ? { T: Item } : never
     }): T {
-      implementsMechanism('routing', 'nested-generic');
+      implementsMechanism('nested-generic');
       return value as T;
     }`,
   });
@@ -263,7 +260,7 @@ test('mapped indexed and conditional type binders do not capture callable generi
     'src/guard.ts': `export function guard<U>(value: {
       [Key in keyof U]: U[Key] extends infer Item ? { T: Item } : never
     }): U {
-      implementsMechanism('routing', 'nested-generic');
+      implementsMechanism('nested-generic');
       return value as U;
     }`,
   });
@@ -281,13 +278,13 @@ test('an explicit this parameter is canonical signature identity', () => {
   const alpha = sourcePackage('@fixture/explicit-this', {
     'src/guard.ts': `type Receiver = { mode: 'alpha' };
       export function guard(this: Receiver): void {
-        implementsMechanism('routing', 'explicit-this');
+        implementsMechanism('explicit-this');
       }`,
   });
   const beta = sourcePackage('@fixture/explicit-this', {
     'src/guard.ts': `type Receiver = { mode: 'beta' };
       export function guard(this: Receiver): void {
-        implementsMechanism('routing', 'explicit-this');
+        implementsMechanism('explicit-this');
       }`,
   });
   const alphaSite = emit([path.join(alpha, 'src')], alpha)
@@ -304,7 +301,7 @@ test('a receiver generic outside the callable account fails closed', () => {
   const dir = sourcePackage('@fixture/generic-receiver', {
     'src/guard.ts': `export class Guard<Value extends { id: string }> {
       guard(value: Value): Value {
-        implementsMechanism('routing', 'generic-receiver');
+        implementsMechanism('generic-receiver');
         return value;
       }
     }`,
@@ -318,7 +315,7 @@ test('a receiver generic outside the callable account fails closed', () => {
 
 test('mechanism identity survives whole-project root relocation', () => {
   const source = `export function stable(value: string): boolean {
-    implementsMechanism('routing', 'stable-guard');
+    implementsMechanism('stable-guard');
     return value.length > 0;
   }`;
   const beforeDir = sourcePackage('@fixture/relocation', { 'src/stable.ts': source });
@@ -339,7 +336,7 @@ test('JavaScript maps its semantic site to javascript-symbol without a path', ()
   const dir = sourcePackage('@fixture/javascript', {
     'src/guard.js': `/** @returns {boolean} */
       export function guard() {
-        implementsMechanism('routing', 'javascript-guard');
+        implementsMechanism('javascript-guard');
         return true;
       }`,
   });
@@ -363,7 +360,7 @@ test('mechanism extraction fails without semantic package identity', () => {
   writeProjectScaffold(dir);
   const source = path.join(dir, 'guard.ts');
   fs.writeFileSync(source, mechanismSource(
-    `function guard() { implementsMechanism('routing', 'guard'); }`,
+    `function guard() { implementsMechanism('guard'); }`,
   ));
 
   assert.throws(
@@ -375,7 +372,7 @@ test('mechanism extraction fails without semantic package identity', () => {
 test('anonymous mechanism sites fail closed', () => {
   const dir = sourcePackage('@fixture/ambiguous', {
     'src/guard.ts': `declare function register(value: () => void): void;
-      register(() => { implementsMechanism('routing', 'guard'); });`,
+      register(() => { implementsMechanism('guard'); });`,
   });
 
   assert.throws(
@@ -387,7 +384,7 @@ test('anonymous mechanism sites fail closed', () => {
 test('compiler-ambiguous declarations fail instead of using a file fallback', () => {
   const dir = sourcePackage('@fixture/ambiguous', {
     'src/guard.ts': `function guard() {
-      implementsMechanism('routing', 'guard');
+      implementsMechanism('guard');
     }
     function guard() { return true; }`,
   });
@@ -401,8 +398,8 @@ test('compiler-ambiguous declarations fail instead of using a file fallback', ()
 test('repeated marker calls at one semantic site fail closed', () => {
   const dir = sourcePackage('@fixture/repeated', {
     'src/guard.ts': `function guard() {
-      implementsMechanism('routing', 'guard');
-      implementsMechanism('routing', 'guard');
+      implementsMechanism('guard');
+      implementsMechanism('guard');
     }`,
   });
 
@@ -415,10 +412,10 @@ test('repeated marker calls at one semantic site fail closed', () => {
 test('moving a module changes the mechanism identity', () => {
   const dir = sourcePackage('@fixture/federated', {
     'area-a/guard.ts': `export function guard() {
-      implementsMechanism('alpha', 'guard');
+      implementsMechanism('guard');
     }`,
     'area-b/guard.ts': `export function guard() {
-      implementsMechanism('beta', 'guard');
+      implementsMechanism('guard');
     }`,
   });
   const manifest = emit([path.join(dir, 'area-a'), path.join(dir, 'area-b')], dir).manifest;
@@ -433,9 +430,9 @@ test('moving a module changes the mechanism identity', () => {
 test('invalid mechanism arguments are fatal rather than warnings', () => {
   for (const call of [
     'implementsMechanism()',
-    "implementsMechanism('alpha')",
+    "implementsMechanism(mechanism)",
     "implementsMechanism('alpha', mechanism)",
-    "implementsMechanism('alpha', 'guard', 'extra')",
+    "implementsMechanism('guard', 'extra')",
   ]) {
     const dir = sourcePackage('@fixture/invalid-marker', {
       'src/guard.ts': `declare const mechanism: string;
@@ -443,7 +440,7 @@ test('invalid mechanism arguments are fatal rather than warnings', () => {
     });
     assert.throws(
       () => emit([path.join(dir, 'src')], dir),
-      /needs exactly two string literal spec and mechanism arguments/,
+      /needs exactly one stable Mechanism ID/,
     );
   }
 });
@@ -451,9 +448,9 @@ test('invalid mechanism arguments are fatal rather than warnings', () => {
 test('import aliases and namespace imports resolve the annotation symbol', () => {
   const dir = sourcePackage('@fixture/aliases', {
     'src/direct.ts': `import { implementsMechanism as mark } from '@azimuth-sh/annotations';
-      export function direct() { mark('alpha', 'direct'); }`,
+      export function direct() { mark('direct'); }`,
     'src/namespace.ts': `import * as azimuth from '@azimuth-sh/annotations';
-      export function namespaced() { azimuth.implementsMechanism('alpha', 'namespace'); }`,
+      export function namespaced() { azimuth.implementsMechanism('namespace'); }`,
   });
   const implementations = emit([path.join(dir, 'src')], dir)
     .manifest.mechanism_implementations;
@@ -468,7 +465,7 @@ test('import aliases and namespace imports resolve the annotation symbol', () =>
 test('an unprovable annotation import alias fails through compiler diagnostics', () => {
   const dir = sourcePackage('@fixture/unresolved-alias', {
     'src/guard.ts': `import { implementsMechanism as mark } from '@azimuth-sh/annotations';
-      export function guard() { mark('alpha', 'guard'); }`,
+      export function guard() { mark('guard'); }`,
   });
   fs.writeFileSync(
     path.join(dir, 'node_modules', '@azimuth-sh', 'annotations', 'index.d.ts'),
@@ -488,10 +485,10 @@ test('an unprovable annotation import alias fails through compiler diagnostics',
 
 test('a local homonym is ordinary source', () => {
   const dir = sourcePackage('@fixture/homonym', {
-    'src/local.ts': `function implementsMechanism(spec: string, mechanism: string): void {
+    'src/local.ts': `function implementsMechanism(mechanism: string): void {
       void spec; void mechanism;
     }
-    export function local() { implementsMechanism('alpha', 'ordinary'); }`,
+    export function local() { implementsMechanism('ordinary'); }`,
   });
 
   assert.deepEqual(
@@ -506,7 +503,7 @@ test('an arbitrary object property homonym is ordinary source', () => {
         from '@azimuth-sh/annotations';
       declare const local: any;
       void marker;
-      local.implementsMechanism('alpha', 'ordinary');`,
+      local.implementsMechanism('ordinary');`,
   });
 
   assert.deepEqual(
@@ -518,7 +515,7 @@ test('an arbitrary object property homonym is ordinary source', () => {
 test('overlapping selectors are canonicalized before marker extraction', () => {
   const dir = sourcePackage('@fixture/dedup', {
     'src/guard.ts': `export function guard() {
-      implementsMechanism('alpha', 'guard');
+      implementsMechanism('guard');
     }`,
   });
   const file = path.join(dir, 'src', 'guard.ts');
@@ -533,7 +530,7 @@ test('all eight configured source extensions are discovered', () => {
   const sources = Object.fromEntries(extensions.map((extension, index) => [
     `src/guard-${index}.${extension}`,
     `export function guard${index}() {
-      implementsMechanism('alpha', 'guard-${index}');
+      implementsMechanism('guard-${index}');
     }`,
   ]));
   const dir = sourcePackage('@fixture/extensions', sources);
@@ -550,7 +547,7 @@ test('all eight configured source extensions are discovered', () => {
 test('a whole configured Program fails on an unselected source diagnostic', () => {
   const dir = sourcePackage('@fixture/diagnostics', {
     'src/guard.ts': `export function guard() {
-      implementsMechanism('alpha', 'guard');
+      implementsMechanism('guard');
     }`,
     'src/unselected.ts': 'const invalid: string = 42;',
   });
@@ -570,7 +567,7 @@ test('nearest config and owning package define the project identity', () => {
   const source = path.join(nested, 'src', 'guard.ts');
   fs.mkdirSync(path.dirname(source), { recursive: true });
   fs.writeFileSync(source, mechanismSource(`export function guard() {
-    implementsMechanism('alpha', 'guard');
+    implementsMechanism('guard');
   }`));
 
   const implementation = emit([source], dir).manifest.mechanism_implementations[0];
@@ -581,7 +578,7 @@ test('a package-relative module specifier must resolve to the selected source', 
   const dir = sourcePackage('@fixture/module-resolution', {
     'src/guard.native.ts': 'export const unrelated = true;',
     'src/guard.ts': `export function guard() {
-      implementsMechanism('alpha', 'guard');
+      implementsMechanism('guard');
     }`,
   });
   const configPath = path.join(dir, 'tsconfig.json');
@@ -600,7 +597,7 @@ test('a package-relative module specifier must resolve to the selected source', 
 test('ambiguous nearest configs and inputs spanning projects fail closed', () => {
   const ambiguous = sourcePackage('@fixture/ambiguous-config', {
     'src/guard.ts': `export function guard() {
-      implementsMechanism('alpha', 'guard');
+      implementsMechanism('guard');
     }`,
   });
   fs.writeFileSync(path.join(ambiguous, 'jsconfig.json'), '{}');
@@ -619,7 +616,7 @@ test('ambiguous nearest configs and inputs spanning projects fail closed', () =>
     fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
     fs.writeFileSync(
       path.join(dir, 'src', 'guard.ts'),
-      mechanismSource("export function guard() { implementsMechanism('alpha', 'guard'); }"),
+      mechanismSource("export function guard() { implementsMechanism('guard'); }"),
     );
   }
   assert.throws(
@@ -632,7 +629,7 @@ test('canonical type identity expands aliases and retains generic constraints', 
   const alias = sourcePackage('@fixture/types', {
     'src/guard.ts': `type Input = { id: string };
       export function guard<Value extends Input>(value: Value): Input {
-        implementsMechanism('alpha', 'guard');
+        implementsMechanism('guard');
         return value;
       }`,
   });
@@ -640,7 +637,7 @@ test('canonical type identity expands aliases and retains generic constraints', 
     'src/guard.ts': `export function guard<Value extends { id: string }>(value: Value): {
         id: string
       } {
-        implementsMechanism('alpha', 'guard');
+        implementsMechanism('guard');
         return value;
       }`,
   });
@@ -657,7 +654,7 @@ test('a named type without a path-free compiler qualification fails closed', () 
   const dir = sourcePackage('@fixture/named-type', {
     'src/guard.ts': `interface Input { id: string }
       export function guard(value: Input): boolean {
-        implementsMechanism('alpha', 'guard');
+        implementsMechanism('guard');
         return value.id.length > 0;
       }`,
   });
@@ -671,10 +668,10 @@ test('a named type without a path-free compiler qualification fails closed', () 
 test('static and instance receiver kinds are explicit', () => {
   const dir = sourcePackage('@fixture/receivers', {
     'src/guard.ts': `export class StaticGuard {
-      static guard() { implementsMechanism('alpha', 'static'); }
+      static guard() { implementsMechanism('static'); }
     }
     export class InstanceGuard {
-      guard() { implementsMechanism('alpha', 'instance'); }
+      guard() { implementsMechanism('instance'); }
     }`,
   });
   const sites = emit([path.join(dir, 'src')], dir)
@@ -699,14 +696,14 @@ test('the CLI reports invalid marker input without publishing output', () => {
   );
 
   assert.equal(completed.status, 2);
-  assert.match(completed.stderr, /^azimuth-emit: .*needs exactly two string literal/m);
+  assert.match(completed.stderr, /^azimuth-emit: .*needs exactly one stable Mechanism ID/m);
   assert.equal(fs.existsSync(output), false);
 });
 
 test('the CLI publishes the strict mechanism pair after complete validation', () => {
   const dir = sourcePackage('@fixture/cli-success', {
     'src/guard.ts': `export function guard() {
-      implementsMechanism('alpha', 'guard');
+      implementsMechanism('guard');
     }`,
   });
   const output = path.join(dir, 'manifest.json');
@@ -722,7 +719,6 @@ test('the CLI publishes the strict mechanism pair after complete validation', ()
     artifacts: Array<Record<string, unknown>>;
   };
   assert.deepEqual(Object.keys(manifest.mechanism_implementations[0]), [
-    'spec',
     'mechanism',
     'site',
     'binding',
@@ -740,7 +736,7 @@ test('the CLI publishes the strict mechanism pair after complete validation', ()
 test('the CLI reports publication failures without an unhandled stack', () => {
   const dir = sourcePackage('@fixture/cli-publication', {
     'src/guard.ts': `export function guard() {
-      implementsMechanism('alpha', 'guard');
+      implementsMechanism('guard');
     }`,
   });
   const output = path.join(dir, 'occupied');
@@ -789,37 +785,34 @@ test('unrelated object methods named covers remain ordinary source', () => {
 // Form is how a test checks, not a property of code — so realizes never carries one, and the
 // emitter has no way to attach one.
 test('realizes carries no form', () => {
-  const result = scanText(`function f() { realizes('a', 's'); }`, 'a.ts');
+  const result = scanText(`function f() { realizes('s'); }`, 'a.ts');
   assert.equal('scope' in result.realizes[0], false);
   assert.equal('quantification' in result.realizes[0], false);
 });
 
 test('a Check implementation needs exactly one literal id', () => {
-  const result = scanText(
-    `test('missing', () => { implementsCheck(); });
-     test('dynamic', () => { implementsCheck(checkId); });
-     test('extra', () => { implementsCheck('alpha/check', 'extra'); });`,
-    'a.test.ts',
-  );
-  assert.equal(result.checkImplementations.length, 0);
-  assert.equal(result.warnings.length, 3);
-  assert.ok(
-    result.warnings.every((warning) => /exactly one string Check id/.test(warning.message)),
-  );
+  for (const marker of [
+    'implementsCheck()',
+    'implementsCheck(checkId)',
+    "implementsCheck('check', 'extra')",
+  ]) {
+    assert.throws(
+      () => scanText(`test('invalid', () => { ${marker}; });`, 'a.test.ts'),
+      { message: `${path.resolve('a.test.ts')}:1: implementsCheck needs exactly one string Check id` },
+    );
+  }
 });
 
-test('warnings carry a line number', () => {
-  const result = scanText(
-    `\n\ntest('t', () => { implementsCheck(); });`,
-    'a.test.ts',
+test('marker failures carry the source file and line number', () => {
+  assert.throws(
+    () => scanText(`\n\ntest('t', () => { implementsCheck(); });`, 'a.test.ts'),
+    { message: `${path.resolve('a.test.ts')}:3: implementsCheck needs exactly one string Check id` },
   );
-  assert.equal(result.warnings[0].line, 3);
-  assert.equal(result.warnings[0].file, 'a.test.ts');
 });
 
 test('an unmarked test is outside the Check model', () => {
   const result = scanText(
-    `test('enrolled', () => { implementsCheck('alpha/enrolled'); });
+    `test('enrolled', () => { implementsCheck('enrolled'); });
      test('bare', () => { const x = 1; });`,
     'a.test.ts',
   );
@@ -834,7 +827,7 @@ test('an unmarked test is outside the Check model', () => {
 
 test('tsx parses', () => {
   const result = scanText(
-    `export function View() { realizes('a', 's'); return <div className="x" />; }`,
+    `export function View() { realizes('s'); return <div className="x" />; }`,
     'a.tsx',
   );
   assert.equal(result.realizes.length, 1);
@@ -843,7 +836,7 @@ test('tsx parses', () => {
 
 test('javascript uses the same compiler parser but keeps its language identity', () => {
   const result = scanText(
-    `export function handler() { realizes('a', 's'); }`,
+    `export function handler() { realizes('s'); }`,
     'service.js',
   );
 
@@ -853,7 +846,7 @@ test('javascript uses the same compiler parser but keeps its language identity',
 
 // Nothing outside a marker call is a tag. A string that merely mentions one is prose.
 test('a mention of a marker in a string is not a tag', () => {
-  const result = scanText(`const doc = "call realizes('a', 's') to tag a site";`, 'a.ts');
+  const result = scanText(`const doc = "call realizes('s') to tag a site";`, 'a.ts');
   assert.deepEqual(result.realizes, []);
 });
 
@@ -899,7 +892,7 @@ function writeProjectScaffold(dir: string): void {
   );
   fs.writeFileSync(
     path.join(annotations, 'index.d.ts'),
-    'export declare function implementsMechanism(spec: string, mechanism: string): void;\n',
+    'export declare function implementsMechanism(mechanism: string): void;\n',
   );
 }
 

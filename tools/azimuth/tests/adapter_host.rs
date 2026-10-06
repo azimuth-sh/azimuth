@@ -172,9 +172,9 @@ impl Fixture {
         };
         let subject_fingerprint = run::subject_fingerprint(&subject);
         let check = CheckSelection {
-            id: "demo/check".into(),
+            id: "check".into(),
             fingerprint: fp('b'),
-            cases: vec!["demo#check/works".into()],
+            cases: vec!["works".into()],
             implementations: vec![Implementation {
                 identity: "demo|rust-symbol|demo::check".into(),
                 source_fingerprint: fp('c'),
@@ -199,7 +199,7 @@ impl Fixture {
         let route = LaunchRoute {
             selection: RouteSelection {
                 kind: RouteSelectionKind::Check,
-                id: "demo/check".into(),
+                id: "check".into(),
             },
             capability: RouteCapability {
                 address: "synthetic/checks".into(),
@@ -438,13 +438,13 @@ impl Fixture {
                 attempts: vec![CheckAttempt {
                     ordinal: 1,
                     activity: "native-check".into(),
-                    outcomes: [("demo#check/works".into(), ObservationOutcome::Violated)]
+                    outcomes: [("works".into(), ObservationOutcome::Violated)]
                         .into_iter()
                         .collect(),
                 }],
             }],
             observations: vec![Observation {
-                case: "demo#check/works".into(),
+                case: "works".into(),
                 outcome: ObservationOutcome::Violated,
                 observed_at_ms: 12,
                 fingerprint: fp('0'),
@@ -1071,6 +1071,15 @@ fn description_launch_plan_and_provenance_substitution_fail_closed() {
     let _guard = test_lock();
     let fixture = Fixture::new(RunOperation::Execute, 1_000, 1_000_000, 1_000_000);
     let mut response = fixture.bundle();
+    response.provenance.normalizer.id = fixture.adapter().id.clone();
+    refresh(&mut response);
+    fixture.set_bundle_response(&response, &[]);
+    assert_eq!(
+        fixture.invoke(&[]).unwrap_err().class,
+        HostErrorClass::Semantic
+    );
+
+    let mut response = fixture.bundle();
     response.provenance.normalizer.version = "substituted".into();
     refresh(&mut response);
     fixture.set_bundle_response(&response, &[]);
@@ -1276,4 +1285,90 @@ fn predecessor_validation_rejects_two_runs_before_spawn() {
     assert_eq!(error.class, HostErrorClass::Semantic);
     assert!(!fixture.count.exists());
     assert_no_invocation_stage_leaked();
+}
+
+#[test]
+fn python_native_builder_emits_core_valid_attempts_and_visible_coverage_gaps() {
+    let _guard = test_lock();
+    let fixture = Fixture::new(RunOperation::Import, 1_000, 1_000_000, 1_000_000);
+    let launch_path = fixture.root.join("builder-launch.json");
+    fs::write(
+        &launch_path,
+        run_plan::launch_plan_to_json(&fixture.launch).to_string_pretty(),
+    )
+    .unwrap();
+    let identities = Json::Arr(
+        fixture
+            .input_identities
+            .iter()
+            .map(|identity| {
+                Json::obj(vec![
+                    ("id", Json::str(&identity.id)),
+                    ("digest", Json::str(&identity.digest)),
+                    ("size_bytes", Json::Num(identity.size_bytes as f64)),
+                ])
+            })
+            .collect(),
+    );
+    let identity_path = fixture.root.join("builder-inputs.json");
+    fs::write(&identity_path, identities.to_string_pretty()).unwrap();
+    let package_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../packages/python")
+        .canonicalize()
+        .unwrap();
+    let script = r#"
+import json, sys
+from azimuth_run import build_check_bundle
+launch = json.load(open(sys.argv[1]))
+identities = json.load(open(sys.argv[2]))
+covered = sys.argv[3] == 'covered'
+check = launch['plan']['checks'][0]
+activities = [{'id': 'measurement', 'status': 'completed', 'started_at_ms': 11,
+               'finished_at_ms': 12, 'artifacts': [], 'diagnostics': [], 'attributes': {}}] if covered else []
+units = {check['id']: [{'id': 'whole', 'attempts': [{'ordinal': 0, 'activity': 'measurement',
+          'outcomes': {case: 'satisfied' for case in check['cases']}}]}]} if covered else {}
+bundle = build_check_bundle(launch, source={'system': 'native-builder', 'execution': 'execution-1'},
+    normalizer={'id': 'adapter/' + launch['adapter']['id'], 'version': launch['adapter']['adapter_version'],
+                'build_fingerprint': launch['adapter']['adapter_fingerprint']},
+    generated_at_ms=13, started_at_ms=11, finished_at_ms=12,
+    actual_context=launch['plan']['required_context'], activities=activities, units_by_check=units,
+    artifacts=[], diagnostics=[], import_inputs=identities)
+print(json.dumps(bundle))
+"#;
+    for (coverage, outcome) in [
+        ("covered", ObservationOutcome::Satisfied),
+        ("missing", ObservationOutcome::Inconclusive),
+    ] {
+        let result = std::process::Command::new("python3")
+            .env("PYTHONPATH", &package_path)
+            .args(["-c", script])
+            .arg(&launch_path)
+            .arg(&identity_path)
+            .arg(coverage)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let bundle = run::parse(
+            "python-native-bundle.json",
+            &String::from_utf8(result.stdout).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            run::verify(&bundle).is_empty(),
+            "{:?}",
+            run::verify(&bundle)
+        );
+        assert_eq!(bundle.check_executions[0].units[0].attempts[0].ordinal, 1);
+        assert_eq!(bundle.check_executions[0].observations[0].outcome, outcome);
+        fixture.set_bundle_response(&bundle, &[]);
+        let hosted = fixture.invoke(&[]).unwrap();
+        assert_eq!(
+            hosted.bundle.check_executions[0].observations[0].outcome,
+            outcome
+        );
+    }
 }

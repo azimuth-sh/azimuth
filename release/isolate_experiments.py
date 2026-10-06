@@ -48,6 +48,7 @@ EXECUTION_PROGRAMS = (
     "java",
     "javac",
     "node",
+    "npm",
     "python3",
 )
 MANIFEST_NAMES = {"Cargo.toml", "build.gradle", "go.mod", "package.json", "settings.gradle"}
@@ -457,7 +458,6 @@ def write_linkage(root, output_root):
     linkage = {
         "realizes": [
             {
-                "spec": SPEC,
                 "claim": claim,
                 "site": "qualify_experimental_isolation",
                 "file": "release/isolate_experiments.py",

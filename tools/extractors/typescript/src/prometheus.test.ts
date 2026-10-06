@@ -40,10 +40,10 @@ test('emits operational realization and Check implementation from validated rule
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'azimuth-prometheus-linkage-'));
   const rules = path.join(root, 'alerts.yml');
   const tests = path.join(root, 'alerts.test.yml');
-  fs.writeFileSync(rules, `# azimuth-realizes: operations/delivery backlog-alert\n- alert: Backlog\n`);
+  fs.writeFileSync(rules, `# azimuth-realizes: backlog-alert\n- alert: Backlog\n`);
   fs.writeFileSync(
     tests,
-    `# azimuth-implements-check: operations/backlog-alert\nalertname: Backlog\n`,
+    `# azimuth-implements-check: backlog-alert\nalertname: Backlog\n`,
   );
 
   const linkage = prometheusLinkage(rules, tests, root);
@@ -51,7 +51,7 @@ test('emits operational realization and Check implementation from validated rule
   assert.equal(linkage.realizes[0].site, 'Backlog');
   assert.match(linkage.realizes[0].source_fingerprint, /^sha256:[0-9a-f]{64}$/);
   assert.deepEqual(linkage.check_implementations[0], {
-    check: 'operations/backlog-alert', site: 'Backlog',
+    check: 'backlog-alert', site: 'Backlog',
     file: 'alerts.test.yml', lang: 'prometheus',
     source_fingerprint: linkage.check_implementations[0].source_fingerprint,
   });
@@ -60,7 +60,7 @@ test('emits operational realization and Check implementation from validated rule
     /^sha256:[0-9a-f]{64}$/,
   );
 
-  fs.writeFileSync(rules, `# azimuth-realizes: operations/delivery backlog-alert\n- alert: Backlog\n  expr: backlog > 2\n`);
+  fs.writeFileSync(rules, `# azimuth-realizes: backlog-alert\n- alert: Backlog\n  expr: backlog > 2\n`);
   const changed = prometheusLinkage(rules, tests, root);
   assert.notEqual(changed.realizes[0].source_fingerprint, linkage.realizes[0].source_fingerprint);
   assert.equal(
@@ -76,15 +76,15 @@ test('Check fingerprints are confined to their marker-delimited rule-test site',
   fs.writeFileSync(rules, '- alert: First\n- alert: Second\n');
   fs.writeFileSync(
     tests,
-    `# azimuth-implements-check: operations/shared\nalertname: First\nvalue: 1\n` +
-      `# azimuth-implements-check: operations/shared\nalertname: Second\nvalue: 2\n`,
+    `# azimuth-implements-check: shared\nalertname: First\nvalue: 1\n` +
+      `# azimuth-implements-check: shared\nalertname: Second\nvalue: 2\n`,
   );
   const before = prometheusLinkage(rules, tests, root);
 
   fs.writeFileSync(
     tests,
-    `# azimuth-implements-check: operations/shared\nalertname: First\nvalue: 1\n` +
-      `# azimuth-implements-check: operations/shared\nalertname: Second\nvalue: 3\n`,
+    `# azimuth-implements-check: shared\nalertname: First\nvalue: 1\n` +
+      `# azimuth-implements-check: shared\nalertname: Second\nvalue: 3\n`,
   );
   const after = prometheusLinkage(rules, tests, root);
 

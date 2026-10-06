@@ -1366,6 +1366,11 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
         if !model
             .evidence_bindings()
             .any(|binding| binding.check == check.id)
+            && !model
+                .account_verifications
+                .iter()
+                .flat_map(|file| &file.checks)
+                .any(|item| item.definition.id == check.id && !item.bindings.is_empty())
         {
             findings.push(simple(
                 FindingKind::CheckWithoutBinding,
@@ -1376,18 +1381,23 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                 format!("Check `{}` has no Evidence Binding", check.id),
             ));
         }
-        let has_applicable_binding = model.evidence_bindings().any(|binding| {
-            binding.check == check.id
-                && model
-                    .cases()
-                    .find(|claim| claim.id() == binding.case)
-                    .is_some_and(|claim| {
-                        matches!(
-                            claim.claim.criticality,
-                            Some(Criticality::Standard | Criticality::Critical)
-                        )
-                    })
-        });
+        let has_applicable_binding = model
+            .account_verifications
+            .iter()
+            .flat_map(|file| &file.checks)
+            .any(|item| item.definition.id == check.id && !item.bindings.is_empty())
+            || model.evidence_bindings().any(|binding| {
+                binding.check == check.id
+                    && model
+                        .cases()
+                        .find(|claim| claim.id() == binding.case)
+                        .is_some_and(|claim| {
+                            matches!(
+                                claim.claim.criticality,
+                                Some(Criticality::Standard | Criticality::Critical)
+                            )
+                        })
+            });
         if has_applicable_binding
             && !model
                 .check_implementations

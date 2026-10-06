@@ -489,7 +489,6 @@ def write_linkage(root, output_root):
     linkage = {
         "realizes": [
             {
-                "spec": SPEC,
                 "claim": claim,
                 "site": site,
                 "file": "release/qualify.py",

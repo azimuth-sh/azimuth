@@ -386,6 +386,7 @@ impl SemanticChallengeScope {
 
 #[derive(Debug, Default)]
 pub struct Model {
+    pub package_producers: Vec<crate::verification_packages::Producer>,
     pub specs: Vec<Spec>,
     pub account_designs: Vec<crate::account_design::AccountDesign>,
     pub account_verifications: Vec<crate::account_verification::AccountVerification>,
@@ -640,7 +641,7 @@ impl Model {
         obligations
     }
 
-    fn account_design_digest(&self, spec: &str, claim: &str) -> Option<String> {
+    pub(crate) fn account_design_digest(&self, spec: &str, claim: &str) -> Option<String> {
         let (design, declaration) = self.account_design_for_claim(spec, claim)?;
         fn relationships(item: &crate::account_design::Declaration) -> Json {
             Json::obj(vec![
@@ -687,7 +688,7 @@ impl Model {
         ])))
     }
 
-    fn account_verification_digest(&self, spec: &str, claim: &str) -> Option<String> {
+    pub(crate) fn account_verification_digest(&self, spec: &str, claim: &str) -> Option<String> {
         let id = claim.to_string();
         let document = self
             .account_verifications
@@ -749,6 +750,10 @@ impl Model {
                         .collect(),
                 ),
             ),
+            (
+                "packages",
+                crate::verification_packages::declarations_json(&document.package_entities),
+            ),
             ("sections", Json::Arr(sections)),
             ("elements", Json::Arr(elements)),
             (
@@ -768,11 +773,20 @@ impl Model {
                                 ("id", Json::str(&check.definition.id)),
                                 ("rationale", Json::str(&check.definition.rationale)),
                                 (
+                                    "bindings",
+                                    crate::verification_packages::bindings_json(&check.bindings),
+                                ),
+                                (
+                                    "inputs",
+                                    crate::verification_packages::map_json(&check.inputs),
+                                ),
+                                (
+                                    "selectors",
+                                    crate::verification_packages::map_json(&check.selectors),
+                                ),
+                                (
                                     "definition",
-                                    Json::str(&crate::fingerprint::check_fingerprint(
-                                        &check.definition,
-                                        &self.check_implementations,
-                                    )),
+                                    Json::str(self.check_execution_fingerprint(&check.definition)),
                                 ),
                                 (
                                     "cases",
@@ -940,7 +954,99 @@ impl Model {
     }
 
     pub fn checks(&self) -> impl Iterator<Item = &crate::verification::Check> {
-        self.verifications.iter().flat_map(|file| &file.checks)
+        self.verifications
+            .iter()
+            .flat_map(|file| &file.checks)
+            .chain(
+                self.account_verifications
+                    .iter()
+                    .flat_map(|file| file.checks.iter().map(|check| &check.definition)),
+            )
+    }
+
+    pub fn check_binding_count(&self, check: &str, case: &str) -> usize {
+        self.evidence_bindings()
+            .filter(|binding| binding.check == check && binding.case == case)
+            .count()
+            + self
+                .account_verifications
+                .iter()
+                .flat_map(|file| &file.checks)
+                .filter(|item| item.definition.id == check)
+                .flat_map(|item| &item.bindings)
+                .filter(|binding| binding.case == case)
+                .count()
+    }
+
+    pub fn check_execution_fingerprint(&self, check: &crate::verification::Check) -> String {
+        let base = crate::fingerprint::check_fingerprint(check, &self.check_implementations);
+        if let Some(authored) = self
+            .account_verifications
+            .iter()
+            .flat_map(|file| &file.checks)
+            .find(|item| item.definition.id == check.id)
+        {
+            let mut dependencies = self
+                .package_producers
+                .iter()
+                .filter(|producer| {
+                    authored
+                        .inputs
+                        .values()
+                        .any(|value| value == &producer.entity)
+                })
+                .collect::<Vec<_>>();
+            dependencies.sort_by(|left, right| {
+                (&left.package, &left.contract, &left.entity, &left.site).cmp(&(
+                    &right.package,
+                    &right.contract,
+                    &right.entity,
+                    &right.site,
+                ))
+            });
+            let dependencies = dependencies
+                .into_iter()
+                .map(|producer| {
+                    Json::obj(vec![
+                        ("package", Json::str(&producer.package)),
+                        ("contract", Json::str(&producer.contract)),
+                        ("entity", Json::str(&producer.entity)),
+                        ("site", Json::str(&producer.site)),
+                        (
+                            "source",
+                            producer
+                                .source
+                                .as_ref()
+                                .map_or(Json::Null, |source| Json::str(source.key())),
+                        ),
+                        (
+                            "source_fingerprint",
+                            Json::str(&producer.source_fingerprint),
+                        ),
+                        ("schema", producer.schema.clone().unwrap_or(Json::Null)),
+                        ("inputs", producer.inputs_json()),
+                    ])
+                })
+                .collect();
+            crate::fingerprint::canonical_sha256(&Json::obj(vec![
+                ("definition", Json::str(base)),
+                (
+                    "bindings",
+                    crate::verification_packages::bindings_json(&authored.bindings),
+                ),
+                (
+                    "inputs",
+                    crate::verification_packages::map_json(&authored.inputs),
+                ),
+                (
+                    "selectors",
+                    crate::verification_packages::map_json(&authored.selectors),
+                ),
+                ("producers", Json::Arr(dependencies)),
+            ]))
+        } else {
+            base
+        }
     }
 
     pub fn evidence_bindings(&self) -> impl Iterator<Item = &crate::verification::EvidenceBinding> {
@@ -984,7 +1090,7 @@ impl Model {
         crate::account_model::authored_check_issues(
             self.account_verifications.iter(),
             &self.specs,
-            self.checks(),
+            self.verifications.iter().flat_map(|file| &file.checks),
             &self.account_supports,
             &crate::account_model::mechanism_ids(self.account_designs.iter(), &self.designs),
         )
@@ -1229,7 +1335,7 @@ impl Model {
             .find(|policy| policy.id == qualification.policy)?;
         Some(crate::fingerprint::method_qualification_fingerprint(
             qualification,
-            &crate::fingerprint::check_fingerprint(check, &self.check_implementations),
+            &self.check_execution_fingerprint(check),
             &crate::fingerprint::policy_fingerprint(policy),
         ))
     }
@@ -1601,7 +1707,7 @@ impl Model {
         Some(scope_component(
             crate::verification::SemanticScopeKind::Check,
             id,
-            crate::fingerprint::check_fingerprint(check, &self.check_implementations),
+            self.check_execution_fingerprint(check),
         ))
     }
 
@@ -2367,6 +2473,15 @@ impl Model {
 
         Json::obj(vec![
             ("version", Json::Num(5.0)),
+            (
+                "extensions",
+                Json::Arr(
+                    self.package_producers
+                        .iter()
+                        .map(crate::verification_packages::Producer::to_json)
+                        .collect(),
+                ),
+            ),
             ("specs", Json::Arr(specs)),
             (
                 "realizes",
@@ -2404,6 +2519,18 @@ impl Model {
                             Json::obj(vec![
                                 ("definition", check_json(self, &check.definition)),
                                 ("rationale", Json::str(&check.definition.rationale)),
+                                (
+                                    "bindings",
+                                    crate::verification_packages::bindings_json(&check.bindings),
+                                ),
+                                (
+                                    "inputs",
+                                    crate::verification_packages::map_json(&check.inputs),
+                                ),
+                                (
+                                    "selectors",
+                                    crate::verification_packages::map_json(&check.selectors),
+                                ),
                                 ("claim", Json::str(&check.claim)),
                                 (
                                     "cases",
@@ -2668,6 +2795,10 @@ fn workspace_json(model: &Model) -> Json {
     Json::Obj(vec![
         ("path".into(), Json::str(&workspace.path)),
         (
+            "packages".into(),
+            Json::Arr(workspace.packages.iter().map(Json::str).collect()),
+        ),
+        (
             "areas".into(),
             Json::Arr(
                 workspace
@@ -2785,13 +2916,22 @@ fn check_json(model: &Model, item: &crate::verification::Check) -> Json {
             "methods",
             Json::Arr(item.methods.iter().map(Json::str).collect()),
         ),
-        ("terminal", Json::str(&item.terminal)),
+        (
+            "terminal",
+            if model
+                .account_verifications
+                .iter()
+                .flat_map(|file| &file.checks)
+                .any(|check| check.definition.id == item.id && !check.bindings.is_empty())
+            {
+                Json::Null
+            } else {
+                Json::str(&item.terminal)
+            },
+        ),
         (
             "fingerprint",
-            Json::str(crate::fingerprint::check_fingerprint(
-                item,
-                &model.check_implementations,
-            )),
+            Json::str(model.check_execution_fingerprint(item)),
         ),
     ])
 }

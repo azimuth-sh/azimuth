@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+azimuth = { path = "../../../tools/azimuth" }
 azimuth-assurance-domain = { path = "../domain" }
 axum = "0.8"
 serde.workspace = true
@@ -19,3 +20,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 [dev-dependencies]
 reqwest = { version = "0.12", features = ["json"] }
 testcontainers-modules = { version = "0.12.1", features = ["postgres"] }
+
+[[bin]]
+name = "run-ledger"
+path = "src/run_ledger_main.rs"

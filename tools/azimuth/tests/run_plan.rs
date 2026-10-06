@@ -105,7 +105,7 @@ fn model(checks: &[&str]) -> Model {
                 .map(|id| EvidenceBinding {
                     id: format!("bindings/{}", id.rsplit('/').next().unwrap()),
                     check: (*id).into(),
-                    case: "synthetic#works/works".into(),
+                    case: "works".into(),
                     method_qualification: format!(
                         "qualifications/{}",
                         id.rsplit('/').next().unwrap()
@@ -201,7 +201,7 @@ fn challenge_model() -> Model {
     .unwrap();
     let verification = parse_verification(
         "alpha/verification.md",
-        "# Verification: alpha\n\n## Check: alpha/check\nMethod: invoke\nTerminal: the behavior works\n\nAtomic.\n\n## Evidence Binding: alpha/edge\nCheck: alpha/check\nCase: alpha#behavior/works\nMethod qualification: alpha/method\nProposition: direct\nContext: {\"platform\":\"linux\"}\nChallenge domain: [\"check-implementation\"]\nPolicy: credible\n\nReviewable.\n\n## Method Qualification: alpha/method\nCheck: alpha/check\nScope: unit\nQuantification: example\nOracle: direct\nContext: {\"platform\":\"linux\"}\nChallenge domain: [\"check-implementation\"]\nPolicy: credible\nVerdict: qualified\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nQualified: 2026-08-22\nQualifier: owner\n\nQualified.\n\n## Challenger: mutation/search\nForm: mutation\nSearches for: an undetected change\nRequired scope: [\"check-implementation\"]\n\nSearches exact semantics.\n\n## Challenge Plan: alpha/plan\nChallenger: mutation/search\nSelect: method-qualification from method-qualification alpha/method\n\nTargets the qualification.\n",
+        "# Verification: alpha\n\n## Check: check\nMethod: invoke\nTerminal: the behavior works\n\nAtomic.\n\n## Evidence Binding: alpha/edge\nCheck: check\nCase: works\nMethod qualification: alpha/method\nProposition: direct\nContext: {\"platform\":\"linux\"}\nChallenge domain: [\"check-implementation\"]\nPolicy: credible\n\nReviewable.\n\n## Method Qualification: alpha/method\nCheck: check\nScope: unit\nQuantification: example\nOracle: direct\nContext: {\"platform\":\"linux\"}\nChallenge domain: [\"check-implementation\"]\nPolicy: credible\nVerdict: qualified\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nQualified: 2026-08-22\nQualifier: owner\n\nQualified.\n\n## Challenger: mutation/search\nForm: mutation\nSearches for: an undetected change\nRequired scope: [\"check-implementation\"]\n\nSearches exact semantics.\n\n## Challenge Plan: alpha/plan\nChallenger: mutation/search\nSelect: method-qualification from method-qualification alpha/method\n\nTargets the qualification.\n",
     )
     .unwrap();
     let standards = parse_standards(
@@ -213,7 +213,7 @@ fn challenge_model() -> Model {
         specs: vec![spec],
         verifications: vec![verification],
         decision_standards: Some(standards),
-        check_implementations: vec![implementation("alpha/check", "checks::alpha")],
+        check_implementations: vec![implementation("check", "checks::alpha")],
         ..Default::default()
     };
     let expected = model
@@ -236,7 +236,7 @@ fn rich_challenge_model() -> Model {
     .unwrap();
     let verification = parse_verification(
         "alpha/verification.md",
-        "# Verification: alpha\n\n## Check: alpha/check\nMethod: invoke\nTerminal: the behavior works\n\nAtomic.\n\n## Evidence Binding: alpha/edge\nCheck: alpha/check\nCase: alpha#behavior/works\nMethod qualification: alpha/method\nProposition: direct\nContext: {\"platform\":\"linux\"}\nChallenge domain: [\"realization\",\"mechanism\"]\nPolicy: credible\n\nReviewable.\n\n## Method Qualification: alpha/method\nCheck: alpha/check\nScope: unit\nQuantification: example\nOracle: direct\nContext: {\"platform\":\"linux\"}\nChallenge domain: [\"realization\",\"mechanism\"]\nPolicy: credible\nVerdict: qualified\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nQualified: 2026-08-22\nQualifier: owner\n\nQualified.\n\n## Applicability Decision: alpha/edge\nVerdict: applicable\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nDecided: 2026-08-22\nDecider: owner\n\nApplicable.\n\n## Claim Judgment: alpha#behavior\nVerdict: accepted\nPolicy: credible\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nJudged: 2026-08-22\nJudge: owner\nBasis: the exact composition is accepted\nResidual risk: none identified\n\nAccepted.\n\n## Challenger: mutation/search\nForm: mutation\nSearches for: an undetected change\nRequired scope: [\"claim\"]\n\nSearches exact semantics.\n\n## Challenge Plan: alpha/plan\nChallenger: mutation/search\nSelect: claim-judgment from claim alpha#behavior\n\nTargets the total decision.\n",
+        "# Verification: alpha\n\n## Check: check\nMethod: invoke\nTerminal: the behavior works\n\nAtomic.\n\n## Evidence Binding: alpha/edge\nCheck: check\nCase: works\nMethod qualification: alpha/method\nProposition: direct\nContext: {\"platform\":\"linux\"}\nChallenge domain: [\"realization\",\"mechanism\"]\nPolicy: credible\n\nReviewable.\n\n## Method Qualification: alpha/method\nCheck: check\nScope: unit\nQuantification: example\nOracle: direct\nContext: {\"platform\":\"linux\"}\nChallenge domain: [\"realization\",\"mechanism\"]\nPolicy: credible\nVerdict: qualified\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nQualified: 2026-08-22\nQualifier: owner\n\nQualified.\n\n## Applicability Decision: alpha/edge\nVerdict: applicable\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nDecided: 2026-08-22\nDecider: owner\n\nApplicable.\n\n## Claim Judgment: behavior\nVerdict: accepted\nPolicy: credible\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nJudged: 2026-08-22\nJudge: owner\nBasis: the exact composition is accepted\nResidual risk: none identified\n\nAccepted.\n\n## Challenger: mutation/search\nForm: mutation\nSearches for: an undetected change\nRequired scope: [\"claim\"]\n\nSearches exact semantics.\n\n## Challenge Plan: alpha/plan\nChallenger: mutation/search\nSelect: claim-judgment from claim behavior\n\nTargets the total decision.\n",
     )
     .unwrap();
     let standards = parse_standards(
@@ -283,7 +283,7 @@ fn rich_challenge_model() -> Model {
             source_fingerprint: fp('d'),
         }],
         check_implementations: vec![CheckImplementation {
-            check: "alpha/check".into(),
+            check: "check".into(),
             site: "checks::alpha".into(),
             file: "tests/alpha.rs".into(),
             lang: "rust".into(),
@@ -363,6 +363,7 @@ fn rich_challenge_model() -> Model {
             residue: String::new(),
         }],
         workspace: Workspace {
+            packages: Vec::new(),
             path: "azimuth/workspace.json".into(),
             areas: vec![
                 Area {
@@ -390,6 +391,7 @@ fn rich_challenge_model() -> Model {
             }],
             realization_obligations: Vec::new(),
         },
+        ..Model::default()
     };
     model.specs[0].claims[0].over = Some("surface".into());
     refresh_decisions(&mut model);
@@ -446,7 +448,7 @@ fn request(ids: &[&str], operation: RunOperation, capability: &str) -> PlanReque
             .map(|id| RequestedCheck {
                 id: (*id).into(),
                 capability: capability.into(),
-                cases: vec!["synthetic#works/works".into()],
+                cases: vec!["works".into()],
                 units: vec![unit("whole")],
             })
             .collect(),
@@ -456,19 +458,15 @@ fn request(ids: &[&str], operation: RunOperation, capability: &str) -> PlanReque
 
 #[test]
 fn request_parser_preserves_exact_subject_time_context_operation_and_units() {
-    let source = plan_request_to_json(&request(
-        &["checks/alpha"],
-        RunOperation::Import,
-        "demo/reports",
-    ))
-    .to_string_pretty();
+    let source = plan_request_to_json(&request(&["alpha"], RunOperation::Import, "demo/reports"))
+        .to_string_pretty();
     let parsed = parse_plan_request("request.json", &source).unwrap();
     assert_eq!(parsed.operation, RunOperation::Import);
     assert_eq!(parsed.planned_at_ms, 1_787_300_000_000);
     assert_eq!(parsed.required_context["platform"], "linux");
     assert_eq!(
         parsed.subject,
-        request(&["checks/alpha"], RunOperation::Import, "demo/reports").subject
+        request(&["alpha"], RunOperation::Import, "demo/reports").subject
     );
     assert_eq!(parsed.checks[0].units, vec![unit("whole")]);
 
@@ -481,12 +479,8 @@ fn request_parser_preserves_exact_subject_time_context_operation_and_units() {
 
 #[test]
 fn request_parser_rejects_unknown_duplicate_and_noncanonical_members() {
-    let valid = plan_request_to_json(&request(
-        &["checks/alpha"],
-        RunOperation::Execute,
-        "demo/alpha",
-    ))
-    .to_string_pretty();
+    let valid = plan_request_to_json(&request(&["alpha"], RunOperation::Execute, "demo/alpha"))
+        .to_string_pretty();
     assert!(parse_plan_request(
         "request.json",
         &valid.replacen("\"checks\":", "\"extra\":true,\n  \"checks\":", 1),
@@ -499,26 +493,17 @@ fn request_parser_rejects_unknown_duplicate_and_noncanonical_members() {
     );
     assert!(parse_plan_request("request.json", &duplicate).is_err());
 
-    let mut unsorted = request(
-        &["checks/beta", "checks/alpha"],
-        RunOperation::Execute,
-        "demo/alpha",
-    );
-    assert!(plan(
-        &model(&["checks/alpha", "checks/beta"]),
-        &configuration(),
-        &unsorted
-    )
-    .is_err());
-    unsorted.checks[0].id = "checks/alpha".into();
-    assert!(plan(&model(&["checks/alpha"]), &configuration(), &unsorted).is_err());
+    let mut unsorted = request(&["beta", "alpha"], RunOperation::Execute, "demo/alpha");
+    assert!(plan(&model(&["alpha", "beta"]), &configuration(), &unsorted).is_err());
+    unsorted.checks[0].id = "alpha".into();
+    assert!(plan(&model(&["alpha"]), &configuration(), &unsorted).is_err());
 }
 
 #[test]
 fn planner_uses_the_complete_model_before_selecting_checks() {
-    let first = model(&["checks/alpha"]);
-    let second = model(&["checks/alpha", "checks/unselected"]);
-    let request = request(&["checks/alpha"], RunOperation::Execute, "demo/alpha");
+    let first = model(&["alpha"]);
+    let second = model(&["alpha", "unselected"]);
+    let request = request(&["alpha"], RunOperation::Execute, "demo/alpha");
     let first = plan(&first, &configuration(), &request).unwrap();
     let second = plan(&second, &configuration(), &request).unwrap();
     assert_eq!(first.plan.checks, second.plan.checks);
@@ -528,18 +513,18 @@ fn planner_uses_the_complete_model_before_selecting_checks() {
 
 #[test]
 fn unknown_and_duplicate_model_checks_fail_closed() {
-    let unknown = request(&["checks/missing"], RunOperation::Execute, "demo/alpha");
+    let unknown = request(&["missing"], RunOperation::Execute, "demo/alpha");
     assert!(
-        plan(&model(&["checks/alpha"]), &configuration(), &unknown).unwrap_err()[0]
+        plan(&model(&["alpha"]), &configuration(), &unknown).unwrap_err()[0]
             .detail
             .contains("unknown Check")
     );
 
-    let mut duplicate = model(&["checks/alpha"]);
+    let mut duplicate = model(&["alpha"]);
     duplicate.verifications.push(Verification {
         owner: "second".into(),
         path: "second/verification.md".into(),
-        checks: vec![check("checks/alpha")],
+        checks: vec![check("alpha")],
         bindings: Vec::new(),
         method_qualifications: Vec::new(),
         applicability_decisions: Vec::new(),
@@ -550,7 +535,7 @@ fn unknown_and_duplicate_model_checks_fail_closed() {
     assert!(plan(
         &duplicate,
         &configuration(),
-        &request(&["checks/alpha"], RunOperation::Execute, "demo/alpha"),
+        &request(&["alpha"], RunOperation::Execute, "demo/alpha"),
     )
     .unwrap_err()[0]
         .detail
@@ -559,16 +544,16 @@ fn unknown_and_duplicate_model_checks_fail_closed() {
 
 #[test]
 fn unimplemented_and_unstable_checks_fail_closed() {
-    let mut unimplemented = model(&["checks/alpha"]);
+    let mut unimplemented = model(&["alpha"]);
     unimplemented.check_implementations.clear();
-    let request = request(&["checks/alpha"], RunOperation::Execute, "demo/alpha");
+    let request = request(&["alpha"], RunOperation::Execute, "demo/alpha");
     assert!(
         plan(&unimplemented, &configuration(), &request).unwrap_err()[0]
             .detail
             .contains("no implementation")
     );
 
-    let mut unstable = model(&["checks/alpha"]);
+    let mut unstable = model(&["alpha"]);
     unstable.check_implementations[0].source = None;
     assert!(plan(&unstable, &configuration(), &request).unwrap_err()[0]
         .detail
@@ -577,15 +562,15 @@ fn unimplemented_and_unstable_checks_fail_closed() {
 
 #[test]
 fn planner_includes_the_complete_sorted_implementation_closure() {
-    let mut model = model(&["checks/alpha"]);
+    let mut model = model(&["alpha"]);
     model.check_implementations = vec![
-        implementation("checks/alpha", "checks::zeta"),
-        implementation("checks/alpha", "checks::alpha"),
+        implementation("alpha", "checks::zeta"),
+        implementation("alpha", "checks::alpha"),
     ];
     let launch = plan(
         &model,
         &configuration(),
-        &request(&["checks/alpha"], RunOperation::Execute, "demo/alpha"),
+        &request(&["alpha"], RunOperation::Execute, "demo/alpha"),
     )
     .unwrap();
     assert_eq!(
@@ -603,14 +588,14 @@ fn planner_includes_the_complete_sorted_implementation_closure() {
 
 #[test]
 fn capability_class_and_adapter_address_are_exact() {
-    let model = model(&["checks/alpha"]);
-    let import_through_execute = request(&["checks/alpha"], RunOperation::Import, "demo/alpha");
+    let model = model(&["alpha"]);
+    let import_through_execute = request(&["alpha"], RunOperation::Import, "demo/alpha");
     assert!(
         plan(&model, &configuration(), &import_through_execute).unwrap_err()[0]
             .detail
             .contains("check.import")
     );
-    let unknown = request(&["checks/alpha"], RunOperation::Execute, "other/alpha");
+    let unknown = request(&["alpha"], RunOperation::Execute, "other/alpha");
     assert!(plan(&model, &configuration(), &unknown).unwrap_err()[0]
         .detail
         .contains("unknown configured capability"));
@@ -625,13 +610,9 @@ fn one_launch_cannot_route_checks_through_several_configured_adapters() {
     other.descriptor_fingerprint = fp('b');
     other.configuration_fingerprint = fp('c');
     config.adapters.push(other);
-    let mut request = request(
-        &["checks/alpha", "checks/beta"],
-        RunOperation::Execute,
-        "demo/alpha",
-    );
+    let mut request = request(&["alpha", "beta"], RunOperation::Execute, "demo/alpha");
     request.checks[1].capability = "other/alpha".into();
-    let errors = plan(&model(&["checks/alpha", "checks/beta"]), &config, &request).unwrap_err();
+    let errors = plan(&model(&["alpha", "beta"]), &config, &request).unwrap_err();
     assert!(errors
         .iter()
         .any(|error| error.detail.contains("several adapters")));
@@ -639,17 +620,17 @@ fn one_launch_cannot_route_checks_through_several_configured_adapters() {
 
 #[test]
 fn capability_substitution_changes_launch_identity_but_not_semantic_plan() {
-    let model = model(&["checks/alpha"]);
+    let model = model(&["alpha"]);
     let alpha = plan(
         &model,
         &configuration(),
-        &request(&["checks/alpha"], RunOperation::Execute, "demo/alpha"),
+        &request(&["alpha"], RunOperation::Execute, "demo/alpha"),
     )
     .unwrap();
     let beta = plan(
         &model,
         &configuration(),
-        &request(&["checks/alpha"], RunOperation::Execute, "demo/beta"),
+        &request(&["alpha"], RunOperation::Execute, "demo/beta"),
     )
     .unwrap();
     assert_eq!(alpha.plan, beta.plan);
@@ -658,9 +639,9 @@ fn capability_substitution_changes_launch_identity_but_not_semantic_plan() {
 
 #[test]
 fn exact_subject_context_units_time_and_operation_are_identity_bearing() {
-    let model = model(&["checks/alpha"]);
+    let model = model(&["alpha"]);
     let config = configuration();
-    let base_request = request(&["checks/alpha"], RunOperation::Execute, "demo/alpha");
+    let base_request = request(&["alpha"], RunOperation::Execute, "demo/alpha");
     let base = plan(&model, &config, &base_request).unwrap();
 
     let mut context = base_request.clone();
@@ -697,7 +678,7 @@ fn exact_subject_context_units_time_and_operation_are_identity_bearing() {
     let imported = plan(
         &model,
         &config,
-        &request(&["checks/alpha"], RunOperation::Import, "demo/reports"),
+        &request(&["alpha"], RunOperation::Import, "demo/reports"),
     )
     .unwrap();
     assert_eq!(base.plan, imported.plan);
@@ -706,18 +687,18 @@ fn exact_subject_context_units_time_and_operation_are_identity_bearing() {
 
 #[test]
 fn several_bindings_still_produce_one_check_and_no_challenges_or_qualification_gate() {
-    let mut model = model(&["checks/alpha"]);
+    let mut model = model(&["alpha"]);
     let mut other_case = model.specs[0].claims[0].cases[0].clone();
     other_case.id = "other".into();
     model.specs[0].claims[0].cases.push(other_case);
     let mut second = binding("binding/two");
-    second.case = "synthetic#works/other".into();
+    second.case = "other".into();
     model.verifications[0].bindings.push(second);
     assert!(model.verifications[0].method_qualifications.is_empty());
     let launch = plan(
         &model,
         &configuration(),
-        &request(&["checks/alpha"], RunOperation::Execute, "demo/alpha"),
+        &request(&["alpha"], RunOperation::Execute, "demo/alpha"),
     )
     .unwrap();
     assert_eq!(launch.plan.checks.len(), 1);
@@ -726,13 +707,13 @@ fn several_bindings_still_produce_one_check_and_no_challenges_or_qualification_g
 
 #[test]
 fn rejected_qualification_and_binding_context_mismatch_do_not_gate_planning() {
-    let mut model = model(&["checks/alpha"]);
+    let mut model = model(&["alpha"]);
     let mut binding = binding("binding/one");
     binding.context.insert("platform".into(), "linux".into());
     model.verifications[0].bindings = vec![binding];
     model.verifications[0].method_qualifications = vec![MethodQualification {
         id: "binding/one".into(),
-        check: "checks/alpha".into(),
+        check: "alpha".into(),
         scope: model::Scope::Unit,
         quantification: model::Quantification::Example,
         oracle: model::Oracle::Direct,
@@ -747,7 +728,7 @@ fn rejected_qualification_and_binding_context_mismatch_do_not_gate_planning() {
         path: "verification.md".into(),
         line: 2,
     }];
-    let mut request = request(&["checks/alpha"], RunOperation::Execute, "demo/alpha");
+    let mut request = request(&["alpha"], RunOperation::Execute, "demo/alpha");
     request
         .required_context
         .insert("platform".into(), "windows".into());
@@ -758,16 +739,12 @@ fn rejected_qualification_and_binding_context_mismatch_do_not_gate_planning() {
 
 #[test]
 fn route_order_cardinality_and_configured_capability_identity_fail_closed() {
-    let model = model(&["checks/alpha", "checks/beta"]);
+    let model = model(&["alpha", "beta"]);
     let config = configuration();
     let launch = plan(
         &model,
         &config,
-        &request(
-            &["checks/alpha", "checks/beta"],
-            RunOperation::Execute,
-            "demo/alpha",
-        ),
+        &request(&["alpha", "beta"], RunOperation::Execute, "demo/alpha"),
     )
     .unwrap();
 
@@ -803,9 +780,9 @@ fn route_order_cardinality_and_configured_capability_identity_fail_closed() {
 #[test]
 fn typed_routes_enforce_address_and_challenge_form_shape() {
     let launch = plan(
-        &model(&["checks/alpha"]),
+        &model(&["alpha"]),
         &configuration(),
-        &request(&["checks/alpha"], RunOperation::Execute, "demo/alpha"),
+        &request(&["alpha"], RunOperation::Execute, "demo/alpha"),
     )
     .unwrap();
 
@@ -840,12 +817,8 @@ fn typed_routes_enforce_address_and_challenge_form_shape() {
 
 #[test]
 fn unsafe_and_fractional_request_numbers_are_schema_errors() {
-    let source = plan_request_to_json(&request(
-        &["checks/alpha"],
-        RunOperation::Execute,
-        "demo/alpha",
-    ))
-    .to_string_pretty();
+    let source = plan_request_to_json(&request(&["alpha"], RunOperation::Execute, "demo/alpha"))
+        .to_string_pretty();
     let unsafe_number = source.replacen("1787300000000", "9007199254740992", 1);
     assert!(parse_plan_request("request.json", &unsafe_number).is_err());
     let fractional = source.replacen("1787300000000", "1787300000000.5", 1);
@@ -855,9 +828,9 @@ fn unsafe_and_fractional_request_numbers_are_schema_errors() {
 #[test]
 fn typed_launch_validation_never_hashes_unsafe_numbers() {
     let valid = plan(
-        &model(&["checks/alpha"]),
+        &model(&["alpha"]),
         &configuration(),
-        &request(&["checks/alpha"], RunOperation::Execute, "demo/alpha"),
+        &request(&["alpha"], RunOperation::Execute, "demo/alpha"),
     )
     .unwrap();
 
@@ -888,9 +861,9 @@ fn typed_launch_validation_never_hashes_unsafe_numbers() {
 #[test]
 fn launch_round_trip_is_deterministic_and_rejects_substitution() {
     let launch = plan(
-        &model(&["checks/alpha"]),
+        &model(&["alpha"]),
         &configuration(),
-        &request(&["checks/alpha"], RunOperation::Execute, "demo/alpha"),
+        &request(&["alpha"], RunOperation::Execute, "demo/alpha"),
     )
     .unwrap();
     let first = launch_plan_to_json(&launch).to_string_pretty();
@@ -920,9 +893,9 @@ fn canonical_launch_vector_matches_the_frozen_vector() {
             model_fingerprint: fp('8'),
             required_context: BTreeMap::new(),
             checks: vec![run::CheckSelection {
-                id: "demo/check".into(),
+                id: "check".into(),
                 fingerprint: fp('6'),
-                cases: vec!["demo#works/works".into()],
+                cases: vec!["works".into()],
                 implementations: vec![run::Implementation {
                     identity: "demo|rust-symbol|demo::check".into(),
                     source_fingerprint: fp('7'),
@@ -943,7 +916,7 @@ fn canonical_launch_vector_matches_the_frozen_vector() {
         routes: vec![run::LaunchRoute {
             selection: run::RouteSelection {
                 kind: run::RouteSelectionKind::Check,
-                id: "demo/check".into(),
+                id: "check".into(),
             },
             capability: run::RouteCapability {
                 address: "demo/check".into(),
@@ -957,20 +930,20 @@ fn canonical_launch_vector_matches_the_frozen_vector() {
     };
     assert_eq!(
         launch_fingerprint(&launch),
-        "sha256:7043a3051227f7f36561e2076fd681f0567c745e1a0475df8983c8eabde866f6"
+        "sha256:0ff31694270df0490a27d6e6cb251a561a5c70ce9279bdf1b474ee6d4ea306cd"
     );
 }
 
 #[test]
 fn planning_and_finalization_share_the_exact_model_fingerprint() {
-    let model = model(&["checks/alpha"]);
+    let model = model(&["alpha"]);
     let findings = validation::validate(&model);
     let expected = fingerprint::model_digest(&model, &findings);
     let (finalized, _) = azimuth::change::finalization(&model, &findings);
     let launch = plan(
         &model,
         &configuration(),
-        &request(&["checks/alpha"], RunOperation::Execute, "demo/alpha"),
+        &request(&["alpha"], RunOperation::Execute, "demo/alpha"),
     )
     .unwrap();
     assert_eq!(finalized, expected);
@@ -1010,9 +983,9 @@ fn challenge_only_and_mixed_plans_derive_exact_semantics_and_accountable_inputs(
 
     let mut mixed = challenge_request(RunOperation::Execute);
     mixed.checks.push(RequestedCheck {
-        id: "alpha/check".into(),
+        id: "check".into(),
         capability: "demo/alpha".into(),
-        cases: vec!["alpha#behavior/works".into()],
+        cases: vec!["works".into()],
         units: vec![unit("whole")],
     });
     let mixed = plan(&model, &config, &mixed).unwrap();
@@ -1108,7 +1081,7 @@ fn challenge_planning_fails_closed_on_caps_context_forms_and_empty_selection() {
 fn max_candidates_counts_the_resolved_plan_before_cross_plan_deduplication() {
     let mut model = challenge_model();
     model.verifications[0].challenge_plans[0].selectors =
-        vec![Selector::MethodQualificationFromCheck("alpha/check".into())];
+        vec![Selector::MethodQualificationFromCheck("check".into())];
     let mut binding = model.verifications[0].bindings[0].clone();
     binding.id = "alpha/edge-two".into();
     model.verifications[0].bindings.push(binding);
@@ -1239,7 +1212,7 @@ fn planner_executes_all_seven_selector_forms_through_current_decisions() {
             SemanticScopeKind::Binding,
         ),
         (
-            Selector::MethodQualificationFromCheck("alpha/check".into()),
+            Selector::MethodQualificationFromCheck("check".into()),
             run::ChallengeTargetKind::MethodQualification,
             SemanticScopeKind::Check,
         ),
@@ -1249,12 +1222,12 @@ fn planner_executes_all_seven_selector_forms_through_current_decisions() {
             SemanticScopeKind::Realization,
         ),
         (
-            Selector::MethodQualificationFromMechanism("alpha#guard".into()),
+            Selector::MethodQualificationFromMechanism("guard".into()),
             run::ChallengeTargetKind::MethodQualification,
             SemanticScopeKind::Mechanism,
         ),
         (
-            Selector::ClaimJudgmentFromClaim("alpha#behavior".into()),
+            Selector::ClaimJudgmentFromClaim("behavior".into()),
             run::ChallengeTargetKind::ClaimJudgment,
             SemanticScopeKind::Claim,
         ),
@@ -1264,7 +1237,7 @@ fn planner_executes_all_seven_selector_forms_through_current_decisions() {
             SemanticScopeKind::Realization,
         ),
         (
-            Selector::ClaimJudgmentFromMechanism("alpha#guard".into()),
+            Selector::ClaimJudgmentFromMechanism("guard".into()),
             run::ChallengeTargetKind::ClaimJudgment,
             SemanticScopeKind::Mechanism,
         ),
@@ -1352,7 +1325,7 @@ fn add_second_binding(model: &mut Model, context: &str, stale: bool) {
 fn multi_target_context_and_adverse_siblings_fail_before_any_launch() {
     let mut contexts = rich_challenge_model();
     contexts.verifications[0].challenge_plans[0].selectors =
-        vec![Selector::MethodQualificationFromCheck("alpha/check".into())];
+        vec![Selector::MethodQualificationFromCheck("check".into())];
     contexts.verifications[0].challengers[0].required_scope = vec![SemanticScopeKind::Check];
     add_second_binding(&mut contexts, "windows", false);
     let mut request = challenge_request(RunOperation::Execute);
@@ -1367,7 +1340,7 @@ fn multi_target_context_and_adverse_siblings_fail_before_any_launch() {
 
     let mut adverse = rich_challenge_model();
     adverse.verifications[0].challenge_plans[0].selectors =
-        vec![Selector::MethodQualificationFromCheck("alpha/check".into())];
+        vec![Selector::MethodQualificationFromCheck("check".into())];
     adverse.verifications[0].challengers[0].required_scope = vec![SemanticScopeKind::Check];
     add_second_binding(&mut adverse, "linux", true);
     let cap_errors = plan(
@@ -1398,9 +1371,9 @@ fn mixed_check_challenge_routes_enforce_one_adapter_and_support_import() {
     config.adapters.push(other);
     let mut cross = challenge_request(RunOperation::Execute);
     cross.checks.push(RequestedCheck {
-        id: "alpha/check".into(),
+        id: "check".into(),
         capability: "demo/alpha".into(),
-        cases: vec!["alpha#behavior/works".into()],
+        cases: vec!["works".into()],
         units: vec![unit("whole")],
     });
     cross.challenges[0].capability = "other/challenge".into();
@@ -1411,9 +1384,9 @@ fn mixed_check_challenge_routes_enforce_one_adapter_and_support_import() {
 
     let mut import = challenge_request(RunOperation::Import);
     import.checks.push(RequestedCheck {
-        id: "alpha/check".into(),
+        id: "check".into(),
         capability: "demo/reports".into(),
-        cases: vec!["alpha#behavior/works".into()],
+        cases: vec!["works".into()],
         units: vec![unit("whole")],
     });
     let launch = plan(&model, &configuration(), &import).unwrap();
@@ -1476,9 +1449,9 @@ fn two_required_forms_use_the_fixed_requested_plan_union() {
 #[test]
 fn selector_order_is_stable_and_relocation_changes_only_launch_accounting() {
     let selectors = vec![
-        Selector::ClaimJudgmentFromClaim("alpha#behavior".into()),
+        Selector::ClaimJudgmentFromClaim("behavior".into()),
         Selector::ClaimJudgmentFromRealization("core|rust-item|alpha::works".into()),
-        Selector::ClaimJudgmentFromMechanism("alpha#guard".into()),
+        Selector::ClaimJudgmentFromMechanism("guard".into()),
     ];
     let mut first_model = rich_challenge_model();
     first_model.verifications[0].challenge_plans[0].selectors = selectors.clone();
@@ -1516,8 +1489,8 @@ fn selector_order_is_stable_and_relocation_changes_only_launch_accounting() {
 fn binding(id: &str) -> EvidenceBinding {
     EvidenceBinding {
         id: id.into(),
-        check: "checks/alpha".into(),
-        case: "synthetic#works/works".into(),
+        check: "alpha".into(),
+        case: "works".into(),
         method_qualification: format!("qualifications/{}", id.rsplit('/').next().unwrap()),
         proposition: "the Check bears on the Claim".into(),
         context: BTreeMap::new(),

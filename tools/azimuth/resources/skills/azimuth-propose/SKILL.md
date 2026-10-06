@@ -64,7 +64,7 @@ Use ordinary Markdown captions for candidate verification prose groups; do not d
 
 Declare Claims, Cases, Mechanisms and Checks with stable project-wide lower-kebab IDs, unique within their entity kind. Preserve those IDs when splitting or merging modules or reparenting a Case. Module headers and Case nesting author mutable relationships only. Source APIs carry one stable target ID; contextual locators explicitly retain project, entity kind, ID and optional revision. Do not invent module-derived IDs, aliases, UUID requirements or cross-kind uniqueness.
 
-For candidate verification Checks, Mechanisms and Cases metadata refer directly to stable project-wide IDs. Validate target existence and duplicates without deriving identities from the document module or enclosing Claim. A dependency does not supply evidence or qualification.
+For candidate verification Checks, Mechanism references and inline Case bindings refer directly to stable project-wide IDs. Validate target existence and duplicates without deriving identities from the document module or enclosing Claim. A dependency does not supply evidence or qualification.
 
 ## Review authored intent
 
@@ -81,3 +81,9 @@ Structural validation cannot perform this semantic review. Resolve weak or ambig
 ## Validate and hand off
 
 Run `azimuth change check <id>`, `azimuth change work-packages <id>` when present, the repository's normal `azimuth validate`, and `azimuth change show <id>`. Inspect the working diff and ask whether an implementer can proceed without inventing product behavior, ownership, compatibility, migration, failure or completion decisions. Present the actual files for explicit approval. Do not implement, finalize, archive or commit implicitly.
+
+## Author compact verification packages
+
+Use compact Check method prose and inline Evidence bindings when the project adopts that account. Keep the Contribution narrower than the whole Case where the observation is narrower. Inherit Case only through its structural Case owner; use an explicit Case for shared Checks. Do not synthesize qualification, applicability or judgments from implementation tags.
+
+Surface and network package declarations follow the installed verification reference. Enable packages explicitly, publish field names without duplicating language types, link a source producer through its package marker, and pin independently authored expectation data. State discovery completeness, controls and inconclusive conditions in module prose. Keep package mechanics in the package reference rather than repeating them in every module. Ordinary captions have no IDs.

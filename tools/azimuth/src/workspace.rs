@@ -44,6 +44,7 @@ pub struct RealizationObligation {
 
 #[derive(Debug, Clone, Default)]
 pub struct Workspace {
+    pub packages: Vec<String>,
     pub path: String,
     pub areas: Vec<Area>,
     pub surfaces: Vec<Surface>,
@@ -109,6 +110,7 @@ pub fn parse(path: &str, root: &Json) -> Result<Workspace, Vec<Diag>> {
             "areas",
             "surfaces",
             "realization_obligations",
+            "packages",
         ],
         &mut errors,
     );
@@ -314,8 +316,10 @@ pub fn parse(path: &str, root: &Json) -> Result<Workspace, Vec<Diag>> {
         }
     }
 
+    let packages = crate::verification_packages::packages(path, root, &mut errors);
     if errors.is_empty() {
         Ok(Workspace {
+            packages,
             path: path.to_string(),
             areas,
             surfaces,
