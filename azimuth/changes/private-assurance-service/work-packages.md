@@ -13,7 +13,7 @@ Owns: .dockerignore, azimuth/changes/private-assurance-service, docs/private-ass
 Objective: Integrate the independently owned Terraform repository changes with service contracts and record verified results and remaining deployment inputs
 
 ## Work package: image-publication
-Status: in-progress
+Status: complete
 Depends on: service, integration
 Owns: .github/workflows/publish-assurance.yml
 Objective: Publish only API and Web images from an exact source revision using native AMD64 and ARM64 builds without invoking test or full release workflows

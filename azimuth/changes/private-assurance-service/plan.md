@@ -6,4 +6,4 @@
 
 - [x] Create Terraform-managed Secrets from explicit OAuth and allowlist inputs, generate stable distinct project/role credentials and document producer delivery.
 
-- [ ] Publish the API and Web images only, retaining exact source revision and immutable registry digests; no tests or full release publication.
+- [x] Publish the API and Web images only, retaining exact source revision and immutable registry digests; no tests or full release publication.

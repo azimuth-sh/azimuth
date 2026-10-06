@@ -25,3 +25,12 @@ The earlier isolated service API is not a source for current Assurance State. Th
 ## Image-only publication
 
 The manually dispatched publish-assurance.yml workflow builds and publishes only the API and Web images from main. Its assurance-images GitHub environment permits main branch deployments only and uses the workflow token for registry writes. It uses native Linux AMD64 and ARM64 builders and produces a multi-platform registry digest for each image. Its tags include the exact source commit and workflow execution identity. This lane performs builds and manifest inspection only; it does not run tests, deployment qualification, full Azimuth release publication or live deployment. Choose immutable registry digests for Terraform. A successful build or provenance record does not establish runtime authorization or network isolation.
+
+### Published inspection images
+
+Workflow https://github.com/azimuth-sh/azimuth/actions/runs/37462301063 published these images from source bd0000a735557f28841c72fbc00fe31725a6d191 with builds and inspection only. Both support Linux AMD64 and ARM64. No full Azimuth version was released and no hosted deployment was performed.
+
+```hcl
+assurance_api_image = "ghcr.io/azimuth-sh/azimuth-assurance-api@sha256:44852ca5e06c5b5e57460cbe595f1aad27de2122f618c3fe9a61670f38c48c28"
+assurance_web_image = "ghcr.io/azimuth-sh/azimuth-assurance-web@sha256:b2f11e754b296d9e5ab39d87cfb4fba55656c5eaa5b2b87d82484d0f405954eb"
+```

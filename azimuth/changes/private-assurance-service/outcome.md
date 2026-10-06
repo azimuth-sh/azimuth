@@ -40,3 +40,12 @@ Production terraform validate, targeted formatting and source diff checks passed
 ## Image-only publication preparation
 
 Dima authorized publishing only the two Assurance images without tests. The dispatch-only publish-assurance.yml workflow pins source to the main commit, builds API and Web on native Linux AMD64 and ARM64 runners, assembles and inspects registry indexes, and retains exact source/run/digest records and provenance. Its labels report build-and-inspection-only verification. It invokes no tests or full package release workflow. The source commit uses skip ci to honor this constraint. Independent read-only workflow review found no blocking issue; attempt-qualified artifact names prevent mixing retained rerun artifacts. Publication is pending; no successful registry result is claimed yet.
+
+## Image-only publication result
+
+The image-only workflow https://github.com/azimuth-sh/azimuth/actions/runs/37462301063 succeeded for source commit bd0000a735557f28841c72fbc00fe31725a6d191. Four native platform builds and both multi-platform publication/provenance jobs succeeded. The assurance-images GitHub environment permits only main; the full release environment remains tag-only. The source push used skip ci, and inspection confirmed that only the manually dispatched image workflow ran for this revision. No tests or full package release were run.
+
+- API: ghcr.io/azimuth-sh/azimuth-assurance-api@sha256:44852ca5e06c5b5e57460cbe595f1aad27de2122f618c3fe9a61670f38c48c28
+- WEB: ghcr.io/azimuth-sh/azimuth-assurance-web@sha256:b2f11e754b296d9e5ab39d87cfb4fba55656c5eaa5b2b87d82484d0f405954eb
+
+Anonymous registry reads verified each exact digest, Linux AMD64/ARM64 membership, child manifest/config hashes, source revision labels, build-and-inspection-only labels and current API/Web entrypoints. Publication does not establish runtime authorization, GitHub login, persistence or hosted network isolation. Terraform deployment remains unperformed. The full Azimuth version and published CLI/package cohort remain unchanged.
