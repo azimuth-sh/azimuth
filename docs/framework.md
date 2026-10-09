@@ -2,6 +2,8 @@
 
 Status: **derived**. This document states the current framework. It is written from the artifacts and holds no authority of its own. When it disagrees with them, the authority order is the implementation and its tests, then the parser contracts in [`contracts/`](../contracts/), then [`azimuth/standards/verification.md`](../azimuth/standards/verification.md), then the accepted model under [`azimuth/model/`](../azimuth/model/). Terminology is bounded by [`glossary.md`](./glossary.md); each completed change keeps its own record under [`azimuth/changes/archive/`](../azimuth/changes/archive/).
 
+For the intended assurance control plane, harness boundaries, decision handling and production maintenance loop, see [intended-architecture.md](intended-architecture.md). That document describes direction rather than current executable contracts.
+
 ---
 
 ## The central model

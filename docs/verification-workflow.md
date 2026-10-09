@@ -2,6 +2,8 @@
 
 The account declares expectations; a Run records execution facts; independent reviews assess what those facts establish. Validation makes relationships and gaps visible without deciding a Claim.
 
+For the intended assurance control plane, harness boundaries, decision handling and production maintenance loop, see [intended-architecture.md](intended-architecture.md). That document describes direction rather than current executable contracts.
+
 ## Validate the exact account
 
 Use `azimuth validate` for accepted state and `azimuth change validate <change>` for the prospective state. Project assessments accept a catalog and complete revision-pinned workset directly. The tool derives repository ownership and mounts; authors do not maintain projected workspace files or manually qualify manifests.
