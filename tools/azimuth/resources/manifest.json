@@ -19,7 +19,8 @@
     "verification",
     "work-packages",
     "outcome",
-    "migration"
+    "migration",
+    "workflow"
   ],
   "templates": [
     "init/README.md",

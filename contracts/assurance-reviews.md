@@ -6,7 +6,7 @@ These records review the compact Claim-first account. They remain separate from 
 
 `azimuth assurance authority` exports the full unselected model's project, model fingerprint, Checks, Cases, bindings and Claims, plus an authority fingerprint. A Claim carries its criticality, exact Case dependencies, selected mechanisms and their implementation fingerprints, binding dependencies and structural gaps. Check fingerprints include method declarations and supporting source and package inputs; Claim fingerprints include intent, design, verification and realization support. No local module path becomes an entity identity.
 
-The owner explicitly selects a projection in the ledger. A candidate projection is not accepted intent merely because it is exported or selected in a development ledger. The projection's `fingerprint` is the Run protocol canonical fingerprint of the complete projection excluding that field. Its `model_fingerprint` matches the complete model identity used by Run planning.
+The owner registers immutable candidate projections inside the existing project, separately from explicitly selecting accepted authority. A candidate projection is not accepted intent merely because it is exported, registered or assessed. Revision-scoped review submissions and snapshots identify the exact assessed projection; local workflow records cannot replace authenticated review ingestion. The projection's `fingerprint` is the Run protocol canonical fingerprint of the complete projection excluding that field. Its `model_fingerprint` matches the complete model identity used by Run planning.
 
 ## Review records
 

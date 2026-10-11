@@ -51,7 +51,7 @@ Actionable findings should identify the affected proposition or method, the prob
 
 Azimuth should expose outstanding obligations, eligible actions, dependencies and blockers. Independent tasks may be eligible simultaneously. It should not force all work through a single sequential next action.
 
-The illustrative command `azimuth workflow next` names this intended capability; it is not an implemented command or committed public syntax. A harness chooses how to execute eligible work and applies its own permission and scheduling controls. CI can enforce the same completion conditions at a repository boundary.
+`azimuth workflow next` now implements this boundary for an explicitly configured finite task graph; `workflow update` records conditional result transitions. See [the workflow contract](../contracts/workflow.md) for the implemented increment and remaining integration limits. A harness chooses how to execute eligible work and applies its own permission and scheduling controls. CI can enforce the same completion conditions at a repository boundary.
 
 Readiness and permission are separate. Evidence can establish that a task is ready without authorizing production access. An instruction file guides an agent but cannot by itself enforce tool permissions or reviewer isolation.
 
@@ -143,7 +143,7 @@ Keep assurance conclusions, process health and business value separate. Missing 
 | --- | --- |
 | Repository accounts, source linkage, validation, bounded Run execution and package-specific verification | Existing tooling; exact behavior follows current contracts. |
 | Target-specific review input, compact independent review records, immutable Run and review histories, explicit authority selection and exact-Subject Assurance State | Existing tooling and service capabilities. |
-| Harness-neutral eligible-work interface and correction routing | Intended; no `workflow next` command is currently defined. |
+| Harness-neutral eligible-work interface and correction routing | Implemented for explicit finite task graphs through `workflow next` and conditional `workflow update`; automatic scope discovery, deployment and archive handoff remain outside this increment. |
 | ASS human decision situations and accountable disposition records | Intended; no new decision schema or API is defined here. |
 | Finding-to-correction resolution records and closure evaluation | Intended; identity and closure rules remain open. |
 | Durable production-trigger integration and bounded autonomous maintenance | Intended integration; requires permissions, deployed provenance and recovery contracts. |

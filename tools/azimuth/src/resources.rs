@@ -62,6 +62,22 @@ pub struct ReferenceDescriptor {
 
 pub const REFERENCES: &[ReferenceDescriptor] = &[
     ReferenceDescriptor {
+        id: "workflow",
+        format_version: 1,
+        accepted: &[
+            "explicit task graph",
+            "read-only next",
+            "conditional update",
+            "independent reviews",
+        ],
+        rejected: &[
+            "implicit agent execution",
+            "file-presence approval",
+            "candidate registration selects accepted authority",
+        ],
+        prose: include_str!("../resources/references/workflow.md"),
+    },
+    ReferenceDescriptor {
         id: "exploration",
         format_version: 1,
         accepted: &[

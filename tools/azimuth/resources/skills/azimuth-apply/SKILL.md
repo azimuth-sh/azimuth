@@ -24,3 +24,11 @@ An accepted behavioral spec uses `# Spec: <spec-id>`, `## Claim: <claim-id>`, on
 ## Verify and stop
 
 Perform only engineering checks permitted by repository instructions. Run `azimuth change validate <id>`, the normal `azimuth validate`, and relevant reports or exports. Inspect the final diff and record residuals, unperformed checks and rollout-dependent conditions honestly. Leave the change ready for finalization and ask for the next action. Do not finalize, archive or commit implicitly.
+
+## Explicit workflow handoffs
+
+When a workflow instance is configured, use `azimuth workflow next --instance <file>` or `--change <directory>` and read `azimuth reference show workflow`. Select an eligible task; the `next` field is a recommendation, not assignment. Read its full guidance and pinned inputs. Perform the work, retain its actual records, then call `workflow update` with the result and expected revision. Querying never advances the instance. Do not infer completion, approval or independent assurance from file presence.
+
+Delegate required authoring reviews to another agent or an independent human when the runtime permits it. The reviewer reads the original request, artifact and dependencies directly, records exact input references and findings, and remains distinct from the recorded author. Rejected reviews require correction and reassessment; changed dependencies require fresh assessment. Local actor labels express harness assertions rather than authenticated identity. Service review ingestion must match the actual reviewer credential.
+
+Use existing Method Qualification, Applicability Decision and Claim Judgment contracts for concrete assurance. Submit unchanged reviewer records to the explicit candidate revision in the existing ASS project, fetch an authenticated revision snapshot, and retain it as an accountable workflow input. Registering a candidate never replaces accepted authority or authorizes deployment. Agents may run locally while CI supplies Runs. Never manufacture reviewed-at times, independent reviewer decisions, Run facts or permission records to satisfy a workflow gate.

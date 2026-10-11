@@ -19,6 +19,9 @@ const USAGE: &str = "\
 azimuth — derives and validates an evidence-control-plane model
 
 USAGE
+    azimuth workflow init --definition <file> --instance <file> --root <id>=<path>...
+    azimuth workflow next|verify --instance <file> [--out <file>]
+    azimuth workflow update --instance <file> --result <file> --expected-revision <number> [--out <file>]
     azimuth validate [options]
     azimuth report traceability [options]
     azimuth export [options]
@@ -124,6 +127,55 @@ fn main() -> ExitCode {
     }
 }
 
+fn command_workflow(args: &[String]) -> Result<ExitCode, String> {
+    let mut output = None;
+    let mut selected = Vec::new();
+    let mut index = 0;
+    while index < args.len() {
+        if args[index] == "--out" {
+            if output.is_some() {
+                return Err("workflow accepts one --out".into());
+            }
+            index += 1;
+            output = Some(PathBuf::from(
+                args.get(index).ok_or("--out requires a path")?,
+            ));
+        } else {
+            selected.push(args[index].clone());
+        }
+        index += 1;
+    }
+    if let Some(path) = &output {
+        for pair in selected.windows(2) {
+            let protected = match pair[0].as_str() {
+                "--instance" | "--definition" | "--result" => Some(PathBuf::from(&pair[1])),
+                "--change" => Some(PathBuf::from(&pair[1]).join("workflow.json")),
+                _ => None,
+            };
+            if protected.as_ref().is_some_and(|input| {
+                input == path
+                    || (input.canonicalize().ok().is_some()
+                        && input.canonicalize().ok() == path.canonicalize().ok())
+            }) {
+                return Err("workflow output must not replace an input or its instance".into());
+            }
+        }
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| std::path::Path::new("."));
+        if !parent.is_dir() {
+            return Err("workflow output directory must already exist".into());
+        }
+    }
+    if let Some(path) = &output {
+        azimuth::workflow_state::validate_output(&selected, path)?;
+    }
+    let result = azimuth::workflow_state::command(&selected)?;
+    publish_output(result.to_string_pretty().as_bytes(), output.as_ref())?;
+    Ok(ExitCode::SUCCESS)
+}
+
 struct Options {
     project: Option<PathBuf>,
     workset: Option<PathBuf>,
@@ -147,6 +199,9 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
     }
 
     let command = args[0].clone();
+    if command == "workflow" {
+        return command_workflow(&args[1..]);
+    }
     if command == "change" {
         return command_change(&args[1..]);
     }

@@ -30,6 +30,7 @@ pub mod validation;
 pub mod verification;
 pub mod verification_packages;
 pub mod workflow;
+pub mod workflow_state;
 pub mod workspace;
 
 use crate::diag::Diag;

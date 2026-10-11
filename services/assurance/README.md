@@ -73,12 +73,30 @@ All data routes below require a project bearer credential; `/health` is process 
 | `GET .../reviews` | Immutable review records with current assessment and diagnostics. |
 | `POST .../authority` | Owner selection with `If-None-Match: *` initially or exact `If-Match`. |
 | `GET .../authority` | Currently selected complete authority. |
+| `POST .../model-revisions` | Owner registration of an immutable candidate projection, without authority selection. |
+| `GET .../model-revisions` | Bounded registration metadata; no projection payloads in lists. |
+| `GET .../model-revisions/{revision}` | Exact projection, original registration metadata and current selection indicator. |
+| `GET .../model-revisions/{revision}/snapshot` | Consistent complete bounded authority, revision-linked reviews and latest project Run bundles. |
+| `POST .../model-revisions/{revision}/reviews` | Authenticated reviewer ingestion and explicit linkage to this revision. |
+| `GET .../model-revisions/{revision}/subjects/{fingerprint}/state` | This revision's exact recorded Subject assessment without changing accepted authority. |
 
 List reads accept `limit=1..100` (default 25) and an opaque `after` cursor returned as `next`. Run revision cursors are integer revisions. Payload pages include a SQL-side 32 MiB guard; lookahead records return only cursor metadata; oversized pages fail explicitly before application materialization and require a smaller limit. Each list is an independent keyset traversal; concurrent arrivals before a cursor become visible on refresh. UI Run detail fetches one revision per page. Exact Subject state is never inferred for an unrecorded Subject. Missing authority returns 404; the UI reports an unresolved conclusion. Missing, stale, rejected and invalid reviews retain their actual core assessment and diagnostics.
 
 State assessment reads one consistent database snapshot of current authority, all reviews and latest Run revisions. More than 5000 records or 32 MiB of review/Run payloads fails explicitly; it never substitutes truncated evidence for a complete assessment. This bound is an operational limit, not an Assurance validity rule. Larger accounts require a later bounded incremental projection. Ingestion remains limited to 16 MiB per request.
 
 Browser-accessible `/inspection/{project}/...` routes are GET-only and allow only the listed inspection resources. They recheck the human's project access before server-side API calls; they do not proxy arbitrary paths or bearer writes.
+
+## Candidate model revisions
+
+The project is configured once through credentials; a change does not provision another project. Owner registration accepts the same strict authority projection as authority selection. Its content fingerprint is the revision ID. `POST /v1/projects/{project}/model-revisions` returns HTTP 201 on first registration and HTTP 200 on identical replay. Project mismatch or invalid projection returns HTTP 422. Registration metadata is append-only and retains `registration_status: candidate`, the original registering owner and timestamp; current selection is reported separately. Registration never writes `current_authorities` or the selection history.
+
+An owner may later select that exact projection through the existing conditional `/authority` endpoint. This explicit operation retains history and requires the existing precondition; it does not automatically certify deployment, adoption or change acceptance. Selection of a projection not yet registered also creates its immutable registration. The same revision-linked reviews then remain available under selected authority. No automatic lifecycle promotion, rollout gate or archive operation is implemented.
+
+Revision snapshot responses contain `project`, `model_revision`, `authority`, `reviews` and `bundles`. All are read in one bounded SQL snapshot. Reviews are only those explicitly linked to the revision; bundles are the latest correction heads of shared project Runs, including unjoined evidence for other definitions and Subjects. Their presence is not assignment or applicability approval. Exact dependency matching remains the core assessor's responsibility. A missing revision or Subject returns HTTP 404. Bounds include 5000 review/Run records, 32 MiB review/Run payloads and the authority projection; exceeding them fails rather than returning partial support.
+
+Revision-scoped review submission reuses strict record validation, authenticated reviewer matching and current dependency assessment. Invalid dependencies fail with HTTP 422; protocol-valid rejected and stale assessments are retained. An identical record may be explicitly submitted for another revision when its exact dependencies permit assessment there. The record itself stays immutable; the link records authenticated submission provenance. There is no automatic cross-revision review reuse. Current `/reviews` writes and reads use the selected revision. Candidate records cannot silently affect selected authority. The additive migration links pre-existing review history to the authority selected at migration, preserving records and selection history without asserting their earlier validity or assessment context. Such links are explicitly marked `migration-selected-authority` rather than `reviewer-submission`; migration does not manufacture reviewer approval.
+
+Snapshot and review assessment are observations at read time. A correction or another review arriving afterward may change the next assessment. No lease, freshness guarantee or review-quality guarantee is supplied by an HTTP receipt. The Web UI does not yet browse candidate revisions; authenticated API and harness clients can use these endpoints.
 
 ## Local private profile
 
