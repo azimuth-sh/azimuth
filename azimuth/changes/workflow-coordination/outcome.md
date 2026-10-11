@@ -52,3 +52,13 @@ The harness must establish module scope completeness, obtain real permission, la
 
 
 The readable-reference adjustment replaces all public concrete work references in definitions, handoffs, result/review/approval records and history with `{action, target}`. Existing hashed-reference instances are preserved rather than automatically migrated. Fresh instances require reassessment; no historical result or basis is rewritten. Artifact, basis and definition content fingerprints remain unchanged in purpose. The CLI was built and inspected through fresh synthetic product commands; no tests were written or run.
+
+## Independent proposal review
+
+The shipped definition now requires review-proposal after proposal authoring and before module intent authoring. Review dependencies include the exact request, proposal outputs and established scope; accepted/rejected outcomes use the existing independent authoring-review contract. Rejection reopens the proposal author, and implementation approval also requires the current proposal review. The template revision is 2; the wire format remains version 1. Existing pinned definitions do not change through queries.
+
+Permitted verification: Cargo build succeeded, and fresh initialization plus a query produced the proposal-review gate after retaining unchanged completed authoring definitions. No tests were written or run.
+
+## Flattened handoff inputs
+
+Public handoffs omit dependency result envelopes and include direct prerequisite artifact references in inputs. Identical references are deduplicated in declared order; conflicting references fail closed. Independent authoring reviews and human approval bind to that exact published input list. Dependency outcomes, result histories, correction routing and reviewer independence remain internal.

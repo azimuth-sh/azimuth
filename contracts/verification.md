@@ -628,7 +628,7 @@ The exact TypeScript/JavaScript site account is:
 
 `receiver-kind` is exactly `static | instance | none`. `module-specifier` is the unique declared package export accepted by the configured resolver, or otherwise its unique package-relative compiler module specifier. The package-relative form keeps semantic module segments but contains neither an absolute path nor the workspace-relative `file`. A module move changes this value. Relocation evidence moves the complete project root while retaining package, config meaning and module specifier.
 
-The overload set is sorted and non-empty. Each overload contains generic arity, generic constraints, parameter optional/rest modifiers and canonical parameter and return types. Generic parameters are replaced by `$0`, `$1` and so on in declaration order. The checker recursively resolves aliases to canonical target types; alias spelling does not enter the site. A path-bearing canonical type, duplicate canonical overload or type whose alias/canonical identity is unavailable is invalid.
+The overload set is sorted and non-empty. Each overload contains generic arity, generic constraints, parameter optional/rest modifiers and canonical parameter and return types. Generic parameters are replaced by `$0`, `$1` and so on in declaration order. The checker recursively resolves aliases to canonical target types; alias spelling does not enter the site. Named compiler default-library types retain their compiler-resolved global names; the resolved symbol must include a declaration from the Program's default libraries, and dependency or project augmentations preserve that symbol identity. A same-named consumer symbol with no default-library declaration does not qualify. TypeScript union syntax is encoded as `union(<member>,...)`, with canonical member accounts sorted lexically; nested unions use the same notation after generic substitution. This encoding preserves the site prohibition on `|`; source type syntax remains unchanged. A path-bearing canonical type, duplicate canonical overload or type whose alias/canonical identity is unavailable is invalid.
 
 A mechanism call emits only when its compiler symbol resolves to the `@azimuth-sh/annotations` package's `implementsMechanism` export through a direct, aliased or namespace import. A local homonym is ordinary source. A marker-shaped imported call with wrong arity or non-literal arguments, an anonymous or ambiguous enclosing declaration, an ambiguous symbol or any relevant diagnostic is a controlled extraction failure before output. JavaScript uses `javascript-symbol`; TypeScript uses `typescript-symbol`. The public marker takes one project-global Mechanism ID; CLI syntax is unchanged.
 
@@ -689,6 +689,13 @@ Source uses `ImplementsCheck(<check-id>)`. A language extractor emits only:
 ```
 
 For Check records, workspace or project assembly attaches `area`, `mount`, `address_kind` and `address` from declared repository structure. Files and mounts remain locators; the semantic source identity is `<area>|<address-kind>|<address>`.
+
+Configured TypeScript and JavaScript extraction qualifies realization and Check sites as
+`<package>::<compiler-resolved-module-specifier>::<enclosing-site>`. The package and module
+use the same compiler account as mechanism extraction. A file-level marker uses `<module>`
+as its enclosing site; distinct resolved modules remain distinct semantic implementations.
+The standalone `scanText` fragment utility has no project account and returns an unqualified
+fragment label; its output is not a configured repository manifest.
 
 An implementation marker contains no Case, form, context, Method Qualification or Applicability
 Decision. A native test without the marker emits nothing.

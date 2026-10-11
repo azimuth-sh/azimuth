@@ -8,6 +8,7 @@ use std::path::{Component, Path, PathBuf};
 const KINDS: &[&str] = &[
     "establish-change-scope",
     "author-proposal",
+    "review-proposal",
     "inventory-assurance-targets",
     "produce-artifact",
     "author-spec-delta",
@@ -658,6 +659,7 @@ fn review_kind(kind: &str) -> bool {
 }
 fn author_for(kind: &str) -> Option<&'static str> {
     match kind {
+        "review-proposal" => Some("author-proposal"),
         "review-spec-delta" => Some("author-spec-delta"),
         "review-design" => Some("author-design"),
         "review-verification" => Some("author-verification"),
@@ -914,6 +916,52 @@ fn evaluate(state: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Evaluation, S
     }
     Ok(Evaluation { eligible })
 }
+fn handoff_inputs(handoff: &Json) -> Result<Vec<Json>, String> {
+    let mut references = arr(handoff, "inputs")?.to_vec();
+    for dependency in arr(handoff, "dependencies")? {
+        references.extend(arr(dependency, "records")?.iter().cloned());
+    }
+    let mut inputs = Vec::new();
+    let mut seen = BTreeMap::new();
+    for reference in references {
+        let key = (
+            text(&reference, "kind")?.to_owned(),
+            reference_repository(&reference).to_owned(),
+            text(&reference, "ref")?.to_owned(),
+        );
+        if let Some(previous) = seen.get(&key) {
+            if previous != &reference {
+                return Err("conflicting fingerprints for a handoff input reference".into());
+            }
+        } else {
+            seen.insert(key, reference.clone());
+            inputs.push(reference);
+        }
+    }
+    Ok(inputs)
+}
+fn public_handoff(handoff: &Json) -> Result<Json, String> {
+    let inputs = handoff_inputs(handoff)?;
+    let Json::Obj(fields) = handoff else {
+        return Err("handoff requires object".into());
+    };
+    Ok(Json::Obj(
+        fields
+            .iter()
+            .filter(|(key, _)| key != "dependencies")
+            .map(|(key, value)| {
+                (
+                    key.clone(),
+                    if key == "inputs" {
+                        Json::Arr(inputs.clone())
+                    } else {
+                        value.clone()
+                    },
+                )
+            })
+            .collect(),
+    ))
+}
 fn record_of<'a>(records: &'a [Json], kind: &str) -> Result<&'a Json, String> {
     let matches: Vec<_> = records
         .iter()
@@ -995,10 +1043,7 @@ fn review_record(
             }
         }
         text(&approval, "rationale")?;
-        let mut expected = arr(handoff, "inputs")?.to_vec();
-        for dependency in arr(handoff, "dependencies")? {
-            expected.extend(arr(dependency, "records")?.iter().cloned());
-        }
+        let expected = handoff_inputs(handoff)?;
         if approval.get("dependencies") != Some(&Json::Arr(expected)) {
             return Err("approval dependencies do not match exact handoff".into());
         }
@@ -1035,15 +1080,13 @@ fn review_record(
         if text(&v, "outcome")? == "rejected" && arr(&v, "findings")?.is_empty() {
             return Err("rejected review requires findings".into());
         }
-        let mut expected = arr(handoff, "inputs")?.to_vec();
+        let expected = handoff_inputs(handoff)?;
         for dep in arr(handoff, "dependencies")? {
-            for record in arr(dep, "records")? {
-                expected.push(record.clone());
-            }
             if dep.get("actor") == result.get("actor")
                 && arr(dep, "records")?.iter().any(|record| {
                     record.get("kind").and_then(Json::as_str)
                         == Some(match kind {
+                            "review-proposal" => "proposal",
                             "review-spec-delta" => "intent-delta",
                             "review-design" => "claim-design",
                             _ => "verification-account",
@@ -1054,10 +1097,7 @@ fn review_record(
             }
         }
         if v.get("dependencies") != Some(&Json::Arr(expected)) {
-            return Err(
-                "review dependencies must equal exact handoff inputs then prerequisite records"
-                    .into(),
-            );
+            return Err("review dependencies must equal exact published handoff inputs".into());
         }
     } else if kind == "inventory-assurance-targets" {
         let inventory = read(&resolve(
@@ -1584,7 +1624,16 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             "definition_fingerprint",
             state.get("definition_fingerprint").unwrap().clone(),
         ),
-        ("eligible", Json::Arr(evaluation.eligible)),
+        (
+            "eligible",
+            Json::Arr(
+                evaluation
+                    .eligible
+                    .iter()
+                    .map(public_handoff)
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
+        ),
     ]))
 }
 
@@ -1699,6 +1748,7 @@ fn permitted_outcomes(kind: &str) -> &'static [&'static str] {
         "request-implementation-approval" => &["approved", "denied", "deferred"],
         "qualify-method"
         | "assess-applicability"
+        | "review-proposal"
         | "review-spec-delta"
         | "review-design"
         | "review-verification" => &["accepted", "rejected"],
@@ -2291,7 +2341,9 @@ fn output_contract(action: &Json) -> Result<(), String> {
         "author-spec-delta" => Some("intent-delta"),
         "author-design" => Some("claim-design"),
         "author-verification" => Some("verification-account"),
-        "review-spec-delta" | "review-design" | "review-verification" => Some("authoring-review"),
+        "review-proposal" | "review-spec-delta" | "review-design" | "review-verification" => {
+            Some("authoring-review")
+        }
         "implement-change" => Some("implementation-result"),
         "request-implementation-approval" => Some("implementation-approval"),
         "register-candidate-model-revision" => Some("candidate-registration"),

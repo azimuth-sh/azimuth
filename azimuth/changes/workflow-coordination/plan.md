@@ -6,3 +6,5 @@
 4. Wire CLI dispatch, shipped guidance and contracts; build and inspect permitted product-command behavior.
 
 5. Select and pin reusable declarative templates; ship the standard change-development stages and validated inventory expansion with stable action/target identities.
+
+6. Require independent proposal review before module authoring, with correction and reassessment after rejection.

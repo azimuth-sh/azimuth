@@ -2,7 +2,7 @@
   "format": "azimuth-workflow-template",
   "version": 1,
   "id": "change-development",
-  "revision": 1,
+  "revision": 2,
   "actions": [
     {
       "id": "establish-change-scope",
@@ -67,12 +67,60 @@
       ]
     },
     {
+      "id": "review-proposal",
+      "kind": "review-proposal",
+      "collection": "change",
+      "depends_on": [
+        {
+          "action": "author-proposal",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "establish-change-scope",
+          "match": "all",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        },
+        {
+          "kind": "reference",
+          "id": "proposal"
+        }
+      ],
+      "required_output": {
+        "kind": "authoring-review",
+        "description": "Independently review the proposal against the original request, declared scope and inspected boundaries; retain findings and exact dependencies."
+      },
+      "correction": "author-proposal",
+      "outcomes": [
+        "accepted",
+        "rejected"
+      ],
+      "satisfies": [
+        "accepted"
+      ]
+    },
+    {
       "id": "author-spec-delta",
       "kind": "author-spec-delta",
       "collection": "modules",
       "depends_on": [
         {
           "action": "author-proposal",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "review-proposal",
           "match": "all",
           "condition": "current-success"
         }
@@ -346,6 +394,11 @@
         },
         {
           "action": "author-engineering-plan",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "review-proposal",
           "match": "all",
           "condition": "current-success"
         }

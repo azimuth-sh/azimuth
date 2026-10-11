@@ -650,6 +650,102 @@ test('canonical type identity expands aliases and retains generic constraints', 
   assert.match(aliasSite, /<\$0 extends \{ id: string; \}>/);
 });
 
+test('compiler default-library types retain path-free canonical signature identity', () => {
+  const dir = sourcePackage('@fixture/compiler-library', {
+    'src/request.ts': `type Options = RequestInit;
+      export function request(options: Options): Promise<Response> {
+        implementsMechanism('request');
+        return Promise.resolve(new Response());
+      }`,
+  });
+
+  const site = emit([path.join(dir, 'src')], dir)
+    .manifest.mechanism_implementations[0].site;
+  assert.equal(
+    site,
+    '@fixture/compiler-library::./src/request::none::request(RequestInit):Promise<Response>',
+  );
+});
+
+test('consumer types sharing default-library names fail closed', () => {
+  for (const name of ['RequestInit', 'Response', 'Promise']) {
+    const dir = sourcePackage('@fixture/library-homonym', {
+      'src/request.ts': `interface ${name} { id: string }
+        export function request(value: ${name}): string {
+          implementsMechanism('request');
+          return value.id;
+        }`,
+    });
+
+    assert.throws(
+      () => emit([path.join(dir, 'src')], dir),
+      new RegExp(`cannot qualify named type ${name} without a source locator`),
+    );
+  }
+});
+
+test('consumer augmentation retains the compiler default-library symbol identity', () => {
+  const dir = sourcePackage('@fixture/library-augmentation', {
+    'src/request.ts': `declare global { interface RequestInit { fixture?: string } }
+      export function request(options: RequestInit): boolean {
+        implementsMechanism('request');
+        return !!options.fixture;
+      }`,
+  });
+
+  const site = emit([path.join(dir, 'src')], dir)
+    .manifest.mechanism_implementations[0].site;
+  assert.equal(site, '@fixture/library-augmentation::./src/request::none::request(RequestInit):boolean');
+});
+
+test('generic default-library name homonyms keep callable generic identity', () => {
+  const dir = sourcePackage('@fixture/library-generic', {
+    'src/request.ts': `export function request<RequestInit>(value: RequestInit): RequestInit {
+      implementsMechanism('request');
+      return value;
+    }`,
+  });
+
+  const site = emit([path.join(dir, 'src')], dir)
+    .manifest.mechanism_implementations[0].site;
+  assert.equal(site, '@fixture/library-generic::./src/request::none::request<$0>($0):$0');
+});
+
+test('union member order preserves canonical identity without a site delimiter', () => {
+  const sites = ['number | false', 'false | number'].map((type) => {
+    const dir = sourcePackage('@fixture/union', {
+      'src/guard.ts': `export function guard(value: ${type}): ${type} {
+        implementsMechanism('guard');
+        return value;
+      }`,
+    });
+    return emit([path.join(dir, 'src')], dir).manifest.mechanism_implementations[0].site;
+  });
+
+  assert.equal(sites[0], sites[1]);
+  assert.equal(sites[0], '@fixture/union::./src/guard::none::guard(union(false,number)):union(false,number)');
+  assert.ok(!sites[0].includes('|'));
+});
+
+test('nested unions retain generic substitution and default-library identity', () => {
+  const sites = ['Value', 'Item'].map((generic) => {
+    const dir = sourcePackage('@fixture/nested-union', {
+      'src/guard.ts': `export function guard<${generic}>(
+          value: RequestInit & { nested: ${generic} | { flag: number | false } }
+        ): Promise<Response | ${generic}> {
+        implementsMechanism('guard');
+        return Promise.resolve(null!);
+      }`,
+    });
+    return emit([path.join(dir, 'src')], dir).manifest.mechanism_implementations[0].site;
+  });
+
+  assert.equal(sites[0], sites[1]);
+  assert.match(sites[0], /nested: union\(\$0,\{ flag: union\(false,number\); \}\)/);
+  assert.match(sites[0], /Promise<union\(\$0,Response\)>$/);
+  assert.ok(!sites[0].includes('|'));
+});
+
 test('a named type without a path-free compiler qualification fails closed', () => {
   const dir = sourcePackage('@fixture/named-type', {
     'src/guard.ts': `interface Input { id: string }

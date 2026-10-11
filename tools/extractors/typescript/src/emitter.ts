@@ -17,20 +17,6 @@ import * as ts from 'typescript';
 
 const TEST_CALLS = new Set(['test', 'it']);
 const RETIRED_MARKERS = new Set(['covers', 'coversMechanism']);
-const COMPILER_GLOBAL_TYPES = new Set([
-  'Array',
-  'Date',
-  'Error',
-  'Map',
-  'Promise',
-  'ReadonlyArray',
-  'ReadonlyMap',
-  'ReadonlySet',
-  'RegExp',
-  'Set',
-  'WeakMap',
-  'WeakSet',
-]);
 
 export interface Entry {
   claim: string;
@@ -119,6 +105,7 @@ export function scanText(text: string, file: string): ScanResult {
 interface ProjectIdentity {
   packageName: string;
   moduleSpecifier: string;
+  defaultLibrarySources: ReadonlySet<ts.SourceFile>;
 }
 
 function scanSource(
@@ -152,7 +139,7 @@ function scanSource(
       if (args.length !== 1 || node.arguments.length !== 1 || !isEntityId(args[0])) {
         throw checkMarkerError(node, source, 'realizes needs exactly one stable Claim ID');
       }
-      const site = resolveSite(node, source);
+      const site = resolveLinkageSite(node, source, project);
       result.realizes.push({
         claim: args[0],
         site: site.name,
@@ -171,7 +158,7 @@ function scanSource(
       if (!isEntityId(args[0])) {
         throw checkMarkerError(node, source, 'Check ID must be one lowercase kebab segment');
       }
-      const site = resolveSite(node, source);
+      const site = resolveLinkageSite(node, source, project);
       result.checkImplementations.push({
         check: args[0],
         site: site.name,
@@ -497,7 +484,7 @@ function resolveMechanismSite(
   const signatures = callableSignatures(symbol, declaration, checker, call, source);
   const receiver = receiverKind(declaration);
   const name = `${project.packageName}::${project.moduleSpecifier}::${receiver}::${qualified}` +
-    signatureAccount(signatures, checker, declaration, call, source);
+    signatureAccount(signatures, checker, declaration, call, source, project.defaultLibrarySources);
   if (name !== name.trim() || /[\u0000-\u001f\u007f|]/.test(name)) {
     throw mechanismSiteError(call, source, 'resolved to an invalid qualified identity');
   }
@@ -605,6 +592,7 @@ function signatureAccount(
   siteDeclaration: MechanismDeclaration,
   call: ts.CallExpression,
   source: ts.SourceFile,
+  defaultLibrarySources: ReadonlySet<ts.SourceFile>,
 ): string {
   const accounts = signatures.map((signature) => {
     const typeParameters = signature.typeParameters ?? [];
@@ -619,7 +607,11 @@ function signatureAccount(
       genericPositions.set(symbol, index);
       genericNames.push(name);
     }
-    const genericsAccount = { positions: genericPositions, names: genericNames };
+    const genericsAccount = {
+      positions: genericPositions,
+      names: genericNames,
+      defaultLibrarySources,
+    };
     const generics = typeParameters.map((parameter, index) => {
       const constraint = checker.getBaseConstraintOfType(parameter);
       const declaration = parameter.symbol?.declarations?.find(ts.isTypeParameterDeclaration);
@@ -676,6 +668,7 @@ function signatureAccount(
 interface GenericAccount {
   positions: ReadonlyMap<ts.Symbol, number>;
   names: readonly string[];
+  defaultLibrarySources: ReadonlySet<ts.SourceFile>;
 }
 
 function canonicalThisParameter(
@@ -716,7 +709,7 @@ function canonicalType(
     node,
     location?.getSourceFile() ?? ts.createSourceFile('type.ts', '', ts.ScriptTarget.Latest),
   );
-  const canonical = canonicalTypeSyntax(rendered, generics.names);
+  const canonical = canonicalTypeSyntax(rendered, generics, checker, location);
   if (containsLocatorType(canonical)) {
     throw new Error(`compiler type identity contains a source locator: ${canonical}`);
   }
@@ -728,7 +721,13 @@ interface TokenReplacement {
   text: string;
 }
 
-function canonicalTypeSyntax(text: string, genericNames: readonly string[]): string {
+function canonicalTypeSyntax(
+  text: string,
+  generics: GenericAccount,
+  checker: ts.TypeChecker,
+  location: ts.Node | undefined,
+): string {
+  const genericNames = generics.names;
   const parameters = genericNames.length > 0 ? `<${genericNames.join(',')}>` : '';
   const prefix = `type __AzimuthCanonical${parameters} = `;
   const semantic = semanticSource(
@@ -746,8 +745,10 @@ function canonicalTypeSyntax(text: string, genericNames: readonly string[]): str
     genericSymbols.set(symbol, index);
   }
   const replacements = new Map<number, TokenReplacement>();
+  const unions: ts.UnionTypeNode[] = [];
   const typeStart = declaration.type.getStart(semantic.source);
   visit(declaration.type, (part) => {
+    if (ts.isUnionTypeNode(part)) unions.push(part);
     if (ts.isImportTypeNode(part)) {
       throw new Error('compiler type identity requires a path-bearing import locator');
     }
@@ -767,14 +768,34 @@ function canonicalTypeSyntax(text: string, genericNames: readonly string[]): str
     if (ts.isTypeReferenceNode(part)) {
       const name = entityNameText(part.typeName);
       const symbol = semantic.checker.getSymbolAtLocation(part.typeName);
-      if ((symbol && (genericSymbols.has(symbol)
-          || (symbol.flags & ts.SymbolFlags.TypeParameter) !== 0))
-        || COMPILER_GLOBAL_TYPES.has(name)) {
+      if (symbol && (genericSymbols.has(symbol)
+          || (symbol.flags & ts.SymbolFlags.TypeParameter) !== 0)) {
+        return;
+      }
+      // Rebinding only in the synthetic scope would accept a consumer homonym as a compiler global.
+      const originalSymbol = ts.isIdentifier(part.typeName)
+        ? checker.resolveName(name, location, ts.SymbolFlags.Type, false)
+        : undefined;
+      const declarations = originalSymbol?.declarations;
+      if (declarations && declarations.length > 0
+        && declarations.some((entry) => generics.defaultLibrarySources.has(entry.getSourceFile()))) {
         return;
       }
       throw new Error(`compiler cannot qualify named type ${name} without a source locator`);
     }
   });
+  for (const union of unions.reverse()) {
+    const members = union.types.map((member) => canonicalTokens(
+      text,
+      replacements,
+      member.getStart(semantic.source) - typeStart,
+      member.end - typeStart,
+    )).sort();
+    replacements.set(union.getStart(semantic.source) - typeStart, {
+      end: union.end - typeStart,
+      text: `union(${members.join(',')})`,
+    });
+  }
   return canonicalTokens(text, replacements);
 }
 
@@ -787,18 +808,24 @@ function entityNameText(name: ts.EntityName): string {
 function canonicalTokens(
   text: string,
   replacements: ReadonlyMap<number, TokenReplacement>,
+  start = 0,
+  end = text.length,
 ): string {
   const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, text);
   const tokens: Array<{ kind: ts.SyntaxKind; text: string; separated: boolean }> = [];
-  let previousEnd = 0;
+  scanner.setTextPos(start);
+  let previousEnd = start;
   for (let kind = scanner.scan(); kind !== ts.SyntaxKind.EndOfFileToken; kind = scanner.scan()) {
+    if (scanner.getTokenPos() >= end) break;
     const token = scanner.getTokenText();
-    const replacement = replacements.get(scanner.getTokenPos());
+    const candidate = replacements.get(scanner.getTokenPos());
+    const replacement = candidate && candidate.end <= end ? candidate : undefined;
     tokens.push({
-      kind,
-      text: replacement?.end === scanner.getTextPos() ? replacement.text : token,
+      kind: replacement ? ts.SyntaxKind.Identifier : kind,
+      text: replacement?.text ?? token,
       separated: scanner.getTokenPos() > previousEnd,
     });
+    if (replacement) scanner.setTextPos(replacement.end);
     previousEnd = scanner.getTextPos();
   }
   return tokens.map((token, index) => {
@@ -882,6 +909,20 @@ function stringArgs(call: ts.CallExpression): string[] {
  * `test('…', () => …)` therefore names the test, while a `realizes` in `export function GET`
  * names the handler.
  */
+function resolveLinkageSite(
+  call: ts.CallExpression,
+  source: ts.SourceFile,
+  project?: ProjectIdentity,
+): { name: string; fingerprint: string } {
+  const site = resolveSite(call, source);
+  if (!project) return site;
+  const name = `${project.packageName}::${project.moduleSpecifier}::${site.name}`;
+  if (name !== name.trim() || /[\u0000-\u001f\u007f|]/.test(name)) {
+    throw checkMarkerError(call, source, 'resolved to an invalid qualified source identity');
+  }
+  return { name, fingerprint: site.fingerprint };
+}
+
 function resolveSite(call: ts.CallExpression, source: ts.SourceFile): {
   name: string;
   fingerprint: string;
@@ -973,6 +1014,8 @@ export function emit(
   const files = selectedFiles(roots, canonicalRoot);
   const project = configuredProject(files, canonicalRoot);
   const checker = project.program.getTypeChecker();
+  const defaultLibrarySources = new Set(project.program.getSourceFiles()
+    .filter((entry) => project.program.isSourceFileDefaultLibrary(entry)));
 
   const hasMechanismMarker = validateProjectMarkers(project.program, files);
   const relevantDiagnostics = projectDiagnostics(project.program);
@@ -989,6 +1032,7 @@ export function emit(
     const identity: ProjectIdentity = {
       packageName: project.package.name,
       moduleSpecifier: moduleSpecifier(source.fileName, project.package, project.program),
+      defaultLibrarySources,
     };
     const result = scanSource(relative, source, checker, identity);
     manifest.realizes.push(...result.realizes);
