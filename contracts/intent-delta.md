@@ -1,6 +1,8 @@
 # Intent-delta contract
 
-An intent delta is a reviewable transition, never the accepted spec. A change may contain one or more Markdown files under `specs/`; each begins with `# Intent delta: <spec-id>`. The declared id, rather than the delta path, selects an accepted spec. The operation headings are `## Add claim:`, `## Replace claim:`, `## Remove claim:`, `## Remove case:` and `## Change criticality:`. Unknown operations fail closed. The accepted spec format remains [spec.md](spec.md).
+An intent delta is a reviewable transition, never the accepted spec. A change may contain Markdown intent files under `specs/` or `deltas/<module-id>/spec.md`, but not both trees. Each begins with `# Intent delta: <spec-id>`; the account-delta layout requires the declared module id to match its path. The declared id, rather than the delta path, selects an accepted spec. The operation headings are `## Add term:`, `## Add claim:`, `## Replace claim:`, `## Remove claim:`, `## Remove case:` and `## Change criticality:`. Unknown operations fail closed. The accepted spec format remains [spec.md](spec.md).
+
+`Add term` carries a non-empty free-form module vocabulary definition and projects it to `## Term: <term-id>`. An existing term with identical content is already applied; the same id with different content is rejected. Term replacement/removal is not supported by this operation. Terms contribute to the affected Claim definition fingerprints as described in the spec contract.
 
 `Add claim` carries a complete Claim block with `Criticality:`, a non-empty normative body and at least one `### Add case:` block. It creates a new spec at `<model-root>/<spec-id>/spec.md` if needed, or appends to an existing spec. An existing Claim with the same id is applied only when its complete body, criticality and ordered Cases match exactly; extra Cases are not ignored.
 

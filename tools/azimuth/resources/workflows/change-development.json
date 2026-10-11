@@ -1,0 +1,708 @@
+{
+  "format": "azimuth-workflow-template",
+  "version": 1,
+  "id": "change-development",
+  "revision": 1,
+  "actions": [
+    {
+      "id": "establish-change-scope",
+      "kind": "establish-change-scope",
+      "collection": "change",
+      "depends_on": [],
+      "inputs": [
+        "request",
+        "instructions"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "change-scope",
+        "description": "Retain the actual change-scope and exact input basis; follow the workflow reference."
+      },
+      "correction": null,
+      "outcomes": [
+        "completed",
+        "failed"
+      ],
+      "satisfies": [
+        "completed"
+      ]
+    },
+    {
+      "id": "author-proposal",
+      "kind": "author-proposal",
+      "collection": "change",
+      "depends_on": [
+        {
+          "action": "establish-change-scope",
+          "match": "all",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "proposal",
+        "description": "Retain the actual proposal and exact input basis; follow the workflow reference."
+      },
+      "correction": null,
+      "outcomes": [
+        "completed",
+        "failed"
+      ],
+      "satisfies": [
+        "completed"
+      ]
+    },
+    {
+      "id": "author-spec-delta",
+      "kind": "author-spec-delta",
+      "collection": "modules",
+      "depends_on": [
+        {
+          "action": "author-proposal",
+          "match": "all",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "intent-delta",
+        "description": "Retain the actual intent-delta and exact input basis; follow the workflow reference."
+      },
+      "correction": null,
+      "outcomes": [
+        "completed",
+        "failed"
+      ],
+      "satisfies": [
+        "completed"
+      ]
+    },
+    {
+      "id": "review-spec-delta",
+      "kind": "review-spec-delta",
+      "collection": "modules",
+      "depends_on": [
+        {
+          "action": "author-spec-delta",
+          "match": "same-module",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "authoring-review",
+        "description": "Retain the actual authoring-review and exact input basis; follow the workflow reference."
+      },
+      "correction": "author-spec-delta",
+      "outcomes": [
+        "accepted",
+        "rejected"
+      ],
+      "satisfies": [
+        "accepted"
+      ]
+    },
+    {
+      "id": "author-design",
+      "kind": "author-design",
+      "collection": "modules",
+      "depends_on": [
+        {
+          "action": "review-spec-delta",
+          "match": "same-module",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "claim-design",
+        "description": "Retain the actual claim-design and exact input basis; follow the workflow reference."
+      },
+      "correction": null,
+      "outcomes": [
+        "completed",
+        "failed"
+      ],
+      "satisfies": [
+        "completed"
+      ]
+    },
+    {
+      "id": "review-design",
+      "kind": "review-design",
+      "collection": "modules",
+      "depends_on": [
+        {
+          "action": "author-design",
+          "match": "same-module",
+          "condition": "current-success"
+        },
+        {
+          "action": "review-spec-delta",
+          "match": "same-module",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "authoring-review",
+        "description": "Retain the actual authoring-review and exact input basis; follow the workflow reference."
+      },
+      "correction": "author-design",
+      "outcomes": [
+        "accepted",
+        "rejected"
+      ],
+      "satisfies": [
+        "accepted"
+      ]
+    },
+    {
+      "id": "author-verification",
+      "kind": "author-verification",
+      "collection": "modules",
+      "depends_on": [
+        {
+          "action": "review-spec-delta",
+          "match": "same-module",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "verification-account",
+        "description": "Retain the actual verification-account and exact input basis; follow the workflow reference."
+      },
+      "correction": null,
+      "outcomes": [
+        "completed",
+        "failed"
+      ],
+      "satisfies": [
+        "completed"
+      ]
+    },
+    {
+      "id": "review-verification",
+      "kind": "review-verification",
+      "collection": "modules",
+      "depends_on": [
+        {
+          "action": "author-verification",
+          "match": "same-module",
+          "condition": "current-success"
+        },
+        {
+          "action": "review-spec-delta",
+          "match": "same-module",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "authoring-review",
+        "description": "Retain the actual authoring-review and exact input basis; follow the workflow reference."
+      },
+      "correction": "author-verification",
+      "outcomes": [
+        "accepted",
+        "rejected"
+      ],
+      "satisfies": [
+        "accepted"
+      ]
+    },
+    {
+      "id": "author-engineering-plan",
+      "kind": "author-engineering-plan",
+      "collection": "change",
+      "depends_on": [
+        {
+          "action": "review-design",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "review-verification",
+          "match": "all",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "engineering-plan",
+        "description": "Retain the actual engineering-plan and exact input basis; follow the workflow reference."
+      },
+      "correction": null,
+      "outcomes": [
+        "completed",
+        "failed"
+      ],
+      "satisfies": [
+        "completed"
+      ]
+    },
+    {
+      "id": "request-implementation-approval",
+      "kind": "request-implementation-approval",
+      "collection": "change",
+      "depends_on": [
+        {
+          "action": "author-proposal",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "review-spec-delta",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "review-design",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "review-verification",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "author-engineering-plan",
+          "match": "all",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "implementation-approval",
+        "description": "Retain the actual implementation-approval and exact input basis; follow the workflow reference."
+      },
+      "correction": "author-engineering-plan",
+      "outcomes": [
+        "approved",
+        "denied",
+        "deferred"
+      ],
+      "satisfies": [
+        "approved"
+      ]
+    },
+    {
+      "id": "implement-change",
+      "kind": "implement-change",
+      "collection": "change",
+      "depends_on": [
+        {
+          "action": "request-implementation-approval",
+          "match": "all",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "implementation-result",
+        "description": "Retain the actual implementation-result and exact input basis; follow the workflow reference."
+      },
+      "correction": null,
+      "outcomes": [
+        "completed",
+        "failed"
+      ],
+      "satisfies": [
+        "completed"
+      ]
+    },
+    {
+      "id": "capture-source-support",
+      "kind": "capture-source-support",
+      "collection": "change",
+      "depends_on": [
+        {
+          "action": "implement-change",
+          "match": "all",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "source-support",
+        "description": "Retain the actual source-support and exact input basis; follow the workflow reference."
+      },
+      "correction": null,
+      "outcomes": [
+        "completed",
+        "failed"
+      ],
+      "satisfies": [
+        "completed"
+      ]
+    },
+    {
+      "id": "validate-candidate",
+      "kind": "validate-candidate",
+      "collection": "change",
+      "depends_on": [
+        {
+          "action": "capture-source-support",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "implement-change",
+          "match": "all",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "candidate-validation",
+        "description": "Retain the actual candidate-validation and exact input basis; follow the workflow reference."
+      },
+      "correction": "implement-change",
+      "outcomes": [
+        "completed",
+        "failed"
+      ],
+      "satisfies": [
+        "completed"
+      ]
+    },
+    {
+      "id": "register-candidate-model-revision",
+      "kind": "register-candidate-model-revision",
+      "collection": "change",
+      "depends_on": [
+        {
+          "action": "validate-candidate",
+          "match": "all",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "candidate-registration",
+        "description": "Retain the actual candidate-registration and exact input basis; follow the workflow reference."
+      },
+      "correction": null,
+      "outcomes": [
+        "completed",
+        "failed"
+      ],
+      "satisfies": [
+        "completed"
+      ]
+    },
+    {
+      "id": "inventory-assurance-targets",
+      "kind": "inventory-assurance-targets",
+      "collection": "change",
+      "depends_on": [
+        {
+          "action": "register-candidate-model-revision",
+          "match": "all",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "assurance-target-inventory",
+        "description": "Retain the actual assurance-target-inventory and exact input basis; follow the workflow reference."
+      },
+      "correction": null,
+      "outcomes": [
+        "completed",
+        "failed"
+      ],
+      "satisfies": [
+        "completed"
+      ]
+    },
+    {
+      "id": "qualify-method",
+      "kind": "qualify-method",
+      "collection": "methods",
+      "depends_on": [
+        {
+          "action": "inventory-assurance-targets",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "register-candidate-model-revision",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "implement-change",
+          "match": "all",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions",
+        "snapshot"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "method-qualification",
+        "description": "Retain the actual method-qualification and exact input basis; follow the workflow reference."
+      },
+      "correction": "implement-change",
+      "outcomes": [
+        "accepted",
+        "rejected"
+      ],
+      "satisfies": [
+        "accepted"
+      ]
+    },
+    {
+      "id": "execute-qualified-check",
+      "kind": "execute-qualified-check",
+      "collection": "checks",
+      "depends_on": [
+        {
+          "action": "qualify-method",
+          "match": "same-check",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "run-bundle",
+        "description": "Retain the actual run-bundle and exact input basis; follow the workflow reference."
+      },
+      "correction": null,
+      "outcomes": [
+        "completed",
+        "failed"
+      ],
+      "satisfies": [
+        "completed"
+      ]
+    },
+    {
+      "id": "assess-applicability",
+      "kind": "assess-applicability",
+      "collection": "contributions",
+      "depends_on": [
+        {
+          "action": "execute-qualified-check",
+          "match": "same-check",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions",
+        "snapshot"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "applicability-decision",
+        "description": "Retain the actual applicability-decision and exact input basis; follow the workflow reference."
+      },
+      "correction": "execute-qualified-check",
+      "outcomes": [
+        "accepted",
+        "rejected"
+      ],
+      "satisfies": [
+        "accepted"
+      ]
+    },
+    {
+      "id": "judge-claim",
+      "kind": "judge-claim",
+      "collection": "claims",
+      "depends_on": [
+        {
+          "action": "assess-applicability",
+          "match": "claim-contributions",
+          "condition": "current-success"
+        },
+        {
+          "action": "implement-change",
+          "match": "all",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions",
+        "snapshot"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "claim-judgment",
+        "description": "Retain the actual claim-judgment and exact input basis; follow the workflow reference."
+      },
+      "correction": "implement-change",
+      "outcomes": [
+        "supported",
+        "violated",
+        "unresolved"
+      ],
+      "satisfies": [
+        "supported"
+      ]
+    }
+  ]
+}

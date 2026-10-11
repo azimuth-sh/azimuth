@@ -3,6 +3,17 @@
 use crate::json::Json;
 
 pub const MIGRATION_LINE: &str = "alpha-claim-case";
+
+pub struct WorkflowDescriptor {
+    pub id: &'static str,
+    pub source: &'static str,
+}
+
+pub const WORKFLOWS: &[WorkflowDescriptor] = &[WorkflowDescriptor {
+    id: "change-development",
+    source: include_str!("../resources/workflows/change-development.json"),
+}];
+
 pub const RESOURCE_MANIFEST: &str = include_str!("../resources/manifest.json");
 pub const PROJECT_README: &str = include_str!("../resources/templates/init/README.md");
 pub const DEFAULT_STANDARDS: &str =
@@ -65,6 +76,9 @@ pub const REFERENCES: &[ReferenceDescriptor] = &[
         id: "workflow",
         format_version: 1,
         accepted: &[
+            "pinned declarative definitions",
+            "standard change-development workflow",
+            "validated target inventory expansion",
             "explicit task graph",
             "read-only next",
             "conditional update",

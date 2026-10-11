@@ -8,7 +8,7 @@ Implement harness-agnostic, explicit workflow coordination through independently
 
 ## Scope
 
-A request, configured workflow definition and explicit repository roots produce read-only task handoffs. Conditional, idempotent updates retain work results and adverse reviews. Independent authoring reviews are distinct from existing Method Qualification, Applicability Decision and Claim Judgment records. Candidate model revisions belong to an already configured ASS project and do not replace accepted authority.
+A request, selected declarative workflow definition, explicit target inventories and separately supplied local repository locations produce read-only task handoffs. Standard change coordination uses the shipped change-development definition; commands and packages may supply other strict declarative definitions to the same engine. Conditional, idempotent updates retain work results and adverse reviews. Independent authoring reviews are distinct from existing Method Qualification, Applicability Decision and Claim Judgment records. Candidate model revisions belong to an already configured ASS project and do not replace accepted authority.
 
 ## Boundaries
 

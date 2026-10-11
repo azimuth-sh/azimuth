@@ -19,9 +19,10 @@ const USAGE: &str = "\
 azimuth — derives and validates an evidence-control-plane model
 
 USAGE
-    azimuth workflow init --definition <file> --instance <file> --root <id>=<path>...
-    azimuth workflow next|verify --instance <file> [--out <file>]
-    azimuth workflow update --instance <file> --result <file> --expected-revision <number> [--out <file>]
+    azimuth workflow definition --workflow change-development [--out <file>]\n\
+    azimuth workflow init (--workflow change-development --inputs <file> | --definition <file>) --instance <file> --repositories <file>
+    azimuth workflow next|verify --instance <file> --repositories <file> [--out <file>]
+    azimuth workflow update --instance <file> --repositories <file> --result <file> --expected-revision <number> [--out <file>]
     azimuth validate [options]
     azimuth report traceability [options]
     azimuth export [options]
@@ -148,7 +149,8 @@ fn command_workflow(args: &[String]) -> Result<ExitCode, String> {
     if let Some(path) = &output {
         for pair in selected.windows(2) {
             let protected = match pair[0].as_str() {
-                "--instance" | "--definition" | "--result" => Some(PathBuf::from(&pair[1])),
+                "--instance" | "--definition" | "--inputs" | "--result" | "--repositories"
+                | "--project" => Some(PathBuf::from(&pair[1])),
                 "--change" => Some(PathBuf::from(&pair[1]).join("workflow.json")),
                 _ => None,
             };

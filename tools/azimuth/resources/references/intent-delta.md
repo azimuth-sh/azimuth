@@ -2,7 +2,9 @@
 
 The canonical format contract is `contracts/intent-delta.md` in the Azimuth project.
 
-Each file under a change's `specs/` directory begins with `# Intent delta: <spec-id>`. Supported operations are whole Claim addition, whole Claim replacement, explicit Claim or Case removal, and criticality change. Renaming is a remove-and-add decision with explicit reference repair.
+Intent files live under a change's `specs/` tree or `deltas/<module-id>/spec.md`, never both. Each begins with `# Intent delta: <spec-id>`; the account-delta layout requires the declared module id to match its path. Supported operations are module term addition, whole Claim addition, whole Claim replacement, explicit Claim or Case removal, and criticality change. Renaming is a remove-and-add decision with explicit reference repair.
+
+Use `## Add term: <term-id>` followed by a non-empty free-form vocabulary definition for a module term. The projector produces `## Term:` in the accepted spec. Identical existing content is already applied; conflicting content for the same term id is rejected. This operation does not replace or remove terms.
 
 Use `## Add claim: <lower-kebab-id>`, followed by `Criticality: routine`, one non-empty free-form normative Markdown statement and one or more `### Add case: <lower-kebab-id>` blocks. Each Case contains non-empty free-form normative Markdown in any human language. Core preserves and fingerprints that content without interpreting natural-language keywords, translations, tables, diagrams or code fences. Do not use retired Requirement or Scenario headings.
 

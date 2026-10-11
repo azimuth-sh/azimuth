@@ -18,3 +18,5 @@ package-lock.json
 .azimuth/release/*
 !.azimuth/release/ordinary-workflow-receipt.json
 !.azimuth/release/release-workflow-receipt.json
+
+azimuth/local-repositories.json
