@@ -24,7 +24,9 @@ export async function GET(
     return Response.json({ error: 'Not found' }, { status: 404 });
   const valid =
     (resource.length === 1 &&
-      ['authority', 'runs', 'subjects', 'reviews'].includes(resource[0])) ||
+      ['authority', 'runs', 'subjects', 'reviews', 'claim-reviews'].includes(
+        resource[0],
+      )) ||
     (resource.length === 2 && resource[0] === 'runs') ||
     (resource.length === 3 &&
       resource[0] === 'subjects' &&

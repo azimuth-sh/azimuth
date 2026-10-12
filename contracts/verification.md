@@ -1,5 +1,14 @@
 # Verification declarations
 
+## Current compact assurance lane
+
+The Claim-first account grammar in `account-verification.md` owns current compact Checks, inline Evidence Bindings and machine Challengers. Independent native `claim-review` records assess definitions/source/coverage without execution Subjects. Native `claim-health` records assess exact-Subject observations using current accepted Claim Reviews. Neither binding nor source marker constitutes independent acceptance. Compact declarations require none of the older Method Qualification, Applicability Decision, Claim Judgment, Decision Policy or Challenge Schedule gates described in the historical declaration lane below.
+
+Machine Challenger declarations select `claim-review` or `claim-health` target kinds. They are authored with verification, implemented with the change and run as separate bounded machine work. No agent-performed Challenger execution is supported in this lane. Exact target assessment identity is frozen during planning; Markdown names eligible Claims/Mechanisms rather than a review fingerprint.
+
+Older declaration records retain their historical types and reasons. Parsing them never creates new accepted Claim Reviews or Claim Health. Challenge clean is a scoped negative search fact; findings require disposition against the proposition challenged, and inconclusive results remain gaps. No aggregate mutation score establishes review credibility or health.
+
+
 The repository-owned decision facet for alpha 5. This file declares what a Check means, how its
 terminal result bears on a Case, whether the shared method is credible, whether it applies to each
 exact Check-to-Case edge and whether one Claim's total assurance composition is accepted. It never

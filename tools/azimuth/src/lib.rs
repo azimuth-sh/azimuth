@@ -8,6 +8,7 @@ pub mod account_verification;
 pub mod adapter;
 pub mod adapter_host;
 pub mod assurance;
+pub mod assurance_publication;
 pub mod assurance_review;
 pub mod change;
 pub mod design;
@@ -21,6 +22,7 @@ pub mod labels;
 pub mod manifest;
 pub mod model;
 pub mod resources;
+pub mod review_authoring;
 pub mod run;
 pub mod run_plan;
 pub mod run_selection;
@@ -381,6 +383,21 @@ fn check_facet_owners<'a>(
     }
 }
 
+fn uses_compact_facet(source: &str, heading: &str) -> bool {
+    let mut fenced = false;
+    for line in source.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            fenced = !fenced;
+            continue;
+        }
+        if !fenced && (trimmed.starts_with(heading) || trimmed.starts_with("## Section: ")) {
+            return true;
+        }
+    }
+    false
+}
+
 fn load_design_facets(
     root: &Path,
 ) -> Result<(Vec<design::Design>, Vec<account_design::AccountDesign>), Vec<Diag>> {
@@ -389,11 +406,7 @@ fn load_design_facets(
     for path in paths {
         let display = path.display().to_string();
         match fs::read_to_string(&path) {
-            Ok(source)
-                if source
-                    .lines()
-                    .any(|line| line.starts_with("## Claim design: ")) =>
-            {
+            Ok(source) if uses_compact_facet(&source, "## Claim design: ") => {
                 match account_design::parse_account_design(&display, &source) {
                     Ok(item) => accounts.push(item),
                     Err(mut diagnostics) => errors.append(&mut diagnostics),
@@ -435,11 +448,7 @@ fn load_verification_facets(
     for path in paths {
         let display = path.display().to_string();
         match fs::read_to_string(&path) {
-            Ok(source)
-                if source
-                    .lines()
-                    .any(|line| line.starts_with("## Claim verification: ")) =>
-            {
+            Ok(source) if uses_compact_facet(&source, "## Claim verification: ") => {
                 match account_verification::parse_account_verification(&display, &source) {
                     Ok(item) => accounts.push(item),
                     Err(mut diagnostics) => errors.append(&mut diagnostics),

@@ -1,5 +1,12 @@
 # Check execution selection
 
+## Current execution Subject boundary
+
+New Run planning accepts `source`, `artifact` and `deployment`. Historical Run descriptors retain their original kinds without conversion. Local and CI are provenance of the exact source snapshot, not separate source types. Stage scheduling cannot infer applicability or assurance transfer from matching content/model revision alone.
+
+The existing explicit `Execution` metadata remains readable for accounts that already authored it. New package integrations use actual method/package contracts, source producer inputs and configured capabilities. No new generic `Requires` list is introduced for Challenger work. Missing source capture, reviewed scope, native review record/history or tool configuration remains an explicit planning failure rather than silently omitted work.
+
+
 Execution selection is separate from Check meaning and Claim assurance. A Check may participate in several local, CI or hosted Runs. A policy selects eligible Checks by declared requirements; it is not a manually maintained Check ID inventory and is not a scheduler.
 
 ## Check requirements
@@ -8,7 +15,7 @@ A compact document-owned Check may declare:
 
 ```markdown
 - Execution:
-  - Subjects: workspace, ci-candidate
+  - Subjects: source
   - Family: application
   - Requirements: database, container-runtime
 ```

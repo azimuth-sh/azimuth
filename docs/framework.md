@@ -11,7 +11,7 @@ For the intended assurance control plane, harness boundaries, decision handling 
 Azimuth is an **evidence control plane**. It keeps durable product intent, implementation linkage and reviewed evidentiary meaning in a repository without making a test runner, CI system, analyzer or monitoring provider authoritative for that meaning.
 
 A **Claim** is the independently governable proposition about a product or its operation. It owns
-criticality, production realization, total Claim Judgment and Claim Assurance State. A **Case** is
+criticality, production realization, Claim Review and exact-Subject Claim Health. A **Case** is
 a normative condition/outcome clause inside that Claim's predicate. Cases are addressable for
 evidence, Runs, Observations and Challenger impact, but own none of the parent governance. A result
 about one Case does not silently establish its broader Claim.
@@ -25,9 +25,8 @@ Each Claim can have three facets:
 | evidence | Why should a particular method be believed for each Case? | `verification.md` |
 
 Criticality decides which facets are applicable. A routine Claim stops at intent and owes no
-realization, mechanism, Evidence Binding, Method Qualification, Applicability Decision or Claim
-Judgment. Standard and critical Claims add the applicable obligations. Every active Claim in this
-repository is routine during the fast-moving alpha 5 phase. Its ordinary tests and release checks
+realization, mechanism, Evidence Binding or evidence review. Standard and critical Claims add the applicable obligations. Every active Claim in this
+repository is routine during the fast-moving alpha phase. Its ordinary tests and release checks
 remain engineering safeguards; they are not Azimuth evidence.
 
 ## Intent and mechanism
@@ -59,125 +58,33 @@ The compact Claim-first account separates authored meaning, machine execution an
 
 Explicit packages add shared concepts without changing Claim kinds. `azimuth.surface` supplies Surfaces, independent Expectation Sets, typed producer descriptors and deterministic report validation. `azimuth.network` supplies named Probes and origins. .NET attributes and Python annotations use their package namespaces. A Surface publishes field names; its emitter derives language types and supported values from the enumerator's output. `azimuth surface verify` checks exact Subjects, producer support, completion, schema, unique keys, membership fingerprints and joins in both directions. It does not establish runtime behavior from registration metadata.
 
-Separate strict review records assess the exact Check method, exact Check–Case contribution for one Subject, and complete Claim composition. Their vocabulary and dependency rules are in [assurance-reviews.md](../contracts/assurance-reviews.md). Method Qualification and Applicability Decision use `accepted | rejected`; Claim Judgment concludes `supported | violated | unresolved`. The ledger reports missing, rejected, stale, invalid and accepted assessments without authoring positive reviews. Decision Policies and challenge scheduling for this lane remain deferred.
+Claim Review assesses the complete authored Claim account: Cases, design, realizations, Check methods and implementations, oracles, coverage, Challengers and limitations. It records `accepted | rejected` against exact definition dependencies, without an execution Subject. Claim Health separately assesses Run Observations for one exact Subject against the current reviewed Claim and records `supported | violated | unresolved` with residual risks. Execution and structural validation author neither assessment. See [assurance-reviews.md](../contracts/assurance-reviews.md).
+
+No separate Check Review, Method Qualification, Applicability Decision or Claim Judgment stage is mandatory in this compact account. Missing, rejected, stale, invalid and ambiguous dependencies remain visible. Changing definitions requires reassessment; rerunning unchanged Checks does not require repeating their definition review.
 
 `azimuth assurance authority` exports a complete unselected authority projection whose model identity matches Run planning. The owner explicitly selects it in the project-scoped Run ledger. Selection of a candidate projection is not change acceptance. The ledger retains Runs, correction chains, independently authenticated reviews and authority selections, then computes exact-Subject state against the selected authority. See [run-ledger.md](../contracts/run-ledger.md).
 
-## Earlier repository decision graph
-
-The older declaration lane in `contracts/verification.md` remains implemented. Its repository-owned decision blocks and Challenge planning retain their existing policy, context and scheduling semantics. The following sections describe that lane; they do not add those fields to compact bindings.
-
-Its graph is deliberately sparse:
+## Review and execution relationships
 
 ```text
-production site --Realizes---------------------------> Claim
-Mechanism implementation --> Mechanism -------------> Claim
-Check implementation --> Check --Evidence Binding---> Case --belongs to--> Claim
-                              |                         |
-                       Method Qualification     Applicability Decision
-                              \_________________________/
-                                           |
-                                  total Claim Judgment
-
-Challenger --Challenge Plan--> exact decision fingerprint
+Claim + Cases + design + sources + verification -> Claim Review
+Check implementation -> Check --Contribution--> Case --> Claim
+Check execution --exact Subject--> Observation
+Current Claim Review + exact-Subject Observations -> Claim Health
+Challenger --exact assessment target--> Challenge Result
 ```
 
-### Check
+A Check is deliberately enrolled; it is not every test, analyzer rule or monitor in a repository. One implementation may support several Checks, and one Check may contribute to several Cases when its assertions bear on those Cases. `ImplementsCheck(<check-id>)` identifies the implementation, not evidentiary meaning or reviewer approval.
 
-A **Check** is a deliberately enrolled verification method with one atomic terminal proposition. It is not every native test, analyzer rule or monitor in a repository. If two assertions can vary independently, they are separate Checks even when one native process evaluates both.
+An inline Evidence Binding explains what a Check establishes for a Case. The typed Check–Case pair identifies that relation. Definition review assesses its credibility as part of Claim Review; observed support is assessed as part of Claim Health. Structural mechanisms can support the reviewed design without inventing execution observations.
 
-Source code uses `ImplementsCheck(<project-global-check-id>)`. Extractors emit exactly the Check id,
-resolved implementation site, file locator, language and exact source fingerprint. The marker
-names no Case, evidence form, context or decision. Several implementation sites may compose one
-Check. Unmarked tests remain ordinary engineering tests and emit no Azimuth evidence linkage.
+A machine-executed Challenger searches for reasons to distrust an exact Claim Review or Claim Health assessment. Its declaration lives beside Checks in `verification.md`; code or configuration supplies its implementation. Mutation, adversarial requests and static analysis may serve this role. The proposition being investigated determines the role: a bounded product assertion is a Check, whereas a search for blind spots in an assessment is a Challenger.
 
-### Evidence Binding
+Source scope is selected through meaningful Claim realization and Mechanism implementation tags. Ecosystem emitters resolve semantic sites and accountable locations; adapters translate them into tool filters. Target scope is distinct from compilation/analysis dependencies and exercised Check scope. Missing mappings, exclusions and tool-driven expansion remain visible in the scope report. Tags do not prove completeness.
 
-An **Evidence Binding** is one reviewed Check-to-Case edge. It explains why the Check's terminal
-result bears on exactly one Case and declares:
+Planning selects an exact assessment fingerprint. The execution Subject is separate from the assessment target. Current Stryker integration pins exact source input for an isolated mutation batch and retains native statuses and locations; materialized per-mutant Subjects and mutant-specific product Observations are unavailable. Future captured mutants would require distinct Subjects before their observations could support product health. Results are `clean | findings | inconclusive`; clean is only a negative search fact. Findings require disposition and, when relevant, correction and independent reassessment. There is no aggregate mutation-score assurance or recursive Challenger qualification stage.
 
-- the binding proposition;
-- the Method Qualification it relies on;
-- an exact edge-context string map;
-- the relations a Challenger may traverse; and
-- one Decision Policy.
-
-One Check may bind to several Cases only when the same atomic result honestly bears on every one.
-Each relationship is a separate binding. Conversely, one Case may receive several Checks. A
-`(Check, Case)` pair is unique.
-
-Executable Checks demonstrate sampled behavior. Structural enforcement remains a mechanism and can contribute to a total-composition Claim Judgment without requiring a fictitious execution result.
-
-### Method Qualification and Applicability Decision
-
-A **Method Qualification** is the reviewed decision that one Check implementation, oracle, form,
-common context and policy account is credible. It is `qualified | rejected`; several bindings may
-reuse it only when those exact method inputs are shared.
-
-An **Applicability Decision** is the independent `applicable | rejected` decision that the qualified
-method establishes one exact Check-to-Case binding under its edge context. Its id is the binding
-id. Shared method defects therefore fan out; edge relevance defects remain local.
-
-Neither decision records an execution or establishes that its Claim is satisfied.
-
-### Claim Judgment and policy
-
-A **Claim Judgment** is the repository-owned decision over one standard or critical parent Claim's
-total applicable composition. Its exact identity binds the complete Claim and Case digests,
-criticality, Claim-level realizations, Case-relevant mechanisms, every binding, Method
-Qualification and Applicability Decision, applicable surfaces and obligations, policy, verdict,
-basis and residual risk. It is `accepted | rejected`; only a fingerprint-current accepted Judgment
-is executable. Cases own no separate Judgment. A Run never authors or repairs one.
-
-The strict `verification.md` block is:
-
-```text
-## Claim Judgment: <claim-id>
-Verdict: accepted | rejected
-Policy: <decision-policy-id>
-Fingerprint: sha256:<64-lowercase-hex>
-Judged: YYYY-MM-DD
-Judge: <accountable identity>
-Basis: <one or more ordered statements>
-Residual risk: <one or more ordered statements>
-```
-
-Unknown labels, duplicate ids, routine targets, missing basis or residual risk and dangling Claims fail. Date, judge and rationale remain accountable metadata rather than fingerprint inputs.
-
-One project `Decision Policy` namespace supplies the open Challenge forms required for Method
-Qualifications, Applicability Decisions and Claim Judgments. A separate `Challenge Schedule:
-current` assigns every required or declared form exactly once to `gate | scheduled`.
-
-```text
-## Decision Policy: <id>
-Required challenge: <open-form>
-
-## Challenge Schedule: current
-Gate challenge: <open-form>
-Scheduled challenge: <open-form>
-```
-
-Each policy has at least one distinct required form. The schedule is singular and non-empty; either lane may be empty. A form cannot occur in both lanes or remain unscheduled.
-
-### Challengers and Challenge Plans
-
-A **Challenger** searches for a reason to distrust a Method Qualification, Applicability Decision or
-Claim Judgment. The proposition determines the role, not the executable brand. It declares an open
-form and a non-empty set of required closed semantic scope kinds.
-
-A **Challenge Plan** names one Challenger and uses twelve selector forms across Method
-Qualification, Applicability Decision and Claim Judgment relations. Resolution retains every
-candidate as `selected`, `missing-decision`, `stale-decision`, `rejected-decision`,
-`invalid-decision`, `inapplicable` or `unresolved-relation`. Only a current positive decision is
-selected. One successful sibling never hides an adverse candidate, and zero selection never falls
-back to a path, glob or whole suite.
-
-Executable selections deduplicate by exact Challenger and target identity. A challenged Method
-Qualification fans out through every dependent binding; a challenged Applicability Decision stays
-local to its Case edge. Both reach the parent Claim and current Claim Judgment without fabricating
-another Challenge Result.
-
-A Challenger is not recursively qualified in alpha 5. Its quality is an ordinary tool-release, conformance and review concern.
+The earlier repository declaration lane remains separately documented in [verification.md](../contracts/verification.md), and earlier independent review records retain [their historical contract](../contracts/history/assurance-reviews-before-claim-health.md). Historical decisions do not substitute for current Claim Review or Claim Health.
 
 ## Linkage and domains
 
@@ -197,11 +104,7 @@ Areas locate source participation. A surface can combine enumerator contribution
 
 `azimuth validate` deterministically reports **Findings**. Each Finding has one kind from the exhaustive registry, a closed category, severity, source location, optional Claim and criticality, detail and corrective help. The exhaustive registry and its closed categories are in [`contracts/findings.md`](../contracts/findings.md). No current Finding kind maps to the execution category; it is reserved for the deferred execution plane.
 
-Findings include incomplete intent, dangling or missing realizations, unresolved mechanisms and
-surfaces, invalid Check and binding cardinality, missing or stale Method Qualifications and
-Applicability Decisions, unstable Check implementations, missing, stale or rejected Claim
-Judgments, incomplete policy coverage, verification applied to routine Claims and unresolved
-Challenge Plans.
+Findings include incomplete intent, dangling or missing realizations, unresolved mechanisms and surfaces, invalid Check relationships, unsupported or unstable implementations and unresolved Challenge scope. Change validation distinguishes structural Findings from acceptance obligations. Exact review currentness and observed health remain separate assessments; structural validity is not evidence of a supported Claim.
 
 ## Consumer installation and guidance
 
@@ -232,8 +135,7 @@ no authored authority or execution fact.
 
 `azimuth export` writes the complete derived model as format version 5. The export includes Claims,
 Cases, workspace data, realization and implementation linkage, mechanisms, Checks, Evidence
-Bindings, Method Qualifications, Applicability Decisions, Claim Judgments, Decision Policies, the
-Challenge Schedule, Challengers, Challenge Plans, candidate resolutions and Findings.
+Bindings, Challengers, Challenge resolutions and Findings. Historical declaration collections remain separately represented where that lane is present; runtime review histories are not repository export content.
 
 The core reads language-neutral manifests rather than source. Ecosystem extractors emit the shared strict linkage collections. This keeps source parsing outside the core and makes a language integration an extractor concern instead of a fork of the model.
 
@@ -257,7 +159,7 @@ Criticality changes through the same lifecycle without changing Claim identity. 
 
 ## Run and adapter execution control plane
 
-Azimuth implements the provider-neutral [`azimuth-run-bundle` version 1](../contracts/run-bundle.md) exchange. One immutable bundle revision accounts for one logical Run over one exact typed Subject and semantic plan. It freezes planned and actual selection, physical activities, ordered attempts, one terminal Observation for each actually selected Check and one terminal Challenge Result for each selected Challenger target. Workspace, CI-candidate, artifact, deployment, service and bounded monitoring-window Subjects use content or deployed-state fingerprints rather than mutable locators as their exact state.
+Azimuth implements the provider-neutral [`azimuth-run-bundle` version 1](../contracts/run-bundle.md) exchange. One immutable bundle revision accounts for one logical Run over one exact typed Subject and semantic plan. It freezes planned and actual selection, physical activities, ordered attempts, one terminal Observation for each actually selected Check and one terminal Challenge Result for each selected Challenger target. Current execution uses source snapshots, artifacts and deployments with content or deployed-state fingerprints rather than mutable locators. Local and CI origin belongs to provenance. Historical workspace, CI-candidate, service and monitoring-window descriptors remain parseable with their original meanings; they do not grant new cross-Subject reuse.
 
 Run bundles reduce retries and finite work units deterministically. Violations and challenge findings survive retries; missing planned units and unfinished work cannot become positive results. An omitted target creates no fabricated result. Full replacement corrections retain immutable Subject, context, plan, source-execution and start anchors and form one fingerprint-linked chain.
 
@@ -286,14 +188,11 @@ azimuth run import --plan <file> --input <id>=<file>... \
   [--predecessor <bundle>...] [--config <file>] [--out <file>]
 ```
 
-Verification compares the running adapter's complete description with configuration. Planning loads the complete unselected model and accepts strict Check-only, Challenge-only or mixed requests; the two arrays are required and their union is non-empty. A Check request names its exact configured capability and finite units. A Challenge request names an authored Plan, explicit capability, finite units and a nonzero candidate cap. Core derives fingerprints, targets, Challenger forms, lanes and scope; callers supply none of those semantic fields. There is no partial-model or `--only` mode.
+Verification compares the running adapter's complete description with configuration. Planning loads the complete unselected model and accepts strict Check-only, Challenge-only or mixed requests; the two arrays are required and their union is non-empty. A Check request names its exact configured capability and finite units. A compact Challenge request selects a declared Challenger, explicit capability, finite units and a bounded target selection. Core resolves assessment fingerprints and semantic scope from the account; historical Plan requests retain their separate native rules. There is no partial-model or `--only` mode.
 
-The requested Challenge Plan union is fixed. Every reached candidate counts toward its Plan cap,
-including adverse dispositions, before cross-Plan selection deduplication. Any adverse candidate,
-cap overflow, incompatible decision contexts or conflicting work fails planning. For every selected
-decision, the union must contain a runnable target for every form required by its Decision Policy.
+Compact Challenge planning resolves declarations against current Claim Review or Claim Health fingerprints and produces bounded semantic scope and accountable launch inputs. Adverse or ambiguous target selection fails rather than silently choosing a larger source tree or whole suite. Historical authored Challenge Plans retain their own policy and scheduling rules; those rules are not extra mandatory compact review stages.
 
-Each Challenge selection freezes its `gate | scheduled` lane and canonical semantic scope. Scope contains sorted selector anchors and complete decision inputs with typed identities and fingerprints. Each Challenge route projects exactly the source-backed scope items into accountable source, Artifact, enumeration or surface-member locator accounts. Scope changes semantic Plan identity; locator changes launch identity. An adapter translates this frozen account and never loads or reinterprets the repository model.
+Each selection freezes an exact target and semantic scope. Source-backed scope items project into accountable source, Artifact, enumeration or surface-member locators. Semantic scope changes Plan identity; locator projection changes launch identity. An adapter translates this frozen account rather than reinterpreting repository authority.
 
 Execute and import stage the configured executable, resources and import inputs from the same open streams core hashes. Core clears the child environment and invokes the staged executable directly. On a supported host, process creation places it in a fresh process group before adapter code runs. One configured deadline bounds request writing, concurrent response and diagnostic reads and core's own wait. Core signals remaining group members on every terminal path and cleans their inherited pipes while they retain group membership. A host without that process-group primitive rejects the exchange before spawn as an exit-one transport failure.
 
@@ -326,3 +225,9 @@ Historical consumer feedback is retained only as an [immutable provenance citati
 One falsifier stays open and is cheap to run once the export carries non-routine content: if the intent, mechanism and evidence views over the export turn out to be substantially the same view, the three-facet split is decorative and the artifacts should collapse into fewer.
 
 Azimuth does not prove prose predicates, infer honest linkage from source, turn a clean Challenger search into positive product evidence, create a repository decision from execution facts or enroll native tests automatically. Its current outputs are a versioned repository account, derived traceability and validated bounded adapter exchanges. The current ledger adds durable ingestion and independently reviewed Subject-specific assurance. Protocol validity alone still supplies no positive Claim conclusion.
+
+## Local work and accountable publication
+
+Local draft reviews, debug Runs and correction attempts remain local by default. CI validates exact dependencies and publishes the current package relied on for delivery, including necessary provenance and relevant adverse or unresolved facts. All model-assisted review can happen locally; deterministic CI transport does not relabel an agent or human reviewer. Review submission requires the authorized reviewer credential matching the original record; a producer token authorizes Runs only.
+
+The Assurance State Service preserves immutable published assessments, Run corrections and authority selections. Definition review is visible independently of Subjects; Claim Health is exact-Subject and cannot be reused merely because an image or model revision matches. Source-to-artifact-to-deployment provenance is explicit information, not automatic evidence applicability. Candidate registration, publication and execution never select accepted authority or authorize deployment implicitly.

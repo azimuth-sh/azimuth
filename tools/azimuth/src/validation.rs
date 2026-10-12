@@ -30,6 +30,7 @@ pub enum FindingCategory {
     Verification,
     Mechanism,
     Judgment,
+    Assurance,
     Surface,
     Execution,
 }
@@ -42,6 +43,7 @@ impl FindingCategory {
             Self::Verification => "verification",
             Self::Mechanism => "mechanism",
             Self::Judgment => "judgment",
+            Self::Assurance => "assurance",
             Self::Surface => "surface",
             Self::Execution => "execution",
         }
@@ -89,6 +91,7 @@ define_finding_kinds! {
     StaleApplicabilityDecision,
     MissingClaimJudgment,
     PendingClaimReview,
+    MissingClaimAssurance,
     InvalidClaimReview,
     VerificationElementSupportUnresolved,
     CaseCheckContributionUnresolved,
@@ -147,6 +150,7 @@ impl FindingKind {
             Self::StaleApplicabilityDecision => "stale-applicability-decision",
             Self::MissingClaimJudgment => "missing-claim-judgment",
             Self::PendingClaimReview => "pending-claim-review",
+            Self::MissingClaimAssurance => "missing-claim-assurance",
             Self::InvalidClaimReview => "invalid-claim-review",
             Self::VerificationElementSupportUnresolved => "verification-element-support-unresolved",
             Self::CaseCheckContributionUnresolved => "case-check-contribution-unresolved",
@@ -203,6 +207,7 @@ impl FindingKind {
             | Self::RejectedClaimJudgment
             | Self::StaleClaimJudgment
             | Self::InvalidClaimJudgment => FindingCategory::Judgment,
+            Self::MissingClaimAssurance => FindingCategory::Assurance,
             Self::MissingChallenger
             | Self::UnresolvedChallengePlan
             | Self::MissingChallengeDecision
@@ -265,7 +270,8 @@ impl FindingKind {
                 "Review applicability against its current fingerprint."
             }
             Self::MissingClaimJudgment => "Record the Claim's total-composition Judgment.",
-            Self::PendingClaimReview => "Complete the pending Claim review against implementation and evidence before judgment.",
+            Self::PendingClaimReview => "Complete the pending historical Claim review against implementation and evidence before judgment.",
+            Self::MissingClaimAssurance => "Supply a matching native assurance snapshot with current accepted Claim Review and supported exact-Subject Claim Health.",
             Self::InvalidClaimReview => "Repair the Claim review references before judgment.",
             Self::VerificationElementSupportUnresolved => "Provide source/configuration support for the required verification element.",
             Self::CaseCheckContributionUnresolved => "Declare a source-authored Check contribution to this Case.",
@@ -1294,6 +1300,21 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
             claim.claim.criticality,
             Some(Criticality::Standard | Criticality::Critical)
         ) {
+            continue;
+        }
+        if model
+            .account_verifications
+            .iter()
+            .any(|facet| facet.claims.iter().any(|entry| entry.claim == claim.id()))
+        {
+            findings.push(simple(
+                FindingKind::MissingClaimAssurance,
+                &claim.spec.path,
+                claim.claim.line,
+                Some(claim.id()),
+                Some(crate::diag::EntityKind::Claim),
+                "compact Claim requires current accepted native Claim Review and supported exact-Subject Claim Health; definitions alone establish neither".into(),
+            ));
             continue;
         }
         let judgment = model

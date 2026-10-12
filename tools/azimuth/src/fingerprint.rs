@@ -169,6 +169,22 @@ pub fn challenger_fingerprint(challenger: &crate::verification::Challenger) -> S
         ("form", Json::str(&challenger.form)),
         ("searches_for", Json::str(&challenger.searches_for)),
         (
+            "targets",
+            Json::Arr(challenger.targets.iter().map(Json::str).collect()),
+        ),
+        (
+            "claims",
+            Json::Arr(challenger.claims.iter().map(Json::str).collect()),
+        ),
+        (
+            "mechanisms",
+            Json::Arr(challenger.mechanisms.iter().map(Json::str).collect()),
+        ),
+        (
+            "checks",
+            Json::Arr(challenger.checks.iter().map(Json::str).collect()),
+        ),
+        (
             "required_scope",
             Json::Arr(
                 required_scope

@@ -2,9 +2,7 @@
 
 Status: **compact verification packages, independent review records and the current Run ledger implemented; compact Decision Policies and challenge scheduling deferred**.
 
-Azimuth is an evidence control plane, not a catalog of testing and analysis products. Compact package contracts preserve authored Check methods and inline contributions; separate review records qualify methods, assess exact-Subject applicability and judge Claims. The older declaration lane also implements the repository graph from Checks through Case Evidence Bindings to shared Method
-Qualifications and edge Applicability Decisions, plus total parent Claim Judgments, Challengers,
-Challenge Plans, Decision Policies and one current Challenge Schedule.
+Azimuth is an evidence control plane, not a catalog of testing and analysis products. Packages extend authoring, extraction and execution over shared Claims, Cases, Checks and inline contributions. Claim Review assesses definitions and their verification credibility; Claim Health assesses observations for an exact Subject. Machine-executed Challengers search for weaknesses in an exact assessment. No separate Check Review, Method Qualification, Applicability Decision or Claim Judgment step is mandatory in the compact account. Historical declaration contracts and review records retain their original meanings without granting current positive assurance.
 
 This document records the role and authority boundaries extension work must preserve. Strict wire details remain in the [adapter](../contracts/adapter.md), [launch-plan](../contracts/run-launch-plan.md) and [Run-bundle](../contracts/run-bundle.md) formats.
 
@@ -19,10 +17,10 @@ The executable brand does not decide whether an activity is a Check or a Challen
 - Broad static analysis is normally a Challenger because a clean search does not establish product behavior.
 - A claim-specific static rule with an independent product oracle can be a Check.
 - Flakiness repetition, test-order randomization and oracle mutation are Challengers because they
-  search for reasons to distrust a method or applicability decision.
+  search for reasons to distrust a Claim Review or Claim Health assessment.
 - A contract or schema assertion is a Check when the accepted or rejected interaction is itself the product predicate.
 - A backup restoration or rollback drill is a Check when it directly evaluates a recovery Claim for an exact artifact or deployment.
-- A penetration or exploratory session is a Challenger by default because negative search does not imply product satisfaction.
+- A machine-executed penetration search can be a Challenger because negative search does not imply product satisfaction. Agent-only exploratory investigations are not enrolled Challenger execution in this increment.
 
 One physical execution may perform both roles. A broker-loss exercise could directly evaluate a recovery Check while challenging whether another Check detects the injected fault. The runtime model must preserve the product outcome and the separately targeted challenge outcome rather than collapsing them into one generic success.
 
@@ -33,16 +31,15 @@ to several Cases only when its terminal outcome is atomic and honestly bears on 
 
 The compact extension seam is package-owned authoring and extraction over the shared Check–Case graph. `azimuth.surface` declares Surfaces and independent Expectation Sets; `azimuth.network` declares Probes and origins. Packages expose canonical namespaces, descriptors and validators without making providers authoritative for Case meaning. See [verification-packages.md](../contracts/verification-packages.md) and [assurance-reviews.md](../contracts/assurance-reviews.md).
 
-The older declaration lane remains repository-owned:
+The compact account keeps distinct ownership:
 
-- `verification.md` declares Checks, Evidence Bindings, Method Qualifications, Applicability
-  Decisions, Challengers and Challenge Plans plus one Claim Judgment per applicable parent Claim;
-- project standards declare Decision Policies and one `gate | scheduled` Challenge Schedule;
-- source uses sparse `ImplementsCheck(<check-id>)` linkage;
-- extractors emit implementation identity and source fingerprints, never evidentiary meaning;
-- Challenge Plans use twelve selector forms for exact current decision fingerprints and preserve
-  every candidate disposition; and
-- `azimuth export` version 5 exposes the derived repository graph and Findings.
+- `verification.md` declares Checks, inline contributions, package concepts and machine-executed Challengers;
+- source tags identify Check/Challenger implementations and meaningful Claim or Mechanism realization scope;
+- ecosystem extractors emit semantic sites, accountable locations and fingerprints, not reviewer decisions;
+- exact Claim Reviews and Claim Health records are authored separately and compiled against pinned packets; and
+- Runs retain actual execution Subjects, observations, Challenge Results and provenance.
+
+The older repository declaration lane retains its separately documented Decision Policies and Challenge Plans. It is historical guidance for that grammar, not a mandatory compact review layer. See [the historical review contract](../contracts/history/assurance-reviews-before-claim-health.md).
 
 Ordinary tests, analyzer rules and monitors remain outside Azimuth until deliberately enrolled. This prevents thousands of native test cases from becoming accidental assurance authority. It is independent of storage capacity: the current ledger may retain large execution volumes while the semantic Check graph remains sparse.
 
@@ -52,7 +49,7 @@ engineering tests, not Azimuth evidence.
 
 ## Current Run exchange
 
-The [`azimuth-run-bundle` version 1](../contracts/run-bundle.md) contract represents one logical Run over an exact workspace, CI candidate, artifact, deployment, service or monitoring window. It freezes the model and selected Check or Challenger fingerprints, exact context, planned and actual work, physical activities, ordered attempts, terminal results, content-addressed artifacts, diagnostics and accountable provenance.
+The [`azimuth-run-bundle` version 1](../contracts/run-bundle.md) contract represents one logical Run over an exact source snapshot, artifact or deployment; historical Subject variants retain their original meanings. It freezes the model and selected Check or Challenger fingerprints, exact context, planned and actual work, physical activities, ordered attempts, terminal results, content-addressed artifacts, diagnostics and accountable provenance.
 
 Every actually selected Check has one terminal Observation. Every selected Challenger target has one separately reduced Challenge Result. A shared activity can contribute to both without making a clean challenge positive product evidence or a violated Observation a challenge finding. Partial, cancelled and timed-out Runs omit unselected work rather than fabricating results.
 
@@ -88,12 +85,9 @@ azimuth run import --plan <file> --input <id>=<file>... \
 
 Verification performs the configured description handshake. Planning loads the complete unselected model and accepts Check-only, Challenge-only or mixed strict requests. Check requests name an explicit capability and finite units. Challenge requests additionally name an authored Plan and nonzero candidate cap. The two arrays are required and their combined selection is non-empty.
 
-Planning resolves the fixed union of requested Plans. Only current positive Method Qualifications,
-Applicability Decisions and Claim Judgments execute as Challenge targets. Every reached candidate
-counts toward its Plan cap, and any adverse disposition fails planning. Exact decision context,
-policy-required-form coverage and the one-adapter boundary must hold.
+Compact planning selects exact current Claim Review or Claim Health assessment fingerprints and resolves a bounded semantic scope. The mutation execution Subject is separate from the review target. Current Stryker integration pins exact batch source input and native mutation statuses/locations; per-mutant exact Subjects and mutant-specific product Observations are unavailable. Future materialized mutants require distinct Subjects before their observations can support product health. Source scope uses meaningful Claim or Mechanism tags rather than duplicate file lists; emitters supply locations and adapters translate them into tool filters. Mutation targets, compilation/analysis dependencies and exercised Checks remain distinct. Missing mappings, exclusions and scope expansion must be recorded rather than silently broadening execution.
 
-Every Challenge selection freezes its `gate | scheduled` lane, exact target and sorted semantic scope. Scope contains typed selector anchors and complete decision inputs. Each launch route projects every source-backed scope item into one exact accountable source, Artifact, enumeration or surface-member input. Scope affects semantic Plan identity; locator projection affects launch identity. The adapter does not load or reinterpret the repository model.
+Historical authored Challenge Plans retain their policy and schedule semantics. Compact planning does not invent a mandatory Decision Policy, recursive Challenger qualification or positive interpretation of a clean search. The adapter executes the frozen semantic selection and accountable launch inputs; it never loads or reinterprets repository authority.
 
 For every exchange, core stages executable, resource and import-input bytes from the same open streams it hashes and invokes only staged content with a cleared environment. On a supported host, the adapter starts in a fresh process group before its code runs. One configured deadline bounds core request writing, concurrent response and diagnostic reads and core's own wait. Core signals remaining group members on every terminal path and cleans inherited pipes while those processes remain in the group. A host without the required process-group primitive rejects the exchange before spawn.
 
@@ -106,8 +100,7 @@ Adapter, configuration, description, launch, routes and normalizer are correctio
 A valid violated Observation, Challenge finding, partial or cancelled Run, or adapter-returned protocol-valid `timed-out` Run fact exits zero. A host-enforced process deadline is a transport timeout and exits one, as does another transport, semantic, content or identity mismatch. A returned `timed-out` fact is valid only when the complete response arrives inside that host deadline; host timeout publishes nothing. CLI and schema failures exit two. No nonzero result publishes an output bundle.
 
 Challenge Results are exactly `clean | findings | inconclusive`. Clean records only that the
-configured search found no objection. A challenged Method Qualification fans out through dependent
-edges; an Applicability Decision remains local. Neither path fabricates a direct Judgment result.
+configured search found no objection. Findings attack the pinned assessment and require disposition, correction and reassessment where relevant. They do not fabricate a violated product Claim, and clean results do not establish supported Claim Health.
 
 Adapters are short-lived processes. There is no long-running adapter, service bridge, provider webhook or generic event gateway. Provider-specific event hosting does not enter core or the Assurance Service.
 
@@ -119,7 +112,7 @@ The synthetic [Challenge-planning conformance](../experiments/challenge-planning
 
 ## Service and wire boundary
 
-The current `run-ledger` accepts strict Run bundles and independently authored compact review records under project-scoped producer, reviewer and owner credentials. Owners explicitly select a complete authority projection exported with `azimuth assurance authority`; registering a candidate does not accept a change. A snapshot joins that selected authority, immutable reviews and current correction heads for an exact Subject. No passing Run fabricates a supported Judgment. Stale, rejected, missing and ambiguous support remains visible.
+The current `run-ledger` accepts strict Run bundles and independently authored compact review records under project-scoped producer, reviewer and owner credentials. Owners explicitly select a complete authority projection exported with `azimuth assurance authority`; registering a candidate does not accept a change. A snapshot joins that selected authority, immutable reviews and current correction heads for an exact Subject. No passing Run fabricates a supported Claim Health assessment. Stale, rejected, missing and ambiguous support remains visible.
 
 The older claim-contract/project-snapshot service stays isolated, with no compatibility bridge into current Run state. `azimuth export` emits repository model content; the authority command emits its pinned full-model review projection, neither exporting runtime ledger history. Provider-specific event hosting remains outside the ledger. See [run-ledger.md](../contracts/run-ledger.md).
 
@@ -137,3 +130,9 @@ A future provider package or ledger integration is composable only if it preserv
 - equivalent normalized bundles work locally and through the optional ledger.
 
 Adapter transport stops before durable ingestion; the separate current ledger supplies authorization, immutable history and Subject-specific compact Assurance State. No cache-validity, automatic expiry, cross-Subject reuse or historical applicability inference is defined. Compact challenge policies and scheduling remain deferred. Guidance must not simulate those missing authorities or turn checked-in records into fresh measurements.
+
+## Review provenance and publication
+
+Native reviews may retain optional `provenance: {agent, model, reassesses}`. Agent and model labels are null or supplied nonempty names; reassessment is null or an earlier same-target review fingerprint with an earlier review time. Labels do not establish independence or permission. Markdown aggregates preserve reviewer, actual review time, rationale and exact packet dependencies.
+
+Local drafts and experimental executions stay local by default. CI publishes the current package relied on for delivery and relevant adverse facts, preserving original authorship. Review publication requires an authorized reviewer credential matching the record; producer permission cannot publish reviews. ASS retains published immutable records, separately exposes definition Review currentness and exact-Subject Health, and never infers acceptance from registration, transport, execution or deployment provenance.

@@ -23,10 +23,22 @@ export interface Review {
   record: Record<string, unknown>;
   assessment: string;
   diagnostics: string[];
+  historical: boolean;
+  submitted_by: string;
+  submitted_at: string;
 }
 export interface ReviewPage {
   records: Review[];
   next: string | null;
+}
+export interface ClaimReviewState {
+  authority_fingerprint: string;
+  claims: Array<{
+    claim: string;
+    record: Record<string, unknown> | null;
+    assessment: string;
+    diagnostics: string[];
+  }>;
 }
 export interface SubjectState {
   authority_fingerprint: string;
@@ -34,12 +46,13 @@ export interface SubjectState {
   claims: Array<{
     claim: string;
     status: string;
-    judgment: string;
+    review?: string;
+    health?: string;
     diagnostics: string[];
     gaps: unknown;
     bindings: unknown;
+    challenges?: unknown;
   }>;
-  method_qualifications: unknown;
 }
 export async function readProject<T>(
   project: string,
@@ -74,7 +87,7 @@ export async function projectView(
   project: string,
   page: { runs?: string; subjects?: string; reviews?: string },
 ) {
-  const [authority, runs, subjects, reviews] = await Promise.all([
+  const [authority, runs, subjects, reviews, claimReviews] = await Promise.all([
     readProject<Record<string, unknown>>(project, '/authority'),
     readProject<Page<RunSummary>>(
       project,
@@ -88,8 +101,9 @@ export async function projectView(
       project,
       `/reviews?after=${encodeURIComponent(page.reviews ?? '')}`,
     ),
+    readProject<ClaimReviewState>(project, '/claim-reviews'),
   ]);
-  return { authority, runs, subjects, reviews };
+  return { authority, runs, subjects, reviews, claimReviews };
 }
 
 export function routeFingerprint(value: string): string | null {

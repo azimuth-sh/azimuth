@@ -23,7 +23,7 @@ export default async function SubjectPage({
   return (
     <div className="shell">
       <Link href={`/projects/${encodeURIComponent(projectId)}`}>← Project</Link>
-      <h1>Exact-Subject Assurance State</h1>
+      <h1>Exact-Subject Claim Health</h1>
       <code>{subject}</code>
       {!state ? (
         <p>No selected authority; conclusion unresolved.</p>
@@ -36,15 +36,20 @@ export default async function SubjectPage({
             <article className="section" key={claim.claim}>
               <h2>{claim.claim}</h2>
               <p>
-                Conclusion: <strong>{claim.status}</strong> · Judgment
-                freshness: <strong>{claim.judgment}</strong>
+                Conclusion: <strong>{claim.status}</strong> · Review:{' '}
+                <strong>{claim.review ?? 'missing'}</strong> · Health
+                assessment: <strong>{claim.health ?? 'missing'}</strong>
               </p>
               <p>{claim.diagnostics.join('; ')}</p>
               <details>
                 <summary>Bindings and gaps</summary>
                 <pre>
                   {JSON.stringify(
-                    { bindings: claim.bindings, gaps: claim.gaps },
+                    {
+                      bindings: claim.bindings,
+                      gaps: claim.gaps,
+                      challenges: claim.challenges,
+                    },
                     null,
                     2,
                   )}
@@ -53,7 +58,9 @@ export default async function SubjectPage({
             </article>
           ))}
           <details>
-            <summary>Method qualifications and complete state</summary>
+            <summary>
+              Complete health, dependencies and challenge results
+            </summary>
             <pre>{JSON.stringify(state, null, 2)}</pre>
           </details>
         </>

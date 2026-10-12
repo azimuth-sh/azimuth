@@ -73,6 +73,23 @@ pub struct ReferenceDescriptor {
 
 pub const REFERENCES: &[ReferenceDescriptor] = &[
     ReferenceDescriptor {
+        id: "assurance-reviews",
+        format_version: 1,
+        accepted: &[
+            "Markdown review bundles",
+            "exact review-input packets",
+            "native review compilation",
+            "local candidate snapshots",
+            "independent reviewer provenance",
+        ],
+        rejected: &[
+            "invented reviewer facts",
+            "local compilation authenticates identity",
+            "compilation selects accepted authority",
+        ],
+        prose: include_str!("../resources/references/assurance-reviews.md"),
+    },
+    ReferenceDescriptor {
         id: "workflow",
         format_version: 1,
         accepted: &[

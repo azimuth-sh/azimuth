@@ -58,6 +58,9 @@ pub struct RunBundle {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Subject {
+    Source {
+        repositories: Vec<RepositoryState>,
+    },
     Workspace {
         repositories: Vec<RepositoryState>,
     },
@@ -206,6 +209,8 @@ pub struct ChallengeScopeItem {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ChallengeScopeKind {
+    ClaimReview,
+    ClaimHealth,
     ApplicabilityDecision,
     Case,
     Claim,
@@ -230,6 +235,8 @@ pub enum ChallengeScopeKind {
 impl ChallengeScopeKind {
     pub fn name(self) -> &'static str {
         match self {
+            Self::ClaimReview => "claim-review",
+            Self::ClaimHealth => "claim-health",
             Self::ApplicabilityDecision => "applicability-decision",
             Self::Case => "case",
             Self::Claim => "claim",
@@ -268,6 +275,8 @@ pub struct ChallengeTarget {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChallengeTargetKind {
+    ClaimReview,
+    ClaimHealth,
     ApplicabilityDecision,
     ClaimJudgment,
     MethodQualification,
@@ -276,6 +285,8 @@ pub enum ChallengeTargetKind {
 impl ChallengeTargetKind {
     pub fn name(self) -> &'static str {
         match self {
+            Self::ClaimReview => "claim-review",
+            Self::ClaimHealth => "claim-health",
             Self::ApplicabilityDecision => "applicability-decision",
             Self::ClaimJudgment => "claim-judgment",
             Self::MethodQualification => "method-qualification",
@@ -1184,6 +1195,11 @@ fn parse_subject(value: &Json, where_: &str) -> Result<Subject, String> {
     let base = object_pairs(value, where_)?;
     let kind = string(base, "kind", where_)?;
     match kind {
+        "source" => {
+            let object = object(value, where_, &["kind", "repositories"])?;
+            let repositories = parse_array(object, "repositories", where_, parse_repository)?;
+            Ok(Subject::Source { repositories })
+        }
         "workspace" => {
             let object = object(value, where_, &["kind", "repositories"])?;
             let repositories = parse_array(object, "repositories", where_, parse_repository)?;
@@ -1426,6 +1442,8 @@ fn parse_challenge_scope(value: &Json, where_: &str) -> Result<ChallengeScope, S
 fn parse_challenge_scope_item(value: &Json, where_: &str) -> Result<ChallengeScopeItem, String> {
     let object = object(value, where_, &["kind", "id", "fingerprint"])?;
     let kind = match string(object, "kind", where_)? {
+        "claim-review" => ChallengeScopeKind::ClaimReview,
+        "claim-health" => ChallengeScopeKind::ClaimHealth,
         "applicability-decision" => ChallengeScopeKind::ApplicabilityDecision,
         "case" => ChallengeScopeKind::Case,
         "claim" => ChallengeScopeKind::Claim,
@@ -1472,6 +1490,8 @@ fn parse_challenger_ref(value: &Json, where_: &str) -> Result<ChallengerRef, Str
 fn parse_target(value: &Json, where_: &str) -> Result<ChallengeTarget, String> {
     let object = object(value, where_, &["kind", "id", "fingerprint"])?;
     let kind = match string(object, "kind", where_)? {
+        "claim-review" => ChallengeTargetKind::ClaimReview,
+        "claim-health" => ChallengeTargetKind::ClaimHealth,
         "applicability-decision" => ChallengeTargetKind::ApplicabilityDecision,
         "claim-judgment" => ChallengeTargetKind::ClaimJudgment,
         "method-qualification" => ChallengeTargetKind::MethodQualification,
@@ -1482,7 +1502,9 @@ fn parse_target(value: &Json, where_: &str) -> Result<ChallengeTarget, String> {
         ChallengeTargetKind::ApplicabilityDecision | ChallengeTargetKind::MethodQualification => {
             validate_id(&target_id, true).map_err(|reason| format!("{where_}.id: {reason}"))?
         }
-        ChallengeTargetKind::ClaimJudgment => {
+        ChallengeTargetKind::ClaimReview
+        | ChallengeTargetKind::ClaimHealth
+        | ChallengeTargetKind::ClaimJudgment => {
             validate_claim_id(&target_id).map_err(|reason| format!("{where_}.id: {reason}"))?
         }
     }
@@ -2597,7 +2619,9 @@ pub fn validate_subject_component(subject: &Subject) -> Vec<SchemaError> {
         }
     }
     let (values, label): (Vec<String>, &str) = match subject {
-        Subject::Workspace { repositories } | Subject::CiCandidate { repositories } => (
+        Subject::Source { repositories }
+        | Subject::Workspace { repositories }
+        | Subject::CiCandidate { repositories } => (
             repositories.iter().map(|item| item.id.clone()).collect(),
             "$.repositories",
         ),
@@ -3725,6 +3749,13 @@ pub fn subject_to_json(subject: &Subject) -> Json {
         "unsafe Subject number must be rejected before serialization"
     );
     match subject {
+        Subject::Source { repositories } => Json::obj(vec![
+            ("kind", Json::str("source")),
+            (
+                "repositories",
+                Json::Arr(repositories.iter().map(repository_json).collect()),
+            ),
+        ]),
         Subject::Workspace { repositories } => Json::obj(vec![
             ("kind", Json::str("workspace")),
             (
@@ -4559,7 +4590,9 @@ pub fn verify(bundle: &RunBundle) -> Vec<Finding> {
 
 fn validate_subject(bundle: &RunBundle, add: &mut impl FnMut(&str, String)) {
     match &bundle.subject {
-        Subject::Workspace { repositories } | Subject::CiCandidate { repositories, .. } => {
+        Subject::Source { repositories }
+        | Subject::Workspace { repositories }
+        | Subject::CiCandidate { repositories, .. } => {
             if repositories.is_empty() {
                 add(
                     "run/subject-cardinality",
@@ -4617,14 +4650,14 @@ fn canonical<T, K: Ord>(
 
 fn validate_canonical_arrays(bundle: &RunBundle, add: &mut impl FnMut(&str, String)) {
     match &bundle.subject {
-        Subject::Workspace { repositories } | Subject::CiCandidate { repositories, .. } => {
-            canonical(
-                repositories,
-                |item| item.id.clone(),
-                "subject.repositories",
-                add,
-            )
-        }
+        Subject::Source { repositories }
+        | Subject::Workspace { repositories }
+        | Subject::CiCandidate { repositories, .. } => canonical(
+            repositories,
+            |item| item.id.clone(),
+            "subject.repositories",
+            add,
+        ),
         Subject::Artifact { artifacts } | Subject::Deployment { artifacts, .. } => {
             canonical(artifacts, |item| item.id.clone(), "subject.artifacts", add)
         }

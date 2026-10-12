@@ -1,6 +1,6 @@
 # Assurance State Service
 
-The current API stores validated Runs, append-only correction and independent review histories, explicit model authority and exact-Subject Assurance State. The inspection-only Web UI uses this API. Execution never creates an approved review or a supported Claim conclusion.
+The current API stores validated Runs, append-only correction histories, definition-level Claim Reviews, exact-Subject Claim Health assessments and explicit model authority. Earlier Method Qualification, Applicability Decision and Claim Judgment records remain immutable readable history; they do not substitute for the new assessments. The inspection-only Web UI uses this API. Execution never creates an approved review or a supported Claim conclusion.
 
 ## Private hosted deployment
 
@@ -69,13 +69,15 @@ All data routes below require a project bearer credential; `/health` is process 
 | `GET .../runs/{run_id}` | Immutable revision history, oldest first, with a revision cursor. |
 | `GET .../subjects` | Exact recorded Subject fingerprints and descriptors. |
 | `GET .../subjects/{fingerprint}/state` | Current authority's derived state for that exact recorded Subject. |
-| `POST .../reviews` | Reviewer ingestion; independent records are never fabricated by execution. |
+| `POST .../reviews` | Reviewer ingestion of Claim Review or Claim Health; execution never fabricates an assessment. |
+| `GET .../claim-reviews` | Current definition assessments, independent of execution Subjects. |
 | `GET .../reviews` | Immutable review records with current assessment and diagnostics. |
 | `POST .../authority` | Owner selection with `If-None-Match: *` initially or exact `If-Match`. |
 | `GET .../authority` | Currently selected complete authority. |
 | `POST .../model-revisions` | Owner registration of an immutable candidate projection, without authority selection. |
 | `GET .../model-revisions` | Bounded registration metadata; no projection payloads in lists. |
 | `GET .../model-revisions/{revision}` | Exact projection, original registration metadata and current selection indicator. |
+| `GET .../model-revisions/{revision}/claim-reviews` | Candidate definition assessments without authority selection or an execution Subject. |
 | `GET .../model-revisions/{revision}/snapshot` | Consistent complete bounded authority, revision-linked reviews and latest project Run bundles. |
 | `POST .../model-revisions/{revision}/reviews` | Authenticated reviewer ingestion and explicit linkage to this revision. |
 | `GET .../model-revisions/{revision}/subjects/{fingerprint}/state` | This revision's exact recorded Subject assessment without changing accepted authority. |
@@ -97,6 +99,24 @@ Revision snapshot responses contain `project`, `model_revision`, `authority`, `r
 Revision-scoped review submission reuses strict record validation, authenticated reviewer matching and current dependency assessment. Invalid dependencies fail with HTTP 422; protocol-valid rejected and stale assessments are retained. An identical record may be explicitly submitted for another revision when its exact dependencies permit assessment there. The record itself stays immutable; the link records authenticated submission provenance. There is no automatic cross-revision review reuse. Current `/reviews` writes and reads use the selected revision. Candidate records cannot silently affect selected authority. The additive migration links pre-existing review history to the authority selected at migration, preserving records and selection history without asserting their earlier validity or assessment context. Such links are explicitly marked `migration-selected-authority` rather than `reviewer-submission`; migration does not manufacture reviewer approval.
 
 Snapshot and review assessment are observations at read time. A correction or another review arriving afterward may change the next assessment. No lease, freshness guarantee or review-quality guarantee is supplied by an HTTP receipt. The Web UI does not yet browse candidate revisions; authenticated API and harness clients can use these endpoints.
+
+## Claim Review and Claim Health
+
+Claim Review assesses the Claim definition, Cases, implementation and verification account using exact dependencies. It has no execution Subject or observations. Its accepted or rejected outcome is authored independently of Run execution. `GET .../claim-reviews` exposes the latest assessment for every Claim and shows missing and stale records explicitly.
+
+Claim Health names one exact Subject, its current accepted Claim Review and an explicit Run/observation basis. The core validates definition dependencies, correction heads and Subject matching independently; a stale or rejected definition review cannot establish supported health. Source, artifact and deployment are distinct execution Subjects. Build and deployment provenance is inspectable information, never automatic permission to reuse observations across Subjects. Missing Cases, unresolved evidence and Challenge findings remain visible. A clean Challenge is a negative search fact, not proof of health. Current mutation integration records exact batch source input and native mutation statuses/locations; it does not materialize per-mutant Subjects or mutant-specific product Observations.
+
+The existing append-only `assurance_reviews` JSONB table retains the native records and their fingerprints without converting historical payloads. Optional provenance and exact `challenge_basis` references are stored unchanged. Submission assesses against existing latest Run correction heads and revision-linked reviews; publish relied-on Runs before dependent assessments and retained predecessors before reassessments. Missing or changed challenge proofs remain stale dependencies, not silent success. Candidate revision links remain explicit. The UI separates definition review from exact-Subject health and labels historical review kinds. Review history exposes the original reviewer in the payload and the actual authenticated submitter and receive time separately; agent/model provenance remains part of the authored dependency artifacts rather than being inferred from the transport.
+
+Local drafts and debugging Runs need not be uploaded. CI publication is the default accountable boundary, publishing the selected review and evidence with necessary dependencies and relevant adverse facts. A CI producer token authorizes Runs only. Transporting an unchanged locally authored review requires an authorized reviewer credential matching that record's reviewer; CI cannot relabel the reviewer or acquire review permission from producer status. Credentials must be configured explicitly. There is no new signed delegation or publisher role.
+
+### Migration and rollback
+
+No database migration is necessary for these record kinds: existing immutable JSONB payloads and revision links accommodate them. New review writes accept only `claim-review` and `claim-health`. Historical kinds remain parseable for inspection; they are never silently promoted into accepted Claim Reviews or supported Claim Health. Existing projects therefore show unresolved new assessments until independently authored records are published.
+
+Back up the PostgreSQL volume before rollout. Downgrading the application after publishing new records is unsafe because an earlier parser may reject the complete snapshot. Roll back code only before new-kind ingestion, or restore a separately retained pre-rollout database snapshot into an isolated recovery deployment. Do not delete or rewrite published history to make an older binary appear compatible. This change does not publish images or deploy the service.
+
+Build and source inspection establish compilation and schema integration, not PostgreSQL-backed behavior, OAuth authorization or live Challenge execution. Existing historical parsers remain readable; there is no automatic cross-Subject composition, recency expiration, telemetry ingestion or review-quality guarantee. Full snapshots retain the existing bounded-record and payload limits.
 
 ## Local private profile
 

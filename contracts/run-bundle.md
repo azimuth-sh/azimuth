@@ -1,5 +1,22 @@
 # Run bundle format
 
+## Current Subject and machine Challenge semantics
+
+New Run requests use three Subject kinds: `source`, `artifact`, `deployment`. `source` is the exact source snapshot, with the same repository state fields required for historical workspace capture:
+
+```json
+{"kind":"source","repositories":[{"id":"example","revision":"immutable-base-revision","content_fingerprint":"sha256:<64-lowercase-hex>"}]}
+```
+
+Local/CI origin belongs to Run provenance, not a different source identity. Complete relevant tracked/staged/modified/untracked capture remains a producer obligation; a digest proves identity only, not capture completeness. Service/component selection and observation intervals are explicit examination scope carried in exact planned context and native evidence. They do not erase deployment differences or authorize cross-Subject evidence transfer. Existing `workspace`, `ci-candidate`, `service` and `monitoring-window` Run descriptors remain readable with their original meanings. Their descriptor hashes are not rewritten to new types. They are rejected for newly authored Run requests.
+
+Challenge target `kind` additionally accepts `claim-review` and `claim-health`. Its `id` identifies the assessed Claim and `fingerprint` identifies the exact native assessment record. The execution Subject remains the Run Subject and is independent of that assessment target. Scope anchors additionally accept these assessment kinds; source-backed scope inputs retain exact selected source identities and fingerprints.
+
+Machine Challenge Results remain `clean | findings | inconclusive` with native objections, artifacts, diagnostics and measured work-unit attempts. Findings may coexist with incomplete search; diagnostics must retain those gaps. Clean never establishes product satisfaction or supported Claim Health. Surviving mutations require equivalence/relevance assessment, while timeout/compile/discovery failures remain visible.
+
+The initial Stryker integration records the exact captured source input Subject for the batch Challenger execution, native mutation identities/statuses and derivation locations. Its native report does not capture exact materialized source snapshots per mutant. It therefore produces no fabricated mutant Subjects or mutant-specific product Observations. A provider that does execute product Checks against captured mutants must identify each distinct mutant Subject explicitly before those observations can be used. A mutation result cannot characterize the unmodified deployment's health.
+
+
 A Run bundle is one strict provider-neutral JSON account of a bounded execution. The file suffix is `.json`; format identity comes from its fields, not its path.
 
 ## Root

@@ -189,3 +189,96 @@ def build_check_bundle(launch, *, source, normalizer, generated_at_ms,
         raise ValueError("initial import cannot supply a correction reason")
     bundle["bundle_fingerprint"] = fingerprint({"format": "azimuth-run-bundle-fingerprint", "version": 1, "bundle": bundle})
     return bundle
+
+
+def build_challenge_bundle(launch, *, source, normalizer, generated_at_ms,
+                           started_at_ms, finished_at_ms, actual_context,
+                           activities, units_by_challenge, artifacts, diagnostics,
+                           import_inputs):
+    launch = deepcopy(launch)
+    if len(launch.get('adapters', [])) != 1 or launch['operation'] != 'import' or launch['plan']['checks']:
+        raise ValueError('Challenger builder requires one partitioned Challenge-only import launch')
+    adapter = launch['adapters'][0]
+    expected = {'id': 'adapter/' + adapter['id'], 'version': adapter['adapter_version'], 'build_fingerprint': adapter['adapter_fingerprint']}
+    if normalizer != expected:
+        raise ValueError('normalizer does not identify selected adapter')
+    if not launch['planned_at_ms'] <= started_at_ms <= finished_at_ms <= generated_at_ms:
+        raise ValueError('invalid execution time interval')
+    subject_fp = fingerprint({'format':'azimuth-subject-fingerprint','version':1,'subject':launch['subject']})
+    if subject_fp != launch['subject_fingerprint']:
+        raise ValueError('Subject fingerprint mismatch')
+    launch_payload = {key:launch[key] for key in ('operation','planned_at_ms','subject','subject_fingerprint','plan','routes')}
+    launch_payload.update(format='azimuth-run-launch-fingerprint',version=1,adapter=deepcopy(adapter))
+    if fingerprint(launch_payload) != launch['fingerprint']:
+        raise ValueError('launch fingerprint mismatch')
+    activity_map = _identity_map(activities,'activity')
+    artifact_map = _identity_map(artifacts,'artifact')
+    diagnostic_map = _identity_map(diagnostics,'diagnostic')
+    challenges = launch['plan']['challenges']
+    if set(units_by_challenge) != {item['id'] for item in challenges}:
+        raise ValueError('native Challenge selection must exactly cover plan')
+    if not import_inputs:
+        raise ValueError('native import requires accountable inputs')
+    adapter.update(launch_fingerprint=launch['fingerprint'],routes=launch['routes'],import_inputs=sorted(deepcopy(import_inputs),key=lambda item:item['id']))
+    selection = {'context':deepcopy(actual_context),'plan_fingerprint':launch['plan']['fingerprint'],
+                 'checks':[],'challenges':deepcopy(challenges)}
+    selection['fingerprint'] = fingerprint(dict(format='azimuth-run-selection-fingerprint',version=1,**selection))
+    bundle = {'format':'azimuth-run-bundle','version':1,'bundle_revision':0,'subject':launch['subject'],
+              'subject_fingerprint':subject_fp,'planned_at_ms':launch['planned_at_ms'],'started_at_ms':started_at_ms,
+              'finished_at_ms':finished_at_ms,'status':'complete','plan':launch['plan'],'actual_selection':selection,
+              'provenance':{'mode':'import','source':deepcopy(source),'normalizer':deepcopy(normalizer),'adapter':adapter,'generated_at_ms':generated_at_ms},
+              'check_executions':[],'challenger_executions':[]}
+    bundle['run_id'] = fingerprint({'format':'azimuth-run-identity','version':1,'source_system':source['system'],
+                                   'source_execution':source['execution'],'subject_fingerprint':subject_fp,
+                                   'plan_fingerprint':selection['plan_fingerprint'],'launch_fingerprint':launch['fingerprint']})
+    used = set()
+    for challenge in challenges:
+        units = _identity_map(units_by_challenge[challenge['id']],'unit')
+        if set(units) != {item['id'] for item in challenge['units']}:
+            raise ValueError('native Challenge units must exactly cover plan')
+        outcomes, objections, refs, diagnostic_refs, wire_units = [], set(), set(), set(), []
+        for planned in challenge['units']:
+            unit = units[planned['id']]
+            attempts = unit.get('attempts', [])
+            if not attempts:
+                raise ValueError('native Challenge unit has no measured attempt')
+            wire_attempts = []
+            for ordinal, attempt in enumerate(attempts):
+                if attempt['ordinal'] != ordinal or attempt['outcome'] not in {'clean','findings','inconclusive'}:
+                    raise ValueError('invalid Challenge attempt')
+                activity_id = attempt['activity']
+                if activity_id not in activity_map or activity_id in used:
+                    raise ValueError('attempt activity must exist and be unique')
+                activity = activity_map[activity_id]
+                if not started_at_ms <= activity['started_at_ms'] <= activity['finished_at_ms'] <= finished_at_ms:
+                    raise ValueError('activity outside execution interval')
+                if activity['status'] != 'completed' and attempt['outcome'] != 'inconclusive':
+                    raise ValueError('failed activity cannot establish completed search')
+                used.add(activity_id)
+                refs.update(activity['artifacts'])
+                diagnostic_refs.update(activity['diagnostics'])
+                objections.update(attempt.get('objections',[]))
+                wire_attempts.append({'ordinal':ordinal+1,'activity':activity_id,'outcome':attempt['outcome']})
+            outcomes.append('findings' if any(item['outcome']=='findings' for item in attempts) else attempts[-1]['outcome'])
+            wire_units.append({'id':unit['id'],'attempts':wire_attempts})
+        outcome = 'findings' if 'findings' in outcomes else 'clean' if set(outcomes)=={'clean'} else 'inconclusive'
+        if outcome == 'findings' and not objections:
+            raise ValueError('findings require concrete objections')
+        if outcome == 'clean' and objections:
+            raise ValueError('clean result cannot hide objections')
+        execution = {'challenge':challenge['id'],'challenger':deepcopy(challenge['challenger']),
+                     'target':deepcopy(challenge['target']),'units':wire_units}
+        result = {'outcome':outcome,'observed_at_ms':finished_at_ms,'objections':sorted(objections),
+                  'artifacts':sorted(refs),'diagnostics':sorted(diagnostic_refs)}
+        result['fingerprint'] = fingerprint({'format':'azimuth-challenge-result-fingerprint','version':1,'run_id':bundle['run_id'],
+            'challenge':execution['challenge'],'challenger':execution['challenger'],'target':execution['target'],
+            'outcome':outcome,'observed_at_ms':finished_at_ms})
+        execution['result'] = result
+        bundle['challenger_executions'].append(execution)
+    if used != set(activity_map):
+        raise ValueError('native activity not accounted by planned Challenge')
+    bundle.update(activities=sorted(activity_map.values(),key=lambda item:item['id']),
+                  artifacts=sorted(artifact_map.values(),key=lambda item:item['id']),
+                  diagnostics=sorted(diagnostic_map.values(),key=lambda item:item['id']))
+    bundle['bundle_fingerprint'] = fingerprint({'format':'azimuth-run-bundle-fingerprint','version':1,'bundle':bundle})
+    return bundle

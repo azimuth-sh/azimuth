@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub const SURFACE: &str = "azimuth.surface";
 pub const NETWORK: &str = "azimuth.network";
+pub const CHALLENGE: &str = "azimuth.challenge";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Binding {
@@ -60,7 +61,7 @@ pub fn packages(path: &str, root: &Json, errors: &mut Vec<Diag>) -> Vec<String> 
     let mut result = Vec::new();
     for value in values {
         match value.as_str() {
-            Some(SURFACE | NETWORK) => {
+            Some(SURFACE | NETWORK | CHALLENGE) => {
                 let value = value.as_str().unwrap().to_string();
                 if result.contains(&value) {
                     errors.push(Diag::file(path, "duplicate enabled package"));
@@ -69,7 +70,7 @@ pub fn packages(path: &str, root: &Json, errors: &mut Vec<Diag>) -> Vec<String> 
             }
             _ => errors.push(Diag::file(
                 path,
-                "unknown verification package; expected azimuth.surface or azimuth.network",
+                "unknown verification package; expected azimuth.surface, azimuth.network or azimuth.challenge",
             )),
         }
     }
@@ -438,6 +439,7 @@ pub fn parse_producers(path: &str, root: &Json, errors: &mut Vec<Diag>) -> Vec<P
             (package.as_str(), contract.as_str()),
             (SURFACE, "surface-enumerator" | "surface-expectations")
                 | (NETWORK, "probe-implementation")
+                | (CHALLENGE, "challenger-implementation")
         ) {
             errors.push(Diag::file(path, "unsupported package producer contract"));
         }
@@ -468,7 +470,10 @@ pub fn parse_producers(path: &str, root: &Json, errors: &mut Vec<Diag>) -> Vec<P
                 None => errors.push(Diag::file(path, "surface producer requires schema")),
             }
         } else if schema.is_some() {
-            errors.push(Diag::file(path, "probe producer has no member schema"));
+            errors.push(Diag::file(
+                path,
+                "probe or Challenger implementation has no member schema",
+            ));
         }
         let mut inputs = Vec::new();
         if let Some(value) = value.get("inputs") {
@@ -909,15 +914,25 @@ pub fn validate_accounts(
                 "producer package is not enabled",
             ));
         }
-        if !declarations.iter().any(|(_, entity)| {
-            entity.package() == producer.package
-                && entity.id == producer.entity
-                && match entity.kind.as_str() {
-                    "Surface" => producer.contract == "surface-enumerator",
-                    "Expectation set" => producer.contract == "surface-expectations",
-                    _ => producer.contract == "probe-implementation",
-                }
-        }) {
+        let declared_challenger = producer.package == CHALLENGE
+            && producer.contract == "challenger-implementation"
+            && accounts.iter().any(|account| {
+                account
+                    .challengers
+                    .iter()
+                    .any(|challenger| challenger.id == producer.entity)
+            });
+        if !declared_challenger
+            && !declarations.iter().any(|(_, entity)| {
+                entity.package() == producer.package
+                    && entity.id == producer.entity
+                    && match entity.kind.as_str() {
+                        "Surface" => producer.contract == "surface-enumerator",
+                        "Expectation set" => producer.contract == "surface-expectations",
+                        _ => producer.contract == "probe-implementation",
+                    }
+            })
+        {
             errors.push(Diag::file(
                 &producer.file,
                 "producer references undeclared package entity",

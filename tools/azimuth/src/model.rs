@@ -1072,7 +1072,14 @@ impl Model {
     }
 
     pub fn challengers(&self) -> impl Iterator<Item = &crate::verification::Challenger> {
-        self.verifications.iter().flat_map(|file| &file.challengers)
+        self.verifications
+            .iter()
+            .flat_map(|file| &file.challengers)
+            .chain(
+                self.account_verifications
+                    .iter()
+                    .flat_map(|file| &file.challengers),
+            )
     }
 
     pub fn challenge_plans(&self) -> impl Iterator<Item = &crate::verification::ChallengePlan> {
@@ -1207,6 +1214,62 @@ impl Model {
             }
         }
 
+        for file in &self.account_verifications {
+            for challenger in &file.challengers {
+                record_global_id(
+                    &mut challenger_ids,
+                    "Challenger",
+                    &challenger.id,
+                    &challenger.path,
+                    challenger.line,
+                    &mut issues,
+                );
+                if !self
+                    .workspace
+                    .packages
+                    .iter()
+                    .any(|package| package == "azimuth.challenge")
+                {
+                    issues.push(Diag::at(
+                        &challenger.path,
+                        challenger.line,
+                        "Challenger requires enabled azimuth.challenge package",
+                    ));
+                }
+                for id in &challenger.claims {
+                    if !self.claims().any(|view| view.claim.id == *id) {
+                        issues.push(Diag::at(
+                            &challenger.path,
+                            challenger.line,
+                            format!("Challenger selects unknown Claim `{id}`"),
+                        ));
+                    }
+                }
+                for id in &challenger.mechanisms {
+                    if !crate::account_model::mechanism_ids(
+                        self.account_designs.iter(),
+                        &self.designs,
+                    )
+                    .contains(id)
+                    {
+                        issues.push(Diag::at(
+                            &challenger.path,
+                            challenger.line,
+                            format!("Challenger selects unknown Mechanism `{id}`"),
+                        ));
+                    }
+                }
+                for id in &challenger.checks {
+                    if !self.checks().any(|item| item.id == *id) {
+                        issues.push(Diag::at(
+                            &challenger.path,
+                            challenger.line,
+                            format!("Challenger selects unknown Check `{id}`"),
+                        ));
+                    }
+                }
+            }
+        }
         if let Some(standards) = &self.decision_standards {
             let scheduled = standards
                 .schedule
@@ -1235,7 +1298,7 @@ impl Model {
                     ),
                 ));
             }
-            for challenger in self.challengers() {
+            for challenger in self.challengers().filter(|item| item.targets.is_empty()) {
                 if !scheduled.contains(&challenger.form) {
                     issues.push(Diag::at(
                         &challenger.path,
@@ -3080,6 +3143,22 @@ fn challenger_json(item: &crate::verification::Challenger) -> Json {
         ("id", Json::str(&item.id)),
         ("form", Json::str(&item.form)),
         ("searches_for", Json::str(&item.searches_for)),
+        (
+            "targets",
+            Json::Arr(item.targets.iter().map(Json::str).collect()),
+        ),
+        (
+            "claims",
+            Json::Arr(item.claims.iter().map(Json::str).collect()),
+        ),
+        (
+            "mechanisms",
+            Json::Arr(item.mechanisms.iter().map(Json::str).collect()),
+        ),
+        (
+            "checks",
+            Json::Arr(item.checks.iter().map(Json::str).collect()),
+        ),
         (
             "required_scope",
             Json::Arr(

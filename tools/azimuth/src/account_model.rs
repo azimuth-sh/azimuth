@@ -337,6 +337,44 @@ pub fn inspect_with_support(
             }
         }
     }
+    for account in verifications.values() {
+        for challenger in &account.challengers {
+            if !workspace
+                .packages
+                .iter()
+                .any(|package| package == "azimuth.challenge")
+            {
+                report.findings.push(AccountFinding::new(
+                    AccountFindingKind::CheckImplementationUnresolved,
+                    &account.path,
+                    challenger.line,
+                    Some(challenger.id.clone()),
+                    "Challenger package azimuth.challenge is not enabled",
+                ));
+            }
+            let implementations = package_producers
+                .iter()
+                .filter(|producer| {
+                    producer.package == "azimuth.challenge"
+                        && producer.contract == "challenger-implementation"
+                        && producer.entity == challenger.id
+                })
+                .collect::<Vec<_>>();
+            if implementations.len() != 1
+                || implementations
+                    .iter()
+                    .any(|producer| producer.source.is_none())
+            {
+                report.findings.push(AccountFinding::new(
+                    AccountFindingKind::CheckImplementationUnresolved,
+                    &account.path,
+                    challenger.line,
+                    Some(challenger.id.clone()),
+                    "Challenger must resolve exactly one qualified package implementation",
+                ));
+            }
+        }
+    }
     let authored_checks = verifications
         .values()
         .flat_map(|file| &file.checks)
@@ -407,18 +445,6 @@ pub fn inspect_with_support(
                     claim.line,
                     Some(identity.clone()),
                     format!("non-routine Claim `{identity}` has no Claim verification"),
-                ));
-            }
-            if !reviews
-                .get(&spec.id)
-                .is_some_and(|review| review.claims.iter().any(|entry| entry.claim == identity))
-            {
-                report.findings.push(AccountFinding::new(
-                    AccountFindingKind::MissingClaimReview,
-                    &spec.path,
-                    claim.line,
-                    Some(identity.clone()),
-                    format!("non-routine Claim `{identity}` has no Claim review"),
                 ));
             }
         }
@@ -1087,7 +1113,9 @@ fn uses_account_format(path: &Path, heading: &str) -> Result<bool, Vec<Diag>> {
             fenced = !fenced;
             continue;
         }
-        if !fenced && trimmed.starts_with(heading) {
+        if !fenced
+            && (trimmed.starts_with(&format!("{heading}: ")) || trimmed.starts_with("## Section: "))
+        {
             return Ok(true);
         }
     }

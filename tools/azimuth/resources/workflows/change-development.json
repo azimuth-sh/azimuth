@@ -2,7 +2,7 @@
   "format": "azimuth-workflow-template",
   "version": 1,
   "id": "change-development",
-  "revision": 2,
+  "revision": 6,
   "actions": [
     {
       "id": "establish-change-scope",
@@ -462,49 +462,10 @@
       ]
     },
     {
-      "id": "capture-source-support",
-      "kind": "capture-source-support",
+      "id": "validate-change-account",
+      "kind": "validate-change-account",
       "collection": "change",
       "depends_on": [
-        {
-          "action": "implement-change",
-          "match": "all",
-          "condition": "current-success"
-        }
-      ],
-      "inputs": [
-        "request",
-        "instructions"
-      ],
-      "guidance": [
-        {
-          "kind": "reference",
-          "id": "workflow"
-        }
-      ],
-      "required_output": {
-        "kind": "source-support",
-        "description": "Retain the actual source-support and exact input basis; follow the workflow reference."
-      },
-      "correction": null,
-      "outcomes": [
-        "completed",
-        "failed"
-      ],
-      "satisfies": [
-        "completed"
-      ]
-    },
-    {
-      "id": "validate-candidate",
-      "kind": "validate-candidate",
-      "collection": "change",
-      "depends_on": [
-        {
-          "action": "capture-source-support",
-          "match": "all",
-          "condition": "current-success"
-        },
         {
           "action": "implement-change",
           "match": "all",
@@ -523,7 +484,7 @@
       ],
       "required_output": {
         "kind": "candidate-validation",
-        "description": "Retain the actual candidate-validation and exact input basis; follow the workflow reference."
+        "description": "Capture current source support and exact repository Subjects; validate the complete change account across its repositories. Retain the validation report with findings, manifests and exact dependencies. Failed capture leaves validation incomplete; reuse captures only when their dependencies remain current."
       },
       "correction": "implement-change",
       "outcomes": [
@@ -535,12 +496,12 @@
       ]
     },
     {
-      "id": "register-candidate-model-revision",
-      "kind": "register-candidate-model-revision",
+      "id": "prepare-candidate-model-revision",
+      "kind": "prepare-candidate-model-revision",
       "collection": "change",
       "depends_on": [
         {
-          "action": "validate-candidate",
+          "action": "validate-change-account",
           "match": "all",
           "condition": "current-success"
         }
@@ -553,45 +514,15 @@
         {
           "kind": "reference",
           "id": "workflow"
-        }
-      ],
-      "required_output": {
-        "kind": "candidate-registration",
-        "description": "Retain the actual candidate-registration and exact input basis; follow the workflow reference."
-      },
-      "correction": null,
-      "outcomes": [
-        "completed",
-        "failed"
-      ],
-      "satisfies": [
-        "completed"
-      ]
-    },
-    {
-      "id": "inventory-assurance-targets",
-      "kind": "inventory-assurance-targets",
-      "collection": "change",
-      "depends_on": [
-        {
-          "action": "register-candidate-model-revision",
-          "match": "all",
-          "condition": "current-success"
-        }
-      ],
-      "inputs": [
-        "request",
-        "instructions"
-      ],
-      "guidance": [
+        },
         {
           "kind": "reference",
-          "id": "workflow"
+          "id": "assurance-reviews"
         }
       ],
       "required_output": {
-        "kind": "assurance-target-inventory",
-        "description": "Retain the actual assurance-target-inventory and exact input basis; follow the workflow reference."
+        "kind": "candidate-preparation",
+        "description": "Prepare a complete local candidate authority and digest-pinned assurance snapshot. No ASS registration or accepted-authority selection is required."
       },
       "correction": null,
       "outcomes": [
@@ -603,17 +534,56 @@
       ]
     },
     {
-      "id": "qualify-method",
-      "kind": "qualify-method",
-      "collection": "methods",
+      "id": "review-claim",
+      "kind": "review-claim",
+      "collection": "claim-definitions",
       "depends_on": [
         {
-          "action": "inventory-assurance-targets",
+          "action": "prepare-candidate-model-revision",
           "match": "all",
           "condition": "current-success"
         },
         {
-          "action": "register-candidate-model-revision",
+          "action": "implement-change",
+          "match": "all",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions",
+        "snapshot"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        },
+        {
+          "kind": "reference",
+          "id": "assurance-reviews"
+        }
+      ],
+      "required_output": {
+        "kind": "claim-review",
+        "description": "Independently review the exact Claim definition, Cases, realization, mechanisms and verification coverage without execution Subjects. Retain rejected reviews and reassessments."
+      },
+      "correction": "implement-change",
+      "outcomes": [
+        "accepted",
+        "rejected"
+      ],
+      "satisfies": [
+        "accepted"
+      ]
+    },
+    {
+      "id": "run-challengers",
+      "kind": "run-challengers",
+      "collection": "change",
+      "depends_on": [
+        {
+          "action": "review-claim",
           "match": "all",
           "condition": "current-success"
         },
@@ -635,26 +605,26 @@
         }
       ],
       "required_output": {
-        "kind": "method-qualification",
-        "description": "Retain the actual method-qualification and exact input basis; follow the workflow reference."
+        "kind": "run-bundle",
+        "description": "Execute declared machine Challengers against exact current reviews and resolved source scope; retain adverse facts and inconclusive results. Clean results do not establish Claim Health."
       },
       "correction": "implement-change",
       "outcomes": [
-        "accepted",
-        "rejected"
+        "completed",
+        "failed"
       ],
       "satisfies": [
-        "accepted"
+        "completed"
       ]
     },
     {
-      "id": "execute-qualified-check",
-      "kind": "execute-qualified-check",
+      "id": "execute-check",
+      "kind": "execute-check",
       "collection": "checks",
       "depends_on": [
         {
-          "action": "qualify-method",
-          "match": "same-check",
+          "action": "review-claim",
+          "match": "all",
           "condition": "current-success"
         }
       ],
@@ -682,52 +652,27 @@
       ]
     },
     {
-      "id": "assess-applicability",
-      "kind": "assess-applicability",
-      "collection": "contributions",
-      "depends_on": [
-        {
-          "action": "execute-qualified-check",
-          "match": "same-check",
-          "condition": "current-success"
-        }
-      ],
-      "inputs": [
-        "request",
-        "instructions",
-        "snapshot"
-      ],
-      "guidance": [
-        {
-          "kind": "reference",
-          "id": "workflow"
-        }
-      ],
-      "required_output": {
-        "kind": "applicability-decision",
-        "description": "Retain the actual applicability-decision and exact input basis; follow the workflow reference."
-      },
-      "correction": "execute-qualified-check",
-      "outcomes": [
-        "accepted",
-        "rejected"
-      ],
-      "satisfies": [
-        "accepted"
-      ]
-    },
-    {
-      "id": "judge-claim",
-      "kind": "judge-claim",
+      "id": "assess-claim-health",
+      "kind": "assess-claim-health",
       "collection": "claims",
       "depends_on": [
         {
-          "action": "assess-applicability",
-          "match": "claim-contributions",
+          "action": "execute-check",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "review-claim",
+          "match": "same-claim",
           "condition": "current-success"
         },
         {
           "action": "implement-change",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "run-challengers",
           "match": "all",
           "condition": "current-success"
         }
@@ -741,11 +686,15 @@
         {
           "kind": "reference",
           "id": "workflow"
+        },
+        {
+          "kind": "reference",
+          "id": "assurance-reviews"
         }
       ],
       "required_output": {
-        "kind": "claim-judgment",
-        "description": "Retain the actual claim-judgment and exact input basis; follow the workflow reference."
+        "kind": "claim-health",
+        "description": "Assess observations for the exact Subject against the current accepted Claim Review. Missing evidence stays unresolved; different Subjects are not implicitly joined."
       },
       "correction": "implement-change",
       "outcomes": [
@@ -755,6 +704,50 @@
       ],
       "satisfies": [
         "supported"
+      ]
+    },
+    {
+      "id": "register-candidate-model-revision",
+      "kind": "register-candidate-model-revision",
+      "collection": "change",
+      "depends_on": [
+        {
+          "action": "assess-claim-health",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "prepare-candidate-model-revision",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "run-challengers",
+          "match": "all",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions"
+      ],
+      "guidance": [
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "candidate-registration",
+        "description": "Publish the locally reviewed immutable candidate to the existing ASS project through authorized transport. Retain the actual registration receipt. Publish retained Runs and independent native review records in dependency order under their authorized identities; do not select accepted authority."
+      },
+      "correction": null,
+      "outcomes": [
+        "completed",
+        "failed"
+      ],
+      "satisfies": [
+        "completed"
       ]
     }
   ]

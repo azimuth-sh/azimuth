@@ -869,6 +869,7 @@ pub fn validation_facet(kind: validation::FindingKind) -> ValidationFacet {
     match kind {
         MissingClaimJudgment
         | PendingClaimReview
+        | MissingClaimAssurance
         | RejectedClaimJudgment
         | StaleClaimJudgment
         | MissingMethodQualification

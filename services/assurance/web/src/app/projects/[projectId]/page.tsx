@@ -42,6 +42,28 @@ export default async function ProjectPage({
         )}
       </section>
       <section className="section">
+        <h2>Claim Reviews</h2>
+        <p>
+          Definition assessments are independent of execution Subjects. An
+          accepted review does not establish deployed Claim Health.
+        </p>
+        {view.claimReviews?.claims.map((claim) => (
+          <article key={claim.claim}>
+            <h3>{claim.claim}</h3>
+            <p>
+              Review: <strong>{claim.assessment}</strong>
+            </p>
+            <p>{claim.diagnostics.join('; ')}</p>
+            {claim.record && (
+              <details>
+                <summary>Reviewed dependencies and reviewer provenance</summary>
+                <pre>{JSON.stringify(claim.record, null, 2)}</pre>
+              </details>
+            )}
+          </article>
+        )) ?? <p>No selected authority; definition assessments unresolved.</p>}
+      </section>
+      <section className="section">
         <h2>Exact Subjects</h2>
         {view.subjects?.items.length ? (
           view.subjects.items.map((item) => (
@@ -103,8 +125,14 @@ export default async function ProjectPage({
             <details key={String(review.record.fingerprint)}>
               <summary>
                 {String(review.record.kind)} · {review.assessment}
+                {review.historical ? ' · historical record' : ''}
               </summary>
               <p>{review.diagnostics.join('; ')}</p>
+              <p>
+                Reviewer: {String(review.record.reviewer)} · authenticated
+                submitter: {review.submitted_by} · received:{' '}
+                {review.submitted_at}
+              </p>
               <pre>{JSON.stringify(review.record, null, 2)}</pre>
             </details>
           ))

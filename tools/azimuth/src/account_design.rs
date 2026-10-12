@@ -163,15 +163,17 @@ pub fn parse_account_design(path: &str, source: &str) -> Result<AccountDesign, V
     while let Some(index) = stack.pop() {
         headings[index].end = source.len();
     }
-    if headings
-        .iter()
-        .all(|heading| heading.kind != DeclarationKind::Claim)
-    {
+    if headings.iter().all(|heading| {
+        !matches!(
+            heading.kind,
+            DeclarationKind::Claim | DeclarationKind::Section
+        )
+    }) {
         errors.push(Diag::expecting(
             path,
             0,
-            "design has no Claim account",
-            "at least one ## Claim design: <claim>",
+            "design has no Claim account or shared Section",
+            "at least one ## Claim design: <claim> or ## Section: <caption>",
         ));
     }
 

@@ -137,6 +137,7 @@ pub fn app(state: LedgerState) -> Router {
             "/v1/projects/{project}/authority",
             post(register_authority).get(current_authority),
         )
+        .route("/v1/projects/{project}/claim-reviews", get(claim_reviews))
         .route(
             "/v1/projects/{project}/reviews",
             post(ingest_review).get(review_history),
@@ -152,6 +153,10 @@ pub fn app(state: LedgerState) -> Router {
         .route(
             "/v1/projects/{project}/model-revisions/{revision}/snapshot",
             get(model_revision_snapshot),
+        )
+        .route(
+            "/v1/projects/{project}/model-revisions/{revision}/claim-reviews",
+            get(model_revision_claim_reviews),
         )
         .route(
             "/v1/projects/{project}/model-revisions/{revision}/reviews",
@@ -312,6 +317,59 @@ async fn subject_state(
     let (authority, reviews, bundles) = load_snapshot(&state.pool, &project).await?;
     let result = assurance_review::subject_state(&authority, &reviews, &bundles, &subject);
     Ok(Json(to_value(&result)?))
+}
+
+async fn claim_reviews(
+    State(state): State<LedgerState>,
+    Path(project): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, LedgerError> {
+    state.authorize(&project, &headers, None)?;
+    let (authority, reviews, bundles) = load_snapshot(&state.pool, &project).await?;
+    definition_reviews(&authority, &reviews, &bundles)
+}
+
+async fn model_revision_claim_reviews(
+    State(state): State<LedgerState>,
+    Path((project, revision)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, LedgerError> {
+    state.authorize(&project, &headers, None)?;
+    let (authority, reviews, bundles) =
+        load_revision_snapshot(&state.pool, &project, Some(&revision)).await?;
+    definition_reviews(&authority, &reviews, &bundles)
+}
+
+fn definition_reviews(
+    authority: &CoreJson,
+    reviews: &[CoreJson],
+    bundles: &[run::RunBundle],
+) -> Result<Json<Value>, LedgerError> {
+    let projection = to_value(authority)?;
+    let mut claims = Vec::new();
+    for claim in projection["claims"]
+        .as_array()
+        .ok_or_else(|| LedgerError::invalid("authority Claims missing"))?
+    {
+        let id = claim["id"]
+            .as_str()
+            .ok_or_else(|| LedgerError::invalid("Claim identity missing"))?;
+        let target = CoreJson::obj(vec![
+            ("kind", CoreJson::str("claim-review")),
+            ("claim", CoreJson::str(id)),
+        ]);
+        match assurance_review::latest_review(reviews, &target) {
+            Ok(Some(record)) => {
+                let assessment = assurance_review::assess_record(record, authority, reviews, bundles);
+                claims.push(json!({"claim":id,"record":to_value(record)?,"assessment":assessment.status,"diagnostics":assessment.diagnostics}));
+            }
+            Ok(None) => claims.push(json!({"claim":id,"record":null,"assessment":"missing","diagnostics":["Claim Review is absent"]})),
+            Err(error) => claims.push(json!({"claim":id,"record":null,"assessment":"invalid","diagnostics":[error]})),
+        }
+    }
+    Ok(Json(
+        json!({"authority_fingerprint":projection["fingerprint"],"claims":claims}),
+    ))
 }
 
 async fn register_model_revision(
@@ -539,6 +597,12 @@ async fn submit_review(
     let record = core_json(body)?;
     assurance_review::validate_record(&record).map_err(LedgerError::invalid)?;
     let payload = to_value(&record)?;
+    if !matches!(
+        payload.get("kind").and_then(Value::as_str),
+        Some("claim-review" | "claim-health")
+    ) {
+        return Err(LedgerError::invalid("new review submissions require claim-review or claim-health; earlier review kinds remain readable history"));
+    }
     if payload.get("reviewer").and_then(Value::as_str) != Some(&reviewer) {
         return Err(LedgerError::forbidden());
     }
@@ -583,7 +647,7 @@ async fn review_history(
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
     let limit = page.limit()?;
-    let rows = sqlx::query("SELECT fingerprint, CASE WHEN sum(CASE WHEN ordinal < $3 THEN octet_length(payload::text) ELSE 0 END) OVER () > 33554432 THEN NULL WHEN ordinal < $3 THEN payload ELSE 'null'::jsonb END AS payload FROM (SELECT fingerprint,payload,row_number() OVER (ORDER BY fingerprint) AS ordinal FROM (SELECT fingerprint,payload FROM assurance_reviews WHERE project=$1 AND fingerprint > $2 AND EXISTS (SELECT 1 FROM model_revision_reviews r JOIN current_authorities c ON r.project=c.project AND r.revision_fingerprint=c.fingerprint WHERE r.project=assurance_reviews.project AND r.review_fingerprint=assurance_reviews.fingerprint) ORDER BY fingerprint LIMIT $3) candidates) page ORDER BY fingerprint")
+    let rows = sqlx::query("SELECT fingerprint, submitted_by, submitted_at::text AS submitted_at, CASE WHEN sum(CASE WHEN ordinal < $3 THEN octet_length(payload::text) ELSE 0 END) OVER () > 33554432 THEN NULL WHEN ordinal < $3 THEN payload ELSE 'null'::jsonb END AS payload FROM (SELECT fingerprint,payload,submitted_by,submitted_at,row_number() OVER (ORDER BY fingerprint) AS ordinal FROM (SELECT fingerprint,payload,submitted_by,submitted_at FROM assurance_reviews WHERE project=$1 AND fingerprint > $2 AND EXISTS (SELECT 1 FROM model_revision_reviews r JOIN current_authorities c ON r.project=c.project AND r.revision_fingerprint=c.fingerprint WHERE r.project=assurance_reviews.project AND r.review_fingerprint=assurance_reviews.fingerprint) ORDER BY fingerprint LIMIT $3) candidates) page ORDER BY fingerprint")
         .bind(&project).bind(&page.after).bind(limit + 1).fetch_all(&state.pool).await?;
     require_bounded_payloads(&rows)?;
     let (authority, reviews, bundles) = load_snapshot(&state.pool, &project).await?;
@@ -597,7 +661,7 @@ async fn review_history(
         let payload: Value = row.try_get("payload")?;
         let record = core_json(payload.to_string().as_bytes())?;
         let assessment = assurance_review::assess_record(&record, &authority, &reviews, &bundles);
-        records.push(json!({"record":payload,"assessment":assessment.status,"diagnostics":assessment.diagnostics}));
+        records.push(json!({"historical": !matches!(payload.get("kind").and_then(Value::as_str), Some("claim-review" | "claim-health")), "record":payload,"assessment":assessment.status,"diagnostics":assessment.diagnostics,"submitted_by":row.try_get::<String, _>("submitted_by")?,"submitted_at":row.try_get::<String, _>("submitted_at")?}));
     }
     Ok(Json(
         json!({"project":project,"records":records,"next":next}),

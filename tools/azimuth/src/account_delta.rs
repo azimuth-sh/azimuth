@@ -66,6 +66,7 @@ impl Facet {
             (Self::Verification, 2 | 3, "section") => Some("Section"),
             (Self::Verification, 3 | 4, "element") => Some("Element"),
             (Self::Verification, 3..=6, "check") => Some("Check"),
+            (Self::Verification, 3..=6, "challenger") => Some("Challenger"),
             (Self::Verification, 3, "surface") => Some("Surface"),
             (Self::Verification, 3, "expectation set") => Some("Expectation set"),
             (Self::Verification, 3, "probe") => Some("Probe"),

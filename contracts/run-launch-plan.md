@@ -1,5 +1,18 @@
 # Run launch-plan format
 
+## Compact machine Challenger planning
+
+A requested Challenge may name a compact Challenger directly instead of an older authored Challenge Plan. The new form supplies `assessment` (one strict native Claim Review/Health record), optional `assessment_history` and `run_history` arrays, and required `scope_report` when `assessment` is present. `execution-capability`, finite `units` and `max_candidates` retain their native meanings. Every unit's parameters pin `scope_fingerprint` to the prepared report. No tool or form is discovered implicitly.
+
+The planner validates the native assessment against complete current model authority. A rejected, invalid, stale or superseded assessment is not an eligible target. Claim Review needs no Run history; Claim Health validation needs its exact current accepted Claim Review and native evidence history. No older accepted record is selected to bypass a newer rejected record. The selected target must match the Challenger's declared target kinds and Claims.
+
+`scope_report` uses format `azimuth-challenge-source-scope`, version 1, complete status, selected Challenger identity and canonical fingerprint. Its request matches the declared Claims/Mechanisms/Checks; inherited Claims may be omitted from the implementation selector when Mechanisms narrow production scope. Every selected site must match current model source linkage, file locator and emitted fingerprint. Native planning supplies source-backed launch inputs and exact review/health scope anchor independently of the execution Subject.
+
+The `azimuth.challenge` package prepares scope from compiler/structural emitter manifests, not directory discovery in core. Repository bindings locate files; source identities remain semantic. Current tool adapters report whole-file expansion where emitters do not expose source regions, explicit repository/Area exclusions, broader test filters and analysis limitations. Independently reviewed scope/configuration inputs remain essential; accepted target status alone does not establish source scope completeness.
+
+New plan requests require `source`, `artifact` or `deployment` Subjects. Historical complete launches/Runs keep their original descriptors. This is an explicit alpha contract migration, not a silent normalization alias.
+
+
 A Run launch plan binds one provider-neutral Run-bundle semantic Plan to explicit configured adapter capabilities. The file is strict JSON with format `azimuth-run-launch-plan` and version `1`. Unknown fields, duplicate object keys, invalid numbers, non-canonical arrays and duplicate identities fail. There is no alpha 1 reader.
 
 ## Planning request

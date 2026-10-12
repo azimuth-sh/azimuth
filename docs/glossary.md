@@ -248,3 +248,18 @@ negative search, not positive product evidence.
 A protocol-valid adapter-returned `timed-out` Run is an execution fact and exits zero only when its complete response arrives within that deadline. A host-enforced deadline is a transport timeout, exits one and publishes no bundle.
 
 **Assurance Service** — the current project-scoped `run-ledger` persists valid Run histories, explicit model authority selections and independent compact reviews, then derives exact-Subject state. Its producer, reviewer and owner roles authorize different actions. The earlier service API and version 2 project-snapshot wire stay isolated with no compatibility bridge. A bounded adapter is not this ledger or a long-running webhook host.
+
+## Current compact assessment vocabulary
+
+**Claim Review** — independent assessment of exact Claim/Case definitions, design, implementation,
+Check contributions, oracles, scope and limitations. No execution Subject or Observations are required.
+
+**Claim Health** — assessed behavior of a Claim for an exact Subject, based on current reviewed
+definitions and applicable Observations. Missing, stale, conflicting or incomplete support remains unresolved.
+
+**Challenger implementation** — tagged machine-executable code/configuration implementing a
+declared search for objections to a Claim Review or recorded Claim Health. Production targets use
+ordinary Claim/Mechanism implementation tags, not separate Challenger-specific target tags.
+
+Method Qualification, Applicability Decision and Claim Judgment definitions above describe historical
+records; they are not mandatory steps in the current compact assessment lane.

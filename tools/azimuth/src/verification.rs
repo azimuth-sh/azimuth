@@ -296,6 +296,10 @@ pub struct ApplicabilityDecision {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Challenger {
+    pub targets: Vec<String>,
+    pub claims: Vec<String>,
+    pub mechanisms: Vec<String>,
+    pub checks: Vec<String>,
     pub id: String,
     pub form: String,
     pub searches_for: String,
@@ -1085,6 +1089,10 @@ fn parse_challenger(
     let required_scope = parse_required_scope(path, line, &required_scope_text, errors)?;
     require_rationale(path, line, "Challenger", id, block, errors);
     Some(Challenger {
+        targets: Vec::new(),
+        claims: Vec::new(),
+        mechanisms: Vec::new(),
+        checks: Vec::new(),
         id: id.to_string(),
         form,
         searches_for,

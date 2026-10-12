@@ -34,7 +34,7 @@ pub struct SelectionEntry {
     pub check: String,
     pub status: String,
 }
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SelectionReport {
     pub request: Option<PlanRequest>,
     pub findings: Vec<SelectionFinding>,
@@ -423,6 +423,7 @@ pub fn to_json(report: &SelectionReport) -> Json {
 }
 pub fn subject_kind(subject: &Subject) -> &'static str {
     match subject {
+        Subject::Source { .. } => "source",
         Subject::Workspace { .. } => "workspace",
         Subject::CiCandidate { .. } => "ci-candidate",
         Subject::Artifact { .. } => "artifact",
@@ -433,6 +434,7 @@ pub fn subject_kind(subject: &Subject) -> &'static str {
 }
 fn subject_kind_valid(value: &str) -> bool {
     [
+        "source",
         "workspace",
         "ci-candidate",
         "artifact",

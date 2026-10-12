@@ -1,56 +1,159 @@
-# Compact independent assurance reviews
+# Claim Review and Claim Health
 
-These records review the compact Claim-first account. They remain separate from authored Checks and inline Evidence Bindings. Binding identity is the project-global Check–Case pair; there is no authored binding ID. Decision Policies and challenge scheduling for this lane remain deferred.
+Claim Review assesses definitions. Claim Health assesses observed behavior for an exact Subject.
+Neither execution, structural validation nor an implementation tag authors an independent review.
+Check Review, Method Qualification, Applicability Decision and Claim Judgment are not mandatory
+steps in the current compact account. Their earlier records remain historical facts with their
+original meanings; see [the previous contract](history/assurance-reviews-before-claim-health.md).
 
-## Authority projection
+## Authority and dependencies
 
-`azimuth assurance authority` exports the full unselected model's project, model fingerprint, Checks, Cases, bindings and Claims, plus an authority fingerprint. A Claim carries its criticality, exact Case dependencies, selected mechanisms and their implementation fingerprints, binding dependencies and structural gaps. Check fingerprints include method declarations and supporting source and package inputs; Claim fingerprints include intent, design, verification and realization support. No local module path becomes an entity identity.
+`azimuth assurance authority` exports the complete unselected model projection with stable Claim,
+Case, Check and Mechanism identities, inline Check–Case contributions and source support.
+Candidate registration does not select accepted authority or authorize deployment.
+Review currentness follows relevant definitions and implementation/input fingerprints, rather
+than unrelated changes to the whole model. Changing a relevant dependency requires reassessment.
+The latest unambiguous assessment of a typed target is current; never fall back to an earlier
+positive record when a newer record is rejected, stale or invalid.
 
-The owner registers immutable candidate projections inside the existing project, separately from explicitly selecting accepted authority. A candidate projection is not accepted intent merely because it is exported, registered or assessed. Revision-scoped review submissions and snapshots identify the exact assessed projection; local workflow records cannot replace authenticated review ingestion. The projection's `fingerprint` is the Run protocol canonical fingerprint of the complete projection excluding that field. Its `model_fingerprint` matches the complete model identity used by Run planning.
+## Claim Review
 
-## Review records
+Native kind: `claim-review`. The independent reviewer examines Claim/Case completeness, design,
+realizations, Check implementations, input and expectation independence, oracles, coverage,
+Challenger definitions and resolved source scopes, assumptions and limitations.
 
-Every record has exactly these common fields:
+A record pins `claim`, `claim_fingerprint` and exact `dependencies`, with
+`decision: accepted | rejected`. It requires no execution Subject or Observation basis.
+Common record metadata retains the accountable `reviewer`, actual `reviewed_at_ms`, substantive
+`rationale`, supporting `artifacts` and canonical `fingerprint`.
+Acceptance expresses credibility of the reviewed account, not observed product health.
 
-| Field | Meaning |
-| --- | --- |
-| `kind` | `method-qualification`, `applicability-decision` or `claim-judgment`. |
-| `reviewer` | Independent reviewer identity; ledger authentication must match it. |
-| `reviewed_at_ms` | Nonnegative safe-integer Unix milliseconds. |
-| `rationale` | Nonempty explanation of the actual assessment. |
-| `artifacts` | Nonempty array of `{id, digest, locator}` review artifacts. Digests are SHA-256 fingerprints; locators are not identities. |
-| `fingerprint` | Run protocol canonical fingerprint of this exact record excluding `fingerprint`. |
+`dependencies` is the exact packet `{checks, cases, claims, bindings}` selected for this Claim.
+Its definitions include realization sites and fingerprints, mechanisms, Check implementations,
+Challenger declarations and implementation/configuration support. Source paths are locators, not
+entity identities. Review currentness checks these dependencies; a matching reviewer label or
+unchanged prose alone cannot establish currentness.
 
-Unknown fields, duplicate keys, duplicate dependencies, invalid identities, unsafe timestamps and mismatched fingerprints fail. Core validates accountable references but does not inspect an artifact's review quality.
+## Claim Health
 
-### Method Qualification
+Native kind: `claim-health`. The assessor examines Observations against the current reviewed
+Claim and its Case contributions for the exact Subject and recorded examination scope. Current
+execution Subject kinds are `source`, `artifact` and `deployment`; local/CI origin is provenance.
+Historical variants retain their original meanings and do not create automatic reuse.
 
-Additional fields: `check`, `check_fingerprint`, `decision` (`accepted` or `rejected`). The record assesses whether the pinned Check method can credibly establish its stated propositions under its declared limits. It does not establish a Case from a particular execution.
+A record pins `claim`, `claim_fingerprint`, exact `dependencies`, `subject_fingerprint`,
+`claim_review_fingerprint` and `basis` references to `{run, bundle_fingerprint, observation}`.
+It retains `conclusion: supported | violated | unresolved` and `residual_risks`, plus the common
+review metadata. Supported health requires a current accepted Claim Review, complete applicable
+Case support, credible controls and no unresolved structural or evidence gaps. A failed Check
+alone is an adverse observation, not an independently assessed violated Claim.
+Missing measurements, broken controls, incomplete examination and conflicting evidence remain
+unresolved. A definition review is not repeated merely because unchanged Checks execute again.
 
-### Applicability Decision
+## Provenance and reassessment
 
-Additional fields: `check`, `case`, `check_fingerprint`, `case_fingerprint`, `binding_fingerprint`, `subject_fingerprint`, `method_qualification_fingerprint`, `basis`, `decision` and `limitations`.
+Native records may carry optional `provenance` with exactly:
 
-`basis` is a nonempty array of exact `{run, bundle_fingerprint, observation}` references. `decision` is `accepted` or `rejected`; `limitations` is a string array. The record assesses whether those Observations contribute the authored binding's proposition for this particular Case and exact Subject. It pins the qualified method and all contributing definitions. A qualified HTTP denial method does not automatically establish network isolation or a persisted-effect proposition.
+```json
+{"agent": null, "model": null, "reassesses": null}
+```
 
-### Claim Judgment
+`agent` and `model` are null or nonempty labels supplied by the authoring harness. `reassesses`
+is null or the canonical fingerprint of an earlier retained assessment. The predecessor must
+have the same typed target; Claim Health therefore also requires the same exact Subject. The
+reassessment must have a strictly later `reviewed_at_ms`. Missing predecessors remain visible
+missing dependencies, not an implicit approval. Labels retain provenance but do not prove
+independence, authenticate the reviewer or grant publication permission.
 
-Additional fields: `claim`, `claim_fingerprint`, `subject_fingerprint`, `cases`, `mechanisms`, `bindings`, `conclusion` and `residual_risks`.
+## Challenge proof dependencies
 
-`cases` and `mechanisms` contain `{id, fingerprint}` dependencies. `bindings` contains `{check, case, fingerprint, applicability_fingerprint}`; the applicability reference is explicitly null when missing. `conclusion` is `supported`, `violated` or `unresolved`; `residual_risks` is a string array. The independent reviewer accounts for all current Claim dependencies and gaps. Execution success does not create this record.
+New Claim Review and Claim Health records may carry optional `challenge_basis`, an array of
+exact references:
 
-## Assessment and state
+```json
+[
+  {
+    "run": "sha256:<run-id>",
+    "bundle_fingerprint": "sha256:<bundle-fingerprint>",
+    "result_fingerprint": "sha256:<challenge-result-fingerprint>",
+    "target_fingerprint": "sha256:<challenged-assessment-fingerprint>"
+  }
+]
+```
 
-Assessment distinguishes `accepted`, `rejected`, `stale`, `invalid` and `missing`. Unknown or changed definitions, different Subjects, missing observations, obsolete correction heads and newer relevant Observations cannot silently preserve earlier positive decisions. The latest review time for a typed target selects the current record; ambiguous records at that time are invalid, without falling back to an earlier accepted record.
+Each value is a canonical SHA-256 fingerprint. Exact reference tuples must be unique; authored
+array order has no separate semantic requirement. Preparation emits them deterministically from
+current Run correction heads and recorded execution order. A missing or corrected Run head,
+changed result or changed target makes the dependent assessment stale. Prior assessment targets
+may supply explicit objection context; their presence never converts historical conclusions into
+positive current assurance.
 
-A supported Claim requires complete current dependencies, accepted current qualifications and applicability decisions, satisfied applicable Observations, no structural gaps, and an independent current supported Judgment. A violated Claim requires an independent violated Judgment with credible applicable counterevidence; a failed Check alone is an adverse execution fact. Incomplete or conflicting support remains unresolved. Routine Claims report when independent review is not required without manufacturing a supported Judgment.
+A matching adverse Challenge Result attacking the assessment's own exact fingerprint leaves it
+unresolved pending reassessment. An independently authored successor can assess the prior-target
+objection in its rationale and retain these exact proof dependencies. A clean result remains a
+negative search fact. These references do not give Claim Review an execution Subject or product
+Observation basis: the Challenger Run retains its execution Subject separately.
 
-The ledger retains immutable histories and computes exact Subject-specific state against the owner's selected authority. Evidence from other Subjects or changed model support remains visible and unjoined. See [run-ledger.md](run-ledger.md) for persistence and permissions.
+## Authored records and preparation
 
-## Independent review input preparation
+Keep aggregate files such as `reviews/claim-reviews.md` and `reviews/claim-health.md` in the change.
+Names are conventions, not identities. Headings use `## Claim review: <record-id>` or
+`## Claim health: <record-id>`. Metadata pins an `Input` packet, `Input fingerprint`, `Claim`,
+`Reviewer`, actual UTC `Reviewed at`, and `Decision` or `Conclusion`; rationale is substantive
+Markdown. Health also retains residual risks. Optional `Agent`, `Model` and `Reassesses` retain
+provenance and correction relationships. Markdown `Reassesses` names an earlier record ID in
+the aggregate bundle; compilation resolves that ID to its native fingerprint. Supplied labels alone confer no independence or permission.
 
-`azimuth assurance review-input --project <id> --request <file> [--review <file>...] [--bundle <file>...] [model options] --out <file>` prepares an `azimuth-review-input` version 1 packet. A strict request identifies exactly one method (`kind`, `check`), applicability target (`kind`, `check`, `case`, `subject_fingerprint`) or Claim (`kind`, `claim`, `subject_fingerprint`). Routine Claims do not require independent Claim Judgment.
+`azimuth assurance review-input` prepares exact definitions, dependencies, existing assessments,
+visible gaps and, for health only, matching Subjects/Observations. Packets may also include optional
+`challenge_bundles`: scoped native Run proofs for the selected assessment objections, not a
+dump of all project execution history. Compilation validates those bundles and pins the
+corresponding `challenge_basis` references. It creates no reviewer, time,
+decision or positive conclusion. `azimuth assurance review-compile` compiles aggregate Markdown
+against those exact packets and the current account. Placeholders and changed inputs fail.
+Generated packets, compiled bundles and execution reports belong in ignored change `.azimuth/`.
 
-The packet pins current authority and target dependencies, authored definitions, exact matching Subject descriptors, current relevant Observations and their active Run bundles, existing review assessments and visible gaps. Its fingerprint covers the complete packet. It is preparation, not a review record: it creates no reviewer, reviewed-at time, rationale, decision or conclusion. Unknown targets and malformed inputs fail; absent evidence produces explicit gaps.
+## Challenging an assessment
 
-Record freshness follows relevant Check, Case, binding, mechanism, Claim and execution dependencies. Unrelated changes to the full authority projection do not independently stale a review. Changing only a Case contribution does not requalify an unchanged method; applicability still pins that binding and must be reviewed against its current meaning. A stale or invalid applicability dependency propagates into its dependent Judgment even when that Judgment previously concluded unresolved.
+A machine-executed Challenger targets an exact Claim Review or Claim Health assessment selected
+at planning time. Its execution Subject is separate from the assessment target. The current
+Stryker integration pins the exact source input for an isolated mutation batch and retains native
+mutation statuses and locations. It does not materialize exact per-mutant Subjects or mutant-specific
+product Observations. Such captures would require distinct Subjects before those observations
+could be used as product evidence; a batch result is not evidence of unmodified deployment health.
+Results are `clean | findings | inconclusive`. Clean only means the bounded search found no
+objection. Findings require disposition and correction/reassessment where relevant, and cannot
+be silently ignored when relying on the attacked assessment. No mutation score or clean search
+establishes positive health.
+
+## Publication and service authority
+
+Local drafts, correction attempts and exploratory Runs remain local by default. CI publishes the
+current package relied on for delivery, including exact Subjects, unchanged local reviewer
+records, relevant adverse/unresolved evidence and provenance. Subsequent hosted evidence and
+health assessments are published after authorized deployment.
+CI transport does not change the author of a review. Submission still requires an authorized
+reviewer credential matching the recorded reviewer; producer permission alone cannot submit one.
+Publish relied-on Runs before their dependent review records, and predecessors before
+reassessments, so the service can validate exact proof dependencies. Submission assesses against
+the revision-linked review history and existing latest Run correction heads; native optional
+fields are retained unchanged in the immutable record.
+The service preserves immutable histories and exposes currentness and dependency gaps against
+explicit model authority. Source, artifact and deployed evidence cannot be joined solely because
+their model revision matches. Any cross-Subject reliance requires an explicit applicability and
+provenance contract; unsupported composition remains a visible gap.
+
+## Service inspection and migration
+
+The service preserves native JSONB records and explicit model-revision links without rewriting
+older reviews. New review submissions accept Claim Review and Claim Health only. Definition
+assessments are exposed independently of Subjects through selected and candidate
+`claim-reviews` resources; exact-Subject state exposes Review currentness and Health separately.
+Authenticated submitter and receive time are transport facts, distinct from authored review
+provenance. Missing, stale, rejected and ambiguous records cannot infer supported health.
+
+There is no automatic authority selection, deployment acceptance or reassessment from execution.
+Historical parsers retain their original meanings for inspection; they do not convert old
+qualifications or judgments into new reviews. After new-kind ingestion, application rollback
+requires a parser capable of those records or an isolated pre-rollout database recovery; deleting
+or rewriting immutable history is not a migration strategy.

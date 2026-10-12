@@ -124,13 +124,14 @@ internal static class Collector
                 "Azimuth.Surface.Annotations.SurfaceEnumeratorAttribute" => "surface-enumerator",
                 "Azimuth.Surface.Annotations.SurfaceExpectationsAttribute" => "surface-expectations",
                 "Azimuth.Network.Annotations.ImplementsProbeAttribute" => "probe-implementation",
+                "Azimuth.Challenge.Annotations.ImplementsChallengerAttribute" => "challenger-implementation",
                 _ => null
             };
             if (contract is null) continue;
             var entity = EntityArgument(attribute, file, site);
             EnsureMechanismFingerprint(site, fingerprint, file);
             System.Text.Json.Nodes.JsonObject? schema = null;
-            if (contract != "probe-implementation")
+            if (contract is not "probe-implementation" and not "challenger-implementation")
             {
                 var method = member as MethodInfo;
                 if (method is null && member is Type type)
@@ -148,7 +149,7 @@ internal static class Collector
             var configuration = attribute.NamedArguments.FirstOrDefault(argument => argument.MemberName == "ConfigurationFile").TypedValue.Value as string;
             if (configuration is not null)
             {
-                if (contract != "surface-expectations" || configuration.Length == 0 || Path.IsPathRooted(configuration) || configuration.Contains("\\") || configuration.Split('/').Any(segment => segment is "" or "." or ".."))
+                if (contract is not "surface-expectations" and not "challenger-implementation" || configuration.Length == 0 || Path.IsPathRooted(configuration) || configuration.Contains("\\") || configuration.Split('/').Any(segment => segment is "" or "." or ".."))
                     throw new InvalidOperationException($"{site}: ConfigurationFile requires a normalized repository-relative file");
                 var path = Path.GetFullPath(configuration, Path.GetFullPath(root));
                 if (!File.Exists(path)) throw new InvalidOperationException($"{site}: missing configuration input {configuration}");
@@ -161,7 +162,7 @@ internal static class Collector
                 }
                 inputs.Add(new ProducerInput(configuration, "sha256:" + Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant()));
             }
-            result.Extensions.Add(new PackageProducer(contract == "probe-implementation" ? "azimuth.network" : "azimuth.surface", contract, entity, site, file, Lang, fingerprint, schema, inputs));
+            result.Extensions.Add(new PackageProducer(contract == "challenger-implementation" ? "azimuth.challenge" : contract == "probe-implementation" ? "azimuth.network" : "azimuth.surface", contract, entity, site, file, Lang, fingerprint, schema, inputs));
         }
     }
 

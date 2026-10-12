@@ -75,7 +75,12 @@ export interface MechanismImplementation {
   source_fingerprint: string;
 }
 
+export interface ChallengerImplementation {
+  package: string; contract: string; entity: string; site: string; file: string; lang: string; source_fingerprint: string; inputs: { file: string; fingerprint: string }[];
+}
+
 export interface Manifest {
+  extensions?: ChallengerImplementation[];
   realizes: Entry[];
   check_implementations: CheckImplementation[];
   mechanism_implementations: MechanismImplementation[];
@@ -91,6 +96,7 @@ export interface Warning {
 }
 
 export interface ScanResult {
+  challengerImplementations: ChallengerImplementation[];
   realizes: Entry[];
   checkImplementations: CheckImplementation[];
   mechanismImplementations: MechanismImplementation[];
@@ -119,6 +125,7 @@ function scanSource(
     realizes: [],
     checkImplementations: [],
     mechanismImplementations: [],
+    challengerImplementations: [],
     warnings: [],
   };
   const retiredImports = retiredMarkerImports(source);
@@ -132,6 +139,23 @@ function scanSource(
       throw new Error(
         `${file}:${location.line}: retired alpha 1 marker \`${retired}\` is not supported`,
       );
+    }
+
+    if (isMarkerCall(node, 'implementsChallenger')) {
+      const imported = source.statements.some(statement => ts.isImportDeclaration(statement)
+        && ts.isStringLiteral(statement.moduleSpecifier) && statement.moduleSpecifier.text === '@azimuth-sh/challenge'
+        && statement.importClause?.namedBindings && ts.isNamedImports(statement.importClause.namedBindings)
+        && statement.importClause.namedBindings.elements.some(element => element.name.text === 'implementsChallenger'
+          && (!element.propertyName || element.propertyName.text === 'implementsChallenger')));
+      if (!imported) throw checkMarkerError(node, source, 'implementsChallenger requires @azimuth-sh/challenge import');
+      const args = stringArgs(node);
+      if (args.length !== 1 || node.arguments.length !== 1 || !isEntityId(args[0])) {
+        throw checkMarkerError(node, source, 'implementsChallenger requires exactly one stable identity');
+      }
+      const site = resolveLinkageSite(node, source, project);
+      result.challengerImplementations.push({ package: 'azimuth.challenge', contract: 'challenger-implementation',
+        entity: args[0], site: site.name, file, lang, source_fingerprint: site.fingerprint, inputs: [] });
+      return;
     }
 
     if (isMarkerCall(node, 'realizes')) {
@@ -1001,6 +1025,7 @@ export function emit(
   repoRoot: string,
 ): { manifest: Manifest; warnings: Warning[] } {
   const manifest: Manifest = {
+    extensions: [],
     realizes: [],
     check_implementations: [],
     mechanism_implementations: [],
@@ -1035,6 +1060,7 @@ export function emit(
       defaultLibrarySources,
     };
     const result = scanSource(relative, source, checker, identity);
+    manifest.extensions!.push(...result.challengerImplementations);
     manifest.realizes.push(...result.realizes);
     manifest.check_implementations.push(...result.checkImplementations);
     manifest.mechanism_implementations.push(...result.mechanismImplementations);

@@ -9,7 +9,6 @@ const KINDS: &[&str] = &[
     "establish-change-scope",
     "author-proposal",
     "review-proposal",
-    "inventory-assurance-targets",
     "produce-artifact",
     "author-spec-delta",
     "author-design",
@@ -22,7 +21,13 @@ const KINDS: &[&str] = &[
     "implement-change",
     "capture-source-support",
     "validate-candidate",
+    "validate-change-account",
+    "prepare-candidate-model-revision",
     "register-candidate-model-revision",
+    "review-claim",
+    "execute-check",
+    "assess-claim-health",
+    "run-challengers",
     "qualify-method",
     "execute-qualified-check",
     "assess-applicability",
@@ -232,6 +237,10 @@ fn ref_shape(v: &Json, hashed: bool) -> Result<(), String> {
         fields.push("repository");
         identifier(text(v, "repository")?)?;
     }
+    if v.get("record").is_some() {
+        fields.push("record");
+        identifier(text(v, "record")?)?;
+    }
     if hashed {
         fields.push("fingerprint");
     }
@@ -323,7 +332,11 @@ fn resolve(v: &Json, r: &BTreeMap<String, PathBuf>) -> Result<PathBuf, String> {
     Ok(actual)
 }
 fn materialize(v: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Json, String> {
-    let bytes = fs::read(resolve(v, r)?).map_err(|e| e.to_string())?;
+    let bytes = if v.get("record").is_some() {
+        crate::fingerprint::canonical_json(&selected_record(v, r)?).into_bytes()
+    } else {
+        fs::read(resolve(v, r)?).map_err(|e| e.to_string())?
+    };
     let mut fields = vec![
         ("kind", Json::str(text(v, "kind")?)),
         ("ref", Json::str(text(v, "ref")?)),
@@ -332,7 +345,53 @@ fn materialize(v: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Json, String> 
     if let Some(repository) = v.get("repository") {
         fields.push(("repository", repository.clone()));
     }
+    if let Some(record) = v.get("record") {
+        fields.push(("record", record.clone()));
+    }
     Ok(Json::obj(fields))
+}
+fn selected_record(reference: &Json, roots: &BTreeMap<String, PathBuf>) -> Result<Json, String> {
+    let value = read(&resolve(reference, roots)?)?;
+    let Some(id) = reference.get("record").and_then(Json::as_str) else {
+        return Ok(value);
+    };
+    crate::review_authoring::records(&value)?;
+    let entry = arr(&value, "records")?
+        .iter()
+        .find(|entry| entry.get("id").and_then(Json::as_str) == Some(id))
+        .ok_or("selected review record does not exist in compiled bundle")?;
+    let Json::Obj(fields) = entry else {
+        return Err("compiled review entry requires object".into());
+    };
+    Ok(Json::Obj(
+        fields
+            .iter()
+            .filter(|(key, _)| key != "assessment")
+            .cloned()
+            .collect(),
+    ))
+}
+fn supporting_record(reference: &Json, roots: &BTreeMap<String, PathBuf>) -> Result<Json, String> {
+    let value = selected_record(reference, roots)?;
+    Ok(
+        if text(reference, "kind")? == "candidate-preparation" && value.get("fingerprint").is_some()
+        {
+            crate::assurance_review::validate_authority(&value)?;
+            Json::obj(vec![
+                ("format", Json::str("azimuth-candidate-preparation")),
+                ("version", Json::Num(1.0)),
+                ("project", value.get("project").unwrap().clone()),
+                ("model_revision", value.get("fingerprint").unwrap().clone()),
+            ])
+        } else if reference.get("record").is_some() {
+            value
+                .get("record")
+                .ok_or("compiled entry has no native review")?
+                .clone()
+        } else {
+            value
+        },
+    )
 }
 fn check_ref(v: &Json, r: &BTreeMap<String, PathBuf>) -> Result<(), String> {
     ref_shape(v, true)?;
@@ -427,7 +486,9 @@ fn definition(v: &Json) -> Result<(), String> {
             }
         }
         for required in match text(task, "kind")? {
-            "qualify-method" | "execute-qualified-check" => vec!["check"],
+            "qualify-method" | "execute-qualified-check" | "execute-check" => vec!["check"],
+            "review-claim" => vec!["claim"],
+            "assess-claim-health" => vec!["claim", "subject"],
             "assess-applicability" => vec!["check", "case", "subject"],
             "judge-claim" => vec!["claim", "subject"],
             _ => vec![],
@@ -457,6 +518,7 @@ fn definition(v: &Json) -> Result<(), String> {
                 text(input, "kind")?,
                 reference_repository(input),
                 text(input, "ref")?,
+                input.get("record").and_then(Json::as_str),
             )) {
                 return Err("duplicate task input".into());
             }
@@ -500,7 +562,14 @@ fn definition(v: &Json) -> Result<(), String> {
                 return Err("authoring review correction must reopen its author".into());
             }
         }
-        if ["qualify-method", "assess-applicability", "judge-claim"].contains(&text(task, "kind")?)
+        if [
+            "qualify-method",
+            "assess-applicability",
+            "judge-claim",
+            "review-claim",
+            "assess-claim-health",
+        ]
+        .contains(&text(task, "kind")?)
             && arr(task, "inputs")?
                 .iter()
                 .filter(|i| i.get("kind").and_then(Json::as_str) == Some("assurance-snapshot"))
@@ -593,12 +662,42 @@ fn instance(v: &Json) -> Result<(), String> {
     Ok(())
 }
 fn result_shape(v: &Json) -> Result<(), String> {
-    obj(
-        v,
-        &[
-            "format", "version", "id", "task", "basis", "actor", "outcome", "records",
-        ],
-    )?;
+    let mut fields = vec![
+        "format", "version", "id", "task", "basis", "actor", "outcome", "records",
+    ];
+    for optional in ["inputs", "decision"] {
+        if v.get(optional).is_some() {
+            fields.push(optional);
+        }
+    }
+    obj(v, &fields)?;
+    if let Some(inputs) = v.get("inputs") {
+        for reference in inputs.as_array().ok_or("captured inputs require array")? {
+            ref_shape(reference, true)?;
+        }
+    }
+    if let Some(decision) = v.get("decision") {
+        let mut fields = vec![
+            "format",
+            "version",
+            "task",
+            "outcome",
+            "dependencies",
+            "rationale",
+        ];
+        match text(decision, "format")? {
+            "azimuth-authoring-review" => fields.extend(["reviewer", "findings"]),
+            "azimuth-workflow-approval" => fields.push("actor"),
+            _ => return Err("unknown captured decision kind".into()),
+        }
+        obj(decision, &fields)?;
+        if number(decision, "version")? != 1 {
+            return Err("captured decision requires version 1".into());
+        }
+        for reference in arr(decision, "dependencies")? {
+            ref_shape(reference, true)?;
+        }
+    }
     if text(v, "format")? != "azimuth-workflow-result" || number(v, "version")? != 1 {
         return Err("expected workflow result version 1".into());
     }
@@ -633,6 +732,7 @@ fn result_shape(v: &Json) -> Result<(), String> {
             text(record, "kind")?,
             reference_repository(record),
             text(record, "ref")?,
+            record.get("record").and_then(Json::as_str),
         )) {
             return Err("duplicate result record".into());
         }
@@ -713,6 +813,25 @@ fn evaluate(state: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Evaluation, S
             progress = true;
             let mut input_values = Vec::new();
             let mut reasons = Vec::new();
+            if let Some(subject) = task.get("target").and_then(|v| v.get("subject")) {
+                if let Some(subject_inputs) = state
+                    .get("definition")
+                    .and_then(|v| v.get("parameters"))
+                    .and_then(|v| v.get("assurance"))
+                    .and_then(|v| v.get("subject_inputs"))
+                    .and_then(Json::as_array)
+                {
+                    for input in subject_inputs
+                        .iter()
+                        .filter(|v| v.get("subject") == Some(subject))
+                    {
+                        if let Err(error) = check_ref(input.get("input").unwrap(), r) {
+                            reasons.push(format!("selected Subject input: {error}"));
+                        }
+                    }
+                }
+            }
+
             for input in arr(task, "inputs")? {
                 match materialize(input, r) {
                     Ok(v) => input_values.push(v),
@@ -928,6 +1047,11 @@ fn handoff_inputs(handoff: &Json) -> Result<Vec<Json>, String> {
             text(&reference, "kind")?.to_owned(),
             reference_repository(&reference).to_owned(),
             text(&reference, "ref")?.to_owned(),
+            reference
+                .get("record")
+                .and_then(Json::as_str)
+                .unwrap_or("")
+                .to_owned(),
         );
         if let Some(previous) = seen.get(&key) {
             if previous != &reference {
@@ -1019,7 +1143,7 @@ fn review_record(
 ) -> Result<(), String> {
     let records = arr(result, "records")?;
     if kind == "request-implementation-approval" {
-        let approval = read(&resolve(record_of(records, "implementation-approval")?, r)?)?;
+        let approval = decision_record(result, handoff, "implementation-approval", r)?;
         obj(
             &approval,
             &[
@@ -1048,7 +1172,7 @@ fn review_record(
             return Err("approval dependencies do not match exact handoff".into());
         }
     } else if review_kind(kind) {
-        let v = read(&resolve(record_of(records, "authoring-review")?, r)?)?;
+        let v = decision_record(result, handoff, "authoring-review", r)?;
         obj(
             &v,
             &[
@@ -1099,38 +1223,23 @@ fn review_record(
         if v.get("dependencies") != Some(&Json::Arr(expected)) {
             return Err("review dependencies must equal exact published handoff inputs".into());
         }
-    } else if kind == "inventory-assurance-targets" {
-        let inventory = read(&resolve(
-            record_of(records, "assurance-target-inventory")?,
-            r,
-        )?)?;
-        inventory_shape(&inventory)?;
-        let snapshot = read(&resolve(inventory.get("snapshot").unwrap(), r)?)?;
-        validate_snapshot(&snapshot)?;
-        snapshot_target(&snapshot, handoff.get("target").unwrap())?;
-        if snapshot.get("model_revision") != inventory.get("model_revision")
-            || snapshot.get("project") != inventory.get("project")
-        {
-            return Err("inventory snapshot project/revision changed".into());
-        }
-        let registration = arr(handoff, "dependencies")?
-            .iter()
-            .flat_map(|d| arr(d, "records").unwrap_or(&[]))
-            .find(|r| r.get("kind").and_then(Json::as_str) == Some("candidate-registration"))
-            .ok_or("inventory has no direct candidate registration")?;
-        let receipt = read(&resolve(registration, r)?)?;
-        if receipt.get("model_revision") != inventory.get("model_revision")
-            || receipt.get("project") != inventory.get("project")
-        {
-            return Err("inventory differs from current candidate registration".into());
-        }
-    } else if ["qualify-method", "assess-applicability", "judge-claim"].contains(&kind) {
+    } else if [
+        "qualify-method",
+        "assess-applicability",
+        "judge-claim",
+        "review-claim",
+        "assess-claim-health",
+    ]
+    .contains(&kind)
+    {
         let expected = match kind {
             "qualify-method" => "method-qualification",
             "assess-applicability" => "applicability-decision",
+            "review-claim" => "claim-review",
+            "assess-claim-health" => "claim-health",
             _ => "claim-judgment",
         };
-        let review = read(&resolve(record_of(records, expected)?, r)?)?;
+        let review = supporting_record(record_of(records, expected)?, r)?;
         crate::assurance_review::validate_record(&review)?;
         for key in if kind == "qualify-method" {
             vec!["check"]
@@ -1150,7 +1259,7 @@ fn review_record(
         {
             return Err("assurance review kind or reviewer mismatch".into());
         }
-        if kind == "qualify-method" {
+        if ["qualify-method", "review-claim"].contains(&kind) {
             for dependency in arr(handoff, "dependencies")? {
                 if dependency.get("actor") == result.get("actor")
                     && arr(dependency, "records")?.iter().any(|record| {
@@ -1167,17 +1276,39 @@ fn review_record(
         validate_snapshot(&snapshot)?;
         snapshot_target(&snapshot, handoff.get("target").unwrap())?;
         let authority = snapshot.get("authority").unwrap();
-        let prior = arr(&snapshot, "reviews")?;
-        if !prior.iter().any(|submitted| submitted == &review) {
-            return Err("review is absent from supplied ASS revision snapshot".into());
+        let mut local_reviews = arr(&snapshot, "reviews")?.to_vec();
+        let mut runs = snapshot_runs(&snapshot)?;
+        if ["review-claim", "assess-claim-health"].contains(&kind) {
+            for dependency in arr(handoff, "dependencies")? {
+                for reference in arr(dependency, "records")? {
+                    if ["claim-review", "claim-health"].contains(&text(reference, "kind")?) {
+                        let prior = supporting_record(reference, r)?;
+                        if !local_reviews.contains(&prior) {
+                            local_reviews.push(prior);
+                        }
+                    } else if text(reference, "kind")? == "run-bundle" {
+                        let path = resolve(reference, r)?;
+                        let source =
+                            fs::read_to_string(&path).map_err(|error| error.to_string())?;
+                        let bundle = crate::run::parse(&path.display().to_string(), &source)
+                            .map_err(|error| format!("invalid prerequisite Run: {error:?}"))?;
+                        if !runs.contains(&bundle) {
+                            runs.push(bundle);
+                        }
+                    }
+                }
+            }
         }
+        if !local_reviews.contains(&review) {
+            local_reviews.push(review.clone());
+        }
+        let prior = local_reviews.as_slice();
         let target = crate::assurance_review::review_target(&review)?;
         if crate::assurance_review::latest_review(prior, &target)? != Some(&review) {
             return Err(
                 "review has been superseded or snapshot current target is ambiguous".into(),
             );
         }
-        let runs = snapshot_runs(&snapshot)?;
         if let Some(subject) = handoff.get("target").and_then(|v| v.get("subject")) {
             if review.get("subject_fingerprint") != Some(subject) {
                 return Err("review Subject differs from task target".into());
@@ -1186,7 +1317,7 @@ fn review_record(
         let assessment = crate::assurance_review::assess_record(&review, authority, prior, &runs);
         let desired = text(result, "outcome")?;
         let matches = assessment.status == desired
-            || (kind == "judge-claim"
+            || (["judge-claim", "assess-claim-health"].contains(&kind)
                 && assessment.status == "accepted"
                 && review.get("conclusion").and_then(Json::as_str) == Some(desired));
         if !matches {
@@ -1197,6 +1328,195 @@ fn review_record(
         }
     }
     Ok(())
+}
+fn decision_record(
+    result: &Json,
+    handoff: &Json,
+    kind: &str,
+    roots: &BTreeMap<String, PathBuf>,
+) -> Result<Json, String> {
+    if let Some(decision) = result.get("decision") {
+        return Ok(decision.clone());
+    }
+    let source = supporting_record(record_of(arr(result, "records")?, kind)?, roots)?;
+    if source.get("work").is_none() {
+        return Ok(source);
+    }
+    let mut fields = vec![
+        (
+            "format",
+            Json::str(if kind == "authoring-review" {
+                "azimuth-authoring-review"
+            } else {
+                "azimuth-workflow-approval"
+            }),
+        ),
+        ("version", Json::Num(1.0)),
+        ("task", result.get("task").unwrap().clone()),
+        (
+            if kind == "authoring-review" {
+                "reviewer"
+            } else {
+                "actor"
+            },
+            result.get("actor").unwrap().clone(),
+        ),
+        ("outcome", result.get("outcome").unwrap().clone()),
+        ("dependencies", Json::Arr(handoff_inputs(handoff)?)),
+        ("rationale", Json::str(text(&source, "report")?)),
+    ];
+    if kind == "authoring-review" {
+        fields.push((
+            "findings",
+            Json::Arr(if text(result, "outcome")? == "rejected" {
+                vec![Json::str(text(&source, "report")?)]
+            } else {
+                vec![]
+            }),
+        ));
+    }
+    Ok(Json::obj(fields))
+}
+fn authored_result(
+    source: &Json,
+    path: &Path,
+    handoffs: &Json,
+    state: &Json,
+    actor: &str,
+    roots: &BTreeMap<String, PathBuf>,
+) -> Result<Json, String> {
+    let mut fields = vec!["work", "outcome", "outputs"];
+    for optional in ["target", "report"] {
+        if source.get(optional).is_some() {
+            fields.push(optional);
+        }
+    }
+    obj(source, &fields)?;
+    identifier(text(source, "work")?)?;
+    identifier(actor)?;
+    if source.get("report").is_some() {
+        text(source, "report")?;
+    }
+    if handoffs.get("format").and_then(Json::as_str) != Some("azimuth-workflow-handoff")
+        || number(handoffs, "version")? != 1
+        || handoffs.get("instance") != state.get("id")
+    {
+        return Err("--handoff requires this instance's workflow next output".into());
+    }
+    let requested = source.get("target");
+    if let Some(target) = requested {
+        work_key(&Json::obj(vec![
+            ("action", source.get("work").unwrap().clone()),
+            ("target", target.clone()),
+        ]))?;
+    }
+    let candidates = arr(handoffs, "eligible")?
+        .iter()
+        .filter(|work| {
+            work.get("action") == source.get("work")
+                && requested.is_none_or(|target| {
+                    if let Json::Obj(fields) = target {
+                        fields.iter().all(|(key, value)| {
+                            work.get("target").and_then(|v| v.get(key)) == Some(value)
+                        })
+                    } else {
+                        false
+                    }
+                })
+        })
+        .collect::<Vec<_>>();
+    if candidates.len() != 1 {
+        return Err("work and target must select exactly one captured eligible handoff".into());
+    }
+    let handoff = candidates[0];
+    let mut records = arr(source, "outputs")?
+        .iter()
+        .map(|reference| {
+            ref_shape(reference, false)?;
+            let mut reference = reference.clone();
+            if text(handoff, "task")? == "prepare-candidate-model-revision"
+                && text(&reference, "kind")? == "candidate-authority"
+            {
+                set(&mut reference, "kind", Json::str("candidate-preparation"));
+            }
+            materialize(&reference, roots)
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let required = if text(source, "outcome")? == "failed" {
+        "failure-report"
+    } else {
+        text(
+            handoff
+                .get("required_output")
+                .ok_or("handoff has no output contract")?,
+            "kind",
+        )?
+    };
+    let uses_report = required == "failure-report"
+        || required == "implementation-result"
+        || required == "implementation-approval"
+        || required == "authoring-review";
+    let actual = fs::canonicalize(path).map_err(|e| e.to_string())?;
+    let root = roots.get("").unwrap();
+    if !actual.starts_with(root) {
+        return Err("authored result must be retained inside the workflow directory".into());
+    }
+    let relative = actual.strip_prefix(root).unwrap().to_string_lossy();
+    if uses_report
+        && !records
+            .iter()
+            .any(|record| record.get("kind").and_then(Json::as_str) == Some(required))
+    {
+        text(source, "report")?;
+        records.push(materialize(
+            &Json::obj(vec![
+                ("kind", Json::str(required)),
+                ("ref", Json::str(relative.as_ref())),
+            ]),
+            roots,
+        )?);
+    }
+    if !records.iter().any(|record| {
+        text(record, "ref").ok() == Some(relative.as_ref())
+            && reference_repository(record).is_empty()
+    }) {
+        records.push(materialize(
+            &Json::obj(vec![
+                ("kind", Json::str("work-result")),
+                ("ref", Json::str(relative.as_ref())),
+            ]),
+            roots,
+        )?);
+    }
+    let identity = digest(&Json::obj(vec![
+        ("source", source.clone()),
+        ("actor", Json::str(actor)),
+        ("task", handoff.get("id").unwrap().clone()),
+        ("basis", handoff.get("basis").unwrap().clone()),
+    ]));
+    let mut result = Json::obj(vec![
+        ("format", Json::str("azimuth-workflow-result")),
+        ("version", Json::Num(1.0)),
+        ("id", Json::str(format!("attempt-{}", &identity[7..]))),
+        ("task", handoff.get("id").unwrap().clone()),
+        ("basis", handoff.get("basis").unwrap().clone()),
+        ("actor", Json::str(actor)),
+        ("outcome", source.get("outcome").unwrap().clone()),
+        ("records", Json::Arr(records)),
+        ("inputs", Json::Arr(arr(handoff, "inputs")?.to_vec())),
+    ]);
+    if text(source, "outcome")? != "failed"
+        && (review_kind(text(handoff, "task")?)
+            || text(handoff, "task")? == "request-implementation-approval")
+    {
+        let context = Json::obj(vec![
+            ("inputs", handoff.get("inputs").unwrap().clone()),
+            ("dependencies", Json::Arr(vec![])),
+        ]);
+        let decision = decision_record(&result, &context, required, roots)?;
+        set(&mut result, "decision", decision);
+    }
+    Ok(result)
 }
 struct Lock(PathBuf);
 impl Drop for Lock {
@@ -1258,11 +1578,21 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             "--repositories",
             "--project",
         ],
+        "assurance-targets" => vec![
+            "--instance",
+            "--change",
+            "--repositories",
+            "--project",
+            "--snapshot",
+            "--subjects",
+        ],
         "next" | "verify" => vec!["--instance", "--change", "--repositories", "--project"],
         "update" => vec![
             "--instance",
             "--change",
             "--result",
+            "--handoff",
+            "--actor",
             "--expected-revision",
             "--repositories",
             "--project",
@@ -1346,9 +1676,40 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
     let mut state = read(&path)?;
     instance(&state).map_err(|e| format!("{}: line 1: {e}", path.display()))?;
     let r = runtime_locations(args, &path)?;
+    if operation == "assurance-targets" {
+        let snapshot =
+            Json::obj(vec![
+                ("kind", Json::str("assurance-snapshot")),
+                (
+                    "ref",
+                    Json::str(get("--snapshot").ok_or(
+                        "assurance-targets requires --snapshot workflow-relative reference",
+                    )?),
+                ),
+            ]);
+        let selection = get("--subjects").map(|value| {
+            Json::obj(vec![
+                ("kind", Json::str("assurance-subject-selection")),
+                ("ref", Json::str(value)),
+            ])
+        });
+        return assurance_definition(&state, &snapshot, selection.as_ref(), &r);
+    }
     if operation == "update" {
         let result_path = Path::new(get("--result").ok_or("update requires --result")?);
-        let result = read(result_path)?;
+        let authored = read(result_path)?;
+        let handoffs = read(Path::new(get("--handoff").ok_or(
+            "update requires --handoff FILE captured before performing the work",
+        )?))?;
+        let result = authored_result(
+            &authored,
+            result_path,
+            &handoffs,
+            &state,
+            get("--actor").ok_or("update requires --actor ID from the executing harness")?,
+            &r,
+        )
+        .map_err(|error| format!("{}: line 1: {error}", result_path.display()))?;
         result_shape(&result).map_err(|e| format!("{}: line 1: {e}", result_path.display()))?;
         let expected = get("--expected-revision")
             .ok_or("update requires --expected-revision")?
@@ -1366,6 +1727,11 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
                     ("applied_revision", Json::Num((position + 1) as f64)),
                 ]));
             }
+        }
+        if expected < number(&handoffs, "workflow_revision")?
+            || handoffs.get("definition_fingerprint") != state.get("definition_fingerprint")
+        {
+            return Err("handoff revision or definition differs from update context".into());
         }
         if expected != number(&state, "revision")? {
             return Err("workflow revision conflict".into());
@@ -1386,9 +1752,11 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
         let outcome = text(&result, "outcome")?;
         let valid = if kind == "request-implementation-approval" {
             ["approved", "denied", "deferred"].contains(&outcome)
-        } else if review_kind(kind) || ["qualify-method", "assess-applicability"].contains(&kind) {
+        } else if review_kind(kind)
+            || ["qualify-method", "assess-applicability", "review-claim"].contains(&kind)
+        {
             ["accepted", "rejected"].contains(&outcome)
-        } else if kind == "judge-claim" {
+        } else if ["judge-claim", "assess-claim-health"].contains(&kind) {
             ["supported", "violated", "unresolved"].contains(&outcome)
         } else {
             ["completed", "failed"].contains(&outcome)
@@ -1448,19 +1816,127 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             }
             text(&scope, "rationale")?;
         }
-        if kind == "register-candidate-model-revision" && outcome == "completed" {
-            let receipt = read(&resolve(
-                record_of(arr(&result, "records")?, "candidate-registration")?,
+        if [
+            "prepare-candidate-model-revision",
+            "register-candidate-model-revision",
+        ]
+        .contains(&kind)
+            && outcome == "completed"
+        {
+            let receipt = supporting_record(
+                record_of(
+                    arr(&result, "records")?,
+                    if kind == "prepare-candidate-model-revision" {
+                        "candidate-preparation"
+                    } else {
+                        "candidate-registration"
+                    },
+                )?,
                 &r,
-            )?)?;
+            )?;
             registration(&receipt, handoff.get("target").unwrap())?;
+            let expected_format = if kind == "prepare-candidate-model-revision" {
+                "azimuth-candidate-preparation"
+            } else {
+                "azimuth-candidate-registration"
+            };
+            if text(&receipt, "format")? != expected_format {
+                return Err(format!("{kind} requires {expected_format}"));
+            }
         }
-        if kind == "execute-qualified-check" && outcome == "completed" {
+        if [
+            "execute-qualified-check",
+            "execute-check",
+            "run-challengers",
+        ]
+        .contains(&kind)
+            && outcome == "completed"
+        {
             let reference = record_of(arr(&result, "records")?, "run-bundle")?;
             let path = resolve(reference, &r)?;
             let source = fs::read_to_string(&path).map_err(|e| e.to_string())?;
             let bundle = crate::run::parse(&path.display().to_string(), &source)
                 .map_err(|e| format!("invalid Run: {e:?}"))?;
+            if kind == "run-challengers" && bundle.challenger_executions.is_empty() {
+                return Err("Challenger execution requires recorded Challenge Results".into());
+            }
+            if kind == "run-challengers" {
+                let snapshot = read(&resolve(
+                    record_of(arr(handoff, "inputs")?, "assurance-snapshot")?,
+                    &r,
+                )?)?;
+                validate_snapshot(&snapshot)?;
+                let authority = snapshot.get("authority").unwrap();
+                let mut reviews = arr(&snapshot, "reviews")?.to_vec();
+                for dependency in arr(handoff, "dependencies")? {
+                    for reference in arr(dependency, "records")? {
+                        if ["claim-review", "claim-health"].contains(&text(reference, "kind")?) {
+                            let review = supporting_record(reference, &r)?;
+                            if !reviews.contains(&review) {
+                                reviews.push(review);
+                            }
+                        }
+                    }
+                }
+                let runs = snapshot_runs(&snapshot)?;
+                for execution in &bundle.challenger_executions {
+                    let declarations = arr(authority, "claims")?.iter().flat_map(|claim| {
+                        claim
+                            .get("challengers")
+                            .and_then(Json::as_array)
+                            .unwrap_or(&[])
+                    });
+                    if !declarations.into_iter().any(|challenger| {
+                        challenger.get("id").and_then(Json::as_str)
+                            == Some(execution.challenger.id.as_str())
+                            && challenger.get("fingerprint").and_then(Json::as_str)
+                                == Some(execution.challenger.fingerprint.as_str())
+                            && challenger
+                                .get("claims")
+                                .and_then(Json::as_array)
+                                .is_some_and(|claims| {
+                                    claims.iter().any(|claim| {
+                                        claim.as_str() == Some(execution.target.id.as_str())
+                                    })
+                                })
+                    }) {
+                        return Err("Challenge does not match the current declared Challenger and Claim scope".into());
+                    }
+                    if !["claim-review", "claim-health"].contains(&execution.target.kind.name()) {
+                        return Err(
+                            "New workflow Challenges must target Claim Review or Claim Health"
+                                .into(),
+                        );
+                    }
+                    let review = reviews
+                        .iter()
+                        .find(|review| {
+                            review.get("fingerprint").and_then(Json::as_str)
+                                == Some(execution.target.fingerprint.as_str())
+                        })
+                        .ok_or("Challenge target assessment missing from retained inputs")?;
+                    if review.get("claim").and_then(Json::as_str)
+                        != Some(execution.target.id.as_str())
+                        || review.get("kind").and_then(Json::as_str)
+                            != Some(execution.target.kind.name())
+                    {
+                        return Err(
+                            "Challenge target kind or Claim differs from retained assessment"
+                                .into(),
+                        );
+                    }
+                    let target = crate::assurance_review::review_target(review)?;
+                    if crate::assurance_review::latest_review(&reviews, &target)? != Some(review)
+                        || crate::assurance_review::assess_record(
+                            review, authority, &reviews, &runs,
+                        )
+                        .status
+                            != "accepted"
+                    {
+                        return Err("Challenge target is not current and eligible".into());
+                    }
+                }
+            }
             if let Some(check) = handoff
                 .get("target")
                 .and_then(|v| v.get("check"))
@@ -1510,37 +1986,31 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
         if additions.len() > 1 {
             return Err("one workflow definition extension allowed per result".into());
         }
-        let inventory_extension = if kind == "inventory-assurance-targets" && outcome == "completed"
-        {
-            let reference = record_of(arr(&result, "records")?, "assurance-target-inventory")?;
-            let inventory = read(&resolve(reference, &r)?)?;
-            validate_inventory(&inventory, &state, &r)?;
-            let old = state.get("definition").unwrap();
-            let mut parameters = old
-                .get("parameters")
-                .ok_or("inventory expansion requires pinned template")?
-                .clone();
-            let previous = parameters.get("assurance").unwrap().clone();
-            if previous != Json::Null && previous != inventory {
-                if previous.get("model_revision") == inventory.get("model_revision") {
-                    return Err("same candidate revision requires unchanged target inventory and snapshot reference".into());
-                }
-                let mut retained = parameters
-                    .get("previous_assurance")
-                    .and_then(Json::as_array)
-                    .unwrap_or(&[])
-                    .to_vec();
-                if retained
-                    .iter()
-                    .any(|v| v.get("model_revision") == inventory.get("model_revision"))
+        let records = arr(&result, "records")?;
+        let inventory_extension = if outcome != "failed"
+            && state.get("definition").unwrap().get("template").is_some()
+            && (kind == "prepare-candidate-model-revision"
+                || records.iter().any(|r| {
+                    r.get("kind").and_then(Json::as_str) == Some("assurance-subject-selection")
+                })) {
+            let snapshot = records.iter().find(|r| r.get("kind").and_then(Json::as_str) == Some("assurance-snapshot"))
+                .cloned().or_else(|| state.get("definition").unwrap().get("parameters")?.get("assurance")?.get("snapshot").cloned())
+                .ok_or("candidate preparation requires an assurance-snapshot output for automatic target derivation")?;
+            let selection = records.iter().find(|r| {
+                r.get("kind").and_then(Json::as_str) == Some("assurance-subject-selection")
+            });
+            let mut prepared = state.clone();
+            if let Json::Obj(fields) = &mut prepared {
+                if let Some((_, Json::Arr(history))) =
+                    fields.iter_mut().find(|(key, _)| key == "history")
                 {
-                    return Err("cannot reactivate a superseded candidate revision".into());
+                    history.push(Json::obj(vec![
+                        ("result_fingerprint", Json::str(digest(&result))),
+                        ("result", result.clone()),
+                    ]));
                 }
-                retained.push(previous);
-                set(&mut parameters, "previous_assurance", Json::Arr(retained));
             }
-            set(&mut parameters, "assurance", inventory);
-            Some(expand(old.get("template").unwrap(), &parameters)?)
+            Some(assurance_definition(&prepared, &snapshot, selection, &r)?)
         } else {
             None
         };
@@ -1620,6 +2090,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
         ("version", Json::Num(1.0)),
         ("workflow_revision", state.get("revision").unwrap().clone()),
         ("instance", Json::str(text(&state, "id")?)),
+        ("required_inputs", assurance_requirements(&state)?),
         (
             "definition_fingerprint",
             state.get("definition_fingerprint").unwrap().clone(),
@@ -1669,6 +2140,21 @@ pub fn validate_output(args: &[String], output: &Path) -> Result<(), String> {
         Ok(resolved)
     };
     let output = canonical(output)?;
+    for flag in ["--handoff", "--result", "--definition", "--inputs"] {
+        if let Some(input) = value(flag) {
+            if canonical(&input)? == output {
+                return Err(format!("output aliases {flag} input"));
+            }
+        }
+    }
+    for flag in ["--snapshot", "--subjects"] {
+        if let Some(input) = value(flag) {
+            let input = path.parent().unwrap_or(Path::new(".")).join(input);
+            if canonical(&input)? == output {
+                return Err(format!("output aliases {flag} input"));
+            }
+        }
+    }
     if canonical(&repository_file(args)?)? == output {
         return Err("output aliases local repository locations".into());
     }
@@ -1746,13 +2232,14 @@ fn set(value: &mut Json, key: &str, replacement: Json) {
 fn permitted_outcomes(kind: &str) -> &'static [&'static str] {
     match kind {
         "request-implementation-approval" => &["approved", "denied", "deferred"],
-        "qualify-method"
+        "review-claim"
+        | "qualify-method"
         | "assess-applicability"
         | "review-proposal"
         | "review-spec-delta"
         | "review-design"
         | "review-verification" => &["accepted", "rejected"],
-        "judge-claim" => &["supported", "violated", "unresolved"],
+        "judge-claim" | "assess-claim-health" => &["supported", "violated", "unresolved"],
         _ => &["completed", "failed"],
     }
 }
@@ -1819,6 +2306,7 @@ fn template(v: &Json) -> Result<(), String> {
             "change",
             "modules",
             "methods",
+            "claim-definitions",
             "checks",
             "contributions",
             "claims",
@@ -1853,8 +2341,14 @@ fn template(v: &Json) -> Result<(), String> {
                 return Err("unknown required input binding".into());
             }
         }
-        if ["qualify-method", "assess-applicability", "judge-claim"]
-            .contains(&text(action, "kind")?)
+        if [
+            "qualify-method",
+            "assess-applicability",
+            "judge-claim",
+            "review-claim",
+            "assess-claim-health",
+        ]
+        .contains(&text(action, "kind")?)
             && !input_bindings.contains("snapshot")
         {
             return Err("assurance action requires snapshot binding".into());
@@ -1886,6 +2380,7 @@ fn template(v: &Json) -> Result<(), String> {
                     "same-check",
                     "same-subject",
                     "claim-contributions",
+                    "same-claim",
                 ]
                 .contains(&text(dep, "match")?)
             {
@@ -1908,15 +2403,14 @@ fn template(v: &Json) -> Result<(), String> {
                         && ["checks", "contributions", "claims"].contains(&other)
                 }
                 "claim-contributions" => collection == "claims" && other == "contributions",
+                "same-claim" => {
+                    ["claims", "claim-definitions"].contains(&collection)
+                        && ["claims", "claim-definitions"].contains(&other)
+                }
                 _ => true,
             };
             if !meaningful {
                 return Err("dependency target matcher cannot match declared collections".into());
-            }
-            if ["change", "modules"].contains(&collection)
-                && !["change", "modules"].contains(&other)
-            {
-                return Err("initial task cannot depend on unavailable later inventory".into());
             }
         }
         if let Some(correction) = action.get("correction").and_then(Json::as_str) {
@@ -1974,19 +2468,79 @@ fn parameters(v: &Json) -> Result<(), String> {
     Ok(())
 }
 fn inventory_shape(v: &Json) -> Result<(), String> {
-    obj(
-        v,
-        &[
-            "format",
-            "version",
-            "project",
-            "model_revision",
-            "snapshot",
-            "checks",
-            "contributions",
-            "claims",
-        ],
-    )?;
+    let mut fields = vec![
+        "format",
+        "version",
+        "project",
+        "model_revision",
+        "snapshot",
+        "checks",
+        "contributions",
+        "claims",
+    ];
+    for optional in [
+        "methods",
+        "claim_definitions",
+        "challengers",
+        "pending_subjects",
+        "selection",
+        "subject_inputs",
+    ] {
+        if v.get(optional).is_some() {
+            fields.push(optional);
+        }
+    }
+    obj(v, &fields)?;
+    if v.get("challengers").is_some() {
+        let mut seen = BTreeSet::new();
+        for challenger in arr(v, "challengers")? {
+            let challenger = challenger.as_str().ok_or("Challenger ID requires string")?;
+            identifier(challenger)?;
+            if !seen.insert(challenger) {
+                return Err("duplicate inventory Challenger".into());
+            }
+        }
+    }
+    if v.get("claim_definitions").is_some() {
+        let mut seen = BTreeSet::new();
+        for target in arr(v, "claim_definitions")? {
+            obj(target, &["claim"])?;
+            identifier(text(target, "claim")?)?;
+            if !seen.insert(text(target, "claim")?) {
+                return Err("duplicate Claim definition target".into());
+            }
+        }
+    }
+    if v.get("subject_inputs").is_some() {
+        for input in arr(v, "subject_inputs")? {
+            obj(input, &["subject", "input"])?;
+            fingerprint(text(input, "subject")?)?;
+            ref_shape(input.get("input").unwrap(), true)?;
+        }
+    }
+    if let Some(selection) = v.get("selection") {
+        ref_shape(selection, false)?;
+    }
+    for field in ["methods", "pending_subjects"] {
+        if v.get(field).is_some() {
+            let mut seen = BTreeSet::new();
+            for target in arr(v, field)? {
+                if field == "methods" {
+                    obj(target, &["check"])?;
+                    identifier(text(target, "check")?)?;
+                } else {
+                    obj(target, &["kind", "id"])?;
+                    identifier(text(target, "id")?)?;
+                    if !["check", "claim"].contains(&text(target, "kind")?) {
+                        return Err("pending Subject target requires check or claim kind".into());
+                    }
+                }
+                if !seen.insert(digest(target)) {
+                    return Err("duplicate derived assurance target".into());
+                }
+            }
+        }
+    }
     if text(v, "format")? != "azimuth-assurance-target-inventory" || number(v, "version")? != 1 {
         return Err("expected assurance target inventory version 1".into());
     }
@@ -2036,25 +2590,75 @@ fn expand_generation(source: &Json, bindings: &Json) -> Result<Json, String> {
     ]);
     for action in arr(source, "actions")? {
         let collection = text(action, "collection")?;
+        if text(action, "kind")? == "run-challengers"
+            && bindings
+                .get("assurance")
+                .and_then(|inventory| inventory.get("challengers"))
+                .and_then(Json::as_array)
+                .is_some_and(|challengers| challengers.is_empty())
+        {
+            by_action.insert(text(action, "id")?.into(), Vec::new());
+            continue;
+        }
+        if collection == "change"
+            && bindings
+                .get("assurance")
+                .and_then(|v| v.get("pending_subjects"))
+                .and_then(Json::as_array)
+                .is_some_and(|v| !v.is_empty())
+            && arr(action, "depends_on")?.iter().any(|dep| {
+                arr(source, "actions").unwrap().iter().any(|a| {
+                    a.get("id") == dep.get("action") && text(a, "collection").ok() == Some("claims")
+                })
+            })
+        {
+            by_action.insert(text(action, "id")?.into(), Vec::new());
+            continue;
+        }
+        if bindings.get("assurance") == Some(&Json::Null)
+            && arr(action, "depends_on")?.iter().any(|dep| {
+                by_action
+                    .get(text(dep, "action").unwrap())
+                    .is_some_and(Vec::is_empty)
+            })
+        {
+            by_action.insert(text(action, "id")?.into(), Vec::new());
+            continue;
+        }
         let targets = match collection {
             "change" => vec![Json::obj(vec![])],
             "modules" => arr(bindings, "modules")?.to_vec(),
+            "claim-definitions" => {
+                if bindings.get("assurance") == Some(&Json::Null) {
+                    vec![]
+                } else {
+                    arr(bindings.get("assurance").unwrap(), "claim_definitions")?.to_vec()
+                }
+            }
             "methods" => {
                 if bindings.get("assurance") == Some(&Json::Null) {
                     vec![]
                 } else {
                     let mut seen = BTreeSet::new();
-                    arr(bindings.get("assurance").unwrap(), "checks")?
-                        .iter()
-                        .filter_map(|c| {
-                            let check = c.get("check").unwrap().clone();
-                            if seen.insert(check.as_str().unwrap().to_string()) {
-                                Some(Json::obj(vec![("check", check)]))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect()
+                    let inventory = bindings.get("assurance").unwrap();
+                    arr(
+                        inventory,
+                        if inventory.get("methods").is_some() {
+                            "methods"
+                        } else {
+                            "checks"
+                        },
+                    )?
+                    .iter()
+                    .filter_map(|c| {
+                        let check = c.get("check").unwrap().clone();
+                        if seen.insert(check.as_str().unwrap().to_string()) {
+                            Some(Json::obj(vec![("check", check)]))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
                 }
             }
             _ => {
@@ -2073,7 +2677,17 @@ fn expand_generation(source: &Json, bindings: &Json) -> Result<Json, String> {
                     set(&mut target, &k, v);
                 }
             }
-            if !["change", "modules"].contains(&collection) {
+            let follows_assurance = arr(action, "depends_on")?.iter().any(|dep| {
+                by_action
+                    .get(text(dep, "action").unwrap())
+                    .is_some_and(|tasks| {
+                        tasks.iter().any(|task| {
+                            task.get("target")
+                                .is_some_and(|t| t.get("model_revision").is_some())
+                        })
+                    })
+            });
+            if !["change", "modules"].contains(&collection) || follows_assurance {
                 set(
                     &mut target,
                     "model_revision",
@@ -2102,6 +2716,7 @@ fn expand_generation(source: &Json, bindings: &Json) -> Result<Json, String> {
                                         || target.get("subject") == other.get("subject"))
                             }
                             "same-subject" => target.get("subject") == other.get("subject"),
+                            "same-claim" => target.get("claim") == other.get("claim"),
                             "claim-contributions" => {
                                 target.get("claim") == other.get("claim")
                                     && target.get("subject") == other.get("subject")
@@ -2111,9 +2726,43 @@ fn expand_generation(source: &Json, bindings: &Json) -> Result<Json, String> {
                     })
                     .collect::<Vec<_>>();
                 if matched.is_empty() {
-                    return Err(format!(
-                        "required dependency {id} has no matching validated inventory target"
-                    ));
+                    let complete_empty_challengers = text(dependency, "match")? == "all"
+                        && arr(source, "actions")?.iter().any(|action| {
+                            action.get("id") == dependency.get("action")
+                                && text(action, "kind").ok() == Some("run-challengers")
+                        })
+                        && bindings
+                            .get("assurance")
+                            .and_then(|inventory| inventory.get("challengers"))
+                            .and_then(Json::as_array)
+                            .is_some_and(|challengers| challengers.is_empty());
+                    let complete_empty_reviews = text(dependency, "match")? == "all"
+                        && arr(source, "actions")?.iter().any(|action| {
+                            action.get("id") == dependency.get("action")
+                                && text(action, "collection").ok() == Some("claim-definitions")
+                        })
+                        && bindings
+                            .get("assurance")
+                            .and_then(|inventory| inventory.get("claim_definitions"))
+                            .and_then(Json::as_array)
+                            .is_some_and(|claims| claims.is_empty());
+                    let complete_empty_claims = bindings
+                        .get("assurance")
+                        .filter(|v| *v != &Json::Null)
+                        .is_some_and(|v| arr(v, "claims").is_ok_and(|claims| claims.is_empty()))
+                        && text(dependency, "match")? == "all"
+                        && arr(source, "actions")?.iter().any(|a| {
+                            text(a, "id").ok() == Some(id)
+                                && text(a, "collection").ok() == Some("claims")
+                        });
+                    if !complete_empty_claims
+                        && !complete_empty_challengers
+                        && !complete_empty_reviews
+                    {
+                        return Err(format!(
+                            "required dependency {id} has no matching validated inventory target"
+                        ));
+                    }
                 }
                 for task in &matched {
                     deps.push(task.get("id").unwrap().clone());
@@ -2140,6 +2789,26 @@ fn expand_generation(source: &Json, bindings: &Json) -> Result<Json, String> {
                             .clone(),
                     ),
                     _ => unreachable!(),
+                }
+            }
+            if target.get("subject").is_some() {
+                if let Some(subject_inputs) = bindings
+                    .get("assurance")
+                    .and_then(|v| v.get("subject_inputs"))
+                    .and_then(Json::as_array)
+                {
+                    for selected in subject_inputs
+                        .iter()
+                        .filter(|v| v.get("subject") == target.get("subject"))
+                    {
+                        let mut input = selected.get("input").unwrap().clone();
+                        if let Json::Obj(fields) = &mut input {
+                            fields.retain(|(key, _)| key != "fingerprint");
+                        }
+                        if !inputs.contains(&input) {
+                            inputs.push(input);
+                        }
+                    }
                 }
             }
             let task = Json::obj(vec![
@@ -2194,7 +2863,7 @@ fn initial_definition_inner(
             return Err("initial inputs cannot inject historical assurance inventories".into());
         }
         if bindings.get("assurance") != Some(&Json::Null) {
-            return Err("initial assurance inventory must be null; record validated inventory after candidate registration".into());
+            return Err("initial assurance inventory must be null; candidate preparation derives the inventory automatically".into());
         }
         expand(&selected, &bindings)
     } else {
@@ -2204,6 +2873,270 @@ fn initial_definition_inner(
         Ok(selected)
     }
 }
+fn assurance_requirements(state: &Json) -> Result<Json, String> {
+    let pending = state
+        .get("definition")
+        .and_then(|v| v.get("parameters"))
+        .and_then(|v| v.get("assurance"))
+        .and_then(|v| v.get("pending_subjects"))
+        .and_then(Json::as_array)
+        .unwrap_or(&[]);
+    Ok(Json::Arr(pending.iter().map(|target| Json::obj(vec![
+        ("kind", Json::str("assurance-subject-selection")),
+        ("target", target.clone()),
+        ("reason", Json::str("Select an exact execution Subject for this target. Claim composition requires every declared contribution on that same Subject; model revision equality does not join different Subjects.")),
+    ])).collect()))
+}
+
+fn assurance_definition(
+    state: &Json,
+    snapshot_ref: &Json,
+    selection_ref: Option<&Json>,
+    locations: &BTreeMap<String, PathBuf>,
+) -> Result<Json, String> {
+    let old = state.get("definition").unwrap();
+    let mut parameters = old
+        .get("parameters")
+        .ok_or("automatic assurance expansion requires a pinned template")?
+        .clone();
+    let snapshot = read(&resolve(snapshot_ref, locations)?)?;
+    validate_snapshot(&snapshot)?;
+    let authority = snapshot.get("authority").unwrap();
+    let current = parameters.get("assurance").unwrap();
+    let selection_ref = selection_ref.or_else(|| {
+        if current.get("model_revision") == snapshot.get("model_revision") {
+            current.get("selection")
+        } else {
+            None
+        }
+    });
+    let mut checks = Vec::new();
+    let mut selected_claims = Vec::new();
+    let mut subject_inputs = Vec::new();
+    if let Some(reference) = selection_ref {
+        ref_shape(reference, false)?;
+        if text(reference, "kind")? != "assurance-subject-selection" {
+            return Err("expected assurance-subject-selection reference".into());
+        }
+        let selection = read(&resolve(reference, locations)?)?;
+        obj(
+            &selection,
+            &[
+                "format",
+                "version",
+                "project",
+                "model_revision",
+                "checks",
+                "claims",
+            ],
+        )?;
+        if text(&selection, "format")? != "azimuth-assurance-subject-selection"
+            || number(&selection, "version")? != 1
+        {
+            return Err("expected assurance Subject selection version 1".into());
+        }
+        if selection.get("project") != snapshot.get("project")
+            || selection.get("model_revision") != snapshot.get("model_revision")
+        {
+            return Err("Subject selection differs from candidate project/revision".into());
+        }
+        for collection in ["checks", "claims"] {
+            let field = if collection == "checks" {
+                "check"
+            } else {
+                "claim"
+            };
+            let mut seen = BTreeSet::new();
+            for target in arr(&selection, collection)? {
+                obj(target, &[field, "subject"])?;
+                identifier(text(target, field)?)?;
+                let entity = arr(authority, collection)?
+                    .iter()
+                    .find(|entity| entity.get("id") == target.get(field))
+                    .ok_or("selected target absent from candidate authority")?;
+                if collection == "claims" && text(entity, "criticality")? == "routine" {
+                    return Err("routine Claim has no Judgment obligation".into());
+                }
+                let reference = target.get("subject").unwrap();
+                ref_shape(reference, false)?;
+                if text(reference, "kind")? != "subject" {
+                    return Err("selected Subject requires subject reference kind".into());
+                }
+                let value = read(&resolve(reference, locations)?)?;
+                let subject = crate::run::subject_from_json(&value)?;
+                if !crate::run::validate_subject_component(&subject).is_empty() {
+                    return Err("selected Subject fails native protocol validation".into());
+                }
+                let input = Json::obj(vec![
+                    (
+                        "subject",
+                        Json::str(crate::run::subject_fingerprint(&subject)),
+                    ),
+                    ("input", materialize(reference, locations)?),
+                ]);
+                if !subject_inputs.contains(&input) {
+                    subject_inputs.push(input);
+                }
+                let target = Json::obj(vec![
+                    (field, target.get(field).unwrap().clone()),
+                    (
+                        "subject",
+                        Json::str(crate::run::subject_fingerprint(&subject)),
+                    ),
+                ]);
+                if !seen.insert(digest(&target)) {
+                    return Err("duplicate selected target/Subject".into());
+                }
+                if collection == "checks" {
+                    checks.push(target);
+                } else {
+                    selected_claims.push(target);
+                }
+            }
+        }
+    }
+    let methods = arr(authority, "checks")?
+        .iter()
+        .map(|check| Json::obj(vec![("check", check.get("id").unwrap().clone())]))
+        .collect::<Vec<_>>();
+    let mut contributions = Vec::new();
+    let mut claims = Vec::new();
+    let mut pending = Vec::new();
+    for method in &methods {
+        if !checks
+            .iter()
+            .any(|check| check.get("check") == method.get("check"))
+        {
+            pending.push(Json::obj(vec![
+                ("kind", Json::str("check")),
+                ("id", method.get("check").unwrap().clone()),
+            ]));
+        }
+    }
+    for claim in arr(authority, "claims")? {
+        if text(claim, "criticality")? == "routine" {
+            continue;
+        }
+        for binding in arr(claim, "bindings")? {
+            for check in checks
+                .iter()
+                .filter(|check| check.get("check") == binding.get("check"))
+            {
+                contributions.push(Json::obj(vec![
+                    ("check", binding.get("check").unwrap().clone()),
+                    ("case", binding.get("case").unwrap().clone()),
+                    ("claim", claim.get("id").unwrap().clone()),
+                    ("subject", check.get("subject").unwrap().clone()),
+                ]));
+            }
+        }
+        let targets = selected_claims
+            .iter()
+            .filter(|target| target.get("claim") == claim.get("id"))
+            .collect::<Vec<_>>();
+        let mut complete = !targets.is_empty();
+        for target in targets {
+            if arr(claim, "bindings")?.iter().all(|binding| {
+                checks.iter().any(|check| {
+                    check.get("check") == binding.get("check")
+                        && check.get("subject") == target.get("subject")
+                })
+            }) {
+                claims.push(target.clone());
+            } else {
+                complete = false;
+            }
+        }
+        if !complete {
+            pending.push(Json::obj(vec![
+                ("kind", Json::str("claim")),
+                ("id", claim.get("id").unwrap().clone()),
+            ]));
+        }
+    }
+    let portable_ref = |reference: &Json| {
+        let mut value = reference.clone();
+        if let Json::Obj(fields) = &mut value {
+            fields.retain(|(key, _)| key != "fingerprint");
+        }
+        value
+    };
+    let mut inventory = Json::obj(vec![
+        ("format", Json::str("azimuth-assurance-target-inventory")),
+        ("version", Json::Num(1.0)),
+        ("project", snapshot.get("project").unwrap().clone()),
+        (
+            "model_revision",
+            snapshot.get("model_revision").unwrap().clone(),
+        ),
+        ("snapshot", portable_ref(snapshot_ref)),
+        ("methods", Json::Arr(methods)),
+        (
+            "claim_definitions",
+            Json::Arr(
+                arr(authority, "claims")?
+                    .iter()
+                    .filter(|claim| text(claim, "criticality").ok() != Some("routine"))
+                    .map(|claim| Json::obj(vec![("claim", claim.get("id").unwrap().clone())]))
+                    .collect(),
+            ),
+        ),
+        ("checks", Json::Arr(checks)),
+        ("contributions", Json::Arr(contributions)),
+        ("claims", Json::Arr(claims)),
+        ("pending_subjects", Json::Arr(pending)),
+        ("subject_inputs", Json::Arr(subject_inputs)),
+    ]);
+    if arr(authority, "claims")?
+        .iter()
+        .all(|claim| claim.get("challengers").is_some())
+    {
+        let challengers = arr(authority, "claims")?
+            .iter()
+            .flat_map(|claim| arr(claim, "challengers").unwrap())
+            .map(|challenger| text(challenger, "id").unwrap().to_string())
+            .collect::<BTreeSet<_>>();
+        set(
+            &mut inventory,
+            "challengers",
+            Json::Arr(challengers.iter().map(Json::str).collect()),
+        );
+    }
+    if let Some(selection) = selection_ref {
+        set(&mut inventory, "selection", portable_ref(selection));
+    }
+    validate_inventory(&inventory, state, locations)?;
+    let previous = parameters.get("assurance").unwrap().clone();
+    if previous != Json::Null && previous.get("model_revision") != inventory.get("model_revision") {
+        let mut retained = parameters
+            .get("previous_assurance")
+            .and_then(Json::as_array)
+            .unwrap_or(&[])
+            .to_vec();
+        if retained
+            .iter()
+            .any(|v| v.get("model_revision") == inventory.get("model_revision"))
+        {
+            return Err("cannot reactivate a superseded candidate revision".into());
+        }
+        retained.push(previous);
+        set(&mut parameters, "previous_assurance", Json::Arr(retained));
+    }
+    set(&mut parameters, "assurance", inventory);
+    let extended = expand(old.get("template").unwrap(), &parameters)?;
+    for history in arr(state, "history")? {
+        let id = history.get("result").unwrap().get("task").unwrap();
+        let previous = arr(old, "tasks")?
+            .iter()
+            .find(|task| task.get("id") == Some(id))
+            .ok_or("historical task absent")?;
+        if !arr(&extended, "tasks")?.iter().any(|task| task == previous) {
+            return Err("automatic target expansion would rewrite completed work".into());
+        }
+    }
+    Ok(extended)
+}
+
 fn validate_inventory(
     v: &Json,
     state: &Json,
@@ -2226,24 +3159,79 @@ fn validate_inventory(
         return Err("inventory project/revision differs from snapshot".into());
     }
     let tasks = arr(state.get("definition").unwrap(), "tasks")?;
-    if let Some(task) = tasks
-        .iter()
-        .find(|t| t.get("kind").and_then(Json::as_str) == Some("register-candidate-model-revision"))
-    {
-        let result =
-            latest(state, text(task, "id")?).ok_or("candidate registration not recorded")?;
-        let receipt = read(&resolve(
-            record_of(arr(result, "records")?, "candidate-registration")?,
+    if let Some(task) = tasks.iter().find(|t| {
+        [
+            "prepare-candidate-model-revision",
+            "register-candidate-model-revision",
+        ]
+        .contains(&t.get("kind").and_then(Json::as_str).unwrap_or(""))
+    }) {
+        let result = latest(state, text(task, "id")?)
+            .ok_or("candidate preparation or registration not recorded")?;
+        let receipt = supporting_record(
+            record_of(
+                arr(result, "records")?,
+                if text(task, "kind")? == "prepare-candidate-model-revision" {
+                    "candidate-preparation"
+                } else {
+                    "candidate-registration"
+                },
+            )?,
             locations,
-        )?)?;
+        )?;
         registration(&receipt, task.get("target").unwrap())?;
         if receipt.get("model_revision") != v.get("model_revision") {
-            return Err("inventory differs from registered candidate revision".into());
+            return Err("inventory differs from prepared candidate revision".into());
         }
     } else {
-        return Err("assurance inventory requires candidate registration gate".into());
+        return Err(
+            "assurance inventory requires candidate preparation or registration gate".into(),
+        );
     }
     let authority = snapshot.get("authority").unwrap();
+    if let Some(claims) = v.get("claim_definitions") {
+        let expected = Json::Arr(
+            arr(authority, "claims")?
+                .iter()
+                .filter(|claim| text(claim, "criticality").ok() != Some("routine"))
+                .map(|claim| Json::obj(vec![("claim", claim.get("id").unwrap().clone())]))
+                .collect(),
+        );
+        if claims != &expected {
+            return Err("Claim definition targets differ from candidate authority".into());
+        }
+    }
+    if let Some(challengers) = v.get("challengers") {
+        if !arr(authority, "claims")?
+            .iter()
+            .all(|claim| claim.get("challengers").is_some())
+        {
+            return Err(
+                "Historical authority does not establish Challenger inventory completeness".into(),
+            );
+        }
+        let expected = arr(authority, "claims")?
+            .iter()
+            .flat_map(|claim| arr(claim, "challengers").unwrap())
+            .map(|challenger| text(challenger, "id").unwrap().to_string())
+            .collect::<BTreeSet<_>>();
+        if challengers != &Json::Arr(expected.iter().map(Json::str).collect()) {
+            return Err("Challenger inventory differs from candidate authority".into());
+        }
+    }
+    if let Some(methods) = v.get("methods").and_then(Json::as_array) {
+        let expected = arr(authority, "checks")?
+            .iter()
+            .map(|check| text(check, "id").map(str::to_owned))
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        let actual = methods
+            .iter()
+            .map(|method| text(method, "check").map(str::to_owned))
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        if actual != expected {
+            return Err("derived methods differ from candidate Checks".into());
+        }
+    }
     for check in arr(v, "checks")? {
         if !arr(authority, "checks")?
             .iter()
@@ -2303,6 +3291,14 @@ fn validate_inventory(
             && !arr(v, "claims")?
                 .iter()
                 .any(|c| c.get("claim") == claim.get("id"))
+            && !v
+                .get("pending_subjects")
+                .and_then(Json::as_array)
+                .is_some_and(|pending| {
+                    pending.iter().any(|p| {
+                        text(p, "kind").ok() == Some("claim") && p.get("id") == claim.get("id")
+                    })
+                })
         {
             return Err("inventory omits a non-routine candidate Claim".into());
         }
@@ -2322,8 +3318,14 @@ fn snapshot_target(snapshot: &Json, target: &Json) -> Result<(), String> {
 }
 fn registration(v: &Json, target: &Json) -> Result<(), String> {
     obj(v, &["format", "version", "project", "model_revision"])?;
-    if text(v, "format")? != "azimuth-candidate-registration" || number(v, "version")? != 1 {
-        return Err("expected candidate registration version 1".into());
+    if ![
+        "azimuth-candidate-registration",
+        "azimuth-candidate-preparation",
+    ]
+    .contains(&text(v, "format")?)
+        || number(v, "version")? != 1
+    {
+        return Err("expected candidate preparation or registration version 1".into());
     }
     identifier(text(v, "project")?)?;
     fingerprint(text(v, "model_revision")?)?;
@@ -2332,6 +3334,12 @@ fn registration(v: &Json, target: &Json) -> Result<(), String> {
         .is_some_and(|p| Some(p) != v.get("project"))
     {
         return Err("candidate registration belongs to another project".into());
+    }
+    if target
+        .get("model_revision")
+        .is_some_and(|revision| v.get("model_revision") != Some(revision))
+    {
+        return Err("candidate receipt differs from pinned model revision".into());
     }
     Ok(())
 }
@@ -2345,10 +3353,14 @@ fn output_contract(action: &Json) -> Result<(), String> {
             Some("authoring-review")
         }
         "implement-change" => Some("implementation-result"),
+        "validate-change-account" => Some("candidate-validation"),
         "request-implementation-approval" => Some("implementation-approval"),
+        "prepare-candidate-model-revision" => Some("candidate-preparation"),
         "register-candidate-model-revision" => Some("candidate-registration"),
-        "inventory-assurance-targets" => Some("assurance-target-inventory"),
         "qualify-method" => Some("method-qualification"),
+        "review-claim" => Some("claim-review"),
+        "execute-check" | "run-challengers" => Some("run-bundle"),
+        "assess-claim-health" => Some("claim-health"),
         "execute-qualified-check" => Some("run-bundle"),
         "assess-applicability" => Some("applicability-decision"),
         "judge-claim" => Some("claim-judgment"),

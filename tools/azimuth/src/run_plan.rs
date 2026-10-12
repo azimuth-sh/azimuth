@@ -90,7 +90,7 @@ impl RunOperation {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PlanRequest {
     pub operation: RunOperation,
     pub planned_at_ms: u64,
@@ -108,8 +108,12 @@ pub struct RequestedCheck {
     pub units: Vec<WorkUnit>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RequestedChallenge {
+    pub assessment: Option<Json>,
+    pub assessment_history: Vec<Json>,
+    pub run_history: Vec<Json>,
+    pub scope_report: Option<Json>,
     pub id: String,
     pub capability: String,
     pub max_candidates: u64,
@@ -471,8 +475,21 @@ fn resolve_requested_challenges(
     let mut errors = Vec::new();
     let mut adapter_id = None;
     let mut pending = BTreeMap::<String, Pending>::new();
+    let mut direct_selections = Vec::new();
+    let mut direct_routes = Vec::new();
     let mut selected_forms = BTreeMap::<(DecisionKind, String), (String, BTreeSet<String>)>::new();
     for requested in &request.challenges {
+        if requested.assessment.is_some() {
+            match resolve_assessment_challenge(model, configuration, request, requested) {
+                Ok((selection, route, adapter)) => {
+                    adapter_id = Some(adapter);
+                    direct_selections.push(selection);
+                    direct_routes.push(route);
+                }
+                Err(error) => errors.push(error),
+            }
+            continue;
+        }
         let plans = model
             .challenge_plans()
             .filter(|plan| plan.id == requested.id)
@@ -788,8 +805,8 @@ fn resolve_requested_challenges(
         }
     }
 
-    let mut selections = Vec::new();
-    let mut routes = Vec::new();
+    let mut selections = direct_selections;
+    let mut routes = direct_routes;
     for (_, item) in pending {
         let inputs = match construct_inputs(&item.semantic_scope) {
             Ok(inputs) => inputs,
@@ -1315,7 +1332,16 @@ fn parse_requested_challenge(value: &Json, where_: &str) -> Result<RequestedChal
     let fields = object(
         value,
         where_,
-        &["id", "execution-capability", "max_candidates", "units"],
+        &[
+            "id",
+            "execution-capability",
+            "max_candidates",
+            "units",
+            "assessment",
+            "assessment_history",
+            "run_history",
+            "scope_report",
+        ],
     )?;
     let id = nonempty(fields, where_, "id")?;
     validate_id(&id, true).map_err(|detail| format!("{where_}.id {detail}"))?;
@@ -1336,6 +1362,36 @@ fn parse_requested_challenge(value: &Json, where_: &str) -> Result<RequestedChal
     }
     validate_units(&units, &format!("{where_}.units"))?;
     Ok(RequestedChallenge {
+        assessment: fields
+            .iter()
+            .find(|(key, _)| key == "assessment")
+            .map(|(_, value)| value.clone()),
+        scope_report: fields
+            .iter()
+            .find(|(key, _)| key == "scope_report")
+            .map(|(_, value)| value.clone()),
+        assessment_history: fields
+            .iter()
+            .find(|(key, _)| key == "assessment_history")
+            .map(|(_, value)| {
+                value
+                    .as_array()
+                    .map(|items| items.to_vec())
+                    .ok_or_else(|| format!("{where_}.assessment_history must be an array"))
+            })
+            .transpose()?
+            .unwrap_or_default(),
+        run_history: fields
+            .iter()
+            .find(|(key, _)| key == "run_history")
+            .map(|(_, value)| {
+                value
+                    .as_array()
+                    .map(|items| items.to_vec())
+                    .ok_or_else(|| format!("{where_}.run_history must be an array"))
+            })
+            .transpose()?
+            .unwrap_or_default(),
         id,
         capability,
         max_candidates,
@@ -1461,6 +1517,12 @@ fn parse_launch_adapter(value: &Json) -> Result<LaunchAdapter, String> {
 }
 
 fn validate_request(request: &PlanRequest) -> Result<(), String> {
+    if !matches!(
+        request.subject,
+        Subject::Source { .. } | Subject::Artifact { .. } | Subject::Deployment { .. }
+    ) {
+        return Err("new Run requests require source, artifact or deployment; historical Subject descriptors remain readable without relabeling".into());
+    }
     if request.planned_at_ms > MAX_SAFE_INTEGER {
         return Err("$.planned_at_ms exceeds the safe-integer limit".into());
     }
@@ -1598,12 +1660,18 @@ fn requested_check_json(check: &RequestedCheck) -> Json {
 }
 
 fn requested_challenge_json(challenge: &RequestedChallenge) -> Json {
-    Json::obj(vec![
-        ("id", Json::str(&challenge.id)),
-        ("execution-capability", Json::str(&challenge.capability)),
-        ("max_candidates", Json::Num(challenge.max_candidates as f64)),
+    let mut fields = vec![
+        ("id".into(), Json::str(&challenge.id)),
         (
-            "units",
+            "execution-capability".into(),
+            Json::str(&challenge.capability),
+        ),
+        (
+            "max_candidates".into(),
+            Json::Num(challenge.max_candidates as f64),
+        ),
+        (
+            "units".into(),
             Json::Arr(
                 challenge
                     .units
@@ -1617,7 +1685,26 @@ fn requested_challenge_json(challenge: &RequestedChallenge) -> Json {
                     .collect(),
             ),
         ),
-    ])
+    ];
+    if let Some(record) = &challenge.assessment {
+        fields.push(("assessment".into(), record.clone()));
+    }
+    if let Some(scope) = &challenge.scope_report {
+        fields.push(("scope_report".into(), scope.clone()));
+    }
+    if !challenge.assessment_history.is_empty() {
+        fields.push((
+            "assessment_history".into(),
+            Json::Arr(challenge.assessment_history.clone()),
+        ));
+    }
+    if !challenge.run_history.is_empty() {
+        fields.push((
+            "run_history".into(),
+            Json::Arr(challenge.run_history.clone()),
+        ));
+    }
+    Json::Obj(fields)
 }
 
 fn string_map_json(values: &BTreeMap<String, String>) -> Json {
@@ -1901,4 +1988,290 @@ pub fn adapter_launch(launch: &LaunchPlan, adapter: &LaunchAdapter) -> LaunchPla
     };
     child.fingerprint = launch_fingerprint(&child);
     child
+}
+
+fn resolve_assessment_challenge(
+    model: &Model,
+    configuration: &AdapterConfiguration,
+    request: &PlanRequest,
+    requested: &RequestedChallenge,
+) -> Result<(ChallengeSelection, LaunchRoute, String), String> {
+    let record = requested.assessment.as_ref().ok_or("missing assessment")?;
+    crate::assurance_review::validate_record(record)?;
+    let kind_name = record
+        .get("kind")
+        .and_then(Json::as_str)
+        .ok_or("assessment kind missing")?;
+    let (kind, scope_kind) = match kind_name {
+        "claim-review" => (
+            ChallengeTargetKind::ClaimReview,
+            ChallengeScopeKind::ClaimReview,
+        ),
+        "claim-health" => (
+            ChallengeTargetKind::ClaimHealth,
+            ChallengeScopeKind::ClaimHealth,
+        ),
+        _ => return Err("machine Challenger targets only Claim Review or Claim Health".into()),
+    };
+    let authority = crate::assurance_review::authority(model, "challenge-planning")?;
+    let bundles = requested
+        .run_history
+        .iter()
+        .map(|value| {
+            run::parse("challenge.run_history", &value.to_string_pretty())
+                .map_err(|errors| format!("invalid assessment Run history: {errors:?}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let state = crate::assurance_review::assess_record(
+        record,
+        &authority,
+        &requested.assessment_history,
+        &bundles,
+    );
+    if !matches!(
+        state.status.as_str(),
+        "accepted" | "supported" | "violated" | "unresolved"
+    ) {
+        return Err(format!(
+            "assessment is not a current eligible target: {} {}",
+            state.status,
+            state.diagnostics.join("; ")
+        ));
+    }
+    let claim = record
+        .get("claim")
+        .and_then(Json::as_str)
+        .ok_or("assessment Claim missing")?;
+    let reviewed_at = record
+        .get("reviewed_at_ms")
+        .and_then(Json::as_num)
+        .unwrap_or_default();
+    for previous in &requested.assessment_history {
+        crate::assurance_review::validate_record(previous)?;
+        if previous.get("kind") == record.get("kind")
+            && previous.get("claim") == record.get("claim")
+            && previous.get("subject_fingerprint") == record.get("subject_fingerprint")
+            && previous
+                .get("reviewed_at_ms")
+                .and_then(Json::as_num)
+                .unwrap_or_default()
+                > reviewed_at
+        {
+            return Err("assessment was superseded by a newer record for the same target".into());
+        }
+    }
+    let challenger = model
+        .challengers()
+        .find(|item| item.id == requested.id && !item.targets.is_empty())
+        .ok_or("request does not select one compact machine Challenger")?;
+    if !challenger.targets.iter().any(|target| target == kind_name)
+        || !challenger.claims.iter().any(|id| id == claim)
+    {
+        return Err("assessment falls outside declared Challenger target scope".into());
+    }
+    let scope = requested
+        .scope_report
+        .as_ref()
+        .ok_or("machine Challenger requires prepared source scope_report")?;
+    if scope.get("format").and_then(Json::as_str) != Some("azimuth-challenge-source-scope")
+        || scope.get("version").and_then(Json::as_num) != Some(1.0)
+        || scope.get("status").and_then(Json::as_str) != Some("complete")
+        || scope.get("challenger").and_then(Json::as_str) != Some(&challenger.id)
+    {
+        return Err("scope report must be complete and identify the selected Challenger".into());
+    }
+    let Json::Obj(fields) = scope else {
+        return Err("scope report must be object".into());
+    };
+    let scope_payload = Json::Obj(
+        fields
+            .iter()
+            .filter(|(key, _)| key != "fingerprint")
+            .cloned()
+            .collect(),
+    );
+    let scope_fingerprint = crate::fingerprint::canonical_sha256(&scope_payload);
+    if scope.get("fingerprint").and_then(Json::as_str) != Some(&scope_fingerprint) {
+        return Err("scope report fingerprint mismatch".into());
+    }
+    let declaration = scope.get("request").ok_or("scope request missing")?;
+    for (field, expected) in [
+        ("claims", &challenger.claims),
+        ("mechanisms", &challenger.mechanisms),
+        ("checks", &challenger.checks),
+    ] {
+        let actual = declaration
+            .get(field)
+            .and_then(Json::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(Json::as_str)
+                    .map(str::to_string)
+                    .collect::<BTreeSet<_>>()
+            })
+            .unwrap_or_default();
+        if field == "claims" && actual.is_empty() && !challenger.mechanisms.is_empty() {
+            continue;
+        }
+        if actual != expected.iter().cloned().collect::<BTreeSet<_>>() {
+            return Err(format!("scope {field} differs from Challenger declaration"));
+        }
+    }
+    let (adapter, capability) = configuration
+        .capability(&requested.capability)
+        .ok_or("unknown Challenger capability")?;
+    let required_class = match request.operation {
+        RunOperation::Execute => CapabilityClass::ChallengeExecute,
+        RunOperation::Import => CapabilityClass::ChallengeImport,
+    };
+    if !capability.supports(required_class)
+        || !capability.challenge_forms.contains(&challenger.form)
+    {
+        return Err("configured capability does not support Challenger form and operation".into());
+    }
+    let record_fingerprint = crate::assurance_review::record_fingerprint(record)?;
+    let challenger_fingerprint = crate::fingerprint::challenger_fingerprint(challenger);
+    let id = run::challenge_selection_id(&challenger_fingerprint, kind, &record_fingerprint);
+    let mut inputs = Vec::new();
+    let mut scope_inputs = Vec::new();
+    for site in scope
+        .get("sites")
+        .and_then(Json::as_array)
+        .ok_or("scope sites missing")?
+    {
+        let text = |key| {
+            site.get(key)
+                .and_then(Json::as_str)
+                .ok_or_else(|| format!("scope site missing {key}"))
+        };
+        let relation = text("relationship")?;
+        let entity = text("entity")?;
+        let address = text("site")?;
+        let file = text("file")?;
+        let fingerprint = text("source_fingerprint")?;
+        let (input_kind, semantic_kind, language, exists) = match relation {
+            "claim" => (
+                LaunchInputKind::Realization,
+                ChallengeScopeKind::Realization,
+                model
+                    .realizes
+                    .iter()
+                    .find(|item| item.claim == entity && item.site == address)
+                    .map(|item| item.lang.clone())
+                    .unwrap_or_default(),
+                model.realizes.iter().any(|item| {
+                    item.claim == entity
+                        && item.site == address
+                        && item.file == file
+                        && item.source_fingerprint == fingerprint
+                }),
+            ),
+            "mechanism" => (
+                LaunchInputKind::MechanismImplementation,
+                ChallengeScopeKind::MechanismImplementation,
+                model
+                    .mechanism_implementations
+                    .iter()
+                    .find(|item| item.mechanism == entity && item.site == address)
+                    .map(|item| item.lang.clone())
+                    .unwrap_or_default(),
+                model.mechanism_implementations.iter().any(|item| {
+                    item.mechanism == entity
+                        && item.site == address
+                        && item.file == file
+                        && item.source_fingerprint == fingerprint
+                }),
+            ),
+            "check" => (
+                LaunchInputKind::CheckImplementation,
+                ChallengeScopeKind::CheckImplementation,
+                model
+                    .check_implementations
+                    .iter()
+                    .find(|item| item.check == entity && item.site == address)
+                    .map(|item| item.lang.clone())
+                    .unwrap_or_default(),
+                model.check_implementations.iter().any(|item| {
+                    item.check == entity
+                        && item.site == address
+                        && item.file == file
+                        && item.source_fingerprint == fingerprint
+                }),
+            ),
+            _ => return Err("unsupported selected source relationship".into()),
+        };
+        if !exists {
+            return Err(format!(
+                "scope source mapping is absent or stale: {address}"
+            ));
+        }
+        let identity = format!("{entity}:{address}");
+        inputs.push(
+            run::construct_launch_input(
+                input_kind,
+                identity.clone(),
+                fingerprint.into(),
+                LaunchInputSource::Source {
+                    file: file.into(),
+                    language,
+                    site: address.into(),
+                },
+            )
+            .map_err(|error| error.detail)?,
+        );
+        scope_inputs.push(ChallengeScopeItem {
+            kind: semantic_kind,
+            id: identity,
+            fingerprint: fingerprint.into(),
+        });
+    }
+    inputs.sort();
+    inputs.dedup();
+    scope_inputs.sort();
+    scope_inputs.dedup();
+    let anchors = vec![ChallengeScopeItem {
+        kind: scope_kind,
+        id: claim.into(),
+        fingerprint: record_fingerprint.clone(),
+    }];
+    let native_scope = run::construct_challenge_scope(anchors, scope_inputs)
+        .map_err(|errors| format!("invalid challenge scope: {errors:?}"))?;
+    let mut units = requested.units.clone();
+    for unit in &mut units {
+        match unit.parameters.get("scope_fingerprint") {
+            Some(value) if value == &scope_fingerprint => {}
+            _ => return Err("each Challenge unit must pin the prepared scope_fingerprint".into()),
+        }
+    }
+    let selection = ChallengeSelection {
+        id: id.clone(),
+        challenger: ChallengerRef {
+            id: challenger.id.clone(),
+            fingerprint: challenger_fingerprint,
+        },
+        target: ChallengeTarget {
+            kind,
+            id: claim.into(),
+            fingerprint: record_fingerprint,
+        },
+        lane: run::ChallengeLane::Gate,
+        scope: native_scope,
+        units,
+    };
+    let route = run::construct_launch_route(
+        RouteSelection {
+            kind: RouteSelectionKind::Challenge,
+            id,
+        },
+        RouteCapability {
+            address: requested.capability.clone(),
+            class: request.operation.route_challenge_class(),
+            challenge_form: Some(challenger.form.clone()),
+            fingerprint: capability.fingerprint.clone(),
+        },
+        inputs,
+    )
+    .map_err(|errors| format!("invalid Challenge launch route: {errors:?}"))?;
+    Ok((selection, route, adapter.id.clone()))
 }

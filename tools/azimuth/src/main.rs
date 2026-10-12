@@ -22,7 +22,8 @@ USAGE
     azimuth workflow definition --workflow change-development [--out <file>]\n\
     azimuth workflow init (--workflow change-development --inputs <file> | --definition <file>) --instance <file> --repositories <file>
     azimuth workflow next|verify --instance <file> --repositories <file> [--out <file>]
-    azimuth workflow update --instance <file> --repositories <file> --result <file> --expected-revision <number> [--out <file>]
+    azimuth workflow assurance-targets --instance <file> --repositories <file> --snapshot <relative-ref> [--subjects <relative-ref>] [--out <file>]
+    azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--out <file>]
     azimuth validate [options]
     azimuth report traceability [options]
     azimuth export [options]
@@ -30,6 +31,13 @@ USAGE
     azimuth assurance review-input --project <id> --request <file> [--review <file>...]
         [--bundle <file>...] [options] [--catalog <file> --workset <file>] [--out <file>]
     azimuth assurance authority --project <id> [options] [--out <file>]
+    azimuth assurance prepare-candidate --project <id> [options] [--out <file>]
+    azimuth assurance verify-snapshot --input <snapshot> [--out <file>]
+    azimuth assurance snapshot --project <id> [--review <file>...] [--bundle <file>...] [options]
+    azimuth assurance review-draft --input <packet> --input-ref <change-relative ref> --id <id> [--out <file>]
+    azimuth assurance review-compile --project <id> --change-root <dir> --input <relative Markdown>...
+        [--review <file>...] [--bundle <file>...] [options] [--out <file>]
+    azimuth assurance review-export --input <compiled bundle> --id <id> [--out <file>]
         [--catalog <project.json> --workset <workset.json>]
     azimuth adapter verify [--config <file>]
     azimuth run select --policy <file> [model options] [--config <file>] [--out <file>]
@@ -79,6 +87,8 @@ USAGE
 OPTIONS
     --project <file>      project catalog; requires --workset
     --workset <file>      exact federated assessment inputs
+    --assurance-snapshot <file>  native Claim Review/Health records for acceptance validation
+    --scope <scope>       structure (default) or acceptance; validation and finalization boundaries
     --model <dir>          current model packages (default: azimuth/model)
     --standards <file>     decision policies and Challenge schedule
                            (default: azimuth/standards/verification.md)
@@ -178,6 +188,20 @@ fn command_workflow(args: &[String]) -> Result<ExitCode, String> {
     Ok(ExitCode::SUCCESS)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ValidationScope {
+    Structure,
+    Acceptance,
+}
+impl ValidationScope {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Structure => "structure",
+            Self::Acceptance => "acceptance",
+        }
+    }
+}
+
 struct Options {
     project: Option<PathBuf>,
     workset: Option<PathBuf>,
@@ -186,6 +210,8 @@ struct Options {
     workspace: PathBuf,
     manifests: Vec<PathBuf>,
     supports: Vec<PathBuf>,
+    validation_scope: ValidationScope,
+    assurance_snapshot: Option<PathBuf>,
     only: Vec<String>,
     out: Option<PathBuf>,
 }
@@ -248,8 +274,8 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
     }
 
     match command.as_str() {
-        "validate" => command_validate(parse_options(&args[1..])?),
-        "export" => command_export(parse_options(&args[1..])?),
+        "validate" => command_validate(parse_options(&args[1..], true)?),
+        "export" => command_export(parse_options(&args[1..], false)?),
         other => Err(format!("unknown command `{other}`\n\n{USAGE}")),
     }
 }
@@ -977,6 +1003,8 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
                     "--workspace",
                     "--manifest",
                     "--support",
+                    "--scope",
+                    "--assurance-snapshot",
                     "--only",
                     "--out",
                 ]
@@ -1089,7 +1117,8 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
     }
     let value = one_position(&positional, "change operation needs one id or directory")?;
     let root = azimuth::workflow::resolve_change(&changes, value)?;
-    let options = parse_options(&option_args)?;
+    let acceptance_boundary = matches!(operation.as_str(), "finalize" | "archive");
+    let options = parse_options(&option_args, operation == "validate" || acceptance_boundary)?;
     if operation == "validate" {
         if preview_path.is_some() {
             return Err("change validate does not accept --preview".into());
@@ -1098,6 +1127,9 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
     }
     if options.project.is_some() {
         return Err("project/workset inputs are supported by change validate".into());
+    }
+    if acceptance_boundary && !options.only.is_empty() {
+        return Err("finalize and archive require the complete current model; omit --only".into());
     }
     if matches!(
         operation.as_str(),
@@ -1161,7 +1193,10 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
             return Ok(ExitCode::from(2));
         }
     };
-    let findings = validation::validate(&loaded.model);
+    let mut findings = validation::validate(&loaded.model);
+    if acceptance_boundary {
+        apply_native_assurance(&loaded.model, &options, &mut findings)?;
+    }
     let projection = match azimuth::intent::project(&root, &options.model, &loaded.model) {
         Ok(projection) => projection,
         Err(errors) => {
@@ -2518,6 +2553,7 @@ fn unique_run_bundles(bundles: &[azimuth::run::RunBundle]) -> Vec<&azimuth::run:
 
 fn subject_kind(subject: &azimuth::run::Subject) -> &'static str {
     match subject {
+        azimuth::run::Subject::Source { .. } => "source",
         azimuth::run::Subject::Workspace { .. } => "workspace",
         azimuth::run::Subject::CiCandidate { .. } => "ci-candidate",
         azimuth::run::Subject::Artifact { .. } => "artifact",
@@ -2699,7 +2735,7 @@ fn run_inspection_json(
     ])
 }
 
-fn parse_options(args: &[String]) -> Result<Options, String> {
+fn parse_options(args: &[String], allow_scope: bool) -> Result<Options, String> {
     let mut o = Options {
         project: None,
         workset: None,
@@ -2708,9 +2744,12 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
         workspace: PathBuf::new(),
         manifests: Vec::new(),
         supports: Vec::new(),
+        validation_scope: ValidationScope::Structure,
+        assurance_snapshot: None,
         only: Vec::new(),
         out: None,
     };
+    let mut scope_seen = false;
     let mut i = 0;
     while i < args.len() {
         let arg = &args[i];
@@ -2754,6 +2793,32 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
             }
             "--support" => {
                 o.supports.push(PathBuf::from(value("--support")?));
+                i += 2;
+            }
+            "--assurance-snapshot" => {
+                if !allow_scope {
+                    return Err("--assurance-snapshot is available only for validation, change finalize and change archive".into());
+                }
+                set_once_path(
+                    &mut o.assurance_snapshot,
+                    PathBuf::from(value("--assurance-snapshot")?),
+                    "--assurance-snapshot",
+                )?;
+                i += 2;
+            }
+            "--scope" => {
+                if !allow_scope {
+                    return Err("--scope is available only for validation, change finalize and change archive".into());
+                }
+                if scope_seen {
+                    return Err("--scope may be supplied only once".into());
+                }
+                scope_seen = true;
+                o.validation_scope = match value("--scope")?.as_str() {
+                    "structure" => ValidationScope::Structure,
+                    "acceptance" => ValidationScope::Acceptance,
+                    _ => return Err("--scope requires structure or acceptance".into()),
+                };
                 i += 2;
             }
             "--only" => {
@@ -2840,8 +2905,40 @@ fn command_validate(options: Options) -> Result<ExitCode, String> {
     reject_validation_output(&options, None)?;
     let loaded = load_validation_inputs(&options)?;
     report(&loaded.warnings, "warning");
-    let findings = validation::validate(&loaded.model);
-    render_validation(&loaded.model, &findings, &[], options.out.as_deref())
+    let mut findings = validation::validate(&loaded.model);
+    apply_native_assurance(&loaded.model, &options, &mut findings)?;
+    render_validation(
+        &loaded.model,
+        &findings,
+        &[],
+        options.validation_scope,
+        options.out.as_deref(),
+    )
+}
+
+fn apply_native_assurance(
+    model: &azimuth::model::Model,
+    options: &Options,
+    findings: &mut Vec<validation::Finding>,
+) -> Result<(), String> {
+    let Some(path) = &options.assurance_snapshot else {
+        return Ok(());
+    };
+    if options.validation_scope != ValidationScope::Acceptance {
+        return Err("--assurance-snapshot requires --scope acceptance; structural validation does not assess reviews".into());
+    }
+    let content =
+        fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let snapshot = azimuth::json::parse(&content).map_err(|error| error.to_string())?;
+    let supported = azimuth::assurance_publication::supported_claims(model, &snapshot)?;
+    findings.retain(|finding| {
+        finding.kind != validation::FindingKind::MissingClaimAssurance
+            || !finding
+                .claim
+                .as_ref()
+                .is_some_and(|claim| supported.contains(claim))
+    });
+    Ok(())
 }
 
 fn reject_validation_output(
@@ -2854,6 +2951,7 @@ fn reject_validation_output(
         .chain(options.supports.iter())
         .chain(options.project.iter())
         .chain(options.workset.iter())
+        .chain(options.assurance_snapshot.iter())
         .chain(std::iter::once(&options.workspace))
         .chain(std::iter::once(&options.standards));
     reject_output_input_equality(options.out.as_ref(), inputs, "validation")?;
@@ -2969,6 +3067,8 @@ fn command_change_validate(root: &std::path::Path, options: &Options) -> Result<
         workspace: options.workspace.clone(),
         manifests: options.manifests.clone(),
         supports: options.supports.clone(),
+        validation_scope: options.validation_scope,
+        assurance_snapshot: options.assurance_snapshot.clone(),
         only: Vec::new(),
         out: None,
     };
@@ -3014,6 +3114,7 @@ fn command_change_validate(root: &std::path::Path, options: &Options) -> Result<
     };
     report(&prospective.warnings, "warning");
     let mut findings = validation::validate(&prospective.model);
+    apply_native_assurance(&prospective.model, options, &mut findings)?;
     for finding in &mut findings {
         if let Ok(relative) = std::path::Path::new(&finding.path).strip_prefix(&stage.0) {
             finding.path = original_roots
@@ -3025,7 +3126,11 @@ fn command_change_validate(root: &std::path::Path, options: &Options) -> Result<
                 .to_string();
         }
     }
-    let blockers = azimuth::change::completion_issues(root, &change);
+    let blockers = if options.validation_scope == ValidationScope::Acceptance {
+        azimuth::change::completion_issues(root, &change)
+    } else {
+        Vec::new()
+    };
     println!(
         "change `{}`: current {} Claim(s) → prospective {} Claim(s)",
         change.id,
@@ -3036,6 +3141,7 @@ fn command_change_validate(root: &std::path::Path, options: &Options) -> Result<
         &prospective.model,
         &findings,
         &blockers,
+        options.validation_scope,
         options.out.as_deref(),
     )
 }
@@ -3081,10 +3187,20 @@ fn render_validation(
     model: &azimuth::model::Model,
     findings: &[validation::Finding],
     blockers: &[String],
+    scope: ValidationScope,
     out: Option<&std::path::Path>,
 ) -> Result<ExitCode, String> {
     use azimuth::change::ValidationFacet;
     use azimuth::json::Json;
+    let scoped_findings = findings
+        .iter()
+        .filter(|finding| {
+            scope == ValidationScope::Acceptance
+                || azimuth::change::validation_facet(finding.kind) == ValidationFacet::Structure
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let findings = scoped_findings.as_slice();
     let structural = findings
         .iter()
         .filter(|finding| {
@@ -3109,8 +3225,9 @@ fn render_validation(
         .count();
     let readiness = errors == 0 && findings.is_empty() && blockers.is_empty();
     if let Some(out) = out {
-        let report = Json::obj(vec![
+        let mut fields = vec![
             ("format", Json::str("azimuth-validation")),
+            ("scope", Json::str(scope.name())),
             ("version", Json::Num(1.0)),
             (
                 "structural_validity",
@@ -3155,7 +3272,16 @@ fn render_validation(
                 "acceptance_blockers",
                 Json::Arr(blockers.iter().map(Json::str).collect()),
             ),
-        ]);
+        ];
+        if scope == ValidationScope::Structure {
+            fields.retain(|(key, _)| {
+                !matches!(
+                    *key,
+                    "evidence_completeness" | "acceptance_readiness" | "acceptance_blockers"
+                )
+            });
+        }
+        let report = Json::obj(fields);
         publish_output(
             report.to_string_pretty().as_bytes(),
             Some(&out.to_path_buf()),
@@ -3167,24 +3293,28 @@ fn render_validation(
             if errors == 0 { "valid" } else { "invalid" },
             errors
         );
-        println!("Evidence completeness: {} evidence gap(s), {} review obligation(s); execution assurance is evaluated separately", evidence.len(), reviews.len());
-        println!(
-            "Acceptance readiness: {}",
-            if readiness {
-                "no declared blockers"
-            } else {
-                "blocked"
+        if scope == ValidationScope::Acceptance {
+            println!("Evidence completeness: {} evidence gap(s), {} review obligation(s); execution assurance is evaluated separately", evidence.len(), reviews.len());
+            println!(
+                "Acceptance readiness: {}",
+                if readiness {
+                    "no declared blockers"
+                } else {
+                    "blocked"
+                }
+            );
+            for blocker in blockers {
+                println!("  acceptance blocker: {blocker}");
             }
-        );
-        for blocker in blockers {
-            println!("  acceptance blocker: {blocker}");
         }
     }
-    Ok(if errors > 0 {
-        ExitCode::from(1)
-    } else {
-        ExitCode::SUCCESS
-    })
+    Ok(
+        if errors > 0 || (scope == ValidationScope::Acceptance && !readiness) {
+            ExitCode::from(1)
+        } else {
+            ExitCode::SUCCESS
+        },
+    )
 }
 
 fn command_report(args: &[String]) -> Result<ExitCode, String> {
@@ -3194,7 +3324,7 @@ fn command_report(args: &[String]) -> Result<ExitCode, String> {
     if operation != "traceability" {
         return Err(format!("unknown report `{operation}`"));
     }
-    let options = parse_options(&args[1..])?;
+    let options = parse_options(&args[1..], false)?;
     let loaded = match azimuth::load_with_support(
         &options.model,
         &options.standards,
@@ -3316,22 +3446,139 @@ fn command_surface(args: &[String]) -> Result<ExitCode, String> {
     }
 }
 
+fn command_review_document(args: &[String]) -> Result<ExitCode, String> {
+    let operation = args[0].as_str();
+    let mut input = None;
+    let mut out = None;
+    let mut id = None;
+    let mut reference = None;
+    let mut cursor = 1;
+    while cursor < args.len() {
+        let flag = args[cursor].as_str();
+        let value = argument_value(args, cursor, flag)?;
+        match flag {
+            "--input" => set_once_path(&mut input, PathBuf::from(value), flag)?,
+            "--out" => set_once_path(&mut out, PathBuf::from(value), flag)?,
+            "--id" => {
+                if id.replace(value.to_string()).is_some() {
+                    return Err("duplicate --id".into());
+                }
+            }
+            "--input-ref" if operation == "review-draft" => {
+                if reference.replace(value.to_string()).is_some() {
+                    return Err("duplicate --input-ref".into());
+                }
+            }
+            _ => return Err(format!("unknown {operation} option {flag}")),
+        }
+        cursor += 2;
+    }
+    let input = input.ok_or("review document command needs --input")?;
+    if out.as_ref().is_some_and(|path| {
+        path == &input
+            || (path.canonicalize().ok().is_some()
+                && path.canonicalize().ok() == input.canonicalize().ok())
+    }) {
+        return Err("review output must not replace its input".into());
+    }
+    let source = fs::read_to_string(&input).map_err(|e| format!("{}: {e}", input.display()))?;
+    let value = azimuth::json::parse(&source).map_err(|e| format!("{}: {e}", input.display()))?;
+    let id = id.ok_or("review document command needs --id")?;
+    let output = if operation == "review-draft" {
+        azimuth::review_authoring::skeleton(
+            &value,
+            &reference.ok_or("review-draft needs portable --input-ref")?,
+            &id,
+        )?
+    } else {
+        azimuth::review_authoring::records(&value)?;
+        value
+            .get("records")
+            .and_then(azimuth::json::Json::as_array)
+            .ok_or("review-export needs compiled bundle")?
+            .iter()
+            .find(|e| e.get("id").and_then(azimuth::json::Json::as_str) == Some(id.as_str()))
+            .ok_or("review ID absent from bundle")?
+            .get("record")
+            .ok_or("missing native review")?
+            .to_string_pretty()
+    };
+    if let Some(path) = out {
+        publish_output(output.as_bytes(), Some(&path))?;
+    } else {
+        println!("{output}");
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
 fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
     let operation = args.first().map(String::as_str).unwrap_or_default();
-    if !matches!(operation, "authority" | "review-input") {
+    if operation == "verify-snapshot" {
+        let mut input = None;
+        let mut out = None;
+        let mut cursor = 1;
+        while cursor < args.len() {
+            match args[cursor].as_str() {
+                "--input" => set_once_path(
+                    &mut input,
+                    PathBuf::from(argument_value(args, cursor, "--input")?),
+                    "--input",
+                )?,
+                "--out" => set_once_path(
+                    &mut out,
+                    PathBuf::from(argument_value(args, cursor, "--out")?),
+                    "--out",
+                )?,
+                _ => return Err("verify-snapshot accepts --input and --out only".into()),
+            }
+            cursor += 2;
+        }
+        let input = input.ok_or("verify-snapshot requires --input")?;
+        reject_output_input_equality(out.as_ref(), std::iter::once(&input), "verify-snapshot")?;
+        let source = fs::read_to_string(&input).map_err(|e| format!("{}: {e}", input.display()))?;
+        let value = azimuth::json::parse(&source).map_err(|e| e.to_string())?;
+        let result = azimuth::assurance_publication::verify_snapshot(&value)?.to_string_pretty();
+        if let Some(out) = out {
+            publish_output(result.as_bytes(), Some(&out))?;
+        } else {
+            println!("{result}");
+        }
+        return Ok(ExitCode::SUCCESS);
+    }
+    if matches!(operation, "review-draft" | "review-export") {
+        return command_review_document(args);
+    }
+    if !matches!(
+        operation,
+        "authority" | "review-input" | "review-compile" | "snapshot" | "prepare-candidate"
+    ) {
         return Err("expected assurance authority --project <id> [model options] [--catalog <file> --workset <file>]".into());
     }
     let mut project = None;
     let mut catalog = None;
     let mut workset = None;
     let mut request = None;
+    let mut change_root = None;
+    let mut markdown = Vec::new();
     let mut reviews = Vec::new();
     let mut bundles = Vec::new();
     let mut options = Vec::new();
     let mut cursor = 1;
     while cursor < args.len() {
         match args[cursor].as_str() {
-            "--request" | "--review" | "--bundle" if operation == "review-input" => {
+            "--change-root" if operation == "review-compile" => {
+                set_once_path(
+                    &mut change_root,
+                    PathBuf::from(argument_value(args, cursor, "--change-root")?),
+                    "--change-root",
+                )?;
+                cursor += 2;
+            }
+            "--input" if operation == "review-compile" => {
+                markdown.push(argument_value(args, cursor, "--input")?.to_string());
+                cursor += 2;
+            }
+            "--request" | "--review" | "--bundle" if operation != "authority" => {
                 let value = PathBuf::from(argument_value(args, cursor, &args[cursor])?);
                 match args[cursor].as_str() {
                     "--request" => set_once_path(&mut request, value, "--request")?,
@@ -3364,7 +3611,7 @@ fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
         }
     }
     let project = project.ok_or("authority requires --project <id>")?;
-    let options = parse_options(&options)?;
+    let options = parse_options(&options, false)?;
     if !options.only.is_empty() {
         return Err("authority does not permit selection".into());
     }
@@ -3403,36 +3650,91 @@ fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
             .join("\n")
     })?;
     report(&loaded.warnings, "warning");
-    let authority = if operation == "review-input" {
-        let request = request.ok_or("review-input needs --request <file>")?;
-        let request = azimuth::json::parse(
-            &fs::read_to_string(&request)
-                .map_err(|error| format!("{}: {error}", request.display()))?,
+    let mut native_reviews = Vec::new();
+    for path in &reviews {
+        let value = azimuth::json::parse(
+            &fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?,
         )
-        .map_err(|error| error.to_string())?;
-        let reviews = reviews
-            .iter()
-            .map(|path| {
-                azimuth::json::parse(
-                    &fs::read_to_string(path)
-                        .map_err(|error| format!("{}: {error}", path.display()))?,
-                )
-                .map_err(|error| error.to_string())
-            })
-            .collect::<Result<Vec<_>, String>>()?;
-        let bundles = match load_run_bundles(&bundles) {
-            Ok(bundles) => bundles,
-            Err(code) => return Ok(code),
-        };
-        azimuth::assurance_review::review_input(
-            &loaded.model,
-            &project,
-            &request,
-            &reviews,
-            &bundles,
-        )?
-    } else {
-        azimuth::assurance_review::authority(&loaded.model, &project)?
+        .map_err(|e| e.to_string())?;
+        native_reviews.extend(azimuth::review_authoring::records(&value)?);
+    }
+    let bundles = match load_run_bundles(&bundles) {
+        Ok(bundles) => bundles,
+        Err(code) => return Ok(code),
+    };
+    let authority = match operation {
+        "review-input" => {
+            let request = request.ok_or("review-input needs --request <file>")?;
+            let request = azimuth::json::parse(
+                &fs::read_to_string(&request).map_err(|e| format!("{}: {e}", request.display()))?,
+            )
+            .map_err(|e| e.to_string())?;
+            azimuth::assurance_review::review_input(
+                &loaded.model,
+                &project,
+                &request,
+                &native_reviews,
+                &bundles,
+            )?
+        }
+        "review-compile" => {
+            if request.is_some() {
+                return Err("review-compile does not accept --request".into());
+            }
+            if markdown.is_empty() {
+                return Err("review-compile needs --input <change-relative Markdown>".into());
+            }
+            azimuth::review_authoring::compile(
+                &change_root.ok_or("review-compile needs --change-root")?,
+                &markdown,
+                &loaded.model,
+                &project,
+                &native_reviews,
+                &bundles,
+            )?
+        }
+        "prepare-candidate" => {
+            if request.is_some() || !native_reviews.is_empty() || !bundles.is_empty() {
+                return Err("prepare-candidate accepts model options only".into());
+            }
+            let authority = azimuth::assurance_review::authority(&loaded.model, &project)?;
+            azimuth::json::Json::obj(vec![
+                (
+                    "format",
+                    azimuth::json::Json::str("azimuth-candidate-preparation"),
+                ),
+                ("version", azimuth::json::Json::Num(1.0)),
+                ("project", azimuth::json::Json::str(&project)),
+                (
+                    "model_revision",
+                    authority.get("fingerprint").unwrap().clone(),
+                ),
+            ])
+        }
+        "snapshot" => {
+            if request.is_some() {
+                return Err("snapshot does not accept --request".into());
+            }
+            let findings = azimuth::run::verify_set(&bundles);
+            if !findings.is_empty() {
+                return Err(format!("invalid Run history: {findings:?}"));
+            }
+            let authority = azimuth::assurance_review::authority(&loaded.model, &project)?;
+            azimuth::json::Json::obj(vec![
+                ("project", azimuth::json::Json::str(&project)),
+                (
+                    "model_revision",
+                    authority.get("fingerprint").unwrap().clone(),
+                ),
+                ("authority", authority),
+                ("reviews", azimuth::json::Json::Arr(native_reviews)),
+                (
+                    "bundles",
+                    azimuth::json::Json::Arr(bundles.iter().map(azimuth::run::to_json).collect()),
+                ),
+            ])
+        }
+        _ => azimuth::assurance_review::authority(&loaded.model, &project)?,
     };
     let output = authority.to_string_pretty();
     if let Some(path) = options.out {

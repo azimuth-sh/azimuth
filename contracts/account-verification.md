@@ -1,5 +1,32 @@
 # Claim-first verification explanation
 
+## Machine Challenger declarations
+
+A compact account declares a shared or Claim-owned `Challenger` alongside Checks. It cannot be nested inside a Case, Check, Element or another Challenger. Change deltas use `Add challenger`; projected model documents use `Challenger`. Identity is project-global and survives module moves.
+
+```markdown
+### Challenger: admission-mutation
+
+- Form: `mutation`
+- Targets: `claim-review`
+- Mechanisms:
+  - `service-admission`
+- Checks:
+  - `invalid-service-is-rejected`
+
+Search for weakened admission that the selected Checks fail to detect.
+Describe relevant exclusions and limitations of this objection search.
+```
+
+`Form` is one machine form, `mutation` or `source-analysis`. `Targets` is a scalar or nonempty list selecting `claim-review` and/or `claim-health`. `Claims` is optional under a Claim and defaults to that enclosing Claim; shared declarations require explicit Claims. `Mechanisms` and `Checks` are optional stable-ID lists. Every selected identity must exist. Nonempty Mechanisms narrow production targets; otherwise the selected Claims' realization sites are production targets. Checks select existing executable verification support. Purpose/search prose is mandatory. Scope filters, tool switches, rule files and native execution budgets belong to tagged implementation configuration, not duplicated Markdown file lists.
+
+Enable `azimuth.challenge` explicitly in the workspace/project. The declaration must resolve exactly one qualified `challenger-implementation` package producer; missing/ambiguous support is a structural Finding. Package tags identify implementation only. Production selection continues to use ordinary `Realizes` and `ImplementsMechanism` relations. Tags create no accepted review or health conclusion.
+
+Scope preparation is machine-readable and precedes Claim Review. It reports selected sites/source files and fingerprints, inclusion reasons, explicit repository/Area exclusions, missing mappings, whole-file expansion, separate build/analysis/Check scopes and tool-filter limitations. Missing or ambiguous mappings fail closed; never expand silently to the entire repository. Scope completeness remains an independently reviewed proposition.
+
+Compact accounts no longer require `judgments.md` declarations as a documentary structural gate. Independently authored Claim Reviews and exact-Subject Claim Health records use the aggregated review authoring contract. Old judgment facets remain historical documents and cannot be relabeled as accepted Claim Reviews or supported Claim Health.
+
+
 This proposed facet retains a module's verification strategy, Check definitions and supporting method vocabulary. It is not an execution manifest or Claim Judgment. Account assembly compares the authored definitions and Case relationships with the spec and extracted implementation support before drawing conclusions.
 
 A file starts with `# Verification: <module-id>`, which declares mutable module membership. Claim verification and Case verification headings name stable project-wide IDs. Case nesting must agree with its explicitly declared current Claim relationship. Duplicate same-kind IDs anywhere in the assembled project fail; moving an entity changes membership, not identity. A Case verification may contain prose without an Element.

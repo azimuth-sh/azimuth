@@ -16,6 +16,7 @@ pub struct AccountVerification {
     pub cases: Vec<CaseVerification>,
     pub elements: Vec<VerificationElement>,
     pub checks: Vec<AuthoredCheck>,
+    pub challengers: Vec<crate::verification::Challenger>,
     pub package_entities: Vec<crate::verification_packages::Declaration>,
 }
 
@@ -97,6 +98,7 @@ pub fn parse_account_verification(
     let mut cases = Vec::new();
     let mut elements = Vec::new();
     let mut checks = Vec::new();
+    let mut challengers = Vec::new();
     let mut package_entities = Vec::new();
     let mut ancestors: Vec<usize> = Vec::new();
 
@@ -307,6 +309,41 @@ pub fn parse_account_verification(
 
 
             }
+            (3..=6, "Challenger") => {
+                validate_local(path, heading.line, "Challenger", heading.id, &mut errors);
+                if active_case.is_some() || matches!(structural_parent, Some("Check" | "Challenger" | "Element")) {
+                    errors.push(Diag::at(path, heading.line, "Challenger must be shared or Claim-owned, never Case-owned or inside another implementation declaration"));
+                }
+                let (fields, body) = read_fields(path, heading.line, block,
+                    &["Form", "Targets", "Claims", "Mechanisms", "Checks"], &mut errors);
+                let form = fields[0].first().cloned().unwrap_or_default();
+                if fields[0].len() != 1 || !matches!(form.as_str(), "mutation" | "source-analysis") {
+                    errors.push(Diag::at(path, heading.line, "machine Challenger Form must be mutation or source-analysis"));
+                }
+                let targets = fields[1].clone();
+                if targets.is_empty() || targets.iter().any(|target| !matches!(target.as_str(), "claim-review" | "claim-health")) {
+                    errors.push(Diag::at(path, heading.line, "Targets must select claim-review or claim-health"));
+                }
+                let mut selected_claims = fields[2].clone();
+                if selected_claims.is_empty() {
+                    if let Some(claim) = &active_claim { selected_claims.push(claim.clone()); }
+                }
+                if selected_claims.is_empty() || body.trim().is_empty() {
+                    errors.push(Diag::at(path, heading.line, "Challenger requires selected Claims and objection-search prose"));
+                }
+                for id in selected_claims.iter().chain(fields[3].iter()).chain(fields[4].iter()) {
+                    validate_local(path, heading.line, "selected entity", id, &mut errors);
+                }
+                if challengers.iter().any(|item: &crate::verification::Challenger| item.id == heading.id) {
+                    errors.push(Diag::at(path, heading.line, "duplicate Challenger identity"));
+                }
+                challengers.push(crate::verification::Challenger {
+                    id: heading.id.into(), form, targets, claims: selected_claims,
+                    mechanisms: fields[3].clone(), checks: fields[4].clone(),
+                    searches_for: body.clone(), rationale: body, required_scope: Vec::new(),
+                    path: path.into(), line: heading.line,
+                });
+            }
             (3..=6, "Check") => {
                 let valid_parent = active_claim.is_some()
                     && matches!(structural_parent, Some("Claim verification" | "Case verification" | "Section"))
@@ -393,12 +430,12 @@ pub fn parse_account_verification(
         ));
         return Err(errors);
     };
-    if claims.is_empty() {
+    if claims.is_empty() && sections.is_empty() {
         errors.push(Diag::expecting(
             path,
             1,
-            "verification has no Claim scope",
-            "at least one `## Claim verification:` declaration",
+            "verification has no Claim scope or shared Section",
+            "at least one `## Claim verification:` or `## Section:` declaration",
         ));
     }
     for claim in &claims {
@@ -439,6 +476,7 @@ pub fn parse_account_verification(
             cases,
             elements,
             checks,
+            challengers,
             package_entities,
         })
     } else {
@@ -488,6 +526,7 @@ fn collect_headings<'a>(path: &str, lines: &'a [&str], errors: &mut Vec<Diag>) -
             "Case verification",
             "Section",
             "Check",
+            "Challenger",
             "Element",
             "Surface",
             "Expectation set",
@@ -564,7 +603,12 @@ fn read_fields(
             ));
         }
         seen[position] = true;
-        if label == "Kind" {
+        if label == "Kind"
+            || (matches!(
+                label,
+                "Form" | "Targets" | "Claims" | "Mechanisms" | "Checks"
+            ) && !suffix.trim().is_empty())
+        {
             let Some(value) = suffix
                 .trim()
                 .strip_prefix('`')
