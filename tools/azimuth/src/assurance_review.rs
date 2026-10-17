@@ -256,14 +256,13 @@ pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
             ("challengers", claim_challengers(model, id)),
         ]));
     }
-    let findings = crate::validation::validate(model);
     let result = Json::obj(vec![
         ("project", Json::str(project)),
         (
             "model_fingerprint",
             Json::str(format!(
                 "sha256:{}",
-                crate::fingerprint::model_digest(model, &findings)
+                crate::fingerprint::authority_model_digest(model)
             )),
         ),
         ("checks", sorted(checks, "id")),
@@ -1413,7 +1412,9 @@ pub fn review_input(
     }
     match kind {
         "method-qualification" => object(request, &["kind", "check"]),
-        "applicability-decision" => object(request, &["kind", "check", "case", "subject_fingerprint"]),
+        "applicability-decision" => {
+            object(request, &["kind", "check", "case", "subject_fingerprint"])
+        }
         "claim-judgment" => object(request, &["kind", "claim", "subject_fingerprint"]),
         _ => return Err("review input kind requires claim-review or claim-health".into()),
     }?;
@@ -2445,6 +2446,31 @@ fn assess_claim_assessment(
     }
     assessed("accepted", "")
 }
+fn reassessment_history(selected: Vec<Json>, reviews: &[Json]) -> Vec<Json> {
+    let mut retained = BTreeMap::new();
+    let mut pending = selected;
+    while let Some(record) = pending.pop() {
+        let fingerprint = text(&record, "fingerprint").unwrap().to_string();
+        if retained.contains_key(&fingerprint) {
+            continue;
+        }
+        if let Some(previous) = record
+            .get("provenance")
+            .and_then(|value| value.get("reassesses"))
+            .and_then(Json::as_str)
+        {
+            if let Some(ancestor) = reviews
+                .iter()
+                .find(|value| value.get("fingerprint").and_then(Json::as_str) == Some(previous))
+            {
+                pending.push(ancestor.clone());
+            }
+        }
+        retained.insert(fingerprint, record);
+    }
+    retained.into_values().collect()
+}
+
 fn claim_assessment_input(
     model: &Model,
     project: &str,
@@ -2615,7 +2641,10 @@ fn claim_assessment_input(
         ("evidence_bundles", Json::Arr(evidence)),
         ("challenge_bundles", Json::Arr(challenge_bundles)),
         ("review_states", Json::Arr(states)),
-        ("existing_reviews", Json::Arr(existing)),
+        (
+            "existing_reviews",
+            Json::Arr(reassessment_history(existing, reviews)),
+        ),
         ("gaps", Json::Arr(gaps)),
     ]);
     let fp = record_fingerprint(&output)?;

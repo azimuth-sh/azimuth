@@ -24,6 +24,9 @@ USAGE
     azimuth workflow next|verify --instance <file> --repositories <file> [--out <file>]
     azimuth workflow assurance-targets --instance <file> --repositories <file> --snapshot <relative-ref> [--subjects <relative-ref>] [--out <file>]
     azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--out <file>]
+    azimuth release project --baseline-revision <sha256> --change <dir>... [model options]
+    azimuth release compose|prepare|verify --input <file> [--model-out <absent directory>] [--out <file>]
+    azimuth assurance catalog --project <id> [model options] [--out <file>]
     azimuth validate [options]
     azimuth report traceability [options]
     azimuth export [options]
@@ -259,6 +262,9 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
     }
     if command == "report" {
         return command_report(&args[1..]);
+    }
+    if command == "release" {
+        return command_release(&args[1..]);
     }
     if command == "assurance" {
         return command_assurance(&args[1..]);
@@ -3550,7 +3556,12 @@ fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
     }
     if !matches!(
         operation,
-        "authority" | "review-input" | "review-compile" | "snapshot" | "prepare-candidate"
+        "authority"
+            | "review-input"
+            | "review-compile"
+            | "snapshot"
+            | "prepare-candidate"
+            | "catalog"
     ) {
         return Err("expected assurance authority --project <id> [model options] [--catalog <file> --workset <file>]".into());
     }
@@ -3693,6 +3704,7 @@ fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
                 &bundles,
             )?
         }
+        "catalog" => azimuth::release::catalog(&loaded.model),
         "prepare-candidate" => {
             if request.is_some() || !native_reviews.is_empty() || !bundles.is_empty() {
                 return Err("prepare-candidate accepts model options only".into());
@@ -3742,5 +3754,91 @@ fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
     } else {
         println!("{output}");
     }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn command_release(args: &[String]) -> Result<ExitCode, String> {
+    let operation = args
+        .first()
+        .map(String::as_str)
+        .ok_or("release requires compose, prepare or verify")?;
+    if operation == "project" {
+        let mut baseline = None;
+        let mut changes = Vec::new();
+        let mut options = Vec::new();
+        let mut cursor = 1;
+        while cursor < args.len() {
+            match args[cursor].as_str() {
+                "--baseline-revision" => {
+                    if baseline
+                        .replace(argument_value(args, cursor, "--baseline-revision")?.to_string())
+                        .is_some()
+                    {
+                        return Err("duplicate --baseline-revision".into());
+                    }
+                    cursor += 2;
+                }
+                "--change" => {
+                    changes.push(PathBuf::from(argument_value(args, cursor, "--change")?));
+                    cursor += 2;
+                }
+                _ => {
+                    options.push(args[cursor].clone());
+                    cursor += 1;
+                }
+            }
+        }
+        if changes.is_empty() {
+            return Err("release project requires --change".into());
+        }
+        let options = parse_options(&options, false)?;
+        if options.project.is_some() || options.workset.is_some() || !options.only.is_empty() {
+            return Err("release project requires an explicit complete model directory, not a selected or federated overlay".into());
+        }
+        let loaded = load_validation_inputs(&options)?;
+        let request = azimuth::release::project(
+            &loaded.model,
+            &options.model,
+            &changes,
+            &baseline.ok_or("release project requires --baseline-revision")?,
+        )?;
+        publish_output(request.to_string_pretty().as_bytes(), options.out.as_ref())?;
+        return Ok(ExitCode::SUCCESS);
+    }
+    let mut input = None;
+    let mut out = None;
+    let mut model_out = None;
+    let mut cursor = 1;
+    while cursor < args.len() {
+        let target = match args[cursor].as_str() {
+            "--input" => &mut input,
+            "--out" => &mut out,
+            "--model-out" if operation == "compose" => &mut model_out,
+            other => return Err(format!("unsupported release option `{other}`")),
+        };
+        set_once_path(
+            target,
+            PathBuf::from(argument_value(args, cursor, &args[cursor])?),
+            &args[cursor],
+        )?;
+        cursor += 2;
+    }
+    let input = input.ok_or("release requires --input")?;
+    reject_output_input_equality(out.as_ref(), std::iter::once(&input), "release")?;
+    let source =
+        fs::read_to_string(&input).map_err(|error| format!("{}: {error}", input.display()))?;
+    let value =
+        azimuth::json::parse(&source).map_err(|error| format!("{}: {error}", input.display()))?;
+    let result = match operation {
+        "compose" => azimuth::release::compose(&value),
+        "prepare" => azimuth::release::prepare(&value),
+        "verify" => azimuth::release::verify(&value),
+        _ => return Err("release requires compose, prepare or verify".into()),
+    }
+    .map_err(|error| format!("{}:1: {error}", input.display()))?;
+    if let Some(directory) = model_out {
+        azimuth::release::materialize(&result, &directory)?;
+    }
+    publish_output(result.to_string_pretty().as_bytes(), out.as_ref())?;
     Ok(ExitCode::SUCCESS)
 }

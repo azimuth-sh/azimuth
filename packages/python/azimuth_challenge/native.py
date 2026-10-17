@@ -8,7 +8,7 @@ def normalize(tool, native, *, execution_failed=False):
     if tool == 'stryker-net':
         files = native.get('files')
         if not isinstance(files, dict) or not files:
-            return 'inconclusive', [], ['mutation discovery missing or empty'], {}
+            return 'inconclusive', [], inconclusive + ['mutation discovery missing or empty'], {}
         counts = {}
         for file, account in files.items():
             for mutant in account.get('mutants', []):

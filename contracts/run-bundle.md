@@ -244,7 +244,7 @@ source_fingerprint)` and are non-empty. Units sort by id, are non-empty and have
 `whole` unit represents native work whose internal population is not separately planned. One Check
 selection may name several Cases without duplicating its physical execution.
 
-Implementation `identity` is the stable semantic SourceIdentity `<area>|<address-kind>|<address>`. Area and address kind are lower kebab ids. Address is non-empty, glob-free semantic identity rather than a file, path, numeric line, or path-plus-line locator; it uses the realization-selector boundary from [verification.md](verification.md).
+Implementation `identity` is the stable semantic SourceIdentity `<area>|<address-kind>|<address>`. Area and address kind are lower kebab ids. Compiler symbol address kinds retain their ecosystem syntax: .NET array/generic/pointer type notation and ECMAScript package/module/binding and package/module/receiver/member signatures are semantic addresses, including a relative logical module and optional-property/array syntax; these are not file locators or wildcard selections. Address is non-empty, glob-free semantic identity rather than a file, path, numeric line, or path-plus-line locator; it uses the realization-selector boundary from [verification.md](verification.md).
 
 Challenges sort by their plan-local id, which is unique. `lane` is exactly `gate | scheduled` and is derived from the current Challenge Schedule. Scope is the strict semantic Challenge scope from [verification.md](verification.md); its arrays and fingerprint are validated independently.
 
@@ -378,7 +378,7 @@ These are the exact identities core computed and supplied to the adapter. Paths,
 }
 ```
 
-Artifact ids and kinds are lower kebab path ids. Media type and locator value are non-empty. `size_bytes` is a non-negative safe integer. Locator kind is `uri | bundle-relative`. Bundle-relative values use `/`, are relative, contain no empty, `.` or `..` segment and do not start with `/`. Artifact arrays sort by unique id. Verification never reads a locator.
+Artifact ids and kinds are lower kebab path ids. Media type and locator value are non-empty. `size_bytes` is a non-negative safe integer. Locator kind is `uri | bundle-relative | unavailable`. An unavailable locator retains the artifact digest as its value and asserts no retrievable location; it does not discard measurements required for an Observation. Bundle-relative values use `/`, are relative, contain no empty, `.` or `..` segment and do not start with `/`. Artifact arrays sort by unique id. Verification never reads a locator.
 
 ## Diagnostics
 

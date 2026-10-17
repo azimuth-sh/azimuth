@@ -47,6 +47,11 @@ pub const SKILLS: &[SkillResource] = &[
         openai: include_str!("../resources/skills/azimuth-apply/agents/openai.yaml"),
     },
     SkillResource {
+        id: "azimuth-review-claim",
+        source: include_str!("../resources/skills/azimuth-review-claim/SKILL.md"),
+        openai: include_str!("../resources/skills/azimuth-review-claim/agents/openai.yaml"),
+    },
+    SkillResource {
         id: "azimuth-archive",
         source: include_str!("../resources/skills/azimuth-archive/SKILL.md"),
         openai: include_str!("../resources/skills/azimuth-archive/agents/openai.yaml"),
@@ -72,6 +77,24 @@ pub struct ReferenceDescriptor {
 }
 
 pub const REFERENCES: &[ReferenceDescriptor] = &[
+    ReferenceDescriptor {
+        id: "release-publication",
+        format_version: 1,
+        accepted: &[
+            "explicit composed release",
+            "immutable source/build/deployment provenance",
+            "portable native records",
+            "unavailable supporting evidence",
+        ],
+        rejected: &[
+            "publication implies acceptance",
+            "deployment owned by one Change",
+            "silent semantic merge",
+            "CI invokes an agent",
+            "rewritten native history",
+        ],
+        prose: include_str!("../resources/references/release-publication.md"),
+    },
     ReferenceDescriptor {
         id: "assurance-reviews",
         format_version: 1,

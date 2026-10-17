@@ -39,7 +39,7 @@ def account(launch, reports):
             artifact_id='report-'+suffix
             artifacts.append({'id':artifact_id,'kind':'native-challenge-report','media_type':'application/json',
                 'digest':'sha256:'+hashlib.sha256(raw).hexdigest(),'size_bytes':len(raw),
-                'locator':{'kind':'uri','value':path.resolve().as_uri()}})
+                'locator':{'kind':'unavailable','value':'sha256:'+hashlib.sha256(raw).hexdigest()}})
             refs=[]
             for ordinal,reason in enumerate(gaps):
                 diagnostic_id='gap-'+suffix+'-'+str(ordinal)
@@ -58,7 +58,7 @@ def account(launch, reports):
         raise ValueError('native report selection differs from finite planned units')
     execution=fingerprint(raw_reports)
     return {'format':'azimuth-challenge-native-account','version':1,'subject':launch['subject'],
-            'source':{'system':'azimuth.challenge','execution':execution},'started_at_ms':min(starts),'finished_at_ms':max(finishes),
+            'source':{'system':'azimuth-challenge','execution':execution},'started_at_ms':min(starts),'finished_at_ms':max(finishes),
             'generated_at_ms':max(int(time.time()*1000),max(finishes)),'actual_context':launch['plan']['required_context'],
             'activities':activities,'units_by_challenge':units,'reports':raw_reports,'artifacts':artifacts,'diagnostics':diagnostics}
 

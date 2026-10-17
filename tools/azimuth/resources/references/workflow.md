@@ -260,3 +260,34 @@ Existing instances retain their pinned definitions and immutable histories. Adop
 Keep authored task results under `.azimuth/results/`, useful generated artifacts under `.azimuth/artifacts/`, and exact assurance review inputs under `.azimuth/review-inputs/`. Normative change artifacts and authored assurance review bundles remain outside this ignored working directory. One result per attempt is enough: a separate work report, workflow-result wrapper and update receipt are not required. Query handoffs are temporary in-flight inputs, not a permanent transcript. The instance already retains the exact coordination history.
 
 Clean only unreferenced scratch exports, command transcripts, duplicate response captures and superseded diagnostics. Preserve every supporting file referenced by immutable history, current declared input, retained review dependency or Run, and preserve the complete candidate needed for assessment. Historical supporting artifacts cannot be silently discarded merely because they no longer satisfy current work. Back up the workspace before cleanup; historical dependency closure takes precedence over a target file count.
+
+## Acting on correction feedback
+
+`eligible[].corrections` gives reviewed work/outcome, reviewer, the reviewed model revision when present, direct authored review sections and reviewed artifacts. Read the section using its `directory`, `ref`, and `line`; its digest identifies the exact retained review section. If source resolution fails, read the inline retained feedback and diagnostic. Compiled bundles and internal result wrappers remain tooling/audit records, not required reading for ordinary correction work.
+
+Currentness applies only to retained input references; unchanged historical captures do not establish that current checkouts still match them. Inspect current source and artifacts before applying feedback. Assess each finding, update the existing engineering plan as needed, and implement bounded corrections. Use the normal compact result's `report` to identify each review/finding and record its changes and actual verification, justified disagreement, or unresolved limitation. Independent reassessment follows; correction work does not accept its own review. Obtain the relevant decision for material scope or intent changes. No extra correction-plan task or duplicate report file is required.
+
+For revision-7 Challenger work, select one eligible `run-challenger` target. Read its declaration,
+readable reviews and scope/configuration inputs. Retain a fresh-attempt readable `challenger-report`
+and native `run-bundle`; include the finding disposition/limitations in the work report. Execution
+completion is distinct from the derived assessment: native clean means bounded no-findings, never
+Claim Health. Findings require bounded correction and independent reassessment; execution failure
+or inconclusive search requires environment/configuration/scope diagnosis and retry. Preserve
+surviving-mutant equivalence/relevance questions and findings alongside any execution gaps.
+
+For findings with unchanged candidate/source/configuration, an independently accepted successor
+Claim Review can retain the exact Run/result/target `challenge_basis` proofs and justify the
+disposition. Core may then close the original bounded search without relabeling its findings.
+Execution gaps remain retry obligations. Changed source or scope requires fresh candidate work
+and affected reruns. Captured parallel Challenger results remain recordable after a sibling
+finding only while their exact inputs and prerequisite basis remain unchanged.
+
+For a selected compiled review entry, workflow assessment retains its exact reassessment ancestor chain from the validated bundle as historical context. Unselected sibling reviews are not imported as current prerequisites. Missing predecessors remain missing dependencies; retained ancestors never confer current acceptance.
+
+## Claim Review guidance (change-development revision 8)
+
+`review-claim` handoffs reference the shipped `azimuth-review-claim` skill. Acceptance requires
+both adequate verification design and faithful implemented verification, including the observations
+and controls promised by each contribution. Execution may remain pending. Documented unfinished
+implementation does not satisfy the gate. Existing workflow instances retain their pinned guidance
+and definitions until an explicit migration; installing this skill does not rewrite review history.

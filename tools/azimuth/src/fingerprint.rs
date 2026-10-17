@@ -103,6 +103,51 @@ pub fn canonical_sha256(value: &crate::json::Json) -> String {
     format!("sha256:{}", sha256(canonical_json(value).as_bytes()))
 }
 
+/// Model authority names definitions and source support, independently of local staging locations.
+pub fn authority_model_digest(model: &crate::model::Model) -> String {
+    use crate::json::Json;
+    fn remove_fields(value: &mut Json, excluded: &[&str]) {
+        if let Json::Obj(fields) = value {
+            fields.retain(|(key, _)| !excluded.contains(&key.as_str()));
+        }
+    }
+    let mut account = model.to_json(&[]);
+    if let Json::Obj(fields) = &mut account {
+        for (key, value) in fields {
+            match key.as_str() {
+                "specs" => {
+                    if let Json::Arr(specs) = value {
+                        for spec in specs {
+                            remove_fields(spec, &["path"]);
+                            if let Json::Obj(fields) = spec {
+                                if let Some((_, Json::Arr(claims))) =
+                                    fields.iter_mut().find(|(key, _)| key == "claims")
+                                {
+                                    for claim in claims {
+                                        remove_fields(claim, &["line"]);
+                                        if let Json::Obj(fields) = claim {
+                                            if let Some((_, Json::Arr(cases))) =
+                                                fields.iter_mut().find(|(key, _)| key == "cases")
+                                            {
+                                                for case in cases {
+                                                    remove_fields(case, &["line"]);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                "workspace" => remove_fields(value, &["path"]),
+                _ => {}
+            }
+        }
+    }
+    sha256(canonical_json(&account).as_bytes())
+}
+
 /// Derives the raw SHA-256 digest of the complete model account used by planning and finalization.
 ///
 /// Findings are part of the exported account, so a caller must pass the findings derived from the

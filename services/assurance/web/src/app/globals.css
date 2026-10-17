@@ -194,3 +194,21 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px soli
 details { margin-block: 1rem; }
 
 pre code { color: inherit; }
+
+select, button {
+  font: inherit;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 8px 12px;
+  max-width: 100%;
+}
+select:focus-visible, button:focus-visible, a:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+form { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; }
+form label { display: grid; gap: 8px; max-width: 100%; }
+pre { overflow-x: auto; max-width: 100%; }
+code { overflow-wrap: anywhere; }

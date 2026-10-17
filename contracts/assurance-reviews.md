@@ -27,6 +27,13 @@ A record pins `claim`, `claim_fingerprint` and exact `dependencies`, with
 Common record metadata retains the accountable `reviewer`, actual `reviewed_at_ms`, substantive
 `rationale`, supporting `artifacts` and canonical `fingerprint`.
 Acceptance expresses credibility of the reviewed account, not observed product health.
+Acceptance requires both an adequate verification approach and an implementation capable of
+fulfilling its declared obligations, including required observations, independent controls and
+native reporting. Known material implementation gaps block acceptance even when documented.
+Justified scope boundaries remain reviewable, but cannot omit a required proposition without
+adequate alternative coverage. Execution may remain pending; unavailable execution environments
+alone do not establish an implementation defect. The shipped `azimuth-review-claim` skill guides
+this semantic assessment; record compilation does not decide these criteria.
 
 `dependencies` is the exact packet `{checks, cases, claims, bindings}` selected for this Claim.
 Its definitions include realization sites and fingerprints, mechanisms, Check implementations,
@@ -104,6 +111,8 @@ Markdown. Health also retains residual risks. Optional `Agent`, `Model` and `Rea
 provenance and correction relationships. Markdown `Reassesses` names an earlier record ID in
 the aggregate bundle; compilation resolves that ID to its native fingerprint. Supplied labels alone confer no independence or permission.
 
+`azimuth assurance review-input` retains the selected assessments and their transitive reassessment predecessors in deterministic fingerprint order. This retained history reproduces review states during compilation; a genuinely absent predecessor remains an explicit gap. Unrelated review histories are not added.
+
 `azimuth assurance review-input` prepares exact definitions, dependencies, existing assessments,
 visible gaps and, for health only, matching Subjects/Observations. Packets may also include optional
 `challenge_bundles`: scoped native Run proofs for the selected assessment objections, not a
@@ -157,3 +166,7 @@ Historical parsers retain their original meanings for inspection; they do not co
 qualifications or judgments into new reviews. After new-kind ingestion, application rollback
 requires a parser capable of those records or an isolated pre-rollout database recovery; deleting
 or rewriting immutable history is not a migration strategy.
+
+## Candidate relocation
+
+New candidate authority fingerprints exclude machine-local model/workspace document paths, declaration line numbers and validation findings. Repository-relative implementation locators, qualified source identities, source fingerprints, definitions and workspace mount configuration remain in the model identity. Moving a local candidate folder does not create a new authority; changing its definitions or source support does. Historical authority records retain their original fingerprints and are not rewritten.

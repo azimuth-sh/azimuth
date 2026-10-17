@@ -2,7 +2,7 @@
   "format": "azimuth-workflow-template",
   "version": 1,
   "id": "change-development",
-  "revision": 6,
+  "revision": 8,
   "actions": [
     {
       "id": "establish-change-scope",
@@ -556,6 +556,10 @@
       ],
       "guidance": [
         {
+          "kind": "skill",
+          "id": "azimuth-review-claim"
+        },
+        {
           "kind": "reference",
           "id": "workflow"
         },
@@ -566,7 +570,7 @@
       ],
       "required_output": {
         "kind": "claim-review",
-        "description": "Independently review the exact Claim definition, Cases, realization, mechanisms and verification coverage without execution Subjects. Retain rejected reviews and reassessments."
+        "description": "Independently assess the exact Claim, Cases, design and realization. Accept only when the verification approach is adequate and its implementation can fulfil declared obligations, including required observations and controls. Execution may remain pending. Retain findings, rejected reviews and reassessments."
       },
       "correction": "implement-change",
       "outcomes": [
@@ -578,12 +582,17 @@
       ]
     },
     {
-      "id": "run-challengers",
-      "kind": "run-challengers",
-      "collection": "change",
+      "id": "run-challenger",
+      "kind": "run-challenger",
+      "collection": "challengers",
       "depends_on": [
         {
           "action": "review-claim",
+          "match": "challenger-claims",
+          "condition": "current-success"
+        },
+        {
+          "action": "prepare-candidate-model-revision",
           "match": "all",
           "condition": "current-success"
         },
@@ -606,7 +615,7 @@
       ],
       "required_output": {
         "kind": "run-bundle",
-        "description": "Execute declared machine Challengers against exact current reviews and resolved source scope; retain adverse facts and inconclusive results. Clean results do not establish Claim Health."
+        "description": "Execute this declared machine Challenger against its current accepted Claim Reviews and reviewed resolved source scope. Retain a readable challenger-report and native run-bundle, including findings, gaps and limitations. Execution completion does not imply acceptance. Investigate surviving mutants for relevance, equivalence and coverage. No findings never establishes Claim Health."
       },
       "correction": "implement-change",
       "outcomes": [
@@ -672,7 +681,7 @@
           "condition": "current-success"
         },
         {
-          "action": "run-challengers",
+          "action": "run-challenger",
           "match": "all",
           "condition": "current-success"
         }
@@ -722,7 +731,7 @@
           "condition": "current-success"
         },
         {
-          "action": "run-challengers",
+          "action": "run-challenger",
           "match": "all",
           "condition": "current-success"
         }

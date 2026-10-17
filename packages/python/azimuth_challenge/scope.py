@@ -119,7 +119,7 @@ def resolve(request, manifests, roots):
                 raise ValueError('tool glob metacharacters in exact source locator are unsupported')
             mutate.append(relative)
         config = {'stryker-config': {'project': Path(request['project']).name, 'mutate': mutate,
-                   'test-case-filter': check_filter, 'reporters': ['json'], 'thresholds': {'high': 100, 'low': 0, 'break': 0}}}
+                   'test-case-filter': check_filter, 'test-runner': 'vstest', 'concurrency': 1, 'reporters': ['json'], 'thresholds': {'high': 100, 'low': 0, 'break': 0}}}
     else:
         if not rules:
             raise ValueError('source analysis requires explicit local custom rules')

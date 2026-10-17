@@ -339,6 +339,21 @@ fn parse(source: &str) -> Result<Vec<Review>, String> {
     }
     Ok(records)
 }
+pub(crate) fn section_location(source: &str, id: &str, digest: &str) -> Result<usize, String> {
+    let review = parse(source)?
+        .into_iter()
+        .find(|review| review.id == id)
+        .ok_or("authored review section is absent")?;
+    let actual = format!(
+        "sha256:{}",
+        crate::fingerprint::sha256(review.source.as_bytes())
+    );
+    if actual != digest {
+        return Err("authored review section differs from the retained review".into());
+    }
+    Ok(review.line)
+}
+
 fn field<'a>(r: &'a Review, key: &str) -> Result<&'a str, String> {
     r.fields
         .get(key)

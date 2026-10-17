@@ -71,3 +71,30 @@ azimuth run import --plan launch-plan.json --input native-account=native-account
 ```
 
 Reports must match the planned source Subject and reviewed scope exactly. The native import adapter is `packages/python/azimuth_challenge/adapter.py`; configured resources are `native-normalizer` (`native.py`) and `run-protocol` (`azimuth_run/protocol.py`), ordered by ID. Its fixed configuration prevents ambient normalization settings. Corrections are currently new executions; existing immutable Runs remain inspectable.
+
+### Selected-test runner contract
+
+Prepared mutation configuration selects `test-runner: vstest`, exact `test-case-filter` and one
+concurrent mutation worker. The VSTest filter is a JSON configuration property in Stryker.NET
+4.16.0, even though that installed CLI does not register `--test-case-filter` as a command-line
+option. Source inspection at package commit `f9109e24c615a7030a3b33e5532c665c974e4ec5`
+confirms `FileConfigReader` binds it to `TestCaseFilterInput`; no unfiltered fallback is allowed.
+The driver supplies `--skip-version-check` as a CLI flag, not an unsupported JSON property.
+Help/config inspection establishes wiring only; actual selected Check execution requires a later
+authorized run and inspection of discovery/results. Native reports additionally expose execution
+status (`completed | failed`) and presentation assessment (`no-findings | findings | inconclusive`);
+Run protocol outcomes remain `clean | findings | inconclusive`. Findings retain execution gaps.
+
+### Immutable adapter registration
+
+Create a local import configuration with the package's own identity calculator, then verify its
+descriptor before planning. The provider family is the valid lower-kebab path `azimuth/challenge`.
+
+```sh
+PYTHONPATH=packages/python python3 -m azimuth_challenge.register \
+  --python /absolute/python --out /ignored/fresh-adapter-configuration.json
+azimuth adapter verify --config /ignored/fresh-adapter-configuration.json
+```
+
+The registration copies and digest-pins the native adapter, normalizer and Run protocol helper.
+Choose a fresh output for changed behavior; do not rewrite configurations used by retained Runs.

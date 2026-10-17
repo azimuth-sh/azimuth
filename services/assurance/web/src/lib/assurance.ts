@@ -20,6 +20,7 @@ export interface SubjectSummary {
   subject: unknown;
 }
 export interface Review {
+  provenance_basis?: string;
   record: Record<string, unknown>;
   assessment: string;
   diagnostics: string[];

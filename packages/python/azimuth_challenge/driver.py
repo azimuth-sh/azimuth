@@ -39,7 +39,7 @@ def execute(scope, root, executable, capture, environment, timeout, git_executab
         raise ValueError('source inventory or captured content changed; recapture before execution')
     selected = {item['file']:item['file_fingerprint'] for item in scope['sites']}
     with tempfile.TemporaryDirectory(prefix='azimuth-challenge-') as temporary:
-        isolated = Path(temporary) / 'source'
+        isolated = (Path(temporary) / 'source').resolve()
         isolated.mkdir()
         for item in capture['files']:
             relative = item['file']
@@ -77,7 +77,7 @@ def execute(scope, root, executable, capture, environment, timeout, git_executab
             configuration = isolated / 'stryker-config.json'
             configuration.write_text(json.dumps(scope['tool_configuration']))
             working = (isolated / request['test_project']).parent
-            arguments = [executable, 'stryker', '--config-file', str(configuration)]
+            arguments = [executable, 'stryker', '--config-file', str(configuration), '--skip-version-check', '--break-on-initial-test-failure', '--verbosity', 'debug']
         else:
             working = isolated
             arguments = [executable] + scope['tool_configuration']['arguments']
@@ -132,6 +132,8 @@ def execute(scope, root, executable, capture, environment, timeout, git_executab
                   'tool_executable_digest':'sha256:' + hashlib.sha256(Path(executable).read_bytes()).hexdigest(),
                   'tool_arguments':arguments,'environment_fingerprint':fingerprint(environment),
                   'started_at_ms':started,'finished_at_ms':finished,'outcome':outcome,
+                  'execution_status':'failed' if timed_out or process.returncode != 0 else 'completed',
+                  'assessment':'no-findings' if outcome == 'clean' else outcome,
                   'objections':findings,'inconclusive_reasons':gaps,'native_counts':counts,'native_report_json':json.dumps(native,sort_keys=True,allow_nan=False), 'limitations':scope['limitations'] + (['Stryker mutates compiled code internally; this report records the captured Challenger input Subject, not exact materialized source Subjects for each mutant. No mutant-specific product Observations are inferred.'] if tool == 'stryker-net' else []),
                   'tool_exit':process.returncode if process.returncode >= 0 else 'signal',
                   'timed_out':timed_out,'stdout':output.decode(errors='replace'),'stderr':errors.decode(errors='replace')}

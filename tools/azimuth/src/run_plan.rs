@@ -2090,7 +2090,7 @@ fn resolve_assessment_challenge(
             .cloned()
             .collect(),
     );
-    let scope_fingerprint = crate::fingerprint::canonical_sha256(&scope_payload);
+    let scope_fingerprint = run::canonical_fingerprint(&scope_payload)?;
     if scope.get("fingerprint").and_then(Json::as_str) != Some(&scope_fingerprint) {
         return Err("scope report fingerprint mismatch".into());
     }
@@ -2150,22 +2150,21 @@ fn resolve_assessment_challenge(
         let address = text("site")?;
         let file = text("file")?;
         let fingerprint = text("source_fingerprint")?;
-        let (input_kind, semantic_kind, language, exists) = match relation {
+        let (input_kind, semantic_kind, mappings) = match relation {
             "claim" => (
                 LaunchInputKind::Realization,
                 ChallengeScopeKind::Realization,
                 model
                     .realizes
                     .iter()
-                    .find(|item| item.claim == entity && item.site == address)
-                    .map(|item| item.lang.clone())
-                    .unwrap_or_default(),
-                model.realizes.iter().any(|item| {
-                    item.claim == entity
-                        && item.site == address
-                        && item.file == file
-                        && item.source_fingerprint == fingerprint
-                }),
+                    .filter(|item| {
+                        item.claim == entity
+                            && item.site == address
+                            && item.file == file
+                            && item.source_fingerprint == fingerprint
+                    })
+                    .map(|item| (item.lang.clone(), item.source.clone()))
+                    .collect::<Vec<_>>(),
             ),
             "mechanism" => (
                 LaunchInputKind::MechanismImplementation,
@@ -2173,15 +2172,14 @@ fn resolve_assessment_challenge(
                 model
                     .mechanism_implementations
                     .iter()
-                    .find(|item| item.mechanism == entity && item.site == address)
-                    .map(|item| item.lang.clone())
-                    .unwrap_or_default(),
-                model.mechanism_implementations.iter().any(|item| {
-                    item.mechanism == entity
-                        && item.site == address
-                        && item.file == file
-                        && item.source_fingerprint == fingerprint
-                }),
+                    .filter(|item| {
+                        item.mechanism == entity
+                            && item.site == address
+                            && item.file == file
+                            && item.source_fingerprint == fingerprint
+                    })
+                    .map(|item| (item.lang.clone(), item.source.clone()))
+                    .collect::<Vec<_>>(),
             ),
             "check" => (
                 LaunchInputKind::CheckImplementation,
@@ -2189,24 +2187,23 @@ fn resolve_assessment_challenge(
                 model
                     .check_implementations
                     .iter()
-                    .find(|item| item.check == entity && item.site == address)
-                    .map(|item| item.lang.clone())
-                    .unwrap_or_default(),
-                model.check_implementations.iter().any(|item| {
-                    item.check == entity
-                        && item.site == address
-                        && item.file == file
-                        && item.source_fingerprint == fingerprint
-                }),
+                    .filter(|item| {
+                        item.check == entity
+                            && item.site == address
+                            && item.file == file
+                            && item.source_fingerprint == fingerprint
+                    })
+                    .map(|item| (item.lang.clone(), item.source.clone()))
+                    .collect::<Vec<_>>(),
             ),
             _ => return Err("unsupported selected source relationship".into()),
         };
-        if !exists {
+        let [(language, Some(source))] = mappings.as_slice() else {
             return Err(format!(
-                "scope source mapping is absent or stale: {address}"
+                "scope source mapping requires one current qualified identity: {address}"
             ));
-        }
-        let identity = format!("{entity}:{address}");
+        };
+        let identity = source.key();
         inputs.push(
             run::construct_launch_input(
                 input_kind,
@@ -2214,7 +2211,7 @@ fn resolve_assessment_challenge(
                 fingerprint.into(),
                 LaunchInputSource::Source {
                     file: file.into(),
-                    language,
+                    language: language.clone(),
                     site: address.into(),
                 },
             )

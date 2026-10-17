@@ -104,6 +104,8 @@ Markdown. Health also retains residual risks. Optional `Agent`, `Model` and `Rea
 provenance and correction relationships. Markdown `Reassesses` names an earlier record ID in
 the aggregate bundle; compilation resolves that ID to its native fingerprint. Supplied labels alone confer no independence or permission.
 
+`azimuth assurance review-input` retains selected assessments and their transitive reassessment predecessors in deterministic fingerprint order. This history allows compilation to reproduce review states; a genuinely absent predecessor remains a gap. Unrelated histories are not added.
+
 `azimuth assurance review-input` prepares exact definitions, dependencies, existing assessments,
 visible gaps and, for health only, matching Subjects/Observations. Packets may also include optional
 `challenge_bundles`: scoped native Run proofs for the selected assessment objections, not a

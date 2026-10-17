@@ -81,6 +81,16 @@ The shipped revision 6 stages are: establish scope → author/review proposal �
 
 Rejected Claim Reviews and adverse/unresolved Claim Health expose correction and independent reassessment. Check execution records actual violations and measurement failures rather than an invented passing result. Challengers target an exact assessment; adverse findings affect reliance through native assessment rules. The harness selects eligible work, providers and concurrency. No `completed` result substitutes for an accepted review, supported health or human permission.
 
+## Correction handoffs
+
+An adverse result reopens its configured correction work; there is no separate mandatory correction-planning task. Public `eligible[].corrections` projects feedback for the executing agent rather than embedding historical workflow results, compiled records or result-file references. Each correction names the reviewed work, outcome, reviewer, reviewed model revision when present, readable review sections and reviewed artifact references. Machine records remain in immutable workflow history for validation, basis calculation and audit.
+
+Readable sections are resolved from the native review's declared artifact locator and verified against its retained section digest. The resolver tries only explicit repository roots and the workflow directory; for conventional change-local `.azimuth` storage, its immediate parent is the change-local review root. It never searches directories. Exactly one verified source is required. Missing, changed, ambiguous or unsupported source locations produce a diagnostic and retained rationale/findings inline instead of an invented path. An unrelated appended review does not change the selected section's digest. Source objects include execution-local `directory`, portable `ref`, section ID, line and section fingerprint; they are navigation metadata, not new authority or worker-authored reference syntax.
+
+`input_currentness` checks the retained review input references and reports `unchanged` or `changed-or-unavailable`, with diagnostics. It does not recapture source, compare the current checkout to a historical source capture, prove semantic applicability or declare the reviewed candidate accepted. The agent must inspect current artifacts and source before deciding whether a finding still applies.
+
+Correction guidance requires assessing every finding, updating the existing engineering plan as needed, implementing bounded corrections, and recording each review/finding's disposition in the result `report`: changes and actual verification, justified disagreement, or an explicit unresolved limitation. Material intent or scope changes need the relevant decision before implementation. Independent reassessment remains required. The tool checks the normal nonempty result-report contract; it does not claim semantic validation of finding coverage.
+
 ## Change-account validation
 
 `validate-change-account` is one workflow objective after implementation. Capture current ecosystem and deployment manifests and exact repository Subjects, then validate the complete change account against those captures. Its `candidate-validation` result retains findings and exact dependencies, including source-support manifests and capture completion. Capture failure leaves validation incomplete; a capture may be reused only while its dependencies remain current. Use `azimuth change validate --scope structure` for this task. Its report excludes independent decision and acceptance obligations; assess those later with `--scope acceptance`. Structural success does not establish definition credibility or exact-Subject Claim Health.
@@ -234,7 +244,7 @@ Implementation approval can use the compact result itself, with the actual human
 
 ## ASS integration and assurance assessments
 
-Local development prepares the candidate and conducts Claim Reviews without ASS connectivity. Author aggregate Markdown records, prepare exact inputs and compile them against the complete candidate. Claim Review requires definitions/source support; Claim Health additionally requires actual exact-Subject Runs and a current accepted Claim Review. The native schema and compilation commands are in `contracts/assurance-reviews.md`. Workflow assessment hydrates retained prerequisite Runs and reviews into the candidate snapshot; no manually rewritten snapshot per task is required.
+Local development prepares the candidate and conducts Claim Reviews without ASS connectivity. Author aggregate Markdown records, prepare exact inputs and compile them against the complete candidate. Claim Review requires definitions/source support; Claim Health additionally requires actual exact-Subject Runs and a current accepted Claim Review. The native schema and compilation commands are in `contracts/assurance-reviews.md`. Workflow assessment hydrates retained prerequisite Runs and reviews into the candidate snapshot; no manually rewritten snapshot per task is required. A successor Claim Review also receives immutable Run references recorded before its prerequisite implementation result. This retains the execution history that motivated corrections without making a later unchanged-definition rerun invalidate the earlier review. Update validates the exact handoff Run references when resolving a review’s Challenge dependencies; absence or modification cannot become acceptance.
 
 Each assurance task supplies a snapshot with exactly `{project, model_revision, authority, reviews, bundles}`. Core validates schemas and currentness, matches the exact Claim and (for health) Subject, and assesses the submitted native record against actual evidence. Ambiguous latest records, stale dependencies and relevant Challenger findings prevent unsupported reliance. Historical review kinds retain their original meaning and satisfy no current Review/Health gate.
 
@@ -260,3 +270,60 @@ Existing instances retain their pinned definitions and immutable histories. Adop
 Keep authored task results under `.azimuth/results/`, useful generated artifacts under `.azimuth/artifacts/`, and exact assurance review inputs under `.azimuth/review-inputs/`. Normative change artifacts and authored assurance review bundles remain outside this ignored working directory. One result per attempt is enough: a separate work report, workflow-result wrapper and update receipt are not required. Query handoffs are temporary in-flight inputs, not a permanent transcript. The instance already retains the exact coordination history.
 
 Clean only unreferenced scratch exports, command transcripts, duplicate response captures and superseded diagnostics. Preserve every supporting file referenced by immutable history, current declared input, retained review dependency or Run, and preserve the complete candidate needed for assessment. Historical supporting artifacts cannot be silently discarded merely because they no longer satisfy current work. Back up the workspace before cleanup; historical dependency closure takes precedence over a target file count.
+
+### Completing concurrent Claim Reviews
+
+An already captured eligible Claim Review may be recorded after a sibling rejection reopens their shared implementation work, provided its definition, exact input fingerprints and prerequisite result basis remain unchanged and no newer result for that review has been recorded. Native review validation, independent reviewer identity, outcome and revision checks still apply. This permits retaining concurrent adverse reviews; it does not authorize starting blocked work or treating a changed-input assessment as current.
+
+## Per-Challenger execution (change-development revision 7)
+
+The standard template expands `run-challenger` over the complete candidate Challenger inventory.
+Each work target identifies one `challenger` and model revision; the coordinator may schedule these
+independently or in parallel. The `challenger-claims` matcher selects current accepted definition
+reviews only for the Claims named by that declaration. Candidate derivation retains a validated
+`challenger_claims` identity mapping alongside the inventory. Missing mappings are not empty scope.
+
+The handoff includes the exact declaration, implementation/configuration source locators, readable
+review sections, reviewed revision/currentness, any explicitly supplied scope/capture/configuration
+inputs, instructions and fresh-attempt report/result destinations. The worker resolves and reviews
+source scope before execution; absent scope is not permission for broad fallback. Scope reports
+retain selected sites, exclusions, gaps and whole-file/tool expansions.
+
+The compact result keeps `outcome: completed | failed` for execution. A completed work item requires
+both a `run-bundle` and readable `challenger-report`, plus a prose `report`. Core derives the separate
+`challenge_assessment`: `no-findings | findings | inconclusive` and `execution_gaps` from the Run.
+Native `clean` maps to `no-findings`; native protocol records are not renamed. Findings and gaps may
+coexist. Completed no-findings without execution gaps satisfies downstream gates. Findings may also be
+closed by a current independently accepted successor Claim Review retaining exact `challenge_basis`
+proofs for every finding result, while the candidate revision, Challenger definition and retained
+source/scope inputs remain unchanged. That is an accepted disposition, not a clean Run. Changed
+source/configuration/scope requires a fresh candidate and rerun; execution gaps cannot be waived by
+this disposition path. A failed
+execution is retained with its failure report; include any usable partial Run/report as well.
+
+Findings reopen the configured implementation prerequisite for bounded diagnosis and correction.
+A surviving mutant requires relevance/equivalence/coverage disposition, not an automatic product
+bug label. Corrected definitions/source require affected independent reassessment and Challenger
+reruns. Failed or inconclusive execution retries the same task after repairing environment,
+configuration or scope, without automatically reopening product implementation. Clean bounded
+search never establishes Claim Health. Historical Runs and readable reports remain immutable.
+
+Pinned older instances do not change on query. Use explicit supported migration or a fresh instance;
+retain historical aggregate tasks and results unchanged. No automatic consumer-instance migration
+is performed by a tooling upgrade.
+
+An already captured per-Challenger task may retain its result after a sibling finding reopens
+implementation, provided its exact input/prerequisite basis is unchanged and no newer result for
+that task exists. Native Run validation still applies. This retains independently scheduled work;
+it never starts blocked work or accepts results against revised source/review dependencies.
+Retry handoffs include the previous attempt's readable report and assessment for diagnosis.
+
+For a selected compiled review entry, workflow assessment retains its exact reassessment ancestor chain from the validated bundle as historical context. Unselected sibling reviews are not imported as current prerequisites. Missing predecessors remain missing dependencies; retained ancestors never confer current acceptance.
+
+## Claim Review guidance (change-development revision 8)
+
+`review-claim` handoffs reference the shipped `azimuth-review-claim` skill. Acceptance requires
+both adequate verification design and faithful implemented verification, including the observations
+and controls promised by each contribution. Execution may remain pending. Documented unfinished
+implementation does not satisfy the gate. Existing workflow instances retain their pinned guidance
+and definitions until an explicit migration; installing this skill does not rewrite review history.

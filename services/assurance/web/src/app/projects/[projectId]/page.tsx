@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { requireViewer } from '@/lib/auth';
-import { cursor, projectView } from '@/lib/assurance';
+import { readProject, type Page, cursor, projectView } from '@/lib/assurance';
 export const dynamic = 'force-dynamic';
 export default async function ProjectPage({
   params,
@@ -17,6 +17,9 @@ export default async function ProjectPage({
     subjects: cursor(query.subjects),
     reviews: cursor(query.reviews),
   });
+  const releases = await readProject<Page<{ fingerprint: string; release: { label: string; model_revision: string }; accepted: boolean }>>(projectId, `/releases?after=${encodeURIComponent(cursor(query.releases))}`);
+  const changes = await readProject<Page<{ id: string; revisions: unknown[] }>>(projectId, `/changes?after=${encodeURIComponent(cursor(query.changes))}`);
+  const deployments = await readProject<Page<{ deployment: { id: string; environment: string }; release_fingerprint: string }>>(projectId, `/deployments?after=${encodeURIComponent(cursor(query.deployments))}`);
   const root = `/projects/${encodeURIComponent(projectId)}`;
   return (
     <div className="shell">
@@ -28,6 +31,10 @@ export default async function ProjectPage({
         Inspection only. Pages list at most 25 records; follow each list
         independently. No missing or stale review is treated as supported.
       </p>
+      <p><Link href={`${root}/model`}>Browse Modules → Claims → Cases and Checks</Link></p>
+      <section className="section"><h2>Composed releases</h2>{releases?.items.map(r => <p key={r.fingerprint}><Link href={`${root}/releases/${encodeURIComponent(r.fingerprint)}`}>{r.release.label}</Link> · {r.accepted ? 'accepted' : 'candidate'}</p>)}{releases?.next && <Link href={`${root}?releases=${encodeURIComponent(releases.next)}`}>Next releases →</Link>}</section>
+      <section className="section"><h2>Changes</h2>{changes?.items.map(c => <details key={c.id}><summary>{c.id}</summary><pre>{JSON.stringify(c.revisions,null,2)}</pre></details>)}{changes?.next && <Link href={`${root}?changes=${encodeURIComponent(changes.next)}`}>Next Changes →</Link>}</section>
+      <section className="section"><h2>Deployments</h2>{deployments?.items.map(d => <p key={d.deployment.id}>{d.deployment.environment} · {d.deployment.id} · <Link href={`${root}/releases/${encodeURIComponent(d.release_fingerprint)}`}>Reference release</Link></p>)}{deployments?.next && <Link href={`${root}?deployments=${encodeURIComponent(deployments.next)}`}>Next deployments →</Link>}</section>
       <section className="section">
         <h2>Selected model authority</h2>
         {view.authority ? (
@@ -129,9 +136,9 @@ export default async function ProjectPage({
               </summary>
               <p>{review.diagnostics.join('; ')}</p>
               <p>
-                Reviewer: {String(review.record.reviewer)} · authenticated
+                Asserted reviewer: {String(review.record.reviewer)} · authenticated
                 submitter: {review.submitted_by} · received:{' '}
-                {review.submitted_at}
+                {review.submitted_at} · provenance: {review.provenance_basis ?? 'authenticated-reviewer'}
               </p>
               <pre>{JSON.stringify(review.record, null, 2)}</pre>
             </details>

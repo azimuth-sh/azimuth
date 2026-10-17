@@ -507,6 +507,7 @@ pub struct ArtifactLocator {
 pub enum LocatorKind {
     Uri,
     BundleRelative,
+    Unavailable,
 }
 
 impl LocatorKind {
@@ -514,6 +515,7 @@ impl LocatorKind {
         match self {
             Self::Uri => "uri",
             Self::BundleRelative => "bundle-relative",
+            Self::Unavailable => "unavailable",
         }
     }
 }
@@ -1805,6 +1807,7 @@ fn parse_artifact(value: &Json, where_: &str) -> Result<Artifact, String> {
     let locator_kind = match string(locator, "kind", &locator_where)? {
         "uri" => LocatorKind::Uri,
         "bundle-relative" => LocatorKind::BundleRelative,
+        "unavailable" => LocatorKind::Unavailable,
         other => {
             return Err(format!(
                 "{locator_where}.kind has unsupported value `{other}`"
@@ -1815,6 +1818,13 @@ fn parse_artifact(value: &Json, where_: &str) -> Result<Artifact, String> {
     if locator_kind == LocatorKind::BundleRelative && !valid_bundle_relative(&locator_value) {
         return Err(format!(
             "{locator_where}.value is not a normalized bundle-relative path"
+        ));
+    }
+    if locator_kind == LocatorKind::Unavailable
+        && locator_value != fingerprint(fields, "digest", where_)?
+    {
+        return Err(format!(
+            "{locator_where}.value must equal the artifact digest when unavailable"
         ));
     }
     Ok(Artifact {
@@ -2433,6 +2443,43 @@ fn validate_implementation_identity(value: &str) -> Result<(), String> {
             return Ok(());
         }
         return Err("has an invalid semantic Next route address".into());
+    }
+    if parts[1] == "dotnet-symbol" {
+        let address = parts[2];
+        let mut brackets = 0usize;
+        let valid = address.chars().all(|character| {
+            match character {
+                '[' => brackets += 1,
+                ']' if brackets > 0 => brackets -= 1,
+                ']' => return false,
+                _ => {}
+            }
+            character.is_alphanumeric() || "_.+`!(),[]<>&*".contains(character)
+        });
+        if valid && brackets == 0 && !locator_shaped_address(address) {
+            return Ok(());
+        }
+        return Err("has an invalid compiler .NET symbol address".into());
+    }
+    if matches!(parts[1], "typescript-symbol" | "javascript-symbol") {
+        let fields = parts[2].split("::").collect::<Vec<_>>();
+        if matches!(fields.len(), 3 | 4)
+            && !fields[0].is_empty()
+            && !fields[0].contains(['\\', '*', '?', '[', ']'])
+            && fields[1].strip_prefix("./").is_some_and(|module| {
+                !module.is_empty()
+                    && !module.contains(['\\', '*', '?', '[', ']'])
+                    && module
+                        .split('/')
+                        .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
+            })
+            && !fields[2].is_empty()
+            && !fields[2].contains(['/', '\\', '*', '?', '[', ']'])
+            && (fields.len() == 3 || (!fields[3].is_empty() && !fields[3].contains(['/', '\\'])))
+        {
+            return Ok(());
+        }
+        return Err("has an invalid compiler ECMAScript symbol address".into());
     }
     if parts[2].contains(['/', '\\']) || locator_shaped_address(parts[2]) {
         return Err("contains a locator-shaped address".into());

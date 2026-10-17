@@ -28,6 +28,7 @@ const KINDS: &[&str] = &[
     "execute-check",
     "assess-claim-health",
     "run-challengers",
+    "run-challenger",
     "qualify-method",
     "execute-qualified-check",
     "assess-applicability",
@@ -89,6 +90,7 @@ fn work_key(value: &Json) -> Result<String, String> {
             "case",
             "check",
             "probe",
+            "challenger",
             "subject",
             "model_revision",
         ]
@@ -393,6 +395,33 @@ fn supporting_record(reference: &Json, roots: &BTreeMap<String, PathBuf>) -> Res
         },
     )
 }
+fn supporting_review_history(
+    reference: &Json,
+    roots: &BTreeMap<String, PathBuf>,
+) -> Result<Vec<Json>, String> {
+    let selected = supporting_record(reference, roots)?;
+    let retained = crate::review_authoring::records(&read(&resolve(reference, roots)?)?)?;
+    let mut history = vec![selected];
+    let mut seen = BTreeSet::new();
+    while let Some(previous) = history
+        .last()
+        .and_then(|review| review.get("provenance"))
+        .and_then(|provenance| provenance.get("reassesses"))
+        .and_then(Json::as_str)
+    {
+        if !seen.insert(previous.to_string()) {
+            return Err("cyclic reassessment history".into());
+        }
+        let Some(before) = retained
+            .iter()
+            .find(|review| review.get("fingerprint").and_then(Json::as_str) == Some(previous))
+        else {
+            break;
+        };
+        history.push(before.clone());
+    }
+    Ok(history)
+}
 fn check_ref(v: &Json, r: &BTreeMap<String, PathBuf>) -> Result<(), String> {
     ref_shape(v, true)?;
     if materialize(v, r)?.get("fingerprint") != v.get("fingerprint") {
@@ -472,6 +501,7 @@ fn definition(v: &Json) -> Result<(), String> {
                 "case",
                 "check",
                 "probe",
+                "challenger",
                 "subject",
                 "model_revision",
             ]
@@ -488,6 +518,7 @@ fn definition(v: &Json) -> Result<(), String> {
         for required in match text(task, "kind")? {
             "qualify-method" | "execute-qualified-check" | "execute-check" => vec!["check"],
             "review-claim" => vec!["claim"],
+            "run-challenger" => vec!["challenger"],
             "assess-claim-health" => vec!["claim", "subject"],
             "assess-applicability" => vec!["check", "case", "subject"],
             "judge-claim" => vec!["claim", "subject"],
@@ -568,6 +599,7 @@ fn definition(v: &Json) -> Result<(), String> {
             "judge-claim",
             "review-claim",
             "assess-claim-health",
+            "run-challenger",
         ]
         .contains(&text(task, "kind")?)
             && arr(task, "inputs")?
@@ -665,12 +697,20 @@ fn result_shape(v: &Json) -> Result<(), String> {
     let mut fields = vec![
         "format", "version", "id", "task", "basis", "actor", "outcome", "records",
     ];
-    for optional in ["inputs", "decision"] {
+    for optional in ["inputs", "decision", "challenge_assessment"] {
         if v.get(optional).is_some() {
             fields.push(optional);
         }
     }
     obj(v, &fields)?;
+    if let Some(assessment) = v.get("challenge_assessment") {
+        obj(assessment, &["assessment", "execution_gaps"])?;
+        if !["no-findings", "findings", "inconclusive"].contains(&text(assessment, "assessment")?)
+            || !matches!(assessment.get("execution_gaps"), Some(Json::Bool(_)))
+        {
+            return Err("invalid derived Challenger assessment".into());
+        }
+    }
     if let Some(inputs) = v.get("inputs") {
         for reference in inputs.as_array().ok_or("captured inputs require array")? {
             ref_shape(reference, true)?;
@@ -748,14 +788,217 @@ fn latest<'a>(state: &'a Json, id: &str) -> Option<&'a Json> {
         .map(|h| h.get("result").unwrap())
         .find(|r| r.get("task").and_then(Json::as_str) == Some(id))
 }
+fn challenger_claim_inventory(authority: &Json) -> Result<Json, String> {
+    let mut selected: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for claim in arr(authority, "claims")? {
+        for challenger in claim
+            .get("challengers")
+            .and_then(Json::as_array)
+            .unwrap_or(&[])
+        {
+            for target in arr(challenger, "claims")? {
+                selected
+                    .entry(text(challenger, "id")?.into())
+                    .or_default()
+                    .insert(
+                        target
+                            .as_str()
+                            .ok_or("Challenger Claim requires identity")?
+                            .into(),
+                    );
+            }
+        }
+    }
+    Ok(Json::Arr(
+        selected
+            .into_iter()
+            .map(|(id, claims)| {
+                Json::obj(vec![
+                    ("challenger", Json::str(id)),
+                    ("claims", Json::Arr(claims.iter().map(Json::str).collect())),
+                ])
+            })
+            .collect(),
+    ))
+}
+fn challenger_claims(bindings: &Json, target: &Json) -> Result<Vec<Json>, String> {
+    let inventory = bindings
+        .get("assurance")
+        .ok_or("Challenger inventory missing")?;
+    let mapping = arr(inventory, "challenger_claims")?
+        .iter()
+        .find(|mapping| mapping.get("challenger") == target.get("challenger"))
+        .ok_or("Challenger Claim mapping missing; derive a fresh candidate inventory")?;
+    Ok(arr(mapping, "claims")?.to_vec())
+}
+fn challenge_assessment(
+    result: &Json,
+    target: &Json,
+    roots: &BTreeMap<String, PathBuf>,
+) -> Result<Json, String> {
+    let reference = record_of(arr(result, "records")?, "run-bundle")?;
+    let path = resolve(reference, roots)?;
+    let bundle = crate::run::load(&path).map_err(|e| format!("invalid Challenger Run: {e:?}"))?;
+    if !crate::run::verify(&bundle).is_empty()
+        || !bundle.check_executions.is_empty()
+        || bundle.challenger_executions.is_empty()
+    {
+        return Err("Challenger task requires a valid nonempty Challenge-only Run".into());
+    }
+    let challenger = text(target, "challenger")?;
+    if bundle
+        .challenger_executions
+        .iter()
+        .any(|e| e.challenger.id != challenger)
+    {
+        return Err("Run contains a different Challenger than the task target".into());
+    }
+    let snapshot = read(&resolve(
+        record_of(arr(result, "inputs")?, "assurance-snapshot")?,
+        roots,
+    )?)?;
+    if snapshot.get("model_revision") != target.get("model_revision") {
+        return Err("Challenger Run candidate revision differs from task".into());
+    }
+    let declarations = arr(snapshot.get("authority").unwrap(), "claims")?
+        .iter()
+        .flat_map(|c| c.get("challengers").and_then(Json::as_array).unwrap_or(&[]))
+        .filter(|d| d.get("id").and_then(Json::as_str) == Some(challenger))
+        .collect::<Vec<_>>();
+    let declaration = declarations
+        .first()
+        .ok_or("task Challenger absent from candidate")?;
+    if declarations.iter().any(|d| d != declaration) {
+        return Err("conflicting Challenger declarations".into());
+    }
+    let expected = arr(declaration, "claims")?
+        .iter()
+        .map(|id| id.as_str().unwrap())
+        .collect::<BTreeSet<_>>();
+    let actual = bundle
+        .challenger_executions
+        .iter()
+        .map(|e| e.target.id.as_str())
+        .collect::<BTreeSet<_>>();
+    if actual != expected
+        || bundle.challenger_executions.iter().any(|e| {
+            Some(e.challenger.fingerprint.as_str())
+                != declaration.get("fingerprint").and_then(Json::as_str)
+        })
+    {
+        return Err("Run does not cover the exact declared Challenger and all its Claims".into());
+    }
+    let findings = bundle
+        .challenger_executions
+        .iter()
+        .any(|e| e.result.outcome.name() == "findings");
+    let gaps = bundle.diagnostics.iter().any(|d| {
+        d.class != crate::run::DiagnosticClass::Objection
+            && d.severity != crate::run::Severity::Info
+    }) || bundle
+        .activities
+        .iter()
+        .any(|a| a.status != crate::run::ActivityStatus::Completed)
+        || bundle.challenger_executions.iter().any(|e| {
+            e.result.outcome.name() == "inconclusive"
+                || e.units.iter().any(|u| {
+                    u.attempts
+                        .iter()
+                        .any(|a| a.outcome.name() == "inconclusive")
+                })
+        });
+    Ok(Json::obj(vec![
+        (
+            "assessment",
+            Json::str(if findings {
+                "findings"
+            } else if gaps {
+                "inconclusive"
+            } else {
+                "no-findings"
+            }),
+        ),
+        ("execution_gaps", Json::Bool(gaps)),
+    ]))
+}
+fn challenge_disposition(
+    result: &Json,
+    task: &Json,
+    dependencies: &[Json],
+    roots: &BTreeMap<String, PathBuf>,
+) -> Result<bool, String> {
+    for input in arr(result, "inputs")? {
+        if input.get("kind").and_then(Json::as_str) != Some("assurance-snapshot") {
+            check_ref(input, roots)?;
+        }
+    }
+    let assessment = challenge_assessment(result, task.get("target").unwrap(), roots)?;
+    if text(result, "outcome")? != "completed"
+        || text(&assessment, "assessment")? != "findings"
+        || assessment.get("execution_gaps") != Some(&Json::Bool(false))
+    {
+        return Ok(false);
+    }
+    let bundle = crate::run::load(&resolve(
+        record_of(arr(result, "records")?, "run-bundle")?,
+        roots,
+    )?)
+    .map_err(|error| format!("invalid Challenger Run: {error:?}"))?;
+    let mut reviews = Vec::new();
+    for dependency in dependencies {
+        if text(dependency, "outcome")? != "accepted" {
+            continue;
+        }
+        for reference in arr(dependency, "records")? {
+            if reference.get("kind").and_then(Json::as_str) == Some("claim-review") {
+                reviews.push(supporting_record(reference, roots)?);
+            }
+        }
+    }
+    for execution in &bundle.challenger_executions {
+        if execution.result.outcome.name() != "findings" {
+            continue;
+        }
+        if !reviews.iter().any(|review| {
+            review.get("claim").and_then(Json::as_str) == Some(execution.target.id.as_str())
+                && review.get("fingerprint").and_then(Json::as_str)
+                    != Some(execution.target.fingerprint.as_str())
+                && review
+                    .get("challenge_basis")
+                    .and_then(Json::as_array)
+                    .is_some_and(|proofs| {
+                        proofs.iter().any(|proof| {
+                            proof.get("run").and_then(Json::as_str) == Some(bundle.run_id.as_str())
+                                && proof.get("bundle_fingerprint").and_then(Json::as_str)
+                                    == Some(bundle.bundle_fingerprint.as_str())
+                                && proof.get("result_fingerprint").and_then(Json::as_str)
+                                    == Some(execution.result.fingerprint.as_str())
+                                && proof.get("target_fingerprint").and_then(Json::as_str)
+                                    == Some(execution.target.fingerprint.as_str())
+                        })
+                    })
+        }) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
 fn successful(result: &Json) -> bool {
+    if let Some(assessment) = result.get("challenge_assessment") {
+        return result.get("outcome").and_then(Json::as_str) == Some("completed")
+            && assessment.get("assessment").and_then(Json::as_str) == Some("no-findings")
+            && assessment.get("execution_gaps") == Some(&Json::Bool(false));
+    }
     matches!(
         result.get("outcome").and_then(Json::as_str),
         Some("completed" | "accepted" | "supported" | "approved")
     )
 }
 fn review_kind(kind: &str) -> bool {
-    kind.starts_with("review-")
+    matches!(
+        kind,
+        "review-proposal" | "review-spec-delta" | "review-design" | "review-verification"
+    )
 }
 fn author_for(kind: &str) -> Option<&'static str> {
     match kind {
@@ -848,6 +1091,42 @@ fn evaluate(state: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Evaluation, S
                     dep_results.push(result.clone());
                 }
             }
+            if text(task, "kind")? == "review-claim" {
+                let history = arr(state, "history")?;
+                let implementation_position = dep_results
+                    .iter()
+                    .filter(|result| {
+                        arr(result, "records").is_ok_and(|records| {
+                            records.iter().any(|reference| {
+                                reference.get("kind").and_then(Json::as_str)
+                                    == Some("implementation-result")
+                            })
+                        })
+                    })
+                    .filter_map(|result| {
+                        history
+                            .iter()
+                            .position(|entry| entry.get("result") == Some(result))
+                    })
+                    .max();
+                if let Some(position) = implementation_position {
+                    for entry in &history[..position] {
+                        for reference in arr(entry.get("result").unwrap(), "records")? {
+                            if reference.get("kind").and_then(Json::as_str) != Some("run-bundle") {
+                                continue;
+                            }
+                            match check_ref(reference, r) {
+                                Ok(()) => {
+                                    if !input_values.contains(reference) {
+                                        input_values.push(reference.clone());
+                                    }
+                                }
+                                Err(error) => reasons.push(error),
+                            }
+                        }
+                    }
+                }
+            }
             let mut corrections = Vec::new();
             let mut correction_pending = false;
             for review in tasks {
@@ -865,17 +1144,28 @@ fn evaluate(state: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Evaluation, S
                         .find(|result| {
                             result.get("task").and_then(Json::as_str)
                                 == Some(text(review, "id").unwrap())
-                                && matches!(
-                                    result.get("outcome").and_then(Json::as_str),
-                                    Some(
-                                        "rejected"
-                                            | "violated"
-                                            | "unresolved"
-                                            | "failed"
-                                            | "denied"
-                                            | "deferred"
-                                    )
-                                )
+                                && (text(review, "kind").ok() != Some("run-challenger")
+                                    || result
+                                        .get("challenge_assessment")
+                                        .and_then(|v| v.get("assessment"))
+                                        .and_then(Json::as_str)
+                                        == Some("findings"))
+                                && (result
+                                    .get("challenge_assessment")
+                                    .and_then(|v| v.get("assessment"))
+                                    .and_then(Json::as_str)
+                                    == Some("findings")
+                                    || matches!(
+                                        result.get("outcome").and_then(Json::as_str),
+                                        Some(
+                                            "rejected"
+                                                | "violated"
+                                                | "unresolved"
+                                                | "failed"
+                                                | "denied"
+                                                | "deferred"
+                                        )
+                                    ))
                         })
                     {
                         let own = latest(state, id);
@@ -968,7 +1258,14 @@ fn evaluate(state: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Evaluation, S
                 reasons.push(reason);
             }
             if let Some(previous) = latest(state, id) {
-                if !successful(previous) {
+                if !successful(previous)
+                    && (text(task, "kind")? != "run-challenger"
+                        || previous
+                            .get("challenge_assessment")
+                            .and_then(|v| v.get("assessment"))
+                            .and_then(Json::as_str)
+                            == Some("findings"))
+                {
                     let configured = task.get("correction").and_then(Json::as_str);
                     let correction = configured.or_else(|| {
                         author_for(text(task, "kind").unwrap()).and_then(|kind| {
@@ -998,15 +1295,25 @@ fn evaluate(state: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Evaluation, S
                 }
             }
             let b = basis(task, &basis_inputs, &basis_dependencies, &corrections);
+            let disposition = text(task, "kind")? == "run-challenger"
+                && reasons.is_empty()
+                && latest(state, id).is_some_and(|result| {
+                    challenge_disposition(result, task, &dep_results, r).unwrap_or(false)
+                });
             let valid = !correction_pending
                 && latest(state, id).is_some_and(|result| {
-                    successful(result)
+                    (successful(result) || disposition)
+                        && (text(task, "kind").ok() != Some("run-challenger")
+                            || challenge_assessment(result, task.get("target").unwrap(), r)
+                                .is_ok_and(|value| {
+                                    result.get("challenge_assessment") == Some(&value)
+                                }))
                         && task.get("satisfies").is_none_or(|allowed| {
                             allowed.as_array().is_some_and(|values| {
                                 values.contains(result.get("outcome").unwrap())
                             })
                         })
-                        && result.get("basis").and_then(Json::as_str) == Some(&b)
+                        && (disposition || result.get("basis").and_then(Json::as_str) == Some(&b))
                         && arr(result, "records").is_ok_and(|records| {
                             records.iter().all(|record| check_ref(record, r).is_ok())
                         })
@@ -1026,6 +1333,15 @@ fn evaluate(state: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Evaluation, S
             }
             if reasons.is_empty() {
                 eligible.push(Json::obj(vec![("id",Json::str(id)),("task",Json::str(text(task,"kind")?)),("action",task.get("action").cloned().unwrap_or_else(|| Json::str(text(task,"kind").unwrap()))),("target",task.get("target").unwrap().clone()),("repositories",repository_locations(r)),("workflow_directory",Json::str(r.get("").unwrap().to_string_lossy())),("basis",Json::str(b)),("reason",Json::str(if !corrections.is_empty(){"Perform the configured correction after an adverse result; independent reassessment will follow."}else if latest(state,id).is_some(){"The previous result is adverse or its dependencies changed."}else{"The configured prerequisites are satisfied."})),("guidance",task.get("guidance").unwrap().clone()),("inputs",Json::Arr(input_values)),("dependencies",Json::Arr(dep_results)),("corrections",Json::Arr(corrections)),("required_output",task.get("required_output").unwrap().clone())]));
+                if text(task, "kind")? == "run-challenger" {
+                    if let Some(previous) = latest(state, id) {
+                        set(
+                            eligible.last_mut().unwrap(),
+                            "previous_attempt",
+                            previous.clone(),
+                        );
+                    }
+                }
             }
         }
         if !progress {
@@ -1039,6 +1355,14 @@ fn handoff_inputs(handoff: &Json) -> Result<Vec<Json>, String> {
     let mut references = arr(handoff, "inputs")?.to_vec();
     for dependency in arr(handoff, "dependencies")? {
         references.extend(arr(dependency, "records")?.iter().cloned());
+        references.extend(
+            arr(dependency, "inputs")?
+                .iter()
+                .filter(|reference| {
+                    reference.get("kind").and_then(Json::as_str) == Some("run-bundle")
+                })
+                .cloned(),
+        );
     }
     let mut inputs = Vec::new();
     let mut seen = BTreeMap::new();
@@ -1064,12 +1388,173 @@ fn handoff_inputs(handoff: &Json) -> Result<Vec<Json>, String> {
     }
     Ok(inputs)
 }
-fn public_handoff(handoff: &Json) -> Result<Json, String> {
+fn correction_source(native: &Json, roots: &BTreeMap<String, PathBuf>) -> Result<Json, String> {
+    let artifacts = arr(native, "artifacts")?;
+    let mut matches = Vec::new();
+    for artifact in artifacts {
+        let Some((path, section)) = text(artifact, "locator")?.split_once('#') else {
+            continue;
+        };
+        portable(path)?;
+        let mut locations = roots.clone();
+        if let Some(directory) = roots
+            .get("")
+            .filter(|p| p.file_name().is_some_and(|n| n == ".azimuth"))
+        {
+            locations.insert(String::new(), directory.parent().unwrap().to_path_buf());
+        }
+        for (repository, root) in &locations {
+            let reference = Json::obj(vec![
+                ("kind", Json::str("review-source")),
+                ("ref", Json::str(path)),
+            ]);
+            let context = BTreeMap::from([(String::new(), root.clone())]);
+            let Ok(resolved) = resolve(&reference, &context) else {
+                continue;
+            };
+            let Ok(source) = fs::read_to_string(&resolved) else {
+                continue;
+            };
+            let Ok(line) = crate::review_authoring::section_location(
+                &source,
+                section,
+                text(artifact, "digest")?,
+            ) else {
+                continue;
+            };
+            let value = Json::obj(vec![
+                ("kind", Json::str("review-source")),
+                ("directory", Json::str(root.to_string_lossy())),
+                ("ref", Json::str(path)),
+                ("section", Json::str(section)),
+                ("line", Json::Num(line as f64)),
+                (
+                    "section_fingerprint",
+                    artifact.get("digest").unwrap().clone(),
+                ),
+                (
+                    "repository",
+                    if repository.is_empty() {
+                        Json::Null
+                    } else {
+                        Json::str(repository)
+                    },
+                ),
+            ]);
+            if !matches.iter().any(|(p, _)| p == &resolved) {
+                matches.push((resolved, value));
+            }
+        }
+    }
+    if matches.len() != 1 {
+        return Err("authored review source is missing, changed, outside declared roots or ambiguous; use the retained feedback".into());
+    }
+    Ok(matches.remove(0).1)
+}
+fn public_correction(result: &Json, roots: &BTreeMap<String, PathBuf>) -> Result<Json, String> {
+    let task = result
+        .get("task")
+        .ok_or("correction has no work reference")?;
+    let mut feedback = Vec::new();
+    for reference in arr(result, "records")? {
+        if ["work-result", "run-bundle"].contains(&text(reference, "kind")?) {
+            continue;
+        }
+        if text(reference, "kind")? == "challenger-report" {
+            check_ref(reference, roots)?;
+            feedback.push(Json::obj(vec![
+                ("kind", Json::str("challenger-report")),
+                ("report", reference.clone()),
+                (
+                    "directory",
+                    Json::str(
+                        roots
+                            .get(reference_repository(reference))
+                            .ok_or("unknown report root")?
+                            .to_string_lossy(),
+                    ),
+                ),
+            ]));
+            continue;
+        }
+        match check_ref(reference, roots).and_then(|()| supporting_record(reference, roots)) {
+            Ok(native) => {
+                let source = correction_source(&native, roots);
+                let mut fields = vec![
+                    ("kind", reference.get("kind").unwrap().clone()),
+                    ("review", source.as_ref().cloned().unwrap_or(Json::Null)),
+                ];
+                if let Some(id) = reference.get("record") {
+                    fields.push(("id", id.clone()));
+                }
+                if let Err(error) = source {
+                    fields.push(("source_diagnostic", Json::str(error)));
+                    fields.push((
+                        "feedback",
+                        native
+                            .get("rationale")
+                            .or_else(|| native.get("report"))
+                            .cloned()
+                            .unwrap_or(Json::Null),
+                    ));
+                }
+                feedback.push(Json::obj(fields));
+            }
+            Err(error) => feedback.push(Json::obj(vec![
+                ("kind", reference.get("kind").unwrap().clone()),
+                ("source_diagnostic", Json::str(error)),
+            ])),
+        }
+    }
+    if let Some(assessment) = result.get("challenge_assessment") {
+        feedback.push(Json::obj(vec![
+            ("kind", Json::str("challenger-assessment")),
+            ("assessment", assessment.clone()),
+            ("guidance", Json::str("Investigate each objection; distinguish a product defect, inadequate Check coverage, equivalent or irrelevant mutation, and execution limitations. Record an independently reassessable disposition; do not turn surviving mutants into automatic product defects.")),
+        ]));
+    }
+    if let Some(decision) = result.get("decision") {
+        feedback.push(Json::obj(vec![
+            ("kind", Json::str("authoring-review")),
+            (
+                "feedback",
+                decision.get("rationale").cloned().unwrap_or(Json::Null),
+            ),
+        ]));
+    }
+    let inputs = arr(result, "inputs")?;
+    let diagnostics = inputs
+        .iter()
+        .filter_map(|input| check_ref(input, roots).err().map(Json::str))
+        .collect::<Vec<_>>();
+    Ok(Json::obj(vec![
+        ("work", task.clone()),
+        ("outcome", result.get("outcome").unwrap().clone()),
+        ("reviewer", result.get("actor").unwrap().clone()),
+        ("reviewed_model_revision", encode_work(task).get("target").and_then(|target| target.get("model_revision")).cloned().unwrap_or(Json::Null)),
+        ("input_currentness", Json::obj(vec![
+            ("status", Json::str(if diagnostics.is_empty() { "unchanged" } else { "changed-or-unavailable" })),
+            ("scope", Json::str("Retained review inputs only; source captures are not a fresh assessment of current working trees.")),
+            ("diagnostics", Json::Arr(diagnostics)),
+        ])),
+        ("reviews", Json::Arr(feedback)),
+        ("reviewed_artifacts", Json::Arr(inputs.iter().filter(|input| matches!(input.get("kind").and_then(Json::as_str), Some("candidate-facet" | "intent-delta" | "claim-design" | "verification-account" | "source-scope-report"))).cloned().collect())),
+    ]))
+}
+fn public_handoff(handoff: &Json, roots: &BTreeMap<String, PathBuf>) -> Result<Json, String> {
     let inputs = handoff_inputs(handoff)?;
+    let corrections = arr(handoff, "corrections")?
+        .iter()
+        .map(|result| public_correction(result, roots))
+        .collect::<Result<Vec<_>, _>>()?;
+    let previous_attempt = handoff
+        .get("previous_attempt")
+        .map(|previous| public_correction(previous, roots))
+        .transpose()?;
     let Json::Obj(fields) = handoff else {
         return Err("handoff requires object".into());
     };
-    Ok(Json::Obj(
+    let mut result = Json::Obj(
         fields
             .iter()
             .filter(|(key, _)| key != "dependencies")
@@ -1078,13 +1563,121 @@ fn public_handoff(handoff: &Json) -> Result<Json, String> {
                     key.clone(),
                     if key == "inputs" {
                         Json::Arr(inputs.clone())
+                    } else if key == "corrections" {
+                        Json::Arr(corrections.clone())
+                    } else if key == "previous_attempt" {
+                        previous_attempt.as_ref().unwrap().clone()
                     } else {
                         value.clone()
                     },
                 )
             })
             .collect(),
-    ))
+    );
+    if text(handoff, "task")? == "run-challenger" {
+        set(
+            &mut result,
+            "challenger",
+            challenger_handoff(handoff, roots)?,
+        );
+    }
+    if !corrections.is_empty() {
+        set(&mut result, "correction_guidance", Json::Arr(vec![
+            Json::str("Read the referenced authored reviews and current change artifacts; compare each finding with current source and the reviewed inputs before relying on it."),
+            Json::str("Update the existing engineering plan as needed, implement bounded corrections, and obtain a decision before material scope or intent changes."),
+            Json::str("In the result report, identify each review and finding, record changes and actual verification or a justified disagreement, and retain unresolved limitations for independent reassessment."),
+        ]));
+        let mut required = handoff.get("required_output").unwrap().clone();
+        let description = format!("{} Include a finding-by-finding disposition in the result report: changes and actual verification, justified disagreement, or an explicit unresolved limitation. Independent reassessment remains required.", text(&required, "description")?);
+        set(&mut required, "description", Json::str(description));
+        set(&mut result, "required_output", required);
+    }
+    Ok(result)
+}
+fn challenger_handoff(handoff: &Json, roots: &BTreeMap<String, PathBuf>) -> Result<Json, String> {
+    let snapshot = read(&resolve(
+        record_of(arr(handoff, "inputs")?, "assurance-snapshot")?,
+        roots,
+    )?)?;
+    let identity = text(handoff.get("target").unwrap(), "challenger")?;
+    let mut declaration = None;
+    for claim in arr(snapshot.get("authority").unwrap(), "claims")? {
+        for challenger in claim
+            .get("challengers")
+            .and_then(Json::as_array)
+            .unwrap_or(&[])
+        {
+            if text(challenger, "id")? == identity {
+                if declaration.is_some_and(|previous| previous != challenger) {
+                    return Err("conflicting Challenger declarations".into());
+                }
+                declaration = Some(challenger);
+            }
+        }
+    }
+    let declaration = declaration.ok_or("Challenger missing from candidate")?;
+    let mut reviews = Vec::new();
+    for dependency in arr(handoff, "dependencies")? {
+        for reference in arr(dependency, "records")? {
+            if reference.get("kind").and_then(Json::as_str) != Some("claim-review") {
+                continue;
+            }
+            let native = supporting_record(reference, roots)?;
+            if !arr(declaration, "claims")?.contains(native.get("claim").unwrap_or(&Json::Null)) {
+                continue;
+            }
+            let source = correction_source(&native, roots);
+            let mut fields = vec![
+                ("claim", native.get("claim").unwrap().clone()),
+                ("review", source.as_ref().cloned().unwrap_or(Json::Null)),
+                ("reviewed_model_revision", snapshot.get("model_revision").unwrap().clone()),
+                ("input_currentness", Json::str("Current prerequisite basis; recapture and reassess if implementation, scope or configuration changes.")),
+            ];
+            if let Err(error) = source {
+                fields.push(("source_diagnostic", Json::str(error)));
+            }
+            reviews.push(Json::obj(fields));
+        }
+    }
+    let mut scopes = Vec::new();
+    let mut scope_inputs = Vec::new();
+    for input in handoff_inputs(handoff)? {
+        if input.get("kind").and_then(Json::as_str) == Some("source-scope-report") {
+            let scope = read(&resolve(&input, roots)?)?;
+            if scope.get("challenger").and_then(Json::as_str) == Some(identity) {
+                scopes.push(scope);
+                scope_inputs.push(input);
+            }
+        } else if matches!(
+            input.get("kind").and_then(Json::as_str),
+            Some("source-capture" | "challenger-configuration")
+        ) {
+            scope_inputs.push(input);
+        }
+    }
+    if scopes.len() > 1 {
+        return Err("ambiguous prepared Challenger source scope".into());
+    }
+    let resolved_scope = scopes.pop().unwrap_or(Json::Null);
+    Ok(Json::obj(vec![
+        ("resolved_scope", resolved_scope),
+        ("declaration", declaration.clone()),
+        ("reviews", Json::Arr(reviews)),
+        ("scope_inputs", Json::Arr(scope_inputs)),
+        ("instructions", Json::Arr(vec![
+            Json::str("Read the declaration and authored Claim Reviews. Resolve its implementation configuration files and current source scope; retain selected sites, exclusions, unresolved mappings and tool expansions. Missing or stale scope is not permission for a repository-wide fallback."),
+            Json::str("Use explicit isolated tool/environment configuration and an exact source capture. Execute only this Challenger and its selected Checks. Preserve native reports, a readable challenger-report and the imported run-bundle in a fresh attempt directory."),
+            Json::str("Record execution as completed or failed. Azimuth derives assessment no-findings, findings or inconclusive from the Run (native clean means no-findings). Preserve findings together with execution gaps; no findings never establishes Claim Health."),
+            Json::str("For execution failure or inconclusive search, diagnose configuration, prerequisites, scope and tool limitations and retry this work. Do not classify an execution problem as a product defect. Surviving mutations require relevance/equivalence/coverage disposition and independent reassessment."),
+        ])),
+        ("destinations", Json::obj(vec![
+            ("directory", Json::str(format!("artifacts/challengers/{identity}/<fresh-attempt>"))),
+            ("readable_report", Json::str("report.md")),
+            ("native_report", Json::str("native-report.json")),
+            ("run_bundle", Json::str("run-bundle.json")),
+            ("result", Json::str(format!("results/{identity}-<fresh-attempt>.json"))),
+        ])),
+    ]))
 }
 fn record_of<'a>(records: &'a [Json], kind: &str) -> Result<&'a Json, String> {
     let matches: Vec<_> = records
@@ -1282,25 +1875,30 @@ fn review_record(
             for dependency in arr(handoff, "dependencies")? {
                 for reference in arr(dependency, "records")? {
                     if ["claim-review", "claim-health"].contains(&text(reference, "kind")?) {
-                        let prior = supporting_record(reference, r)?;
-                        if !local_reviews.contains(&prior) {
-                            local_reviews.push(prior);
-                        }
-                    } else if text(reference, "kind")? == "run-bundle" {
-                        let path = resolve(reference, r)?;
-                        let source =
-                            fs::read_to_string(&path).map_err(|error| error.to_string())?;
-                        let bundle = crate::run::parse(&path.display().to_string(), &source)
-                            .map_err(|error| format!("invalid prerequisite Run: {error:?}"))?;
-                        if !runs.contains(&bundle) {
-                            runs.push(bundle);
+                        for prior in supporting_review_history(reference, r)? {
+                            if !local_reviews.contains(&prior) {
+                                local_reviews.push(prior);
+                            }
                         }
                     }
                 }
             }
+            for reference in handoff_inputs(handoff)? {
+                if text(&reference, "kind")? == "run-bundle" {
+                    let path = resolve(&reference, r)?;
+                    let source = fs::read_to_string(&path).map_err(|error| error.to_string())?;
+                    let bundle = crate::run::parse(&path.display().to_string(), &source)
+                        .map_err(|error| format!("invalid prerequisite Run: {error:?}"))?;
+                    if !runs.contains(&bundle) {
+                        runs.push(bundle);
+                    }
+                }
+            }
         }
-        if !local_reviews.contains(&review) {
-            local_reviews.push(review.clone());
+        for retained in supporting_review_history(record_of(records, expected)?, r)? {
+            if !local_reviews.contains(&retained) {
+                local_reviews.push(retained);
+            }
         }
         let prior = local_reviews.as_slice();
         let target = crate::assurance_review::review_target(&review)?;
@@ -1377,6 +1975,76 @@ fn decision_record(
     }
     Ok(Json::obj(fields))
 }
+fn unchanged_inflight_assessment(
+    state: &Json,
+    captured: &Json,
+    result: &Json,
+    roots: &BTreeMap<String, PathBuf>,
+) -> Result<Option<Json>, String> {
+    let id = text(result, "task")?;
+    let Some(task) = arr(state.get("definition").unwrap(), "tasks")?
+        .iter()
+        .find(|task| task.get("id") == result.get("task"))
+    else {
+        return Ok(None);
+    };
+    if !["review-claim", "run-challenger"].contains(&text(task, "kind")?) {
+        return Ok(None);
+    }
+    let Some(handoff) = arr(captured, "eligible")?
+        .iter()
+        .find(|handoff| handoff.get("id") == result.get("task"))
+    else {
+        return Ok(None);
+    };
+    let captured_revision = number(captured, "workflow_revision")? as usize;
+    if arr(state, "history")?
+        .iter()
+        .skip(captured_revision)
+        .any(|entry| entry.get("result").and_then(|value| value.get("task")) == result.get("task"))
+    {
+        return Ok(None);
+    }
+    for input in arr(handoff, "inputs")? {
+        if check_ref(input, roots).is_err() {
+            return Ok(None);
+        }
+    }
+    let inputs = arr(task, "inputs")?
+        .iter()
+        .map(|input| materialize(input, roots))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut dependencies = Vec::new();
+    for dependency in arr(task, "depends_on")? {
+        let Some(previous) = latest(state, dependency.as_str().unwrap()) else {
+            return Ok(None);
+        };
+        if !successful(previous) {
+            return Ok(None);
+        }
+        dependencies.push(previous.clone());
+    }
+    let current_basis = basis(task, &inputs, &dependencies, &[]);
+    if handoff.get("basis").and_then(Json::as_str) != Some(current_basis.as_str())
+        || result.get("basis").and_then(Json::as_str) != Some(current_basis.as_str())
+    {
+        return Ok(None);
+    }
+    // A sibling adverse assessment may reopen implementation while these captured inputs remain unchanged.
+    Ok(Some(Json::obj(vec![
+        ("id", Json::str(id)),
+        ("task", task.get("kind").unwrap().clone()),
+        ("target", task.get("target").unwrap().clone()),
+        ("inputs", Json::Arr(inputs)),
+        ("dependencies", Json::Arr(dependencies)),
+        ("basis", Json::str(current_basis)),
+        (
+            "required_output",
+            task.get("required_output").unwrap().clone(),
+        ),
+    ])))
+}
+
 fn authored_result(
     source: &Json,
     path: &Path,
@@ -1505,6 +2173,17 @@ fn authored_result(
         ("records", Json::Arr(records)),
         ("inputs", Json::Arr(arr(handoff, "inputs")?.to_vec())),
     ]);
+    if text(handoff, "task")? == "run-challenger"
+        && (text(source, "outcome")? == "completed"
+            || arr(&result, "records")?
+                .iter()
+                .any(|r| r.get("kind").and_then(Json::as_str) == Some("run-bundle")))
+    {
+        text(source, "report")?;
+        record_of(arr(&result, "records")?, "challenger-report")?;
+        let assessment = challenge_assessment(&result, handoff.get("target").unwrap(), roots)?;
+        set(&mut result, "challenge_assessment", assessment);
+    }
     if text(source, "outcome")? != "failed"
         && (review_kind(text(handoff, "task")?)
             || text(handoff, "task")? == "request-implementation-approval")
@@ -1737,10 +2416,12 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             return Err("workflow revision conflict".into());
         }
         let evaluation = evaluate(&state, &r)?;
+        let inflight = unchanged_inflight_assessment(&state, &handoffs, &result, &r)?;
         let handoff = evaluation
             .eligible
             .iter()
             .find(|t| t.get("id") == result.get("task"))
+            .or(inflight.as_ref())
             .ok_or("task is not eligible")?;
         if handoff.get("basis") != result.get("basis") {
             return Err("stale result basis".into());
@@ -1848,19 +2529,26 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             "execute-qualified-check",
             "execute-check",
             "run-challengers",
+            "run-challenger",
         ]
         .contains(&kind)
-            && outcome == "completed"
+            && (outcome == "completed"
+                || kind == "run-challenger"
+                    && arr(&result, "records")?
+                        .iter()
+                        .any(|r| r.get("kind").and_then(Json::as_str) == Some("run-bundle")))
         {
             let reference = record_of(arr(&result, "records")?, "run-bundle")?;
             let path = resolve(reference, &r)?;
             let source = fs::read_to_string(&path).map_err(|e| e.to_string())?;
             let bundle = crate::run::parse(&path.display().to_string(), &source)
                 .map_err(|e| format!("invalid Run: {e:?}"))?;
-            if kind == "run-challengers" && bundle.challenger_executions.is_empty() {
+            if ["run-challengers", "run-challenger"].contains(&kind)
+                && bundle.challenger_executions.is_empty()
+            {
                 return Err("Challenger execution requires recorded Challenge Results".into());
             }
-            if kind == "run-challengers" {
+            if ["run-challengers", "run-challenger"].contains(&kind) {
                 let snapshot = read(&resolve(
                     record_of(arr(handoff, "inputs")?, "assurance-snapshot")?,
                     &r,
@@ -1871,14 +2559,30 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
                 for dependency in arr(handoff, "dependencies")? {
                     for reference in arr(dependency, "records")? {
                         if ["claim-review", "claim-health"].contains(&text(reference, "kind")?) {
-                            let review = supporting_record(reference, &r)?;
-                            if !reviews.contains(&review) {
-                                reviews.push(review);
+                            for review in supporting_review_history(reference, &r)? {
+                                if !reviews.contains(&review) {
+                                    reviews.push(review);
+                                }
                             }
                         }
                     }
                 }
-                let runs = snapshot_runs(&snapshot)?;
+                let mut runs = snapshot_runs(&snapshot)?;
+                for reference in handoff_inputs(handoff)? {
+                    if text(&reference, "kind")? == "run-bundle" {
+                        check_ref(&reference, &r)?;
+                        let path = resolve(&reference, &r)?;
+                        let source =
+                            fs::read_to_string(&path).map_err(|error| error.to_string())?;
+                        let previous = crate::run::parse(&path.display().to_string(), &source)
+                            .map_err(|error| {
+                                format!("invalid assessment Run history: {error:?}")
+                            })?;
+                        if !runs.contains(&previous) {
+                            runs.push(previous);
+                        }
+                    }
+                }
                 for execution in &bundle.challenger_executions {
                     let declarations = arr(authority, "claims")?.iter().flat_map(|claim| {
                         claim
@@ -1965,10 +2669,12 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             }
         }
         let before = evaluate(&state, &r)?;
+        let live_inflight = unchanged_inflight_assessment(&state, &handoffs, &result, &r)?;
         if before
             .eligible
             .iter()
             .find(|t| t.get("id") == result.get("task"))
+            .or(live_inflight.as_ref())
             .and_then(|t| t.get("basis"))
             != result.get("basis")
         {
@@ -2101,7 +2807,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
                 evaluation
                     .eligible
                     .iter()
-                    .map(public_handoff)
+                    .map(|handoff| public_handoff(handoff, &r))
                     .collect::<Result<Vec<_>, _>>()?,
             ),
         ),
@@ -2307,6 +3013,7 @@ fn template(v: &Json) -> Result<(), String> {
             "modules",
             "methods",
             "claim-definitions",
+            "challengers",
             "checks",
             "contributions",
             "claims",
@@ -2347,6 +3054,7 @@ fn template(v: &Json) -> Result<(), String> {
             "judge-claim",
             "review-claim",
             "assess-claim-health",
+            "run-challenger",
         ]
         .contains(&text(action, "kind")?)
             && !input_bindings.contains("snapshot")
@@ -2381,6 +3089,7 @@ fn template(v: &Json) -> Result<(), String> {
                     "same-subject",
                     "claim-contributions",
                     "same-claim",
+                    "challenger-claims",
                 ]
                 .contains(&text(dep, "match")?)
             {
@@ -2403,6 +3112,7 @@ fn template(v: &Json) -> Result<(), String> {
                         && ["checks", "contributions", "claims"].contains(&other)
                 }
                 "claim-contributions" => collection == "claims" && other == "contributions",
+                "challenger-claims" => collection == "challengers" && other == "claim-definitions",
                 "same-claim" => {
                     ["claims", "claim-definitions"].contains(&collection)
                         && ["claims", "claim-definitions"].contains(&other)
@@ -2482,6 +3192,7 @@ fn inventory_shape(v: &Json) -> Result<(), String> {
         "methods",
         "claim_definitions",
         "challengers",
+        "challenger_claims",
         "pending_subjects",
         "selection",
         "subject_inputs",
@@ -2491,6 +3202,28 @@ fn inventory_shape(v: &Json) -> Result<(), String> {
         }
     }
     obj(v, &fields)?;
+    if let Some(mapping) = v.get("challenger_claims") {
+        let mut ids = BTreeSet::new();
+        for entry in mapping
+            .as_array()
+            .ok_or("Challenger Claim mapping requires array")?
+        {
+            obj(entry, &["challenger", "claims"])?;
+            identifier(text(entry, "challenger")?)?;
+            if !ids.insert(text(entry, "challenger")?) || arr(entry, "claims")?.is_empty() {
+                return Err(
+                    "Challenger mapping requires unique identities and nonempty Claim scope".into(),
+                );
+            }
+            for claim in arr(entry, "claims")? {
+                identifier(
+                    claim
+                        .as_str()
+                        .ok_or("Challenger Claim requires identifier")?,
+                )?;
+            }
+        }
+    }
     if v.get("challengers").is_some() {
         let mut seen = BTreeSet::new();
         for challenger in arr(v, "challengers")? {
@@ -2635,6 +3368,16 @@ fn expand_generation(source: &Json, bindings: &Json) -> Result<Json, String> {
                     arr(bindings.get("assurance").unwrap(), "claim_definitions")?.to_vec()
                 }
             }
+            "challengers" => {
+                if bindings.get("assurance") == Some(&Json::Null) {
+                    vec![]
+                } else {
+                    arr(bindings.get("assurance").unwrap(), "challengers")?
+                        .iter()
+                        .map(|id| Json::obj(vec![("challenger", id.clone())]))
+                        .collect()
+                }
+            }
             "methods" => {
                 if bindings.get("assurance") == Some(&Json::Null) {
                     vec![]
@@ -2717,6 +3460,13 @@ fn expand_generation(source: &Json, bindings: &Json) -> Result<Json, String> {
                             }
                             "same-subject" => target.get("subject") == other.get("subject"),
                             "same-claim" => target.get("claim") == other.get("claim"),
+                            "challenger-claims" => {
+                                challenger_claims(bindings, &target).is_ok_and(|claims| {
+                                    other
+                                        .get("claim")
+                                        .is_some_and(|claim| claims.contains(claim))
+                                })
+                            }
                             "claim-contributions" => {
                                 target.get("claim") == other.get("claim")
                                     && target.get("subject") == other.get("subject")
@@ -2729,7 +3479,10 @@ fn expand_generation(source: &Json, bindings: &Json) -> Result<Json, String> {
                     let complete_empty_challengers = text(dependency, "match")? == "all"
                         && arr(source, "actions")?.iter().any(|action| {
                             action.get("id") == dependency.get("action")
-                                && text(action, "kind").ok() == Some("run-challengers")
+                                && matches!(
+                                    text(action, "kind").ok(),
+                                    Some("run-challengers" | "run-challenger")
+                                )
                         })
                         && bindings
                             .get("assurance")
@@ -3102,6 +3855,11 @@ fn assurance_definition(
             Json::Arr(challengers.iter().map(Json::str).collect()),
         );
     }
+    set(
+        &mut inventory,
+        "challenger_claims",
+        challenger_claim_inventory(authority)?,
+    );
     if let Some(selection) = selection_ref {
         set(&mut inventory, "selection", portable_ref(selection));
     }
@@ -3217,6 +3975,11 @@ fn validate_inventory(
             .collect::<BTreeSet<_>>();
         if challengers != &Json::Arr(expected.iter().map(Json::str).collect()) {
             return Err("Challenger inventory differs from candidate authority".into());
+        }
+    }
+    if let Some(mapping) = v.get("challenger_claims") {
+        if mapping != &challenger_claim_inventory(authority)? {
+            return Err("Challenger Claim mapping differs from candidate authority".into());
         }
     }
     if let Some(methods) = v.get("methods").and_then(Json::as_array) {
@@ -3359,7 +4122,7 @@ fn output_contract(action: &Json) -> Result<(), String> {
         "register-candidate-model-revision" => Some("candidate-registration"),
         "qualify-method" => Some("method-qualification"),
         "review-claim" => Some("claim-review"),
-        "execute-check" | "run-challengers" => Some("run-bundle"),
+        "execute-check" | "run-challengers" | "run-challenger" => Some("run-bundle"),
         "assess-claim-health" => Some("claim-health"),
         "execute-qualified-check" => Some("run-bundle"),
         "assess-applicability" => Some("applicability-decision"),

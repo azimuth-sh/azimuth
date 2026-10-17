@@ -12,8 +12,11 @@ use serde_json::{json, Value};
 use sqlx::{PgPool, Row};
 use std::{collections::BTreeMap, sync::Arc};
 
+mod release;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Role {
+    Publisher,
     Producer,
     Reviewer,
     Owner,
@@ -23,6 +26,8 @@ enum Role {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectCredentials {
+    #[serde(default)]
+    pub publishers: BTreeMap<String, String>,
     pub producers: BTreeMap<String, String>,
     pub reviewers: BTreeMap<String, String>,
     pub owners: BTreeMap<String, String>,
@@ -62,6 +67,7 @@ impl LedgerState {
             }
             let mut entries = Vec::new();
             for (role, identities) in [
+                (Role::Publisher, roles.publishers),
                 (Role::Producer, roles.producers),
                 (Role::Reviewer, roles.reviewers),
                 (Role::Owner, roles.owners),
@@ -172,6 +178,23 @@ pub fn app(state: LedgerState) -> Router {
         .route(
             "/v1/projects/{project}/subjects/{subject}/state",
             get(subject_state),
+        )
+        .route(
+            "/v1/projects/{project}/releases",
+            post(release::publish).get(release::list),
+        )
+        .route(
+            "/v1/projects/{project}/releases/{release}",
+            get(release::show),
+        )
+        .route(
+            "/v1/projects/{project}/releases/{release}/acceptance",
+            post(release::accept),
+        )
+        .route("/v1/projects/{project}/changes", get(release::changes))
+        .route(
+            "/v1/projects/{project}/deployments",
+            post(release::deploy).get(release::deployments),
         )
         .layer(DefaultBodyLimit::max(16 * 1024 * 1024))
         .with_state(state)
@@ -507,6 +530,16 @@ async fn register_authority(
             .bind(&project)
             .fetch_optional(&mut *transaction)
             .await?;
+    let release_managed: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM assurance_releases WHERE project=$1)")
+            .bind(&project)
+            .fetch_one(&mut *transaction)
+            .await?;
+    if release_managed {
+        return Err(LedgerError::conflict(
+            "release-managed projects promote models through explicit composed-release acceptance",
+        ));
+    }
     let match_fields = headers.get_all("if-match").iter().collect::<Vec<_>>();
     let none_fields = headers.get_all("if-none-match").iter().collect::<Vec<_>>();
     if match_fields.len() > 1
@@ -647,7 +680,7 @@ async fn review_history(
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
     let limit = page.limit()?;
-    let rows = sqlx::query("SELECT fingerprint, submitted_by, submitted_at::text AS submitted_at, CASE WHEN sum(CASE WHEN ordinal < $3 THEN octet_length(payload::text) ELSE 0 END) OVER () > 33554432 THEN NULL WHEN ordinal < $3 THEN payload ELSE 'null'::jsonb END AS payload FROM (SELECT fingerprint,payload,submitted_by,submitted_at,row_number() OVER (ORDER BY fingerprint) AS ordinal FROM (SELECT fingerprint,payload,submitted_by,submitted_at FROM assurance_reviews WHERE project=$1 AND fingerprint > $2 AND EXISTS (SELECT 1 FROM model_revision_reviews r JOIN current_authorities c ON r.project=c.project AND r.revision_fingerprint=c.fingerprint WHERE r.project=assurance_reviews.project AND r.review_fingerprint=assurance_reviews.fingerprint) ORDER BY fingerprint LIMIT $3) candidates) page ORDER BY fingerprint")
+    let rows = sqlx::query("SELECT fingerprint, provenance_basis, submitted_by, submitted_at::text AS submitted_at, CASE WHEN sum(CASE WHEN ordinal < $3 THEN octet_length(payload::text) ELSE 0 END) OVER () > 33554432 THEN NULL WHEN ordinal < $3 THEN payload ELSE 'null'::jsonb END AS payload FROM (SELECT fingerprint,payload,provenance_basis,submitted_by,submitted_at,row_number() OVER (ORDER BY fingerprint) AS ordinal FROM (SELECT fingerprint,payload,provenance_basis,submitted_by,submitted_at FROM assurance_reviews WHERE project=$1 AND fingerprint > $2 AND EXISTS (SELECT 1 FROM model_revision_reviews r JOIN current_authorities c ON r.project=c.project AND r.revision_fingerprint=c.fingerprint WHERE r.project=assurance_reviews.project AND r.review_fingerprint=assurance_reviews.fingerprint) ORDER BY fingerprint LIMIT $3) candidates) page ORDER BY fingerprint")
         .bind(&project).bind(&page.after).bind(limit + 1).fetch_all(&state.pool).await?;
     require_bounded_payloads(&rows)?;
     let (authority, reviews, bundles) = load_snapshot(&state.pool, &project).await?;
@@ -661,7 +694,7 @@ async fn review_history(
         let payload: Value = row.try_get("payload")?;
         let record = core_json(payload.to_string().as_bytes())?;
         let assessment = assurance_review::assess_record(&record, &authority, &reviews, &bundles);
-        records.push(json!({"historical": !matches!(payload.get("kind").and_then(Value::as_str), Some("claim-review" | "claim-health")), "record":payload,"assessment":assessment.status,"diagnostics":assessment.diagnostics,"submitted_by":row.try_get::<String, _>("submitted_by")?,"submitted_at":row.try_get::<String, _>("submitted_at")?}));
+        records.push(json!({"historical": !matches!(payload.get("kind").and_then(Value::as_str), Some("claim-review" | "claim-health")), "record":payload,"assessment":assessment.status,"diagnostics":assessment.diagnostics,"provenance_basis":row.try_get::<String, _>("provenance_basis")?,"submitted_by":row.try_get::<String, _>("submitted_by")?,"submitted_at":row.try_get::<String, _>("submitted_at")?}));
     }
     Ok(Json(
         json!({"project":project,"records":records,"next":next}),

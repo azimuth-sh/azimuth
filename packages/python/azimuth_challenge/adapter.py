@@ -20,6 +20,22 @@ def unique(pairs):
     return result
 
 
+def registration_identity(executable_data, resources, fingerprint):
+    identity={'protocol_version':1,'id':'azimuth-challenge','provider_family':'azimuth/challenge','adapter_version':'0.1.0-alpha.6',
+              'build':'machine-challenge-import','content':{'executable_digest':digest(executable_data),
+              'resources':[{'id':item['id'],'digest':item['digest']} for item in resources]}}
+    adapter_fp=fingerprint(dict(format='azimuth-adapter-fingerprint',version=1,**identity))
+    capability={'id':'native','classes':['challenge.import'],'challenge_forms':['mutation','source-analysis'],'semantic_settings':{}}
+    capability['fingerprint']=fingerprint(dict(format='azimuth-adapter-capability-fingerprint',version=1,adapter_fingerprint=adapter_fp,**capability))
+    descriptor=dict(format='azimuth-adapter-description',version=1,**identity,adapter_fingerprint=adapter_fp,capabilities=[capability])
+    descriptor['descriptor_fingerprint']=fingerprint({'format':'azimuth-adapter-descriptor-fingerprint','version':1,'descriptor':descriptor})
+    expected_configuration=fingerprint({'format':'azimuth-adapter-configuration-fingerprint','version':1,
+        'adapter_fingerprint':adapter_fp,'descriptor_fingerprint':descriptor['descriptor_fingerprint'],
+        'semantic_settings':{'native_contract':'azimuth-challenge-native-report-v1'},'environment':{'literals':{}},
+        'limits':{'timeout_ms':30000,'stdout_bytes':16777216,'stderr_bytes':1048576},'capabilities':[capability]})
+    return identity, capability, descriptor, expected_configuration
+
+
 def main():
     request=json.loads(sys.stdin.read(),object_pairs_hook=unique)
     if request.get('format')!='azimuth-adapter-request' or request.get('version')!=1 or request.get('operation') not in ('describe','import'):
@@ -38,18 +54,9 @@ def main():
     if digest(normalizer_data)!=resources[0]['digest']:
         raise ValueError('native normalizer digest mismatch')
     exec(compile(normalizer_data,resources[0]['locator'],'exec'),native.__dict__)
-    identity={'protocol_version':1,'id':'azimuth-challenge','provider_family':'azimuth.challenge','adapter_version':'0.1.0-alpha.6',
-              'build':'machine-challenge-import','content':{'executable_digest':digest(Path(__file__).read_bytes()),
-              'resources':[{'id':item['id'],'digest':item['digest']} for item in resources]}}
-    adapter_fp=helper.fingerprint(dict(format='azimuth-adapter-fingerprint',version=1,**identity))
-    capability={'id':'native','classes':['challenge.import'],'challenge_forms':['mutation','source-analysis'],'semantic_settings':{}}
-    capability['fingerprint']=helper.fingerprint(dict(format='azimuth-adapter-capability-fingerprint',version=1,adapter_fingerprint=adapter_fp,**capability))
-    descriptor=dict(format='azimuth-adapter-description',version=1,**identity,adapter_fingerprint=adapter_fp,capabilities=[capability])
-    descriptor['descriptor_fingerprint']=helper.fingerprint({'format':'azimuth-adapter-descriptor-fingerprint','version':1,'descriptor':descriptor})
-    expected_configuration=helper.fingerprint({'format':'azimuth-adapter-configuration-fingerprint','version':1,
-        'adapter_fingerprint':adapter_fp,'descriptor_fingerprint':descriptor['descriptor_fingerprint'],
-        'semantic_settings':{'native_contract':'azimuth-challenge-native-report-v1'},'environment':{'literals':{}},
-        'limits':{'timeout_ms':30000,'stdout_bytes':16777216,'stderr_bytes':1048576},'capabilities':[capability]})
+    identity, capability, descriptor, expected_configuration = registration_identity(
+        Path(__file__).read_bytes(), resources, helper.fingerprint)
+    adapter_fp = descriptor['adapter_fingerprint']
     if configuration['fingerprint']!=expected_configuration or configuration['semantic_settings']!={'native_contract':'azimuth-challenge-native-report-v1'}:
         raise ValueError('unexpected adapter configuration')
     response={'format':'azimuth-adapter-response','version':1,'request_id':request['request_id'],'operation':request['operation'],'status':'ok','description':descriptor}
@@ -71,7 +78,9 @@ def main():
         account=json.loads(data,object_pairs_hook=unique)
         if account.get('format')!='azimuth-challenge-native-account' or account.get('version')!=1 or account['subject']!=launch['subject']:
             raise ValueError('native account or Subject mismatch')
-        if launch['adapter']['configuration_fingerprint'] != expected_configuration:
+        if (len(launch.get('adapters', [])) != 1
+                or launch['adapters'][0]['id'] != 'azimuth-challenge'
+                or launch['adapters'][0]['configuration_fingerprint'] != expected_configuration):
             raise ValueError('launch configuration mismatch')
         for challenge in launch['plan']['challenges']:
             for unit in challenge['units']:
