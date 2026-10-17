@@ -12,6 +12,7 @@ obj/
 package-lock.json
 !packages/typescript/package-lock.json
 !tools/extractors/typescript/package-lock.json
+!tools/extractors/helm/package-lock.json
 !services/assurance/web/package-lock.json
 .azimuth/*
 !.azimuth/release/
