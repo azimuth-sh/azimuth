@@ -746,6 +746,7 @@ pub fn strict_json(path: &str, source: &str) -> Result<Json, SchemaError> {
 
 fn strict_json_parse(source: &str) -> Result<Json, String> {
     let mut parser = StrictJson {
+        source,
         bytes: source.as_bytes(),
         position: 0,
     };
@@ -792,6 +793,7 @@ pub fn import_input_from_json(value: &Json) -> Result<ImportInputIdentity, Strin
 }
 
 struct StrictJson<'a> {
+    source: &'a str,
     bytes: &'a [u8],
     position: usize,
 }
@@ -934,9 +936,10 @@ impl StrictJson<'_> {
                 }
                 continue;
             }
-            let tail = std::str::from_utf8(&self.bytes[self.position..])
-                .map_err(|_| self.error("invalid UTF-8"))?;
-            let character = tail.chars().next().expect("non-empty UTF-8 tail");
+            let character = self.source[self.position..]
+                .chars()
+                .next()
+                .expect("non-empty UTF-8 tail");
             value.push(character);
             self.position += character.len_utf8();
         }
