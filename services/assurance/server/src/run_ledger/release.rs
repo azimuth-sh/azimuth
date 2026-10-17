@@ -7,9 +7,19 @@ pub(super) async fn publish(
     body: Bytes,
 ) -> Result<(StatusCode, Json<Value>), LedgerError> {
     let submitter = state.authorize(&project, &headers, Some(Role::Publisher))?;
-    let native = core_json(&body)?;
-    azimuth::release::verify(&native).map_err(LedgerError::invalid)?;
-    let payload = to_value(&native)?;
+    // Native verification must not monopolize the async worker serving liveness requests.
+    let (payload, mut bundles) = tokio::task::spawn_blocking(move || {
+        let native = core_json(&body)?;
+        azimuth::release::verify(&native).map_err(LedgerError::invalid)?;
+        let payload = to_value(&native)?;
+        let bundles = array(&payload["snapshot"], "bundles")?
+            .iter()
+            .map(|value| parse_bundle(&value.to_string()))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok::<_, LedgerError>((payload, bundles))
+    })
+    .await
+    .map_err(validation_worker_error)??;
     if payload["project"].as_str() != Some(&project) {
         return Err(LedgerError::invalid("publication project must match route"));
     }
@@ -50,10 +60,6 @@ pub(super) async fn publish(
         sqlx::query("INSERT INTO release_changes(project,release_fingerprint,change_id,change_revision,payload) VALUES($1,$2,$3,$4,$5)")
             .bind(&project).bind(fingerprint).bind(text(change,"id")?).bind(text(change,"revision")?).bind(change).execute(&mut *tx).await?;
     }
-    let mut bundles = array(snapshot, "bundles")?
-        .iter()
-        .map(|v| parse_bundle(&v.to_string()))
-        .collect::<Result<Vec<_>, _>>()?;
     bundles.sort_by(|a, b| (&a.run_id, a.bundle_revision).cmp(&(&b.run_id, b.bundle_revision)));
     for bundle in bundles {
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
@@ -67,23 +73,26 @@ pub(super) async fn publish(
         .bind(&bundle.run_id)
         .fetch_all(&mut *tx)
         .await?;
-        let mut history = rows
+        let stored = rows
             .iter()
-            .map(|r| {
-                let v: Value = r.try_get("payload")?;
-                parse_bundle(&v.to_string())
-            })
-            .collect::<Result<Vec<_>, LedgerError>>()?;
-        if let Some(previous) = history
-            .iter()
-            .find(|b| b.bundle_revision == bundle.bundle_revision)
-        {
-            if previous.bundle_fingerprint != bundle.bundle_fingerprint {
-                return Err(LedgerError::conflict(
-                    "Run revision has different immutable content",
-                ));
+            .map(|row| row.try_get::<Value, _>("payload"))
+            .collect::<Result<Vec<_>, _>>()?;
+        let (bundle, insertion) = tokio::task::spawn_blocking(move || {
+            let mut history = stored
+                .iter()
+                .map(|value| parse_bundle(&value.to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            if let Some(previous) = history
+                .iter()
+                .find(|item| item.bundle_revision == bundle.bundle_revision)
+            {
+                if previous.bundle_fingerprint != bundle.bundle_fingerprint {
+                    return Err(LedgerError::conflict(
+                        "Run revision has different immutable content",
+                    ));
+                }
+                return Ok((bundle, None));
             }
-        } else {
             if bundle.bundle_revision as u128 != history.len() as u128 {
                 return Err(LedgerError::conflict(
                     "publication lacks immediate Run predecessor",
@@ -95,9 +104,15 @@ pub(super) async fn publish(
                     "published Run history is inconsistent",
                 ));
             }
+            let payload = to_value(&run::to_json(&bundle))?;
+            Ok((bundle, Some(payload)))
+        })
+        .await
+        .map_err(validation_worker_error)??;
+        if let Some(payload) = insertion {
             sqlx::query("INSERT INTO run_bundles(project,run_id,revision,fingerprint,subject_fingerprint,model_fingerprint,payload) VALUES($1,$2,$3,$4,$5,$6,$7)")
                 .bind(&project).bind(&bundle.run_id).bind(bundle.bundle_revision as i64).bind(&bundle.bundle_fingerprint)
-                .bind(&bundle.subject_fingerprint).bind(&bundle.plan.model_fingerprint).bind(to_value(&run::to_json(&bundle))?).execute(&mut *tx).await?;
+                .bind(&bundle.subject_fingerprint).bind(&bundle.plan.model_fingerprint).bind(payload).execute(&mut *tx).await?;
         }
         sqlx::query("INSERT INTO release_run_submissions(project,release_fingerprint,run_fingerprint,submitted_by) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING")
             .bind(&project).bind(fingerprint).bind(&bundle.bundle_fingerprint).bind(&submitter).execute(&mut *tx).await?;
@@ -120,6 +135,14 @@ pub(super) async fn publish(
             json!({"project":project,"fingerprint":fingerprint,"model_revision":revision,"status":"candidate","submitted_by":submitter,"review_provenance":"publisher-transported-assertion"}),
         ),
     ))
+}
+
+fn validation_worker_error(error: tokio::task::JoinError) -> LedgerError {
+    tracing::error!(error = %error, "Release validation worker failed");
+    LedgerError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        detail: "Release validation did not complete".into(),
+    }
 }
 
 fn text<'a>(value: &'a Value, key: &str) -> Result<&'a str, LedgerError> {
