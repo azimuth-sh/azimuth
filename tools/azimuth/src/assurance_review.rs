@@ -2250,7 +2250,10 @@ fn assess_claim_assessment(
         Ok(v) => v,
         Err(e) => return assessed("stale", e),
     };
-    if record.get("dependencies") != Some(&deps)
+    if record
+        .get("dependencies")
+        .map(crate::fingerprint::canonical_sha256)
+        != Some(crate::fingerprint::canonical_sha256(&deps))
         || record.get("claim_fingerprint")
             != authority_item(authority, "claims", "id", claim).and_then(|v| v.get("fingerprint"))
     {
