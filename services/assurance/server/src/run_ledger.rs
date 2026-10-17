@@ -804,7 +804,17 @@ async fn load_revision_snapshot(
     let value: Value = sqlx::query_scalar(r#"
         WITH selected AS (SELECT fingerprint FROM model_revisions WHERE project=$1 AND fingerprint=$2
             UNION ALL SELECT fingerprint FROM current_authorities WHERE project=$1 AND $2::text IS NULL),
-        heads AS (SELECT DISTINCT ON (run_id) run_id,payload FROM run_bundles WHERE project=$1 ORDER BY run_id,revision DESC),
+        relevant_runs AS (
+            SELECT b.run_id FROM run_bundles b JOIN assurance_authorities a
+                ON a.project=b.project AND a.payload->>'model_fingerprint'=b.model_fingerprint
+                JOIN selected s ON s.fingerprint=a.fingerprint WHERE b.project=$1
+            UNION
+            SELECT b.run_id FROM run_bundles b JOIN release_run_submissions r
+                ON r.project=b.project AND r.run_fingerprint=b.fingerprint
+                JOIN assurance_releases p ON p.project=r.project AND p.fingerprint=r.release_fingerprint
+                JOIN selected s ON s.fingerprint=p.model_revision WHERE b.project=$1),
+        heads AS (SELECT DISTINCT ON (b.run_id) b.run_id,b.payload FROM run_bundles b
+            JOIN relevant_runs r ON r.run_id=b.run_id WHERE b.project=$1 ORDER BY b.run_id,b.revision DESC),
         reviews AS (SELECT a.fingerprint,a.payload FROM assurance_reviews a
             JOIN model_revision_reviews r ON a.project=r.project AND a.fingerprint=r.review_fingerprint
             JOIN selected s ON s.fingerprint=r.revision_fingerprint WHERE a.project=$1),
