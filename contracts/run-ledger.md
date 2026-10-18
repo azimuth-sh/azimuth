@@ -54,3 +54,10 @@ Owner `POST /v1/projects/{project}/model-revisions` accepts a strict full author
 Snapshots fail above 5000 review/Run records or 32 MiB including authority bytes. They never infer support from partial evidence. Absent revision or Subject returns HTTP 404. Candidate registration and accepted selection remain separate: an owner selects the exact revision through the existing conditional `/authority` operation after the relevant rollout, assessments and acceptance decision. The endpoint authorizes selection; it does not itself perform or prove those workflow obligations. Selecting a registered candidate preserves its linked review records.
 
 Review payloads remain immutable; explicit revision links preserve submission provenance. There is no automatic cross-revision reuse. The additive migration distinguishes links captured against the authority selected at migration from authenticated reviewer submissions, and does not infer historical validity. Current review reads follow selected authority; historical candidate reviews remain accessible through their revision snapshots.
+
+
+## Explicit Check Run model association
+
+An owner may POST `{"run_fingerprint":"sha256:...","reason":"..."}` to `/v1/projects/{project}/model-revisions/{revision}/run-models`. The representative Run and revision must already exist in the same project. The service derives the native Run model fingerprint from the stored Run, requires a nonempty Check-only plan whose Check IDs and fingerprints exist in that authority, and retains the owner, representative, rationale and time. Identical model associations are idempotent; the original attribution is immutable.
+
+This explicitly joins existing and subsequent Runs with that exact native model fingerprint to revision snapshots. It does not infer a relationship from Check names, change the accepted revision, establish source applicability, merge Subjects, or manufacture a Claim Health conclusion. Native dependency/currentness assessment and exact-Subject independent Claim Health still apply. Producers and collectors cannot create this association. Challenge histories remain explicitly associated by publication.

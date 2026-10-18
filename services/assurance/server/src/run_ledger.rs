@@ -172,6 +172,10 @@ pub fn app(state: LedgerState) -> Router {
             "/v1/projects/{project}/model-revisions/{revision}/subjects/{subject}/state",
             get(model_revision_subject_state),
         )
+        .route(
+            "/v1/projects/{project}/model-revisions/{revision}/run-models",
+            post(associate_run_model),
+        )
         .route("/v1/projects/{project}/runs", post(ingest).get(list_runs))
         .route("/v1/projects/{project}/subjects", get(list_subjects))
         .route("/v1/projects/{project}/runs/{run_id}", get(history))
@@ -426,6 +430,74 @@ async fn register_model_revision(
         Json(
             json!({"project":project,"revision":fingerprint,"registration_status":"candidate","replayed":!inserted}),
         ),
+    ))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RunModelAssociation {
+    run_fingerprint: String,
+    reason: String,
+}
+
+async fn associate_run_model(
+    State(state): State<LedgerState>,
+    Path((project, revision)): Path<(String, String)>,
+    headers: HeaderMap,
+    Json(body): Json<RunModelAssociation>,
+) -> Result<(StatusCode, Json<Value>), LedgerError> {
+    let owner = state.authorize(&project, &headers, Some(Role::Owner))?;
+    if body.reason.trim().is_empty() || body.reason.len() > 16384 {
+        return Err(LedgerError::invalid(
+            "bounded association rationale required",
+        ));
+    }
+    let authority: Option<Value> = sqlx::query_scalar("SELECT a.payload FROM assurance_authorities a JOIN model_revisions r USING(project,fingerprint) WHERE r.project=$1 AND r.fingerprint=$2")
+        .bind(&project).bind(&revision).fetch_optional(&state.pool).await?;
+    let authority = authority.ok_or_else(LedgerError::not_found)?;
+    let payload: Option<Value> =
+        sqlx::query_scalar("SELECT payload FROM run_bundles WHERE project=$1 AND fingerprint=$2")
+            .bind(&project)
+            .bind(&body.run_fingerprint)
+            .fetch_optional(&state.pool)
+            .await?;
+    let payload = payload.ok_or_else(LedgerError::not_found)?;
+    let checks = payload["plan"]["checks"]
+        .as_array()
+        .ok_or_else(|| LedgerError::invalid("Run Check plan missing"))?;
+    let current = authority["checks"]
+        .as_array()
+        .ok_or_else(|| LedgerError::invalid("authority Checks missing"))?;
+    if checks.is_empty()
+        || !payload["plan"]["challenges"]
+            .as_array()
+            .is_some_and(Vec::is_empty)
+        || checks.iter().any(|check| {
+            !current.iter().any(|candidate| {
+                candidate["id"] == check["id"] && candidate["fingerprint"] == check["fingerprint"]
+            })
+        })
+    {
+        return Err(LedgerError::invalid(
+            "representative Run must be Check-only with exact current Check identities",
+        ));
+    }
+    let bundle = tokio::task::spawn_blocking(move || parse_bundle(&payload.to_string()))
+        .await
+        .map_err(|_| LedgerError::invalid("Run validation worker failed"))??;
+    let inserted = sqlx::query("INSERT INTO model_revision_run_models(project,revision_fingerprint,run_model_fingerprint,representative_run_fingerprint,reason,associated_by) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING")
+        .bind(&project).bind(&revision).bind(&bundle.plan.model_fingerprint).bind(&body.run_fingerprint)
+        .bind(&body.reason).bind(&owner).execute(&state.pool).await?.rows_affected() == 1;
+    Ok((
+        if inserted {
+            StatusCode::CREATED
+        } else {
+            StatusCode::OK
+        },
+        Json(json!({
+            "project":project,"revision":revision,"run_model_fingerprint":bundle.plan.model_fingerprint,
+            "replayed":!inserted,"scope":"Run context association only; review currentness and exact-Subject Claim Health remain independently assessed"
+        })),
     ))
 }
 
@@ -808,6 +880,18 @@ async fn load_revision_snapshot(
             SELECT b.run_id FROM run_bundles b JOIN assurance_authorities a
                 ON a.project=b.project AND a.payload->>'model_fingerprint'=b.model_fingerprint
                 JOIN selected s ON s.fingerprint=a.fingerprint WHERE b.project=$1
+            UNION
+            SELECT b.run_id FROM run_bundles b JOIN model_revision_run_models m
+                ON m.project=b.project AND m.run_model_fingerprint=b.model_fingerprint
+                JOIN selected s ON s.fingerprint=m.revision_fingerprint
+                JOIN assurance_authorities a ON a.project=m.project AND a.fingerprint=m.revision_fingerprint
+                WHERE b.project=$1
+                    AND jsonb_array_length(b.payload->'plan'->'checks') > 0
+                    AND jsonb_array_length(b.payload->'plan'->'challenges') = 0
+                    AND NOT EXISTS (
+                        SELECT 1 FROM jsonb_array_elements(b.payload->'plan'->'checks') c
+                        WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(a.payload->'checks') current_check
+                            WHERE current_check->>'id'=c->>'id' AND current_check->>'fingerprint'=c->>'fingerprint'))
             UNION
             SELECT b.run_id FROM run_bundles b JOIN release_run_submissions r
                 ON r.project=b.project AND r.run_fingerprint=b.fingerprint
