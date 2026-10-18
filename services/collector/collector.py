@@ -36,7 +36,7 @@ def fetch(url, token=None, method='GET', body=None, ca=None):
         raise ValueError('Response exceeds limit')
     return json.loads(raw)
 
-def native_bundle(binding, record):
+def native_bundle(binding, record, import_inputs=None):
     launch = binding['launch']
     if record['subject_fingerprint'] != launch['subject_fingerprint'] or record['binding'] != binding['id']:
         raise ValueError('Observation deployment binding differs')
@@ -45,7 +45,7 @@ def native_bundle(binding, record):
     checks = launch['plan']['checks']
     if len(checks) != 1 or checks[0]['id'] != record['check'] or len(checks[0]['units']) != 1:
         raise ValueError('Adapter requires exactly one Check and one whole observation unit')
-    if record['outcome'] not in binding['allowed_outcomes']:
+    if record['outcome'] not in binding['allowed_outcomes'] or (binding['adapter'] == 'probe-results' and record['outcome'] == 'satisfied'):
         raise ValueError('Outcome not permitted for source')
     adapter = launch['adapters'][0]
     activity = {'id': 'measurement', 'status': 'completed', 'started_at_ms': record['started_at_ms'],
@@ -58,7 +58,7 @@ def native_bundle(binding, record):
         actual_context=launch['plan']['required_context'], activities=[activity], artifacts=[], diagnostics=[],
         units_by_check={record['check']: [{'id': checks[0]['units'][0]['id'], 'attempts': [{'ordinal': 0, 'activity': 'measurement',
             'outcomes': {case: record['outcome'] for case in checks[0]['cases']}}]}]},
-        import_inputs=[{'id': 'native-report', 'digest': 'sha256:' + hashlib.sha256(raw).hexdigest(), 'size_bytes': len(raw)}])
+        import_inputs=import_inputs if import_inputs is not None else [{'id': 'native-report', 'digest': 'sha256:' + hashlib.sha256(raw).hexdigest(), 'size_bytes': len(raw)}])
 
 class ProbeResults:
     def collect(self, binding, cursor):
@@ -140,18 +140,29 @@ def discover(config):
             result.append(item)
     return result
 
+def validate_binding(binding, code_fingerprint, protocol_fingerprint):
+    if binding['adapter'] == 'probe-results' and set(binding['allowed_outcomes']) != {'violated', 'inconclusive'}:
+        raise ValueError('Exposure probes permit only violated or inconclusive outcomes')
+    launch = binding['launch']
+    if len(launch['adapters']) != 1 or launch['adapters'][0]['id'] != binding['adapter']:
+        raise ValueError('Launch must select the configured collector adapter')
+    if binding['collector_fingerprint'] != code_fingerprint:
+        raise ValueError('Binding must identify the executing collector code')
+    if binding['protocol_fingerprint'] != protocol_fingerprint:
+        raise ValueError('Binding must identify the executing Run protocol resource')
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
     config = json.loads(Path(os.environ.get('COLLECTOR_CONFIG', '/config/collector.json')).read_text())
     code_fingerprint = 'sha256:' + hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    protocol_fingerprint = 'sha256:' + hashlib.sha256(Path(build_check_bundle.__code__.co_filename).read_bytes()).hexdigest()
     ids = set()
     for binding in config['sources']:
         if binding['id'] in ids:
             raise ValueError('Duplicate source binding identity')
         ids.add(binding['id'])
-        adapter = binding['launch']['adapters'][0]
-        if adapter['id'] != binding['adapter'] or adapter['adapter_fingerprint'] != code_fingerprint:
-            raise ValueError('Launch adapter must identify the executing collector code')
+        validate_binding(binding, code_fingerprint, protocol_fingerprint)
         if binding['launch']['subject']['kind'] != 'deployment':
             raise ValueError('Collector requires explicit deployment bindings')
         if binding['adapter'] == 'prometheus-rules':
