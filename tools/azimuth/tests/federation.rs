@@ -764,7 +764,7 @@ fn split_and_monorepo_controls_derive_the_same_assurance_relations() {
 }
 
 #[test]
-fn repository_envelope_normalizes_check_linkage_and_exports_only_v4_keys() {
+fn repository_envelope_preserves_check_linkage_in_stable_identity_export() {
     let lab = Lab::new();
     let flat = lab.root.join("artifacts/backend-flat.json");
     write(&flat, FLAT_BACKEND_LINKAGE);
@@ -794,7 +794,7 @@ fn repository_envelope_normalizes_check_linkage_and_exports_only_v4_keys() {
         .model
         .check_implementations
         .iter()
-        .find(|item| item.check == "payments/capture-identifier")
+        .find(|item| item.check == "capture-identifier")
         .expect("Check implementation survives federation");
     let source = implementation
         .source
@@ -809,7 +809,7 @@ fn repository_envelope_normalizes_check_linkage_and_exports_only_v4_keys() {
     assert_eq!(source.mount, "tests");
 
     let export = loaded.model.to_json(&[]).to_string_pretty();
-    assert!(export.contains("\"version\": 4"));
+    assert!(export.contains("\"version\": 5"));
     assert!(export.contains("\"check_implementations\""));
     assert!(!export.contains("\"covers\""));
     assert!(!export.contains("\"mechanism_covers\""));
@@ -1321,7 +1321,7 @@ fn assembled_verification_authority_requires_a_current_owning_spec() {
         &lab.backend
             .root
             .join("azimuth/model/retired/verification.md"),
-        "# Verification: retired\n\n## Check: retired/check\nMethod: invoke\nTerminal: works\n\nAtomic.\n",
+        "# Verification: retired\n\n## Check: retired-check\nMethod: invoke\nTerminal: works\n\nAtomic.\n",
     );
     output(
         &lab.backend.root,
@@ -1377,7 +1377,7 @@ fn whole_area_relocation_preserves_check_implementation_identity() {
     let lab = Lab::new();
     let linkage = EXPERIENCE_LINKAGE.replace(
         "\"artifacts\":[",
-        "\"check_implementations\":[{\"check\":\"experience/receipt-rendering\",\"site\":\"receipt shows identifier\",\"file\":\"app/web/rider/src/receipt.test.ts\",\"lang\":\"typescript\",\"source_fingerprint\":\"sha256:5555555555555555555555555555555555555555555555555555555555555555\",\"area\":\"rider-experience\",\"address_kind\":\"typescript-symbol\",\"address\":\"receipt shows identifier\",\"mount\":\"code\"}],\n  \"artifacts\":[",
+        "\"check_implementations\":[{\"check\":\"receipt-rendering\",\"site\":\"receipt shows identifier\",\"file\":\"app/web/rider/src/receipt.test.ts\",\"lang\":\"typescript\",\"source_fingerprint\":\"sha256:5555555555555555555555555555555555555555555555555555555555555555\",\"area\":\"rider-experience\",\"address_kind\":\"typescript-symbol\",\"address\":\"receipt shows identifier\",\"mount\":\"code\"}],\n  \"artifacts\":[",
     );
     write(
         &lab.experience.manifest,
@@ -1399,7 +1399,7 @@ fn whole_area_relocation_preserves_check_implementation_identity() {
     let before = model
         .check_implementations
         .iter()
-        .find(|item| item.check == "experience/receipt-rendering")
+        .find(|item| item.check == "receipt-rendering")
         .unwrap();
     let before_identity = before.source.as_ref().unwrap().key();
     let before_fingerprint = before.source_fingerprint.clone();
@@ -1455,7 +1455,7 @@ fn whole_area_relocation_preserves_check_implementation_identity() {
     let after = moved_model
         .check_implementations
         .iter()
-        .find(|item| item.check == "experience/receipt-rendering")
+        .find(|item| item.check == "receipt-rendering")
         .unwrap();
     assert_eq!(before_identity, after.source.as_ref().unwrap().key());
     assert_eq!(before_fingerprint, after.source_fingerprint);
@@ -1469,7 +1469,7 @@ fn federated_marker_relocation_rewrites_one_path_free_identity_pair() {
         write(
             &raw,
             &format!(
-                "{{\"mechanism_implementations\":[{{\"spec\":\"payments/receipt\",\
+                "{{\"mechanism_implementations\":[{{\
                  \"mechanism\":\"projection\",\"site\":\"Payments.Capture.Project()\",\
                  \"binding\":\"dotnet-symbol:Payments.Capture.Project()\",\"file\":\"{file}\",\
                  \"lang\":\"csharp\",\"source_fingerprint\":\
@@ -1690,7 +1690,7 @@ fn assembly_scales_to_fifty_real_repositories_and_five_thousand_sources() {
         let model_source = format!("intent-{index}");
         let repo_root = root.join(&id);
         let spec = format!(
-            "# Spec: scale/repo-{index}\n\n## Claim: remains-routine\nCriticality: routine\n\nThe fixture SHALL remain routine.\n\n### Case: remains\nEvent: it is checked\nRequired: it remains routine\n"
+            "# Spec: scale/repo-{index}\n\n## Claim: repo-{index}-remains-routine\nCriticality: routine\n\nThe fixture SHALL remain routine.\n\n### Case: repo-{index}-remains\nEvent: it is checked\nRequired: it remains routine\n"
         );
         write(
             &repo_root.join(format!("azimuth/model/scale/repo-{index}/spec.md")),
@@ -1802,23 +1802,23 @@ const PROJECT: &str = r#"{
 }"#;
 
 const BACKEND_LINKAGE: &str = r#"{
-  "realizes":[{"spec":"payments/receipt","claim":"capture-identifier-is-returned","site":"Handle","file":"app/services/Payments/Capture.cs","lang":"csharp","source_fingerprint":"sha256:1111111111111111111111111111111111111111111111111111111111111111","area":"payments","address_kind":"dotnet-symbol","address":"Handle","mount":"code"}],
+  "realizes":[{"claim":"capture-identifier-is-returned","site":"Handle","file":"app/services/Payments/Capture.cs","lang":"csharp","source_fingerprint":"sha256:1111111111111111111111111111111111111111111111111111111111111111","area":"payments","address_kind":"dotnet-symbol","address":"Handle","mount":"code"}],
   "artifacts":[{"id":"capture-identifier-projection","kind":"dotnet-method","file":"app/services/Payments/Capture.cs","area":"payments","address_kind":"dotnet-method","address":"capture-identifier-projection","mount":"code"}]
 }"#;
 
 const FLAT_BACKEND_LINKAGE: &str = r#"{
-  "realizes":[{"spec":"payments/receipt","claim":"capture-identifier-is-returned","site":"Payments.Capture.Handle","file":"app/services/Payments/Capture.cs","lang":"csharp","source_fingerprint":"sha256:1111111111111111111111111111111111111111111111111111111111111111"}],
-  "check_implementations":[{"check":"payments/capture-identifier","site":"Payments.Tests.CaptureTests.ReturnsIdentifier","file":"app/services/Payments.Tests/CaptureTests.cs","lang":"csharp","source_fingerprint":"sha256:2222222222222222222222222222222222222222222222222222222222222222"}],
+  "realizes":[{"claim":"capture-identifier-is-returned","site":"Payments.Capture.Handle","file":"app/services/Payments/Capture.cs","lang":"csharp","source_fingerprint":"sha256:1111111111111111111111111111111111111111111111111111111111111111"}],
+  "check_implementations":[{"check":"capture-identifier","site":"Payments.Tests.CaptureTests.ReturnsIdentifier","file":"app/services/Payments.Tests/CaptureTests.cs","lang":"csharp","source_fingerprint":"sha256:2222222222222222222222222222222222222222222222222222222222222222"}],
   "artifacts":[{"id":"capture-identifier-projection","kind":"dotnet-method","file":"app/services/Payments/Capture.cs"}]
 }"#;
 
 const EXPERIENCE_LINKAGE: &str = r#"{
-  "realizes":[{"spec":"experience/receipt","claim":"capture-identifier-is-shown","site":"Receipt","file":"app/web/rider/src/receipt.tsx","lang":"typescript","source_fingerprint":"sha256:3333333333333333333333333333333333333333333333333333333333333333","area":"rider-experience","address_kind":"typescript-symbol","address":"Receipt","mount":"code"},{"spec":"payments/receipt","claim":"capture-identifier-is-returned","site":"Receipt","file":"app/web/rider/src/receipt.tsx","lang":"typescript","source_fingerprint":"sha256:3333333333333333333333333333333333333333333333333333333333333333","area":"rider-experience","address_kind":"typescript-symbol","address":"Receipt","mount":"code"}],
+  "realizes":[{"claim":"capture-identifier-is-shown","site":"Receipt","file":"app/web/rider/src/receipt.tsx","lang":"typescript","source_fingerprint":"sha256:3333333333333333333333333333333333333333333333333333333333333333","area":"rider-experience","address_kind":"typescript-symbol","address":"Receipt","mount":"code"},{"claim":"capture-identifier-is-returned","site":"Receipt","file":"app/web/rider/src/receipt.tsx","lang":"typescript","source_fingerprint":"sha256:3333333333333333333333333333333333333333333333333333333333333333","area":"rider-experience","address_kind":"typescript-symbol","address":"Receipt","mount":"code"}],
   "artifacts":[{"id":"display-density-control","kind":"typescript-export","file":"app/web/rider/src/display-density.tsx","area":"rider-experience","address_kind":"typescript-export","address":"display-density-control","mount":"code"}]
 }"#;
 
 const OPERATIONS_LINKAGE: &str = r#"{
-  "realizes":[{"spec":"operations/dashboard","claim":"delivery-backlog-is-alerted","site":"DeliveryBacklog","file":"monitoring/delivery.rules.yml","lang":"prometheus","source_fingerprint":"sha256:4444444444444444444444444444444444444444444444444444444444444444","area":"monitoring","address_kind":"prometheus-alert","address":"DeliveryBacklog","mount":"rules"}],
+  "realizes":[{"claim":"delivery-backlog-is-alerted","site":"DeliveryBacklog","file":"monitoring/delivery.rules.yml","lang":"prometheus","source_fingerprint":"sha256:4444444444444444444444444444444444444444444444444444444444444444","area":"monitoring","address_kind":"prometheus-alert","address":"DeliveryBacklog","mount":"rules"}],
   "artifacts":[{"id":"ride-dashboard","kind":"dashboard","file":"monitoring/dashboard.json","area":"monitoring","address_kind":"dashboard","address":"ride-dashboard","mount":"rules"}]
 }"#;
 

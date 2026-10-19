@@ -3,7 +3,7 @@ use std::env;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 
-#[realizes("polyglot/identity", "service-identifies-implementation-language")]
+#[realizes("service-identifies-implementation-language")]
 fn identity() -> &'static str {
     "rust"
 }

@@ -2469,13 +2469,14 @@ fn validate_implementation_identity(value: &str) -> Result<(), String> {
         if matches!(fields.len(), 3 | 4)
             && !fields[0].is_empty()
             && !fields[0].contains(['\\', '*', '?', '[', ']'])
-            && fields[1].strip_prefix("./").is_some_and(|module| {
-                !module.is_empty()
-                    && !module.contains(['\\', '*', '?', '[', ']'])
-                    && module
-                        .split('/')
-                        .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
-            })
+            && (fields[1] == "."
+                || fields[1].strip_prefix("./").is_some_and(|module| {
+                    !module.is_empty()
+                        && !module.contains(['\\', '*', '?', '[', ']'])
+                        && module
+                            .split('/')
+                            .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
+                }))
             && !fields[2].is_empty()
             && !fields[2].contains(['/', '\\', '*', '?', '[', ']'])
             && (fields.len() == 3 || (!fields[3].is_empty() && !fields[3].contains(['/', '\\'])))

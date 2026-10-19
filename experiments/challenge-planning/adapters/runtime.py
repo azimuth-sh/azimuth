@@ -224,6 +224,7 @@ def assert_routes(launch):
 
 def make_bundle(request):
     launch = request["launch_plan"]
+    adapter_identity, = launch["adapters"]
     assert_routes(launch)
     planned = launch["planned_at_ms"]
     finished = planned + 2
@@ -286,11 +287,11 @@ def make_bundle(request):
             },
             "normalizer": {
                 "id": "adapter/synthetic",
-                "version": launch["adapter"]["adapter_version"],
-                "build_fingerprint": launch["adapter"]["adapter_fingerprint"],
+                "version": adapter_identity["adapter_version"],
+                "build_fingerprint": adapter_identity["adapter_fingerprint"],
             },
             "adapter": {
-                **copy.deepcopy(launch["adapter"]),
+                **copy.deepcopy(adapter_identity),
                 "launch_fingerprint": launch["fingerprint"],
                 "routes": copy.deepcopy(launch["routes"]),
                 "import_inputs": [

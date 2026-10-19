@@ -961,8 +961,12 @@ fn marker_attribute(attribute: &Attribute) -> Result<Option<(String, Vec<String>
 }
 
 fn valid_entity_id(id: &str) -> bool {
-    !id.is_empty() && !id.starts_with('-') && !id.ends_with('-')
-        && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    !id.is_empty()
+        && !id.starts_with('-')
+        && !id.ends_with('-')
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
 fn source_segment(source: &str, start: LineColumn, end: LineColumn) -> Result<&str, String> {
@@ -1209,7 +1213,7 @@ mod tests {
     #[test]
     fn check_implementations_bind_to_exact_functions() {
         let markers = scan(
-            "#[azimuth::realizes(\"polyglot/identity\", \"rust-identifies\")]\nfn identity() -> &'static str { \"rust\" }\n\n#[azimuth::implements_check(\"identity-check\")]\nfn first_test() { assert_eq!(identity(), \"rust\"); }\n\n#[azimuth::implements_check(\"identity-check\")]\nfn second_test() { assert!(!identity().is_empty()); }\n\nfn unmarked() {}\n",
+            "#[azimuth::realizes(\"rust-identifies\")]\nfn identity() -> &'static str { \"rust\" }\n\n#[azimuth::implements_check(\"identity-check\")]\nfn first_test() { assert_eq!(identity(), \"rust\"); }\n\n#[azimuth::implements_check(\"identity-check\")]\nfn second_test() { assert!(!identity().is_empty()); }\n\nfn unmarked() {}\n",
             "service.rs",
             &context(),
         )
@@ -1282,7 +1286,7 @@ mod tests {
     #[test]
     fn mechanisms_use_crate_module_type_item_and_signature() {
         let markers = scan(
-            "mod engine {\nstruct Worker;\nimpl Worker {\n#[implements_mechanism(\"payments/capture\", \"completion-guard\")]\nfn apply<T: Copy>(&self, value: T) -> Option<T> { Some(value) }\n}\n}\n",
+            "mod engine {\nstruct Worker;\nimpl Worker {\n#[implements_mechanism(\"completion-guard\")]\nfn apply<T: Copy>(&self, value: T) -> Option<T> { Some(value) }\n}\n}\n",
             "service.rs",
             &context(),
         )
@@ -1301,7 +1305,7 @@ mod tests {
     #[test]
     fn trait_implementations_and_nested_items_do_not_collide() {
         let markers = scan(
-            "trait First { fn apply(&self); }\ntrait Second { fn apply(&self); }\nstruct Worker;\nimpl First for Worker {\n#[implements_mechanism(\"alpha\", \"first\")]\nfn apply(&self) {}\n}\nimpl Second for Worker {\n#[implements_mechanism(\"alpha\", \"second\")]\nfn apply(&self) {}\n}\n",
+            "trait First { fn apply(&self); }\ntrait Second { fn apply(&self); }\nstruct Worker;\nimpl First for Worker {\n#[implements_mechanism(\"first\")]\nfn apply(&self) {}\n}\nimpl Second for Worker {\n#[implements_mechanism(\"second\")]\nfn apply(&self) {}\n}\n",
             "service.rs",
             &context(),
         )
@@ -1318,7 +1322,7 @@ mod tests {
 
     #[test]
     fn relocation_preserves_semantic_site_and_fingerprint() {
-        let source = "#[implements_mechanism(\"alpha\", \"guard\")]\nfn apply(value: u64) -> u64 { value }\n";
+        let source = "#[implements_mechanism(\"guard\")]\nfn apply(value: u64) -> u64 { value }\n";
         let before = scan(source, "first.rs", &context()).unwrap();
         let after = scan(source, "second.rs", &context()).unwrap();
         assert_eq!(before[0].site, after[0].site);
@@ -1330,20 +1334,20 @@ mod tests {
     }
 
     #[test]
-    fn mechanism_marker_remains_two_arguments() {
+    fn mechanism_marker_requires_one_argument() {
         let error = scan(
-            "#[implements_mechanism(\"alpha\", \"guard\", \"extra\")]\nfn apply() {}\n",
+            "#[implements_mechanism(\"guard\", \"extra\")]\nfn apply() {}\n",
             "service.rs",
             &context(),
         )
         .unwrap_err();
-        assert!(error.contains("needs exactly 2"));
+        assert!(error.contains("needs exactly 1"));
     }
 
     #[test]
     fn duplicate_qualified_site_fails_closed() {
         let markers = scan(
-            "#[implements_mechanism(\"alpha\", \"first\")]\nfn apply() {}\n#[implements_mechanism(\"alpha\", \"second\")]\nfn apply() {}\n",
+            "#[implements_mechanism(\"first\")]\nfn apply() {}\n#[implements_mechanism(\"second\")]\nfn apply() {}\n",
             "service.rs",
             &context(),
         )
@@ -1355,13 +1359,13 @@ mod tests {
     #[test]
     fn signatures_drop_patterns_and_canonicalize_generic_parameters() {
         let before = scan(
-            "#[implements_mechanism(\"alpha\", \"guard\")]\nfn apply<T: Copy>(named: T, _: Option<T>) -> T where T: Send { named }\n",
+            "#[implements_mechanism(\"guard\")]\nfn apply<T: Copy>(named: T, _: Option<T>) -> T where T: Send { named }\n",
             "service.rs",
             &context(),
         )
         .unwrap();
         let after = scan(
-            "#[implements_mechanism(\"alpha\", \"guard\")]\nfn apply<Value: Copy>(other: Value, ignored: Option<Value>) -> Value where Value: Send { other }\n",
+            "#[implements_mechanism(\"guard\")]\nfn apply<Value: Copy>(other: Value, ignored: Option<Value>) -> Value where Value: Send { other }\n",
             "service.rs",
             &context(),
         )
@@ -1375,13 +1379,13 @@ mod tests {
     #[test]
     fn declared_type_path_spelling_remains_identity() {
         let alias = scan(
-            "type Alias = u64;\n#[implements_mechanism(\"alpha\", \"guard\")]\nfn apply(value: Alias) {}\n",
+            "type Alias = u64;\n#[implements_mechanism(\"guard\")]\nfn apply(value: Alias) {}\n",
             "service.rs",
             &context(),
         )
         .unwrap();
         let underlying = scan(
-            "type Alias = u64;\n#[implements_mechanism(\"alpha\", \"guard\")]\nfn apply(value: u64) {}\n",
+            "type Alias = u64;\n#[implements_mechanism(\"guard\")]\nfn apply(value: u64) {}\n",
             "service.rs",
             &context(),
         )
@@ -1394,7 +1398,7 @@ mod tests {
         let project = temporary_project("reachable");
         write_package(&project.0, "");
         fs::write(project.0.join("src/lib.rs"), "mod engine;\n").unwrap();
-        let source = "use azimuth_annotations::implements_mechanism;\n#[implements_mechanism(\"alpha\", \"guard\")]\npub fn apply(value: u64) -> u64 { value }\n";
+        let source = "use azimuth_annotations::implements_mechanism;\n#[implements_mechanism(\"guard\")]\npub fn apply(value: u64) -> u64 { value }\n";
         let selected = project.0.join("src/engine.rs");
         fs::write(&selected, source).unwrap();
 
@@ -1449,7 +1453,7 @@ mod tests {
 
         let rejected = temporary_project("rejected");
         write_package(&rejected.0, "");
-        let source = "use azimuth_annotations::implements_mechanism;\n#[implements_mechanism(\"alpha\", \"guard\")]\npub fn apply() -> Missing { panic!() }\n";
+        let source = "use azimuth_annotations::implements_mechanism;\n#[implements_mechanism(\"guard\")]\npub fn apply() -> Missing { panic!() }\n";
         fs::write(rejected.0.join("src/lib.rs"), source).unwrap();
         let error = emit(&[rejected.0.join("src/lib.rs")], &rejected.0).unwrap_err();
         assert!(error.contains("did not compile"), "{error}");
@@ -1478,7 +1482,7 @@ mod tests {
                 package.join("src/lib.rs"),
                 format!(
                     "use azimuth_annotations::implements_mechanism;\n\
-                     #[implements_mechanism(\"alpha\", \"{mechanism}\")]\n\
+                     #[implements_mechanism(\"{mechanism}\")]\n\
                      pub fn apply() {{}}\n"
                 ),
             )

@@ -10,7 +10,7 @@ class EmitterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "service.py"
             path.write_text(
-                '@realizes("polyglot/identity", "python-identifies")\n'
+                '@realizes("python-identifies")\n'
                 'def identity():\n    return "python"\n\n'
                 '@implements_check("identity-check")\n'
                 'def test_first():\n    assert identity() == "python"\n\n'
@@ -87,7 +87,7 @@ class EmitterTests(unittest.TestCase):
             (second.parent / "__init__.py").write_text("", encoding="utf-8")
             source = (
                 'class Worker:\n'
-                '    @implements_mechanism("payments/capture", "completion-guard")\n'
+                '    @implements_mechanism("completion-guard")\n'
                 '    def complete(self, value):\n'
                 '        return value\n'
             )
@@ -100,7 +100,7 @@ class EmitterTests(unittest.TestCase):
 
             self.assertEqual(
                 set(implementation),
-                {"spec", "mechanism", "site", "binding", "file", "lang", "source_fingerprint"},
+                {"mechanism", "site", "binding", "file", "lang", "source_fingerprint"},
             )
             self.assertEqual(implementation["site"], "pkg.capture.Worker.complete")
             self.assertEqual(
@@ -134,7 +134,7 @@ class EmitterTests(unittest.TestCase):
             path = Path(directory) / "service.py"
             path.write_text(
                 'def outer():\n'
-                '    @implements_mechanism("alpha", "nested")\n'
+                '    @implements_mechanism("nested")\n'
                 '    def run():\n'
                 '        pass\n',
                 encoding="utf-8",
@@ -143,10 +143,10 @@ class EmitterTests(unittest.TestCase):
             self.assertEqual(implementation["site"], "pkg.service.outer.<locals>.run")
 
             path.write_text(
-                '@implements_mechanism("alpha", "first")\n'
+                '@implements_mechanism("first")\n'
                 'def run():\n'
                 '    pass\n\n'
-                '@implements_mechanism("alpha", "second")\n'
+                '@implements_mechanism("second")\n'
                 'def run():\n'
                 '    pass\n',
                 encoding="utf-8",
@@ -154,20 +154,20 @@ class EmitterTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "ambiguous mechanism site"):
                 scan(path, "pkg/service.py")
 
-    def test_mechanism_marker_remains_two_arguments(self) -> None:
+    def test_mechanism_marker_requires_one_argument(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "service.py"
             path.write_text(
-                '@implements_mechanism("alpha", "guard", "extra")\n'
+                '@implements_mechanism("guard", "extra")\n'
                 'def run():\n'
                 '    pass\n',
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(ValueError, "needs exactly 2"):
+            with self.assertRaisesRegex(ValueError, "needs exactly 1"):
                 scan(path, "service.py")
 
             path.write_text(
-                '@implements_mechanism("alpha", "guard", unexpected="value")\n'
+                '@implements_mechanism("guard", unexpected="value")\n'
                 'def run():\n'
                 '    pass\n',
                 encoding="utf-8",
@@ -181,7 +181,7 @@ class EmitterTests(unittest.TestCase):
             source_root.mkdir()
             path = source_root / "service.py"
             path.write_text(
-                '@implements_mechanism("alpha", "guard")\n'
+                '@implements_mechanism("guard")\n'
                 'def apply():\n'
                 '    pass\n',
                 encoding="utf-8",

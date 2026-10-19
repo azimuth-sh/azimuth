@@ -15,13 +15,13 @@ The decision must be challenged.\n\n\
 Gate challenge: mutation\n\n\
 Mutation is gate work.\n";
 const VERIFICATION: &str = "# Verification: alpha\n\n\
-## Check: alpha/check\n\
+## Check: alpha-check\n\
 Method: invoke\n\
 Terminal: works\n\n\
 Atomic.\n\n\
 ## Evidence Binding: alpha/edge\n\
-Check: alpha/check\n\
-Case: alpha#works/observed\n\
+Check: alpha-check\n\
+Case: observed\n\
 Method qualification: alpha/method\n\
 Proposition: direct\n\
 Context: {}\n\
@@ -29,7 +29,7 @@ Challenge domain: [\"realization\"]\n\
 Policy: credible\n\n\
 Reviewable.\n\n\
 ## Method Qualification: alpha/method\n\
-Check: alpha/check\n\
+Check: alpha-check\n\
 Scope: unit\n\
 Quantification: example\n\
 Oracle: direct\n\
@@ -47,7 +47,7 @@ Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 Decided: 2026-08-21\n\
 Decider: owner\n\n\
 Applicable.\n\n\
-## Claim Judgment: alpha#works\n\
+## Claim Judgment: works\n\
 Verdict: accepted\n\
 Policy: credible\n\
 Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
@@ -65,7 +65,7 @@ Searches the exact edge.\n\n\
 Challenger: mutation/search\n\
 Select: applicability-decision from binding alpha/edge\n\
 Select: method-qualification from method-qualification alpha/method\n\
-Select: claim-judgment from claim alpha#works\n\n\
+Select: claim-judgment from claim works\n\n\
 Targets both decisions.\n";
 
 fn source(address: &str) -> SourceIdentity {
@@ -119,7 +119,7 @@ fn model() -> Model {
         ],
         decision_standards: Some(parse_standards("standards.md", STANDARDS).unwrap()),
         verifications: vec![parse_verification("verification.md", VERIFICATION).unwrap()],
-        check_implementations: vec![check_implementation("alpha/check", "check")],
+        check_implementations: vec![check_implementation("alpha-check", "check")],
         ..Default::default()
     };
     refresh(&mut model);
@@ -159,7 +159,7 @@ fn refresh(model: &mut Model) {
 fn projects_sorted_realization_verification_and_current_judgment_relationships() {
     let report = project(&model());
     let case = &report.cases[0];
-    assert_eq!(case.id, "alpha#works/observed");
+    assert_eq!(case.id, "observed");
     assert_eq!(case.realizations, ["core|rust-item|a", "core|rust-item|z"]);
     assert_eq!(case.verification[0].binding, "alpha/edge");
     assert!(case.verification[0].current);
@@ -211,7 +211,7 @@ fn challenge_resolutions_sort_independently_of_authority_order() {
 fn impact_graph_deduplicates_one_dependent_judgment_across_qualifications() {
     let mut value = model();
     let mut check = value.verifications[0].checks[0].clone();
-    check.id = "alpha/alternate".into();
+    check.id = "alpha-alternate".into();
     let mut binding = value.verifications[0].bindings[0].clone();
     binding.id = "alpha/alternate-edge".into();
     binding.check = check.id.clone();

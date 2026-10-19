@@ -229,11 +229,11 @@ assert scope["fingerprint"] == "sha256:" + hashlib.sha256(
     json.dumps(scope_preimage, separators=(",", ":"), sort_keys=True).encode()
 ).hexdigest()
 assert [(item["kind"], item["id"]) for item in scope["anchors"]] == [
-    ("claim", "synthetic/behavior#works")
+    ("claim", "behavior-is-observable")
 ]
 assert [(item["kind"], item["id"]) for item in scope["inputs"]] == [
-    ("claim", "synthetic/behavior#works"),
-    ("claim-judgment", "synthetic/behavior#works"),
+    ("claim", "behavior-is-observable"),
+    ("claim-judgment", "behavior-is-observable"),
     ("realization", "synthetic|rust-symbol|behavior::execute"),
     ("policy", "synthetic/claim-judgment-policy"),
 ]

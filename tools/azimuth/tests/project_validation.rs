@@ -172,7 +172,11 @@ fn project_and_candidate_validate_without_generated_workspaces_or_mutation() {
     );
     assert_eq!(
         report.get("acceptance_readiness").and_then(Json::as_str),
-        Some("blocked")
+        None
+    );
+    assert_eq!(
+        report.get("scope").and_then(Json::as_str),
+        Some("structure")
     );
     assert_eq!(fs::read(spec).unwrap(), before);
     assert!(String::from_utf8_lossy(&candidate.stdout).contains("prospective 2 Claim(s)"));

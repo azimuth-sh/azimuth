@@ -312,7 +312,7 @@ fn validate_reports_clean_and_finding_exit_classes() {
     let finding = azimuth(&["validate", "--model", model.to_str().unwrap()]);
     let stdout = String::from_utf8(finding.stdout).unwrap();
     assert_eq!(finding.status.code(), Some(1));
-    assert!(stdout.contains("realization unrealized"), "{stdout}");
+    assert!(stdout.contains("verification unbound-case"), "{stdout}");
     assert!(stdout.contains("help:"), "{stdout}");
 
     fs::write(model.join("sample/spec.md"), "not a spec").unwrap();

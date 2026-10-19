@@ -2152,10 +2152,15 @@ pub fn challenge_candidate_scope_kinds(
                     }
                 }
             }
-            let case_prefix = format!("{}/", target.id);
+            let case_ids = model
+                .find_claim(&target.id)
+                .into_iter()
+                .flat_map(|claim| &claim.claim.cases)
+                .map(|case| case.id.as_str())
+                .collect::<BTreeSet<_>>();
             for binding in model
                 .evidence_bindings()
-                .filter(|binding| binding.case.starts_with(&case_prefix))
+                .filter(|binding| case_ids.contains(binding.case.as_str()))
             {
                 add_applicability_input_kinds(model, binding, &mut kinds)?;
             }

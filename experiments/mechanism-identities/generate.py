@@ -16,13 +16,13 @@ from copy import deepcopy
 FAMILIES = ("cpp", "python", "go", "rust", "dotnet", "jvm", "typescript")
 SHA = "sha256:" + "0" * 64
 PRIMARY_MECHANISMS = {
-    "cpp": "guard-int",
-    "python": "guard",
-    "go": "receiver-guard",
-    "rust": "trait-guard",
-    "dotnet": "guard-int",
-    "jvm": "guard-int",
-    "typescript": "overload-guard",
+    "cpp": "identity-cpp-guard-int",
+    "python": "identity-python-guard",
+    "go": "identity-go-receiver-guard",
+    "rust": "identity-rust-trait-guard",
+    "dotnet": "identity-dotnet-guard-int",
+    "jvm": "identity-jvm-guard-int",
+    "typescript": "identity-typescript-overload-guard",
 }
 
 
@@ -60,14 +60,14 @@ def fixture_sources(root: pathlib.Path, repository: pathlib.Path, phase: str) ->
         """#include \"azimuth.hpp\"
 namespace conformance {
 struct Guard {
-  AZIMUTH_REALIZES("identity-cpp", "stable")
-  AZIMUTH_IMPLEMENTS_CHECK("identity-cpp/relocation")
-  AZIMUTH_IMPLEMENTS_MECHANISM("identity-cpp", "guard-int")
+  AZIMUTH_REALIZES("identity-cpp-stable")
+  AZIMUTH_IMPLEMENTS_CHECK("identity-cpp-relocation")
+  AZIMUTH_IMPLEMENTS_MECHANISM("identity-cpp-guard-int")
   int apply(int value) const { return value; }
-  AZIMUTH_IMPLEMENTS_MECHANISM("identity-cpp", "guard-long")
+  AZIMUTH_IMPLEMENTS_MECHANISM("identity-cpp-guard-long")
   long apply(long value) const { return value; }
   struct Nested {
-    AZIMUTH_IMPLEMENTS_MECHANISM("identity-cpp", "nested-guard")
+    AZIMUTH_IMPLEMENTS_MECHANISM("identity-cpp-nested-guard")
     static int protect(int value) { return value; }
   };
 };
@@ -82,14 +82,14 @@ struct Guard {
 )
 
 class Guard:
-    @realizes("identity-python", "stable")
-    @implements_check("identity-python/relocation")
-    @implements_mechanism("identity-python", "guard")
+    @realizes("identity-python-stable")
+    @implements_check("identity-python-relocation")
+    @implements_mechanism("identity-python-guard")
     def apply(self, value):
         return value
 
     class Nested:
-        @implements_mechanism("identity-python", "nested-guard")
+        @implements_mechanism("identity-python-nested-guard")
         def protect(self, value):
             return value
 """
@@ -113,13 +113,13 @@ class Guard:
 import azimuth "github.com/azimuth-sh/azimuth-go/azimuth"
 type Guard struct{}
 func (Guard) Apply(value int) int {
-  azimuth.Realizes("identity-go", "stable")
-  azimuth.ImplementsCheck("identity-go/relocation")
-  azimuth.ImplementsMechanism("identity-go", "receiver-guard")
+  azimuth.Realizes("identity-go-stable")
+  azimuth.ImplementsCheck("identity-go-relocation")
+  azimuth.ImplementsMechanism("identity-go-receiver-guard")
   return value
 }
 func Transform[Value ~[]int](value Value) Value {
-  azimuth.ImplementsMechanism("identity-go", "generic-guard")
+  azimuth.ImplementsMechanism("identity-go-generic-guard")
   return value
 }
 """,
@@ -142,12 +142,12 @@ edition = "2021"
 pub trait Apply<Value> { fn apply(&self, value: Value) -> Value; }
 pub struct Guard;
 impl Apply<u64> for Guard {
-    #[realizes("identity-rust", "stable")]
-    #[implements_check("identity-rust/relocation")]
-    #[implements_mechanism("identity-rust", "trait-guard")]
+    #[realizes("identity-rust-stable")]
+    #[implements_check("identity-rust-relocation")]
+    #[implements_mechanism("identity-rust-trait-guard")]
     fn apply(&self, value: u64) -> u64 { value }
 }
-#[implements_mechanism("identity-rust", "generic-guard")]
+#[implements_mechanism("identity-rust-generic-guard")]
 pub fn transform<Value: Copy>(value: Value) -> Value { value }
 """,
     )
@@ -173,15 +173,15 @@ pub fn transform<Value: Copy>(value: Value) -> Value { value }
 namespace Conformance;
 public static class Guard
 {
-    [Realizes("identity-dotnet", "stable")]
-    [ImplementsCheck("identity-dotnet/relocation")]
-    [ImplementsMechanism("identity-dotnet", "guard-int")]
+    [Realizes("identity-dotnet-stable")]
+    [ImplementsCheck("identity-dotnet-relocation")]
+    [ImplementsMechanism("identity-dotnet-guard-int")]
     public static int Apply(int value) => value;
-    [ImplementsMechanism("identity-dotnet", "guard-string")]
+    [ImplementsMechanism("identity-dotnet-guard-string")]
     public static string Apply(string value) => value;
     public static class Nested
     {
-        [ImplementsMechanism("identity-dotnet", "nested-guard")]
+        [ImplementsMechanism("identity-dotnet-nested-guard")]
         public static System.Guid Protect(System.Guid value) => value;
     }
 }
@@ -193,14 +193,14 @@ public static class Guard
         """package conformance;
 import sh.azimuth.Azimuth;
 public final class Guard {
-  @Azimuth.Realizes(spec="identity-jvm", claim="stable")
-  @Azimuth.ImplementsCheck("identity-jvm/relocation")
-  @Azimuth.ImplementsMechanism(spec="identity-jvm", mechanism="guard-int")
+  @Azimuth.Realizes("identity-jvm-stable")
+  @Azimuth.ImplementsCheck("identity-jvm-relocation")
+  @Azimuth.ImplementsMechanism("identity-jvm-guard-int")
   public static int apply(int value) { return value; }
-  @Azimuth.ImplementsMechanism(spec="identity-jvm", mechanism="guard-string")
+  @Azimuth.ImplementsMechanism("identity-jvm-guard-string")
   public static String apply(String value, int attempts) { return value + attempts; }
   public static final class Nested {
-    @Azimuth.ImplementsMechanism(spec="identity-jvm", mechanism="nested-guard")
+    @Azimuth.ImplementsMechanism("identity-jvm-nested-guard")
     public static java.util.UUID protect(java.util.UUID value) { return value; }
   }
 }
@@ -227,9 +227,9 @@ public final class Guard {
     })
     write(
         annotations / "index.d.ts",
-        "export declare function implementsMechanism(spec: string, mechanism: string): void;\n"
+        "export declare function implementsMechanism(mechanism: string): void;\n"
         "export declare function implementsCheck(check: string): void;\n"
-        "export declare function realizes(spec: string, claim: string): void;\n",
+        "export declare function realizes(claim: string): void;\n",
     )
     write(
         base / "typescript/index.ts",
@@ -239,13 +239,13 @@ export class Guard {
   static apply(value: number): number;
   static apply(value: string): number;
   static apply(value: number | string): number {
-    realizes('identity-typescript', 'stable');
-    implementsCheck('identity-typescript/relocation');
-    implementsMechanism('identity-typescript', 'overload-guard');
+    realizes('identity-typescript-stable');
+    implementsCheck('identity-typescript-relocation');
+    implementsMechanism('identity-typescript-overload-guard');
     return typeof value === 'number' ? value : value.length;
   }
   apply<Value extends { id: string }>(value: Value): Value {
-    implementsMechanism('identity-typescript', 'generic-receiver-guard');
+    implementsMechanism('identity-typescript-generic-receiver-guard');
     return value;
   }
 }
@@ -258,13 +258,13 @@ def invalid_sources(root: pathlib.Path, repository: pathlib.Path) -> None:
     write(
         base / "cpp/internal.cpp",
         """#include "azimuth.hpp"
-AZIMUTH_IMPLEMENTS_MECHANISM("invalid-cpp", "guard")
+AZIMUTH_IMPLEMENTS_MECHANISM("invalid-cpp-guard")
 static void guard() {}
 """,
     )
     write(
         base / "python/guard.py",
-        """@implements_mechanism("invalid-python", "guard", unexpected="value")
+        """@implements_mechanism("invalid-python-guard", unexpected="value")
 def guard():
     return True
 """,
@@ -281,7 +281,7 @@ def guard():
         """package invalid
 import azimuth "github.com/azimuth-sh/azimuth-go/azimuth"
 func Guard() int {
-  azimuth.ImplementsMechanism("invalid-go", "guard")
+  azimuth.ImplementsMechanism("invalid-go-guard")
   return missing
 }
 """,
@@ -301,7 +301,7 @@ path = "custom.rs"
     write(
         base / "rust/custom.rs",
         """use azimuth_annotations::implements_mechanism;
-#[implements_mechanism("invalid-rust", "guard")]
+#[implements_mechanism("invalid-rust-guard")]
 pub fn guard() {}
 """,
     )
@@ -320,8 +320,8 @@ pub fn guard() {}
         base / "dotnet/Invalid.cs",
         """using Azimuth.Annotations;
 public static class Invalid {
-  [ImplementsMechanism("invalid-dotnet", "first")]
-  [ImplementsMechanism("invalid-dotnet", "second")]
+  [ImplementsMechanism("invalid-dotnet-first")]
+  [ImplementsMechanism("invalid-dotnet-second")]
   public static void Guard() {}
 }
 """,
@@ -331,8 +331,8 @@ public static class Invalid {
         """package invalid;
 import sh.azimuth.Azimuth;
 public final class Guard {
-  @Azimuth.ImplementsMechanism(spec="invalid-jvm", mechanism="first")
-  @Azimuth.ImplementsMechanism(spec="invalid-jvm", mechanism="second")
+  @Azimuth.ImplementsMechanism("invalid-jvm-first")
+  @Azimuth.ImplementsMechanism("invalid-jvm-second")
   public static void guard() {}
 }
 """,
@@ -357,13 +357,13 @@ public final class Guard {
     })
     write(
         annotations / "index.d.ts",
-        "export declare function implementsMechanism(spec: string, mechanism: string): void;\n",
+        "export declare function implementsMechanism(mechanism: string): void;\n",
     )
     write(
         base / "typescript/src/guard.ts",
         """import { implementsMechanism } from '@azimuth-sh/annotations';
 export function guard(mechanism: string): void {
-  implementsMechanism('invalid-typescript', mechanism);
+  implementsMechanism(mechanism);
 }
 """,
     )
@@ -375,7 +375,7 @@ def collision_sources(root: pathlib.Path) -> None:
             root / f"collision/{name}/src/guard.cpp",
             """#include "azimuth.hpp"
 namespace collision {
-AZIMUTH_IMPLEMENTS_MECHANISM("collision-%s", "guard")
+AZIMUTH_IMPLEMENTS_MECHANISM("collision-%s-guard")
 int apply(int value) { return value; }
 }
 """ % name,
@@ -457,7 +457,7 @@ def exact_record(record: dict[str, object], fields: set[str], where: str) -> Non
 
 def verify_extractors(root: pathlib.Path) -> None:
     implementation_fields = {
-        "spec", "mechanism", "site", "binding", "file", "lang", "source_fingerprint"
+        "mechanism", "site", "binding", "file", "lang", "source_fingerprint"
     }
     artifact_fields = {"id", "kind", "file"}
     address_kinds = {
@@ -484,7 +484,7 @@ def verify_extractors(root: pathlib.Path) -> None:
             second = right_by_mechanism[mechanism]
             exact_record(first, implementation_fields, f"{family}/{mechanism}/before")
             exact_record(second, implementation_fields, f"{family}/{mechanism}/after")
-            for field in ("spec", "mechanism", "site", "binding", "lang", "source_fingerprint"):
+            for field in ("mechanism", "site", "binding", "lang", "source_fingerprint"):
                 assert first[field] == second[field], (family, mechanism, field)
             assert first["file"] != second["file"], (family, mechanism, "file")
             kind = address_kinds[family]
@@ -528,7 +528,7 @@ def verify_extractors(root: pathlib.Path) -> None:
     assert first["site"] == second["site"]
     assert first["binding"] == second["binding"]
     assert first["source_fingerprint"] == second["source_fingerprint"]
-    assert (first["spec"], first["mechanism"]) != (second["spec"], second["mechanism"])
+    assert first["mechanism"] != second["mechanism"]
 
 
 def legacy_profiles(root: pathlib.Path) -> None:
@@ -654,19 +654,19 @@ def model(root: pathlib.Path, phase: str) -> None:
         package.mkdir()
         write(
             package / "spec.md",
-            f"# Spec: {spec}\n\n## Claim: stable\nCriticality: standard\n\n"
+            f"# Spec: {spec}\n\n## Claim: {spec}-stable\nCriticality: standard\n\n"
             f"The {family} implementation SHALL retain its semantic mechanism identity.\n\n"
-            "### Case: relocation\nMoving the declared project root preserves semantic identity.\n\n"
-            "## Claim: profiles\nCriticality: routine\n\n"
+            f"### Case: {spec}-relocation\nMoving the declared project root preserves semantic identity.\n\n"
+            f"## Claim: {spec}-profiles\nCriticality: routine\n\n"
             "The language fixture SHALL expose its additional semantic identity profiles.\n\n"
-            "### Case: language-profiles\nExtraction preserves exact overload, nesting, receiver, trait, generic, or module identity.\n",
+            f"### Case: {spec}-language-profiles\nExtraction preserves exact overload, nesting, receiver, trait, generic, or module identity.\n",
         )
         primary = PRIMARY_MECHANISMS[family]
         design = (
-            f"# Design: {spec}\n\n## Claim: stable\n"
+            f"# Design: {spec}\n\n## Claim: {spec}-stable\n"
             f"Mechanism: {primary}\nEnforcement: guard\n\n"
             "The selected marker anchors the relocation Claim's complete composition.\n\n"
-            "## Claim: profiles\n"
+            f"## Claim: {spec}-profiles\n"
         )
         for mechanism in mechanisms:
             if mechanism == primary:
@@ -696,18 +696,18 @@ def model(root: pathlib.Path, phase: str) -> None:
         write(
             package / "verification.md",
             f"# Verification: {spec}\n\n"
-            f"## Check: {spec}/relocation\n"
+            f"## Check: {spec}-relocation\n"
             "Method: compare the semantic mechanism account across two project roots\n"
             "Terminal: every semantic field remains equal while its locator moves\n\n"
             "The synthetic Check has one exact implementation in the language fixture.\n\n"
-            f"## Evidence Binding: {spec}/relocation\nCheck: {spec}/relocation\n"
-            f"Case: {spec}#stable/relocation\n"
+            f"## Evidence Binding: {spec}/relocation\nCheck: {spec}-relocation\n"
+            f"Case: {spec}-relocation\n"
             f"Method qualification: {spec}/relocation-method\n"
             "Proposition: semantic identity is relocation-stable\nContext: {}\n"
             "Challenge domain: [\"mechanism\"]\nPolicy: relocation\n\n"
             "The binding connects only this synthetic conformance Check.\n\n"
             f"## Method Qualification: {spec}/relocation-method\n"
-            f"Check: {spec}/relocation\nScope: component\nQuantification: example\n"
+            f"Check: {spec}-relocation\nScope: component\nQuantification: example\n"
             "Oracle: direct\nContext: {}\nChallenge domain: [\"mechanism\"]\n"
             "Policy: relocation\nVerdict: qualified\n"
             f"Fingerprint: {qualification_placeholder}\nQualified: 2026-08-22\n"
@@ -717,7 +717,7 @@ def model(root: pathlib.Path, phase: str) -> None:
             f"Fingerprint: {applicability_placeholder}\nDecided: 2026-08-22\n"
             "Decider: conformance-owner\n\n"
             "The qualified comparison applies to the relocation Case.\n\n"
-            f"## Claim Judgment: {spec}#stable\nVerdict: accepted\nPolicy: relocation\n"
+            f"## Claim Judgment: {spec}-stable\nVerdict: accepted\nPolicy: relocation\n"
             f"Fingerprint: {judgment_placeholder}\nJudged: 2026-08-22\n"
             "Judge: conformance-owner\n"
             "Basis: all semantic mechanism accounts are exact\n"
@@ -725,10 +725,10 @@ def model(root: pathlib.Path, phase: str) -> None:
             "The synthetic judgment exists only to compare canonical identities.\n\n"
             + challenger
             + f"## Challenge Plan: {spec}/relocation\nChallenger: identity/mutation\n"
-            f"Select: claim-judgment from claim {spec}#stable\n\n"
+            f"Select: claim-judgment from claim {spec}-stable\n\n"
             "The selector addresses one exact synthetic Judgment.\n\n"
             f"## Challenge Plan: {spec}/qualification\nChallenger: identity/mutation\n"
-            f"Select: method-qualification from check {spec}/relocation\n"
+            f"Select: method-qualification from check {spec}-relocation\n"
             f"Select: applicability-decision from binding {spec}/relocation\n\n"
             "The selectors address the shared method and exact applicability decision.\n",
         )
@@ -742,11 +742,11 @@ def model(root: pathlib.Path, phase: str) -> None:
                 mount_path = mount_path.split("/src", 1)[0] + "/src"
         areas.append({"id": family, "mounts": [{"id": "code", "path": mount_path}]})
         challenge_requests.append({
-            "id": f"{spec}/relocation", "capability": "identity/challenge",
+            "id": f"{spec}/relocation", "execution-capability": "identity/challenge",
             "max_candidates": 1, "units": [{"id": "whole", "parameters": {}}],
         })
         challenge_requests.append({
-            "id": f"{spec}/qualification", "capability": "identity/challenge",
+            "id": f"{spec}/qualification", "execution-capability": "identity/challenge",
             "max_candidates": 2, "units": [{"id": "whole", "parameters": {}}],
         })
     write_json(destination / "workspace.json", {
@@ -781,7 +781,7 @@ def seal(root: pathlib.Path, phase: str) -> None:
     for spec, placeholders_for_spec in placeholders.items():
         path = destination / f"model/{spec}/verification.md"
         source = path.read_text(encoding="utf-8")
-        claim = f"{spec}#stable"
+        claim = f"{spec}-stable"
         if claim not in expected:
             related = [
                 item for item in exported["challenge_resolutions"]
@@ -814,13 +814,13 @@ def collision_model(root: pathlib.Path) -> None:
         package.mkdir(exist_ok=True)
         write(
             package / "spec.md",
-            f"# Spec: {spec}\n\n## Claim: stable\nCriticality: routine\n\n"
+            f"# Spec: {spec}\n\n## Claim: {spec}-stable\nCriticality: routine\n\n"
             "The synthetic collision site SHALL remain distinguishable by area.\n\n"
-            "### Case: assembled-identity\nEqual raw sites retain distinct area-qualified SourceIdentity keys after assembly.\n",
+            f"### Case: {spec}-assembled-identity\nEqual raw sites retain distinct area-qualified SourceIdentity keys after assembly.\n",
         )
         write(
             package / "design.md",
-            f"# Design: {spec}\n\n## Claim: stable\nMechanism: guard\n"
+            f"# Design: {spec}\n\n## Claim: {spec}-stable\nMechanism: {spec}-guard\n"
             "Enforcement: guard\n\nThe marker is deliberately shared across repositories.\n",
         )
     write_json(destination / "cross-area.json", {
@@ -872,7 +872,7 @@ def core_account(exported: dict[str, object], launch: dict[str, object]) -> dict
     return {
         "sources": sorted((item["area"], item["address_kind"], item["address"])
                           for item in mechanisms),
-        "mechanisms": sorted((item["spec"], item["mechanism"], item["binding"])
+        "mechanisms": sorted((item["mechanism"], item["binding"])
                              for item in mechanisms),
         "artifacts": sorted((item["id"], item["kind"]) for item in artifacts),
         "judgments": sorted((item["id"], item["fingerprint"]) for item in judgments),
@@ -898,7 +898,7 @@ def assert_selection_shapes(challenges: list[dict[str, object]]) -> None:
         spec = f"identity-{family}"
         binding = f"{spec}/relocation"
         method = f"{spec}/relocation-method"
-        claim = f"{spec}#stable"
+        claim = f"{spec}-stable"
         for target_kind, target_id, anchor_kind, expected_kinds in (
             ("method-qualification", method, "check", method_kinds),
             ("applicability-decision", binding, "binding", applicability_kinds),
@@ -912,7 +912,7 @@ def assert_selection_shapes(challenges: list[dict[str, object]]) -> None:
             assert selection["units"] == [{"id": "whole", "parameters": {}}]
             anchors = selection["scope"]["anchors"]
             assert len(anchors) == 1
-            anchor_id = binding if anchor_kind == "check" else target_id
+            anchor_id = f"{spec}-relocation" if anchor_kind == "check" else target_id
             assert (anchors[0]["kind"], anchors[0]["id"]) == (anchor_kind, anchor_id)
             inputs = selection["scope"]["inputs"]
             actual_kinds = {item["kind"] for item in inputs}
@@ -920,7 +920,7 @@ def assert_selection_shapes(challenges: list[dict[str, object]]) -> None:
             by_kind = {}
             for item in inputs:
                 by_kind.setdefault(item["kind"], []).append(item["id"])
-            assert by_kind["check"] == [binding]
+            assert by_kind["check"] == [f"{spec}-relocation"]
             assert by_kind["method-qualification"] == [method]
             assert by_kind["policy"] == ["relocation"]
             if target_kind != "method-qualification":
@@ -929,7 +929,7 @@ def assert_selection_shapes(challenges: list[dict[str, object]]) -> None:
                 assert by_kind["applicability-decision"] == [binding]
             if target_kind == "claim-judgment":
                 assert by_kind["claim-judgment"] == [claim]
-                assert by_kind["mechanism"] == [f"{spec}#{PRIMARY_MECHANISMS[family]}"]
+                assert by_kind["mechanism"] == [PRIMARY_MECHANISMS[family]]
 
 
 def verify_core(root: pathlib.Path) -> None:

@@ -46,11 +46,11 @@ func TestMechanismUsesPackageReceiverAndTypeSignature(t *testing.T) {
 import azimuth "github.com/azimuth-sh/azimuth-go/azimuth"
 type Worker struct{}
 func (worker *Worker) Apply(value string) error {
-	azimuth.ImplementsMechanism("payments/capture", "completion-guard")
+	azimuth.ImplementsMechanism("completion-guard")
 	return nil
 }
 func Apply(value int) int {
-	azimuth.ImplementsMechanism("payments/capture", "free-guard")
+	azimuth.ImplementsMechanism("free-guard")
 	return value
 }
 `)
@@ -82,7 +82,7 @@ func Apply(value int) int {
 		if err := json.Unmarshal(encoded, &fields); err != nil {
 			t.Fatal(err)
 		}
-		if len(fields) != 7 || fields["site"] != implementation.Site {
+		if len(fields) != 6 || fields["site"] != implementation.Site {
 			t.Fatalf("mechanism shape is not strict: %s", encoded)
 		}
 	}
@@ -97,7 +97,7 @@ func TestMechanismRelocationIsStableAndDuplicateSiteFails(t *testing.T) {
 	source := `package service
 import . "github.com/azimuth-sh/azimuth-go/azimuth"
 type Worker struct{}
-func (Worker) Apply(value string) { ImplementsMechanism("alpha", "guard") }
+func (Worker) Apply(value string) { ImplementsMechanism("guard") }
 `
 	first := writeSource(t, directory, source)
 	before, err := emit([]string{first}, directory)
@@ -121,21 +121,21 @@ func (Worker) Apply(value string) { ImplementsMechanism("alpha", "guard") }
 	}
 
 	first = writeSource(t, directory, source+`
-func (Worker) Apply(value string) { ImplementsMechanism("alpha", "other") }
+func (Worker) Apply(value string) { ImplementsMechanism("other") }
 `)
 	if _, err := emit([]string{first}, directory); err == nil {
 		t.Fatal("expected the compiler account to reject a duplicate declaration")
 	}
 }
 
-func TestMechanismMarkerRemainsTwoArguments(t *testing.T) {
+func TestMechanismMarkerRequiresOneArgument(t *testing.T) {
 	directory := t.TempDir()
 	path := writeSource(t, directory, `package service
 import . "github.com/azimuth-sh/azimuth-go/azimuth"
-func Apply() { ImplementsMechanism("alpha", "guard", "extra") }
+func Apply() { ImplementsMechanism("guard", "extra") }
 `)
-	if _, err := emit([]string{path}, directory); err == nil || !strings.Contains(err.Error(), "needs exactly 2") {
-		t.Fatalf("expected type-checked two-argument marker failure, got %v", err)
+	if _, err := emit([]string{path}, directory); err == nil || !strings.Contains(err.Error(), "needs exactly 1") {
+		t.Fatalf("expected type-checked one-argument marker failure, got %v", err)
 	}
 }
 
@@ -143,7 +143,7 @@ func TestAnonymousMechanismSiteFailsClosed(t *testing.T) {
 	directory := t.TempDir()
 	path := writeSource(t, directory, `package service
 import . "github.com/azimuth-sh/azimuth-go/azimuth"
-func Apply() { callback := func() { ImplementsMechanism("alpha", "guard") }; callback() }
+func Apply() { callback := func() { ImplementsMechanism("guard") }; callback() }
 `)
 	if _, err := emit([]string{path}, directory); err == nil ||
 		!strings.Contains(err.Error(), "anonymous function has no stable Go site") {
@@ -155,7 +155,7 @@ func TestCheckImplementationsResolveExactFunctions(t *testing.T) {
 	directory := t.TempDir()
 	path := writeSource(t, directory, `package service
 import azimuth "github.com/azimuth-sh/azimuth-go/azimuth"
-func Identity() { azimuth.Realizes("polyglot/identity", "go-identifies") }
+func Identity() { azimuth.Realizes("go-identifies") }
 func TestFirst() { azimuth.ImplementsCheck("identity-check") }
 func TestSecond() { azimuth.ImplementsCheck("identity-check"); println("second") }
 func Unmarked() { println("unmarked") }
@@ -270,8 +270,8 @@ func TestGenericParametersArePositionalAcrossReceiverConstraintsAndUses(t *testi
 	first := writeSource(t, directory, `package service
 import . "github.com/azimuth-sh/azimuth-go/azimuth"
 type Box[T ~int] struct{}
-func (Box[T]) Apply(value T) T { ImplementsMechanism("alpha", "receiver"); return value }
-func Transform[U ~[]int](value U) U { ImplementsMechanism("alpha", "callable"); return value }
+func (Box[T]) Apply(value T) T { ImplementsMechanism("receiver"); return value }
+func Transform[U ~[]int](value U) U { ImplementsMechanism("callable"); return value }
 `)
 	before, err := emit([]string{first}, directory)
 	if err != nil {
@@ -280,8 +280,8 @@ func Transform[U ~[]int](value U) U { ImplementsMechanism("alpha", "callable"); 
 	secondSource := `package service
 import . "github.com/azimuth-sh/azimuth-go/azimuth"
 type Box[Element ~int] struct{}
-func (Box[Element]) Apply(value Element) Element { ImplementsMechanism("alpha", "receiver"); return value }
-func Transform[Values ~[]int](value Values) Values { ImplementsMechanism("alpha", "callable"); return value }
+func (Box[Element]) Apply(value Element) Element { ImplementsMechanism("receiver"); return value }
+func Transform[Values ~[]int](value Values) Values { ImplementsMechanism("callable"); return value }
 `
 	second := writeSource(t, directory, secondSource)
 	after, err := emit([]string{second}, directory)
@@ -308,7 +308,7 @@ func TestGenericConstraintChangesSemanticSite(t *testing.T) {
 	directory := t.TempDir()
 	path := writeSource(t, directory, `package service
 import . "github.com/azimuth-sh/azimuth-go/azimuth"
-func Apply[T ~int](value T) T { ImplementsMechanism("alpha", "guard"); return value }
+func Apply[T ~int](value T) T { ImplementsMechanism("guard"); return value }
 `)
 	before, err := emit([]string{path}, directory)
 	if err != nil {
@@ -316,7 +316,7 @@ func Apply[T ~int](value T) T { ImplementsMechanism("alpha", "guard"); return va
 	}
 	writeSource(t, directory, `package service
 import . "github.com/azimuth-sh/azimuth-go/azimuth"
-func Apply[T ~string](value T) T { ImplementsMechanism("alpha", "guard"); return value }
+func Apply[T ~string](value T) T { ImplementsMechanism("guard"); return value }
 `)
 	after, err := emit([]string{path}, directory)
 	if err != nil {
@@ -340,7 +340,7 @@ func TestInputGroupingDoesNotChangePackageIdentity(t *testing.T) {
 	directory := t.TempDir()
 	path := writeSource(t, directory, `package service
 import . "github.com/azimuth-sh/azimuth-go/azimuth"
-func Apply(value int) int { ImplementsMechanism("alpha", "guard"); return value }
+func Apply(value int) int { ImplementsMechanism("guard"); return value }
 `)
 	byFile, err := emit([]string{path}, directory)
 	if err != nil {
@@ -360,7 +360,7 @@ func TestCompilerRejectsInvalidMarkedFunctionBody(t *testing.T) {
 	path := writeSource(t, directory, `package service
 import azimuth "github.com/azimuth-sh/azimuth-go/azimuth"
 func Apply(value int) int {
-	azimuth.ImplementsMechanism("alpha", "guard")
+	azimuth.ImplementsMechanism("guard")
 	return missing
 }
 `)
@@ -378,7 +378,7 @@ import (
 	azimuth "github.com/azimuth-sh/azimuth-go/azimuth"
 )
 func Apply(request *http.Request) string {
-	azimuth.ImplementsMechanism("alpha", "guard")
+	azimuth.ImplementsMechanism("guard")
 	return request.Method
 }
 `)
@@ -404,11 +404,11 @@ func TestDuplicateSiteAcrossPackagesFailsClosed(t *testing.T) {
 	}
 	firstPath := writeSource(t, first, `package service
 import azimuth "github.com/azimuth-sh/azimuth-go/azimuth"
-func Apply() { azimuth.ImplementsMechanism("alpha", "first") }
+func Apply() { azimuth.ImplementsMechanism("first") }
 `)
 	secondPath := writeSource(t, second, `package service
 import azimuth "github.com/azimuth-sh/azimuth-go/azimuth"
-func Apply() { azimuth.ImplementsMechanism("alpha", "second") }
+func Apply() { azimuth.ImplementsMechanism("second") }
 `)
 	if _, err := emit([]string{firstPath, secondPath}, root); err == nil ||
 		!strings.Contains(err.Error(), "ambiguous mechanism site") {

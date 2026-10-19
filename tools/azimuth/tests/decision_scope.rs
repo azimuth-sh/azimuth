@@ -27,13 +27,13 @@ The composition must be challenged.\n\n\
 Gate challenge: mutation\n\n\
 Mutation is gate work.\n";
 const VERIFICATION: &str = "# Verification: alpha\n\n\
-## Check: alpha/check\n\
+## Check: alpha-check\n\
 Method: invoke\n\
 Terminal: the behavior works\n\n\
 Atomic.\n\n\
 ## Evidence Binding: alpha/edge\n\
-Check: alpha/check\n\
-Case: alpha#behavior/works\n\
+Check: alpha-check\n\
+Case: works\n\
 Method qualification: alpha/method\n\
 Proposition: direct\n\
 Context: {}\n\
@@ -41,7 +41,7 @@ Challenge domain: [\"realization\",\"mechanism\"]\n\
 Policy: credible\n\n\
 Reviewable.\n\n\
 ## Method Qualification: alpha/method\n\
-Check: alpha/check\n\
+Check: alpha-check\n\
 Scope: unit\n\
 Quantification: example\n\
 Oracle: direct\n\
@@ -59,7 +59,7 @@ Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 Decided: 2026-08-22\n\
 Decider: owner\n\n\
 Applicable.\n\n\
-## Claim Judgment: alpha#behavior\n\
+## Claim Judgment: behavior\n\
 Verdict: accepted\n\
 Policy: credible\n\
 Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
@@ -75,7 +75,7 @@ Required scope: [\"mechanism\"]\n\n\
 Searches exact semantics.\n\n\
 ## Challenge Plan: alpha/plan\n\
 Challenger: mutation/search\n\
-Select: claim-judgment from mechanism alpha#guard\n\n\
+Select: claim-judgment from mechanism guard\n\n\
 Targets the total decision.\n";
 
 fn source(area: &str, mount: &str, kind: &str, address: &str) -> SourceIdentity {
@@ -123,7 +123,7 @@ fn model() -> Model {
             },
         ],
         check_implementations: vec![CheckImplementation {
-            check: "alpha/check".into(),
+            check: "alpha-check".into(),
             site: "checks::alpha".into(),
             file: "tests/alpha.rs".into(),
             lang: "rust".into(),
@@ -266,17 +266,17 @@ fn export_resolutions_match_validation_order_and_an_independent_golden() {
         "selector": {
           "target": "claim-judgment",
           "from": "mechanism",
-          "id": "alpha#guard"
+          "id": "guard"
         },
         "relation": {
           "kind": "claim",
-          "id": "alpha#behavior"
+          "id": "behavior"
         },
         "target": {
           "kind": "claim-judgment",
-          "id": "alpha#behavior",
-          "expected_fingerprint": "sha256:92cefc23047b1c5a5171550e0386a93f55ee3f645285d9d2e5e1ffc0601c7d1e",
-          "authored_fingerprint": "sha256:92cefc23047b1c5a5171550e0386a93f55ee3f645285d9d2e5e1ffc0601c7d1e"
+          "id": "behavior",
+          "expected_fingerprint": "sha256:34d694fe71ff89ded4c6ef370f41b92f7417a120aee1707c9a7f2d24240190c2",
+          "authored_fingerprint": "sha256:34d694fe71ff89ded4c6ef370f41b92f7417a120aee1707c9a7f2d24240190c2"
         },
         "disposition": "selected"
       }
@@ -293,17 +293,17 @@ fn export_resolutions_match_validation_order_and_an_independent_golden() {
         "selector": {
           "target": "claim-judgment",
           "from": "mechanism",
-          "id": "alpha#guard"
+          "id": "guard"
         },
         "relation": {
           "kind": "claim",
-          "id": "alpha#behavior"
+          "id": "behavior"
         },
         "target": {
           "kind": "claim-judgment",
-          "id": "alpha#behavior",
-          "expected_fingerprint": "sha256:92cefc23047b1c5a5171550e0386a93f55ee3f645285d9d2e5e1ffc0601c7d1e",
-          "authored_fingerprint": "sha256:92cefc23047b1c5a5171550e0386a93f55ee3f645285d9d2e5e1ffc0601c7d1e"
+          "id": "behavior",
+          "expected_fingerprint": "sha256:34d694fe71ff89ded4c6ef370f41b92f7417a120aee1707c9a7f2d24240190c2",
+          "authored_fingerprint": "sha256:34d694fe71ff89ded4c6ef370f41b92f7417a120aee1707c9a7f2d24240190c2"
         },
         "disposition": "selected"
       }
@@ -328,7 +328,7 @@ fn direct_mechanism_and_total_judgment_scope_preserve_every_component_variant() 
 
     assert_eq!(scope.anchors.len(), 1);
     assert_eq!(scope.anchors[0].kind, SemanticScopeKind::Mechanism);
-    assert_eq!(scope.anchors[0].id, "alpha#guard");
+    assert_eq!(scope.anchors[0].id, "guard");
     assert!(scope
         .inputs
         .iter()
@@ -365,8 +365,8 @@ fn direct_mechanism_and_total_judgment_scope_preserve_every_component_variant() 
         "sha256:c1e41a8cf0a5666a3817b2c2835d6c2fcda9c65d8ea1383255c7c16be21aee51"
     );
     assert_eq!(
-        azimuth::fingerprint::realization_obligation_digest("alpha#behavior", &["core".into()]),
-        "sha256:d853b01504c755d039d1950e436b619032edc9bf759f40d4d45e12f5ec1325bb"
+        azimuth::fingerprint::realization_obligation_digest("behavior", &["core".into()]),
+        "sha256:868bdaf37f40b3a8369b0db5b5c3f286f9f2a5a5a3d52e7974bbab65b42b8887"
     );
     assert_eq!(
         azimuth::fingerprint::enumerated_surface_member_digest("surface", "app/enumerated.ts"),
@@ -418,9 +418,9 @@ fn every_selector_projects_its_exact_authored_anchor() {
             SemanticScopeKind::MethodQualification,
         ),
         (
-            Selector::MethodQualificationFromCheck("alpha/check".into()),
+            Selector::MethodQualificationFromCheck("alpha-check".into()),
             SemanticScopeKind::Check,
-            "alpha/check",
+            "alpha-check",
             SemanticScopeKind::MethodQualification,
         ),
         (
@@ -430,15 +430,15 @@ fn every_selector_projects_its_exact_authored_anchor() {
             SemanticScopeKind::MethodQualification,
         ),
         (
-            Selector::MethodQualificationFromMechanism("alpha#guard".into()),
+            Selector::MethodQualificationFromMechanism("guard".into()),
             SemanticScopeKind::Mechanism,
-            "alpha#guard",
+            "guard",
             SemanticScopeKind::MethodQualification,
         ),
         (
-            Selector::ClaimJudgmentFromClaim("alpha#behavior".into()),
+            Selector::ClaimJudgmentFromClaim("behavior".into()),
             SemanticScopeKind::Claim,
-            "alpha#behavior",
+            "behavior",
             SemanticScopeKind::ClaimJudgment,
         ),
         (
@@ -448,9 +448,9 @@ fn every_selector_projects_its_exact_authored_anchor() {
             SemanticScopeKind::ClaimJudgment,
         ),
         (
-            Selector::ClaimJudgmentFromMechanism("alpha#guard".into()),
+            Selector::ClaimJudgmentFromMechanism("guard".into()),
             SemanticScopeKind::Mechanism,
-            "alpha#guard",
+            "guard",
             SemanticScopeKind::ClaimJudgment,
         ),
     ];
@@ -489,7 +489,7 @@ fn selector_scopes_merge_exactly_and_reject_component_conflicts() {
         .unwrap();
 
     model.verifications[0].challenge_plans[0].selectors =
-        vec![Selector::ClaimJudgmentFromMechanism("alpha#guard".into())];
+        vec![Selector::ClaimJudgmentFromMechanism("guard".into())];
     let mechanism = resolve_challenge_plan(&model, model.challenge_plans().next().unwrap());
     let mechanism_scope = model
         .challenge_candidate_scope(&mechanism.candidates[0])
@@ -529,20 +529,20 @@ fn selected_view_retains_exact_plan_dependencies_and_resolution_bytes() {
     fs::create_dir_all(model_dir.join("beta")).unwrap();
     fs::write(
         model_dir.join("alpha/spec.md"),
-        "# Spec: alpha\n\n## Claim: works\nCriticality: standard\n\nA SHALL work.\n\n\
-         ### Case: yes\nEvent: invoked\nRequired: it works\n",
+        "# Spec: alpha\n\n## Claim: alpha-works\nCriticality: standard\n\nA SHALL work.\n\n\
+         ### Case: alpha-yes\nEvent: invoked\nRequired: it works\n",
     )
     .unwrap();
     fs::write(
         model_dir.join("beta/spec.md"),
-        "# Spec: beta\n\n## Claim: works\nCriticality: standard\n\nB SHALL work.\n\n\
-         ### Case: yes\nEvent: invoked\nRequired: it works\n\n\
+        "# Spec: beta\n\n## Claim: beta-works\nCriticality: standard\n\nB SHALL work.\n\n\
+         ### Case: beta-yes\nEvent: invoked\nRequired: it works\n\n\
          ### Case: unrelated\nEvent: invoked elsewhere\nRequired: the sibling works\n",
     )
     .unwrap();
     fs::write(
         model_dir.join("beta/design.md"),
-        "# Design: beta\n\n## Claim: works\nMechanism: selected-guard\nEnforcement: guard\nCases: [\"yes\"]\n\
+        "# Design: beta\n\n## Claim: beta-works\nMechanism: selected-guard\nEnforcement: guard\nCases: [\"beta-yes\"]\n\
          Binding: artifact:beta-selected\n\nThe selected guard establishes this Claim.\n\n\
          Mechanism: sibling-guard\nEnforcement: guard\nCases: [\"unrelated\"]\n\
          Binding: artifact:beta-sibling\n\nThe sibling guard establishes only its Claim.\n",
@@ -551,12 +551,12 @@ fn selected_view_retains_exact_plan_dependencies_and_resolution_bytes() {
     fs::write(
         model_dir.join("alpha/verification.md"),
         "# Verification: alpha\n\n\
-         ## Check: alpha/check\nMethod: invoke\nTerminal: alpha works\n\nAtomic.\n\n\
-         ## Check: beta/check\nMethod: invoke\nTerminal: beta works\n\nAtomic.\n\n\
-         ## Evidence Binding: alpha/edge\nCheck: alpha/check\nCase: alpha#works/yes\n\
+         ## Check: alpha-check\nMethod: invoke\nTerminal: alpha works\n\nAtomic.\n\n\
+         ## Check: beta-check\nMethod: invoke\nTerminal: beta works\n\nAtomic.\n\n\
+         ## Evidence Binding: alpha/edge\nCheck: alpha-check\nCase: alpha-yes\n\
          Method qualification: alpha/method\nProposition: direct\nContext: {}\n\
          Challenge domain: [\"realization\"]\nPolicy: credible\n\nReviewable.\n\n\
-         ## Evidence Binding: beta/edge\nCheck: beta/check\nCase: beta#works/yes\n\
+         ## Evidence Binding: beta/edge\nCheck: beta-check\nCase: beta-yes\n\
          Method qualification: beta/method\nProposition: direct\nContext: {}\n\
          Challenge domain: [\"mechanism\"]\nPolicy: credible\n\nReviewable.\n\n\
          ## Challenger: mutation/search\nForm: mutation\nSearches for: an undetected change\n\
@@ -581,9 +581,9 @@ fn selected_view_retains_exact_plan_dependencies_and_resolution_bytes() {
         &manifest,
         format!(
             "{{\"realizes\":[\
-             {{\"spec\":\"beta\",\"claim\":\"works\",\"site\":\"beta::yes\",\
+             {{\"claim\":\"beta-works\",\"site\":\"beta::yes\",\
              \"file\":\"src/beta.rs\",\"lang\":\"rust\",\"source_fingerprint\":\"{A}\"}},\
-             {{\"spec\":\"beta\",\"claim\":\"works\",\"site\":\"beta::sibling\",\
+             {{\"claim\":\"beta-works\",\"site\":\"beta::sibling\",\
              \"file\":\"src/sibling.rs\",\"lang\":\"rust\",\"source_fingerprint\":\"{B}\"}}],\
              \"artifacts\":[\
              {{\"id\":\"artifact:beta-selected\",\"kind\":\"rust-item\",\
@@ -626,7 +626,7 @@ fn selected_view_retains_exact_plan_dependencies_and_resolution_bytes() {
             .iter()
             .map(|scenario| scenario.id.as_str())
             .collect::<Vec<_>>(),
-        ["yes", "unrelated"]
+        ["beta-yes", "unrelated"]
     );
     assert_eq!(
         selected
@@ -635,7 +635,7 @@ fn selected_view_retains_exact_plan_dependencies_and_resolution_bytes() {
             .filter(|site| site.spec == "beta")
             .map(|site| site.claim.as_str())
             .collect::<Vec<_>>(),
-        ["works", "works"]
+        ["beta-works", "beta-works"]
     );
     assert_eq!(
         selected.designs[0].entries[0].mechanisms[0].id,
@@ -699,13 +699,13 @@ fn local_marker_relocation_preserves_semantics_and_changes_only_locator_accounts
         fs::write(
             &manifest,
             format!(
-                "{{\"realizes\":[{{\"spec\":\"alpha\",\"claim\":\"behavior\",\
+                "{{\"realizes\":[{{\"claim\":\"behavior\",\
                  \"site\":\"alpha::works\",\"file\":\"src/alpha.rs\",\"lang\":\"rust\",\
                  \"source_fingerprint\":\"{A}\"}}],\
-                 \"check_implementations\":[{{\"check\":\"alpha/check\",\
+                 \"check_implementations\":[{{\"check\":\"alpha-check\",\
                  \"site\":\"checks::alpha\",\"file\":\"src/check.rs\",\"lang\":\"rust\",\
                  \"source_fingerprint\":\"{C}\"}}],\
-                 \"mechanism_implementations\":[{{\"spec\":\"alpha\",\"mechanism\":\"guard\",\
+                 \"mechanism_implementations\":[{{\"mechanism\":\"guard\",\
                  \"site\":\"alpha::Guard::apply\",\
                  \"binding\":\"rust-symbol:alpha::Guard::apply\",\"file\":\"{file}\",\
                  \"lang\":\"rust\",\"source_fingerprint\":\"{B}\"}}],\

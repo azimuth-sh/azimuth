@@ -10,10 +10,13 @@ namespace Azimuth.Emit.Tests;
 /// </summary>
 public sealed class CollectorTests
 {
+    private static string WorkspaceRoot([System.Runtime.CompilerServices.CallerFilePath] string file = "") =>
+        Path.GetFullPath(Path.Combine(Path.GetDirectoryName(file)!, "../../../.."));
+
     private static Collector.Result Collect() =>
         Collector.Collect(
             [typeof(Azimuth.Fixture.Production).Assembly],
-            Directory.GetCurrentDirectory());
+            WorkspaceRoot());
 
     [Fact]
     public void A_type_level_tag_names_its_site_by_the_type()
@@ -21,7 +24,7 @@ public sealed class CollectorTests
         var entry = Assert.Single(
             Collect().Realizes,
             r => r.Claim == "type-level-thing");
-        Assert.Equal("alpha", entry.Spec);
+        Assert.Null(entry.GetType().GetProperty("Spec"));
         Assert.Equal("Azimuth.Fixture.Production", entry.Site);
     }
 
@@ -72,7 +75,7 @@ public sealed class CollectorTests
     {
         var artifact = Assert.Single(
             Collect().Artifacts,
-            artifact => artifact.Id == "dotnet-symbol:Azimuth.Fixture.Production.Untagged");
+            artifact => artifact.Id == "dotnet-symbol:Azimuth.Fixture!Azimuth.Fixture.Production.Untagged()");
         Assert.Equal("dotnet-method", artifact.Kind);
         Assert.EndsWith("Fixture.cs", artifact.File);
     }
@@ -93,7 +96,7 @@ public sealed class CollectorTests
     public void Several_sites_can_implement_one_check_deterministically()
     {
         var entries = Collect().CheckImplementations
-            .Where(entry => entry.Check == "fixture/component-behavior")
+            .Where(entry => entry.Check == "fixture-component-behavior")
             .ToList();
 
         Assert.Equal(2, entries.Count);
@@ -145,7 +148,7 @@ public sealed class CollectorTests
         var entry = Assert.Single(
             Collect().MechanismImplementations,
             item => item.Mechanism == "branch-selection");
-        Assert.Equal("alpha", entry.Spec);
+        Assert.Null(entry.GetType().GetProperty("Spec"));
         Assert.Equal("Azimuth.Fixture.Production.Branching()", entry.Site);
         Assert.Equal($"dotnet-symbol:{entry.Site}", entry.Binding);
         Assert.DoesNotContain(entry.File, entry.Binding, StringComparison.Ordinal);
@@ -173,12 +176,9 @@ public sealed class CollectorTests
     {
         var baseline = Collect().MechanismImplementations.Single(
             item => item.Mechanism == "branch-selection");
-        var normalizedFile = baseline.File.Replace('\\', '/');
-        var markerIndex = normalizedFile.IndexOf("/tools/extractors/", StringComparison.Ordinal);
-        Assert.True(markerIndex > 0);
         var relocated = Collector.Collect(
                 [typeof(Azimuth.Fixture.Production).Assembly],
-                normalizedFile[..markerIndex])
+                Path.Combine(WorkspaceRoot(), "tools/extractors"))
             .MechanismImplementations.Single(item => item.Mechanism == "branch-selection");
 
         Assert.Equal(baseline.Site, relocated.Site);
@@ -190,30 +190,18 @@ public sealed class CollectorTests
     [Fact]
     public void One_qualified_site_cannot_name_several_mechanisms()
     {
-        var assembly = System.Reflection.Emit.AssemblyBuilder.DefineDynamicAssembly(
-            new System.Reflection.AssemblyName("Azimuth.Collision"),
-            System.Reflection.Emit.AssemblyBuilderAccess.Run);
-        var module = assembly.DefineDynamicModule("main");
-        var type = module.DefineType("Collision.Site", System.Reflection.TypeAttributes.Public);
-        var method = type.DefineMethod(
-            "Guard",
-            System.Reflection.MethodAttributes.Public | System.Reflection.MethodAttributes.Static,
-            typeof(void),
-            Type.EmptyTypes);
-        method.GetILGenerator().Emit(System.Reflection.Emit.OpCodes.Ret);
-        var constructor = typeof(Azimuth.Annotations.ImplementsMechanismAttribute)
-            .GetConstructor([typeof(string), typeof(string)])!;
-        method.SetCustomAttribute(new System.Reflection.Emit.CustomAttributeBuilder(
-            constructor,
-            ["alpha", "first"]));
-        method.SetCustomAttribute(new System.Reflection.Emit.CustomAttributeBuilder(
-            constructor,
-            ["alpha", "second"]));
-        type.CreateType();
-
         var error = Assert.Throws<InvalidOperationException>(() =>
-            Collector.Collect([assembly], Directory.GetCurrentDirectory()));
+            Collector.Collect([typeof(CollectorTests).Assembly], WorkspaceRoot()));
         Assert.Contains("cannot implement several mechanisms", error.Message);
+    }
+
+    private static class ConflictingMechanisms
+    {
+        [Azimuth.Annotations.ImplementsMechanism("first")]
+        [Azimuth.Annotations.ImplementsMechanism("second")]
+        public static void Guard()
+        {
+        }
     }
 
     [Fact]
@@ -267,13 +255,13 @@ public sealed class CollectorTests
     }
 
     [Fact]
-    public void The_manifest_is_keyed_on_the_pair()
+    public void The_manifest_uses_stable_project_entity_ids()
     {
         using var document = JsonDocument.Parse(Collector.ToJson(Collect()));
         var root = document.RootElement;
 
         var realizes = root.GetProperty("realizes")[0];
-        Assert.True(realizes.TryGetProperty("spec", out _));
+        Assert.False(realizes.TryGetProperty("spec", out _));
         Assert.True(realizes.TryGetProperty("claim", out _));
         Assert.False(realizes.TryGetProperty("req", out _));
         Assert.Equal("csharp", realizes.GetProperty("lang").GetString());
@@ -287,7 +275,6 @@ public sealed class CollectorTests
         Assert.Equal(
             new[]
             {
-                "spec",
                 "mechanism",
                 "site",
                 "binding",

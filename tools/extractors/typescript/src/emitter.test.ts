@@ -913,6 +913,7 @@ test('an unmarked test is outside the Check model', () => {
     'a.test.ts',
   );
   assert.deepEqual(Object.keys(result).sort(), [
+    'challengerImplementations',
     'checkImplementations',
     'mechanismImplementations',
     'realizes',

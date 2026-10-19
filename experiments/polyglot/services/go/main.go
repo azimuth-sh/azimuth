@@ -9,7 +9,7 @@ import (
 )
 
 func identity() string {
-	azimuth.Realizes("polyglot/identity", "service-identifies-implementation-language")
+	azimuth.Realizes("service-identifies-implementation-language")
 	return "go"
 }
 
