@@ -180,6 +180,7 @@ fn model() -> Model {
             residue: String::new(),
         }],
         workspace: Workspace {
+            packages: Vec::new(),
             path: "azimuth/workspace.json".into(),
             areas: vec![
                 Area {

@@ -49,6 +49,8 @@ else:
 
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from services.assurance.deployment.runtime import configuration as runtime_configuration, require_login
 
 
 class CandidateError(Exception):
@@ -65,13 +67,20 @@ def require(condition, message):
 
 
 def run(command, cwd=None, capture=False, check=True):
-    return subprocess.run(
-        [str(item) for item in command],
-        cwd=cwd,
-        check=check,
-        capture_output=capture,
-        text=capture,
-    )
+    try:
+        return subprocess.run(
+            [str(item) for item in command],
+            cwd=cwd,
+            check=check,
+            capture_output=capture,
+            text=capture,
+        )
+    except subprocess.CalledProcessError as error:
+        if capture:
+            for output in (error.stdout, error.stderr):
+                if output:
+                    print(output, file=sys.stderr, end="" if output.endswith("\n") else "\n")
+        raise
 
 
 def retained_path(candidate, output):
@@ -140,8 +149,8 @@ def smoke_dotnet(catalog, annotations, emitter):
         (consumer / "Program.cs").write_text(
             "using System;\n"
             "using Azimuth.Annotations;\n"
-            "var tag = new RealizesAttribute(\"consumer\", \"starts\");\n"
-            "Console.WriteLine($\"{tag.Spec}#{tag.Claim}\");\n"
+            "var tag = new RealizesAttribute(\"starts\");\n"
+            "Console.WriteLine($\"{tag.Claim}\");\n"
         )
         config = consumer / "NuGet.Config"
         config.write_text(
@@ -153,7 +162,7 @@ def smoke_dotnet(catalog, annotations, emitter):
         run(["dotnet", "restore", project, "--configfile", config], cwd=consumer)
         result = run(["dotnet", "run", "--project", project, "--no-restore"],
                      cwd=consumer, capture=True)
-        require("consumer#starts" in result.stdout, ".NET annotation entry point failed")
+        require(result.stdout.strip() == "starts", ".NET annotation entry point failed")
 
         tools = consumer / "tools"
         run(
@@ -204,7 +213,7 @@ def smoke_typescript(annotations, emitter):
                 "node",
                 "-e",
                 "const a=require('@azimuth-sh/annotations');"
-                "a.realizes('consumer','starts');"
+                "a.realizes('starts');"
                 "console.log(typeof a.realizes,typeof a.implementsCheck,typeof a['co'+'vers'])",
             ],
             cwd=consumer,
@@ -217,7 +226,7 @@ def smoke_typescript(annotations, emitter):
         source = consumer / "sample.ts"
         source.write_text(
             "import { realizes } from '@azimuth-sh/annotations';\n"
-            "export function start(): void { realizes('consumer', 'starts'); }\n"
+            "export function start(): void { realizes('starts'); }\n"
         )
         # The emitter resolves a site through the nearest TypeScript project, so a consumer
         # without one fails closed rather than guessing an identity from the file path.
@@ -252,8 +261,7 @@ def smoke_typescript(annotations, emitter):
         )
         emitted = json.loads(manifest.read_text())
         require(
-            any(item["spec"] == "consumer" and item["claim"] == "starts"
-                for item in emitted["realizes"]),
+            any(item["claim"] == "starts" for item in emitted["realizes"]),
             "npm emitter entry point failed",
         )
 
@@ -653,56 +661,56 @@ def import_image(root, image_id, archive, platform, tag):
 
 
 def smoke_api(tag, platform, suffix):
-    network = f"azimuth-release-{suffix}"
-    database = f"azimuth-release-db-{suffix}"
-    candidate = f"azimuth-release-api-{suffix}"
-    run(["docker", "network", "create", network])
-    try:
-        run(
-            [
-                "docker", "run", "--detach", "--name", database, "--network", network,
-                "--env", "POSTGRES_DB=azimuth", "--env", "POSTGRES_USER=azimuth",
-                "--env", "POSTGRES_PASSWORD=rehearsal", "postgres:17-alpine",
-            ]
-        )
-        for _ in range(60):
-            ready = run(
-                ["docker", "exec", database, "pg_isready", "-U", "azimuth", "-d", "azimuth"],
-                check=False,
-            )
-            if ready.returncode == 0:
-                break
-            time.sleep(1)
-        else:
-            raise CandidateError("rehearsal PostgreSQL did not become ready")
-        run(
-            [
-                "docker", "run", "--detach", "--platform", platform, "--name", candidate,
-                "--network", network, "--publish", "127.0.0.1::8080", "--env",
-                "DATABASE_URL=postgres://azimuth:rehearsal@" + database + ":5432/azimuth", tag,
-            ]
-        )
-        port = published_port(candidate, 8080)
-        wait_for_url(f"http://127.0.0.1:{port}/health")
-    finally:
-        run(["docker", "rm", "--force", candidate, database], check=False)
-        run(["docker", "network", "rm", network], check=False)
+    with runtime_configuration() as runtime:
+        network = f"azimuth-release-{suffix}"
+        database = f"azimuth-release-db-{suffix}"
+        candidate = f"azimuth-release-api-{suffix}"
+        run(["docker", "network", "create", network])
+        try:
+            run(["docker", "run", "--detach", "--name", database, "--network", network,
+                 "--env", "POSTGRES_DB=azimuth", "--env", "POSTGRES_USER=azimuth",
+                 "--env", "POSTGRES_PASSWORD=rehearsal", "postgres:17-alpine"])
+            for _ in range(60):
+                if run(["docker", "exec", database, "pg_isready", "-U", "azimuth", "-d", "azimuth"], check=False).returncode == 0:
+                    break
+                time.sleep(1)
+            else:
+                raise CandidateError("rehearsal PostgreSQL did not become ready")
+            run(["docker", "run", "--detach", "--platform", platform, "--name", candidate,
+                 "--network", network, "--publish", "127.0.0.1::8081",
+                 "--mount", f"type=bind,source={runtime['root']},target=/secrets,readonly",
+                 "--env", "ASSURANCE_RUN_TOKENS_FILE=/secrets/projects.json",
+                 "--env", "DATABASE_URL=postgres://azimuth:rehearsal@" + database + ":5432/azimuth", tag])
+            port = published_port(candidate, 8081)
+            wait_for_url(f"http://127.0.0.1:{port}/health")
+        except Exception:
+            run(["docker", "logs", "--tail", "100", candidate], check=False)
+            raise
+        finally:
+            run(["docker", "rm", "--force", candidate, database], check=False)
+            run(["docker", "network", "rm", network], check=False)
 
 
 def smoke_web(tag, platform, suffix):
-    candidate = f"azimuth-release-web-{suffix}"
-    try:
-        run(
-            [
-                "docker", "run", "--detach", "--platform", platform, "--name", candidate,
-                "--publish", "127.0.0.1::3000", "--env",
-                "ASSURANCE_API_URL=http://127.0.0.1:9", tag,
-            ]
-        )
-        port = published_port(candidate, 3000)
-        wait_for_url(f"http://127.0.0.1:{port}")
-    finally:
-        run(["docker", "rm", "--force", candidate], check=False)
+    with runtime_configuration() as runtime:
+        candidate = f"azimuth-release-web-{suffix}"
+        try:
+            run(["docker", "run", "--detach", "--platform", platform, "--name", candidate,
+                 "--publish", "127.0.0.1::3000", "--mount", f"type=bind,source={runtime['root']},target=/secrets,readonly",
+                 "--env", "ASSURANCE_API_URL=http://127.0.0.1:9",
+                 "--env", "ASSURANCE_WEB_CONFIG_FILE=/secrets/web.json",
+                 "--env", "NEXTAUTH_URL=" + runtime["environment"]["NEXTAUTH_URL"],
+                 "--env", "NEXTAUTH_SECRET=" + runtime["environment"]["NEXTAUTH_SECRET"], tag])
+            port = published_port(candidate, 3000)
+            origin = f"http://127.0.0.1:{port}"
+            wait_for_url(origin + "/health")
+            wait_for_url(origin + "/login")
+            require_login(origin)
+        except Exception:
+            run(["docker", "logs", "--tail", "100", candidate], check=False)
+            raise
+        finally:
+            run(["docker", "rm", "--force", candidate], check=False)
 
 
 def smoke_image(root, image_id, archive):

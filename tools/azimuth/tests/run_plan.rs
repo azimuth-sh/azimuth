@@ -1,6 +1,9 @@
 #[allow(dead_code)]
 #[path = "../src/adapter.rs"]
 mod adapter;
+mod assurance_review {
+    pub use azimuth::assurance_review::*;
+}
 mod diag {
     pub use azimuth::diag::*;
 }
@@ -427,6 +430,10 @@ fn refresh_decisions(model: &mut Model) {
 fn challenge_request(operation: RunOperation) -> PlanRequest {
     let mut request = request(&[], operation, "demo/alpha");
     request.challenges = vec![RequestedChallenge {
+        assessment: None,
+        assessment_history: Vec::new(),
+        run_history: Vec::new(),
+        scope_report: None,
         id: "alpha/plan".into(),
         capability: "demo/challenge".into(),
         max_candidates: 1,
@@ -1143,6 +1150,10 @@ fn overlapping_plans_deduplicate_exact_targets_and_reject_route_conflicts() {
     model.verifications[0].challenge_plans.push(second);
     let mut request = challenge_request(RunOperation::Execute);
     request.challenges.push(RequestedChallenge {
+        assessment: None,
+        assessment_history: Vec::new(),
+        run_history: Vec::new(),
+        scope_report: None,
         id: "alpha/plan-two".into(),
         capability: "demo/challenge".into(),
         max_candidates: 1,
@@ -1441,6 +1452,10 @@ fn two_required_forms_use_the_fixed_requested_plan_union() {
     request.challenges.insert(
         0,
         RequestedChallenge {
+            assessment: None,
+            assessment_history: Vec::new(),
+            run_history: Vec::new(),
+            scope_report: None,
             id: "alpha/destructive".into(),
             capability: "demo/challenge".into(),
             max_candidates: 1,
