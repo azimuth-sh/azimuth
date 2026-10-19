@@ -14,4 +14,8 @@
 - Real PostgreSQL tests pass for fingerprint-preserving historical/current Reviews, publications, Subjects, nulls/order, immutable conflicts and rollback. The original schema is rejected without mutation.
 - Operational rehearsal restored the approved baseline and exact drim.dev publication into an isolated fresh database; full publication equality passed. Release list 9 ms; full publication and revision snapshot approximately 620 ms locally.
 - Independent review found no remaining blocking correctness findings. Production backup retained privately before rollout.
-- CI, image publication, fresh production deployment and reseeding remain pending. Release acceptance remains pending.
+- Steps 5–7 completed on 2026-10-19. Required CI run 39299836386 passed; image publication 39300924480 succeeded from c9144017ad8afd4062fcf60afe52860f2e470322.
+- Production now uses the separate assurance_state_relational database. The original assurance_state database and pre-rollout backup remain retained. Terraform created one database and performed bounded updates with zero deletions; admitted startup defaults were declared explicitly after provider consistency errors.
+- Approved baseline and the exact current release publication were restored, with full publication equality verified. Reconciler reports a fresh complete observation for the current release. Production has zero JSON/document columns and zero accepted releases; API/Web pods are ready with zero restarts.
+- Web health and login return HTTP 200; full web build and typecheck pass. Browser automation was unavailable, so authenticated screen rendering was not visually inspected during this rollout.
+- Release acceptance and archival remain pending by design.
