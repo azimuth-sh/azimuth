@@ -77,6 +77,11 @@ def declared_template(actual, declared):
         for port, expected in zip(current.get("ports", []), desired.get("ports", [])):
             if "protocol" not in expected and port.get("protocol") == "TCP":
                 port.pop("protocol")
+        for variable, expected in zip(current.get("env", []), desired.get("env", [])):
+            field = variable.get("valueFrom", {}).get("fieldRef", {})
+            expected_field = expected.get("valueFrom", {}).get("fieldRef", {})
+            if "apiVersion" not in expected_field and field.get("apiVersion") == "v1":
+                field.pop("apiVersion")
         for probe in ("startupProbe", "readinessProbe", "livenessProbe"):
             if probe not in current:
                 continue
