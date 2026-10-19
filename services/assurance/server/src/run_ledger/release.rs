@@ -34,7 +34,7 @@ pub(super) async fn publish(
         .execute(&mut *tx)
         .await?;
     let existing: Option<Value> = sqlx::query_scalar(
-        "SELECT payload FROM assurance_releases WHERE project=$1 AND fingerprint=$2",
+        "SELECT assurance_record('release',project,fingerprint) FROM assurance_releases WHERE project=$1 AND fingerprint=$2",
     )
     .bind(&project)
     .bind(fingerprint)
@@ -61,12 +61,21 @@ pub(super) async fn publish(
             Json(json!({"fingerprint":fingerprint,"replayed":true})),
         ));
     }
-    sqlx::query("INSERT INTO assurance_authorities(project,fingerprint,payload,registered_by) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING")
-        .bind(&project).bind(revision).bind(&snapshot["authority"]).bind(&submitter).execute(&mut *tx).await?;
+    crate::relational::store(
+        &mut *tx,
+        "authority",
+        &project,
+        revision,
+        &snapshot["authority"],
+    )
+    .await?;
+    crate::relational::store(&mut *tx, "release", &project, fingerprint, &payload).await?;
+    sqlx::query("INSERT INTO assurance_authorities(project,fingerprint,registered_by) VALUES($1,$2,$3) ON CONFLICT DO NOTHING")
+        .bind(&project).bind(revision).bind(&submitter).execute(&mut *tx).await?;
     sqlx::query("INSERT INTO model_revisions(project,fingerprint,registered_by) VALUES($1,$2,$3) ON CONFLICT DO NOTHING")
         .bind(&project).bind(revision).bind(&submitter).execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO assurance_releases(project,fingerprint,model_revision,payload,submitted_by) VALUES($1,$2,$3,$4,$5)")
-        .bind(&project).bind(fingerprint).bind(revision).bind(&payload).bind(&submitter).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO assurance_releases(project,fingerprint,model_revision,label,baseline_model_revision,submitted_by) VALUES($1,$2,$3,$4,$5,$6)")
+        .bind(&project).bind(fingerprint).bind(revision).bind(text(release, "label")?).bind(text(release, "baseline_model_revision")?).bind(&submitter).execute(&mut *tx).await?;
     if let Some(catalog) = payload.get("catalog") {
         model_catalog::store(
             &mut tx,
@@ -79,8 +88,10 @@ pub(super) async fn publish(
         .await?;
     }
     for change in array(release, "changes")? {
-        sqlx::query("INSERT INTO release_changes(project,release_fingerprint,change_id,change_revision,payload) VALUES($1,$2,$3,$4,$5)")
-            .bind(&project).bind(fingerprint).bind(text(change,"id")?).bind(text(change,"revision")?).bind(change).execute(&mut *tx).await?;
+        let key = format!("{fingerprint}|{}", text(change, "id")?);
+        crate::relational::store(&mut *tx, "change", &project, &key, change).await?;
+        sqlx::query("INSERT INTO release_changes(project,release_fingerprint,change_id,change_revision) VALUES($1,$2,$3,$4)")
+            .bind(&project).bind(fingerprint).bind(text(change,"id")?).bind(text(change,"revision")?).execute(&mut *tx).await?;
     }
     bundles.sort_by(|a, b| (&a.run_id, a.bundle_revision).cmp(&(&b.run_id, b.bundle_revision)));
     for bundle in bundles {
@@ -89,7 +100,7 @@ pub(super) async fn publish(
             .execute(&mut *tx)
             .await?;
         let rows = sqlx::query(
-            "SELECT payload FROM run_bundles WHERE project=$1 AND run_id=$2 ORDER BY revision",
+            "SELECT assurance_record('run',project,fingerprint) AS payload FROM run_bundles WHERE project=$1 AND run_id=$2 ORDER BY revision",
         )
         .bind(&project)
         .bind(&bundle.run_id)
@@ -132,9 +143,17 @@ pub(super) async fn publish(
         .await
         .map_err(validation_worker_error)??;
         if let Some(payload) = insertion {
-            sqlx::query("INSERT INTO run_bundles(project,run_id,revision,fingerprint,subject_fingerprint,model_fingerprint,payload) VALUES($1,$2,$3,$4,$5,$6,$7)")
+            crate::relational::store(
+                &mut *tx,
+                "run",
+                &project,
+                &bundle.bundle_fingerprint,
+                &payload,
+            )
+            .await?;
+            sqlx::query("INSERT INTO run_bundles(project,run_id,revision,fingerprint,subject_fingerprint,model_fingerprint) VALUES($1,$2,$3,$4,$5,$6)")
                 .bind(&project).bind(&bundle.run_id).bind(bundle.bundle_revision as i64).bind(&bundle.bundle_fingerprint)
-                .bind(&bundle.subject_fingerprint).bind(&bundle.plan.model_fingerprint).bind(payload).execute(&mut *tx).await?;
+                .bind(&bundle.subject_fingerprint).bind(&bundle.plan.model_fingerprint).execute(&mut *tx).await?;
         }
         sqlx::query("INSERT INTO release_run_submissions(project,release_fingerprint,run_fingerprint,submitted_by) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING")
             .bind(&project).bind(fingerprint).bind(&bundle.bundle_fingerprint).bind(&submitter).execute(&mut *tx).await?;
@@ -142,8 +161,16 @@ pub(super) async fn publish(
     for record in array(snapshot, "reviews")? {
         let native = core_json(record.to_string().as_bytes())?;
         let target = assurance_review::review_target(&native).map_err(LedgerError::invalid)?;
-        sqlx::query("INSERT INTO assurance_reviews(project,fingerprint,target_fingerprint,payload,submitted_by,provenance_basis) VALUES($1,$2,$3,$4,$5,'publisher-transported-assertion') ON CONFLICT DO NOTHING")
-            .bind(&project).bind(text(record,"fingerprint")?).bind(run::canonical_fingerprint(&target).map_err(LedgerError::invalid)?).bind(record).bind(&submitter).execute(&mut *tx).await?;
+        crate::relational::store(
+            &mut *tx,
+            "review",
+            &project,
+            text(record, "fingerprint")?,
+            record,
+        )
+        .await?;
+        sqlx::query("INSERT INTO assurance_reviews(project,fingerprint,target_fingerprint,submitted_by,provenance_basis) VALUES($1,$2,$3,$4,'publisher-transported-assertion') ON CONFLICT DO NOTHING")
+            .bind(&project).bind(text(record,"fingerprint")?).bind(run::canonical_fingerprint(&target).map_err(LedgerError::invalid)?).bind(&submitter).execute(&mut *tx).await?;
         sqlx::query("INSERT INTO model_revision_reviews(project,revision_fingerprint,review_fingerprint,submitted_by) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING")
             .bind(&project).bind(revision).bind(text(record,"fingerprint")?).bind(&submitter).execute(&mut *tx).await?;
     }
@@ -187,9 +214,19 @@ pub(super) async fn list(
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
     let limit = page.limit()?;
-    let rows = sqlx::query("SELECT fingerprint,jsonb_build_object('fingerprint',fingerprint,'release',payload->'release','submitted_by',submitted_by,'submitted_at',submitted_at,'accepted',EXISTS(SELECT 1 FROM release_acceptances a WHERE a.project=r.project AND a.release_fingerprint=r.fingerprint)) AS payload FROM assurance_releases r WHERE project=$1 AND fingerprint>$2 ORDER BY fingerprint LIMIT $3")
+    let rows = sqlx::query("SELECT fingerprint,jsonb_build_object('fingerprint',fingerprint,'release',jsonb_build_object('fingerprint',fingerprint,'label',label,'model_revision',model_revision,'baseline_model_revision',baseline_model_revision),'submitted_by',submitted_by,'submitted_at',submitted_at,'accepted',EXISTS(SELECT 1 FROM release_acceptances a WHERE a.project=r.project AND a.release_fingerprint=r.fingerprint)) AS payload FROM assurance_releases r WHERE project=$1 AND fingerprint>$2 ORDER BY fingerprint LIMIT $3")
         .bind(&project).bind(&page.after).bind(limit+1).fetch_all(&state.pool).await?;
     paged(rows, limit)
+}
+pub(super) async fn summary(
+    State(state): State<LedgerState>,
+    Path((project, fingerprint)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, LedgerError> {
+    state.authorize(&project, &headers, None)?;
+    let record: Option<Value> = sqlx::query_scalar("SELECT jsonb_build_object('publication',jsonb_build_object('release',jsonb_build_object('fingerprint',fingerprint,'label',label,'model_revision',model_revision,'baseline_model_revision',baseline_model_revision)),'submitted_by',submitted_by,'submitted_at',submitted_at,'acceptance',(SELECT to_jsonb(a) FROM release_acceptances a WHERE a.project=r.project AND a.release_fingerprint=r.fingerprint)) FROM assurance_releases r WHERE project=$1 AND fingerprint=$2")
+        .bind(&project).bind(&fingerprint).fetch_optional(&state.pool).await?;
+    Ok(Json(record.ok_or_else(LedgerError::not_found)?))
 }
 pub(super) async fn show(
     State(state): State<LedgerState>,
@@ -197,7 +234,7 @@ pub(super) async fn show(
     headers: HeaderMap,
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
-    let record: Option<Value> = sqlx::query_scalar("SELECT jsonb_build_object('publication',payload,'submitted_by',submitted_by,'submitted_at',submitted_at,'acceptance',(SELECT to_jsonb(a) FROM release_acceptances a WHERE a.project=r.project AND a.release_fingerprint=r.fingerprint),'deployments',COALESCE((SELECT jsonb_agg(d.payload) FROM release_deployments d WHERE d.project=r.project AND d.release_fingerprint=r.fingerprint),'[]'::jsonb)) FROM assurance_releases r WHERE project=$1 AND fingerprint=$2")
+    let record: Option<Value> = sqlx::query_scalar("SELECT jsonb_build_object('publication',assurance_record('release',r.project,r.fingerprint),'submitted_by',submitted_by,'submitted_at',submitted_at,'acceptance',(SELECT to_jsonb(a) FROM release_acceptances a WHERE a.project=r.project AND a.release_fingerprint=r.fingerprint),'deployments',COALESCE((SELECT jsonb_agg(assurance_record('deployment',d.project,d.deployment_id)) FROM release_deployments d WHERE d.project=r.project AND d.release_fingerprint=r.fingerprint),'[]'::jsonb)) FROM assurance_releases r WHERE project=$1 AND fingerprint=$2")
         .bind(&project).bind(&fingerprint).fetch_optional(&state.pool).await?;
     Ok(Json(record.ok_or_else(LedgerError::not_found)?))
 }
@@ -225,7 +262,7 @@ pub(super) async fn changes(
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
     let limit = page.limit()?;
-    let rows=sqlx::query("SELECT change_id AS fingerprint,jsonb_build_object('id',change_id,'revisions',jsonb_agg(jsonb_build_object('release',release_fingerprint,'change',payload))) AS payload FROM release_changes WHERE project=$1 AND change_id>$2 GROUP BY change_id ORDER BY change_id LIMIT $3")
+    let rows=sqlx::query("SELECT change_id AS fingerprint,jsonb_build_object('id',change_id,'revisions',jsonb_agg(jsonb_build_object('release',release_fingerprint,'change',assurance_record('change',project,release_fingerprint||'|'||change_id)))) AS payload FROM release_changes WHERE project=$1 AND change_id>$2 GROUP BY change_id ORDER BY change_id LIMIT $3")
         .bind(&project).bind(&page.after).bind(limit+1).fetch_all(&state.pool).await?;
     paged(rows, limit)
 }
@@ -237,7 +274,7 @@ pub(super) async fn deployments(
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
     let limit = page.limit()?;
-    let rows=sqlx::query("SELECT deployment_id AS fingerprint,jsonb_build_object('deployment',payload,'release_fingerprint',release_fingerprint,'submitted_by',submitted_by,'submitted_at',submitted_at) AS payload FROM release_deployments WHERE project=$1 AND deployment_id>$2 ORDER BY deployment_id LIMIT $3")
+    let rows=sqlx::query("SELECT deployment_id AS fingerprint,jsonb_build_object('deployment',assurance_record('deployment',project,deployment_id),'release_fingerprint',release_fingerprint,'submitted_by',submitted_by,'submitted_at',submitted_at) AS payload FROM release_deployments WHERE project=$1 AND deployment_id>$2 ORDER BY deployment_id LIMIT $3")
         .bind(&project).bind(&page.after).bind(limit+1).fetch_all(&state.pool).await?;
     paged(rows, limit)
 }
@@ -256,7 +293,7 @@ pub(super) async fn deploy(
     let submitter = state.authorize(&project, &headers, Some(Role::Publisher))?;
     let mut tx = state.pool.begin().await?;
     let release: Option<Value> = sqlx::query_scalar(
-        "SELECT payload->'release' FROM assurance_releases WHERE project=$1 AND fingerprint=$2",
+        "SELECT assurance_record_field('release',project,fingerprint,'release') FROM assurance_releases WHERE project=$1 AND fingerprint=$2",
     )
     .bind(&project)
     .bind(&body.release_fingerprint)
@@ -308,7 +345,7 @@ pub(super) async fn insert_deployment(
         .bind(format!("{project}|deployment|{id}"))
         .execute(&mut **tx)
         .await?;
-    let existing: Option<(String,Value)>=sqlx::query_as("SELECT release_fingerprint,payload FROM release_deployments WHERE project=$1 AND deployment_id=$2")
+    let existing: Option<(String,Value)>=sqlx::query_as("SELECT release_fingerprint,assurance_record('deployment',project,deployment_id) FROM release_deployments WHERE project=$1 AND deployment_id=$2")
         .bind(project).bind(id).fetch_optional(&mut **tx).await?;
     if let Some((previous, payload)) = existing {
         if previous != release || payload != *deployment {
@@ -316,8 +353,9 @@ pub(super) async fn insert_deployment(
         }
         return Ok(());
     }
-    sqlx::query("INSERT INTO release_deployments(project,deployment_id,release_fingerprint,payload,submitted_by) VALUES($1,$2,$3,$4,$5)")
-        .bind(project).bind(id).bind(release).bind(deployment).bind(submitter).execute(&mut **tx).await?;
+    crate::relational::store(&mut **tx, "deployment", project, id, deployment).await?;
+    sqlx::query("INSERT INTO release_deployments(project,deployment_id,release_fingerprint,submitted_by) VALUES($1,$2,$3,$4)")
+        .bind(project).bind(id).bind(release).bind(submitter).execute(&mut **tx).await?;
     Ok(())
 }
 #[derive(Deserialize)]
@@ -360,7 +398,7 @@ pub(super) async fn accept(
         return Err(LedgerError::conflict("release already accepted"));
     }
     let payload: Option<Value> = sqlx::query_scalar(
-        "SELECT payload->'release' FROM assurance_releases WHERE project=$1 AND fingerprint=$2",
+        "SELECT assurance_record_field('release',project,fingerprint,'release') FROM assurance_releases WHERE project=$1 AND fingerprint=$2",
     )
     .bind(&project)
     .bind(&fingerprint)
@@ -382,14 +420,14 @@ pub(super) async fn accept(
             .execute(&mut *tx)
             .await?;
     }
-    let deployment:Option<Value>=sqlx::query_scalar("SELECT d.payload FROM environment_deployment_selections s JOIN release_deployments d ON d.project=s.project AND d.deployment_id=s.deployment_id WHERE s.project=$1 AND s.environment=$3 AND d.release_fingerprint=$2 AND s.revision=(SELECT MAX(revision) FROM environment_deployment_selections WHERE project=$1 AND environment=$3)")
+    let deployment:Option<Value>=sqlx::query_scalar("SELECT assurance_record('deployment',d.project,d.deployment_id) FROM environment_deployment_selections s JOIN release_deployments d ON d.project=s.project AND d.deployment_id=s.deployment_id WHERE s.project=$1 AND s.environment=$3 AND d.release_fingerprint=$2 AND s.revision=(SELECT MAX(revision) FROM environment_deployment_selections WHERE project=$1 AND environment=$3)")
         .bind(&project).bind(&fingerprint).bind(&body.environment).fetch_optional(&mut *tx).await?;
     let deployment = deployment.ok_or_else(|| {
         LedgerError::conflict(
             "release requires a designated deployment in the selected environment",
         )
     })?;
-    let fresh:bool=sqlx::query_scalar("SELECT COALESCE((SELECT payload->>'state'='complete' AND payload->>'release_fingerprint'=$2 AND deployment_id=$4 AND (extract(epoch FROM clock_timestamp())*1000)::bigint <= (payload->>'observed_at_ms')::bigint+(payload->>'valid_for_seconds')::bigint*1000 FROM deployment_observations WHERE project=$1 AND environment=$3 ORDER BY revision DESC LIMIT 1),false)")
+    let fresh:bool=sqlx::query_scalar("SELECT COALESCE((SELECT state='complete' AND release_fingerprint=$2 AND deployment_id=$4 AND (extract(epoch FROM clock_timestamp())*1000)::bigint <= observed_at_ms+valid_for_seconds*1000 FROM deployment_observations WHERE project=$1 AND environment=$3 ORDER BY revision DESC LIMIT 1),false)")
         .bind(&project).bind(&fingerprint).bind(&body.environment).bind(deployment["id"].as_str()).fetch_one(&mut *tx).await?;
     if !fresh {
         return Err(LedgerError::conflict(
@@ -421,7 +459,7 @@ pub(super) async fn accept(
             ));
         }
     }
-    let previous_composition:Option<Value>=sqlx::query_scalar("SELECT r.payload->'release'->'composition' FROM release_acceptances a JOIN assurance_releases r ON r.project=a.project AND r.fingerprint=a.release_fingerprint WHERE a.project=$1 AND r.model_revision=$2 ORDER BY a.accepted_at DESC LIMIT 1")
+    let previous_composition:Option<Value>=sqlx::query_scalar("SELECT assurance_record_field('release',r.project,r.fingerprint,'release')->'composition' FROM release_acceptances a JOIN assurance_releases r ON r.project=a.project AND r.fingerprint=a.release_fingerprint WHERE a.project=$1 AND r.model_revision=$2 ORDER BY a.accepted_at DESC LIMIT 1")
         .bind(&project).bind(&body.expected_accepted_model_revision).fetch_optional(&mut *tx).await?;
     if let Some(previous) = previous_composition {
         if !previous.is_null()

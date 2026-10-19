@@ -1,3 +1,4 @@
+use crate::relational;
 use axum::{
     body::Bytes,
     extract::{DefaultBodyLimit, Path, Query, State},
@@ -12,8 +13,8 @@ use serde_json::{json, Value};
 use sqlx::{PgPool, Row};
 use std::{collections::BTreeMap, sync::Arc};
 
-mod environment;
 mod deployment_observation;
+mod environment;
 mod model_catalog;
 mod release;
 
@@ -183,7 +184,10 @@ pub fn app(state: LedgerState) -> Router {
             "/v1/projects/{project}/model-revisions/{revision}/catalog",
             post(model_catalog::register).get(model_catalog::show),
         )
-        .route("/v1/projects/{project}/environments/{environment}/observations", post(deployment_observation::record).get(deployment_observation::current))
+        .route(
+            "/v1/projects/{project}/environments/{environment}/observations",
+            post(deployment_observation::record).get(deployment_observation::current),
+        )
         .route(
             "/v1/projects/{project}/environments",
             get(environment::list),
@@ -210,6 +214,10 @@ pub fn app(state: LedgerState) -> Router {
         .route(
             "/v1/projects/{project}/releases/{release}",
             get(release::show),
+        )
+        .route(
+            "/v1/projects/{project}/releases/{release}/summary",
+            get(release::summary),
         )
         .route(
             "/v1/projects/{project}/releases/{release}/acceptance",
@@ -245,7 +253,7 @@ async fn ingest(
         .bind(format!("{project}|{}", bundle.run_id))
         .execute(&mut *transaction)
         .await?;
-    let rows = sqlx::query("SELECT revision, fingerprint, payload FROM run_bundles WHERE project = $1 AND run_id = $2 ORDER BY revision")
+    let rows = sqlx::query("SELECT revision, fingerprint, payload FROM (SELECT storage.*,assurance_record('run',storage.project,storage.fingerprint) AS payload FROM run_bundles storage) AS run_bundles WHERE project = $1 AND run_id = $2 ORDER BY revision")
         .bind(&project).bind(&bundle.run_id).fetch_all(&mut *transaction).await?;
     let mut previous = Vec::new();
     for row in rows {
@@ -284,9 +292,17 @@ async fn ingest(
                 .join("; "),
         ));
     }
-    sqlx::query("INSERT INTO run_bundles(project, run_id, revision, fingerprint, subject_fingerprint, model_fingerprint, payload) VALUES ($1,$2,$3,$4,$5,$6,$7)")
+    relational::store(
+        &mut transaction,
+        "run",
+        &project,
+        &bundle.bundle_fingerprint,
+        &payload,
+    )
+    .await?;
+    sqlx::query("INSERT INTO run_bundles(project, run_id, revision, fingerprint, subject_fingerprint, model_fingerprint) VALUES ($1,$2,$3,$4,$5,$6)")
         .bind(&project).bind(&bundle.run_id).bind(revision).bind(&bundle.bundle_fingerprint)
-        .bind(&bundle.subject_fingerprint).bind(&bundle.plan.model_fingerprint).bind(payload)
+        .bind(&bundle.subject_fingerprint).bind(&bundle.plan.model_fingerprint)
         .execute(&mut *transaction).await?;
     transaction.commit().await?;
     Ok((
@@ -318,7 +334,7 @@ async fn history(
         ));
     }
     let rows = sqlx::query(
-        "SELECT revision, CASE WHEN sum(CASE WHEN ordinal < $4 THEN octet_length(payload::text) ELSE 0 END) OVER () > 33554432 THEN NULL WHEN ordinal < $4 THEN payload ELSE 'null'::jsonb END AS payload FROM (SELECT revision,payload,row_number() OVER (ORDER BY revision) AS ordinal FROM (SELECT revision,payload FROM run_bundles WHERE project = $1 AND run_id = $2 AND revision > $3 ORDER BY revision LIMIT $4) candidates) page ORDER BY revision",
+        "SELECT revision, CASE WHEN sum(CASE WHEN ordinal < $4 THEN octet_length(payload::text) ELSE 0 END) OVER () > 33554432 THEN NULL WHEN ordinal < $4 THEN payload ELSE 'null'::jsonb END AS payload FROM (SELECT revision,payload,row_number() OVER (ORDER BY revision) AS ordinal FROM (SELECT revision,payload FROM (SELECT storage.*,assurance_record('run',storage.project,storage.fingerprint) AS payload FROM run_bundles storage) AS run_bundles WHERE project = $1 AND run_id = $2 AND revision > $3 ORDER BY revision LIMIT $4) candidates) page ORDER BY revision",
     )
     .bind(&project)
     .bind(&run_id)
@@ -362,8 +378,12 @@ async fn subject_state(
         return Err(LedgerError::not_found());
     }
     let (authority, reviews, bundles) = load_snapshot(&state.pool, &project).await?;
-    let result = assurance_review::subject_state(&authority, &reviews, &bundles, &subject);
-    Ok(Json(to_value(&result)?))
+    compute(move || {
+        Ok(Json(to_value(&assurance_review::subject_state(
+            &authority, &reviews, &bundles, &subject,
+        ))?))
+    })
+    .await
 }
 
 async fn claim_reviews(
@@ -373,7 +393,7 @@ async fn claim_reviews(
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
     let (authority, reviews, bundles) = load_snapshot(&state.pool, &project).await?;
-    definition_reviews(&authority, &reviews, &bundles)
+    compute(move || definition_reviews(&authority, &reviews, &bundles)).await
 }
 
 async fn model_revision_claim_reviews(
@@ -384,7 +404,7 @@ async fn model_revision_claim_reviews(
     state.authorize(&project, &headers, None)?;
     let (authority, reviews, bundles) =
         load_revision_snapshot(&state.pool, &project, Some(&revision)).await?;
-    definition_reviews(&authority, &reviews, &bundles)
+    compute(move || definition_reviews(&authority, &reviews, &bundles)).await
 }
 
 fn definition_reviews(
@@ -436,8 +456,16 @@ async fn register_model_revision(
         .as_str()
         .ok_or_else(|| LedgerError::invalid("authority fingerprint missing"))?;
     let mut transaction = state.pool.begin().await?;
-    sqlx::query("INSERT INTO assurance_authorities(project,fingerprint,payload,registered_by) VALUES ($1,$2,$3,$4) ON CONFLICT(project,fingerprint) DO NOTHING")
-        .bind(&project).bind(fingerprint).bind(&payload).bind(&owner).execute(&mut *transaction).await?;
+    relational::store(
+        &mut transaction,
+        "authority",
+        &project,
+        fingerprint,
+        &payload,
+    )
+    .await?;
+    sqlx::query("INSERT INTO assurance_authorities(project,fingerprint,registered_by) VALUES ($1,$2,$3) ON CONFLICT(project,fingerprint) DO NOTHING")
+        .bind(&project).bind(fingerprint).bind(&owner).execute(&mut *transaction).await?;
     let inserted = sqlx::query("INSERT INTO model_revisions(project,fingerprint,registered_by) VALUES ($1,$2,$3) ON CONFLICT(project,fingerprint) DO NOTHING")
         .bind(&project).bind(fingerprint).bind(&owner).execute(&mut *transaction).await?.rows_affected() == 1;
     transaction.commit().await?;
@@ -472,15 +500,10 @@ async fn associate_run_model(
             "bounded association rationale required",
         ));
     }
-    let authority: Option<Value> = sqlx::query_scalar("SELECT a.payload FROM assurance_authorities a JOIN model_revisions r USING(project,fingerprint) WHERE r.project=$1 AND r.fingerprint=$2")
+    let authority: Option<Value> = sqlx::query_scalar("SELECT a.payload FROM (SELECT storage.*,assurance_record('authority',storage.project,storage.fingerprint) AS payload FROM assurance_authorities storage) a JOIN model_revisions r USING(project,fingerprint) WHERE r.project=$1 AND r.fingerprint=$2")
         .bind(&project).bind(&revision).fetch_optional(&state.pool).await?;
     let authority = authority.ok_or_else(LedgerError::not_found)?;
-    let payload: Option<Value> =
-        sqlx::query_scalar("SELECT payload FROM run_bundles WHERE project=$1 AND fingerprint=$2")
-            .bind(&project)
-            .bind(&body.run_fingerprint)
-            .fetch_optional(&state.pool)
-            .await?;
+    let payload = relational::load(&state.pool, "run", &project, &body.run_fingerprint).await?;
     let payload = payload.ok_or_else(LedgerError::not_found)?;
     let checks = payload["plan"]["checks"]
         .as_array()
@@ -527,7 +550,7 @@ async fn model_revision(
     headers: HeaderMap,
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
-    let value: Option<Value> = sqlx::query_scalar("SELECT jsonb_build_object('project',r.project,'revision',r.fingerprint,'registration_status',r.registration_status,'registered_by',r.registered_by,'registered_at',r.registered_at,'selected',EXISTS(SELECT 1 FROM current_authorities c WHERE c.project=r.project AND c.fingerprint=r.fingerprint),'authority',a.payload) FROM model_revisions r JOIN assurance_authorities a USING(project,fingerprint) WHERE r.project=$1 AND r.fingerprint=$2")
+    let value: Option<Value> = sqlx::query_scalar("SELECT jsonb_build_object('project',r.project,'revision',r.fingerprint,'registration_status',r.registration_status,'registered_by',r.registered_by,'registered_at',r.registered_at,'selected',EXISTS(SELECT 1 FROM current_authorities c WHERE c.project=r.project AND c.fingerprint=r.fingerprint),'authority',a.payload) FROM model_revisions r JOIN (SELECT storage.*,assurance_record('authority',storage.project,storage.fingerprint) AS payload FROM assurance_authorities storage) a USING(project,fingerprint) WHERE r.project=$1 AND r.fingerprint=$2")
         .bind(&project).bind(&revision).fetch_optional(&state.pool).await?;
     Ok(Json(value.ok_or_else(LedgerError::not_found)?))
 }
@@ -582,6 +605,16 @@ async fn model_revision_subject_state(
     headers: HeaderMap,
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
+    let observed: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM run_bundles WHERE project=$1 AND subject_fingerprint=$2)",
+    )
+    .bind(&project)
+    .bind(&subject)
+    .fetch_one(&state.pool)
+    .await?;
+    if !observed {
+        return Err(LedgerError::not_found());
+    }
     let (authority, reviews, bundles) =
         load_revision_snapshot(&state.pool, &project, Some(&revision)).await?;
     if !bundles
@@ -590,9 +623,12 @@ async fn model_revision_subject_state(
     {
         return Err(LedgerError::not_found());
     }
-    Ok(Json(to_value(&assurance_review::subject_state(
-        &authority, &reviews, &bundles, &subject,
-    ))?))
+    compute(move || {
+        Ok(Json(to_value(&assurance_review::subject_state(
+            &authority, &reviews, &bundles, &subject,
+        ))?))
+    })
+    .await
 }
 
 async fn register_authority(
@@ -661,8 +697,16 @@ async fn register_authority(
             ),
         ));
     }
-    sqlx::query("INSERT INTO assurance_authorities(project,fingerprint,payload,registered_by) VALUES ($1,$2,$3,$4) ON CONFLICT (project,fingerprint) DO NOTHING")
-        .bind(&project).bind(fingerprint).bind(&payload).bind(&owner).execute(&mut *transaction).await?;
+    relational::store(
+        &mut transaction,
+        "authority",
+        &project,
+        fingerprint,
+        &payload,
+    )
+    .await?;
+    sqlx::query("INSERT INTO assurance_authorities(project,fingerprint,registered_by) VALUES ($1,$2,$3) ON CONFLICT (project,fingerprint) DO NOTHING")
+        .bind(&project).bind(fingerprint).bind(&owner).execute(&mut *transaction).await?;
     sqlx::query("INSERT INTO model_revisions(project,fingerprint,registered_by) VALUES ($1,$2,$3) ON CONFLICT(project,fingerprint) DO NOTHING")
         .bind(&project).bind(fingerprint).bind(&owner).execute(&mut *transaction).await?;
     sqlx::query("INSERT INTO current_authorities(project,fingerprint) VALUES ($1,$2) ON CONFLICT(project) DO UPDATE SET fingerprint=EXCLUDED.fingerprint")
@@ -747,8 +791,9 @@ async fn submit_review(
     let target = assurance_review::review_target(&record).map_err(LedgerError::invalid)?;
     let target_fp = run::canonical_fingerprint(&target).map_err(LedgerError::invalid)?;
     let mut transaction = state.pool.begin().await?;
-    sqlx::query("INSERT INTO assurance_reviews(project,fingerprint,target_fingerprint,payload,submitted_by) VALUES ($1,$2,$3,$4,$5) ON CONFLICT(project,fingerprint) DO NOTHING")
-        .bind(project).bind(&fingerprint).bind(target_fp).bind(payload).bind(&reviewer).execute(&mut *transaction).await?;
+    relational::store(&mut transaction, "review", project, &fingerprint, &payload).await?;
+    sqlx::query("INSERT INTO assurance_reviews(project,fingerprint,target_fingerprint,submitted_by) VALUES ($1,$2,$3,$4) ON CONFLICT(project,fingerprint) DO NOTHING")
+        .bind(project).bind(&fingerprint).bind(target_fp).bind(&reviewer).execute(&mut *transaction).await?;
     let inserted = sqlx::query("INSERT INTO model_revision_reviews(project,revision_fingerprint,review_fingerprint,submitted_by) VALUES ($1,$2,$3,$4) ON CONFLICT(project,revision_fingerprint,review_fingerprint) DO NOTHING")
         .bind(project).bind(&revision).bind(&fingerprint).bind(&reviewer).execute(&mut *transaction).await?.rows_affected() == 1;
     transaction.commit().await?;
@@ -772,7 +817,7 @@ async fn review_history(
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
     let limit = page.limit()?;
-    let rows = sqlx::query("SELECT fingerprint, provenance_basis, submitted_by, submitted_at::text AS submitted_at, CASE WHEN sum(CASE WHEN ordinal < $3 THEN octet_length(payload::text) ELSE 0 END) OVER () > 33554432 THEN NULL WHEN ordinal < $3 THEN payload ELSE 'null'::jsonb END AS payload FROM (SELECT fingerprint,payload,provenance_basis,submitted_by,submitted_at,row_number() OVER (ORDER BY fingerprint) AS ordinal FROM (SELECT fingerprint,payload,provenance_basis,submitted_by,submitted_at FROM assurance_reviews WHERE project=$1 AND fingerprint > $2 AND EXISTS (SELECT 1 FROM model_revision_reviews r JOIN current_authorities c ON r.project=c.project AND r.revision_fingerprint=c.fingerprint WHERE r.project=assurance_reviews.project AND r.review_fingerprint=assurance_reviews.fingerprint) ORDER BY fingerprint LIMIT $3) candidates) page ORDER BY fingerprint")
+    let rows = sqlx::query("SELECT fingerprint, provenance_basis, submitted_by, submitted_at::text AS submitted_at, CASE WHEN sum(CASE WHEN ordinal < $3 THEN octet_length(payload::text) ELSE 0 END) OVER () > 33554432 THEN NULL WHEN ordinal < $3 THEN payload ELSE 'null'::jsonb END AS payload FROM (SELECT fingerprint,payload,provenance_basis,submitted_by,submitted_at,row_number() OVER (ORDER BY fingerprint) AS ordinal FROM (SELECT fingerprint,payload,provenance_basis,submitted_by,submitted_at FROM (SELECT storage.*,assurance_record('review',storage.project,storage.fingerprint) AS payload FROM assurance_reviews storage) AS assurance_reviews WHERE project=$1 AND fingerprint > $2 AND EXISTS (SELECT 1 FROM model_revision_reviews r JOIN current_authorities c ON r.project=c.project AND r.revision_fingerprint=c.fingerprint WHERE r.project=assurance_reviews.project AND r.review_fingerprint=assurance_reviews.fingerprint) ORDER BY fingerprint LIMIT $3) candidates) page ORDER BY fingerprint")
         .bind(&project).bind(&page.after).bind(limit + 1).fetch_all(&state.pool).await?;
     require_bounded_payloads(&rows)?;
     let (authority, reviews, bundles) = load_snapshot(&state.pool, &project).await?;
@@ -832,7 +877,7 @@ async fn list_runs(
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
     let limit = page.limit()?;
-    let rows = sqlx::query("SELECT DISTINCT ON (run_id) run_id,revision,fingerprint,subject_fingerprint,model_fingerprint,payload->'status' AS status,payload->'subject' AS subject FROM run_bundles WHERE project=$1 AND run_id > $2 ORDER BY run_id,revision DESC LIMIT $3")
+    let rows = sqlx::query("SELECT DISTINCT ON (run_id) run_id,revision,fingerprint,subject_fingerprint,model_fingerprint,assurance_record_field('run',project,fingerprint,'status') AS status,assurance_record_field('run',project,fingerprint,'subject') AS subject FROM (SELECT storage.*,assurance_record('run',storage.project,storage.fingerprint) AS payload FROM run_bundles storage) AS run_bundles WHERE project=$1 AND run_id > $2 ORDER BY run_id,revision DESC LIMIT $3")
         .bind(&project).bind(&page.after).bind(limit + 1).fetch_all(&state.pool).await?;
     let next = rows
         .get(limit as usize - 1)
@@ -854,7 +899,7 @@ async fn list_subjects(
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
     let limit = page.limit()?;
-    let rows = sqlx::query("SELECT DISTINCT ON (subject_fingerprint) subject_fingerprint,payload->'subject' AS subject FROM run_bundles WHERE project=$1 AND subject_fingerprint > $2 ORDER BY subject_fingerprint,run_id,revision DESC LIMIT $3")
+    let rows = sqlx::query("SELECT DISTINCT ON (subject_fingerprint) subject_fingerprint,assurance_record_field('run',project,fingerprint,'subject') AS subject FROM (SELECT storage.*,assurance_record('run',storage.project,storage.fingerprint) AS payload FROM run_bundles storage) AS run_bundles WHERE project=$1 AND subject_fingerprint > $2 ORDER BY subject_fingerprint,run_id,revision DESC LIMIT $3")
         .bind(&project).bind(&page.after).bind(limit + 1).fetch_all(&state.pool).await?;
     let next = rows
         .get(limit as usize - 1)
@@ -869,7 +914,7 @@ async fn list_subjects(
 }
 
 async fn load_authority(pool: &PgPool, project: &str) -> Result<CoreJson, LedgerError> {
-    let value: Option<Value> = sqlx::query_scalar("SELECT a.payload FROM assurance_authorities a JOIN current_authorities c ON a.project=c.project AND a.fingerprint=c.fingerprint WHERE a.project=$1")
+    let value: Option<Value> = sqlx::query_scalar("SELECT a.payload FROM (SELECT storage.*,assurance_record('authority',storage.project,storage.fingerprint) AS payload FROM assurance_authorities storage) a JOIN current_authorities c ON a.project=c.project AND a.fingerprint=c.fingerprint WHERE a.project=$1")
         .bind(project).fetch_optional(pool).await?;
     core_json(
         value
@@ -894,22 +939,26 @@ async fn load_revision_snapshot(
     // One database snapshot prevents a correction or authority selection from producing a torn assessment.
     // A complete bounded snapshot is preferable to a misleading conclusion from truncated evidence.
     let value: Value = sqlx::query_scalar(r#"
-        WITH selected AS (SELECT fingerprint FROM model_revisions WHERE project=$1 AND fingerprint=$2
+        WITH selected AS MATERIALIZED (
+            SELECT fingerprint FROM model_revisions WHERE project=$1 AND fingerprint=$2
             UNION ALL SELECT fingerprint FROM current_authorities WHERE project=$1 AND $2::text IS NULL),
-        relevant_runs AS (
-            SELECT b.run_id FROM run_bundles b JOIN assurance_authorities a
-                ON a.project=b.project AND a.payload->>'model_fingerprint'=b.model_fingerprint
-                JOIN selected s ON s.fingerprint=a.fingerprint WHERE b.project=$1
-            UNION
-            SELECT b.run_id FROM run_bundles b JOIN model_revision_run_models m
+        authority AS MATERIALIZED (
+            SELECT a.fingerprint,assurance_record('authority',a.project,a.fingerprint) AS payload
+            FROM assurance_authorities a JOIN selected s ON s.fingerprint=a.fingerprint WHERE a.project=$1),
+        associated_plans AS MATERIALIZED (
+            SELECT b.run_id,assurance_record_field('run',b.project,b.fingerprint,'plan') AS plan
+            FROM run_bundles b JOIN model_revision_run_models m
                 ON m.project=b.project AND m.run_model_fingerprint=b.model_fingerprint
-                JOIN selected s ON s.fingerprint=m.revision_fingerprint
-                JOIN assurance_authorities a ON a.project=m.project AND a.fingerprint=m.revision_fingerprint
-                WHERE b.project=$1
-                    AND jsonb_array_length(b.payload->'plan'->'checks') > 0
-                    AND jsonb_array_length(b.payload->'plan'->'challenges') = 0
+            JOIN selected s ON s.fingerprint=m.revision_fingerprint WHERE b.project=$1),
+        relevant_runs AS (
+            SELECT b.run_id FROM run_bundles b JOIN authority a
+                ON a.payload->>'model_fingerprint'=b.model_fingerprint WHERE b.project=$1
+            UNION
+            SELECT b.run_id FROM associated_plans b CROSS JOIN authority a
+                WHERE jsonb_array_length(b.plan->'checks') > 0
+                    AND jsonb_array_length(b.plan->'challenges') = 0
                     AND NOT EXISTS (
-                        SELECT 1 FROM jsonb_array_elements(b.payload->'plan'->'checks') c
+                        SELECT 1 FROM jsonb_array_elements(b.plan->'checks') c
                         WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(a.payload->'checks') current_check
                             WHERE current_check->>'id'=c->>'id' AND current_check->>'fingerprint'=c->>'fingerprint'))
             UNION
@@ -917,20 +966,24 @@ async fn load_revision_snapshot(
                 ON r.project=b.project AND r.run_fingerprint=b.fingerprint
                 JOIN assurance_releases p ON p.project=r.project AND p.fingerprint=r.release_fingerprint
                 JOIN selected s ON s.fingerprint=p.model_revision WHERE b.project=$1),
-        heads AS (SELECT DISTINCT ON (b.run_id) b.run_id,b.payload FROM run_bundles b
+        head_keys AS MATERIALIZED (
+            SELECT DISTINCT ON (b.run_id) b.run_id,b.project,b.fingerprint FROM run_bundles b
             JOIN relevant_runs r ON r.run_id=b.run_id WHERE b.project=$1 ORDER BY b.run_id,b.revision DESC),
-        reviews AS (SELECT a.fingerprint,a.payload FROM assurance_reviews a
-            JOIN model_revision_reviews r ON a.project=r.project AND a.fingerprint=r.review_fingerprint
+        heads AS MATERIALIZED (
+            SELECT run_id,assurance_record('run',project,fingerprint) AS payload FROM head_keys),
+        reviews AS MATERIALIZED (
+            SELECT a.fingerprint,assurance_record('review',a.project,a.fingerprint) AS payload
+            FROM assurance_reviews a JOIN model_revision_reviews r
+                ON a.project=r.project AND a.fingerprint=r.review_fingerprint
             JOIN selected s ON s.fingerprint=r.revision_fingerprint WHERE a.project=$1),
         limits AS (SELECT
             (SELECT count(*) FROM heads) + (SELECT count(*) FROM reviews) AS records,
             COALESCE((SELECT sum(octet_length(payload::text)) FROM heads),0) +
             COALESCE((SELECT sum(octet_length(payload::text)) FROM reviews),0) +
-            COALESCE((SELECT sum(octet_length(a.payload::text)) FROM assurance_authorities a JOIN selected s ON a.fingerprint=s.fingerprint WHERE a.project=$1),0) AS bytes)
+            COALESCE((SELECT sum(octet_length(payload::text)) FROM authority),0) AS bytes)
         SELECT CASE WHEN records > 5000 OR bytes > 33554432 THEN jsonb_build_object('too_large',true)
         ELSE jsonb_build_object(
-            'authority', (SELECT a.payload FROM assurance_authorities a JOIN selected s
-                ON a.fingerprint=s.fingerprint WHERE a.project=$1),
+            'authority', (SELECT payload FROM authority),
             'reviews', COALESCE((SELECT jsonb_agg(payload ORDER BY fingerprint) FROM reviews), '[]'::jsonb),
             'runs', COALESCE((SELECT jsonb_agg(payload ORDER BY run_id) FROM heads), '[]'::jsonb)) END
         FROM limits
@@ -943,20 +996,23 @@ async fn load_revision_snapshot(
     if value["authority"].is_null() {
         return Err(LedgerError::not_found());
     }
-    let authority = core_json(value["authority"].to_string().as_bytes())?;
-    let reviews = value["reviews"]
-        .as_array()
-        .ok_or_else(|| LedgerError::invalid("invalid stored review set"))?
-        .iter()
-        .map(|v| core_json(v.to_string().as_bytes()))
-        .collect::<Result<Vec<_>, _>>()?;
-    let bundles = value["runs"]
-        .as_array()
-        .ok_or_else(|| LedgerError::invalid("invalid stored Run set"))?
-        .iter()
-        .map(|v| parse_bundle(&v.to_string()))
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok((authority, reviews, bundles))
+    compute(move || {
+        let authority = core_json(value["authority"].to_string().as_bytes())?;
+        let reviews = value["reviews"]
+            .as_array()
+            .ok_or_else(|| LedgerError::invalid("invalid stored review set"))?
+            .iter()
+            .map(|v| core_json(v.to_string().as_bytes()))
+            .collect::<Result<Vec<_>, _>>()?;
+        let bundles = value["runs"]
+            .as_array()
+            .ok_or_else(|| LedgerError::invalid("invalid stored Run set"))?
+            .iter()
+            .map(|v| parse_bundle(&v.to_string()))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok((authority, reviews, bundles))
+    })
+    .await
 }
 
 fn core_json(body: &[u8]) -> Result<CoreJson, LedgerError> {
@@ -1031,6 +1087,9 @@ impl LedgerError {
 }
 impl From<sqlx::Error> for LedgerError {
     fn from(error: sqlx::Error) -> Self {
+        if let sqlx::Error::Protocol(detail) = &error {
+            return Self::invalid(detail.clone());
+        }
         tracing::error!(error = %error, "Run ledger database operation failed");
         Self {
             status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -1052,4 +1111,22 @@ impl IntoResponse for LedgerError {
         }
         response
     }
+}
+
+async fn compute<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, LedgerError> + Send + 'static,
+) -> Result<T, LedgerError> {
+    static LIMIT: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
+    let permit = LIMIT
+        .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(2)))
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|_| LedgerError::invalid("assessment worker unavailable"))?;
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        work()
+    })
+    .await
+    .map_err(|_| LedgerError::invalid("assessment worker failed"))?
 }

@@ -70,7 +70,7 @@ check_assurance() {
   python3 services/assurance/deployment/qualify.py
 
   if docker info >/dev/null 2>&1; then
-    cargo test --no-fail-fast --manifest-path services/assurance/Cargo.toml --test lifecycle_api
+    cargo test --no-fail-fast --manifest-path services/assurance/Cargo.toml --test lifecycle_api --test relational_domain
   else
     printf '%s\n' 'Docker is unavailable; assurance lifecycle integration evidence was not run.' >&2
   fi

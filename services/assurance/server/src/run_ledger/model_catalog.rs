@@ -8,28 +8,32 @@ pub(super) async fn store(
     submitter: &str,
     provenance: &str,
 ) -> Result<bool, LedgerError> {
-    let authority: Option<Value> = sqlx::query_scalar("SELECT a.payload FROM assurance_authorities a JOIN model_revisions r USING(project,fingerprint) WHERE r.project=$1 AND r.fingerprint=$2")
+    let authority: Option<Value> = sqlx::query_scalar("SELECT assurance_record('authority',a.project,a.fingerprint) FROM assurance_authorities a JOIN model_revisions r USING(project,fingerprint) WHERE r.project=$1 AND r.fingerprint=$2")
         .bind(project).bind(revision).fetch_optional(&mut **tx).await?;
     let authority = authority.ok_or_else(LedgerError::not_found)?;
     let authority = core_json(authority.to_string().as_bytes())?;
     let native = core_json(catalog.to_string().as_bytes())?;
     azimuth::release::verify_catalog(&native, &authority).map_err(LedgerError::invalid)?;
     let fingerprint = run::canonical_fingerprint(&native).map_err(LedgerError::invalid)?;
-    let inserted = sqlx::query("INSERT INTO model_revision_catalogs(project,revision_fingerprint,catalog_fingerprint,payload,submitted_by,provenance_basis) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING")
-        .bind(project).bind(revision).bind(&fingerprint).bind(catalog).bind(submitter).bind(provenance)
-        .execute(&mut **tx).await?.rows_affected() == 1;
-    let existing: Value = sqlx::query_scalar(
-        "SELECT payload FROM model_revision_catalogs WHERE project=$1 AND revision_fingerprint=$2",
-    )
-    .bind(project)
-    .bind(revision)
-    .fetch_one(&mut **tx)
-    .await?;
-    if existing != *catalog {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(format!("{project}|catalog|{revision}"))
+        .execute(&mut **tx)
+        .await?;
+    let existing: Option<Value> = sqlx::query_scalar(
+        "SELECT assurance_record('catalog',project,revision_fingerprint) FROM model_revision_catalogs WHERE project=$1 AND revision_fingerprint=$2",
+    ).bind(project).bind(revision).fetch_optional(&mut **tx).await?;
+    if existing
+        .as_ref()
+        .is_some_and(|existing| existing != catalog)
+    {
         return Err(LedgerError::conflict(
             "revision catalog is immutable; conflicting catalog rejected",
         ));
     }
+    crate::relational::store(&mut **tx, "catalog", project, revision, catalog).await?;
+    let inserted = sqlx::query("INSERT INTO model_revision_catalogs(project,revision_fingerprint,catalog_fingerprint,submitted_by,provenance_basis) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING")
+        .bind(project).bind(revision).bind(&fingerprint).bind(submitter).bind(provenance)
+        .execute(&mut **tx).await?.rows_affected() == 1;
     Ok(inserted)
 }
 
@@ -69,7 +73,7 @@ pub(super) async fn show(
     headers: HeaderMap,
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
-    let value: Option<Value> = sqlx::query_scalar("SELECT jsonb_build_object('project',project,'model_revision',revision_fingerprint,'fingerprint',catalog_fingerprint,'catalog',payload,'submitted_by',submitted_by,'provenance_basis',provenance_basis,'submitted_at',submitted_at) FROM model_revision_catalogs WHERE project=$1 AND revision_fingerprint=$2")
+    let value: Option<Value> = sqlx::query_scalar("SELECT jsonb_build_object('project',project,'model_revision',revision_fingerprint,'fingerprint',catalog_fingerprint,'catalog',assurance_record('catalog',project,revision_fingerprint),'submitted_by',submitted_by,'provenance_basis',provenance_basis,'submitted_at',submitted_at) FROM model_revision_catalogs WHERE project=$1 AND revision_fingerprint=$2")
         .bind(&project).bind(&revision).fetch_optional(&state.pool).await?;
     value.map(Json).ok_or_else(LedgerError::not_found)
 }
