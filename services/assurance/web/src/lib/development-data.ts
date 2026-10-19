@@ -190,7 +190,7 @@ export function developmentRead(project: string, path: string): unknown {
   if (route === `/model-revisions/${baseline}/snapshot`) return { authority: baselineAuthority, reviews: [], bundles: [] };
   if (route === `/model-revisions/${baseline}/subjects/${subject}/state`) return { authority_fingerprint: baseline, model_fingerprint: baselineAuthority.model_fingerprint, claims: [] };
   if (route === '/releases') return page([{ fingerprint: releaseId, release, accepted }]);
-  if (route === `/releases/${releaseId}`) return { publication: { release, catalog, evidence: [] }, submitted_by: 'development-publisher', submitted_at: at(90), acceptance: accepted ? { owner: 'development-owner', rationale: 'Illustrative acceptance' } : null, deployments: [deployment, stagingDeployment] };
+  if (route === `/releases/${releaseId}` || route === `/releases/${releaseId}/summary`) return { publication: { release, catalog, evidence: [] }, submitted_by: 'development-publisher', submitted_at: at(90), acceptance: accepted ? { owner: 'development-owner', rationale: 'Illustrative acceptance' } : null, deployments: [deployment, stagingDeployment] };
   if (route === '/changes') return page([{ id: 'payment-reminders', revisions: [{ status: accepted ? 'accepted' : 'under-assessment' }] }]);
   if (route === '/deployments') return page([{ deployment, release_fingerprint: releaseId }, { deployment: stagingDeployment, release_fingerprint: releaseId }]);
   if (/^\/environments\/[^/]+\/(deployment|observations)$/.test(route)) return null;

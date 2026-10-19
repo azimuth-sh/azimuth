@@ -1,0 +1,18 @@
+# Relational storage design
+
+## Persistence
+Retain relational metadata keys and histories. Replace stored payloads with explicit schema-bound tables for Runs, model/review records, releases, catalogs, deployment observations and earlier assurance-domain records. Domain nested collections have their own tables and ordered ordinals. Scalar maps are permitted only for genuinely declared maps such as context, diagnostic details and toolchain versions. A generic property/value JSON tree is prohibited.
+
+A shared schema-bound codec declares every object field and PostgreSQL scalar type. Unknown fields fail rather than disappear. Presence/null metadata preserves native optional representations. SQL reconstruction functions return JSON only at the wire/domain-core adapter boundary; no JSON is persisted. Native validation precedes insertion. Every write includes metadata and normalized rows in the same transaction; immutable replay cannot replace content.
+
+## Shared implementation contract
+Coordinator owns src/relational/mod.rs, fresh initial DDL, schema engine, run_ledger.rs integration, operational rollout and tests. `Schema` variants: Text, Number, Boolean, Object(Vec<(&'static str,Schema)>), List(Box<Schema>), Map(Box<Schema>), Ref(&'static str), OneOf(Vec<Schema>). Helpers: object(Vec<...>), list(Schema), map(Schema). Every object key declared; any field can retain explicit null or absence, with contract validation enforcing requiredness.
+
+Each schema module exports `pub(super) fn schemas() -> Vec<(&'static str, Schema)>`. Modules import `super::{Schema, object, list, map}`. Registry kinds: run, authority, review, catalog, release (entire publication), change, deployment, deployment_observation, project_snapshot, definition, qualification, observation, challenge, gate_request, gate_decision.
+
+`relational::store(conn: &mut PgConnection, kind: &str, project: &str, key: &str, value: &serde_json::Value) -> Result<(),sqlx::Error>` stores validated immutable normalized data. `relational::record_sql(kind: &str, project_expr: &str, key_expr: &str) -> String` returns an SQL JSON reconstruction expression, `assurance_record('kind',project_expr,key_expr)`; use expressions in SELECT/RETURNING, never stored payload columns. `relational::load(pool: &PgPool,kind,project,key)` returns Option<Value>. Root metadata keys: native fingerprint for run/authority/review/release, catalog revision fingerprint, deployment ID for deployment, deployment observation fingerprint; change key release fingerprint + '|' + change id. Earlier domain keys use content_fingerprint, gate request/decision use UUID::text. Ref relations deduplicate immutable nested records under their canonical content identity.
+
+## Fresh initialization and deployment
+Replace the active SQLx migration source with server/relational_migrations. New initial metadata DDL has the existing scalar metadata tables without payload/request/decision JSON columns. Generated explicit domain DDL and reconstruction functions initialize through relational::initialize in the same startup initialization. Do not modify historical migration checksums or migrate existing data. Reject a database containing old payload schema to prevent accidental production mutation. Earlier database and a fresh pg_dump remain recoverable.
+
+Keep source/build/deployment identity and reviewer provenance unchanged. Restore baseline before release-managed publication; replay exact current published package and let reconciler recreate observed deployment. Existing probes remain bound to their original Subjects; no automatic Claim Health or acceptance.

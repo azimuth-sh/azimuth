@@ -32,7 +32,7 @@ pub(super) async fn select(
         .execute(&mut *tx)
         .await?;
     let target: Option<Value> = sqlx::query_scalar(
-        "SELECT payload FROM release_deployments WHERE project=$1 AND deployment_id=$2",
+        "SELECT assurance_record('deployment',project,deployment_id) FROM release_deployments WHERE project=$1 AND deployment_id=$2",
     )
     .bind(&project)
     .bind(&body.deployment_id)
@@ -79,7 +79,7 @@ pub(super) async fn current(
     headers: HeaderMap,
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
-    let value: Option<Value> = sqlx::query_scalar("SELECT jsonb_build_object('project',s.project,'environment',s.environment,'revision',s.revision,'deployment',d.payload,'release_fingerprint',d.release_fingerprint,'reason',s.reason,'selected_by',s.selected_by,'selected_at',s.selected_at) FROM environment_deployment_selections s JOIN release_deployments d ON d.project=s.project AND d.deployment_id=s.deployment_id WHERE s.project=$1 AND s.environment=$2 ORDER BY s.revision DESC LIMIT 1")
+    let value: Option<Value> = sqlx::query_scalar("SELECT jsonb_build_object('project',s.project,'environment',s.environment,'revision',s.revision,'deployment',assurance_record('deployment',d.project,d.deployment_id),'release_fingerprint',d.release_fingerprint,'reason',s.reason,'selected_by',s.selected_by,'selected_at',s.selected_at) FROM environment_deployment_selections s JOIN release_deployments d ON d.project=s.project AND d.deployment_id=s.deployment_id WHERE s.project=$1 AND s.environment=$2 ORDER BY s.revision DESC LIMIT 1")
         .bind(&project).bind(&environment).fetch_optional(&state.pool).await?;
     value.map(Json).ok_or_else(LedgerError::not_found)
 }
@@ -90,7 +90,7 @@ pub(super) async fn deployment(
     headers: HeaderMap,
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
-    let value: Option<Value> = sqlx::query_scalar("SELECT jsonb_build_object('deployment',payload,'release_fingerprint',release_fingerprint,'submitted_by',submitted_by,'submitted_at',submitted_at) FROM release_deployments WHERE project=$1 AND deployment_id=$2")
+    let value: Option<Value> = sqlx::query_scalar("SELECT jsonb_build_object('deployment',assurance_record('deployment',project,deployment_id),'release_fingerprint',release_fingerprint,'submitted_by',submitted_by,'submitted_at',submitted_at) FROM release_deployments WHERE project=$1 AND deployment_id=$2")
         .bind(&project).bind(&deployment).fetch_optional(&state.pool).await?;
     value.map(Json).ok_or_else(LedgerError::not_found)
 }

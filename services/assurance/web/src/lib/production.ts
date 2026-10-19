@@ -71,7 +71,7 @@ export async function environmentView(project: string, selected: string | null, 
   const release = deployment
     ? await readProject<Release>(
         project,
-        `/releases/${encodeURIComponent(deployment.release_fingerprint)}`,
+        `/releases/${encodeURIComponent(deployment.release_fingerprint)}/summary`,
       )
     : null;
   const revision = release?.publication.release.model_revision;

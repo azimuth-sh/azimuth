@@ -76,15 +76,6 @@ pub(super) async fn record(
             "components and diagnostics arrays required",
         ));
     }
-    let valid_digest = |v: &Value| {
-        v.as_str().is_some_and(|s| {
-            s.strip_prefix("sha256:").is_some_and(|s| {
-                s.len() == 64
-                    && s.bytes()
-                        .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
-            })
-        })
-    };
     if !o["release_fingerprint"].is_null() && !valid_digest(&o["release_fingerprint"])
         || !o["configuration_fingerprint"].is_null()
             && !valid_digest(&o["configuration_fingerprint"])
@@ -101,11 +92,7 @@ pub(super) async fn record(
     if o["components"].as_array().unwrap().len() > 32 {
         return Err(LedgerError::invalid("at most 32 components permitted"));
     }
-    for c in o["components"].as_array().unwrap() {
-        if !valid_digest(&c["template_fingerprint"]) {
-            return Err(LedgerError::invalid("actual template fingerprint required"));
-        }
-    }
+    validate_components(&o["components"])?;
     let fp = format!(
         "sha256:{}",
         sha256(
@@ -119,7 +106,7 @@ pub(super) async fn record(
         .bind(format!("{project}|observation|{environment}"))
         .execute(&mut *tx)
         .await?;
-    let replay:Option<(i64,Value,String)>=sqlx::query_as("SELECT revision,payload,submitted_by FROM deployment_observations WHERE project=$1 AND environment=$2 AND fingerprint=$3").bind(&project).bind(&environment).bind(&fp).fetch_optional(&mut *tx).await?;
+    let replay:Option<(i64,Value,String)>=sqlx::query_as("SELECT revision,assurance_record('deployment_observation',project,fingerprint),submitted_by FROM deployment_observations WHERE project=$1 AND environment=$2 AND fingerprint=$3").bind(&project).bind(&environment).bind(&fp).fetch_optional(&mut *tx).await?;
     if let Some((revision, payload, by)) = replay {
         if payload != *o || by != publisher {
             return Err(LedgerError::conflict(
@@ -140,7 +127,7 @@ pub(super) async fn record(
             "observation is stale or in the future; observe again",
         ));
     }
-    let previous:Option<(i64,i64)>=sqlx::query_as("SELECT revision,(payload->>'observed_at_ms')::bigint FROM deployment_observations WHERE project=$1 AND environment=$2 ORDER BY revision DESC LIMIT 1").bind(&project).bind(&environment).fetch_optional(&mut *tx).await?;
+    let previous:Option<(i64,i64)>=sqlx::query_as("SELECT revision,observed_at_ms FROM deployment_observations WHERE project=$1 AND environment=$2 ORDER BY revision DESC LIMIT 1").bind(&project).bind(&environment).fetch_optional(&mut *tx).await?;
     if previous.as_ref().map(|v| v.0).unwrap_or(0) != body.expected_revision
         || previous.as_ref().is_some_and(|v| observed <= v.1)
     {
@@ -154,7 +141,7 @@ pub(super) async fn record(
             LedgerError::invalid("complete observation requires release fingerprint")
         })?;
         let artifacts: Option<Value> = sqlx::query_scalar(
-            "SELECT payload->'release' FROM assurance_releases WHERE project=$1 AND fingerprint=$2",
+            "SELECT assurance_record_field('release',project,fingerprint,'release') FROM assurance_releases WHERE project=$1 AND fingerprint=$2",
         )
         .bind(&project)
         .bind(release)
@@ -248,7 +235,8 @@ pub(super) async fn record(
         }
     }
     let revision = body.expected_revision + 1;
-    sqlx::query("INSERT INTO deployment_observations(project,environment,revision,fingerprint,payload,submitted_by,deployment_id) VALUES($1,$2,$3,$4,$5,$6,$7)").bind(&project).bind(&environment).bind(revision).bind(&fp).bind(o).bind(&publisher).bind(observed_deployment).execute(&mut *tx).await?;
+    crate::relational::store(&mut *tx, "deployment_observation", &project, &fp, o).await?;
+    sqlx::query("INSERT INTO deployment_observations(project,environment,revision,fingerprint,submitted_by,deployment_id,observed_at_ms,valid_for_seconds,state,release_fingerprint) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)").bind(&project).bind(&environment).bind(revision).bind(&fp).bind(&publisher).bind(observed_deployment).bind(observed).bind(lifetime).bind(status).bind(o["release_fingerprint"].as_str()).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(Json(
         json!({"fingerprint":fp,"revision":revision,"replayed":false}),
@@ -261,6 +249,78 @@ pub(super) async fn current(
     headers: HeaderMap,
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
-    let record:Option<Value>=sqlx::query_scalar("SELECT jsonb_build_object('revision',revision,'deployment_id',deployment_id,'fingerprint',fingerprint,'observation',payload,'submitted_by',submitted_by,'received_at',received_at,'fresh',(extract(epoch FROM clock_timestamp())*1000)::bigint <= (payload->>'observed_at_ms')::bigint+(payload->>'valid_for_seconds')::bigint*1000) FROM deployment_observations WHERE project=$1 AND environment=$2 ORDER BY revision DESC LIMIT 1").bind(&project).bind(&environment).fetch_optional(&state.pool).await?;
+    let record:Option<Value>=sqlx::query_scalar("SELECT jsonb_build_object('revision',revision,'deployment_id',deployment_id,'fingerprint',fingerprint,'observation',assurance_record('deployment_observation',project,fingerprint),'submitted_by',submitted_by,'received_at',received_at,'fresh',(extract(epoch FROM clock_timestamp())*1000)::bigint <= observed_at_ms+valid_for_seconds*1000) FROM deployment_observations WHERE project=$1 AND environment=$2 ORDER BY revision DESC LIMIT 1").bind(&project).bind(&environment).fetch_optional(&state.pool).await?;
     record.map(Json).ok_or_else(LedgerError::not_found)
+}
+
+fn valid_digest(value: &Value) -> bool {
+    value.as_str().is_some_and(|text| {
+        text.strip_prefix("sha256:").is_some_and(|digest| {
+            digest.len() == 64
+                && digest
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        })
+    })
+}
+
+fn validate_components(value: &Value) -> Result<(), LedgerError> {
+    let components = value
+        .as_array()
+        .ok_or_else(|| LedgerError::invalid("components array required"))?;
+    let keys = ["name", "image", "template_fingerprint", "ready"];
+    for component in components {
+        if component.as_object().is_none_or(|fields| {
+            fields.len() != keys.len() || keys.iter().any(|key| !fields.contains_key(*key))
+        }) || component["name"]
+            .as_str()
+            .is_none_or(|name| name.trim().is_empty())
+            || !(component["image"].is_null() || component["image"].is_string())
+            || !component["ready"].is_boolean()
+            || !valid_digest(&component["template_fingerprint"])
+        {
+            return Err(LedgerError::invalid(
+                "component requires name, nullable image, template fingerprint and boolean ready with no extra fields",
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn component() -> Value {
+        json!({"name":"web-api","image":null,"template_fingerprint":format!("sha256:{}", "a".repeat(64)),"ready":false})
+    }
+
+    #[test]
+    fn incomplete_component_preserves_nullable_image() {
+        assert!(validate_components(&json!([component()])).is_ok());
+    }
+
+    #[test]
+    fn component_shape_rejects_untyped_or_unknown_fields() {
+        for (field, value) in [
+            ("name", json!(null)),
+            ("name", json!(" ")),
+            ("image", json!(42)),
+            ("ready", json!("false")),
+            ("ready", json!(null)),
+            ("template_fingerprint", json!("invalid")),
+            ("unknown", json!(true)),
+        ] {
+            let mut invalid = component();
+            invalid[field] = value;
+            assert!(
+                validate_components(&json!([invalid])).is_err(),
+                "accepted invalid {field}"
+            );
+        }
+        let mut missing = component();
+        missing.as_object_mut().unwrap().remove("image");
+        assert!(validate_components(&json!([missing])).is_err());
+        assert!(validate_components(&json!(["not an object"])).is_err());
+    }
 }

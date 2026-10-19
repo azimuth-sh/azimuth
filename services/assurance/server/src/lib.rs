@@ -1,3 +1,4 @@
+pub(crate) mod relational;
 pub mod run_ledger;
 
 use axum::{
@@ -37,7 +38,23 @@ pub async fn connect(database_url: &str) -> Result<PgPool, sqlx::Error> {
 }
 
 pub async fn migrate(pool: &PgPool) -> Result<(), sqlx::migrate::MigrateError> {
-    sqlx::migrate!().run(pool).await
+    let document_storage = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM information_schema.columns \
+         WHERE table_schema = 'public' AND (udt_name IN ('json', 'jsonb') \
+         OR column_name IN ('payload', 'request', 'decision')))",
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(sqlx::migrate::MigrateError::Execute)?;
+    if document_storage {
+        return Err(sqlx::migrate::MigrateError::Execute(sqlx::Error::Protocol(
+            "fresh relational database required; original database retained".into(),
+        )));
+    }
+    sqlx::migrate!("./relational_migrations").run(pool).await?;
+    relational::initialize(pool)
+        .await
+        .map_err(sqlx::migrate::MigrateError::Execute)
 }
 
 pub fn app(state: AppState) -> Router {
@@ -170,17 +187,17 @@ async fn register_model_snapshot(
     validate_model_snapshot(&snapshot, &project_id)?;
     let content_fingerprint = fingerprint(&snapshot)?;
     let payload = serde_json::to_value(&snapshot)?;
+    let mut transaction = state.pool.begin().await?;
     let result = sqlx::query(
         "INSERT INTO project_model_snapshots(\
-            project_id, id, model_fingerprint, content_fingerprint, payload\
-         ) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+            project_id, id, model_fingerprint, content_fingerprint\
+         ) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
     )
     .bind(&project_id)
     .bind(&snapshot.id)
     .bind(&snapshot.model_fingerprint)
     .bind(&content_fingerprint)
-    .bind(payload)
-    .execute(&state.pool)
+    .execute(&mut *transaction)
     .await?;
     let stored = sqlx::query_scalar::<_, String>(
         "SELECT content_fingerprint FROM project_model_snapshots \
@@ -188,7 +205,7 @@ async fn register_model_snapshot(
     )
     .bind(&project_id)
     .bind(&snapshot.id)
-    .fetch_one(&state.pool)
+    .fetch_one(&mut *transaction)
     .await?;
     let replayed = resolve_replay(
         result.rows_affected(),
@@ -196,6 +213,17 @@ async fn register_model_snapshot(
         &content_fingerprint,
         "project model snapshot",
     )?;
+    if !replayed {
+        relational::store(
+            &mut transaction,
+            "project_snapshot",
+            &project_id,
+            &content_fingerprint,
+            &payload,
+        )
+        .await?;
+    }
+    transaction.commit().await?;
     Ok((
         if replayed {
             StatusCode::OK
@@ -222,18 +250,18 @@ async fn register_definition(
     let definition_fingerprint = definition.fingerprint();
     let content_fingerprint = fingerprint(&definition)?;
     let payload = serde_json::to_value(&definition)?;
+    let mut transaction = state.pool.begin().await?;
     let result = sqlx::query(
         "INSERT INTO evidence_definitions(\
-            project_id, logical_id, definition_fingerprint, declared_at, content_fingerprint, payload\
-         ) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+            project_id, logical_id, definition_fingerprint, declared_at, content_fingerprint\
+         ) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
     )
     .bind(&project_id)
     .bind(&definition.id)
     .bind(&definition_fingerprint)
     .bind(to_db_time(definition.declared_at, "declaredAt")?)
     .bind(&content_fingerprint)
-    .bind(payload)
-    .execute(&state.pool)
+    .execute(&mut *transaction)
     .await?;
     let stored = sqlx::query_scalar::<_, String>(
         "SELECT content_fingerprint FROM evidence_definitions \
@@ -242,7 +270,7 @@ async fn register_definition(
     .bind(&project_id)
     .bind(&definition.id)
     .bind(&definition_fingerprint)
-    .fetch_one(&state.pool)
+    .fetch_one(&mut *transaction)
     .await?;
     let replayed = resolve_replay(
         result.rows_affected(),
@@ -250,6 +278,17 @@ async fn register_definition(
         &content_fingerprint,
         "definition version",
     )?;
+    if !replayed {
+        relational::store(
+            &mut transaction,
+            "definition",
+            &project_id,
+            &content_fingerprint,
+            &payload,
+        )
+        .await?;
+    }
+    transaction.commit().await?;
     Ok((
         if replayed {
             StatusCode::OK
@@ -406,16 +445,16 @@ impl ImmutableTable {
     fn insert_query(self) -> &'static str {
         match self {
             Self::Qualification => {
-            "INSERT INTO qualifications(project_id, id, definition_id, definition_fingerprint, qualified_at, content_fingerprint, payload) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING"
+            "INSERT INTO qualifications(project_id, id, definition_id, definition_fingerprint, qualified_at, content_fingerprint) \
+             VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING"
             }
             Self::Observation => {
-            "INSERT INTO observations(project_id, id, definition_id, definition_fingerprint, observed_at, content_fingerprint, payload) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING"
+            "INSERT INTO observations(project_id, id, definition_id, definition_fingerprint, observed_at, content_fingerprint) \
+             VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING"
             }
             Self::Challenge => {
-            "INSERT INTO challenges(project_id, id, definition_id, definition_fingerprint, observed_at, content_fingerprint, payload, source) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING"
+            "INSERT INTO challenges(project_id, id, definition_id, definition_fingerprint, observed_at, content_fingerprint, source) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING"
             }
         }
     }
@@ -439,27 +478,43 @@ async fn insert_immutable<T: Serialize>(
     let content_fingerprint = fingerprint(write.record)?;
     let payload = serde_json::to_value(write.record)?;
     let time = to_db_time(write.observed_at, "record time")?;
+    let mut transaction = pool.begin().await?;
     let mut statement = sqlx::query(write.table.insert_query())
         .bind(write.project_id)
         .bind(write.id)
         .bind(write.definition_id)
         .bind(write.definition_fingerprint)
         .bind(time)
-        .bind(&content_fingerprint)
-        .bind(payload);
+        .bind(&content_fingerprint);
     if matches!(write.table, ImmutableTable::Challenge) {
         statement = statement.bind(write.source.expect("challenge source is required"));
     }
-    let result = statement.execute(pool).await?;
+    let result = statement.execute(&mut *transaction).await?;
     let table = write.table.name();
     let stored = sqlx::query_scalar::<_, String>(&format!(
         "SELECT content_fingerprint FROM {table} WHERE project_id = $1 AND id = $2"
     ))
     .bind(write.project_id)
     .bind(write.id)
-    .fetch_one(pool)
+    .fetch_one(&mut *transaction)
     .await?;
     let replayed = resolve_replay(result.rows_affected(), stored, &content_fingerprint, table)?;
+    if !replayed {
+        let kind = match write.table {
+            ImmutableTable::Qualification => "qualification",
+            ImmutableTable::Observation => "observation",
+            ImmutableTable::Challenge => "challenge",
+        };
+        relational::store(
+            &mut transaction,
+            kind,
+            write.project_id,
+            &content_fingerprint,
+            &payload,
+        )
+        .await?;
+    }
+    transaction.commit().await?;
     Ok((
         if replayed {
             StatusCode::OK
@@ -541,8 +596,17 @@ async fn load_records<T: DeserializeOwned>(
     order: &str,
 ) -> Result<Vec<T>, AppError> {
     ensure_project(pool, project_id).await?;
+    let kind = match table {
+        "project_model_snapshots" => "project_snapshot",
+        "evidence_definitions" => "definition",
+        "qualifications" => "qualification",
+        "observations" => "observation",
+        "challenges" => "challenge",
+        _ => return Err(AppError::internal("unsupported assurance record table")),
+    };
+    let record = relational::record_sql(kind, "project_id", "content_fingerprint");
     let rows = sqlx::query(&format!(
-        "SELECT payload FROM {table} WHERE project_id = $1 ORDER BY {order}"
+        "SELECT {record} AS payload FROM {table} WHERE project_id = $1 ORDER BY {order}"
     ))
     .bind(project_id)
     .fetch_all(pool)
@@ -565,10 +629,11 @@ async fn evaluate_gate(
     let id = Uuid::new_v4();
     let evaluated_at = now_unix_seconds();
     let target_fingerprint = fingerprint(&GateTarget::from(&request))?;
+    let mut transaction = state.pool.begin().await?;
     let sequence = sqlx::query_scalar::<_, i64>(
         "INSERT INTO gate_decisions(\
-            project_id, id, definition_id, stage, target_fingerprint, evaluated_at, request, decision\
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING sequence",
+            project_id, id, definition_id, stage, target_fingerprint, evaluated_at\
+         ) VALUES ($1, $2, $3, $4, $5, $6) RETURNING sequence",
     )
     .bind(&project_id)
     .bind(id)
@@ -576,10 +641,25 @@ async fn evaluate_gate(
     .bind(request.stage.as_str())
     .bind(target_fingerprint)
     .bind(to_db_time(evaluated_at, "evaluatedAt")?)
-    .bind(serde_json::to_value(&request)?)
-    .bind(serde_json::to_value(&decision)?)
-    .fetch_one(&state.pool)
+    .fetch_one(&mut *transaction)
     .await?;
+    relational::store(
+        &mut transaction,
+        "gate_request",
+        &project_id,
+        &id.to_string(),
+        &serde_json::to_value(&request)?,
+    )
+    .await?;
+    relational::store(
+        &mut transaction,
+        "gate_decision",
+        &project_id,
+        &id.to_string(),
+        &serde_json::to_value(&decision)?,
+    )
+    .await?;
+    transaction.commit().await?;
     let record = GateDecisionRecord {
         sequence: from_db_time(sequence)?,
         id,
@@ -685,10 +765,12 @@ async fn load_gate_decisions(
     project_id: &str,
 ) -> Result<Vec<GateDecisionRecord>, AppError> {
     ensure_project(pool, project_id).await?;
-    let rows = sqlx::query(
-        "SELECT sequence, id, evaluated_at, request, decision FROM gate_decisions \
-         WHERE project_id = $1 ORDER BY sequence DESC",
-    )
+    let request = relational::record_sql("gate_request", "project_id", "id::text");
+    let decision = relational::record_sql("gate_decision", "project_id", "id::text");
+    let rows = sqlx::query(&format!(
+        "SELECT sequence, id, evaluated_at, {request} AS request, {decision} AS decision FROM gate_decisions \
+         WHERE project_id = $1 ORDER BY sequence DESC"
+    ))
     .bind(project_id)
     .fetch_all(pool)
     .await?;
@@ -751,9 +833,10 @@ async fn load_model_snapshot(
     snapshot_id: &str,
 ) -> Result<ProjectModelSnapshot, AppError> {
     ensure_project(pool, project_id).await?;
-    let payload = sqlx::query_scalar::<_, serde_json::Value>(
-        "SELECT payload FROM project_model_snapshots WHERE project_id = $1 AND id = $2",
-    )
+    let record = relational::record_sql("project_snapshot", "project_id", "content_fingerprint");
+    let payload = sqlx::query_scalar::<_, serde_json::Value>(&format!(
+        "SELECT {record} FROM project_model_snapshots WHERE project_id = $1 AND id = $2"
+    ))
     .bind(project_id)
     .bind(snapshot_id)
     .fetch_optional(pool)
@@ -815,10 +898,11 @@ async fn load_definition_version(
     definition_fingerprint: &str,
 ) -> Result<EvidenceDefinition, AppError> {
     ensure_project(pool, project_id).await?;
-    let payload = sqlx::query_scalar::<_, serde_json::Value>(
-        "SELECT payload FROM evidence_definitions \
-         WHERE project_id = $1 AND logical_id = $2 AND definition_fingerprint = $3",
-    )
+    let record = relational::record_sql("definition", "project_id", "content_fingerprint");
+    let payload = sqlx::query_scalar::<_, serde_json::Value>(&format!(
+        "SELECT {record} FROM evidence_definitions \
+         WHERE project_id = $1 AND logical_id = $2 AND definition_fingerprint = $3"
+    ))
     .bind(project_id)
     .bind(definition_id)
     .bind(definition_fingerprint)
