@@ -27,7 +27,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 check_source() {
-  cargo test --manifest-path tools/azimuth/Cargo.toml
+  cargo test --no-fail-fast --manifest-path tools/azimuth/Cargo.toml
   dotnet test tools/extractors/dotnet/Azimuth.Emit.Tests/Azimuth.Emit.Tests.csproj
   dotnet build packages/dotnet/Azimuth.Annotations/Azimuth.Annotations.csproj
 
@@ -47,7 +47,7 @@ check_source() {
   python3 -m unittest discover -s tools/extractors/python -p 'test_*.py'
   python3 -m unittest discover -s tools/extractors/cpp -p 'test_*.py'
   (cd tools/extractors/go && go test ./...)
-  cargo test --manifest-path tools/extractors/rust/Cargo.toml
+  cargo test --no-fail-fast --manifest-path tools/extractors/rust/Cargo.toml
 
   ./experiments/polyglot/check.sh
   ./experiments/assurance-service/check.sh
@@ -58,7 +58,7 @@ check_source() {
 }
 
 check_assurance() {
-  cargo test --manifest-path services/assurance/Cargo.toml --lib
+  cargo test --no-fail-fast --manifest-path services/assurance/Cargo.toml --lib
   (
     cd services/assurance/web
     npm ci
@@ -70,7 +70,7 @@ check_assurance() {
   python3 services/assurance/deployment/qualify.py
 
   if docker info >/dev/null 2>&1; then
-    cargo test --manifest-path services/assurance/Cargo.toml --test lifecycle_api
+    cargo test --no-fail-fast --manifest-path services/assurance/Cargo.toml --test lifecycle_api
   else
     printf '%s\n' 'Docker is unavailable; assurance lifecycle integration evidence was not run.' >&2
   fi
