@@ -1,0 +1,23 @@
+# Deployment observations
+
+Deployment reconciliation is a separate process from Check collection and deployment control. It never mutates workloads, authors Checks/Health or accepts a release. An operator configures project/environment, namespace, exact Deployment/container names, an Argo Application and desired-release ConfigMap. A project-scoped publisher credential is mounted separately.
+
+## Protocol
+
+Publisher POST `/v1/projects/{project}/environments/{environment}/observations` accepts exactly `{expected_revision, observation}`. Observation has exactly `format: azimuth-deployment-observation`, `version: 1`, `observed_at_ms` (integer UTC Unix milliseconds), `valid_for_seconds` (15..300), `state`, `release_fingerprint`, `applied_revision`, `rollout_id`, `configuration_fingerprint`, `components` and `diagnostics`. Nullable identity fields are allowed for unknown observations. Diagnostics are strings; at most 32 component records and 256 KiB observation bytes are accepted. A complete component is exactly `{name,image,template_fingerprint,ready:true}`. Complete observations cover the exact explicitly published deployed `components` bindings, not unused build outputs. Actual image identities come from Pod container statuses, not desired spec images.
+
+States are `complete`, `progressing`, `failed`, `partial`, `unknown` and `drifted`. Only complete observations create immutable deployment records and designate a current deployment, atomically with their observation. Identity hashes release, observed configuration, applied revision and Argo operation completion identity; repeated heartbeats reuse the same deployment. A rollback operation has a distinct rollout identity and thus a distinct deployment even when it reuses artifacts. Native deployment Subjects use component IDs and observed configuration fingerprint. No Check Run is invented.
+
+Read the latest observation revision **before** observing Kubernetes. First expected revision is zero. ASS serializes per project/environment, rejects out-of-order timestamps and stale CAS values, and accepts an identical authorized replay without moving current state. Already acknowledged replays do not renew freshness. New observations must not be older than their validity interval or more than five seconds in the future. Publishers require synchronized clocks. API trust is transport attribution; it is not cryptographic proof that a publisher observed Kubernetes honestly.
+
+GET the same route returns latest observation, revision, deployment ID when complete, server receipt timestamp, publisher and server-computed `fresh`. Non-complete or stale latest observations mean the current environment composition is unconfirmed; earlier selections remain historical records, not current proof. No automatic Health expiry or cross-Subject reuse is added.
+
+## Kubernetes/Argo adapter
+
+Read the release ConfigMap (`data.release.json` is `{release_fingerprint,components}`), Argo status and approved workloads. Desired component entries contain exact image, declared template and its canonical compact sorted JSON SHA-256. Recognized API-server defaults are stripped only when absent from the declaration; unsupported admission changes fail closed as drift. Actual raw templates are separately fingerprinted as observed configuration. Healthy ready Pods must cover the desired replicas with one unambiguous observed image per approved container. Opaque CRI IDs or unsupported multi-platform digest indirection remain incomplete. Initial/final Argo and ConfigMap observations must agree. Polling does not guarantee every intermediate rollout event is captured.
+
+SQLite retains one pending request per environment. Delivery retries preserve exact bytes. A stale/conflicting rejected pending request is discarded with a warning; the next cycle obtains a new revision and observation. Authentication/server failures retain pending data. Discovery failure emits unknown rather than retaining fresh complete state. Single replica/Recreate/PVC prevents concurrent local writers. Keep PVC data and monitor logs plus observation freshness.
+
+## Acceptance
+
+Owner acceptance requires explicit `environment`, exact release and expected accepted baseline plus reason. The selected environment's latest designated deployment must be this release, its latest observation must be fresh and complete, and each non-routine Claim must have supported exact-deployment Health according to the native assessor. This is a manual decision, not an automatic acceptance policy. Historical releases lacking component-bound observations are not silently promoted.

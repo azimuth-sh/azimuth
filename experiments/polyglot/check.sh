@@ -14,7 +14,7 @@ mkdir -p "$BUILD_ROOT/extractors" "$BUILD_ROOT/jvm/azimuth-annotations" \
   "$BUILD_ROOT/jvm/java-service" "$BUILD_ROOT/cpp" "$OUTPUT_ROOT"
 
 (cd tools/extractors/typescript && npm run build --silent && npm test --silent)
-(cd tools/extractors/helm && npm run build --silent)
+(cd tools/extractors/helm && npm ci --ignore-scripts && npm run build --silent)
 (cd tools/extractors/python && python3 -m unittest -v test_azimuth_emit.py)
 (cd tools/extractors/go && GOCACHE="$AZIMUTH_GO_CACHE" GOMODCACHE="$AZIMUTH_GO_MOD_CACHE" go test ./...)
 (cd tools/extractors/rust && cargo fmt -- --check && cargo test)
@@ -99,5 +99,5 @@ cargo run --quiet --manifest-path tools/azimuth/Cargo.toml -- validate \
 cargo run --quiet --manifest-path tools/azimuth/Cargo.toml -- export \
   --model experiments/polyglot/model "${MANIFESTS[@]}" --out "$OUTPUT_ROOT/model.json"
 python3 -c \
-  'import json, sys; model=json.load(open(sys.argv[1])); assert model["version"] == 4; retired={"co"+"vers", "mechanism_"+"co"+"vers", "obser"+"vations", "judg"+"ments"}; assert not retired.intersection(model)' \
+  'import json, sys; model=json.load(open(sys.argv[1])); assert model["version"] == 5; retired={"co"+"vers", "mechanism_"+"co"+"vers", "obser"+"vations", "judg"+"ments"}; assert not retired.intersection(model)' \
   "$OUTPUT_ROOT/model.json"

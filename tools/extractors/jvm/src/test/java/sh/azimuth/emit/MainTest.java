@@ -23,22 +23,22 @@ public final class MainTest {
                 package fixture;
                 import sh.azimuth.Azimuth;
                 public final class Identity {
-                    @Azimuth.Realizes(spec="polyglot/identity", claim="java-identifies")
+                    @Azimuth.Realizes(value="java-identifies")
                     public static String identity() { return "java"; }
-                    @Azimuth.ImplementsCheck("polyglot/java-identity")
+                    @Azimuth.ImplementsCheck("java-identity")
                     public static void identityTest() {}
-                    @Azimuth.ImplementsCheck("polyglot/java-identity")
+                    @Azimuth.ImplementsCheck("java-identity")
                     public static void identityContractTest() { int observed = 1; }
                     @Azimuth.ImplementsMechanism(
-                            spec="polyglot/identity", mechanism="guard-string")
+                            value="guard-string")
                     public static void guard(String value) {}
                     @Azimuth.ImplementsMechanism(
-                            spec="polyglot/identity", mechanism="guard-integer")
+                            value="guard-integer")
                     public static void guard(int value) {}
                     public static void ordinaryTest() {}
                     public static final class Nested {
                         @Azimuth.ImplementsMechanism(
-                                spec="polyglot/identity", mechanism="nested-guard")
+                                value="nested-guard")
                         public static void guard(java.util.UUID value) {}
                     }
                 }
@@ -66,7 +66,7 @@ public final class MainTest {
         if (!manifest.contains("\"lang\":\"java\"")) throw new AssertionError(manifest);
         if (!manifest.contains("fixture.Identity.identity")) throw new AssertionError(manifest);
         if (!manifest.equals(repeated)) throw new AssertionError("manifest was not deterministic");
-        if (count(manifest, "\"check\":\"polyglot/java-identity\"") != 2) {
+        if (count(manifest, "\"check\":\"java-identity\"") != 2) {
             throw new AssertionError(manifest);
         }
         if (manifest.contains("\"site\":\"fixture.Identity.ordinaryTest\"")) {
@@ -88,7 +88,7 @@ public final class MainTest {
         }
         if (sourceFingerprintCount < 3) throw new AssertionError(manifest);
         Matcher checkFingerprints = Pattern.compile(
-                "\\\"check\\\":\\\"polyglot/java-identity\\\"[^}]+"
+                "\\\"check\\\":\\\"java-identity\\\"[^}]+"
                         + "\\\"source_fingerprint\\\":\\\"(sha256:[0-9a-f]{64})\\\"")
                 .matcher(manifest);
         if (!checkFingerprints.find()) throw new AssertionError(manifest);
@@ -112,8 +112,7 @@ public final class MainTest {
                 throw new AssertionError("missing exact companion for " + site + "\n" + manifest);
             }
         }
-        String strictImplementation = "\\{\\\"spec\\\":\\\"polyglot/identity\\\","
-                + "\\\"mechanism\\\":\\\"guard-string\\\","
+        String strictImplementation = "\\{\\\"mechanism\\\":\\\"guard-string\\\","
                 + "\\\"site\\\":\\\"fixture\\.Identity\\.guard\\(Ljava/lang/String;\\)V\\\","
                 + "\\\"binding\\\":\\\"java-symbol:fixture\\.Identity\\.guard"
                 + "\\(Ljava/lang/String;\\)V\\\","
@@ -143,8 +142,8 @@ public final class MainTest {
                 package collision;
                 import sh.azimuth.Azimuth;
                 public final class Site {
-                    @Azimuth.ImplementsMechanism(spec="alpha", mechanism="first")
-                    @Azimuth.ImplementsMechanism(spec="alpha", mechanism="second")
+                    @Azimuth.ImplementsMechanism(value="first")
+                    @Azimuth.ImplementsMechanism(value="second")
                     public static void guard() {}
                 }
                 """);
@@ -181,7 +180,7 @@ public final class MainTest {
 
     private static String mechanismObject(String manifest, String mechanism) {
         Matcher matcher = Pattern.compile(
-                "\\{\\\"spec\\\":\\\"[^\\\"]+\\\",\\\"mechanism\\\":\\\""
+                "\\{\\\"mechanism\\\":\\\""
                         + Pattern.quote(mechanism) + "\\\"[^}]+\\}")
                 .matcher(manifest);
         if (!matcher.find()) throw new AssertionError("missing mechanism " + mechanism);

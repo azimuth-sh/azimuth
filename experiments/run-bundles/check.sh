@@ -116,10 +116,10 @@ for name, kind in expected.items():
         ("realization", "synthetic|rust-symbol|recovery::execute")
     ]
     assert [(item["kind"], item["id"]) for item in scope["inputs"]] == [
-        ("claim", "synthetic/recovery#recovers"),
+        ("claim", "recovers"),
         ("binding", "synthetic/recovery-edge"),
         ("method-qualification", "synthetic/recovery-edge"),
-        ("check", "synthetic/recovery-check"),
+        ("check", "recovery-check"),
         ("check-implementation", "synthetic|rust-symbol|recovery::probe"),
         ("context", "synthetic/recovery-edge"),
         ("policy", "synthetic/recovery-policy"),

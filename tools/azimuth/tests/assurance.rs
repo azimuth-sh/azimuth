@@ -73,14 +73,14 @@ fn isolated_wire_types_keep_deterministic_contract_identity() {
         area.mounts.reverse();
     }
 
-    assert_eq!(left.identity(), "zeta#works");
+    assert_eq!(left.identity(), "works");
     assert_eq!(left.fingerprint(), reordered.fingerprint());
 }
 
 #[test]
 fn snapshot_wire_shape_and_fingerprint_remain_service_compatible() {
-    let first = contract("zeta", "works");
-    let second = contract("alpha", "works");
+    let first = contract("zeta", "zeta-works");
+    let second = contract("alpha", "alpha-works");
     let left = ProjectSnapshot::derive(
         "project",
         "model-fingerprint",
@@ -90,7 +90,7 @@ fn snapshot_wire_shape_and_fingerprint_remain_service_compatible() {
 
     assert_eq!(left, right);
     assert_eq!(left.id, left.fingerprint());
-    assert_eq!(left.claims[0].identity(), "alpha#works");
+    assert_eq!(left.claims[0].identity(), "alpha-works");
     assert_eq!(FORMAT, "azimuth-assurance-project-snapshot");
     assert_eq!(VERSION, 2);
 

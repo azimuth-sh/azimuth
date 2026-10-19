@@ -20,7 +20,7 @@ fn parse(source: &str) -> Result<manifest::Manifest, String> {
 fn parses_stable_check_implementation_linkage() {
     let source = format!(
         r#"{{"check_implementations":[{{
-          "check":"payments/recovery-under-loss",
+          "check":"recovery-under-loss",
           "site":"recovery::replay_after_loss",
           "file":"src/recovery.rs",
           "lang":"rust",
@@ -33,7 +33,7 @@ fn parses_stable_check_implementation_linkage() {
     );
     let manifest = parse(&source).unwrap();
     let implementation = &manifest.check_implementations[0];
-    assert_eq!(implementation.check, "payments/recovery-under-loss");
+    assert_eq!(implementation.check, "recovery-under-loss");
     assert_eq!(
         implementation.semantic_identity(),
         "payments|rust-item|recovery::replay_after_loss"
@@ -53,7 +53,7 @@ fn rejects_every_alpha_one_evidence_collection() {
 fn rejects_unknown_and_missing_check_implementation_fields() {
     let error = parse(&format!(
         r#"{{"check_implementations":[{{
-          "check":"payments/recovery-under-loss",
+          "check":"recovery-under-loss",
           "site":"recovery::replay_after_loss",
           "file":"src/recovery.rs",
           "lang":"rust",
@@ -66,7 +66,7 @@ fn rejects_unknown_and_missing_check_implementation_fields() {
 
     let missing = parse(
         r#"{"check_implementations":[{
-          "check":"payments/recovery-under-loss",
+          "check":"recovery-under-loss",
           "site":"recovery::replay_after_loss",
           "file":"src/recovery.rs",
           "lang":"rust"
@@ -80,7 +80,7 @@ fn rejects_unknown_and_missing_check_implementation_fields() {
 fn rejects_invalid_fingerprints_partial_identity_and_duplicates() {
     let invalid = parse(
         r#"{"check_implementations":[{
-          "check":"payments/recovery-under-loss",
+          "check":"recovery-under-loss",
           "site":"recovery::replay_after_loss",
           "file":"src/recovery.rs",
           "lang":"rust",
@@ -93,7 +93,7 @@ fn rejects_invalid_fingerprints_partial_identity_and_duplicates() {
     assert!(invalid.contains("partial source identity"), "{invalid}");
 
     let implementation = format!(
-        r#"{{"check":"payments/recovery-under-loss","site":"recovery::replay_after_loss",
+        r#"{{"check":"recovery-under-loss","site":"recovery::replay_after_loss",
         "file":"src/recovery.rs","lang":"rust","source_fingerprint":"{SHA}"}}"#
     );
     let duplicate = parse(&format!(
@@ -110,10 +110,10 @@ fn rejects_invalid_fingerprints_partial_identity_and_duplicates() {
 fn accepts_all_six_current_collections_and_rejects_unknown_top_level_keys() {
     let source = format!(
         r#"{{
-          "realizes":[{{"spec":"alpha","claim":"works","site":"A","file":"a.rs","lang":"rust"}}],
-          "check_implementations":[{{"check":"alpha/works","site":"T","file":"t.rs",
+          "realizes":[{{"claim":"works","site":"A","file":"a.rs","lang":"rust"}}],
+          "check_implementations":[{{"check":"works","site":"T","file":"t.rs",
             "lang":"rust","source_fingerprint":"{SHA}"}}],
-          "mechanism_implementations":[{{"spec":"alpha","mechanism":"guard",
+          "mechanism_implementations":[{{"mechanism":"guard",
             "site":"alpha::A","binding":"rust-symbol:alpha::A","file":"a.rs","lang":"rust",
             "source_fingerprint":"{SHA}"}}],
           "class_members":[{{"class":"routes","site":"A","file":"a.rs","lang":"rust"}}],
@@ -138,7 +138,7 @@ fn accepts_all_six_current_collections_and_rejects_unknown_top_level_keys() {
 #[test]
 fn marker_implementations_require_strict_sites_bindings_and_companions() {
     let valid = format!(
-        r#"{{"mechanism_implementations":[{{"spec":"alpha","mechanism":"guard",
+        r#"{{"mechanism_implementations":[{{"mechanism":"guard",
         "site":"alpha::Guard::apply","binding":"rust-symbol:alpha::Guard::apply",
         "file":"src/guard.rs","lang":"rust","source_fingerprint":"{SHA}"}}],
         "artifacts":[{{"id":"rust-symbol:alpha::Guard::apply","kind":"rust-symbol",
@@ -173,8 +173,8 @@ fn marker_implementations_require_strict_sites_bindings_and_companions() {
             valid.replace("alpha::Guard::apply", "src/guard.rs#alpha::Guard::apply"),
         ),
         (
-            "invalid spec id",
-            valid.replace("\"spec\":\"alpha\"", "\"spec\":\"Alpha\""),
+            "unexpected module field",
+            valid.replace("\"mechanism\":", "\"spec\":\"alpha\",\"mechanism\":"),
         ),
         (
             "invalid mechanism id",
@@ -188,14 +188,14 @@ fn marker_implementations_require_strict_sites_bindings_and_companions() {
         assert!(parse(&invalid).is_err(), "{name} unexpectedly parsed");
     }
     let missing_companion = format!(
-        r#"{{"mechanism_implementations":[{{"spec":"alpha","mechanism":"guard",
+        r#"{{"mechanism_implementations":[{{"mechanism":"guard",
         "site":"alpha::Guard::apply","binding":"rust-symbol:alpha::Guard::apply",
         "file":"src/guard.rs","lang":"rust","source_fingerprint":"{SHA}"}}]}}"#
     );
     assert!(parse(&missing_companion).is_err());
 
     let assembled_with_raw_ordinary_collision = format!(
-        r#"{{"mechanism_implementations":[{{"spec":"alpha","mechanism":"guard",
+        r#"{{"mechanism_implementations":[{{"mechanism":"guard",
         "site":"alpha::Guard::apply","binding":"core|rust-symbol|alpha::Guard::apply",
         "file":"src/guard.rs","lang":"rust","source_fingerprint":"{SHA}",
         "area":"core","address_kind":"rust-symbol","address":"alpha::Guard::apply",

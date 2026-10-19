@@ -154,21 +154,21 @@ assert len(launch["plan"]["challenges"]) == 5
 resolutions = {item["plan"]: item for item in exported["challenge_resolutions"]}
 selectors = {
     "judgment-claim": (
-        ("claim-judgment", "claim", "synthetic#behavior"),
-        ("claim", "synthetic#behavior"),
-        ("claim-judgment", "synthetic#behavior"),
-        ("claim", "synthetic#behavior"),
+        ("claim-judgment", "claim", "behavior"),
+        ("claim", "behavior"),
+        ("claim-judgment", "behavior"),
+        ("claim", "behavior"),
     ),
     "judgment-mechanism": (
-        ("claim-judgment", "mechanism", "synthetic#guard"),
-        ("claim", "synthetic#behavior"),
-        ("claim-judgment", "synthetic#behavior"),
-        ("mechanism", "synthetic#guard"),
+        ("claim-judgment", "mechanism", "guard"),
+        ("claim", "behavior"),
+        ("claim-judgment", "behavior"),
+        ("mechanism", "guard"),
     ),
     "judgment-realization": (
         ("claim-judgment", "realization", "core|rust-symbol|synthetic::works"),
-        ("claim", "synthetic#behavior"),
-        ("claim-judgment", "synthetic#behavior"),
+        ("claim", "behavior"),
+        ("claim-judgment", "behavior"),
         ("realization", "core|rust-symbol|synthetic::works"),
     ),
     "qualification-binding": (
@@ -178,16 +178,16 @@ selectors = {
         ("binding", "synthetic/edge"),
     ),
     "qualification-check": (
-        ("method-qualification", "check", "synthetic/analyzer"),
+        ("method-qualification", "check", "analyzer"),
         ("method-qualification", "synthetic/analyzer-method"),
         ("method-qualification", "synthetic/analyzer-method"),
-        ("check", "synthetic/analyzer"),
+        ("check", "analyzer"),
     ),
     "qualification-mechanism": (
-        ("method-qualification", "mechanism", "synthetic#guard"),
+        ("method-qualification", "mechanism", "guard"),
         ("method-qualification", "synthetic/analyzer-method"),
         ("method-qualification", "synthetic/analyzer-method"),
-        ("mechanism", "synthetic#guard"),
+        ("mechanism", "guard"),
     ),
     "qualification-realization": (
         ("method-qualification", "realization", "core|rust-symbol|synthetic::works"),
@@ -271,7 +271,7 @@ fault = next(
     item for item in launch["plan"]["challenges"]
     if item["challenger"]["id"] == "fault/injector"
 )
-assert ("mechanism", "synthetic#guard") in {
+assert ("mechanism", "guard") in {
     (item["kind"], item["id"]) for item in fault["scope"]["anchors"]
 }
 assert routes[fault["id"]]["capability"]["address"] == "synthetic/faults"

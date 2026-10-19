@@ -5,28 +5,28 @@ using Azimuth.Annotations;
 namespace Azimuth.Fixture
 {
     /// A type-level tag names its site by the type; a method-level tag by Type.Method.
-    [Realizes("alpha", "type-level-thing")]
+    [Realizes("type-level-thing")]
     public sealed class Production
     {
-        [Realizes("alpha", "method-level-thing")]
+        [Realizes("method-level-thing")]
         public void Method()
         {
         }
 
         /// A site may realize several claims — branches of one method.
-        [Realizes("alpha", "first-branch")]
-        [Realizes("alpha", "second-branch")]
-        [ImplementsMechanism("alpha", "branch-selection")]
+        [Realizes("first-branch")]
+        [Realizes("second-branch")]
+        [ImplementsMechanism("branch-selection")]
         public void Branching()
         {
         }
 
-        [ImplementsMechanism("alpha", "guard-integer")]
+        [ImplementsMechanism("guard-integer")]
         public void Guard(int value)
         {
         }
 
-        [ImplementsMechanism("alpha", "guard-string")]
+        [ImplementsMechanism("guard-string")]
         public void Guard(string value)
         {
         }
@@ -36,7 +36,7 @@ namespace Azimuth.Fixture
         }
 
         /// An async method's sequence points live on the state machine's MoveNext, not here.
-        [Realizes("alpha", "async-thing")]
+        [Realizes("async-thing")]
         public async Task AsyncWork()
         {
             await Task.Yield();
@@ -44,7 +44,7 @@ namespace Azimuth.Fixture
 
         public sealed class Nested
         {
-            [ImplementsMechanism("alpha", "nested-guard")]
+            [ImplementsMechanism("nested-guard")]
             public void Guard(Guid value)
             {
             }
@@ -53,12 +53,12 @@ namespace Azimuth.Fixture
 
     /// A value type is a realization site too — and the type that *is* an enforcement mechanism is
     /// often a struct, so excluding them would have made the strongest rung untaggable.
-    [Realizes("alpha", "struct-level-thing")]
+    [Realizes("struct-level-thing")]
     public readonly record struct Amount(long MinorUnits);
 
     /// A type with no ordinary methods still needs a navigable realization source. Validators and
     /// configuration types commonly put their entire predicate in the constructor.
-    [Realizes("alpha", "constructor-only-thing")]
+    [Realizes("constructor-only-thing")]
     public sealed class ConstructorOnly
     {
         public ConstructorOnly()
@@ -84,19 +84,19 @@ namespace Azimuth.Fixture.Traced
     public sealed class Tests
     {
         [Fact]
-        [ImplementsCheck("fixture/component-behavior")]
+        [ImplementsCheck("fixture-component-behavior")]
         public void Covered()
         {
         }
 
         [Fact]
-        [ImplementsCheck("fixture/component-behavior")]
+        [ImplementsCheck("fixture-component-behavior")]
         public void CoveredRelationally()
         {
         }
 
         [Fact]
-        [ImplementsCheck("fixture/model-behavior")]
+        [ImplementsCheck("fixture-model-behavior")]
         public void CoveredWithOracle()
         {
         }

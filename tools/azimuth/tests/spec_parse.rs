@@ -24,12 +24,13 @@ fn package_root() -> PathBuf {
 }
 
 fn write_routine_spec(path: &Path, id: &str, scenario: &str) {
+    let entity_prefix = id.replace('/', "-");
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(
         path,
         format!(
-            "# Spec: {id}\n\n## Claim: works\nCriticality: routine\n\n\
-             The system must work.\n\n### Case: {scenario}\nThe system works when invoked.\n"
+            "# Spec: {id}\n\n## Claim: {entity_prefix}-works\nCriticality: routine\n\n\
+             The system must work.\n\n### Case: {entity_prefix}-{scenario}\nThe system works when invoked.\n"
         ),
     )
     .unwrap();
@@ -395,7 +396,7 @@ fn sibling_spec_design_and_verification_form_one_package() {
     fs::write(package.join("design.md"), "# Design: package\n").unwrap();
     fs::write(
         package.join("verification.md"),
-        "# Verification: package\n\n## Check: package/works\nMethod: invoke it\n\
+        "# Verification: package\n\n## Check: package-check\nMethod: invoke it\n\
          Terminal: it works\n\nOne terminal outcome.\n",
     )
     .unwrap();
@@ -432,7 +433,7 @@ fn misplaced_facets_remain_loaded_and_visible_as_navigation_warnings() {
     fs::write(model.join("misplaced/design.md"), "# Design: declared\n").unwrap();
     fs::write(
         model.join("misplaced/verification.md"),
-        "# Verification: declared\n\n## Check: declared/works\nMethod: invoke it\n\
+        "# Verification: declared\n\n## Check: declared-check\nMethod: invoke it\n\
          Terminal: it works\n\nOne terminal outcome.\n",
     )
     .unwrap();
@@ -459,7 +460,7 @@ fn complete_verification_authority_is_checked_before_only_selection() {
         fs::write(
             model.join(owner).join("verification.md"),
             format!(
-                "# Verification: {owner}\n\n## Check: shared/check\nMethod: invoke it\n\
+                "# Verification: {owner}\n\n## Check: shared-check\nMethod: invoke it\n\
                  Terminal: {terminal}\n\nOne terminal outcome.\n"
             ),
         )
@@ -476,7 +477,7 @@ fn complete_verification_authority_is_checked_before_only_selection() {
     .unwrap_err();
     assert!(errors.iter().any(|error| error
         .message
-        .contains("Check `shared/check` is already declared")));
+        .contains("Check `shared-check` is already declared")));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -493,7 +494,7 @@ fn cross_file_duplicate_check_claim_pairs_are_derivation_errors() {
     .unwrap();
     fs::write(
         model.join("beta/verification.md"),
-        "# Verification: beta\n\n## Check: beta/unused\nMethod: invoke\nTerminal: works\n\nAtomic.\n",
+        "# Verification: beta\n\n## Check: beta-unused\nMethod: invoke\nTerminal: works\n\nAtomic.\n",
     )
     .unwrap();
     fs::write(
@@ -505,7 +506,7 @@ fn cross_file_duplicate_check_claim_pairs_are_derivation_errors() {
     let errors = load_packages(&model).unwrap_err();
     assert!(errors.iter().any(|error| error
         .message
-        .contains("Check `shared/check` is already bound to Case `alpha#works/works`")));
+        .contains("Check `shared-check` is already bound to Case `alpha-works`")));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -517,14 +518,14 @@ fn only_selection_retains_relevant_challenge_plans_atomically() {
     write_routine_spec(&model.join("beta/spec.md"), "beta", "works");
     fs::write(
         model.join("alpha/verification.md"),
-        "# Verification: alpha\n\n## Check: shared/check\nMethod: invoke\nTerminal: works\n\n\
-         Atomic.\n\n## Evidence Binding: edge/alpha\nCheck: shared/check\nCase: alpha#works/works\n\
+        "# Verification: alpha\n\n## Check: shared-check\nMethod: invoke\nTerminal: works\n\n\
+         Atomic.\n\n## Evidence Binding: edge/alpha\nCheck: shared-check\nCase: alpha-works\n\
          Method qualification: shared/method\nProposition: direct\nContext: {}\n\
          Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n\n\
-         ## Evidence Binding: edge/beta\nCheck: shared/check\nCase: beta#works/works\n\
+         ## Evidence Binding: edge/beta\nCheck: shared-check\nCase: beta-works\n\
          Method qualification: shared/method\nProposition: direct\nContext: {}\n\
          Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n\n\
-         ## Method Qualification: shared/method\nCheck: shared/check\nScope: unit\n\
+         ## Method Qualification: shared/method\nCheck: shared-check\nScope: unit\n\
          Quantification: example\nOracle: direct\nContext: {}\nChallenge domain: [\"context\"]\n\
          Policy: credible\nVerdict: qualified\n\
          Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
@@ -532,7 +533,7 @@ fn only_selection_retains_relevant_challenge_plans_atomically() {
          ## Challenger: mutation/perturb\nForm: implementation-perturbation\n\
          Searches for: an undetected change\nRequired scope: [\"context\"]\n\nOpen objection.\n\n\
          ## Challenge Plan: shared/plan\nChallenger: mutation/perturb\n\
-         Select: method-qualification from check shared/check\n\
+         Select: method-qualification from check shared-check\n\
          Select: applicability-decision from binding edge/beta\n\nTargets relevant decisions.\n",
     )
     .unwrap();
@@ -568,7 +569,7 @@ fn only_selection_retains_relevant_challenge_plans_atomically() {
     assert_eq!(plan.selectors.len(), 2);
     assert_eq!(
         plan.selectors[0].canonical(),
-        "method-qualification from check shared/check"
+        "method-qualification from check shared-check"
     );
     assert_eq!(
         plan.selectors[1].canonical(),
@@ -590,18 +591,16 @@ fn local_check_identity_is_normalized_before_fingerprinting() {
     write_routine_spec(&model.join("alpha/spec.md"), "alpha", "works");
     fs::write(
         model.join("alpha/verification.md"),
-        "# Verification: alpha\n\n## Check: alpha/works\nMethod: invoke\nTerminal: works\n\n\
+        "# Verification: alpha\n\n## Check: alpha-check\nMethod: invoke\nTerminal: works\n\n\
          Atomic.\n",
     )
     .unwrap();
     let manifest = root.join("manifest.json");
     fs::write(
         &manifest,
-        "{\"check_implementations\":[{\"check\":\"alpha/works\",\
+        "{\"check_implementations\":[{\"check\":\"alpha-check\",\
          \"site\":\"tests::works\",\"file\":\"src/tests.rs\",\"lang\":\"rust\",\
-         \"source_fingerprint\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\
-         \"area\":\"forged\",\"address_kind\":\"forged-kind\",\
-         \"address\":\"forged-address\",\"mount\":\"forged-mount\"}]}"
+         \"source_fingerprint\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}]}"
     )
     .unwrap();
     let first_workspace = root.join("first-workspace.json");
@@ -653,11 +652,9 @@ fn local_check_identity_is_normalized_before_fingerprinting() {
 
     fs::write(
         &manifest,
-        "{\"check_implementations\":[{\"check\":\"alpha/works\",\
+        "{\"check_implementations\":[{\"check\":\"alpha-check\",\
          \"site\":\"tests::outside\",\"file\":\"outside/tests.rs\",\"lang\":\"rust\",\
-         \"source_fingerprint\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\
-         \"area\":\"forged\",\"address_kind\":\"forged-kind\",\
-         \"address\":\"forged-address\",\"mount\":\"forged-mount\"}]}"
+         \"source_fingerprint\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}]}"
     )
     .unwrap();
     let outside = azimuth::load(
@@ -680,7 +677,7 @@ fn merged_manifest_conflicts_are_rejected_before_only_selection() {
     write_routine_spec(&model.join("beta/spec.md"), "beta", "works");
     fs::write(
         model.join("beta/verification.md"),
-        "# Verification: beta\n\n## Check: beta/works\nMethod: invoke\nTerminal: works\n\nAtomic.\n",
+        "# Verification: beta\n\n## Check: beta-check\nMethod: invoke\nTerminal: works\n\nAtomic.\n",
     )
     .unwrap();
     let workspace = root.join("workspace.json");
@@ -697,15 +694,15 @@ fn merged_manifest_conflicts_are_rejected_before_only_selection() {
     let second = root.join("second.json");
     let linkage = |fingerprint: char, suffix: &str| {
         format!(
-            "{{\"realizes\":[{{\"spec\":\"beta\",\"claim\":\"works\",\
+            "{{\"realizes\":[{{\"claim\":\"beta-works\",\
              \"site\":\"beta::works\",\"file\":\"src/beta.rs\",\"lang\":\"rust\",\
              \"source_fingerprint\":\"sha256:{}\"}}],\
-             \"check_implementations\":[{{\"check\":\"beta/works\",\
+             \"check_implementations\":[{{\"check\":\"beta-check\",\
              \"site\":\"tests::works\",\"file\":\"src/tests.rs\",\"lang\":\"rust\",\
              \"source_fingerprint\":\"sha256:{}\"}}],\
-             \"mechanism_implementations\":[{{\"spec\":\"beta\",\"mechanism\":\"guard\",\
-             \"site\":\"beta::guard::{suffix}\",\
-             \"binding\":\"rust-symbol:beta::guard::{suffix}\",\
+             \"mechanism_implementations\":[{{\"mechanism\":\"beta-guard\",\
+             \"site\":\"beta::guard\",\
+             \"binding\":\"rust-symbol:beta::guard\",\
              \"file\":\"src/guard-{suffix}.rs\",\"lang\":\"rust\",\
              \"source_fingerprint\":\"sha256:{}\"}}],\
              \"class_members\":[{{\"class\":\"beta\",\"site\":\"GET /{suffix}\",\
@@ -715,7 +712,7 @@ fn merged_manifest_conflicts_are_rejected_before_only_selection() {
              \"source_fingerprint\":\"sha256:{}\"}}],\
              \"artifacts\":[{{\"id\":\"beta-artifact\",\"kind\":\"schema\",\
              \"file\":\"src/schema.sql\"}},\
-             {{\"id\":\"rust-symbol:beta::guard::{suffix}\",\"kind\":\"rust-symbol\",\
+             {{\"id\":\"rust-symbol:beta::guard\",\"kind\":\"rust-symbol\",\
              \"file\":\"src/guard-{suffix}.rs\"}}]}}",
             fingerprint.to_string().repeat(64),
             fingerprint.to_string().repeat(64),
@@ -745,7 +742,7 @@ fn merged_manifest_conflicts_are_rejected_before_only_selection() {
     );
     assert!(messages.contains("duplicate realization"), "{messages}");
     assert!(
-        messages.contains("multiple marker implementations"),
+        messages.contains("has multiple marker targets"),
         "{messages}"
     );
     assert!(
@@ -765,12 +762,12 @@ fn marker_sites_are_distinct_across_areas_and_conflict_within_one_area_before_on
     write_routine_spec(&model.join("beta/spec.md"), "beta", "works");
     fs::write(
         model.join("alpha/design.md"),
-        "# Design: alpha\n\n## Claim: works\nMechanism: guard\nEnforcement: guard\n\nExact.\n",
+        "# Design: alpha\n\n## Claim: alpha-works\nMechanism: alpha-guard\nEnforcement: guard\n\nExact.\n",
     )
     .unwrap();
     fs::write(
         model.join("beta/design.md"),
-        "# Design: beta\n\n## Claim: works\nMechanism: guard\nEnforcement: guard\n\nExact.\n",
+        "# Design: beta\n\n## Claim: beta-works\nMechanism: beta-guard\nEnforcement: guard\n\nExact.\n",
     )
     .unwrap();
     let manifest = root.join("markers.json");
@@ -778,10 +775,10 @@ fn marker_sites_are_distinct_across_areas_and_conflict_within_one_area_before_on
         &manifest,
         format!(
             "{{\"mechanism_implementations\":[\
-             {{\"spec\":\"alpha\",\"mechanism\":\"guard\",\"site\":\"pkg::Guard::apply\",\
+             {{\"mechanism\":\"alpha-guard\",\"site\":\"pkg::Guard::apply\",\
              \"binding\":\"rust-symbol:pkg::Guard::apply\",\"file\":\"src/a/guard.rs\",\
              \"lang\":\"rust\",\"source_fingerprint\":\"{SHA}\"}},\
-             {{\"spec\":\"beta\",\"mechanism\":\"guard\",\"site\":\"pkg::Guard::apply\",\
+             {{\"mechanism\":\"beta-guard\",\"site\":\"pkg::Guard::apply\",\
              \"binding\":\"rust-symbol:pkg::Guard::apply\",\"file\":\"src/b/guard.rs\",\
              \"lang\":\"rust\",\"source_fingerprint\":\"{SHA}\"}}],\
              \"artifacts\":[\
@@ -871,7 +868,7 @@ fn verification_authority_requires_a_current_owning_spec() {
     fs::create_dir_all(model.join("retired")).unwrap();
     fs::write(
         model.join("retired/verification.md"),
-        "# Verification: retired\n\n## Check: retired/check\nMethod: invoke\nTerminal: works\n\nAtomic.\n",
+        "# Verification: retired\n\n## Check: retired-check\nMethod: invoke\nTerminal: works\n\nAtomic.\n",
     )
     .unwrap();
 
@@ -889,12 +886,7 @@ fn missing_standards_warn_for_any_nonroutine_claim() {
     write_routine_spec(&model.join("routine/spec.md"), "routine", "works");
     fs::write(
         model.join("routine/verification.md"),
-        verification_binding(
-            "routine",
-            "routine/check",
-            "routine#works/works",
-            "edge/routine",
-        ),
+        verification_binding("routine", "routine-check", "routine-works", "edge/routine"),
     )
     .unwrap();
     let routine = load_packages(&model).unwrap();
@@ -915,14 +907,14 @@ fn missing_standards_warn_for_any_nonroutine_claim() {
     fs::write(
         model.join("standard/verification.md"),
         format!(
-            "{}\n## Claim Judgment: standard#works\nVerdict: accepted\nPolicy: credible\n\
+            "{}\n## Claim Judgment: standard-works\nVerdict: accepted\nPolicy: credible\n\
              Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
              Judged: 2026-08-21\nJudge: owner\nBasis: the composition is sufficient\n\
              Residual risk: none identified\n\nReviewed.\n",
             verification_binding(
                 "standard",
-                "standard/check",
-                "standard#works/works",
+                "standard-check",
+                "standard-works",
                 "edge/standard",
             )
         ),
@@ -947,11 +939,11 @@ fn verification_binding(owner: &str, check: &str, case: &str, binding: &str) -> 
 
 fn verification_with_binding(owner: &str, binding: &str, include_check: bool) -> String {
     let check = include_check
-        .then_some("## Check: shared/check\nMethod: invoke\nTerminal: works\n\nAtomic.\n\n")
+        .then_some("## Check: shared-check\nMethod: invoke\nTerminal: works\n\nAtomic.\n\n")
         .unwrap_or_default();
     format!(
         "# Verification: {owner}\n\n{check}## Evidence Binding: {binding}\n\
-         Check: shared/check\nCase: alpha#works/works\nMethod qualification: shared/method\n\
+         Check: shared-check\nCase: alpha-works\nMethod qualification: shared/method\n\
          Proposition: direct\nContext: {{}}\n\
          Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n"
     )

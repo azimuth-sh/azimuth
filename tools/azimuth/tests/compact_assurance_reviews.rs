@@ -242,11 +242,11 @@ fn latest_review_target_is_independent_of_json_object_key_order() {
 }
 
 #[test]
-fn method_review_input_pins_definition_without_manufacturing_a_review() {
+fn claim_review_input_pins_definition_without_manufacturing_a_review() {
     let input = assurance_review::review_input(
         &model(),
         "sample-project",
-        &json::parse(r#"{"kind":"method-qualification","check":"rejects-access"}"#).unwrap(),
+        &json::parse(r#"{"kind":"claim-review","claim":"restricted-access"}"#).unwrap(),
         &[],
         &[],
     )
@@ -257,8 +257,8 @@ fn method_review_input_pins_definition_without_manufacturing_a_review() {
     );
     let target = input.get("target").unwrap();
     assert_eq!(
-        target.get("check").and_then(Json::as_str),
-        Some("rejects-access")
+        target.get("claim").and_then(Json::as_str),
+        Some("restricted-access")
     );
     for field in ["decision", "reviewer", "conclusion", "reviewed_at_ms"] {
         assert!(input.get(field).is_none());
@@ -287,10 +287,18 @@ fn method_review_input_pins_definition_without_manufacturing_a_review() {
 }
 
 #[test]
-fn applicability_review_input_exposes_missing_exact_subject_evidence() {
-    let input = assurance_review::review_input(&model(), "sample-project", &json::parse(&format!(
-        r#"{{"kind":"applicability-decision","check":"rejects-access","case":"rejected-access","subject_fingerprint":"{SHA}"}}"#
-    )).unwrap(), &[], &[]).unwrap();
+fn claim_health_input_exposes_missing_exact_subject_evidence() {
+    let input = assurance_review::review_input(
+        &model(),
+        "sample-project",
+        &json::parse(&format!(
+            r#"{{"kind":"claim-health","claim":"restricted-access","subject_fingerprint":"{SHA}"}}"#
+        ))
+        .unwrap(),
+        &[],
+        &[],
+    )
+    .unwrap();
     assert!(input
         .get("observations")
         .unwrap()
@@ -303,7 +311,15 @@ fn applicability_review_input_exposes_missing_exact_subject_evidence() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|gap| gap.get("case").and_then(Json::as_str) == Some("rejected-access")));
+        .any(
+            |gap| gap.get("record_status").and_then(Json::as_str) == Some("missing")
+                && gap
+                    .get("target")
+                    .unwrap()
+                    .get("kind")
+                    .and_then(Json::as_str)
+                    == Some("claim-health")
+        ));
     let binding = &input
         .get("dependencies")
         .unwrap()
@@ -319,6 +335,10 @@ fn applicability_review_input_exposes_missing_exact_subject_evidence() {
 #[test]
 fn review_input_rejects_unknown_targets_and_authored_decisions() {
     for request in [
+        r#"{"kind":"claim-review","claim":"unknown-claim"}"#,
+        r#"{"kind":"claim-review","claim":"restricted-access","decision":"accepted"}"#,
+        r#"{"kind":"claim-health","claim":"unknown-claim","subject_fingerprint":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
+        r#"{"kind":"claim-health","claim":"restricted-access"}"#,
         r#"{"kind":"method-qualification","check":"unknown-check"}"#,
         r#"{"kind":"method-qualification","check":"rejects-access","decision":"accepted"}"#,
         r#"{"kind":"applicability-decision","check":"rejects-access","case":"unknown-case","subject_fingerprint":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
@@ -337,9 +357,14 @@ fn review_input_rejects_unknown_targets_and_authored_decisions() {
 
 #[test]
 fn claim_review_input_includes_all_current_dependencies_and_visible_gaps() {
-    let input = assurance_review::review_input(&model(), "sample-project", &json::parse(&format!(
-        r#"{{"kind":"claim-judgment","claim":"restricted-access","subject_fingerprint":"{SHA}"}}"#
-    )).unwrap(), &[], &[]).unwrap();
+    let input = assurance_review::review_input(
+        &model(),
+        "sample-project",
+        &json::parse(r#"{"kind":"claim-review","claim":"restricted-access"}"#).unwrap(),
+        &[],
+        &[],
+    )
+    .unwrap();
     let dependencies = input.get("dependencies").unwrap();
     for field in ["claims", "cases", "checks", "bindings"] {
         assert_eq!(
@@ -353,7 +378,13 @@ fn claim_review_input_includes_all_current_dependencies_and_visible_gaps() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|gap| gap.get("status").and_then(Json::as_str) == Some("structural-gap")));
+        .any(|gap| gap.get("record_status").and_then(Json::as_str) == Some("missing")));
+    assert!(!dependencies.get("claims").unwrap().as_array().unwrap()[0]
+        .get("gaps")
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -662,7 +693,11 @@ fn review_packet_keeps_exact_observations_and_native_bundle_artifacts() {
     let model = model();
     let authority = assurance_review::authority(&model, "sample-project").unwrap();
     let bundle = observed_bundle(&authority, "rejects-access", "rejected-access", 10);
-    let request=json::parse(&format!(r#"{{"kind":"applicability-decision","check":"rejects-access","case":"rejected-access","subject_fingerprint":"{}"}}"#,bundle.subject_fingerprint)).unwrap();
+    let request = json::parse(&format!(
+        r#"{{"kind":"claim-health","claim":"restricted-access","subject_fingerprint":"{}"}}"#,
+        bundle.subject_fingerprint
+    ))
+    .unwrap();
     let packet =
         assurance_review::review_input(&model, "sample-project", &request, &[], &[bundle.clone()])
             .unwrap();
@@ -732,15 +767,39 @@ fn unresolved_judgment_becomes_stale_when_its_applicability_basis_is_superseded(
 fn review_input_retains_existing_review_without_rewriting_its_decision() {
     let model = model();
     let authority = assurance_review::authority(&model, "sample-project").unwrap();
-    let review = qualification(&authority, 100);
-    let packet = assurance_review::review_input(
-        &model,
-        "sample-project",
-        &json::parse(r#"{"kind":"method-qualification","check":"rejects-access"}"#).unwrap(),
-        &[review.clone()],
-        &[],
-    )
-    .unwrap();
+    let request = json::parse(r#"{"kind":"claim-review","claim":"restricted-access"}"#).unwrap();
+    let input =
+        assurance_review::review_input(&model, "sample-project", &request, &[], &[]).unwrap();
+    let claim = &authority.get("claims").unwrap().as_array().unwrap()[0];
+    let mut review = qualification(&authority, 100);
+    if let Json::Obj(fields) = &mut review {
+        fields.retain(|(name, _)| {
+            !matches!(name.as_str(), "check" | "check_fingerprint" | "fingerprint")
+        });
+        fields
+            .iter_mut()
+            .find(|(name, _)| name == "kind")
+            .unwrap()
+            .1 = Json::str("claim-review");
+        fields.extend([
+            ("claim".into(), claim.get("id").unwrap().clone()),
+            (
+                "claim_fingerprint".into(),
+                claim.get("fingerprint").unwrap().clone(),
+            ),
+            (
+                "dependencies".into(),
+                input.get("dependencies").unwrap().clone(),
+            ),
+        ]);
+    }
+    let fingerprint = assurance_review::record_fingerprint(&review).unwrap();
+    if let Json::Obj(fields) = &mut review {
+        fields.push(("fingerprint".into(), Json::str(fingerprint)));
+    }
+    let packet =
+        assurance_review::review_input(&model, "sample-project", &request, &[review.clone()], &[])
+            .unwrap();
     assert_eq!(
         packet.get("existing_reviews").unwrap().as_array().unwrap(),
         &[review]

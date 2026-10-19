@@ -3,6 +3,7 @@ import { getServerSession, type NextAuthOptions } from 'next-auth';
 import GitHubProvider from 'next-auth/providers/github';
 import { redirect, notFound } from 'next/navigation';
 import { webConfig } from './config';
+import { developmentScenario } from './development';
 
 export function authOptions(): NextAuthOptions {
   const config = webConfig();
@@ -50,6 +51,10 @@ export function authOptions(): NextAuthOptions {
   };
 }
 export async function viewer() {
+  if (developmentScenario()) return {
+    githubId: 'synthetic-local-viewer', projects: ['payments-demo'],
+    expires: '2099-01-01T00:00:00.000Z',
+  };
   const session = await getServerSession(authOptions());
   return session?.githubId && session.projects.length ? session : null;
 }

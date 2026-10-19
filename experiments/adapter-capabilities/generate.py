@@ -238,13 +238,13 @@ def initialize(root: pathlib.Path) -> None:
     )
     (package / "verification.md").write_text(
         "# Verification: synthetic/behavior\n\n"
-        "## Check: synthetic/behavior\n"
+        "## Check: behavior-check\n"
         "Method: invoke the synthetic behavior\n"
         "Terminal: one bounded result\n\n"
         "The adapter runs one finite synthetic work unit.\n\n"
         "## Evidence Binding: synthetic/behavior-edge\n"
-        "Check: synthetic/behavior\n"
-        "Case: synthetic/behavior#behavior-is-observable/works\n"
+        "Check: behavior-check\n"
+        "Case: works\n"
         "Method qualification: synthetic/behavior-method\n"
         "Proposition: the bounded result directly establishes observable behavior\n"
         "Context: {}\n"
@@ -252,7 +252,7 @@ def initialize(root: pathlib.Path) -> None:
         "Policy: synthetic-evidence\n\n"
         "The experiment binds its one Check to its one Case.\n\n"
         "## Method Qualification: synthetic/behavior-method\n"
-        "Check: synthetic/behavior\n"
+        "Check: behavior-check\n"
         "Scope: component\n"
         "Quantification: example\n"
         "Oracle: relational\n"
@@ -270,7 +270,7 @@ def initialize(root: pathlib.Path) -> None:
         "Decided: 2026-08-30\n"
         "Decider: adapter-experiment\n\n"
         "The bounded Check applies directly to the fixture Case.\n\n"
-        "## Claim Judgment: synthetic/behavior#behavior-is-observable\n"
+        "## Claim Judgment: behavior-is-observable\n"
         "Verdict: accepted\n"
         "Policy: synthetic-evidence\n"
         "Fingerprint: sha256:c1a199c852170cd84bf5699d0b696f98d4c6db95819f2bd380588e0701ac897d\n"
@@ -286,9 +286,9 @@ def initialize(root: pathlib.Path) -> None:
         "The Challenger attacks the policy basis shared by the synthetic decisions.\n\n"
         "## Challenge Plan: synthetic/decision-coverage\n"
         "Challenger: synthetic/implementation-perturbation\n"
-        "Select: method-qualification from check synthetic/behavior\n"
+        "Select: method-qualification from check behavior-check\n"
         "Select: applicability-decision from binding synthetic/behavior-edge\n"
-        "Select: claim-judgment from claim synthetic/behavior#behavior-is-observable\n\n"
+        "Select: claim-judgment from claim behavior-is-observable\n\n"
         "The plan covers each positive decision made by the fixture.\n",
         encoding="utf-8",
     )
@@ -322,7 +322,6 @@ def initialize(root: pathlib.Path) -> None:
         {
             "realizes": [
                 {
-                    "spec": "synthetic/behavior",
                     "claim": "behavior-is-observable",
                     "site": "behavior::execute",
                     "file": "src/behavior.rs",
@@ -332,7 +331,7 @@ def initialize(root: pathlib.Path) -> None:
             ],
             "check_implementations": [
                 {
-                    "check": "synthetic/behavior",
+                    "check": "behavior-check",
                     "site": "behavior::probe",
                     "file": "src/behavior.rs",
                     "lang": "rust-symbol",
@@ -356,9 +355,9 @@ def initialize(root: pathlib.Path) -> None:
         "required_context": {"platform": "synthetic"},
         "checks": [
             {
-                "id": "synthetic/behavior",
-                "capability": "executor/checks",
-                "cases": ["synthetic/behavior#behavior-is-observable/works"],
+                "id": "behavior-check",
+                "execution-capability": "executor/checks",
+                "cases": ["works"],
                 "units": [{"id": "whole", "parameters": {}}],
             }
         ],
@@ -367,7 +366,7 @@ def initialize(root: pathlib.Path) -> None:
     execute = {**base, "operation": "execute"}
     imported = copy.deepcopy(base)
     imported["operation"] = "import"
-    imported["checks"][0]["capability"] = "importer/reports"
+    imported["checks"][0]["execution-capability"] = "importer/reports"
     write_json(root / "request-execute.json", execute)
     write_json(root / "request-import.json", imported)
     (root / "native-report.json").write_text(
@@ -393,7 +392,7 @@ def launch_fingerprint(launch: dict[str, object]) -> str:
             "subject": launch["subject"],
             "subject_fingerprint": launch["subject_fingerprint"],
             "plan": launch["plan"],
-            "adapter": launch["adapter"],
+            "adapter": launch["adapters"][0],
             "routes": launch["routes"],
         }
     )
@@ -422,19 +421,19 @@ def derive_launches(source: pathlib.Path, config_path: pathlib.Path, target: pat
     anchors = [
         {
             "kind": "claim",
-            "id": "synthetic/behavior#works",
+            "id": "behavior-is-observable",
             "fingerprint": fixed("e"),
         }
     ]
     inputs = [
         {
             "kind": "claim",
-            "id": "synthetic/behavior#works",
+            "id": "behavior-is-observable",
             "fingerprint": fixed("e"),
         },
         {
             "kind": "claim-judgment",
-            "id": "synthetic/behavior#works",
+            "id": "behavior-is-observable",
             "fingerprint": target_fingerprint,
         },
         {
@@ -474,7 +473,7 @@ def derive_launches(source: pathlib.Path, config_path: pathlib.Path, target: pat
         },
         "target": {
             "kind": "claim-judgment",
-            "id": "synthetic/behavior#works",
+            "id": "behavior-is-observable",
             "fingerprint": target_fingerprint,
         },
         "lane": "gate",
@@ -572,7 +571,7 @@ def invalid_requests(fixture: pathlib.Path, runtime: pathlib.Path) -> None:
         "operation": "import",
         "launch_plan": launch,
         "configuration": {
-            "fingerprint": launch["adapter"]["configuration_fingerprint"],
+            "fingerprint": launch["adapters"][0]["configuration_fingerprint"],
             "semantic_settings": {"dialect": "synthetic-v1"},
             "resources": [
                 {

@@ -1,31 +1,27 @@
 {
   "realizes": [
     {
-      "spec": "framework/assurance-deployment",
       "claim": "private-network-containment",
       "site": "private_compose_profile",
       "file": "services/assurance/docker-compose.yml",
       "lang": "yaml",
-      "source_fingerprint": "sha256:fae663b8d9a5cffc89a900dc54b0a0f1c63f73a1272ffc23d901879dba21fb1c"
+      "source_fingerprint": "sha256:2ccd45d1e15b27fe5430780ed2ea0f66364fb824ddbd496eaa753ef4ca7847e8"
     },
     {
-      "spec": "framework/assurance-deployment",
       "claim": "private-network-containment",
       "site": "private_deployment_account",
       "file": "services/assurance/README.md",
       "lang": "markdown",
-      "source_fingerprint": "sha256:36810682b28fd744a751b1579be70b6cfb58d7c60bae7a553c237d09dea8b043"
+      "source_fingerprint": "sha256:93da373c098cba1edc918d730b46e4d979ae087fde593c559b85b5b8b1ffc816"
     },
     {
-      "spec": "framework/assurance-deployment",
       "claim": "assurance-ledger-durability",
       "site": "assurance_data_volume",
       "file": "services/assurance/docker-compose.yml",
       "lang": "yaml",
-      "source_fingerprint": "sha256:fae663b8d9a5cffc89a900dc54b0a0f1c63f73a1272ffc23d901879dba21fb1c"
+      "source_fingerprint": "sha256:2ccd45d1e15b27fe5430780ed2ea0f66364fb824ddbd496eaa753ef4ca7847e8"
     },
     {
-      "spec": "framework/assurance-deployment",
       "claim": "assurance-ledger-durability",
       "site": "assurance_server_startup",
       "file": "services/assurance/server/src/main.rs",
@@ -33,12 +29,11 @@
       "source_fingerprint": "sha256:ebd9615bfad1467598f1fa947271aa6c2e558fa6694846321f72da139e233bb8"
     },
     {
-      "spec": "framework/assurance-deployment",
       "claim": "selected-image-platforms-build",
       "site": "build_selected_images",
       "file": "services/assurance/deployment/qualify.py",
       "lang": "python",
-      "source_fingerprint": "sha256:efb475f9d4ff192d09516b3e9aab1d60087caea8f8452558ab1a4eb9c3b92a14"
+      "source_fingerprint": "sha256:de6d09cea618940bad09a2cc89e1dc9d35deb9613a6fa4f80bec7c8873c6a4ce"
     }
   ],
   "check_implementations": [],

@@ -6,7 +6,7 @@ import java.net.InetSocketAddress
 
 object IdentityService {
     @JvmStatic
-    @Azimuth.Realizes(spec = "polyglot/identity", claim = "service-identifies-implementation-language")
+    @Azimuth.Realizes("service-identifies-implementation-language")
     fun identity(): String = "kotlin"
 
     @JvmStatic

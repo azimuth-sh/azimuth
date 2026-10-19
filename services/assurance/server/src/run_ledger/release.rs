@@ -44,6 +44,17 @@ pub(super) async fn publish(
         if existing != payload {
             return Err(LedgerError::conflict("release publication is immutable"));
         }
+        if let Some(catalog) = payload.get("catalog") {
+            model_catalog::store(
+                &mut tx,
+                &project,
+                revision,
+                catalog,
+                &submitter,
+                "publisher-publication",
+            )
+            .await?;
+        }
         tx.commit().await?;
         return Ok((
             StatusCode::OK,
@@ -56,6 +67,17 @@ pub(super) async fn publish(
         .bind(&project).bind(revision).bind(&submitter).execute(&mut *tx).await?;
     sqlx::query("INSERT INTO assurance_releases(project,fingerprint,model_revision,payload,submitted_by) VALUES($1,$2,$3,$4,$5)")
         .bind(&project).bind(fingerprint).bind(revision).bind(&payload).bind(&submitter).execute(&mut *tx).await?;
+    if let Some(catalog) = payload.get("catalog") {
+        model_catalog::store(
+            &mut tx,
+            &project,
+            revision,
+            catalog,
+            &submitter,
+            "publisher-publication",
+        )
+        .await?;
+    }
     for change in array(release, "changes")? {
         sqlx::query("INSERT INTO release_changes(project,release_fingerprint,change_id,change_revision,payload) VALUES($1,$2,$3,$4,$5)")
             .bind(&project).bind(fingerprint).bind(text(change,"id")?).bind(text(change,"revision")?).bind(change).execute(&mut *tx).await?;
@@ -179,7 +201,10 @@ pub(super) async fn show(
         .bind(&project).bind(&fingerprint).fetch_optional(&state.pool).await?;
     Ok(Json(record.ok_or_else(LedgerError::not_found)?))
 }
-fn paged(rows: Vec<sqlx::postgres::PgRow>, limit: i64) -> Result<Json<Value>, LedgerError> {
+pub(super) fn paged(
+    rows: Vec<sqlx::postgres::PgRow>,
+    limit: i64,
+) -> Result<Json<Value>, LedgerError> {
     let next = if rows.len() > limit as usize {
         Some(rows[limit as usize - 1].try_get::<String, _>("fingerprint")?)
     } else {
@@ -260,7 +285,7 @@ pub(super) async fn deploy(
         json!({"recorded":true,"release_fingerprint":body.release_fingerprint}),
     ))
 }
-async fn insert_deployment(
+pub(super) async fn insert_deployment(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     project: &str,
     release: &str,
@@ -298,6 +323,7 @@ async fn insert_deployment(
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Acceptance {
+    environment: String,
     expected_accepted_model_revision: String,
     reason: String,
 }
@@ -308,6 +334,7 @@ pub(super) async fn accept(
     Json(body): Json<Acceptance>,
 ) -> Result<Json<Value>, LedgerError> {
     let owner = state.authorize(&project, &headers, Some(Role::Owner))?;
+    azimuth::diag::validate_id(&body.environment, false).map_err(LedgerError::invalid)?;
     if body.reason.trim().is_empty() || body.reason.len() > 16384 {
         return Err(LedgerError::invalid(
             "bounded acceptance rationale required",
@@ -346,6 +373,54 @@ pub(super) async fn accept(
         ));
     }
     let revision = text(&release, "model_revision")?;
+    for key in [
+        format!("{project}|observation|{}", body.environment),
+        format!("{project}|current-deployment|{}", body.environment),
+    ] {
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+            .bind(key)
+            .execute(&mut *tx)
+            .await?;
+    }
+    let deployment:Option<Value>=sqlx::query_scalar("SELECT d.payload FROM environment_deployment_selections s JOIN release_deployments d ON d.project=s.project AND d.deployment_id=s.deployment_id WHERE s.project=$1 AND s.environment=$3 AND d.release_fingerprint=$2 AND s.revision=(SELECT MAX(revision) FROM environment_deployment_selections WHERE project=$1 AND environment=$3)")
+        .bind(&project).bind(&fingerprint).bind(&body.environment).fetch_optional(&mut *tx).await?;
+    let deployment = deployment.ok_or_else(|| {
+        LedgerError::conflict(
+            "release requires a designated deployment in the selected environment",
+        )
+    })?;
+    let fresh:bool=sqlx::query_scalar("SELECT COALESCE((SELECT payload->>'state'='complete' AND payload->>'release_fingerprint'=$2 AND deployment_id=$4 AND (extract(epoch FROM clock_timestamp())*1000)::bigint <= (payload->>'observed_at_ms')::bigint+(payload->>'valid_for_seconds')::bigint*1000 FROM deployment_observations WHERE project=$1 AND environment=$3 ORDER BY revision DESC LIMIT 1),false)")
+        .bind(&project).bind(&fingerprint).bind(&body.environment).bind(deployment["id"].as_str()).fetch_one(&mut *tx).await?;
+    if !fresh {
+        return Err(LedgerError::conflict(
+            "deployment observation is missing, stale or incomplete",
+        ));
+    }
+    let subject = deployment["subject_fingerprint"].as_str().ok_or_else(|| {
+        LedgerError::conflict("deployment has no exact native assessment Subject")
+    })?;
+    let (authority, reviews, bundles) =
+        load_revision_snapshot(&state.pool, &project, Some(revision)).await?;
+    let assessment = to_value(&assurance_review::subject_state(
+        &authority, &reviews, &bundles, subject,
+    ))?;
+    let current_authority = to_value(&authority)?;
+    for claim in current_authority["claims"]
+        .as_array()
+        .ok_or_else(|| LedgerError::invalid("authority Claims missing"))?
+    {
+        if claim["criticality"] != "routine"
+            && !assessment["claims"].as_array().is_some_and(|claims| {
+                claims
+                    .iter()
+                    .any(|c| c["claim"] == claim["id"] && c["status"] == "supported")
+            })
+        {
+            return Err(LedgerError::conflict(
+                "non-routine Claims require current supported Health for the selected deployment",
+            ));
+        }
+    }
     let previous_composition:Option<Value>=sqlx::query_scalar("SELECT r.payload->'release'->'composition' FROM release_acceptances a JOIN assurance_releases r ON r.project=a.project AND r.fingerprint=a.release_fingerprint WHERE a.project=$1 AND r.model_revision=$2 ORDER BY a.accepted_at DESC LIMIT 1")
         .bind(&project).bind(&body.expected_accepted_model_revision).fetch_optional(&mut *tx).await?;
     if let Some(previous) = previous_composition {

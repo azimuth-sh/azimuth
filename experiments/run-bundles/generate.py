@@ -17,7 +17,7 @@ DESCRIPTOR_FINGERPRINT = "sha256:" + "5" * 64
 CONFIGURATION_FINGERPRINT = "sha256:" + "6" * 64
 CHECK_CAPABILITY_FINGERPRINT = "sha256:" + "7" * 64
 CHALLENGE_CAPABILITY_FINGERPRINT = "sha256:" + "8" * 64
-CHECK_CASE = "synthetic/recovery#recovers/works"
+CHECK_CASE = "recovery-works"
 
 
 def fingerprint(value: object) -> str:
@@ -40,7 +40,7 @@ def unit(unit_id: str) -> dict[str, object]:
 
 def check_selection(units: list[dict[str, object]]) -> dict[str, object]:
     return {
-        "id": "synthetic/recovery-check",
+        "id": "recovery-check",
         "fingerprint": fixed("b"),
         "cases": [CHECK_CASE],
         "implementations": [
@@ -66,7 +66,7 @@ def challenge_selection(units: list[dict[str, object]]) -> dict[str, object]:
     inputs = [
         {
             "kind": "claim",
-            "id": "synthetic/recovery#recovers",
+            "id": "recovers",
             "fingerprint": fixed("1"),
         },
         {
@@ -81,7 +81,7 @@ def challenge_selection(units: list[dict[str, object]]) -> dict[str, object]:
         },
         {
             "kind": "check",
-            "id": "synthetic/recovery-check",
+            "id": "recovery-check",
             "fingerprint": fixed("b"),
         },
         {

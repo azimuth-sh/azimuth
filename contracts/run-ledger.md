@@ -61,3 +61,106 @@ Review payloads remain immutable; explicit revision links preserve submission pr
 An owner may POST `{"run_fingerprint":"sha256:...","reason":"..."}` to `/v1/projects/{project}/model-revisions/{revision}/run-models`. The representative Run and revision must already exist in the same project. The service derives the native Run model fingerprint from the stored Run, requires a nonempty Check-only plan whose Check IDs and fingerprints exist in that authority, and retains the owner, representative, rationale and time. Identical model associations are idempotent; the original attribution is immutable.
 
 This explicitly joins existing and subsequent Runs with that exact native model fingerprint to revision snapshots. It does not infer a relationship from Check names, change the accepted revision, establish source applicability, merge Subjects, or manufacture a Claim Health conclusion. Native dependency/currentness assessment and exact-Subject independent Claim Health still apply. Producers and collectors cannot create this association. Challenge histories remain explicitly associated by publication.
+
+## Revision catalogs
+
+A model revision owns an optional immutable navigation catalog independently of any
+release. `GET /v1/projects/{project}/model-revisions/{revision}/catalog` returns
+`{project, model_revision, fingerprint, catalog, submitted_by, provenance_basis,
+submitted_at}` or HTTP 404 when no catalog has been registered. Absence is not a
+reason to invent a hierarchy from IDs or choose an arbitrary release's catalog.
+
+An owner can POST the raw catalog exported by `azimuth assurance catalog` to the
+same route. Export it from the same complete model inputs used for the authority.
+Validation reuses the native release catalog contract: module parents must exist,
+cycles and duplicate membership are rejected, and Claims, Cases and Checks must
+exactly cover the revision's authority identities. Registration returns 201; an
+identical replay returns 200 without rewriting original provenance. Different
+content for the same revision returns 409. Catalog identity is a canonical content
+fingerprint; attaching a catalog does not change the authority fingerprint, select
+that authority, approve a review or establish Health.
+
+Release publication registers its optional catalog under the release's exact model
+revision in the same transaction. A conflict rejects the whole publication. An
+identical publication replay can register its catalog if it has not yet been
+attached; release history is not rewritten. Existing stored releases are not
+arbitrarily selected or backfilled during migration. Their catalog can be attached
+explicitly by the owner or through verified publication replay.
+
+## Current deployment selection
+
+A recorded deployment and the deployment currently designated for an environment
+are separate facts. No timestamp, deployment ID order, release publication or
+release acceptance implicitly makes a deployment current.
+
+- `GET .../deployments/{deployment_id}` returns one immutable deployment record and
+  its release fingerprint, including when it lies outside the first list page.
+- `GET .../environments` lists current selection metadata, with ordinary keyset
+  pagination by environment.
+- `GET .../environments/{environment}/deployment` returns the latest explicit
+  selection, its deployment, release fingerprint, selection revision, selecting
+  publisher, time and rationale. No selection returns 404.
+- Publisher POST to the same environment route accepts exactly
+  `{deployment_id, expected_revision, reason}`. Use revision 0 for the first
+  selection, otherwise the revision read from GET. The deployment must already
+  exist in the same project and name this exact environment. A bounded, nonblank
+  reason is required. Environment and deployment IDs follow the native ID syntax.
+
+Selection serializes per project/environment. A stale expected revision returns
+409. An exact immediate retry by the same publisher, with the same deployment,
+reason and predecessor revision, returns the existing selection without another
+history event. Every other successful selection appends a monotonically numbered
+history row. Rollback means explicitly selecting another recorded deployment;
+records and earlier selections are retained. Publisher authorization expresses
+operational designation, not model or release acceptance. Viewer and producer
+credentials cannot select deployments; deployment selection itself remains an automation operation. Owner release acceptance is a separate authenticated Web action.
+
+The environment API does not independently observe the cluster. A deployment
+controller or authorized operator must publish the actual deployment record and
+explicitly designate it after rollout. Selection is not evidence of readiness,
+reachability or correctness; those remain Check and Health obligations.
+
+## Structured Health explanations
+
+Each Claim returned by exact-system state inspection now includes `explanation`.
+The existing `status`, `review`, `health`, diagnostics and structural-gap semantics
+remain unchanged. The explanation is derived inside the native assessor from the
+same complete authority, review set and active Run correction heads:
+
+- `summary` and `status`: current accepted Health rationale, or an explanation of
+  why no current assessment establishes a conclusion.
+- `reasons`: typed `code`, `category` and `message`, with optional Check/Case IDs,
+  diagnostic details or structural-gap details. Codes include
+  `claim-review-{assessment}`, `claim-health-{assessment}`, `structural-gaps`,
+  `current-observation-missing` and `health-assessed-{conclusion}`. Consumers do not
+  classify states by matching diagnostic English.
+- `review` and `health`: their assessment status, exact selected record fingerprint,
+  asserted reviewer, review time, authored rationale and diagnostics. No record or
+  ambiguous latest history exposes null record fields, not fabricated authorship.
+- `coverage`: one entry per declared current Check–Case binding, with exact matching
+  observations and status `missing`, `unassessed`, `satisfied`, `violated` or
+  `inconclusive`. Only current Check fingerprints, the exact selected system and
+  active correction heads participate.
+- `evidence`: `supporting`, `violations` and `inconclusive` contain observations
+  explicitly referenced by the basis of the current accepted Health assessment.
+  Other matching observations remain `unassessed`. Every observation retains Run,
+  bundle and observation fingerprints, Check, Case, outcome, observation time,
+  `selected_in_basis` and `accepted_basis`.
+- `residual_risks`: authored residual risks from the selected Health record, if any.
+
+An observed violation can remain unassessed when no current accepted Health record
+covers it; this does not convert the Claim's conclusion automatically. A stale
+assessment's formerly selected observations are not presented as accepted support.
+Missing coverage is inspectable information, not a newly authored assessment.
+There is no automatic expiry, alert interpretation, cross-system evidence transfer
+or Health-transition event stream. Such policies remain separate framework work.
+
+The additive migration `0007_model_catalogs_and_environment_deployments.sql` creates
+new tables only. Existing authority, review, Run, release, deployment and acceptance
+history is preserved. Deploy API and Web as a compatible pair; the Web now expects
+structured explanations and the catalog/current-deployment APIs. No current
+production designation or catalog registration is manufactured at migration.
+
+## Reconciled deployment observations and owner acceptance
+
+Migration 0008 adds append-only deployment observations. See `contracts/deployment-observation.md` for exact CAS, replay, freshness, runtime component and deployment Subject rules. The latest observation may invalidate confidence in an earlier current selection without deleting history. Web acceptance uses a configured per-user owner token on the server and requires explicit environment, expected accepted baseline and reason; missing/stale/incomplete exact deployment observation or unsupported non-routine exact-Subject Health rejects acceptance. No automatic acceptance, source/model application, archival or workload mutation occurs.

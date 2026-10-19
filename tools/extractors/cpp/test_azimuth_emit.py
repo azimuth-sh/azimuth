@@ -15,7 +15,7 @@ class EmitterTests(unittest.TestCase):
             path = Path(directory) / "service.cpp"
             path.write_text(
                 '#include "azimuth.hpp"\n'
-                'AZIMUTH_REALIZES("polyglot/identity", "cpp-identifies")\n'
+                'AZIMUTH_REALIZES("cpp-identifies")\n'
                 'const char* identity() { return "cpp"; }\n'
                 'AZIMUTH_IMPLEMENTS_CHECK("identity-check")\n'
                 'void first_test() {}\n'
@@ -70,7 +70,7 @@ class EmitterTests(unittest.TestCase):
             path.write_text(
                 '#include "azimuth.hpp"\n'
                 'namespace payments { struct Worker {\n'
-                'AZIMUTH_IMPLEMENTS_MECHANISM("payments/capture", "completion-guard")\n'
+                'AZIMUTH_IMPLEMENTS_MECHANISM("completion-guard")\n'
                 'int complete(const int & value) const { return value; }\n'
                 '}; }\n',
                 encoding="utf-8",
@@ -80,7 +80,7 @@ class EmitterTests(unittest.TestCase):
             implementation = manifest["mechanism_implementations"][0]
             self.assertEqual(
                 set(implementation),
-                {"spec", "mechanism", "site", "binding", "file", "lang", "source_fingerprint"},
+                {"mechanism", "site", "binding", "file", "lang", "source_fingerprint"},
             )
             self.assertEqual(
                 implementation["site"],
@@ -100,9 +100,9 @@ class EmitterTests(unittest.TestCase):
             second = Path(directory) / "second.cpp"
             source = (
                 '#include "azimuth.hpp"\nnamespace alpha {\n'
-                'AZIMUTH_IMPLEMENTS_MECHANISM("alpha", "integer")\n'
+                'AZIMUTH_IMPLEMENTS_MECHANISM("integer")\n'
                 'int choose(int value) { return value; }\n'
-                'AZIMUTH_IMPLEMENTS_MECHANISM("alpha", "floating")\n'
+                'AZIMUTH_IMPLEMENTS_MECHANISM("floating")\n'
                 'double choose(double value) { return value; }\n}\n'
             )
             first.write_text(source, encoding="utf-8")
@@ -133,16 +133,16 @@ class EmitterTests(unittest.TestCase):
                     {key: value for key, value in new.items() if key != "file"},
                 )
 
-    def test_mechanism_marker_remains_two_arguments(self) -> None:
+    def test_mechanism_marker_requires_one_argument(self) -> None:
         with tempfile.TemporaryDirectory(dir=self.repository) as directory:
             path = Path(directory) / "service.cpp"
             path.write_text(
                 '#include "azimuth.hpp"\n'
-                '[[clang::annotate("azimuth|implements-mechanism|alpha")]]\n'
+                '[[clang::annotate("azimuth|implements-mechanism|alpha|guard")]]\n'
                 'void run() {}\n',
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(ValueError, "exactly two arguments"):
+            with self.assertRaisesRegex(ValueError, "exactly one argument"):
                 scan(path, self.repository, "clang++", self.include)
 
     def test_one_declaration_retains_distinct_valid_annotations(self) -> None:
@@ -150,9 +150,9 @@ class EmitterTests(unittest.TestCase):
             path = Path(directory) / "service.cpp"
             path.write_text(
                 '#include "azimuth.hpp"\n'
-                'AZIMUTH_REALIZES("payments/capture", "completion-is-safe")\n'
+                'AZIMUTH_REALIZES("completion-is-safe")\n'
                 'AZIMUTH_IMPLEMENTS_CHECK("completion-check")\n'
-                'AZIMUTH_IMPLEMENTS_MECHANISM("payments/capture", "completion-guard")\n'
+                'AZIMUTH_IMPLEMENTS_MECHANISM("completion-guard")\n'
                 'void complete() {}\n',
                 encoding="utf-8",
             )
@@ -182,21 +182,21 @@ class EmitterTests(unittest.TestCase):
     def test_internal_anonymous_and_template_profiles_fail_closed(self) -> None:
         profiles = [
             ("internal linkage", (
-                'AZIMUTH_IMPLEMENTS_MECHANISM("alpha", "guard")\n'
+                'AZIMUTH_IMPLEMENTS_MECHANISM("guard")\n'
                 'static void apply() {}\n'
             )),
             ("ambiguous annotated declaration", (
-                'namespace {\nAZIMUTH_IMPLEMENTS_MECHANISM("alpha", "guard")\n'
+                'namespace {\nAZIMUTH_IMPLEMENTS_MECHANISM("guard")\n'
                 'void apply() {}\n}\n'
             )),
             ("templated or constrained", (
                 'template <typename T>\n'
-                'AZIMUTH_IMPLEMENTS_MECHANISM("alpha", "guard")\n'
+                'AZIMUTH_IMPLEMENTS_MECHANISM("guard")\n'
                 'void apply(T) {}\n'
             )),
             ("templated or constrained", (
                 'template <typename T> requires true\n'
-                'AZIMUTH_IMPLEMENTS_MECHANISM("alpha", "guard")\n'
+                'AZIMUTH_IMPLEMENTS_MECHANISM("guard")\n'
                 'void apply(T) {}\n'
             )),
         ]
@@ -218,7 +218,7 @@ class EmitterTests(unittest.TestCase):
             path.write_text(
                 '#include "azimuth.hpp"\n'
                 'using Local = decltype([] {});\n'
-                'AZIMUTH_IMPLEMENTS_MECHANISM("alpha", "guard")\n'
+                'AZIMUTH_IMPLEMENTS_MECHANISM("guard")\n'
                 'void apply(Local) {}\n',
                 encoding="utf-8",
             )
@@ -231,7 +231,7 @@ class EmitterTests(unittest.TestCase):
             path.write_text(
                 '#include "azimuth.hpp"\n'
                 'namespace alpha { using Amount = int;\n'
-                'AZIMUTH_IMPLEMENTS_MECHANISM("alpha", "guard")\n'
+                'AZIMUTH_IMPLEMENTS_MECHANISM("guard")\n'
                 'Amount apply(Amount value) { return value; }\n}\n',
                 encoding="utf-8",
             )
@@ -254,7 +254,7 @@ class EmitterTests(unittest.TestCase):
             header.write_text(
                 '#include "azimuth.hpp"\n'
                 'inline void ordinary() {}\n'
-                'AZIMUTH_IMPLEMENTS_MECHANISM("alpha", "guard")\n'
+                'AZIMUTH_IMPLEMENTS_MECHANISM("guard")\n'
                 'inline void apply() {}\n',
                 encoding="utf-8",
             )
@@ -271,7 +271,7 @@ class EmitterTests(unittest.TestCase):
             second = root / "second.cpp"
             declaration = (
                 '#include "azimuth.hpp"\n'
-                'AZIMUTH_IMPLEMENTS_MECHANISM("alpha", "{}")\n'
+                'AZIMUTH_IMPLEMENTS_MECHANISM("{}")\n'
                 'void apply() {{}}\n'
             )
             first.write_text(declaration.format("first"), encoding="utf-8")

@@ -24,10 +24,12 @@ export async function GET(
     return Response.json({ error: 'Not found' }, { status: 404 });
   const valid =
     (resource.length === 1 &&
-      ['authority', 'runs', 'subjects', 'reviews', 'claim-reviews'].includes(
+      ['authority', 'runs', 'subjects', 'reviews', 'claim-reviews', 'environments'].includes(
         resource[0],
       )) ||
-    (resource.length === 2 && resource[0] === 'runs') ||
+    (resource.length === 2 && ['runs', 'deployments'].includes(resource[0])) ||
+    (resource.length === 3 && resource[0] === 'environments' && resource[2] === 'deployment') ||
+    (resource.length === 3 && resource[0] === 'model-revisions' && resource[2] === 'catalog' && !!routeFingerprint(resource[1])) ||
     (resource.length === 3 &&
       resource[0] === 'subjects' &&
       resource[2] === 'state' &&

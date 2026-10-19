@@ -1,6 +1,8 @@
 import 'server-only';
 import { webConfig } from './config';
 import { requireViewer } from './auth';
+import { developmentScenario } from './development';
+import { developmentRead } from './development-data';
 
 export interface Page<T> {
   items: T[];
@@ -41,12 +43,35 @@ export interface ClaimReviewState {
     diagnostics: string[];
   }>;
 }
+export interface HealthObservation {
+  check: string;
+  case: string;
+  run: string;
+  bundle_fingerprint: string;
+  observation: string;
+  outcome: string;
+  observed_at_ms: number;
+  selected_in_basis: boolean;
+  accepted_basis: boolean;
+  diagnostics: string[];
+}
+export interface HealthExplanation {
+  summary: string;
+  status: string;
+  reasons: Array<{ code: string; category: string; message: string; check?: string; case?: string; diagnostics?: string[] }>;
+  review: { status: string; fingerprint: string | null; reviewer: string | null; reviewed_at_ms: number | null; rationale: string | null };
+  health: { status: string; fingerprint: string | null; reviewer: string | null; reviewed_at_ms: number | null; rationale: string | null };
+  coverage: Array<{ check: string; case: string; status: string; observations: HealthObservation[] }>;
+  evidence: { supporting: HealthObservation[]; violations: HealthObservation[]; inconclusive: HealthObservation[]; unassessed: HealthObservation[] };
+  residual_risks: unknown[];
+}
 export interface SubjectState {
   authority_fingerprint: string;
   model_fingerprint: string;
   claims: Array<{
     claim: string;
     status: string;
+    explanation: HealthExplanation;
     review?: string;
     health?: string;
     diagnostics: string[];
@@ -60,6 +85,7 @@ export async function readProject<T>(
   path: string,
 ): Promise<T | null> {
   await requireViewer(project);
+  if (developmentScenario()) return developmentRead(project, path) as T | null;
   const config = webConfig();
   const token = config.projects[project]?.viewerToken;
   if (!token) throw new Error('Project read credential is unavailable');

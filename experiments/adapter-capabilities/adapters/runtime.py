@@ -218,6 +218,7 @@ def validate_request(request):
 
     assert operation in {"execute", "import"}
     launch = request["launch_plan"]
+    adapter_identity, = launch["adapters"]
     assert launch["operation"] == operation
     inputs = request["inputs"]
     input_accounts = [
@@ -275,6 +276,7 @@ def input_identities(role, request):
 
 def make_bundle(role, request, adapter_description):
     launch = request["launch_plan"]
+    adapter_identity, = launch["adapters"]
     terminal = request["terminal_predecessor"]
     identities, imported_outcome = input_identities(role, request)
     if terminal is not None:
@@ -335,12 +337,12 @@ def make_bundle(role, request, adapter_description):
                 "execution": "adapter-capability-conformance",
             },
             "normalizer": {
-                "id": "adapter/" + launch["adapter"]["id"],
-                "version": launch["adapter"]["adapter_version"],
-                "build_fingerprint": launch["adapter"]["adapter_fingerprint"],
+                "id": "adapter/" + adapter_identity["id"],
+                "version": adapter_identity["adapter_version"],
+                "build_fingerprint": adapter_identity["adapter_fingerprint"],
             },
             "adapter": {
-                **copy.deepcopy(launch["adapter"]),
+                **copy.deepcopy(adapter_identity),
                 "launch_fingerprint": launch["fingerprint"],
                 "routes": copy.deepcopy(launch["routes"]),
                 "import_inputs": identities,

@@ -1513,8 +1513,8 @@ mod tests {
         };
 
         assert_eq!(
-            selected_mechanism_claims(&model, "example#second"),
-            ["example#works/succeeds".to_string()].into_iter().collect()
+            selected_mechanism_claims(&model, "second"),
+            ["succeeds".to_string()].into_iter().collect()
         );
     }
 

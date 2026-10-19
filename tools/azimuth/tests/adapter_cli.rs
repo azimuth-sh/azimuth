@@ -397,6 +397,10 @@ fn challenge_request(
             Vec::new()
         },
         challenges: vec![RequestedChallenge {
+            assessment: None,
+            assessment_history: Vec::new(),
+            run_history: Vec::new(),
+            scope_report: None,
             id: "demo/plan".into(),
             capability: capability.into(),
             max_candidates,

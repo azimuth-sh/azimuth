@@ -137,6 +137,30 @@ Harness telemetry supplies model and instruction provenance, duration, cost, ret
 
 Keep assurance conclusions, process health and business value separate. Missing execution, decision backlog, repeated failures and correction latency describe process health. Baselines and comparable outcomes are needed to evaluate value. Accepted reviews or rejection counts alone do not measure agent quality.
 
+## Production inspection context
+
+A model revision owns a separately registered, immutable navigation catalog of
+Modules, Claims, Cases and Checks. The catalog is validated against that exact
+revision and can be registered before any release exists. Release publication
+may attach the same catalog atomically. Descriptive navigation metadata does not
+select accepted authority or supply a review.
+
+Each project/environment has explicit, append-only current-deployment selection
+history. An authorized publisher conditionally selects a previously recorded
+deployment using the preceding selection revision. Recording or accepting a
+release does not imply this selection. The selection describes operational
+context; it neither proves readiness nor changes accepted model authority. The
+controller must designate the actual deployment after rollout, with concurrency
+control against a newer selection. Historical deployments remain inspectable.
+
+Exact-system Claim Health includes an assessor-produced explanation: typed
+assessment reasons, current Check–Case coverage, selected review identities and
+exact evidence references. Supporting evidence is distinguished from matching but
+unassessed observations. The UI renders this account; it does not derive
+applicability from timestamps, labels, source/build provenance or English error
+messages. This does not introduce automatic evidence expiry or Health transition
+inference.
+
 ## Current capabilities and intended extensions
 
 | Capability | Status in this architecture |
@@ -165,3 +189,9 @@ Concrete workflow rehearsals belong to the consumer repository that owns the cha
 - Select trigger and recovery integrations; keep distributed scheduling outside the assurance core.
 
 This direction aligns with validation, accountable governance and evidence-based completion, but does not claim to supply every enterprise governance requirement. Runtime permission hooks, session audit, organization-specific compliance, cost telemetry and business outcome measurement require integrations and further design.
+
+## Git release coordination and deployment reconciliation
+
+The local standard workflow ends with native validated Git-trackable publication inputs and does not contact ASS. A declared release repository owns named requests, exact source selection and desired environment references. Deterministic trusted CI publishes candidate/release records together, generates component-bound deployment values, and retains the actual receipt. Deployment and accepted intent remain separate.
+
+A separate reconciler observes actual runtime image identities, rollout state and configuration; it retries idempotently and records append-only observations with freshness. It does not collect Checks, repair workloads or accept models. Kubernetes/Argo discovery is one adapter, not a required deployment platform. Stale/partial/drifted observation means the current environment is unconfirmed. An authenticated owner can accept an exact release for an explicitly assessed environment through ASS after server preconditions; Git model application/archive remains separate. Automatic acceptance remains deferred.

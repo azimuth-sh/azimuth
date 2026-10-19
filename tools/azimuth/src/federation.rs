@@ -68,6 +68,7 @@ pub struct ReceiptRequirement {
 
 #[derive(Debug, Clone)]
 pub struct Project {
+    pub release: Option<StandardsDecl>,
     pub packages: Vec<String>,
     pub id: String,
     pub repositories: Vec<RepositoryDecl>,
@@ -527,6 +528,17 @@ pub fn load_project(path: &Path) -> Result<Project, Vec<Diag>> {
             })
             .collect::<Vec<_>>();
 
+    let release = root.get("release").map(|entry| {
+        let repository = nested_string(&display, "release", entry, "repository", &mut errors);
+        let path = nested_string(&display, "release", entry, "path", &mut errors);
+        if !repositories.iter().any(|r| r.id == repository) || !repository_relative(&path) {
+            errors.push(Diag::file(
+                &display,
+                "release requires a declared repository and normalized relative request path",
+            ));
+        }
+        StandardsDecl { repository, path }
+    });
     validate_catalog(
         &display,
         &repositories,
@@ -538,6 +550,7 @@ pub fn load_project(path: &Path) -> Result<Project, Vec<Diag>> {
     );
     if errors.is_empty() {
         Ok(Project {
+            release,
             packages,
             id,
             repositories,

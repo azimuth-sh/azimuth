@@ -2,6 +2,15 @@
 
 The current API stores validated Runs, append-only correction histories, definition-level Claim Reviews, exact-Subject Claim Health assessments and explicit model authority. Earlier Method Qualification, Applicability Decision and Claim Judgment records remain immutable readable history; they do not substitute for the new assessments. The inspection-only Web UI uses this API. Execution never creates an approved review or a supported Claim conclusion.
 
+## UI development
+
+For dashboard design with synthetic local data, run `npm run dev:scenarios` in
+`services/assurance/web` and open `http://127.0.0.1:3100/projects/payments-demo`.
+See [local UI scenarios](web/development/README.md) for profiles and boundaries.
+This development-only read model does not seed PostgreSQL or validate native
+assurance records. Normal API-backed operation still requires the configured
+OAuth profile below.
+
 ## Private hosted deployment
 
 The canonical API image starts `run-ledger` on port 8081; the Web image serves port 3000. Terraform in the consuming infrastructure repository provisions PostgreSQL, workloads, Tailscale connectivity and HTTP-01 certificates. Image references must name published immutable digests; building source does not publish or deploy images.
@@ -98,7 +107,7 @@ Revision snapshot responses contain `project`, `model_revision`, `authority`, `r
 
 Revision-scoped review submission reuses strict record validation, authenticated reviewer matching and current dependency assessment. Invalid dependencies fail with HTTP 422; protocol-valid rejected and stale assessments are retained. An identical record may be explicitly submitted for another revision when its exact dependencies permit assessment there. The record itself stays immutable; the link records authenticated submission provenance. There is no automatic cross-revision review reuse. Current `/reviews` writes and reads use the selected revision. Candidate records cannot silently affect selected authority. The additive migration links pre-existing review history to the authority selected at migration, preserving records and selection history without asserting their earlier validity or assessment context. Such links are explicitly marked `migration-selected-authority` rather than `reviewer-submission`; migration does not manufacture reviewer approval.
 
-Snapshot and review assessment are observations at read time. A correction or another review arriving afterward may change the next assessment. No lease, freshness guarantee or review-quality guarantee is supplied by an HTTP receipt. The Web UI does not yet browse candidate revisions; authenticated API and harness clients can use these endpoints.
+Snapshot and review assessment are observations at read time. A correction or another review arriving afterward may change the next assessment. No lease, freshness guarantee or review-quality guarantee is supplied by an HTTP receipt. The Web model workspace browses selected and candidate revisions with explicit model/system context. Authenticated API and harness clients use the same revision endpoints.
 
 ## Claim Review and Claim Health
 
@@ -133,3 +142,57 @@ OAuth callbacks, authorization denial paths, PostgreSQL-backed reads and writes,
 ## Preserved isolated service boundary
 
 Earlier `azimuth-assurance-server` source, domain records and `seed-demo.sh` remain isolated historical development facilities. Its project snapshots, evidence definitions and lifecycle gates are not the current Run/review protocol, and the current CLI does not populate it. The published API image and current Web UI no longer use that boundary. Run the earlier binary explicitly only when investigating its isolated wire; do not seed the current service with `seed-demo.sh` or mistake its records for current Assurance State.
+
+## Production workspace APIs
+
+Model navigation now reads `/model-revisions/{revision}/catalog`, independent of
+release lookup. Owner POST registers a complete native catalog against that exact
+revision. Publisher release ingestion also attaches its catalog atomically;
+conflicting immutable catalogs reject the publication. Existing history is not
+rewritten. For a revision registered without a release, export authority and
+catalog with the same complete model inputs, register the authority, then POST the
+catalog with an owner credential.
+
+Production overview follows the explicit current selection at
+`/environments/production/deployment`. Publisher POST accepts:
+
+```json
+{
+  "deployment_id": "production-release-42",
+  "expected_revision": 0,
+  "reason": "Rollout completed; designate this recorded deployment as current."
+}
+```
+
+Use the selection revision returned by GET for replacements. First selection uses
+0. Publish the deployment record first; it must belong to the same environment.
+A stale predecessor returns 409, preventing a late rollout from overwriting a
+more recent selection. The deployment controller must obtain the expected revision
+before its rollout and publish this designation only after actual rollout. A
+rollback explicitly selects its recorded target. Designation neither accepts a
+release nor proves deployment readiness or Claim Health. Tokens remain in the
+calling publisher/controller; the browser has no write capability.
+
+Exact-system Health responses provide structured explanations, coverage and
+accepted versus unassessed evidence references. The native assessor produces these
+fields; the UI does not decide applicability, inspect English diagnostics to
+classify failures or infer freshness from timestamps. See the
+[Run ledger contract](../../contracts/run-ledger.md) for schemas and authority
+boundaries.
+
+Build verification for this update uses Rust compilation and Web type checking.
+No tests were added or run. PostgreSQL migration execution, concurrent selection
+writes and authenticated endpoint behavior have not been exercised against a live
+database in this work; compilation does not establish those runtime properties.
+No production registration, selection or deployment is performed by these source
+changes.
+
+## Owner acceptance and deployment observations
+
+Web users may have server-only `ownerTokens: {project: token}` in addition to read projects. Tokens are distinct per user/project and correspond to separately configured ASS owner identities. Terraform's user `owners` map selects those existing identities; it defaults to empty, so no user gains owner access implicitly. Acceptance uses an authenticated same-origin Server Action and server-side bearer transport; credentials never reach the browser. Owners choose the assessed environment and enter a reason. Server concurrency, observed rollout/freshness and native exact-Subject supported Health gates remain authoritative. Acceptance never applies repository model files or archives Changes.
+
+Deploy API and Web together with additive migration 0008. The production dashboard labels last observed release and explicitly warns when no fresh complete observation matches its selected deployment. Enable the separate reconciler only after image, credential, configured workload and network prerequisites are ready. No existing deployment is selected by migration.
+
+## Migration and rollback boundary
+
+Downgrades are unsupported. Back up the persistent PostgreSQL data before deployment and retain the exact image/configuration identities. A rollback must use application/schema-compatible images; reverting data or schema requires a separately reviewed recovery procedure or a later schema-changing release. Container stop/start and recreation must preserve the existing database volume and its immutable Run/model/review history.

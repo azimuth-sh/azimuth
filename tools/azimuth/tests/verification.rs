@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 
 const DECLARATIONS: &str = r#"# Verification: payments/recovery
 
-## Check: payments/recovery-under-loss
+## Check: recovery-under-loss
 Method: inject broker loss
 Method: observe replay after recovery
 Terminal: the accepted write is replayed exactly once
@@ -22,8 +22,8 @@ Terminal: the accepted write is replayed exactly once
 The methods describe one atomic terminal result.
 
 ## Evidence Binding: payments/recovery-edge
-Check: payments/recovery-under-loss
-Case: payments/recovery#recover/accepted-write-replayed
+Check: recovery-under-loss
+Case: accepted-write-replayed
 Method qualification: payments/recovery-method
 Proposition: replay exercises the recovery predicate
 Context: {"storage":"postgres-17","platform":"linux-x86_64"}
@@ -33,7 +33,7 @@ Policy: credible-executable
 The edge is narrower than the whole suite.
 
 ## Method Qualification: payments/recovery-method
-Check: payments/recovery-under-loss
+Check: recovery-under-loss
 Scope: component
 Quantification: example
 Oracle: relational
@@ -55,7 +55,7 @@ Decider: evidence-owner@example
 
 The qualified method applies to this exact edge.
 
-## Claim Judgment: payments/recovery#recover
+## Claim Judgment: recover
 Verdict: accepted
 Policy: credible-executable
 Fingerprint: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -76,12 +76,12 @@ Surviving changes object to credibility.
 ## Challenge Plan: payments/recovery-credibility
 Challenger: mutation/implementation-perturbation
 Select: applicability-decision from binding payments/recovery-edge
-Select: method-qualification from check payments/recovery-under-loss
+Select: method-qualification from check recovery-under-loss
 Select: method-qualification from realization payments|rust-item|recovery::replay
-Select: method-qualification from mechanism payments/recovery#transactional-outbox
-Select: claim-judgment from claim payments/recovery#recover
+Select: method-qualification from mechanism transactional-outbox
+Select: claim-judgment from claim recover
 Select: claim-judgment from realization payments|rust-item|recovery::replay
-Select: claim-judgment from mechanism payments/recovery#transactional-outbox
+Select: claim-judgment from mechanism transactional-outbox
 
 The Run will freeze the exact selected fingerprints.
 "#;
@@ -123,7 +123,7 @@ fn judgment_model() -> Model {
                 "sha256:1111111111111111111111111111111111111111111111111111111111111111".into(),
         }],
         check_implementations: vec![CheckImplementation {
-            check: "payments/recovery-under-loss".into(),
+            check: "recovery-under-loss".into(),
             site: "tests::replay".into(),
             file: "tests/recovery.rs".into(),
             lang: "rust".into(),
@@ -214,8 +214,8 @@ fn rejects_pre_f_policy_grammar_and_requires_one_current_schedule() {
 #[test]
 fn rejects_invalid_claim_judgments_and_required_scope() {
     let routine_target = DECLARATIONS.replace(
-        "## Claim Judgment: payments/recovery#recover",
-        "## Claim Judgment: not-a-claim",
+        "## Claim Judgment: recover",
+        "## Claim Judgment: not_a_claim",
     );
     assert!(parse_verification("verification.md", &routine_target).is_err());
 
@@ -439,7 +439,7 @@ fn decision_policy_schedule_and_challenger_match_frozen_vectors() {
     );
     assert_eq!(
         azimuth::fingerprint::challenger_fingerprint(&declarations.challengers[0]),
-        "sha256:383c91179c3d79e1a7e2c974376d481c674f9df12aa24ee7c73104a1c03c0390"
+        "sha256:3114add0ab1150585f88ae1db17dbd7fa3b87f1c4f313f97f1ed9f2fb23fbcde"
     );
 }
 
@@ -759,10 +759,7 @@ fn claim_judgment_collects_every_matching_design_entry() {
             .iter()
             .map(|mechanism| mechanism.get("id").unwrap().as_str().unwrap())
             .collect::<Vec<_>>(),
-        [
-            "payments/recovery#first-guard",
-            "payments/recovery#second-guard"
-        ]
+        ["first-guard", "second-guard"]
     );
 }
 
@@ -840,12 +837,12 @@ fn surface_contributions_use_the_authoritative_tuple_order() {
     );
     assert_eq!(
         fingerprint,
-        "sha256:5c792428dc24ff2afe3fc66b80e18ecc1ece2bd597dde94b999beec4670cd875"
+        "sha256:bd7ff906a1c948070d811becafddf7d591ed4d94d1a2d1fe0fb3edc1273de31b"
     );
 }
 
 #[test]
-fn model_enforces_project_cardinality_and_exports_only_version_four_fields() {
+fn model_enforces_project_cardinality_and_exports_only_current_fields() {
     let mut second = parse_verification("other/verification.md", DECLARATIONS).unwrap();
     second.bindings.clear();
     second.method_qualifications.clear();
@@ -870,7 +867,7 @@ fn model_enforces_project_cardinality_and_exports_only_version_four_fields() {
     let exported = model.to_json(&[]);
     assert_eq!(
         exported.get("version").and_then(|value| value.as_num()),
-        Some(4.0)
+        Some(5.0)
     );
     for key in ["covers", "mechanism_covers", "observations"] {
         assert!(exported.get(key).is_none(), "retired export key `{key}`");

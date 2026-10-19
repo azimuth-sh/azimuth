@@ -25,7 +25,7 @@ USAGE
     azimuth workflow assurance-targets --instance <file> --repositories <file> --snapshot <relative-ref> [--subjects <relative-ref>] [--out <file>]
     azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--out <file>]
     azimuth release project --baseline-revision <sha256> --change <dir>... [model options]
-    azimuth release compose|prepare|verify --input <file> [--model-out <absent directory>] [--out <file>]
+    azimuth release compose|prepare|verify|inputs --input <file> [--model-out <absent directory>] [--out <file>]
     azimuth assurance catalog --project <id> [model options] [--out <file>]
     azimuth validate [options]
     azimuth report traceability [options]
@@ -3761,7 +3761,7 @@ fn command_release(args: &[String]) -> Result<ExitCode, String> {
     let operation = args
         .first()
         .map(String::as_str)
-        .ok_or("release requires compose, prepare or verify")?;
+        .ok_or("release requires compose, prepare, verify or inputs")?;
     if operation == "project" {
         let mut baseline = None;
         let mut changes = Vec::new();
@@ -3833,7 +3833,8 @@ fn command_release(args: &[String]) -> Result<ExitCode, String> {
         "compose" => azimuth::release::compose(&value),
         "prepare" => azimuth::release::prepare(&value),
         "verify" => azimuth::release::verify(&value),
-        _ => return Err("release requires compose, prepare or verify".into()),
+        "inputs" => azimuth::release::publication_inputs(&value),
+        _ => return Err("release requires compose, prepare, verify or inputs".into()),
     }
     .map_err(|error| format!("{}:1: {error}", input.display()))?;
     if let Some(directory) = model_out {

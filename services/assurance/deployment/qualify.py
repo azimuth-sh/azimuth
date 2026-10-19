@@ -14,6 +14,12 @@ import urllib.request
 from pathlib import Path
 
 
+if __package__:
+    from .runtime import account, configuration as runtime_configuration, require_login, seed
+else:
+    from runtime import account, configuration as runtime_configuration, require_login, seed
+
+
 ROOT = Path(__file__).resolve().parents[3]
 ASSURANCE_ROOT = ROOT / "services/assurance"
 COMPOSE_FILE = ASSURANCE_ROOT / "docker-compose.yml"
@@ -23,9 +29,9 @@ MIGRATION_ROOT = ASSURANCE_ROOT / "server/migrations"
 OUTPUT_FILE = ROOT / ".azimuth/release/private-deployment.json"
 QUALIFICATION_SECRET = "private-qualification-9f4c8b6e"
 REQUIRED_DOCUMENTATION = (
-    "operator-controlled trusted reverse proxy, SSH tunnel or VPN",
-    "does not add application authentication",
-    "not ready for direct internet exposure",
+    "operator-controlled HTTPS reverse proxy or tunnel",
+    "All data routes below require a project bearer credential",
+    "GitHub OAuth independently authenticates people",
     "Downgrades are unsupported",
     "later schema-changing release",
 )
@@ -69,8 +75,9 @@ def resolved_configuration():
         "ASSURANCE_API_PORT": "18080",
         "ASSURANCE_WEB_PORT": "13000",
     }
-    result = compose_command(["config", "--format", "json"], environment, capture=True)
-    return json.loads(result.stdout)
+    with runtime_configuration() as runtime:
+        result = compose_command(["config", "--format", "json"], environment | runtime["environment"], capture=True)
+        return json.loads(result.stdout)
 
 
 def validate_documentation(documentation):
@@ -130,7 +137,7 @@ def migration_account():
     )
     prefixes = [name.split("_", 1)[0] for name in migrations]
     require(prefixes == sorted(prefixes), "migration filenames are not in forward order")
-    main_source = (ASSURANCE_ROOT / "server/src/main.rs").read_text()
+    main_source = (ASSURANCE_ROOT / "server/src/run_ledger_main.rs").read_text()
     require("migrate(&pool).await" in main_source, "API startup does not apply migrations")
     return migrations
 
@@ -197,13 +204,17 @@ def canonical(value):
 
 
 def demonstrate_lifecycle(prebuilt_images=False):
+    with runtime_configuration() as runtime:
+        return lifecycle_with_configuration(prebuilt_images, runtime)
+
+
+def lifecycle_with_configuration(prebuilt_images, runtime):
     api_port = free_loopback_port()
     web_port = free_loopback_port()
     project = f"azimuth-private-qualification-{os.getpid()}"
-    environment = os.environ.copy() | {
+    environment = os.environ.copy() | runtime["environment"] | {
         "ASSURANCE_POSTGRES_PASSWORD": secrets.token_hex(24),
-        "ASSURANCE_API_PORT": str(api_port),
-        "ASSURANCE_WEB_PORT": str(web_port),
+        "ASSURANCE_API_PORT": str(api_port), "ASSURANCE_WEB_PORT": str(web_port),
         "COMPOSE_PROJECT_NAME": project,
     }
     api_url = f"http://127.0.0.1:{api_port}"
@@ -211,59 +222,41 @@ def demonstrate_lifecycle(prebuilt_images=False):
     transitions = []
     expected_migrations = migration_versions(migration_account())
     if prebuilt_images:
-        require(
-            os.environ.get("ASSURANCE_API_IMAGE") and os.environ.get("ASSURANCE_WEB_IMAGE"),
-            "prebuilt lifecycle requires explicit API and web image identities",
-        )
+        require(os.environ.get("ASSURANCE_API_IMAGE") and os.environ.get("ASSURANCE_WEB_IMAGE"),
+                "prebuilt lifecycle requires explicit API and web image identities")
     try:
         build_mode = "--no-build" if prebuilt_images else "--build"
         compose_command(["up", "--detach", build_mode], environment)
         get_json(f"{api_url}/health")
-        wait_for_web(web_url)
-        require(
-            applied_migration_versions(environment) == expected_migrations,
-            "PostgreSQL migration ledger differs from the repository migration set",
-        )
-        seed_environment = environment | {"ASSURANCE_URL": api_url}
-        subprocess.run(
-            ["./seed-demo.sh"],
-            cwd=ASSURANCE_ROOT,
-            env=seed_environment,
-            check=True,
-        )
-        expected = canonical(get_json(f"{api_url}/v1/projects/checkout/snapshot"))
-
+        wait_for_web(web_url + "/health")
+        require_login(web_url)
+        require(applied_migration_versions(environment) == expected_migrations,
+                "PostgreSQL migration ledger differs from the repository migration set")
+        revision = seed(api_url, runtime["tokens"])
+        expected = canonical(account(api_url, runtime["tokens"], revision))
         compose_command(["stop"], environment)
         compose_command(["start"], environment)
         get_json(f"{api_url}/health")
-        wait_for_web(web_url)
-        require(
-            canonical(get_json(f"{api_url}/v1/projects/checkout/snapshot")) == expected,
-            "ledger history changed across stop and start",
-        )
+        wait_for_web(web_url + "/health")
+        require_login(web_url)
+        require(canonical(account(api_url, runtime["tokens"], revision)) == expected,
+                "Run-ledger authority, candidate snapshot or catalog changed across stop/start")
         transitions.append("stop-start")
-
-        compose_command(
-            ["up", "--detach", "--force-recreate", "postgres", "api", "web"],
-            environment,
-        )
+        compose_command(["up", "--detach", "--force-recreate", "postgres", "api", "web"], environment)
         get_json(f"{api_url}/health")
-        wait_for_web(web_url)
-        require(
-            canonical(get_json(f"{api_url}/v1/projects/checkout/snapshot")) == expected,
-            "ledger history changed across service-container recreation",
-        )
-        require(
-            applied_migration_versions(environment) == expected_migrations,
-            "service recreation changed the successful migration account",
-        )
+        wait_for_web(web_url + "/health")
+        require_login(web_url)
+        require(canonical(account(api_url, runtime["tokens"], revision)) == expected,
+                "Run-ledger history changed across container recreation")
+        require(applied_migration_versions(environment) == expected_migrations,
+                "service recreation changed the successful migration account")
         transitions.append("service-recreation")
-        return {
-            "outcome": "passed",
-            "transitions": transitions,
-            "migrationVersions": expected_migrations,
-            "snapshotSha256": hashlib.sha256(expected.encode()).hexdigest(),
-        }
+        return {"outcome": "passed", "transitions": transitions,
+                "migrationVersions": expected_migrations,
+                "snapshotSha256": hashlib.sha256(expected.encode()).hexdigest()}
+    except Exception:
+        compose_command(["logs", "--no-color", "--tail", "100", "api", "web"], environment)
+        raise
     finally:
         compose_command(["down", "--volumes", "--remove-orphans"], environment)
 
