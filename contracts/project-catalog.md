@@ -116,3 +116,7 @@ Completeness is declared here and never inferred from what a workset happens to 
 ## Verification packages
 
 Optional `packages` explicitly enables `azimuth.surface` and `azimuth.network`; see [verification-packages.md](verification-packages.md). Federation propagates this selection to the assembled workspace. Entity declaration and producer contracts fail when their owning package is absent. No package selection derives from source directory names.
+
+## Release repository
+
+Optional `release: {repository, path}` names the declared repository and normalized relative directory owning Git release requests. It supplies coordination location only, not deployment authorization or an inferred implementation dependency. The repository must be declared. The model, implementation and release repository may be the same or different. Deployment automation remains project-owned.

@@ -13,6 +13,7 @@ azimuth release compose --input request.json --model-out <absent-directory> --ou
 azimuth assurance catalog --project <id> --model <composed-model> [model options] --out catalog.json
 azimuth release prepare --input release-request.json --out publication.json
 azimuth release verify --input publication.json --out publication-report.json
+azimuth release inputs --input publication-inputs-draft.json --out publication-inputs.json
 ```
 
 `project` accepts ordinary complete model options (`--standards`, `--support` included), not a
@@ -159,6 +160,19 @@ artifacts. Runs and Claim Health still name their exact native Subject; matching
 not authorize cross-Subject reuse.
 
 Owner-only acceptance uses `POST /v1/projects/{project}/releases/{fingerprint}/acceptance` with
-`{expected_accepted_model_revision, reason}`. This is an explicit whole-release decision with a
+`{environment, expected_accepted_model_revision, reason}`. This is an explicit whole-release decision with a
 concurrency precondition. Archival occurs later through repository finalization, not publication.
 CI never invokes a model to author missing evidence or resolve composition conflicts.
+
+
+## Git-driven handoff
+
+The standard local workflow ends at `prepare-publication-inputs`. `azimuth release inputs` validates a strict `{format:"azimuth-publication-inputs",version:1,request,composition}` envelope. The native request must retain the exact composed result, name a label, include explicit required review coverage and contain no builds/artifacts/deployments. The CLI preserves immutable native records, validates portability and size, and requires no ASS connection. Commit the compact envelope in the release repository; no local draft Release upload or fabricated registration receipt is required. CI later publishes candidate and release together.
+
+Optional request/release `components: [{id,digest}]` binds unique explicit runtime component identities to declared build artifacts. Unused build artifacts need not be deployed. Components are fingerprinted with the release and never inferred by ordering. Native runtime deployment observation requires these explicit bindings.
+
+A Git release request is `{format:"azimuth-git-release-request",version:1,name,environment,sources:{repository:fullCommit},inputs:{path,digest}}`. Name is bounded, nonblank and non-unique; fingerprint is the generated identity. Source IDs and component build settings are allowlisted by trusted project policy; cross-repository reads require explicit credentials. Configuration commits precede metadata-only release request commits, avoiding source/input self-reference. CI resolves each full commit once, verifies implementation membership in main, validates exact source content and reviewed authority, runs consumer gates, builds component outputs and publishes. No AI inference occurs in CI.
+
+Unprivileged PR validation handles data only. A successful validation can trigger trusted-main coordination; protected publication jobs re-read exact current same-repository PR identity and enforce allowlists. Never run PR scripts under publication credentials. Generated outputs carry request content identity; matching result files suppress recursive builds. Moving request/base fails closed. Deployment merge gates independently verify published artifacts, receipt, generated values and rendered configuration.
+
+Environment selection may reference retained immutable release records and generate Helm values without rebuilding artifacts. Rollback creates a new observed deployment; it cannot restore data or rewind accepted authority. The consumer must review schema/configuration compatibility and maintain deployment adapters per environment. Existing evidence/receipt retention limits rollback eligibility.

@@ -1,0 +1,80 @@
+{
+  "project": "payments-demo",
+  "label": "Payments \u2014 synthetic development data",
+  "claims": [
+    {
+      "id": "reminders-arrive-on-time",
+      "module": "reminders/delivery",
+      "statement": "Payment reminders arrive within five minutes of the selected time.",
+      "case": "scheduled-reminder",
+      "check": "delivery-delay",
+      "method": "Scheduled production probe",
+      "status": "supported",
+      "reason": "The delivery probe and latency measurements support the delivery deadline."
+    },
+    {
+      "id": "reminders-follow-current-payment",
+      "module": "reminders/planning",
+      "statement": "A changed or deleted payment does not produce an outdated reminder.",
+      "case": "payment-edited-during-send",
+      "check": "concurrent-payment-update",
+      "method": "Integration job",
+      "status": "violated",
+      "reason": "A reminder contained the previous amount after the payment was updated."
+    },
+    {
+      "id": "delivery-recovers-after-outage",
+      "module": "reminders/delivery",
+      "statement": "Temporary delivery failures are retried without duplicate reminders.",
+      "case": "provider-recovers",
+      "check": "delivery-retry",
+      "method": "Recovery job",
+      "status": "unresolved",
+      "reason": "The recovery job has not run for the deployed release.",
+      "gap": "missing-execution"
+    },
+    {
+      "id": "personal-data-remains-private",
+      "module": "security",
+      "statement": "Notification workers can read only the payment data needed for delivery.",
+      "case": "unrelated-payment-read",
+      "check": "worker-access-policy",
+      "method": "Access policy analysis and production probe",
+      "status": "unresolved",
+      "reason": "The policy changed after its Claim Review; a successor review is needed.",
+      "gap": "stale-review"
+    },
+    {
+      "id": "delivery-remains-observable",
+      "module": "operations",
+      "statement": "Delivery failures are detected and reported to the operations team.",
+      "case": "delivery-errors-increase",
+      "check": "delivery-alert",
+      "method": "Monitoring rule and alert delivery job",
+      "status": "unresolved",
+      "reason": "The alert delivery job stopped reporting. Its last result does not establish current visibility.",
+      "gap": "lost-visibility"
+    },
+    {
+      "id": "notification-content-is-complete",
+      "module": "reminders/delivery",
+      "statement": "Each reminder contains the payment name, current amount and due date.",
+      "case": "reminder-rendered",
+      "check": "notification-content",
+      "method": "Component tests",
+      "status": "supported",
+      "reason": "The reviewed release assessment includes explicitly approved applicability of the CI content checks."
+    },
+    {
+      "id": "workers-use-restricted-credentials",
+      "module": "security",
+      "statement": "Notification workers use a restricted delivery credential.",
+      "case": "credential-scope",
+      "check": "credential-policy",
+      "method": "Configuration analysis",
+      "status": "unresolved",
+      "reason": "The reviewer rejected the verification: credential scope is declared but effective provider permissions are not checked.",
+      "gap": "rejected-review"
+    }
+  ]
+}

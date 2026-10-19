@@ -24,6 +24,7 @@ const KINDS: &[&str] = &[
     "validate-change-account",
     "prepare-candidate-model-revision",
     "register-candidate-model-revision",
+    "prepare-publication-inputs",
     "review-claim",
     "execute-check",
     "assess-claim-health",
@@ -2497,6 +2498,20 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             }
             text(&scope, "rationale")?;
         }
+        if kind == "prepare-publication-inputs" && outcome == "completed" {
+            let inputs = supporting_record(
+                record_of(arr(&result, "records")?, "publication-inputs")?,
+                &r,
+            )?;
+            crate::release::publication_inputs(&inputs)?;
+            let request = inputs.get("request").unwrap();
+            snapshot_target(
+                request
+                    .get("snapshot")
+                    .ok_or("publication snapshot missing")?,
+                handoff.get("target").unwrap(),
+            )?;
+        }
         if [
             "prepare-candidate-model-revision",
             "register-candidate-model-revision",
@@ -4120,6 +4135,7 @@ fn output_contract(action: &Json) -> Result<(), String> {
         "request-implementation-approval" => Some("implementation-approval"),
         "prepare-candidate-model-revision" => Some("candidate-preparation"),
         "register-candidate-model-revision" => Some("candidate-registration"),
+        "prepare-publication-inputs" => Some("publication-inputs"),
         "qualify-method" => Some("method-qualification"),
         "review-claim" => Some("claim-review"),
         "execute-check" | "run-challengers" | "run-challenger" => Some("run-bundle"),

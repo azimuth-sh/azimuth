@@ -1,27 +1,125 @@
-import Link from 'next/link';
-import { notFound } from 'next/navigation';
-import { readProject, routeFingerprint } from '@/lib/assurance';
-import { requireViewer } from '@/lib/auth';
-export const dynamic = 'force-dynamic';
+import { selectedEnvironment } from "@/lib/environment";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { readProject, routeFingerprint } from "@/lib/assurance";
+import { requireViewer } from "@/lib/auth";
+import { webConfig } from "@/lib/config";
+import { developmentScenario } from "@/lib/development";
+import { environmentView, claimStatus } from "@/lib/production";
+import { ReleaseAcceptance } from "@/components/release-acceptance";
+import { CopyValue } from "@/components/copy-value";
+
+export const dynamic = "force-dynamic";
 type Identity = Record<string, unknown>;
-type Release = { fingerprint: string; label: string; baseline_model_revision: string; model_revision: string; changes: Identity[]; sources: Identity[]; builds: Identity[]; artifacts: Identity[]; deployments: Identity[] };
-export default async function ReleasePage({params}: {params: Promise<{projectId:string;release:string}>}) {
+type Release = {
+  fingerprint: string;
+  label: string;
+  baseline_model_revision: string;
+  model_revision: string;
+  changes: Identity[];
+  sources: Identity[];
+  builds: Identity[];
+  artifacts: Identity[];
+  components?: { id: string; digest: string }[];
+};
+function title(record: Identity, fallback: string) {
+  for (const key of ["label", "name", "id", "repository"]) {
+    if (typeof record[key] === "string") return record[key];
+  }
+  return fallback;
+}
+function receivedAt(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Time unavailable" : new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "medium", timeStyle: "short", timeZone: "UTC",
+  }).format(date) + " UTC";
+}
+export default async function ReleasePage({ params, searchParams }: {
+  params: Promise<{ projectId: string; release: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { projectId, release: segment } = await params;
-  await requireViewer(projectId);
+  const environment = await selectedEnvironment(projectId, (await searchParams).environment);
+  const viewer = await requireViewer(projectId);
+  const synthetic = !!developmentScenario();
+  const canAccept = !synthetic && !!webConfig().users[viewer.githubId]?.ownerTokens?.[projectId];
   const fingerprint = routeFingerprint(segment);
   if (!fingerprint) notFound();
-  const record = await readProject<{publication:{release:Release;evidence:Identity[]};submitted_by:string;submitted_at:string;acceptance:Identity|null;deployments:Identity[]}>(projectId, `/releases/${encodeURIComponent(fingerprint)}`);
+  const record = await readProject<{
+    publication: { release: Release; evidence: Identity[] };
+    submitted_by: string;
+    submitted_at: string;
+    acceptance: Identity | null;
+    deployments: Identity[];
+  }>(projectId, `/releases/${encodeURIComponent(fingerprint)}`);
   if (!record) notFound();
   const release = record.publication.release;
   const root = `/projects/${encodeURIComponent(projectId)}`;
-  const section = (title: string, values: Identity[]) => <section className="section"><h2>{title}</h2>{values.length ? values.map((v,i) => <details key={i}><summary>{String(v.label ?? v.id ?? v.repository ?? v.digest ?? `Record ${i+1}`)}</summary><pre>{JSON.stringify(v,null,2)}</pre></details>) : <p>No records published.</p>}</section>;
-  return <div className="shell"><Link href={root}>← Project</Link><h1>{release.label}</h1><p><strong>{record.acceptance ? 'Accepted composed release' : 'Candidate — not accepted'}</strong></p><code>{release.fingerprint}</code>
-    <p>Authenticated publisher: {record.submitted_by} · received {record.submitted_at}</p>
-    <p>Baseline <code>{release.baseline_model_revision}</code></p><p>Composed model <Link href={`${root}/model?revision=${encodeURIComponent(release.model_revision)}`}>{release.model_revision}</Link></p>
-    <p>Publication does not authorize deployment or accept this model. Deployment records belong to the project/environment and can include several Changes.</p>
-    {section('Included Change revisions',release.changes)}{section('Source snapshots',release.sources)}{section('Build provenance',release.builds)}{section('Immutable artifacts',release.artifacts)}{section('Recorded deployments',record.deployments)}
-    {record.deployments.filter(d => typeof d.subject_fingerprint === 'string').map(d => <p key={String(d.id)}><Link href={`${root}/model?revision=${encodeURIComponent(release.model_revision)}&subject=${encodeURIComponent(String(d.subject_fingerprint))}`}>Claim Health for {String(d.environment)} · {String(d.id)}</Link></p>)}
-    <section className="section"><h2>Evidence availability</h2>{record.publication.evidence.map((e,i) => <p key={i}><code>{String(e.digest)}</code> · {String(e.media_type)} · <strong>{String(e.availability)}</strong></p>)}<p>Unavailable reports limit inspection. Missing required records or measurements cannot establish supported Claim Health.</p></section>
-    {record.acceptance && <details><summary>Owner acceptance decision</summary><pre>{JSON.stringify(record.acceptance,null,2)}</pre></details>}
+  const environmentState = await environmentView(projectId, null, environment);
+  const selectedRelease = environmentState.deployment?.release_fingerprint === fingerprint;
+  const confirmedDeployment = selectedRelease && environmentState.observationFresh;
+  const claims = selectedRelease ? environmentState.state?.claims ?? [] : [];
+  const counts = { supported: 0, violated: 0, unresolved: 0 };
+  for (const claim of claims) counts[claimStatus(claim.status)]++;
+  const environments = [...new Set(record.deployments.flatMap(d => typeof d.environment === "string" ? [d.environment] : []))];
+  const components = release.components ?? [];
+  const modelUrl = `${root}/model?environment=${encodeURIComponent(environment)}&revision=${encodeURIComponent(release.model_revision)}${selectedRelease && environmentState.subject ? `&subject=${encodeURIComponent(environmentState.subject)}` : ""}`;
+  return <div className="dashboard releaseWorkspace">
+    <nav className="pageBreadcrumb" aria-label="Breadcrumb"><Link href={`${root}/releases?environment=${encodeURIComponent(environment)}`}>Releases</Link><span>/</span><span>{release.label}</span></nav>
+    <header className="dashboardHeading">
+      <div><p className="overline">RELEASE</p><h1>{release.label}</h1><p>Published {receivedAt(record.submitted_at)}</p></div>
+      <span className={`badge ${record.acceptance ? "good" : "neutral"}`}>{record.acceptance ? "Accepted" : "Pending acceptance"}</span>
+    </header>
+    <section className="deploymentBar" aria-label="Release summary">
+      <div><span className="fieldLabel">{environment.toUpperCase()}</span><strong>{confirmedDeployment ? `Observed in ${environment}` : selectedRelease ? "Current state unconfirmed" : "Not confirmed as current"}</strong><small>{selectedRelease ? environmentState.deployment?.deployment.id : `No matching current ${environment} deployment`}</small></div>
+      <div><span className="fieldLabel">COMPOSITION</span><strong>{release.changes.length} {release.changes.length === 1 ? "change" : "changes"} · {release.sources.length} {release.sources.length === 1 ? "repository" : "repositories"}</strong></div>
+      <Link className="outlineButton" href={modelUrl}>Inspect Claims ↗</Link>
+    </section>
+    <div className="releaseColumns">
+      <div className="releaseSections">
+        <section className="dashboardPanel">
+          <header className="panelHeading"><div><h2>Included changes</h2><p>Changes composed into this release.</p></div><span className="badge neutral">{release.changes.length}</span></header>
+          {release.changes.map((change, i) => <div className="releaseCompactRow" key={i}><strong>{title(change, `Change ${i + 1}`)}</strong>{typeof change.revision === "string" && <span className="modelDetailMuted">Pinned revision</span>}</div>)}
+          {!release.changes.length && <p className="releaseEmpty">No changes recorded.</p>}
+        </section>
+        <section className="dashboardPanel">
+          <header className="panelHeading"><div><h2>Source repositories</h2><p>Exact source versions used for this release.</p></div></header>
+          {release.sources.map((source, i) => <div className="releaseCompactRow" key={i}><strong>{title(source, `Repository ${i + 1}`)}</strong><span className="modelDetailMuted">{typeof source.commit === "string" && /^[0-9a-f]{40,64}$/.test(source.commit) ? source.commit.slice(0, 8) : "Source snapshot recorded"}</span></div>)}
+          {!release.sources.length && <p className="releaseEmpty">No sources recorded.</p>}
+        </section>
+        <section className="dashboardPanel">
+          <header className="panelHeading"><div><h2>Components</h2><p>{components.length ? "Runtime components bound to immutable build outputs." : `${release.artifacts.length} artifacts · ${release.builds.length} builds. Component bindings are not recorded.`}</p></div></header>
+          {components.map(component => <div className="releaseCompactRow" key={component.id}><strong>{component.id}</strong><span className="badge neutral">Pinned image</span></div>)}
+          {!components.length && release.artifacts.map((artifact, i) => <div className="releaseCompactRow" key={i}><strong>{title(artifact, `Artifact ${i + 1}`)}</strong><span className="modelDetailMuted">{typeof artifact.kind === "string" ? artifact.kind : "Build output"}</span></div>)}
+          {!components.length && !release.artifacts.length && <p className="releaseEmpty">No build artifacts recorded.</p>}
+        </section>
+        <section className="dashboardPanel">
+          <header className="panelHeading"><div><h2>Deployment history</h2><p>Recorded deployments of this release.</p></div></header>
+          {record.deployments.map((deployment, i) => <div className="releaseCompactRow" key={i}><div><strong>{typeof deployment.environment === "string" ? deployment.environment : "Environment unavailable"}</strong><small>{title(deployment, `Deployment ${i + 1}`)}</small></div>{typeof deployment.subject_fingerprint === "string" && <Link className="textLink" href={`${root}/model?environment=${encodeURIComponent(String(deployment.environment))}&revision=${encodeURIComponent(release.model_revision)}&subject=${encodeURIComponent(deployment.subject_fingerprint)}`}>Inspect Claims ↗</Link>}</div>)}
+          {!record.deployments.length && <p className="releaseEmpty">No deployment recorded yet.</p>}
+        </section>
+      </div>
+      <aside className="releaseSections">
+        <section className="dashboardPanel releaseAssessment">
+          <p className="overline">{environment.toUpperCase()} EVIDENCE</p><h2>{confirmedDeployment ? "Current Claim status" : "Current state unconfirmed"}</h2>
+          {claims.length ? <><p>{confirmedDeployment ? "Evidence for the observed deployment." : "Recorded evidence; current environment is not confirmed."}</p><dl className="releaseStatusCounts"><div><dt>Confirmed</dt><dd>{counts.supported}</dd></div><div><dt>Violated</dt><dd>{counts.violated}</dd></div><div><dt>Unresolved</dt><dd>{counts.unresolved}</dd></div></dl><Link className="textLink" href={modelUrl}>Inspect evidence ↗</Link></> : <p>No Claim assessment available for a matching selected environment deployment.</p>}
+        </section>
+        <section className="dashboardPanel releaseAssessment">
+          <p className="overline">OWNER DECISION</p><h2>{record.acceptance ? "Release accepted" : "Awaiting acceptance"}</h2>
+          <p>{record.acceptance ? "Model application and change archival remain separate Git operations. Their completion is not recorded here." : "Acceptance advances the accepted model after the required reviews and evidence are established."}</p>
+          {!record.acceptance && !canAccept && <p className="modelDetailMuted">{synthetic ? "Acceptance is read-only in this local preview." : "An authorized project owner can accept this release."}</p>}
+        </section>
+      </aside>
+    </div>
+    {!record.acceptance && canAccept && <ReleaseAcceptance project={projectId} release={release.fingerprint} baseline={release.baseline_model_revision} environments={environments} />}
+    <details className="dashboardPanel releaseTechnical"><summary>Technical details</summary>
+      <CopyValue label="Release fingerprint" value={release.fingerprint} />
+      <CopyValue label="Baseline model" value={release.baseline_model_revision} />
+      <CopyValue label="Composed model" value={release.model_revision} />
+      <p className="modelDetailMuted">Published by {record.submitted_by} · {receivedAt(record.submitted_at)}</p>
+      <details><summary>Publication and provenance records</summary><pre>{JSON.stringify(record.publication, null, 2)}</pre></details>
+      <details><summary>Deployment records</summary><pre>{JSON.stringify(record.deployments, null, 2)}</pre></details>
+      {record.acceptance && <details><summary>Owner acceptance decision</summary><pre>{JSON.stringify(record.acceptance, null, 2)}</pre></details>}
+    </details>
   </div>;
 }

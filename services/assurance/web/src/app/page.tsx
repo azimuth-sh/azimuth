@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { requireViewer } from '@/lib/auth';
 import { SignOut } from './signout';
+import { developmentScenario } from '@/lib/development';
 export const dynamic = 'force-dynamic';
 export default async function Home() {
   const session = await requireViewer();
@@ -15,7 +16,7 @@ export default async function Home() {
           Inspect current authority, Runs and independent reviews. An accepted
           execution does not establish a supported Claim.
         </p>
-        <SignOut />
+        {!developmentScenario() && <SignOut />}
       </section>
       <section className="section">
         <h2>Your projects</h2>

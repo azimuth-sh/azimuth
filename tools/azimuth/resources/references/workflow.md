@@ -291,3 +291,7 @@ both adequate verification design and faithful implemented verification, includi
 and controls promised by each contribution. Execution may remain pending. Documented unfinished
 implementation does not satisfy the gate. Existing workflow instances retain their pinned guidance
 and definitions until an explicit migration; installing this skill does not rewrite review history.
+
+## Offline publication handoff
+
+The standard workflow's final task is prepare-publication-inputs. Its publication-inputs output is the compact native envelope validated by `azimuth release inputs`. Local preparation never connects to ASS or asserts registration. Commit the envelope in the explicitly configured release repository. Trusted CI publishes the release/candidate and retains the actual receipt. Explicit custom registration tasks remain service operations; preparation is never a registration receipt. Existing pinned workflow instances retain their definition and history; start a new instance to adopt the changed standard template rather than silently rewriting completed tasks.

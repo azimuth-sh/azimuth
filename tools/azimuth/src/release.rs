@@ -92,7 +92,7 @@ pub fn prepare(request: &Json) -> Result<Json, String> {
             "snapshot",
             "evidence",
         ],
-        &["catalog", "composition", "required_reviews"],
+        &["catalog", "composition", "required_reviews", "components"],
     )?;
     if text(request, "format")? != "azimuth-release-request"
         || field(request, "version")?.as_num() != Some(1.0)
@@ -112,6 +112,9 @@ pub fn prepare(request: &Json) -> Result<Json, String> {
     ];
     for key in ["changes", "sources", "builds", "artifacts", "deployments"] {
         release.push((key, field(request, key)?.clone()));
+    }
+    if let Some(components) = request.get("components") {
+        release.push(("components", components.clone()));
     }
     if let Some(composition) = request.get("composition") {
         release.push(("composition", composition.clone()));
@@ -191,7 +194,7 @@ pub fn verify(value: &Json) -> Result<Json, String> {
             "artifacts",
             "deployments",
         ],
-        &["composition", "required_reviews"],
+        &["composition", "required_reviews", "components"],
     )?;
     id(release, "label")?;
     digest_field(release, "baseline_model_revision")?;
@@ -225,6 +228,25 @@ pub fn verify(value: &Json) -> Result<Json, String> {
     }
     if change_ids.is_empty() {
         return Err("release must explicitly include at least one Change".into());
+    }
+    if let Some(components) = release.get("components") {
+        let components = components.as_array().ok_or("components requires array")?;
+        let mut ids = BTreeSet::new();
+        let artifacts = array(release, "artifacts")?;
+        for component in components {
+            shape(component, &["id", "digest"], &[])?;
+            crate::diag::validate_id(text(component, "id")?, false)?;
+            digest_field(component, "digest")?;
+            if !ids.insert(text(component, "id")?)
+                || !artifacts
+                    .iter()
+                    .any(|a| a.get("digest") == component.get("digest"))
+            {
+                return Err(
+                    "component must have a unique identity and declared artifact digest".into(),
+                );
+            }
+        }
     }
     let mut repositories = BTreeSet::new();
     for source in array(release, "sources")? {
@@ -463,7 +485,7 @@ fn portable(value: &Json, at: &str) -> Result<(), String> {
     }
 }
 
-fn verify_catalog(catalog: &Json, authority: &Json) -> Result<(), String> {
+pub fn verify_catalog(catalog: &Json, authority: &Json) -> Result<(), String> {
     shape(catalog, &["modules", "claims", "cases", "checks"], &[])?;
     let mut members = BTreeSet::new();
     let mut modules = BTreeMap::new();
@@ -1091,4 +1113,32 @@ fn portable_evidence(value: &Json, at: &str, unavailable: &BTreeSet<String>) -> 
         }
         _ => portable(value, at),
     }
+}
+
+pub fn publication_inputs(value: &Json) -> Result<Json, String> {
+    shape(value, &["format", "version", "request", "composition"], &[])?;
+    if text(value, "format")? != "azimuth-publication-inputs"
+        || field(value, "version")?.as_num() != Some(1.0)
+    {
+        return Err("expected azimuth-publication-inputs version 1".into());
+    }
+    let request = field(value, "request")?;
+    for key in ["builds", "artifacts", "deployments"] {
+        if !array(request, key)?.is_empty() {
+            return Err("offline inputs cannot assert CI builds, artifacts or deployments".into());
+        }
+    }
+    array(request, "required_reviews")?;
+    let composed = compose(field(value, "composition")?)?;
+    if request.get("composition") != Some(&composed) {
+        return Err("request must retain the exact composed candidate".into());
+    }
+    prepare(request)?;
+    if value.to_string_pretty().len() > PACKAGE_LIMIT {
+        return Err(
+            "publication inputs exceed 8 MiB; compact producer records without rewriting history"
+                .into(),
+        );
+    }
+    Ok(value.clone())
 }

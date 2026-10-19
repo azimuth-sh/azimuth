@@ -12,6 +12,9 @@ use serde_json::{json, Value};
 use sqlx::{PgPool, Row};
 use std::{collections::BTreeMap, sync::Arc};
 
+mod environment;
+mod deployment_observation;
+mod model_catalog;
 mod release;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -175,6 +178,23 @@ pub fn app(state: LedgerState) -> Router {
         .route(
             "/v1/projects/{project}/model-revisions/{revision}/run-models",
             post(associate_run_model),
+        )
+        .route(
+            "/v1/projects/{project}/model-revisions/{revision}/catalog",
+            post(model_catalog::register).get(model_catalog::show),
+        )
+        .route("/v1/projects/{project}/environments/{environment}/observations", post(deployment_observation::record).get(deployment_observation::current))
+        .route(
+            "/v1/projects/{project}/environments",
+            get(environment::list),
+        )
+        .route(
+            "/v1/projects/{project}/environments/{environment}/deployment",
+            post(environment::select).get(environment::current),
+        )
+        .route(
+            "/v1/projects/{project}/deployments/{deployment}",
+            get(environment::deployment),
         )
         .route("/v1/projects/{project}/runs", post(ingest).get(list_runs))
         .route("/v1/projects/{project}/subjects", get(list_subjects))

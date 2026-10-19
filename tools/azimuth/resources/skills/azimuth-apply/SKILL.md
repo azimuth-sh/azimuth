@@ -57,3 +57,7 @@ An equivalent/irrelevant mutant disposition belongs in an independent successor 
 retaining exact `challenge_basis` proof dependencies. An unchanged bounded search can close on
 that accepted disposition; do not fabricate a clean result or rerun forever to hide an objection.
 Source/configuration changes and execution gaps still require affected execution work.
+
+## Git publication handoff
+
+The standard workflow ends at `prepare-publication-inputs`, not a local ASS upload. Validate the compact native envelope with `azimuth release inputs`, and place it in the project's explicitly declared release repository. A named Git request selects exact source commits; trusted CI performs registration/publication and retains the receipt. Do not use a preparation record as proof of service registration or require local ASS credentials. Already pinned workflow histories are not silently rewritten when the standard template changes.

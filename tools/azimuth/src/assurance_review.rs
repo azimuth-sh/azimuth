@@ -1950,6 +1950,224 @@ fn review_mechanisms(
     }
 }
 
+fn explanation_record(record: Option<&Json>, assessment: &Assessment) -> Json {
+    let field = |name| {
+        record
+            .and_then(|r| r.get(name))
+            .cloned()
+            .unwrap_or(Json::Null)
+    };
+    Json::obj(vec![
+        ("status", Json::str(&assessment.status)),
+        ("fingerprint", field("fingerprint")),
+        ("reviewer", field("reviewer")),
+        ("reviewed_at_ms", field("reviewed_at_ms")),
+        ("rationale", field("rationale")),
+        (
+            "diagnostics",
+            Json::Arr(assessment.diagnostics.iter().map(Json::str).collect()),
+        ),
+    ])
+}
+
+fn health_explanation(
+    authority: &Json,
+    claim: &Json,
+    reviews: &[Json],
+    heads: &[&RunBundle],
+    subject: &str,
+    review: &Assessment,
+    health: &Assessment,
+    status: &str,
+) -> Json {
+    let id = text(claim, "id").unwrap();
+    let review_target = Json::obj(vec![
+        ("kind", Json::str("claim-review")),
+        ("claim", Json::str(id)),
+    ]);
+    let health_target = Json::obj(vec![
+        ("kind", Json::str("claim-health")),
+        ("claim", Json::str(id)),
+        ("subject_fingerprint", Json::str(subject)),
+    ]);
+    let review_record = latest_review(reviews, &review_target).ok().flatten();
+    let health_record = latest_review(reviews, &health_target).ok().flatten();
+    let mut reasons = Vec::new();
+    for (kind, label, assessment) in [
+        ("claim-review", "Claim Review", review),
+        ("claim-health", "Claim Health", health),
+    ] {
+        if assessment.status != "accepted" {
+            reasons.push(Json::obj(vec![
+                ("code", Json::str(format!("{kind}-{}", assessment.status))),
+                ("category", Json::str(kind)),
+                ("status", Json::str(&assessment.status)),
+                (
+                    "message",
+                    Json::str(format!(
+                        "{label} is {} for this assessment.",
+                        assessment.status
+                    )),
+                ),
+                (
+                    "diagnostics",
+                    Json::Arr(assessment.diagnostics.iter().map(Json::str).collect()),
+                ),
+            ]));
+        }
+    }
+    if !array(claim, "gaps").unwrap().is_empty() {
+        reasons.push(Json::obj(vec![
+            ("code", Json::str("structural-gaps")),
+            ("category", Json::str("definition")),
+            (
+                "message",
+                Json::str("The Claim has unresolved structural gaps."),
+            ),
+            ("details", claim.get("gaps").unwrap().clone()),
+        ]));
+    }
+    let mut supporting = Vec::new();
+    let mut violations = Vec::new();
+    let mut inconclusive = Vec::new();
+    let mut related = Vec::new();
+    let mut coverage = Vec::new();
+    for binding in array(claim, "bindings").unwrap() {
+        let check_id = text(binding, "check").unwrap();
+        let case_id = text(binding, "case").unwrap();
+        let check_fp = authority_item(authority, "checks", "id", check_id)
+            .and_then(|c| c.get("fingerprint"))
+            .and_then(Json::as_str);
+        let mut observed = Vec::new();
+        let mut accepted_outcomes = Vec::new();
+        for bundle in heads.iter().filter(|b| b.subject_fingerprint == subject) {
+            for execution in bundle.check_executions.iter().filter(|e| {
+                e.check.id == check_id && Some(e.check.fingerprint.as_str()) == check_fp
+            }) {
+                for observation in execution.observations.iter().filter(|o| o.case == case_id) {
+                    let selected = health_record
+                        .and_then(|r| r.get("basis"))
+                        .and_then(Json::as_array)
+                        .unwrap_or(&[])
+                        .iter()
+                        .any(|b| {
+                            b.get("run").and_then(Json::as_str) == Some(bundle.run_id.as_str())
+                                && b.get("bundle_fingerprint").and_then(Json::as_str)
+                                    == Some(bundle.bundle_fingerprint.as_str())
+                                && b.get("observation").and_then(Json::as_str)
+                                    == Some(observation.fingerprint.as_str())
+                        });
+                    let accepted = selected && health.status == "accepted";
+                    let value = Json::obj(vec![
+                        ("check", Json::str(check_id)),
+                        ("case", Json::str(case_id)),
+                        ("run", Json::str(&bundle.run_id)),
+                        ("bundle_fingerprint", Json::str(&bundle.bundle_fingerprint)),
+                        ("observation", Json::str(&observation.fingerprint)),
+                        ("outcome", Json::str(observation.outcome.name())),
+                        (
+                            "observed_at_ms",
+                            Json::Num(observation.observed_at_ms as f64),
+                        ),
+                        ("selected_in_basis", Json::Bool(selected)),
+                        ("accepted_basis", Json::Bool(accepted)),
+                        (
+                            "diagnostics",
+                            Json::Arr(observation.diagnostics.iter().map(Json::str).collect()),
+                        ),
+                    ]);
+                    observed.push(value.clone());
+                    if accepted {
+                        accepted_outcomes.push(observation.outcome);
+                        match observation.outcome {
+                            ObservationOutcome::Satisfied => supporting.push(value),
+                            ObservationOutcome::Violated => violations.push(value),
+                            ObservationOutcome::Inconclusive => inconclusive.push(value),
+                        }
+                    } else {
+                        related.push(value);
+                    }
+                }
+            }
+        }
+        let coverage_status = if observed.is_empty() {
+            reasons.push(Json::obj(vec![
+                ("code", Json::str("current-observation-missing")),
+                ("category", Json::str("evidence")),
+                ("check", Json::str(check_id)), ("case", Json::str(case_id)),
+                ("message", Json::str(format!("No current matching Observation is recorded for Check {check_id} and Case {case_id}."))),
+            ]));
+            "missing"
+        } else if accepted_outcomes.is_empty() {
+            "unassessed"
+        } else if accepted_outcomes.contains(&ObservationOutcome::Violated) {
+            "violated"
+        } else if accepted_outcomes.contains(&ObservationOutcome::Inconclusive) {
+            "inconclusive"
+        } else {
+            "satisfied"
+        };
+        coverage.push(Json::obj(vec![
+            ("check", Json::str(check_id)),
+            ("case", Json::str(case_id)),
+            ("status", Json::str(coverage_status)),
+            ("observations", Json::Arr(observed)),
+        ]));
+    }
+    if health.status == "accepted" && status != "supported" {
+        reasons.push(Json::obj(vec![
+            ("code", Json::str(format!("health-assessed-{status}"))),
+            ("category", Json::str("claim-health")),
+            (
+                "message",
+                health_record
+                    .and_then(|r| r.get("rationale"))
+                    .cloned()
+                    .unwrap_or(Json::str("Claim Health remains unresolved.")),
+            ),
+        ]));
+    }
+    let summary = if health.status == "accepted" {
+        health_record
+            .and_then(|r| r.get("rationale"))
+            .and_then(Json::as_str)
+            .unwrap_or("Assessment rationale is unavailable.")
+            .to_string()
+    } else if reasons.is_empty() {
+        "No current Claim Health assessment is available.".into()
+    } else {
+        reasons
+            .iter()
+            .filter_map(|r| r.get("message").and_then(Json::as_str))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    Json::obj(vec![
+        ("summary", Json::str(summary)),
+        ("status", Json::str(status)),
+        ("reasons", Json::Arr(reasons)),
+        ("review", explanation_record(review_record, review)),
+        ("health", explanation_record(health_record, health)),
+        ("coverage", Json::Arr(coverage)),
+        (
+            "evidence",
+            Json::obj(vec![
+                ("supporting", Json::Arr(supporting)),
+                ("violations", Json::Arr(violations)),
+                ("inconclusive", Json::Arr(inconclusive)),
+                ("unassessed", Json::Arr(related)),
+            ]),
+        ),
+        (
+            "residual_risks",
+            health_record
+                .and_then(|r| r.get("residual_risks"))
+                .cloned()
+                .unwrap_or(Json::Arr(vec![])),
+        ),
+    ])
+}
+
 pub fn subject_state(
     authority: &Json,
     reviews: &[Json],
@@ -2046,7 +2264,18 @@ pub fn subject_state(
                         })
                 })
                 .collect();
+            let explanation = health_explanation(
+                authority,
+                claim,
+                reviews,
+                &heads,
+                subject_fingerprint,
+                &review,
+                &health,
+                &status,
+            );
             Json::obj(vec![
+                ("explanation", explanation),
                 ("claim", Json::str(id)),
                 ("status", Json::str(status)),
                 ("review", Json::str(&review.status)),

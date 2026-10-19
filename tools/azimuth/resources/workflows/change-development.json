@@ -716,8 +716,8 @@
       ]
     },
     {
-      "id": "register-candidate-model-revision",
-      "kind": "register-candidate-model-revision",
+      "id": "prepare-publication-inputs",
+      "kind": "prepare-publication-inputs",
       "collection": "change",
       "depends_on": [
         {
@@ -747,8 +747,8 @@
         }
       ],
       "required_output": {
-        "kind": "candidate-registration",
-        "description": "Publish the locally reviewed immutable candidate to the existing ASS project through authorized transport. Retain the actual registration receipt. Publish retained Runs and independent native review records in dependency order under their authorized identities; do not select accepted authority."
+        "kind": "publication-inputs",
+        "description": "Prepare compact Git-trackable azimuth-publication-inputs version 1 containing the complete native release request and composition request. Validate the envelope with azimuth release inputs --input <draft> --out <Git-tracked-file>. No ASS connection, registration receipt, accepted-authority selection or local upload is required. CI publishes unchanged native reviews and Runs with recorded transport provenance."
       },
       "correction": null,
       "outcomes": [
