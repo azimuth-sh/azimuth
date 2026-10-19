@@ -66,7 +66,7 @@ check_assurance() {
     npm run build
   )
 
-  python3 -m unittest -v services.assurance.deployment.test_qualify
+  python3 -m unittest -v services.assurance.deployment.test_qualify services.reconciler.test_reconciler
   python3 services/assurance/deployment/qualify.py
 
   if docker info >/dev/null 2>&1; then
