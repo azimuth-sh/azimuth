@@ -29,9 +29,9 @@ MIGRATION_ROOT = ASSURANCE_ROOT / "server/migrations"
 OUTPUT_FILE = ROOT / ".azimuth/release/private-deployment.json"
 QUALIFICATION_SECRET = "private-qualification-9f4c8b6e"
 REQUIRED_DOCUMENTATION = (
-    "operator-controlled trusted reverse proxy, SSH tunnel or VPN",
-    "does not add application authentication",
-    "not ready for direct internet exposure",
+    "operator-controlled HTTPS reverse proxy or tunnel",
+    "All data routes below require a project bearer credential",
+    "GitHub OAuth independently authenticates people",
     "Downgrades are unsupported",
     "later schema-changing release",
 )

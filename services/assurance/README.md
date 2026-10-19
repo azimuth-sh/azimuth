@@ -192,3 +192,7 @@ changes.
 Web users may have server-only `ownerTokens: {project: token}` in addition to read projects. Tokens are distinct per user/project and correspond to separately configured ASS owner identities. Terraform's user `owners` map selects those existing identities; it defaults to empty, so no user gains owner access implicitly. Acceptance uses an authenticated same-origin Server Action and server-side bearer transport; credentials never reach the browser. Owners choose the assessed environment and enter a reason. Server concurrency, observed rollout/freshness and native exact-Subject supported Health gates remain authoritative. Acceptance never applies repository model files or archives Changes.
 
 Deploy API and Web together with additive migration 0008. The production dashboard labels last observed release and explicitly warns when no fresh complete observation matches its selected deployment. Enable the separate reconciler only after image, credential, configured workload and network prerequisites are ready. No existing deployment is selected by migration.
+
+## Migration and rollback boundary
+
+Downgrades are unsupported. Back up the persistent PostgreSQL data before deployment and retain the exact image/configuration identities. A rollback must use application/schema-compatible images; reverting data or schema requires a separately reviewed recovery procedure or a later schema-changing release. Container stop/start and recreation must preserve the existing database volume and its immutable Run/model/review history.

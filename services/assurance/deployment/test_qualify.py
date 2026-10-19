@@ -12,9 +12,9 @@ from services.assurance.deployment.qualify import (
 
 
 DOCUMENTATION = """
-operator-controlled trusted reverse proxy, SSH tunnel or VPN
-does not add application authentication
-not ready for direct internet exposure
+operator-controlled HTTPS reverse proxy or tunnel
+All data routes below require a project bearer credential
+GitHub OAuth independently authenticates people
 Downgrades are unsupported
 later schema-changing release
 """
