@@ -78,7 +78,8 @@ def marker(decorator: ast.expr) -> tuple[str, ast.Call] | None:
 def scan(
     path: Path, relative: str, module_relative: str | None = None
 ) -> dict[str, list[dict[str, object]]]:
-    source = path.read_text(encoding="utf-8")
+    module_bytes = path.read_bytes()
+    source = module_bytes.decode("utf-8")
     tree = ast.parse(source, filename=relative)
     manifest = empty_manifest()
     module, _ = module_identity(module_relative or relative)
@@ -170,7 +171,7 @@ def scan(
                             "site": site,
                             "file": relative,
                             "lang": "python",
-                            "source_fingerprint": fingerprint,
+                            "source_fingerprint": "sha256:" + hashlib.sha256(module_bytes).hexdigest(),
                         }
                     )
                 elif name == "implements_mechanism":

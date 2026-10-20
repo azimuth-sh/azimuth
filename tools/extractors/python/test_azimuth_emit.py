@@ -31,7 +31,7 @@ class EmitterTests(unittest.TestCase):
                 self.assertRegex(item["source_fingerprint"], r"^sha256:[0-9a-f]{64}$")
                 self.assertNotIn("spec", item)
 
-    def test_fingerprint_is_local_to_each_implementation(self) -> None:
+    def test_check_support_covers_shared_module_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "service.py"
             path.write_text(
@@ -44,8 +44,28 @@ class EmitterTests(unittest.TestCase):
                 '@implements_check("check")\ndef second():\n    return 3\n'
             )
             after = scan(path, "service.py")["check_implementations"]
-            self.assertEqual(before[0]["source_fingerprint"], after[0]["source_fingerprint"])
+            self.assertNotEqual(before[0]["source_fingerprint"], after[0]["source_fingerprint"])
             self.assertNotEqual(before[1]["source_fingerprint"], after[1]["source_fingerprint"])
+
+    def test_import_and_global_mutations_change_check_support_without_relabeling(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "service.py"
+            source = ('import math as calculation\nLIMIT = 2\n'
+                      '@implements_check("check")\nclass CheckInputs:\n    pass\n'
+                      '@implements_check("check")\ndef verify():\n    return calculation.floor(LIMIT)\n'
+                      '@realizes("behavior")\ndef behavior():\n    return 1\n'
+                      '@implements_mechanism("guard")\ndef guard():\n    return 2\n')
+            path.write_text(source)
+            before = scan(path, "service.py")
+            for changed in (source.replace('import math as calculation', 'import statistics as calculation'),
+                            source.replace('LIMIT = 2', 'LIMIT = 3')):
+                path.write_text(changed)
+                after = scan(path, "service.py")
+                for left, right in zip(before["check_implementations"], after["check_implementations"]):
+                    self.assertEqual(left["site"], right["site"])
+                    self.assertNotEqual(left["source_fingerprint"], right["source_fingerprint"])
+                self.assertEqual(before["realizes"], after["realizes"])
+                self.assertEqual(before["mechanism_implementations"], after["mechanism_implementations"])
 
     def test_retired_decorators_fail_explicitly(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
