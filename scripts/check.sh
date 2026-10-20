@@ -74,7 +74,7 @@ check_assurance() {
     npm run build
   )
 
-  PYTHONPATH=packages/python python3 -m unittest -v services.assurance.deployment.test_qualify services.reconciler.test_reconciler services.collector.test_contexts
+  PYTHONPATH=packages/python python3 -m unittest -v services.assurance.deployment.test_qualify services.reconciler.test_reconciler services.collector.test_contexts services.collector.test_transport
   python3 services/assurance/deployment/qualify.py
 
   if docker info >/dev/null 2>&1; then
