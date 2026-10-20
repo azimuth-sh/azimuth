@@ -23,8 +23,8 @@ export default async function SubjectPage({
   return (
     <div className="shell">
       <Link href={`/projects/${encodeURIComponent(projectId)}`}>← Project</Link>
-      <h1>Exact-Subject Claim Health</h1>
-      <code>{subject}</code>
+      <h1>Subject evidence inspection</h1>
+      <p>Inspect exact-Subject records here. The environment overview shows computed deployment Claim Status.</p><code>{subject}</code>
       {!state ? (
         <p>No selected authority; conclusion unresolved.</p>
       ) : (
@@ -36,9 +36,8 @@ export default async function SubjectPage({
             <article className="section" key={claim.claim}>
               <h2>{claim.claim}</h2>
               <p>
-                Conclusion: <strong>{claim.status}</strong> · Review:{' '}
-                <strong>{claim.review ?? 'missing'}</strong> · Health
-                assessment: <strong>{claim.health ?? 'missing'}</strong>
+                Recorded conclusion: <strong>{claim.status}</strong> · Review:{' '}
+                <strong>{claim.review ?? 'missing'}</strong> · Assessment: <strong>{claim.health ?? 'computed'}</strong>
               </p>
               <p>{claim.diagnostics.join('; ')}</p>
               <details>
@@ -59,7 +58,7 @@ export default async function SubjectPage({
           ))}
           <details>
             <summary>
-              Complete health, dependencies and challenge results
+              Complete assessment, dependencies and challenge results
             </summary>
             <pre>{JSON.stringify(state, null, 2)}</pre>
           </details>

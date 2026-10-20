@@ -390,7 +390,10 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             ), patch("release.publication.has_provenance", return_value=True):
                 state = collect_state(account, sums_path)
             self.assertEqual(state["missingReleaseAssets"], [])
-            self.assertEqual(len(state["targets"]), 10)
+            self.assertEqual(
+                set(state["targets"]),
+                {subject["key"] for subject in account["subjects"]},
+            )
             self.assertEqual(
                 {key: value["sha256"] for key, value in state["targets"].items()},
                 {

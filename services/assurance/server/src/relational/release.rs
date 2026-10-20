@@ -167,6 +167,7 @@ fn deployment_observation() -> Schema {
                 ("image", Schema::Text),
                 ("template_fingerprint", Schema::Text),
                 ("ready", Schema::Boolean),
+                ("instances", list(Schema::Text)),
             ])),
         ),
         ("diagnostics", list(Schema::Text)),

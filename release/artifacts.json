@@ -42,7 +42,11 @@
       "ecosystem": "nuget",
       "identity": "Azimuth.Annotations",
       "manifest": "packages/dotnet/Azimuth.Annotations/Azimuth.Annotations.csproj",
-      "requiredFiles": ["*.nuspec", "README.md", "lib/netstandard2.0/Azimuth.Annotations.dll"],
+      "requiredFiles": [
+        "*.nuspec",
+        "README.md",
+        "lib/netstandard2.0/Azimuth.Annotations.dll"
+      ],
       "allowedFiles": [
         "[Content_Types].xml",
         "_rels/.rels",
@@ -58,7 +62,11 @@
       "ecosystem": "nuget",
       "identity": "Azimuth.Emit",
       "manifest": "tools/extractors/dotnet/Azimuth.Emit/Azimuth.Emit.csproj",
-      "requiredFiles": ["*.nuspec", "README.md", "tools/net10.0/any/azimuth-emit-dotnet.dll"],
+      "requiredFiles": [
+        "*.nuspec",
+        "README.md",
+        "tools/net10.0/any/azimuth-emit-dotnet.dll"
+      ],
       "allowedFiles": [
         "[Content_Types].xml",
         "_rels/.rels",
@@ -73,16 +81,68 @@
       "ecosystem": "npm",
       "identity": "@azimuth-sh/annotations",
       "manifest": "packages/typescript/package.json",
-      "requiredFiles": ["package/package.json", "package/dist/index.js", "package/dist/index.d.ts"],
-      "allowedFiles": ["package/package.json", "package/dist/index.js", "package/dist/index.d.ts"]
+      "requiredFiles": [
+        "package/package.json",
+        "package/dist/index.js",
+        "package/dist/index.d.ts"
+      ],
+      "allowedFiles": [
+        "package/package.json",
+        "package/dist/index.js",
+        "package/dist/index.d.ts"
+      ]
     },
     {
       "id": "typescript-emitter",
       "ecosystem": "npm",
       "identity": "@azimuth-sh/emit",
       "manifest": "tools/extractors/typescript/package.json",
-      "requiredFiles": ["package/package.json", "package/dist/cli.js", "package/dist/emitter.js"],
-      "allowedFiles": ["package/package.json", "package/dist/*.js"]
+      "requiredFiles": [
+        "package/package.json",
+        "package/dist/cli.js",
+        "package/dist/emitter.js"
+      ],
+      "allowedFiles": [
+        "package/package.json",
+        "package/dist/*.js"
+      ]
+    },
+    {
+      "id": "dotnet-testing-xunit",
+      "ecosystem": "nuget",
+      "identity": "Azimuth.Testing.Xunit",
+      "manifest": "packages/dotnet/Azimuth.Testing.Xunit/Azimuth.Testing.Xunit.csproj",
+      "requiredFiles": [
+        "*.nuspec",
+        "README.md",
+        "lib/net8.0/Azimuth.Testing.Xunit.dll"
+      ],
+      "allowedFiles": [
+        "[Content_Types].xml",
+        "_rels/.rels",
+        "*.nuspec",
+        "README.md",
+        "lib/net8.0/Azimuth.Testing.Xunit.dll",
+        "package/services/metadata/core-properties/*.psmdcp"
+      ]
+    },
+    {
+      "id": "typescript-playwright",
+      "ecosystem": "npm",
+      "identity": "@azimuth-sh/playwright",
+      "manifest": "packages/typescript-playwright/package.json",
+      "requiredFiles": [
+        "package/package.json",
+        "package/dist/index.js",
+        "package/dist/index.d.ts",
+        "package/dist/reporter.js"
+      ],
+      "allowedFiles": [
+        "package/package.json",
+        "package/README.md",
+        "package/dist/*.js",
+        "package/dist/*.d.ts"
+      ]
     }
   ],
   "images": [
@@ -92,7 +152,10 @@
       "context": ".",
       "dockerfile": "services/assurance/server/Dockerfile",
       "versionManifest": "services/assurance/Cargo.toml",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     },
     {
       "id": "assurance-web",
@@ -100,7 +163,10 @@
       "context": "services/assurance/web",
       "dockerfile": "services/assurance/web/Dockerfile",
       "versionManifest": "services/assurance/web/package.json",
-      "platforms": ["linux/amd64", "linux/arm64"]
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
     }
   ],
   "nativeBinaries": {
@@ -117,13 +183,84 @@
     "package": "rust-cli-core"
   },
   "protocols": [
-    {"id": "model-export", "version": 4, "produces": true, "accepts": true},
-    {"id": "adapter-config", "version": 1, "produces": false, "accepts": true},
-    {"id": "run-bundle", "version": 1, "produces": true, "accepts": true},
-    {"id": "run-launch-plan", "version": 1, "produces": true, "accepts": true},
-    {"id": "workspace", "version": 1, "produces": true, "accepts": true},
-    {"id": "installation", "version": 1, "produces": true, "accepts": true},
-    {"id": "migration-plan", "version": 1, "produces": true, "accepts": true}
+    {
+      "id": "model-export",
+      "version": 4,
+      "produces": true,
+      "accepts": true
+    },
+    {
+      "id": "adapter-config",
+      "version": 1,
+      "produces": false,
+      "accepts": true
+    },
+    {
+      "id": "run-bundle",
+      "version": 1,
+      "produces": true,
+      "accepts": true
+    },
+    {
+      "id": "run-launch-plan",
+      "version": 1,
+      "produces": true,
+      "accepts": true
+    },
+    {
+      "id": "workspace",
+      "version": 1,
+      "produces": true,
+      "accepts": true
+    },
+    {
+      "id": "installation",
+      "version": 1,
+      "produces": true,
+      "accepts": true
+    },
+    {
+      "id": "migration-plan",
+      "version": 1,
+      "produces": true,
+      "accepts": true
+    },
+    {
+      "id": "verification-context",
+      "version": 1,
+      "produces": true,
+      "accepts": true
+    },
+    {
+      "id": "test-report",
+      "version": 1,
+      "produces": true,
+      "accepts": true
+    },
+    {
+      "id": "test-mapping",
+      "version": 1,
+      "produces": false,
+      "accepts": true
+    },
+    {
+      "id": "native-test-results",
+      "version": 1,
+      "produces": false,
+      "accepts": true
+    },
+    {
+      "id": "deployment-assessment",
+      "version": 1,
+      "produces": false,
+      "accepts": true
+    },
+    {
+      "id": "deployment-status",
+      "version": 1,
+      "produces": true,
+      "accepts": true
+    }
   ],
   "supportedSurfaces": [
     "rust-cli-core",

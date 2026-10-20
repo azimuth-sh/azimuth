@@ -2,6 +2,7 @@ mod account;
 mod domain;
 mod release;
 mod run;
+mod status;
 
 use serde_json::Value;
 use sqlx::{PgConnection, PgPool, Postgres, QueryBuilder};
@@ -52,6 +53,7 @@ fn registry() -> &'static Registry {
             .chain(account::schemas())
             .chain(release::schemas())
             .chain(domain::schemas())
+            .chain(status::schemas())
         {
             assert!(
                 !registry.roots.contains_key(kind),
@@ -153,9 +155,10 @@ pub(crate) async fn initialize(pool: &PgPool) -> Result<(), sqlx::Error> {
     )
     .fetch_optional(&mut *tx)
     .await?;
-    let upgrading = matches!(&existing, Some((1, value)) if value == "5f17f63dbf8b92e333cdc8ab106cf0cb0d5c6d4314c6a05533fe99af2042d598");
+    let upgrading = matches!(&existing, Some((1, value)) if value == "5f17f63dbf8b92e333cdc8ab106cf0cb0d5c6d4314c6a05533fe99af2042d598")
+        || matches!(&existing, Some((2, value)) if value == "a8f5b811252e44a75eb6cbc7f9141af862d3bdb65ea9ca9ebe8953a77824ae47");
     if let Some((version, existing)) = &existing {
-        if !upgrading && (*version != 2 || existing != &signature) {
+        if !upgrading && (*version != 3 || existing != &signature) {
             return Err(invalid(
                 "relational schema changed without an explicit schema version",
             ));
@@ -212,7 +215,7 @@ pub(crate) async fn initialize(pool: &PgPool) -> Result<(), sqlx::Error> {
                     && node.name == "assurance_catalog_claims_item"
                 {
                     sqlx::query(&format!(
-                        "ALTER TABLE {} ADD COLUMN f_title text",
+                        "ALTER TABLE {} ADD COLUMN IF NOT EXISTS f_title text",
                         quote(&node.name)
                     ))
                     .execute(&mut *tx)
@@ -278,7 +281,7 @@ pub(crate) async fn initialize(pool: &PgPool) -> Result<(), sqlx::Error> {
         }
     }
     sqlx::query(&format!("CREATE OR REPLACE FUNCTION assurance_record_field(k text,p text,r text,f text) RETURNS jsonb LANGUAGE sql STABLE AS $$ SELECT CASE k {} ELSE NULL END FROM assurance_records WHERE kind=k AND project=p AND record_key=r $$",field_cases.join(" "))).execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO assurance_storage_schema(version,signature) VALUES(2,$1)")
+    sqlx::query("INSERT INTO assurance_storage_schema(version,signature) VALUES(3,$1)")
         .bind(signature)
         .execute(&mut *tx)
         .await?;
@@ -765,12 +768,22 @@ mod title_upgrade_tests {
         tx.commit().await?;
         assert_eq!(
             load(&pool, "catalog", "example", "titled").await?,
-            Some(titled)
+            Some(titled.clone())
         );
         let version: i32 = sqlx::query_scalar("SELECT max(version) FROM assurance_storage_schema")
             .fetch_one(&pool)
             .await?;
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
+        sqlx::query("DELETE FROM assurance_storage_schema")
+            .execute(&pool)
+            .await?;
+        sqlx::query("INSERT INTO assurance_storage_schema VALUES(2,'a8f5b811252e44a75eb6cbc7f9141af862d3bdb65ea9ca9ebe8953a77824ae47')").execute(&pool).await?;
+        initialize(&pool).await?;
+        initialize(&pool).await?;
+        assert_eq!(
+            load(&pool, "catalog", "example", "titled").await?,
+            Some(titled)
+        );
         Ok(())
     }
 }

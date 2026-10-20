@@ -22,7 +22,8 @@
     "outcome",
     "migration",
     "workflow",
-    "release-publication"
+    "release-publication",
+    "deployment-claim-status"
   ],
   "templates": [
     "init/README.md",

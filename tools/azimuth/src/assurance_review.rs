@@ -8,13 +8,27 @@ pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
     let checks = model
         .checks()
         .map(|check| {
-            Json::obj(vec![
-                ("id", Json::str(&check.id)),
+            let mut fields = vec![
+                ("id".into(), Json::str(&check.id)),
                 (
-                    "fingerprint",
+                    "fingerprint".into(),
                     Json::str(model.check_execution_fingerprint(check)),
                 ),
-            ])
+            ];
+            if let Some(policy) = model
+                .account_verifications
+                .iter()
+                .flat_map(|document| &document.checks)
+                .find(|authored| authored.definition.id == check.id)
+                .and_then(|authored| authored.inputs.get("deployment-policy"))
+            {
+                fields.push((
+                    "deployment".into(),
+                    crate::run::strict_json("Deployment", policy)
+                        .expect("validated deployment policy"),
+                ));
+            }
+            Json::Obj(fields)
         })
         .collect::<Vec<_>>();
     let cases = model
@@ -431,9 +445,15 @@ pub fn validate_authority(value: &Json) -> Result<(), String> {
     if text(value, "fingerprint")? != record_fingerprint(value)? {
         return Err("model authority fingerprint differs from exact projection".into());
     }
+    crate::deployment_status::validate_policies(value)?;
     let mut checks = BTreeSet::new();
     for check in array(value, "checks")? {
-        object(check, &["id", "fingerprint"])?;
+        let mut fields = vec!["id", "fingerprint"];
+        if let Some(policy) = check.get("deployment") {
+            crate::deployment_status::validate_policy(policy)?;
+            fields.push("deployment");
+        }
+        object(check, &fields)?;
         id(check, "id")?;
         fingerprint(check, "fingerprint")?;
         if !checks.insert(text(check, "id")?) {

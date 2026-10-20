@@ -266,6 +266,65 @@ def smoke_typescript(annotations, emitter):
         )
 
 
+def smoke_xunit(catalog, archive):
+    version = catalog["release"]["version"]
+    with tempfile.TemporaryDirectory(prefix="azimuth-xunit-consumer-") as temporary:
+        consumer = Path(temporary)
+        project = consumer / "HarnessConsumer.csproj"
+        project.write_text(
+            '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType>'
+            '<TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings>'
+            '</PropertyGroup><ItemGroup><PackageReference Include="Azimuth.Testing.Xunit" '
+            f'Version="{version}" /></ItemGroup></Project>\n'
+        )
+        (consumer / "Program.cs").write_text(
+            'using Azimuth.Testing.Xunit;\n'
+            'var report = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".json");\n'
+            'var session = new AzimuthTestSession(report, "packed-consumer");\n'
+            'try { await session.InitializeAsync(); '
+            'await session.RunAsync("packed-test", 0, _ => Task.CompletedTask, Array.Empty<ContextSource>()); '
+            'await session.DisposeAsync(); '
+            'if (!File.ReadAllText(report).Contains("packed-test")) throw new Exception("Missing execution fact"); '
+            'Console.WriteLine("xunit-report"); } finally { File.Delete(report); }\n'
+        )
+        # A private cache proves the candidate rather than an older registry package with the same version.
+        config = consumer / "NuGet.Config"
+        config.write_text(
+            '<?xml version="1.0" encoding="utf-8"?><configuration><packageSources><clear />'
+            f'<add key="candidate" value="{archive.parent}" />'
+            '<add key="nuget" value="https://api.nuget.org/v3/index.json" />'
+            '</packageSources><packageSourceMapping><packageSource key="candidate">'
+            '<package pattern="Azimuth.Testing.Xunit" /></packageSource>'
+            '<packageSource key="nuget"><package pattern="*" /></packageSource>'
+            '</packageSourceMapping></configuration>\n'
+        )
+        run(["dotnet", "restore", project, "--configfile", config, "--packages", consumer / "packages"], cwd=consumer)
+        result = run(["dotnet", "run", "--project", project, "--no-restore"], cwd=consumer, capture=True)
+        require(result.stdout.strip() == "xunit-report", "packed xUnit context/report entry point failed")
+
+
+def smoke_playwright(archive):
+    with tempfile.TemporaryDirectory(prefix="azimuth-playwright-consumer-") as temporary:
+        consumer = Path(temporary)
+        (consumer / "package.json").write_text('{"name":"azimuth-playwright-consumer","version":"0.0.0","private":true}\n')
+        run(["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund", archive], cwd=consumer)
+        (consumer / "playwright.config.cjs").write_text(
+            'module.exports={testDir:".",workers:1,reporter:[[require.resolve("@azimuth-sh/playwright/reporter"),'
+            '{outputFile:"report.json",execution:"packed-consumer"}]],use:{azimuthContexts:[]}};\n'
+        )
+        (consumer / "capture.spec.cjs").write_text(
+            'const {test,expect}=require("@azimuth-sh/playwright");\n'
+            'test.use({azimuthTestId:"packed-test"});\n'
+            'test("captures an execution",async()=>{expect(2+2).toBe(4)});\n'
+        )
+        run(["node", consumer / "node_modules/@playwright/test/cli.js", "test", "--config", consumer / "playwright.config.cjs"], cwd=consumer)
+        report = json.loads((consumer / "report.json").read_text())
+        require(report.get("format") == "azimuth-test-report" and report.get("framework") == "playwright"
+                and len(report.get("tests", [])) == 1 and report["tests"][0]["id"] == "packed-test"
+                and report["tests"][0]["outcome"] == "passed" and report["tests"][0]["diagnostics"] == [],
+                "packed Playwright fixture/reporter did not produce a valid execution fact")
+
+
 def smoke_packages(catalog, retained):
     smoke_cargo(catalog, retained["rust-cli-core"])
     smoke_dotnet(
@@ -277,6 +336,8 @@ def smoke_packages(catalog, retained):
         retained["typescript-annotations"],
         retained["typescript-emitter"],
     )
+    smoke_xunit(catalog, retained["dotnet-testing-xunit"])
+    smoke_playwright(retained["typescript-playwright"])
 
 
 def native_binary(root, target):

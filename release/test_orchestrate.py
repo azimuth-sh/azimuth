@@ -153,7 +153,10 @@ class ReleaseOrchestrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             candidate_root = Path(temporary)
             account = self.account(candidate_root)
-            self.assertEqual(len(account["subjects"]), 10)
+            self.assertEqual(
+                {subject["key"] for subject in account["subjects"]},
+                {subject["key"] for subject in expected_subjects(self.catalog)},
+            )
 
     def test_each_missing_and_duplicate_candidate_and_an_unexpected_candidate_fail(self):
         for subject in expected_subjects(self.catalog):
@@ -278,7 +281,10 @@ class ReleaseOrchestrationTests(unittest.TestCase):
             exact = self.exact_state(account)
             plan = plan_publication(account, exact)
             self.assertEqual(plan["publish"], [])
-            self.assertEqual(len(plan["preserve"]), 10)
+            self.assertEqual(
+                set(plan["preserve"]),
+                {subject["key"] for subject in account["subjects"]},
+            )
             for kind, field in (
                 ("package", "sha256"),
                 ("native", "identity"),

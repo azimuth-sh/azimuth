@@ -896,7 +896,29 @@ fn read_check(
     block: &[&str],
     errors: &mut Vec<Diag>,
 ) -> AuthoredCheck {
-    let (filtered, execution) = crate::run_selection::extract_execution(path, line, block, errors);
+    let (mut filtered, execution) =
+        crate::run_selection::extract_execution(path, line, block, errors);
+    let mut deployment = None;
+    for (offset, text) in filtered.iter_mut().enumerate() {
+        if let Some(raw) = text.strip_prefix("- Deployment:") {
+            let parsed = crate::run::strict_json("Deployment", raw.trim())
+                .map_err(|error| error.to_string())
+                .and_then(|value| {
+                    crate::deployment_status::validate_policy(&value)?;
+                    crate::run::canonical_json(&value)
+                });
+            match parsed {
+                Ok(value) if deployment.is_none() => deployment = Some(value),
+                Ok(_) => errors.push(Diag::at(
+                    path,
+                    line + offset + 1,
+                    "Check repeats Deployment policy",
+                )),
+                Err(detail) => errors.push(Diag::at(path, line + offset + 1, detail)),
+            }
+            *text = "\u{0}".into();
+        }
+    }
     let retained = filtered
         .iter()
         .enumerate()
@@ -921,5 +943,8 @@ fn read_check(
         binding.line = remap(binding.line);
     }
     check.inputs.extend(execution);
+    if let Some(deployment) = deployment {
+        check.inputs.insert("deployment-policy".into(), deployment);
+    }
     check
 }

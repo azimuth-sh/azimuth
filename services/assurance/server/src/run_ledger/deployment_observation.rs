@@ -161,7 +161,8 @@ pub(super) async fn record(
         let mut seen = std::collections::BTreeSet::new();
         let mut names = std::collections::BTreeSet::new();
         for c in o["components"].as_array().unwrap() {
-            if c.as_object().is_none_or(|v| v.len() != 4)
+            if c.as_object()
+                .is_none_or(|v| v.len() != 4 + usize::from(v.contains_key("instances")))
                 || ["name", "image", "template_fingerprint", "ready"]
                     .iter()
                     .any(|k| c.get(*k).is_none())
@@ -271,13 +272,27 @@ fn validate_components(value: &Value) -> Result<(), LedgerError> {
     let keys = ["name", "image", "template_fingerprint", "ready"];
     for component in components {
         if component.as_object().is_none_or(|fields| {
-            fields.len() != keys.len() || keys.iter().any(|key| !fields.contains_key(*key))
+            keys.iter().any(|key| !fields.contains_key(*key))
+                || fields
+                    .keys()
+                    .any(|key| !keys.contains(&key.as_str()) && key != "instances")
         }) || component["name"]
             .as_str()
             .is_none_or(|name| name.trim().is_empty())
             || !(component["image"].is_null() || component["image"].is_string())
             || !component["ready"].is_boolean()
             || !valid_digest(&component["template_fingerprint"])
+            || component.get("instances").is_some_and(|instances| {
+                let Some(values) = instances.as_array() else {
+                    return true;
+                };
+                let mut unique = std::collections::BTreeSet::new();
+                values.iter().any(|value| {
+                    value
+                        .as_str()
+                        .is_none_or(|id| id.is_empty() || !unique.insert(id))
+                })
+            })
         {
             return Err(LedgerError::invalid(
                 "component requires name, nullable image, template fingerprint and boolean ready with no extra fields",

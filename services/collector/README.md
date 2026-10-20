@@ -38,3 +38,64 @@ The Docker image includes the native `azimuth` verifier and Python Run builder f
 ## Native adapter registration
 
 Run `python3 services/collector/register.py --adapter probe-results --python /absolute/python3 --output /fresh/adapters.json` from this repository. The registration stages immutable collector and protocol resources and provides the normal describe/import exchange. Use it with `azimuth adapter verify` and `azimuth run plan`; keep the emitted registration with the approved binding. `prometheus-rules` uses the same explicit registration command with that adapter name. Each import input is `native-report`, containing the exact `binding` and actual `record`. Corrections require a distinct operator-owned execution rather than rewriting a retained observation.
+
+## Effective deployment context collection
+
+An optional `context_sources` array operates independently of Check result sources:
+
+```json
+{
+  "id": "application-settings",
+  "project": "example",
+  "environment": "production",
+  "namespace": "example-application",
+  "component": "api",
+  "deployment": "api",
+  "container": "api",
+  "port": 9001,
+  "path": "/internal/verification-context",
+  "contracts": ["sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+  "token_file": "/credentials/example-context-publisher"
+}
+```
+
+The project/namespace must already be approved in `projects`/`namespaces`. Contract fingerprints
+must be explicitly registered by an ASS project owner; collection cannot register or alter them.
+Use a separate project **publisher** credential for deployment captures, preserving the existing
+Check producer credential. The endpoint must be on the approved private telemetry listener at
+port 9001, never a public application route. Endpoint labels/annotations do not configure sources.
+
+The collector reads the current selected deployment and fresh complete reconciler observation.
+It validates the approved Deployment's complete ready replica count and follows each Pod's
+controller ReplicaSet to that Deployment. Every selected container must have an exact observed
+image digest and a unique process-lifetime containerID and PodIP. It reads every ready replica's
+effective context twice, without forwarding ASS/Kubernetes credentials, and requires a stable
+`X-Azimuth-Instance` process boot header and identical selected contract values. It then rereads
+Pod resource versions, ownership/readiness and deployment selection before staging any captures.
+Missing, unready, restarted, mixed, paginated or inaccessible replicas produce no synthetic success.
+
+Contexts use the general `azimuth-verification-context` version 1 protocol. Each capture binds
+the independently observed containerID, exact deployment Subject and component; the app supplies
+neither deployment identity nor trust. Only configured contracts are retained. Startup-fixed
+configuration is supported; reloadable settings require a future stronger capture protocol.
+Independent collector/reconciler polling need not occur at the same instant: the capture must be
+fresh and within the current deployment observation's validity window for the same live instance.
+
+Kubernetes RBAC requires `get` on approved Deployments and `list` on Pods/ReplicaSets in approved
+namespaces (existing deployment list permissions may be retained). NetworkPolicy must allow the
+collector to reach all selected PodIPs on TCP 9001, the Kubernetes API and internal ASS. No new
+Service or GitOps application is needed for each context or probe.
+
+A separate `context_outbox` table on the existing SQLite PVC retains immutable `{capture: ...}`
+requests. POST `/v1/projects/{project}/context-captures` is retried using exact retained bytes;
+only a matching capture fingerprint receipt removes the entry. Transport/authentication errors
+remain pending and logs contain error classes rather than values or credentials. Source discovery
+failures do not stop publication of already retained captures. Global pending capacity covers
+both native Runs and context captures. No `trusted` flag is sent: ASS authenticates attribution.
+Expired pending observations may need operator disposition if ASS rejects their first admission;
+they are never rewritten into fresh captures or silently dropped.
+
+Verification: `PYTHONPATH=packages/python python3 -m unittest services.collector.test_contexts
+services.reconciler.test_reconciler` exercises real local HTTP/Kubernetes responses, every-replica
+coverage, owner-chain and restart races, context/boot changes, credential separation, and exact
+SQLite outbox retries. No production dependency or mocked network client is used.

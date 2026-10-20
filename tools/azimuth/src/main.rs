@@ -26,6 +26,8 @@ USAGE
     azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--out <file>]
     azimuth release project --baseline-revision <sha256> --change <dir>... [model options]
     azimuth release compose|prepare|verify|inputs --input <file> [--model-out <absent directory>] [--out <file>]
+    azimuth assurance deployment-status --input <file> [--out <file>]
+\
     azimuth assurance catalog --project <id> [model options] [--out <file>]
     azimuth validate [options]
     azimuth report traceability [options]
@@ -3519,6 +3521,40 @@ fn command_review_document(args: &[String]) -> Result<ExitCode, String> {
 
 fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
     let operation = args.first().map(String::as_str).unwrap_or_default();
+    if operation == "deployment-status" {
+        let mut input = None;
+        let mut out = None;
+        let mut cursor = 1;
+        while cursor < args.len() {
+            match args[cursor].as_str() {
+                "--input" => set_once_path(
+                    &mut input,
+                    PathBuf::from(argument_value(args, cursor, "--input")?),
+                    "--input",
+                )?,
+                "--out" => set_once_path(
+                    &mut out,
+                    PathBuf::from(argument_value(args, cursor, "--out")?),
+                    "--out",
+                )?,
+                _ => return Err("deployment-status accepts --input and --out only".into()),
+            }
+            cursor += 2;
+        }
+        let input = input.ok_or("deployment-status requires --input")?;
+        reject_output_input_equality(out.as_ref(), std::iter::once(&input), "deployment-status")?;
+        let source =
+            fs::read_to_string(&input).map_err(|error| format!("{}: {error}", input.display()))?;
+        let request = azimuth::run::strict_json(&input.display().to_string(), &source)
+            .map_err(|error| error.to_string())?;
+        let result = azimuth::deployment_status::assess(&request)?.to_string_pretty();
+        if let Some(out) = out {
+            publish_output(result.as_bytes(), Some(&out))?;
+        } else {
+            println!("{result}");
+        }
+        return Ok(ExitCode::SUCCESS);
+    }
     if operation == "verify-snapshot" {
         let mut input = None;
         let mut out = None;

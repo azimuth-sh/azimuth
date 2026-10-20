@@ -43,7 +43,7 @@ export interface ClaimReviewState {
     diagnostics: string[];
   }>;
 }
-export interface HealthObservation {
+export interface StatusObservation {
   check: string;
   case: string;
   run: string;
@@ -54,29 +54,67 @@ export interface HealthObservation {
   selected_in_basis: boolean;
   accepted_basis: boolean;
   diagnostics: string[];
+  applicable?: boolean;
+  subject_fingerprint?: string;
 }
-export interface HealthExplanation {
+export interface StatusExplanation {
   summary: string;
   status: string;
   reasons: Array<{ code: string; category: string; message: string; check?: string; case?: string; diagnostics?: string[] }>;
   review: { status: string; fingerprint: string | null; reviewer: string | null; reviewed_at_ms: number | null; rationale: string | null };
   health: { status: string; fingerprint: string | null; reviewer: string | null; reviewed_at_ms: number | null; rationale: string | null };
-  coverage: Array<{ check: string; case: string; status: string; observations: HealthObservation[] }>;
-  evidence: { supporting: HealthObservation[]; violations: HealthObservation[]; inconclusive: HealthObservation[]; unassessed: HealthObservation[] };
+  coverage: Array<{ check: string; case: string; status: string; observations: StatusObservation[] }>;
+  evidence: { supporting: StatusObservation[]; violations: StatusObservation[]; inconclusive: StatusObservation[]; unassessed: StatusObservation[] };
   residual_risks: unknown[];
+  dependencies?: StatusDependency[];
+  adverse?: StatusObservation[];
+}
+export interface StatusDependency {
+  kind: string;
+  fingerprint?: string;
+  run?: string;
+  bundle_fingerprint?: string;
+}
+export interface MonitorPolicy {
+  id: string;
+  interval_seconds: number;
+  freshness_seconds: number;
+}
+export interface DeploymentCheckPolicy {
+  subject: 'source' | 'artifact' | 'deployment';
+  components: string[];
+  contexts: string[];
+  contribution: 'support' | 'counterexample' | 'both';
+  configuration_sources?: string[];
+  units?: string[];
+  controls?: { unit: string; contexts: string[] }[];
+  monitor: MonitorPolicy | null;
+}
+export interface ClaimBindingStatus {
+  check: string;
+  case: string;
+  status?: string;
+  monitor?: MonitorPolicy | null;
+  reasons?: string[];
 }
 export interface SubjectState {
   authority_fingerprint: string;
   model_fingerprint: string;
+  format?: string;
+  evaluated_at_ms?: number;
+  deployment?: string;
+  subject_fingerprint?: string;
   claims: Array<{
     claim: string;
     status: string;
-    explanation: HealthExplanation;
+    explanation: StatusExplanation;
     review?: string;
     health?: string;
     diagnostics: string[];
     gaps: unknown;
-    bindings: unknown;
+    bindings: ClaimBindingStatus[];
+    dependencies?: StatusDependency[];
+    evaluated_at_ms?: number;
     challenges?: unknown;
   }>;
 }

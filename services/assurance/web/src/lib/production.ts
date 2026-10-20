@@ -80,7 +80,7 @@ export async function environmentView(project: string, selected: string | null, 
     revision && subject
       ? await readProject<SubjectState>(
           project,
-          `/model-revisions/${encodeURIComponent(revision)}/subjects/${encodeURIComponent(subject)}/state`,
+          `/deployments/${encodeURIComponent(deployment!.deployment.id)}/status`,
         )
       : null;
   const catalog = revision

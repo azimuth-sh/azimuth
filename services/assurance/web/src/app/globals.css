@@ -494,3 +494,20 @@ body:has(.moduleOverlay[open]) { overflow: hidden; }
 .environmentSelector label { font-size: 11px; line-height: 1.5; color: var(--muted); }
 .environmentSelector select { width: 100%; min-width: 0; font-size: 13px; line-height: 1.5; }
 @media (max-width: 640px) { .environmentSelector { margin: 8px 0; max-width: 240px; } }
+
+.statusReasons { border: 1px solid var(--line); background: var(--subtle); border-radius: 6px; padding: 16px 18px; margin-top: 22px; }
+.statusReasons summary { cursor: pointer; color: var(--ink); font-size: 13px; line-height: 1.6; }
+.statusReasons li { margin-top: 8px; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.statusReasons small { display: block; }
+.verificationCard { padding: 18px; margin-top: 16px; border: 1px solid var(--line); border-radius: 7px; background: var(--subtle); }
+.verificationCard h4 { margin: 0; font-size: 14px; line-height: 1.5; }
+.verificationCase { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 8px 0 16px; }
+.verificationFacts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 22px; margin: 0; }
+.verificationFacts dt { color: var(--quiet); font-size: 10px; line-height: 1.5; margin-bottom: 4px; }
+.verificationFacts dd { margin: 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.verificationReasons { padding-left: 18px; margin: 16px 0; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.verificationEmpty { padding: 12px 0; margin: 0; color: var(--quiet); font-size: 12px; line-height: 1.7; }
+.verificationContracts { margin-top: 16px; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.verificationContracts summary { cursor: pointer; }
+.verificationContracts code { overflow-wrap: anywhere; font-size: 10px; }
+@media (max-width: 640px) { .verificationFacts { grid-template-columns: minmax(0, 1fr); } .verificationCard { padding: 14px; } .verificationCard .claimSectionHeading { flex-wrap: wrap; } }

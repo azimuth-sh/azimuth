@@ -14,6 +14,7 @@ use sqlx::{PgPool, Row};
 use std::{collections::BTreeMap, sync::Arc};
 
 mod deployment_observation;
+mod deployment_status;
 mod environment;
 mod model_catalog;
 mod release;
@@ -147,6 +148,18 @@ pub fn app(state: LedgerState) -> Router {
             "/v1/projects/{project}/authority",
             post(register_authority).get(current_authority),
         )
+        .route(
+            "/v1/projects/{project}/context-contracts",
+            post(deployment_status::register_contract).get(deployment_status::contracts),
+        )
+        .route(
+            "/v1/projects/{project}/context-captures",
+            post(deployment_status::record_capture).get(deployment_status::captures),
+        )
+        .route(
+            "/v1/projects/{project}/deployments/{deployment}/status",
+            get(deployment_status::show),
+        )
         .route("/v1/projects/{project}/claim-reviews", get(claim_reviews))
         .route(
             "/v1/projects/{project}/reviews",
@@ -238,7 +251,7 @@ async fn ingest(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<(StatusCode, Json<Value>), LedgerError> {
-    state.authorize(&project, &headers, Some(Role::Producer))?;
+    let producer = state.authorize(&project, &headers, Some(Role::Producer))?;
     let source = std::str::from_utf8(&body)
         .map_err(|_| LedgerError::invalid("expected UTF-8 Run bundle"))?;
     let bundle = parse_bundle(source)?;
@@ -304,6 +317,14 @@ async fn ingest(
         .bind(&project).bind(&bundle.run_id).bind(revision).bind(&bundle.bundle_fingerprint)
         .bind(&bundle.subject_fingerprint).bind(&bundle.plan.model_fingerprint)
         .execute(&mut *transaction).await?;
+    deployment_status::attribute_run(
+        &mut transaction,
+        &project,
+        &bundle.bundle_fingerprint,
+        &bundle.run_id,
+        &producer,
+    )
+    .await?;
     transaction.commit().await?;
     Ok((
         StatusCode::CREATED,
@@ -605,14 +626,15 @@ async fn model_revision_subject_state(
     headers: HeaderMap,
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
-    let deployment_registered: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM release_deployments d JOIN assurance_releases r          ON r.project=d.project AND r.fingerprint=d.release_fingerprint          WHERE d.project=$1 AND r.model_revision=$2          AND assurance_record_field('deployment',d.project,d.deployment_id,'subject_fingerprint')=to_jsonb($3::text))",
-    )
-    .bind(&project)
-    .bind(&revision)
-    .bind(&subject)
-    .fetch_one(&state.pool)
-    .await?;
+    let registered_deployment: Option<String> = sqlx::query_scalar(
+        "SELECT d.deployment_id FROM release_deployments d JOIN assurance_releases r          ON r.project=d.project AND r.fingerprint=d.release_fingerprint          WHERE d.project=$1 AND r.model_revision=$2          AND assurance_record_field('deployment',d.project,d.deployment_id,'subject_fingerprint')=to_jsonb($3::text)",
+    ).bind(&project).bind(&revision).bind(&subject).fetch_optional(&state.pool).await?;
+    if let Some(deployment) = registered_deployment {
+        return Ok(Json(
+            deployment_status::assess_deployment(&state, &project, &deployment).await?,
+        ));
+    }
+    let deployment_registered = false;
     if !deployment_registered {
         let observed: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM run_bundles WHERE project=$1 AND subject_fingerprint=$2)",
@@ -1176,7 +1198,18 @@ mod tests {
             &core_json(subject.to_string().as_bytes()).map_err(|error| error.detail)?,
         )?);
         let deployment = json!({"id":"deployment","environment":"production","configuration_fingerprint":digest,"artifacts":[digest],"subject":subject,"subject_fingerprint":subject_fingerprint});
+        let publication = to_value(&azimuth::release::prepare(
+            &core_json(json!({
+                "format":"azimuth-release-request","version":1,"project":"project","label":"Release",
+                "baseline_model_revision":revision,"changes":[{"id":"bounded","revision":digest}],
+                "sources":[{"repository":"root","commit":"a".repeat(40),"content_fingerprint":digest}],
+                "builds":[{"id":"service","sources":["root"],"toolchain":{"compiler":"test"},"configuration_fingerprint":digest,"artifacts":[digest]}],
+                "artifacts":[{"digest":digest,"kind":"container"}],"deployments":[deployment],"components":[{"id":"service","digest":digest}],
+                "snapshot":{"project":"project","model_revision":revision,"authority":authority,"reviews":[],"bundles":[]},"evidence":[]
+            }).to_string().as_bytes()).map_err(|error| error.detail)?
+        )?).map_err(|error| error.detail)?;
         let mut tx = pool.begin().await?;
+        relational::store(&mut tx, "release", "project", &digest, &publication).await?;
         relational::store(&mut tx, "authority", "project", revision, &authority).await?;
         sqlx::query("INSERT INTO assurance_authorities(project,fingerprint,registered_by) VALUES ('project',$1,'owner')").bind(revision).execute(&mut *tx).await?;
         sqlx::query("INSERT INTO model_revisions(project,fingerprint,registered_by) VALUES ('project',$1,'owner')").bind(revision).execute(&mut *tx).await?;
