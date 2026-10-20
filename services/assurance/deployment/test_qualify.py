@@ -96,7 +96,7 @@ class PrivateDeploymentQualificationTests(unittest.TestCase):
 
     def test_migration_account_is_forward_only(self):
         self.assertEqual(migration_account(), ["0001_storage.sql", "0002_target_observations.sql"])
-        self.assertEqual(migration_versions(migration_account()), [1])
+        self.assertEqual(migration_versions(migration_account()), [1, 2])
 
     def test_nested_oci_index_reports_images_and_ignores_attestations(self):
         root = {
