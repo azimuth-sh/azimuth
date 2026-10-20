@@ -121,6 +121,29 @@ internal sealed class SourceFiles : IDisposable
         return fingerprints.Length == 0 ? string.Empty : Hash(string.Join("\n", fingerprints));
     }
 
+    public string CheckSupportFingerprint(Type type)
+    {
+        var paths = SourceMembersOf(type).Select(PathOf)
+            .Concat(type.GetNestedTypes(DeclaredMembers).SelectMany(CheckSupportPaths))
+            .Where(path => path.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+        if (paths.Length == 0) return string.Empty;
+        var sources = new List<string>();
+        foreach (var path in paths)
+        {
+            var absolute = Path.Combine(_root, path);
+            if (!File.Exists(absolute)) return string.Empty;
+            sources.Add(path + "\n" + Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(absolute))).ToLowerInvariant());
+        }
+        // Check helpers may depend on constants and constructors outside method sequence points.
+        return Hash(string.Join("\n", sources));
+    }
+
+    private IEnumerable<string> CheckSupportPaths(Type type) => SourceMembersOf(type).Select(PathOf)
+        .Concat(type.GetNestedTypes(DeclaredMembers).SelectMany(CheckSupportPaths));
+
     private string Lookup(MethodBase method)
     {
         if (_reader is null)

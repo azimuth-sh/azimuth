@@ -300,6 +300,15 @@ internal static class Collector
                         null,
                         null));
             }
+            else if (name == ImplementsCheckName)
+            {
+                var fingerprint = ManifestFingerprint(files.CheckSupportFingerprint(type));
+                if (fingerprint.Length == 0)
+                    throw new InvalidOperationException($"{typeName}: ImplementsCheck requires exact source support");
+                var check = EntityArgument(attribute, file: typeFile, site: typeName);
+                EnsureEntityId(check, $"{typeFile}: {typeName}");
+                result.CheckImplementations.Add(new CheckImplementationEntry(check, typeName, typeFile, fingerprint));
+            }
             else if (name == ImplementsMechanismName)
             {
                 EnsureMechanismFingerprint(mechanismTypeSite, typeFingerprint, typeFile);
