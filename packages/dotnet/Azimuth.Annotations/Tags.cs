@@ -62,15 +62,15 @@ namespace Azimuth.Annotations
         public string Mechanism { get; }
     }
 
-    /// <summary>Identifies a source method that implements a stable project-wide Check.</summary>
+    /// <summary>Identifies a source site that implements a stable project-wide Check.</summary>
     /// <remarks>
     /// The marker declares implementation identity only. The repository-owned verification file
     /// declares the Check's Claim bindings, evidence form, context and Qualification.
     /// </remarks>
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct | AttributeTargets.Method, AllowMultiple = true)]
     public sealed class ImplementsCheckAttribute : Attribute
     {
-        /// <summary>Marks this method as one implementation site of <paramref name="check"/>.</summary>
+        /// <summary>Marks this source site as one implementation site of <paramref name="check"/>.</summary>
         public ImplementsCheckAttribute(string check)
         {
             Check = check;

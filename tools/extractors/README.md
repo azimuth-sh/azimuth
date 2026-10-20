@@ -99,6 +99,8 @@ An unmarked native test emits nothing. This is the normal state for ordinary eng
 
 The .NET extractor reflects over built assemblies. Compiled metadata resolves repeatable attributes, inheritance and generics; portable PDBs provide source paths where available. It also derives type and method symbols plus Entity Framework migration indexes. A mechanism site uses the namespace, declaring type, method and complete metadata parameter signature; a PDB path never disambiguates it.
 
+`ImplementsCheck` also accepts classes and structs for shared verification helpers. Their Check source fingerprint conservatively covers the complete sorted set of PDB-resolved source files for declared and nested members, including private helpers, constructors and constants. Missing source support fails emission. Method-level Check and mechanism fingerprints retain their existing boundaries.
+
 Ordinary .NET type and method Artifacts are emitted only when a source locator is available. Their ids include assembly name and the qualified type or complete method signature, so unrelated assemblies and overloads do not collide. Tagged mechanism sites retain their existing source identities and companion ids. An unlocatable derived database index is omitted with an emitter warning; a tagged mechanism without an exact source locator and fingerprint fails emission.
 
 ```text

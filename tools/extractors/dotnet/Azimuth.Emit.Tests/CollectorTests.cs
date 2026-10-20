@@ -134,6 +134,65 @@ public sealed class CollectorTests
     }
 
     [Fact]
+    public void Type_check_support_changes_when_a_private_helper_constant_changes()
+    {
+        var directory = Path.Combine(WorkspaceRoot(), ".azimuth", "check-support-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var annotations = System.Security.SecurityElement.Escape(typeof(Azimuth.Annotations.ImplementsCheckAttribute).Assembly.Location);
+            File.WriteAllText(Path.Combine(directory, "Support.csproj"), $"""
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <PropertyGroup><TargetFramework>net10.0</TargetFramework><DebugType>portable</DebugType></PropertyGroup>
+                  <ItemGroup><Reference Include="Azimuth.Annotations"><HintPath>{annotations}</HintPath></Reference></ItemGroup>
+                </Project>
+                """);
+            var source = Path.Combine(directory, "Support.cs");
+            var code = """
+                using Azimuth.Annotations;
+                [ImplementsCheck("helper-check")]
+                public sealed class Support
+                {
+                    private const int Expected = 1;
+                    public int Read() => ReadExpected();
+                    private int ReadExpected() => Expected;
+                }
+                """;
+            string Emit(string content)
+            {
+                File.WriteAllText(source, content);
+                using var build = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("dotnet")
+                {
+                    ArgumentList = { "build", Path.Combine(directory, "Support.csproj"), "--verbosity", "quiet" },
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false
+                })!;
+                var stdout = build.StandardOutput.ReadToEnd();
+                var stderr = build.StandardError.ReadToEnd();
+                Assert.True(build.WaitForExit(120_000), "Synthetic source build timed out.");
+                Assert.True(build.ExitCode == 0, stdout + stderr);
+                var context = new System.Runtime.Loader.AssemblyLoadContext(Guid.NewGuid().ToString("N"), isCollectible: true);
+                try
+                {
+                    var assembly = context.LoadFromAssemblyPath(Path.Combine(directory, "bin/Debug/net10.0/Support.dll"));
+                    var entry = Assert.Single(Collector.Collect([assembly], directory).CheckImplementations);
+                    Assert.Equal("helper-check", entry.Check);
+                    Assert.Equal("Support", entry.Site);
+                    Assert.Equal("Support.cs", entry.File);
+                    Assert.Matches("^sha256:[0-9a-f]{64}$", entry.SourceFingerprint);
+                    return entry.SourceFingerprint;
+                }
+                finally { context.Unload(); }
+            }
+            var before = Emit(code);
+            var after = Emit(code.Replace("Expected = 1", "Expected = 2"));
+            Assert.NotEqual(before, after);
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
     public void Alpha_one_marker_types_are_absent()
     {
         var annotations = typeof(Azimuth.Annotations.RealizesAttribute).Assembly;

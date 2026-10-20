@@ -1,6 +1,6 @@
 ---
 name: azimuth-review-claim
-description: Independently assess an Azimuth Claim, its design and implemented verification before execution or after corrections. Use for review-claim work and successor Claim Reviews; observed Claim Health is a separate assessment.
+description: Independently assess an Azimuth Claim, its design and implemented verification before execution or after corrections. Use for review-claim work and successor Claim Reviews; deployment Claim Status is computed separately from applicable evidence.
 ---
 
 # Review a Claim
