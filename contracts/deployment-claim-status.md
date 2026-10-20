@@ -43,3 +43,7 @@ Publishing is a separate operation. It verifies native bundles and uploads exact
 ## Storage rollout
 
 ASS storage version 3 adds typed relational context and applicability tables and recreates readers atomically for recognized version 1 or 2 signatures. Existing immutable records keep their original optional-field presence and fingerprints. Back up production before rollout and compare retained publication, review and Run identities after upgrade. The previous version 2 binary rejects a version 3 schema: rolling its image back alone is unsupported. Recovery requires a forward fix or an explicit restore of the retained pre-upgrade database backup; no automatic destructive rollback is performed.
+
+## Runtime target evidence
+
+The [target observation protocol](target-observation.md) separates measurement identity from deployment attribution. A collector POSTs measured image/process identities and stable Check definitions or locally allowlisted context reports. It does not query ASS for a Subject, deployment selection or contract. ASS retains raw facts relationally, correlates them with independently reconciled historical intervals and materializes validated native evidence only after an unambiguous match. Original observation fingerprints and both reconciliation records remain accountable. Unmatched records are visible and pending; they do not establish support and cannot be assigned by arrival time. Existing exact-Subject Run and capture protocols retain their separate meaning.

@@ -21,3 +21,7 @@ SQLite retains one pending request per environment. Delivery retries preserve ex
 ## Acceptance
 
 Owner acceptance requires explicit `environment`, exact release and expected accepted baseline plus reason. The selected environment's latest designated deployment must be this release, its latest observation must be fresh and complete, and each non-routine Claim must have supported deployment Claim Status according to the native assessor. This is a manual decision, not an automatic acceptance policy. Historical releases lacking component-bound observations are not silently promoted.
+
+## Runtime evidence correlation
+
+Check and context collection may publish subject-free [target observations](target-observation.md). Reconciliation continues to report actual deployments independently; it does not distribute bindings or mutate collectors. ASS retains measurements before resolving them against a complete historical reconciliation bracket. Matching requires the same deployment, actual immutable images and process instances across the measurement interval. Delayed delivery and rollback cannot use current-selection or image-only shortcuts. Missing brackets remain pending. A new application release therefore needs no observer/collector configuration update unless a reviewed Check, context contract or collection route changes.

@@ -11,8 +11,8 @@ import tempfile
 import time
 from urllib.error import HTTPError
 from urllib.parse import urlencode, urlsplit, quote
-from urllib.request import Request, build_opener, HTTPRedirectHandler, HTTPSHandler
-from azimuth_run import build_check_bundle, canonical_json
+from urllib.request import Request, build_opener, HTTPRedirectHandler, HTTPSHandler, ProxyHandler
+from azimuth_run import build_check_bundle, canonical_json, fingerprint
 
 MAX_BYTES = 4 * 1024 * 1024
 
@@ -29,12 +29,16 @@ def fetch(url, token=None, method='GET', body=None, ca=None):
         headers['Authorization'] = 'Bearer ' + token
     if body:
         headers['Content-Type'] = 'application/json'
-    opener = build_opener(NoRedirect(), HTTPSHandler(context=ssl.create_default_context(cafile=ca)))
-    with opener.open(Request(url, data=body, headers=headers, method=method), timeout=15) as response:
-        raw = response.read(MAX_BYTES + 1)
+    opener = build_opener(NoRedirect(), ProxyHandler({}), HTTPSHandler(context=ssl.create_default_context(cafile=ca)))
+    try:
+        with opener.open(Request(url, data=body, headers=headers, method=method), timeout=15) as response:
+            raw = response.read(MAX_BYTES + 1)
+    except HTTPError as error:
+        error.close()
+        raise
     if len(raw) > MAX_BYTES:
         raise ValueError('Response exceeds limit')
-    return json.loads(raw)
+    return json.loads(raw, object_pairs_hook=unique, parse_constant=lambda _: fail('Invalid JSON constant'))
 
 def native_bundle(binding, record, import_inputs=None):
     launch = binding['launch']
@@ -64,9 +68,9 @@ class ProbeResults:
     def collect(self, binding, cursor):
         base = binding['url']
         page = fetch(base + '?' + urlencode({'cursor': cursor or '', 'limit': 50}))
-        if page.get('format') != 'azimuth-check-results' or page.get('version') != 1 or len(page['items']) > 100:
+        if set(page) != {'format', 'version', 'items', 'next_cursor', 'history_gap', 'has_more'} or page.get('format') != 'azimuth-check-results' or type(page.get('version')) is not int or page['version'] != 2 or not isinstance(page['items'], list) or len(page['items']) > 100 or type(page['history_gap']) is not bool or type(page['has_more']) is not bool or (page['next_cursor'] is not None and (not isinstance(page['next_cursor'], str) or len(page['next_cursor']) > 512)):
             raise ValueError('Unsupported results page')
-        self.history_gap = bool(page['history_gap'])
+        self.history_gap = page['history_gap']
         if self.history_gap:
             logging.error('history-gap source=%s cursor=%s', binding['id'], cursor)
         records = page['items']
@@ -78,10 +82,6 @@ class ProbeResults:
 class PrometheusRules:
     def collect(self, binding, cursor):
         end = int(time.time()*1000)
-        window = end // (binding.get('interval_seconds', 60) * 1000)
-        identity = binding['id'] + '/' + str(window)
-        if cursor == identity:
-            return [], cursor
         rules = fetch(binding['url'].rstrip('/') + '/api/v1/rules?type=alert')
         targets = fetch(binding['url'].rstrip('/') + '/api/v1/targets?state=active')
         if rules.get('status') != 'success' or targets.get('status') != 'success':
@@ -91,24 +91,44 @@ class PrometheusRules:
         selected = [target for target in targets['data']['activeTargets']
                     if all(target.get('labels', {}).get(k) == v for k,v in binding['target_labels'].items())]
         fresh = end - binding.get('max_age_seconds', 120) * 1000
+        names = binding['identity_labels']
+        def identity(labels):
+            return {key: labels.get(names[key], '') for key in ('component', 'image', 'instance')}
         def timestamp(value):
             from datetime import datetime
             return int(datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp()*1000)
-        healthy = (len(matches) == 1 and bool(selected) and all(target.get('health') == 'up' and not target.get('lastError')
-                   and timestamp(target['lastScrape']) >= fresh for target in selected)
-                   and matches[0].get('health') == 'ok' and not matches[0].get('lastError')
-                   and timestamp(matches[0]['lastEvaluation']) >= fresh)
-        outcome = 'inconclusive'
-        if healthy:
-            state = matches[0].get('state')
-            if state == 'firing':
-                outcome = 'violated'
-            elif state == 'inactive' and binding.get('allow_healthy_clear', False):
-                outcome = 'satisfied'
-        return [{'execution_id': identity, 'check': binding['launch']['plan']['checks'][0]['id'],
-                 'binding': binding['id'], 'subject_fingerprint': binding['launch']['subject_fingerprint'],
-                 'started_at_ms': end, 'finished_at_ms': end, 'outcome': outcome,
-                 'rule': matches, 'targets_healthy': healthy, 'selected_target_count': len(selected)}], identity
+        actual, alert_targets = [], []
+        evaluated, details = end, {'rule': binding['rule'], 'attribution': 'unresolved'}
+        healthy = False
+        if len(matches) == 1:
+            rule = matches[0]
+            try:
+                evaluated = timestamp(rule['lastEvaluation'])
+                actual = [identity(target.get('labels', {})) for target in selected]
+                firing = [alert for alert in rule.get('alerts', []) if alert.get('state') == 'firing']
+                alert_targets = [identity(alert.get('labels', {})) for alert in firing]
+                validate_targets(actual)
+                validate_targets(alert_targets)
+                healthy = (bool(actual) and bool(alert_targets) and rule.get('state') == 'firing'
+                           and rule.get('health') == 'ok' and not rule.get('lastError')
+                           and fresh <= evaluated <= end + 5000
+                           and all(target.get('health') == 'up' and not target.get('lastError')
+                                   and fresh <= timestamp(target['lastScrape']) <= evaluated for target in selected)
+                           and all(target in actual for target in alert_targets))
+                details = {'rule': rule['name'], 'state': rule.get('state'), 'last_evaluation_ms': evaluated,
+                           'alert_targets': alert_targets, 'selected_targets': actual,
+                           'attribution': 'matched' if healthy else 'unresolved'}
+            except (KeyError, TypeError, ValueError):
+                evaluated, healthy = end, False
+        outcome = 'violated' if healthy else 'inconclusive'
+        measured = alert_targets if healthy else []
+        details.update(outcome=outcome, targets=measured, measured_at_ms=evaluated)
+        execution = binding['id'] + '/' + fingerprint(details)
+        if cursor == execution:
+            return [], cursor
+        return [{'execution_id': execution, 'check': binding['definition']['plan']['checks'][0]['id'],
+                 'started_at_ms': evaluated, 'finished_at_ms': evaluated, 'outcome': outcome,
+                 'targets': measured, 'measurement': details}], execution
 
 ADAPTERS = {'probe-results': ProbeResults, 'prometheus-rules': PrometheusRules}
 
@@ -140,16 +160,125 @@ def discover(config):
             result.append(item)
     return result
 
-def validate_binding(binding, code_fingerprint, protocol_fingerprint):
-    if binding['adapter'] == 'probe-results' and set(binding['allowed_outcomes']) != {'violated', 'inconclusive'}:
-        raise ValueError('Exposure probes permit only violated or inconclusive outcomes')
-    launch = binding['launch']
-    if len(launch['adapters']) != 1 or launch['adapters'][0]['id'] != binding['adapter']:
-        raise ValueError('Launch must select the configured collector adapter')
-    if binding['collector_fingerprint'] != code_fingerprint:
-        raise ValueError('Binding must identify the executing collector code')
-    if binding['protocol_fingerprint'] != protocol_fingerprint:
-        raise ValueError('Binding must identify the executing Run protocol resource')
+def fail(message):
+    raise ValueError(message)
+
+
+def unique(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            fail('Duplicate JSON field')
+        result[key] = value
+    return result
+
+
+def validate_targets(targets):
+    import re
+    if not isinstance(targets, list) or len(targets) > 128:
+        fail('Invalid target inventory')
+    identities = set()
+    for target in targets:
+        if not isinstance(target, dict) or set(target) != {'component', 'image', 'instance'}:
+            fail('Invalid measured target fields')
+        if not all(isinstance(value, str) and 0 < len(value) <= (256 if key == 'component' else 512) for key, value in target.items()):
+            fail('Invalid measured target identity')
+        if not re.fullmatch(r'[^\s@]+@sha256:[0-9a-f]{64}', target['image']) or not re.fullmatch(r'[a-z0-9][a-z0-9+.-]*://[A-Za-z0-9_.:-]{1,480}', target['instance']):
+            fail('Actual immutable image and runtime instance required')
+        identity = tuple(target[key] for key in ('component', 'image', 'instance'))
+        if identity in identities:
+            fail('Duplicate measured target')
+        identities.add(identity)
+
+
+def validate_binding(binding, *unused):
+    if any(key in binding for key in ('launch', 'subject', 'subject_fingerprint', 'valid_from_ms', 'valid_until_ms')):
+        fail('Release bindings are not supported by collector configuration version 2')
+    import re
+    for key in ('id', 'project', 'environment'):
+        if not isinstance(binding.get(key), str) or not re.fullmatch(r'[a-z0-9][a-z0-9_.:/-]{0,127}', binding[key]):
+            fail('Invalid stable source identity')
+    if binding.get('adapter') not in ADAPTERS:
+        fail('Unknown configured adapter')
+    common = {'id', 'project', 'environment', 'adapter', 'allowed_outcomes', 'definition'}
+    fields = common | ({'namespace', 'service', 'port', 'path'} if binding['adapter'] == 'probe-results' else {'url', 'rule', 'rule_labels', 'target_labels', 'identity_labels', 'interval_seconds', 'max_age_seconds'})
+    if set(binding) - fields or not common <= set(binding):
+        fail('Unknown or missing source configuration fields')
+    if binding['adapter'] == 'probe-results':
+        if not {'namespace', 'service', 'port', 'path'} <= set(binding) or type(binding['port']) is not int or not 1 <= binding['port'] <= 65535 or not isinstance(binding['path'], str) or not binding['path'].startswith('/') or any(value in binding['path'] for value in ('?', '#', '..', '//')):
+            fail('Invalid approved probe discovery route')
+    for key, default in (('interval_seconds', 60), ('max_age_seconds', 120)):
+        value = binding.get(key, default)
+        if type(value) is not int or not 10 <= value <= 86400:
+            fail('Invalid bounded source interval')
+    if binding['adapter'] == 'prometheus-rules':
+        if not binding.get('target_labels') or set(binding.get('identity_labels', {})) != {'component', 'image', 'instance'}:
+            fail('Prometheus requires explicit actual target identity labels')
+        parsed = urlsplit(binding['url'])
+        if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+            fail('Invalid approved Prometheus endpoint')
+    definition = binding['definition']
+    if set(definition) != {'plan', 'adapters', 'routes'} or 'fingerprint' in definition['plan']:
+        fail('Subject-free native definition required')
+    checks = definition['plan']['checks']
+    if len(checks) != 1 or len(checks[0]['units']) != 1 or len(definition['adapters']) != 1 or definition['adapters'][0]['id'] != binding['adapter']:
+        fail('One Check, unit and configured adapter required')
+    if set(binding['allowed_outcomes']) != {'violated', 'inconclusive'}:
+        fail('Runtime collection permits only adverse or inconclusive facts')
+
+
+def target_observation(source, record):
+    validate_targets(record['targets'])
+    started, finished = record['started_at_ms'], record['finished_at_ms']
+    if type(started) is not int or type(finished) is not int or not 0 <= started <= finished <= int(time.time()*1000) + 5000:
+        fail('Invalid measurement interval')
+    if record['check'] != source['definition']['plan']['checks'][0]['id'] or record['outcome'] not in source['allowed_outcomes']:
+        fail('Measurement differs from approved Check')
+    if not isinstance(record['execution_id'], str) or not 0 < len(record['execution_id']) <= 256:
+        fail('Invalid measurement execution')
+    if not record['targets'] and record['outcome'] != 'inconclusive':
+        fail('Unattributed collection facts must remain inconclusive')
+    if any(key in record for key in ('binding', 'subject', 'subject_fingerprint', 'deployment', 'release')):
+        fail('Runtime reports cannot carry configured release bindings')
+    details = canonical_json(record)
+    if len(details.encode()) > 65536:
+        fail('Measurement details exceed limit')
+    return {'format': 'azimuth-target-observation', 'version': 1, 'kind': 'check',
+            'source': source['id'], 'execution_id': record['execution_id'], 'environment': source['environment'],
+            'started_at_ms': started, 'finished_at_ms': finished, 'targets': record['targets'],
+            'check': {'definition': source['definition'], 'outcome': record['outcome'], 'details': details}, 'capture': None}
+
+
+def initialize(db):
+    db.executescript('CREATE TABLE IF NOT EXISTS checkpoints (source TEXT PRIMARY KEY, cursor TEXT NOT NULL); CREATE TABLE IF NOT EXISTS outbox (fingerprint TEXT PRIMARY KEY, project TEXT NOT NULL, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS collection_gaps (source TEXT NOT NULL, cursor TEXT NOT NULL, observed_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS target_outbox (fingerprint TEXT PRIMARY KEY, project TEXT NOT NULL, token_file TEXT, payload TEXT NOT NULL);')
+    db.execute("CREATE TABLE IF NOT EXISTS context_outbox (fingerprint TEXT PRIMARY KEY, source TEXT NOT NULL, project TEXT NOT NULL, token_file TEXT NOT NULL, payload TEXT NOT NULL)")
+    db.commit()
+
+
+def stage_targets(db, project, observations, source=None, cursor=None, history_gap=False, max_pending=10000, token_file=None):
+    with db:
+        pending = sum(db.execute('SELECT COUNT(*) FROM ' + table).fetchone()[0] for table in ('outbox', 'context_outbox', 'target_outbox'))
+        if pending + len(observations) > max_pending:
+            fail('Outbox full; checkpoint retained')
+        for observation in observations:
+            db.execute('INSERT OR IGNORE INTO target_outbox VALUES (?,?,?,?)', (fingerprint(observation), project, token_file, canonical_json({'observation': observation})))
+        if source is not None:
+            if history_gap:
+                db.execute('INSERT INTO collection_gaps VALUES (?,?,?)', (source, cursor or '', int(time.time()*1000)))
+            db.execute('INSERT OR REPLACE INTO checkpoints VALUES (?,?)', (source, cursor or ''))
+
+
+def publish_targets(db, config):
+    for identity, project, token_file, payload in db.execute('SELECT fingerprint,project,token_file,payload FROM target_outbox ORDER BY rowid LIMIT 100').fetchall():
+        try:
+            token = Path(token_file or config['projects'][project]['token_file']).read_text().strip()
+            receipt = fetch(config['assurance_url'].rstrip('/') + '/v1/projects/' + quote(project, safe='') + '/target-observations', token=token, method='POST', body=payload.encode())
+            if receipt.get('fingerprint') != identity:
+                fail('Unexpected target observation receipt')
+            with db:
+                db.execute('DELETE FROM target_outbox WHERE fingerprint=?', (identity,))
+        except Exception as failure:
+            logging.error('target-publication-failed fingerprint=%s error=%s', identity, type(failure).__name__)
 
 
 def main():
@@ -158,25 +287,18 @@ def main():
     import contexts
     context_sources = contexts.validate_sources(config)
     context_kube = contexts.KubernetesContexts() if context_sources else None
-    code_fingerprint = 'sha256:' + hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-    protocol_fingerprint = 'sha256:' + hashlib.sha256(Path(build_check_bundle.__code__.co_filename).read_bytes()).hexdigest()
+    if config.get('format') != 'azimuth-collector' or config.get('version') != 2:
+        fail('Explicit collector configuration version 2 required')
     ids = set()
     for binding in config['sources']:
-        if binding['id'] in ids:
-            raise ValueError('Duplicate source binding identity')
+        if binding['id'] in ids or binding['project'] not in config['projects']:
+            fail('Duplicate or unapproved source identity')
         ids.add(binding['id'])
-        validate_binding(binding, code_fingerprint, protocol_fingerprint)
-        if binding['launch']['subject']['kind'] != 'deployment':
-            raise ValueError('Collector requires explicit deployment bindings')
-        if binding['adapter'] == 'prometheus-rules':
-            if not binding.get('target_labels') or binding['rule_labels'].get('azimuth_deployment_fingerprint') != binding['launch']['subject']['deployment_fingerprint']:
-                raise ValueError('Prometheus mappings require target labels and exact deployment fingerprint label')
+        validate_binding(binding)
     state = Path(os.environ.get('COLLECTOR_STATE', '/state'))
     state.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(state/'collector.db')
-    db.executescript('CREATE TABLE IF NOT EXISTS checkpoints (source TEXT PRIMARY KEY, cursor TEXT NOT NULL); CREATE TABLE IF NOT EXISTS outbox (fingerprint TEXT PRIMARY KEY, project TEXT NOT NULL, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS collection_gaps (source TEXT NOT NULL, cursor TEXT NOT NULL, observed_at_ms INTEGER NOT NULL);')
-    contexts.initialize(db)
-    db.commit()
+    initialize(db)
     while True:
         try:
             try:
@@ -186,33 +308,20 @@ def main():
                 bindings = []
             for binding in bindings:
                 try:
-                    if db.execute('SELECT COUNT(*) FROM outbox').fetchone()[0] + db.execute('SELECT COUNT(*) FROM context_outbox').fetchone()[0] >= config.get('max_pending', 10000):
-                        raise ValueError('Outbox full; collection paused')
                     previous = db.execute('SELECT cursor FROM checkpoints WHERE source=?', (binding['id'],)).fetchone()
                     adapter = ADAPTERS[binding['adapter']]()
                     records, cursor = adapter.collect(binding, previous[0] if previous else None)
-                    bundles = [native_bundle(binding, record) for record in records]
-                    for bundle in bundles:
-                        with tempfile.NamedTemporaryFile(mode='w', dir=state, suffix='.json') as file:
-                            file.write(canonical_json(bundle)); file.flush()
-                            subprocess.run(['/usr/local/bin/azimuth', 'run', 'verify', '--bundle', file.name], check=True, timeout=30, capture_output=True)
-                    with db:
-                        if getattr(adapter, 'history_gap', False):
-                            db.execute('INSERT INTO collection_gaps VALUES (?,?,?)', (binding['id'], previous[0] if previous else '', int(time.time()*1000)))
-                        for bundle in bundles:
-                            db.execute('INSERT OR IGNORE INTO outbox VALUES (?,?,?)', (bundle['bundle_fingerprint'], binding['project'], canonical_json(bundle)))
-                        db.execute('INSERT OR REPLACE INTO checkpoints VALUES (?,?)', (binding['id'], cursor or ''))
+                    observations = [target_observation(binding, record) for record in records]
+                    stage_targets(db, binding['project'], observations, binding['id'], cursor, getattr(adapter, 'history_gap', False), config.get('max_pending', 10000))
                 except Exception as failure:
                     logging.error('collection-failed source=%s error=%s', binding['id'], type(failure).__name__)
             for source in context_sources:
                 try:
-                    pending = db.execute('SELECT COUNT(*) FROM outbox').fetchone()[0] + db.execute('SELECT COUNT(*) FROM context_outbox').fetchone()[0]
-                    captures = contexts.collect(config['assurance_url'], source, context_kube, Path(source['token_file']).read_text().strip())
-                    if pending + len(captures) > config.get('max_pending', 10000):
-                        raise ValueError('Outbox full; context collection paused')
-                    contexts.stage(db, source, captures)
+                    captures = contexts.collect(None, source, context_kube)
+                    stage_targets(db, source['project'], captures, max_pending=config.get('max_pending', 10000), token_file=source['token_file'])
                 except Exception as failure:
                     logging.error('context-collection-failed source=%s error=%s', source['id'], type(failure).__name__)
+            publish_targets(db, config)
             contexts.publish(db, config['assurance_url'])
             for fingerprint, project, payload in db.execute('SELECT fingerprint,project,payload FROM outbox LIMIT 100').fetchall():
                 try:

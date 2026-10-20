@@ -18,6 +18,8 @@ mod deployment_status;
 mod environment;
 mod model_catalog;
 mod release;
+mod target_normalizer;
+mod target_observation;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Role {
@@ -143,6 +145,14 @@ impl LedgerState {
 
 pub fn app(state: LedgerState) -> Router {
     Router::new()
+        .route(
+            "/v1/projects/{project}/target-observations",
+            post(target_observation::record).get(target_observation::list),
+        )
+        .route(
+            "/v1/projects/{project}/target-normalizers",
+            get(target_normalizer::list),
+        )
         .route("/health", get(|| async { Json(json!({"status":"ok"})) }))
         .route(
             "/v1/projects/{project}/authority",

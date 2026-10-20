@@ -1,6 +1,6 @@
 use super::{map, object, Schema};
 
-fn snapshot() -> Schema {
+pub(super) fn snapshot() -> Schema {
     object(vec![
         ("captured_at_ms", Schema::Number),
         ("instance", Schema::Text),

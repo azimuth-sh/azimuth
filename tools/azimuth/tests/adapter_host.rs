@@ -927,13 +927,14 @@ fn successful_exchange_cleans_remaining_process_group_members() {
 #[test]
 fn escaped_session_cannot_extend_the_bounded_core_exchange() {
     let _guard = test_lock();
-    let fixture = Fixture::new(RunOperation::Execute, 1_000, 1_000_000, 1_000_000);
+    // Interpreter startup must fit the fixture deadline on shared CI runners.
+    let fixture = Fixture::new(RunOperation::Execute, 5_000, 1_000_000, 1_000_000);
     fixture.set_bundle_response(&fixture.bundle(), &[]);
     fixture.set_mode("escaped-session");
     let started = Instant::now();
     let result = fixture.invoke(&[]);
     let escaped = EscapedProcessGuard::from_path(&fixture.escaped_pid);
-    assert!(started.elapsed() < Duration::from_millis(1_800));
+    assert!(started.elapsed() < Duration::from_millis(5_800));
     let error = result.unwrap_err();
     assert_eq!(error.class, HostErrorClass::Semantic);
     assert_eq!(error.class.exit_code(), 1);

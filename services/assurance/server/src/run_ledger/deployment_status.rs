@@ -329,6 +329,7 @@ pub(super) async fn assess_deployment(
     project: &str,
     deployment: &str,
 ) -> Result<Value, LedgerError> {
+    target_observation::resolve_pending(state, project).await?;
     let mut tx = state.pool.begin().await?;
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         .execute(&mut *tx)
