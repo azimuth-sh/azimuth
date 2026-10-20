@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Reconcile observed deployment state into ASS without changing workloads."""
 import hashlib
+import datetime
 import json
 import logging
 import os
@@ -17,6 +18,7 @@ LIMIT = 262144
 TOKEN = Path("/var/run/secrets/kubernetes.io/serviceaccount/token")
 CA = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 SHA = re.compile(r"sha256:[0-9a-f]{64}\Z")
+REVISION = re.compile(r"[0-9a-f]{40}\Z")
 ID = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\Z")
 
 
@@ -117,8 +119,24 @@ class KubernetesArgo:
         app = self.get(f"/apis/argoproj.io/v1alpha1/namespaces/{b['argocd_namespace']}/applications/{b['application']}")
         require(app is not None, "Argo application unavailable")
         status = app.get("status", {})
-        applied = status.get("sync", {}).get("revision")
-        rollout_id = status.get("operationState", {}).get("finishedAt")
+        operation = status.get("operationState")
+        operation = operation if isinstance(operation, dict) else {}
+        requested_operation = operation.get("operation")
+        requested_sync = requested_operation.get("sync") if isinstance(requested_operation, dict) else None
+        completed = (operation.get("phase") == "Succeeded" and isinstance(requested_sync, dict)
+                     and requested_sync.get("dryRun", False) is False)
+        sync_result = operation.get("syncResult")
+        revision = sync_result.get("revision") if isinstance(sync_result, dict) else None
+        applied = revision if completed and isinstance(revision, str) and REVISION.fullmatch(revision) else None
+        finished = operation.get("finishedAt")
+        rollout_id = None
+        if isinstance(finished, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})", finished):
+            try:
+                timestamp = datetime.datetime.fromisoformat(finished.replace("Z", "+00:00"))
+                if timestamp.tzinfo is not None:
+                    rollout_id = finished
+            except ValueError:
+                pass
         matched, ready, components, templates = True, True, [], {}
         workload_versions = {}
         pod_observations = {}
@@ -199,7 +217,7 @@ class KubernetesArgo:
         state = "complete" if ready and matched and synced and argo_healthy and applied and rollout_id else "partial"
         if not matched and ready:
             state = "drifted"
-        elif status.get("operationState", {}).get("phase") in ("Failed", "Error"):
+        elif operation.get("phase") in ("Failed", "Error"):
             state = "failed"
         elif not synced:
             state = "progressing"

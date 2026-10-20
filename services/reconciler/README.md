@@ -19,3 +19,7 @@ rejects that observation. Missing IDs never become an inferred process lifetime.
 Add namespace-scoped ReplicaSet `get/list` RBAC alongside existing Deployment/Pod permissions.
 Deploy the ASS protocol/schema expansion before this reconciler image. Context collection remains
 separate in the collector; the reconciler does not scrape settings or create Check evidence.
+
+## Applied revision
+
+The applied revision is the exact 40-character Git commit recorded by a successful Argo operation in `status.operationState.syncResult.revision`. The comparison head in `status.sync.revision` may advance after an observer-only Git commit without a sync; it does not create a different applied deployment. A dry-run operation, missing successful-operation revision, or missing/invalid completion timestamp keeps the observation incomplete.

@@ -25,6 +25,9 @@ class Cluster:
         self.requests = []
         self.pod_reads = 0
         self.mode = None
+        self.argo_status = {"sync": {"status": "Synced", "revision": "a" * 40}, "health": {"status": "Healthy"},
+                            "operationState": {"finishedAt": "2026-01-01T00:00:00Z", "phase": "Succeeded",
+                                               "syncResult": {"revision": "a" * 40}, "operation": {"sync": {"revision": "a" * 40}}}}
         self.context_reads = {}
         self.uploads = []
         self.fail_upload = False
@@ -84,7 +87,7 @@ class Cluster:
                 elif "/configmaps/" in path:
                     value = {"metadata": {"resourceVersion": "1"}, "data": {"release.json": json.dumps({"release_fingerprint": DIGEST, "components": {"component": {"image": IMAGE, "template": state.template, "template_fingerprint": template_fingerprint(state.template)}}})}}
                 elif "/applications/" in path:
-                    value = {"status": {"sync": {"status": "Synced", "revision": "exact-commit"}, "health": {"status": "Healthy"}, "operationState": {"finishedAt": "2026-01-01T00:00:00Z", "phase": "Succeeded"}}}
+                    value = {"status": deepcopy(state.argo_status)}
                 else: self.send_response(404); self.end_headers(); return
                 self.send_response(200); self.end_headers(); self.wfile.write(json.dumps(value).encode())
             def do_POST(self):
@@ -169,6 +172,48 @@ class ContextCollectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "changed during observation"): observer.observe()
         self.cluster.mode = "wrong-owner"; self.cluster.pod_reads = 0
         self.assertNotEqual(observer.observe()["state"], "complete")
+
+    def test_reconciler_comparison_head_does_not_change_applied_composition(self):
+        binding = {"namespace": "application", "argocd_namespace": "argocd", "application": "application", "release_config_map": "release",
+                   "workloads": {"component": {"deployment": "application", "container": "application"}}, "freshness_seconds": 90}
+        observer = KubernetesArgo(binding, self.cluster.origin, self.token, ca=None)
+        applied = observer.observe()
+        self.cluster.argo_status["sync"]["revision"] = "b" * 40
+        compared = observer.observe()
+        self.assertEqual(compared["state"], "complete")
+        self.assertEqual(compared["applied_revision"], "a" * 40)
+        for field in ("release_fingerprint", "applied_revision", "rollout_id", "configuration_fingerprint", "components"):
+            self.assertEqual(compared[field], applied[field], field)
+
+    def test_reconciler_requires_successful_exact_sync_result_revision(self):
+        binding = {"namespace": "application", "argocd_namespace": "argocd", "application": "application", "release_config_map": "release",
+                   "workloads": {"component": {"deployment": "application", "container": "application"}}, "freshness_seconds": 90}
+        observer = KubernetesArgo(binding, self.cluster.origin, self.token, ca=None)
+        valid = deepcopy(self.cluster.argo_status["operationState"])
+        for result in (None, [], {}, {"revision": None}, {"revision": "main"}, {"revision": "a" * 39}, {"revision": "g" * 40}):
+            with self.subTest(result=result):
+                self.cluster.argo_status["operationState"] = dict(valid, syncResult=result)
+                observation = observer.observe()
+                self.assertNotEqual(observation["state"], "complete")
+                self.assertIsNone(observation["applied_revision"])
+        for sync in (None, {}, {"sync": None}, {"sync": {"dryRun": True}}, {"sync": {"dryRun": "false"}}):
+            with self.subTest(operation=sync):
+                self.cluster.argo_status["operationState"] = dict(valid, operation=sync)
+                observation = observer.observe()
+                self.assertNotEqual(observation["state"], "complete")
+                self.assertIsNone(observation["applied_revision"])
+        for finished in (None, "", "not-a-date", "2026-01-01T00:00:00", "2026-99-01T00:00:00Z", "2026-01-01Q00:00:00+00:00"):
+            with self.subTest(finished=finished):
+                self.cluster.argo_status["operationState"] = dict(valid, finishedAt=finished)
+                observation = observer.observe()
+                self.assertNotEqual(observation["state"], "complete")
+                self.assertIsNone(observation["rollout_id"])
+        for phase in (None, "Running", "Failed", "Error"):
+            with self.subTest(phase=phase):
+                self.cluster.argo_status["operationState"] = dict(valid, phase=phase)
+                observation = observer.observe()
+                self.assertNotEqual(observation["state"], "complete")
+                self.assertIsNone(observation["applied_revision"])
 
 
 if __name__ == "__main__": unittest.main()
