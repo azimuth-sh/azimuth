@@ -11,7 +11,14 @@
       "method": "Scheduled production probe",
       "status": "supported",
       "reason": "The delivery probe and latency measurements support the delivery deadline.",
-      "title": "Reminders arrive on time"
+      "title": "Reminders arrive on time",
+      "execution_subject": "deployment",
+      "context_required": false,
+      "monitor": {
+        "id": "delivery-delay-monitor",
+        "interval_seconds": 60,
+        "freshness_seconds": 300
+      }
     },
     {
       "id": "reminders-follow-current-payment",
@@ -22,7 +29,10 @@
       "method": "Integration job",
       "status": "violated",
       "reason": "A reminder contained the previous amount after the payment was updated.",
-      "title": "Reminders reflect current payments"
+      "title": "Reminders reflect current payments",
+      "execution_subject": "source",
+      "context_required": false,
+      "monitor": null
     },
     {
       "id": "delivery-recovers-after-outage",
@@ -34,7 +44,10 @@
       "status": "unresolved",
       "reason": "The recovery job has not run for the deployed release.",
       "gap": "missing-execution",
-      "title": "Delivery retries avoid duplicates"
+      "title": "Delivery retries avoid duplicates",
+      "execution_subject": "deployment",
+      "context_required": false,
+      "monitor": null
     },
     {
       "id": "personal-data-remains-private",
@@ -46,7 +59,10 @@
       "status": "unresolved",
       "reason": "The policy changed after its Claim Review; a successor review is needed.",
       "gap": "stale-review",
-      "title": "Workers access only necessary payment data"
+      "title": "Workers access only necessary payment data",
+      "execution_subject": "source",
+      "context_required": true,
+      "monitor": null
     },
     {
       "id": "delivery-remains-observable",
@@ -58,7 +74,14 @@
       "status": "unresolved",
       "reason": "The alert delivery job stopped reporting. Its last result does not establish current visibility.",
       "gap": "lost-visibility",
-      "title": "Delivery failures reach the operations team"
+      "title": "Delivery failures reach the operations team",
+      "execution_subject": "deployment",
+      "context_required": false,
+      "monitor": {
+        "id": "delivery-alert-monitor",
+        "interval_seconds": 60,
+        "freshness_seconds": 300
+      }
     },
     {
       "id": "notification-content-is-complete",
@@ -68,8 +91,11 @@
       "check": "notification-content",
       "method": "Component tests",
       "status": "supported",
-      "reason": "The reviewed release assessment includes explicitly approved applicability of the CI content checks.",
-      "title": "Reminders contain complete payment details"
+      "reason": "Component tests passed for the source used to build the observed artifact; release lineage is verified.",
+      "title": "Reminders contain complete payment details",
+      "execution_subject": "source",
+      "context_required": false,
+      "monitor": null
     },
     {
       "id": "workers-use-restricted-credentials",
@@ -79,9 +105,12 @@
       "check": "credential-policy",
       "method": "Configuration analysis",
       "status": "unresolved",
-      "reason": "The reviewer rejected the verification: credential scope is declared but effective provider permissions are not checked.",
-      "gap": "rejected-review",
-      "title": "Workers use restricted delivery credentials"
+      "reason": "The tested delivery scope is restricted, but one production instance reports an unrestricted scope.",
+      "gap": "context-mismatch",
+      "title": "Workers use restricted delivery credentials",
+      "execution_subject": "source",
+      "context_required": true,
+      "monitor": null
     }
   ]
 }

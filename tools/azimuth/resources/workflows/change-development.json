@@ -2,7 +2,7 @@
   "format": "azimuth-workflow-template",
   "version": 1,
   "id": "change-development",
-  "revision": 8,
+  "revision": 9,
   "actions": [
     {
       "id": "establish-change-scope",
@@ -661,9 +661,9 @@
       ]
     },
     {
-      "id": "assess-claim-health",
-      "kind": "assess-claim-health",
-      "collection": "claims",
+      "id": "prepare-publication-inputs",
+      "kind": "prepare-publication-inputs",
+      "collection": "change",
       "depends_on": [
         {
           "action": "execute-check",
@@ -672,56 +672,6 @@
         },
         {
           "action": "review-claim",
-          "match": "same-claim",
-          "condition": "current-success"
-        },
-        {
-          "action": "implement-change",
-          "match": "all",
-          "condition": "current-success"
-        },
-        {
-          "action": "run-challenger",
-          "match": "all",
-          "condition": "current-success"
-        }
-      ],
-      "inputs": [
-        "request",
-        "instructions",
-        "snapshot"
-      ],
-      "guidance": [
-        {
-          "kind": "reference",
-          "id": "workflow"
-        },
-        {
-          "kind": "reference",
-          "id": "assurance-reviews"
-        }
-      ],
-      "required_output": {
-        "kind": "claim-health",
-        "description": "Assess observations for the exact Subject against the current accepted Claim Review. Missing evidence stays unresolved; different Subjects are not implicitly joined."
-      },
-      "correction": "implement-change",
-      "outcomes": [
-        "supported",
-        "violated",
-        "unresolved"
-      ],
-      "satisfies": [
-        "supported"
-      ]
-    },
-    {
-      "id": "prepare-publication-inputs",
-      "kind": "prepare-publication-inputs",
-      "collection": "change",
-      "depends_on": [
-        {
-          "action": "assess-claim-health",
           "match": "all",
           "condition": "current-success"
         },
@@ -748,7 +698,7 @@
       ],
       "required_output": {
         "kind": "publication-inputs",
-        "description": "Prepare compact Git-trackable azimuth-publication-inputs version 1 containing the complete native release request and composition request. Validate the envelope with azimuth release inputs --input <draft> --out <Git-tracked-file>. No ASS connection, registration receipt, accepted-authority selection or local upload is required. CI publishes unchanged native reviews and Runs with recorded transport provenance."
+        "description": "Prepare compact Git-trackable azimuth-publication-inputs version 1 containing the complete native release request and composition request. Validate the envelope with azimuth release inputs --input <draft> --out <Git-tracked-file>. No ASS connection, registration receipt, accepted-authority selection or local upload is required. CI publishes unchanged native reviews and Runs with recorded transport provenance. Deployment Claim Status is computed after observed rollout; publication does not require an authored positive Claim Health assessment. Deployment-only Checks and Monitors execute in their hosted environment."
       },
       "correction": null,
       "outcomes": [

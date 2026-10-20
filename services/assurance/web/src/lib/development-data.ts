@@ -29,7 +29,9 @@ export function developmentRead(project: string, path: string): unknown {
   const authority = {
     fingerprint: revision, model_fingerprint: identity('source-model'),
     claims: claims.map(c => ({ id: c.id, cases: [c.case], bindings: [{ check: c.check, case: c.case }], gaps: [] })),
-    checks: claims.map(c => ({ id: c.check, fingerprint: identity(c.check) })),
+    checks: claims.map(c => ({ id: c.check, fingerprint: identity(c.check), deployment: {
+      subject: c.execution_subject, components: ['notifications'], contexts: c.context_required ? [identity('delivery-context-contract')] : [], contribution: 'both', monitor: c.monitor,
+    } })),
   };
   const reviews = claims.map(c => ({
     record: { kind: 'claim-review', fingerprint: identity(`review:${c.id}`), claim: c.id,
@@ -42,9 +44,10 @@ export function developmentRead(project: string, path: string): unknown {
   const reviewState = { authority_fingerprint: revision, claims: claims.map((c, i) => ({
     claim: c.id, record: reviews[i].record, assessment: reviews[i].assessment, diagnostics: reviews[i].diagnostics,
   })) };
-  const state = { authority_fingerprint: revision, model_fingerprint: authority.model_fingerprint,
+  const state = { format: 'azimuth-deployment-status', version: 1, deployment: 'payments-2026-10-18', subject_fingerprint: subject,
+    evaluated_at_ms: Date.now(), authority_fingerprint: revision, model_fingerprint: authority.model_fingerprint,
     claims: claims.map((c, i) => {
-      const healthStatus = c.gap ? 'missing' : 'accepted';
+      const computedStatus = 'computed';
       const hasObservation = c.gap !== 'missing-execution';
       const acceptedBasis = !c.gap;
       const observation = {
@@ -52,21 +55,24 @@ export function developmentRead(project: string, path: string): unknown {
         bundle_fingerprint: identity(`run-bundle:${c.id}`), observation: identity(`observation:${c.id}`),
         outcome: c.status === 'violated' ? 'violated' : 'satisfied',
         observed_at_ms: Date.now() - (c.gap === 'lost-visibility' ? 180 : 2) * 60000,
-        selected_in_basis: acceptedBasis, accepted_basis: acceptedBasis, diagnostics: [c.reason],
+        selected_in_basis: acceptedBasis, accepted_basis: acceptedBasis, applicable: acceptedBasis, subject_fingerprint: c.execution_subject === 'source' ? identity('tested-source') : subject, diagnostics: [c.reason],
       };
       const observations = hasObservation ? [observation] : [];
       const reasons = [
         ...(reviews[i].assessment !== 'accepted' ? [{ code: `claim-review-${reviews[i].assessment}`, category: 'claim-review', message: c.reason }] : []),
-        ...(healthStatus !== 'accepted' ? [{ code: 'claim-health-missing', category: 'claim-health', message: 'Claim Health is missing for this assessment.' }] : []),
+        ...(c.gap === 'context-mismatch' ? [{ code: 'context-mismatch', category: 'deployment-evidence', check: c.check, case: c.case, message: c.reason }] : []),
+        ...(c.gap === 'lost-visibility' ? [{ code: 'monitor-overdue', category: 'deployment-evidence', check: c.check, case: c.case, message: c.reason }] : []),
         ...(!hasObservation ? [{ code: 'current-observation-missing', category: 'evidence', check: c.check, case: c.case, message: c.reason }] : []),
       ];
-      return { claim: c.id, status: c.status, review: reviews[i].assessment, health: healthStatus,
+      return { claim: c.id, status: c.status, review: reviews[i].assessment, evaluated_at_ms: Date.now(),
         diagnostics: [c.reason], gaps: c.gap ? [{ kind: c.gap, description: c.reason }] : [],
-        bindings: [{ case: c.case, check: c.check }], challenges: [],
+        bindings: [{ case: c.case, check: c.check, status: acceptedBasis ? 'satisfied' : 'unresolved', monitor: c.monitor,
+          reasons: c.gap ? [c.gap === 'lost-visibility' ? 'Monitor observation is overdue.' : c.reason] : [] }], challenges: [],
         explanation: {
           summary: c.reason, status: c.status, reasons,
           review: { status: reviews[i].assessment, fingerprint: reviews[i].record.fingerprint, reviewer: 'development-reviewer', reviewed_at_ms: Date.now() - 120 * 60000, rationale: c.reason },
-          health: { status: healthStatus, fingerprint: acceptedBasis ? identity(`health:${c.id}`) : null, reviewer: acceptedBasis ? 'development-reviewer' : null, reviewed_at_ms: acceptedBasis ? Date.now() - 60000 : null, rationale: acceptedBasis ? c.reason : null },
+          health: { status: computedStatus, fingerprint: null, reviewer: null, reviewed_at_ms: null, rationale: null },
+          dependencies: [{ kind: 'release', fingerprint: releaseId }, ...(acceptedBasis && c.context_required ? [{ kind: 'context-capture', fingerprint: identity(`capture:${c.id}`) }] : [])],
           coverage: [{ check: c.check, case: c.case, status: !hasObservation ? 'missing' : acceptedBasis ? observation.outcome : 'unassessed', observations }],
           evidence: {
             supporting: acceptedBasis && c.status !== 'violated' ? observations : [],
@@ -79,9 +85,9 @@ export function developmentRead(project: string, path: string): unknown {
   };
   const executed = claims.filter(c => c.gap !== 'missing-execution');
   const runs = executed.map(c => ({ run_id: identity(`run:${c.id}`), revision: 0,
-    fingerprint: identity(`run-bundle:${c.id}`), subject_fingerprint: subject,
+    fingerprint: identity(`run-bundle:${c.id}`), subject_fingerprint: c.execution_subject === 'source' ? identity('tested-source') : subject,
     model_fingerprint: authority.model_fingerprint, status: 'complete',
-    subject: { kind: 'deployment', environment: 'production', id: 'payments-2026-10-18' },
+    subject: c.execution_subject === 'source' ? { kind: 'source', repositories: [{ id: 'payments', revision: 'synthetic-source', content_fingerprint: identity('source-content') }] } : { kind: 'deployment', environment: 'production', id: 'payments-2026-10-18' },
   }));
   const bundles = executed.map((c, i) => ({ ...runs[i],
     check_executions: [{ check: { id: c.check, fingerprint: identity(c.check) }, observations: [{
@@ -138,13 +144,14 @@ export function developmentRead(project: string, path: string): unknown {
     observation: { state: 'complete', observed_at_ms: Date.now() - 60000, valid_for_seconds: 300, release_fingerprint: releaseId },
   };
   if (route === `/deployments/${stagingDeployment.id}`) return { deployment: stagingDeployment, release_fingerprint: releaseId };
-  if (route === `/model-revisions/${revision}/subjects/${stagingSubject}/state`) return {
-    authority_fingerprint: revision, model_fingerprint: authority.model_fingerprint,
-    claims: state.claims.map(claim => ({ ...claim, status: 'unresolved', health: 'missing',
-      diagnostics: ['No assessment has been recorded for this staging deployment.'],
-      explanation: { ...claim.explanation, status: 'unresolved', summary: 'No assessment has been recorded for this staging deployment.',
-        health: { status: 'missing', fingerprint: null, reviewer: null, reviewed_at_ms: null, rationale: null },
-        reasons: [{ code: 'claim-health-missing', category: 'claim-health', message: 'Staging evidence has not been assessed.' }],
+  if (route === `/deployments/${stagingDeployment.id}/status` || route === `/model-revisions/${revision}/subjects/${stagingSubject}/state`) return {
+    ...state, deployment: stagingDeployment.id, subject_fingerprint: stagingSubject,
+    claims: state.claims.map(claim => ({ ...claim, status: 'unresolved',
+      diagnostics: ['Required Check observations are missing for this staging deployment.'],
+      bindings: claim.bindings.map(binding => ({ ...binding, status: 'unresolved', reasons: ['No applicable observation for this staging deployment.'] })),
+      explanation: { ...claim.explanation, status: 'unresolved', summary: 'Required Check observations are missing for this staging deployment.',
+        health: { status: 'computed', fingerprint: null, reviewer: null, reviewed_at_ms: null, rationale: null },
+        reasons: [{ code: 'evidence-missing', category: 'deployment-evidence', message: 'Staging has no applicable Check observations.' }],
         coverage: claim.explanation.coverage.map(binding => ({ ...binding, status: 'missing', observations: [] })),
         evidence: { supporting: [], violations: [], inconclusive: [], unassessed: [] },
       },
@@ -182,9 +189,9 @@ export function developmentRead(project: string, path: string): unknown {
   const run = runs.find(r => route === `/runs/${r.run_id}`);
   if (run) return { items: [bundles.find(b => b.run_id === run.run_id)], next: null };
   if (route === `/model-revisions/${revision}`) return { authority, selected: accepted };
-  if (route === `/model-revisions/${revision}/snapshot`) return { authority, reviews: reviews.map(r => r.record), bundles };
+  if (route === `/model-revisions/${revision}/snapshot`) return { authority, reviews: [...reviews.map(r => r.record), { kind: 'claim-health', claim: claims[0]?.id, subject_fingerprint: subject, fingerprint: identity('historical-assessment'), conclusion: 'supported', reviewed_at_ms: Date.now()-86400000, rationale: 'Historical authored conclusion retained for inspection.' }], bundles };
   if (route === `/subjects/${subject}/state`) return accepted ? state : { ...state, authority_fingerprint: baseline, claims: [] };
-  if (route === `/model-revisions/${revision}/subjects/${subject}/state`) return state;
+  if (route === `/deployments/${deployment.id}/status` || route === `/model-revisions/${revision}/subjects/${subject}/state`) return state;
   if (route === `/model-revisions/${baseline}`) return { authority: baselineAuthority, selected: !accepted };
   if (route === `/model-revisions/${baseline}/claim-reviews`) return { authority_fingerprint: baseline, claims: [] };
   if (route === `/model-revisions/${baseline}/snapshot`) return { authority: baselineAuthority, reviews: [], bundles: [] };

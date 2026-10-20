@@ -3356,7 +3356,8 @@ fn expand_generation(source: &Json, bindings: &Json) -> Result<Json, String> {
                 .is_some_and(|v| !v.is_empty())
             && arr(action, "depends_on")?.iter().any(|dep| {
                 arr(source, "actions").unwrap().iter().any(|a| {
-                    a.get("id") == dep.get("action") && text(a, "collection").ok() == Some("claims")
+                    a.get("id") == dep.get("action")
+                        && matches!(text(a, "collection").ok(), Some("claims" | "checks"))
                 })
             })
         {
@@ -3523,7 +3524,18 @@ fn expand_generation(source: &Json, bindings: &Json) -> Result<Json, String> {
                             text(a, "id").ok() == Some(id)
                                 && text(a, "collection").ok() == Some("claims")
                         });
-                    if !complete_empty_claims
+                    let complete_empty_checks = text(dependency, "match")? == "all"
+                        && arr(source, "actions")?.iter().any(|action| {
+                            action.get("id") == dependency.get("action")
+                                && text(action, "collection").ok() == Some("checks")
+                        })
+                        && bindings
+                            .get("assurance")
+                            .and_then(|inventory| inventory.get("methods"))
+                            .and_then(Json::as_array)
+                            .is_some_and(|methods| methods.is_empty());
+                    if !complete_empty_checks
+                        && !complete_empty_claims
                         && !complete_empty_challengers
                         && !complete_empty_reviews
                     {
@@ -3652,8 +3664,36 @@ fn assurance_requirements(state: &Json) -> Result<Json, String> {
     Ok(Json::Arr(pending.iter().map(|target| Json::obj(vec![
         ("kind", Json::str("assurance-subject-selection")),
         ("target", target.clone()),
-        ("reason", Json::str("Select an exact execution Subject for this target. Claim composition requires every declared contribution on that same Subject; model revision equality does not join different Subjects.")),
+        ("reason", Json::str(if target.get("kind").and_then(Json::as_str) == Some("claim") {
+            "Select an exact execution Subject for this historical authored-health target. Every declared contribution must apply to that same Subject."
+        } else {
+            "Select the exact source or artifact execution Subject for this Check. Deployment-only Checks execute after rollout; model equality alone does not transfer evidence."
+        })),
     ])).collect()))
+}
+
+fn requires_authored_health(definition: &Json) -> bool {
+    definition
+        .get("template")
+        .and_then(|template| template.get("actions"))
+        .and_then(Json::as_array)
+        .is_some_and(|actions| {
+            actions.iter().any(|action| {
+                matches!(
+                    action.get("kind").and_then(Json::as_str),
+                    Some("assess-claim-health" | "judge-claim")
+                )
+            })
+        })
+}
+
+fn local_check(check: &Json, authored_health: bool) -> bool {
+    authored_health
+        || check
+            .get("deployment")
+            .and_then(|policy| policy.get("subject"))
+            .and_then(Json::as_str)
+            != Some("deployment")
 }
 
 fn assurance_definition(
@@ -3763,8 +3803,15 @@ fn assurance_definition(
             }
         }
     }
+    let authored_health = requires_authored_health(old);
+    checks.retain(|target| {
+        arr(authority, "checks").unwrap().iter().any(|check| {
+            check.get("id") == target.get("check") && local_check(check, authored_health)
+        })
+    });
     let methods = arr(authority, "checks")?
         .iter()
+        .filter(|check| local_check(check, authored_health))
         .map(|check| Json::obj(vec![("check", check.get("id").unwrap().clone())]))
         .collect::<Vec<_>>();
     let mut contributions = Vec::new();
@@ -3797,6 +3844,9 @@ fn assurance_definition(
                     ("subject", check.get("subject").unwrap().clone()),
                 ]));
             }
+        }
+        if !authored_health {
+            continue;
         }
         let targets = selected_claims
             .iter()
@@ -4000,6 +4050,12 @@ fn validate_inventory(
     if let Some(methods) = v.get("methods").and_then(Json::as_array) {
         let expected = arr(authority, "checks")?
             .iter()
+            .filter(|check| {
+                local_check(
+                    check,
+                    requires_authored_health(state.get("definition").unwrap()),
+                )
+            })
             .map(|check| text(check, "id").map(str::to_owned))
             .collect::<Result<BTreeSet<_>, _>>()?;
         let actual = methods
@@ -4011,11 +4067,14 @@ fn validate_inventory(
         }
     }
     for check in arr(v, "checks")? {
-        if !arr(authority, "checks")?
-            .iter()
-            .any(|c| c.get("id") == check.get("check"))
-        {
-            return Err("inventory Check absent from candidate authority".into());
+        if !arr(authority, "checks")?.iter().any(|c| {
+            c.get("id") == check.get("check")
+                && local_check(
+                    c,
+                    requires_authored_health(state.get("definition").unwrap()),
+                )
+        }) {
+            return Err("inventory Check absent from local candidate execution scope".into());
         }
     }
     for contribution in arr(v, "contributions")? {
@@ -4065,7 +4124,8 @@ fn validate_inventory(
         }
     }
     for claim in arr(authority, "claims")? {
-        if text(claim, "criticality")? != "routine"
+        if requires_authored_health(state.get("definition").unwrap())
+            && text(claim, "criticality")? != "routine"
             && !arr(v, "claims")?
                 .iter()
                 .any(|c| c.get("claim") == claim.get("id"))
@@ -4218,4 +4278,127 @@ fn initial_definition(
                     .unwrap_or_default()
             )
         })
+}
+
+#[cfg(test)]
+mod deployment_status_workflow_tests {
+    use super::*;
+
+    fn bindings(pending: bool) -> Json {
+        let fingerprint = Json::str(format!("sha256:{}", "a".repeat(64)));
+        Json::obj(vec![
+            ("project", Json::str("sample-project")),
+            ("change", Json::str("sample-change")),
+            (
+                "request",
+                Json::obj(vec![
+                    ("kind", Json::str("initial-request")),
+                    ("ref", Json::str("request.md")),
+                ]),
+            ),
+            ("instructions", Json::Arr(vec![])),
+            (
+                "modules",
+                Json::Arr(vec![Json::obj(vec![("module", Json::str("catalog"))])]),
+            ),
+            (
+                "assurance",
+                Json::obj(vec![
+                    ("format", Json::str("azimuth-assurance-target-inventory")),
+                    ("version", Json::Num(1.0)),
+                    ("project", Json::str("sample-project")),
+                    ("model_revision", fingerprint),
+                    (
+                        "snapshot",
+                        Json::obj(vec![
+                            ("kind", Json::str("assurance-snapshot")),
+                            ("ref", Json::str("snapshot.json")),
+                        ]),
+                    ),
+                    (
+                        "methods",
+                        Json::Arr(if pending {
+                            vec![Json::obj(vec![("check", Json::str("source-check"))])]
+                        } else {
+                            vec![]
+                        }),
+                    ),
+                    ("checks", Json::Arr(vec![])),
+                    ("contributions", Json::Arr(vec![])),
+                    ("claims", Json::Arr(vec![])),
+                    (
+                        "claim_definitions",
+                        Json::Arr(vec![Json::obj(vec![(
+                            "claim",
+                            Json::str("restricted-access"),
+                        )])]),
+                    ),
+                    ("challengers", Json::Arr(vec![])),
+                    ("challenger_claims", Json::Arr(vec![])),
+                    (
+                        "pending_subjects",
+                        Json::Arr(if pending {
+                            vec![Json::obj(vec![
+                                ("kind", Json::str("check")),
+                                ("id", Json::str("source-check")),
+                            ])]
+                        } else {
+                            vec![]
+                        }),
+                    ),
+                ]),
+            ),
+        ])
+    }
+
+    #[test]
+    fn hosted_only_inventory_can_prepare_publication_without_authored_health() {
+        let template = shipped_template("change-development").unwrap();
+        let definition = expand_generation(&template, &bindings(false)).unwrap();
+        assert!(!requires_authored_health(&definition));
+        assert!(arr(&definition, "tasks")
+            .unwrap()
+            .iter()
+            .any(|task| text(task, "kind").unwrap() == "prepare-publication-inputs"));
+        assert!(arr(&definition, "tasks")
+            .unwrap()
+            .iter()
+            .any(|task| text(task, "kind").unwrap() == "review-claim"));
+    }
+
+    #[test]
+    fn missing_local_subject_blocks_publication_expansion() {
+        let template = shipped_template("change-development").unwrap();
+        let definition = expand_generation(&template, &bindings(true)).unwrap();
+        assert!(!arr(&definition, "tasks")
+            .unwrap()
+            .iter()
+            .any(|task| text(task, "kind").unwrap() == "prepare-publication-inputs"));
+    }
+
+    #[test]
+    fn execution_scope_preserves_historical_health_templates() {
+        let hosted = Json::obj(vec![(
+            "deployment",
+            Json::obj(vec![("subject", Json::str("deployment"))]),
+        )]);
+        let source = Json::obj(vec![(
+            "deployment",
+            Json::obj(vec![("subject", Json::str("source"))]),
+        )]);
+        assert!(!local_check(&hosted, false));
+        assert!(local_check(&hosted, true));
+        assert!(local_check(&source, false));
+        let historical = Json::obj(vec![(
+            "template",
+            Json::obj(vec![(
+                "actions",
+                Json::Arr(vec![Json::obj(vec![(
+                    "kind",
+                    Json::str("assess-claim-health"),
+                )])]),
+            )]),
+        )]);
+        assert!(requires_authored_health(&historical));
+    }
 }

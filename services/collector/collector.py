@@ -155,6 +155,9 @@ def validate_binding(binding, code_fingerprint, protocol_fingerprint):
 def main():
     logging.basicConfig(level=logging.INFO)
     config = json.loads(Path(os.environ.get('COLLECTOR_CONFIG', '/config/collector.json')).read_text())
+    import contexts
+    context_sources = contexts.validate_sources(config)
+    context_kube = contexts.KubernetesContexts() if context_sources else None
     code_fingerprint = 'sha256:' + hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     protocol_fingerprint = 'sha256:' + hashlib.sha256(Path(build_check_bundle.__code__.co_filename).read_bytes()).hexdigest()
     ids = set()
@@ -172,6 +175,8 @@ def main():
     state.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(state/'collector.db')
     db.executescript('CREATE TABLE IF NOT EXISTS checkpoints (source TEXT PRIMARY KEY, cursor TEXT NOT NULL); CREATE TABLE IF NOT EXISTS outbox (fingerprint TEXT PRIMARY KEY, project TEXT NOT NULL, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS collection_gaps (source TEXT NOT NULL, cursor TEXT NOT NULL, observed_at_ms INTEGER NOT NULL);')
+    contexts.initialize(db)
+    db.commit()
     while True:
         try:
             try:
@@ -181,7 +186,7 @@ def main():
                 bindings = []
             for binding in bindings:
                 try:
-                    if db.execute('SELECT COUNT(*) FROM outbox').fetchone()[0] >= config.get('max_pending', 10000):
+                    if db.execute('SELECT COUNT(*) FROM outbox').fetchone()[0] + db.execute('SELECT COUNT(*) FROM context_outbox').fetchone()[0] >= config.get('max_pending', 10000):
                         raise ValueError('Outbox full; collection paused')
                     previous = db.execute('SELECT cursor FROM checkpoints WHERE source=?', (binding['id'],)).fetchone()
                     adapter = ADAPTERS[binding['adapter']]()
@@ -199,6 +204,16 @@ def main():
                         db.execute('INSERT OR REPLACE INTO checkpoints VALUES (?,?)', (binding['id'], cursor or ''))
                 except Exception as failure:
                     logging.error('collection-failed source=%s error=%s', binding['id'], type(failure).__name__)
+            for source in context_sources:
+                try:
+                    pending = db.execute('SELECT COUNT(*) FROM outbox').fetchone()[0] + db.execute('SELECT COUNT(*) FROM context_outbox').fetchone()[0]
+                    captures = contexts.collect(config['assurance_url'], source, context_kube, Path(source['token_file']).read_text().strip())
+                    if pending + len(captures) > config.get('max_pending', 10000):
+                        raise ValueError('Outbox full; context collection paused')
+                    contexts.stage(db, source, captures)
+                except Exception as failure:
+                    logging.error('context-collection-failed source=%s error=%s', source['id'], type(failure).__name__)
+            contexts.publish(db, config['assurance_url'])
             for fingerprint, project, payload in db.execute('SELECT fingerprint,project,payload FROM outbox LIMIT 100').fetchall():
                 try:
                     token = Path(config['projects'][project]['token_file']).read_text().strip()

@@ -71,3 +71,26 @@ package, native archive and image publicly, validates provenance and platforms, 
 If a transient failure leaves the tagged source and release bytes unchanged, rerun the workflow. If
 the correction changes source or artifacts, keep the failed tag immutable, advance the version and
 create a new tag. Any partially published version is permanently consumed.
+
+
+## Public test integration candidates
+
+The first-alpha package cohort also includes `Azimuth.Testing.Xunit` (NuGet, .NET 8+) and
+`@azimuth-sh/playwright` (npm). Their native manifests, packed metadata, allowlisted file sets and
+release version are qualified with the existing artifact cohort. Package qualification installs
+the actual xUnit archive through a private NuGet cache/source mapping and executes its report API;
+it installs the actual npm tarball and runs a real synthetic Playwright test with the packaged
+fixture/reporter. These smokes do not contact ASS or require a browser download. Canonical source
+checks separately cover failures, retries, contexts and missing captures through real runners.
+
+`verification-context`, `test-report`, `test-mapping`, `native-test-results`, `deployment-assessment`
+and `deployment-status` have independent protocol version 1 catalog entries. They are not inferred
+from package version `0.1.0-alpha.6`. Public source adapters under `packages/python` remain
+commit-pinned source inputs rather than a newly invented PyPI artifact identity.
+
+Registry publication is not required for consumer CI adoption: build CLI/harness artifacts once
+from the same full canonical Git commit, then distribute those immutable workflow artifacts.
+For NuGet use a commit-specific preview package version with a matching consumer version, or an
+isolated `NUGET_PACKAGES` cache and source mapping to the local candidate feed. Reusing a fixed
+package version with a shared cache can silently select bytes from a different source revision.
+Record the full tooling Git revision and artifact digests; never resolve floating main as identity.

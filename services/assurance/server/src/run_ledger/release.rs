@@ -155,6 +155,14 @@ pub(super) async fn publish(
                 .bind(&project).bind(&bundle.run_id).bind(bundle.bundle_revision as i64).bind(&bundle.bundle_fingerprint)
                 .bind(&bundle.subject_fingerprint).bind(&bundle.plan.model_fingerprint).execute(&mut *tx).await?;
         }
+        deployment_status::attribute_run(
+            &mut tx,
+            &project,
+            &bundle.bundle_fingerprint,
+            &bundle.run_id,
+            &submitter,
+        )
+        .await?;
         sqlx::query("INSERT INTO release_run_submissions(project,release_fingerprint,run_fingerprint,submitted_by) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING")
             .bind(&project).bind(fingerprint).bind(&bundle.bundle_fingerprint).bind(&submitter).execute(&mut *tx).await?;
     }
@@ -434,15 +442,17 @@ pub(super) async fn accept(
             "deployment observation is missing, stale or incomplete",
         ));
     }
-    let subject = deployment["subject_fingerprint"].as_str().ok_or_else(|| {
-        LedgerError::conflict("deployment has no exact native assessment Subject")
-    })?;
-    let (authority, reviews, bundles) =
-        load_revision_snapshot(&state.pool, &project, Some(revision)).await?;
-    let assessment = to_value(&assurance_review::subject_state(
-        &authority, &reviews, &bundles, subject,
-    ))?;
-    let current_authority = to_value(&authority)?;
+    let assessment = super::deployment_status::assess_deployment(
+        &state,
+        &project,
+        deployment["id"]
+            .as_str()
+            .ok_or_else(|| LedgerError::invalid("deployment identity missing"))?,
+    )
+    .await?;
+    let current_authority: Value = sqlx::query_scalar(
+        "SELECT assurance_record('authority',project,fingerprint) FROM assurance_authorities WHERE project=$1 AND fingerprint=$2",
+    ).bind(&project).bind(revision).fetch_one(&mut *tx).await?;
     for claim in current_authority["claims"]
         .as_array()
         .ok_or_else(|| LedgerError::invalid("authority Claims missing"))?
@@ -455,7 +465,7 @@ pub(super) async fn accept(
             })
         {
             return Err(LedgerError::conflict(
-                "non-routine Claims require current supported Health for the selected deployment",
+                "non-routine Claims require current supported Claim Status for the selected deployment",
             ));
         }
     }

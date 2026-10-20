@@ -30,6 +30,14 @@ check_source() {
   cargo test --no-fail-fast --manifest-path tools/azimuth/Cargo.toml
   dotnet test tools/extractors/dotnet/Azimuth.Emit.Tests/Azimuth.Emit.Tests.csproj
   dotnet build packages/dotnet/Azimuth.Annotations/Azimuth.Annotations.csproj
+  dotnet test packages/dotnet/Azimuth.Testing.Xunit.Tests/Azimuth.Testing.Xunit.Tests.csproj
+
+  (
+    cd packages/typescript-playwright
+    npm ci
+    npm test
+  )
+  python3 -m unittest discover -s experiments/test-report-adapter -p 'test_*.py'
 
   (
     cd tools/extractors/typescript
@@ -66,11 +74,11 @@ check_assurance() {
     npm run build
   )
 
-  python3 -m unittest -v services.assurance.deployment.test_qualify services.reconciler.test_reconciler
+  PYTHONPATH=packages/python python3 -m unittest -v services.assurance.deployment.test_qualify services.reconciler.test_reconciler services.collector.test_contexts
   python3 services/assurance/deployment/qualify.py
 
   if docker info >/dev/null 2>&1; then
-    cargo test --no-fail-fast --manifest-path services/assurance/Cargo.toml --test lifecycle_api --test relational_domain
+    cargo test --no-fail-fast --manifest-path services/assurance/Cargo.toml --test lifecycle_api --test relational_domain --test deployment_status
   else
     printf '%s\n' 'Docker is unavailable; assurance lifecycle integration evidence was not run.' >&2
   fi

@@ -11,6 +11,7 @@ pub mod assurance;
 pub mod assurance_publication;
 pub mod assurance_review;
 pub mod change;
+pub mod deployment_status;
 pub mod design;
 pub mod diag;
 pub mod federation;

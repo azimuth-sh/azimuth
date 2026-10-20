@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PackageId>Azimuth.Testing.Xunit</PackageId>
+    <Version>0.1.0-alpha.6</Version>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <Description>Effective verification context capture and execution facts for xUnit v2.</Description>
+    <RepositoryUrl>https://github.com/azimuth-sh/azimuth</RepositoryUrl>
+    <PackageProjectUrl>https://azimuth.sh</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.extensibility.core" Version="2.9.3" />
+    <None Include="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+</Project>

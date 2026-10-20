@@ -11,7 +11,36 @@ pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
 }
 
 fn identity() -> Schema {
-    object(vec![("id", Schema::Text), ("fingerprint", Schema::Text)])
+    object(vec![
+        ("id", Schema::Text),
+        ("fingerprint", Schema::Text),
+        (
+            "deployment",
+            object(vec![
+                ("subject", Schema::Text),
+                ("components", list(Schema::Text)),
+                ("contexts", list(Schema::Text)),
+                ("contribution", Schema::Text),
+                ("configuration_sources", list(Schema::Text)),
+                ("units", list(Schema::Text)),
+                (
+                    "controls",
+                    list(object(vec![
+                        ("unit", Schema::Text),
+                        ("contexts", list(Schema::Text)),
+                    ])),
+                ),
+                (
+                    "monitor",
+                    object(vec![
+                        ("id", Schema::Text),
+                        ("interval_seconds", Schema::Number),
+                        ("freshness_seconds", Schema::Number),
+                    ]),
+                ),
+            ]),
+        ),
+    ])
 }
 
 fn binding() -> Schema {

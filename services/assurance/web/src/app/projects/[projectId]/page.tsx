@@ -155,7 +155,7 @@ export default async function ProjectPage({
           <h2>Select a environment deployment</h2>
           <p>
             No current deployment is selected. Choose a recorded deployment to
-            inspect its Health. This does not change what is designated current.
+            inspect its Claim Status. This does not change what is designated current.
           </p>
           {environmentDeployments.map((d) => (
             <Link
@@ -208,11 +208,11 @@ export default async function ProjectPage({
           {!state ? (
             <div className="panelEmpty">
               <span className="emptySymbol">◇</span>
-              <h3>Deployment Health is not available</h3>
+              <h3>Deployment Claim Status is not available</h3>
               <p>
                 {deployment
-                  ? "This deployment has no available model assessment. No healthy status is inferred."
-                  : "Select a recorded deployment to see its Claim Health."}
+                  ? "This deployment has no available model assessment. No confirmed status is inferred."
+                  : "Select a recorded deployment to see its Claim Status."}
               </p>
             </div>
           ) : !attention.length ? (
@@ -258,7 +258,7 @@ export default async function ProjectPage({
           <span className="overline">ASSESSMENT CONTEXT</span>
           <h2>Evidence, with boundaries.</h2>
           <p>
-            Health describes the selected deployment. A passing Check or an
+            Claim Status describes the selected deployment. A passing Check or an
             accepted review alone does not confirm a Claim.
           </p>
           <dl>
@@ -298,7 +298,7 @@ export default async function ProjectPage({
       <section className="dashboardPanel modulePanel" id="modules">
         <div className="panelHeading">
           <div>
-            <h2>Health by module</h2>
+            <h2>Status by module</h2>
             <p>Navigate from responsibilities to the Claims they contain.</p>
           </div>
           <Link

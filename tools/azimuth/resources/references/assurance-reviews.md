@@ -159,3 +159,8 @@ Historical parsers retain their original meanings for inspection; they do not co
 qualifications or judgments into new reviews. After new-kind ingestion, application rollback
 requires a parser capable of those records or an isolated pre-rollout database recovery; deleting
 or rewriting immutable history is not a migration strategy.
+
+
+## Deployment Claim Status
+
+The standard change-development revision 9 requires independent Claim Reviews and machine execution facts before publication, not an authored positive Claim Health record. ASS computes deployment Claim Status after deployment reconciliation, using reviewed definitions, exact Run Subjects, release provenance and compatible effective-context captures. Historical Claim Health records and the native compilation commands above retain their original wire contracts; they do not substitute for deployment applicability or create current positive Status. Release acceptance remains an explicit owner decision.

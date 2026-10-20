@@ -78,6 +78,23 @@ pub struct ReferenceDescriptor {
 
 pub const REFERENCES: &[ReferenceDescriptor] = &[
     ReferenceDescriptor {
+        id: "deployment-claim-status",
+        format_version: 1,
+        accepted: &[
+            "exact release lineage",
+            "activity-bound effective contexts",
+            "reviewed controls",
+            "fresh deployment Monitors",
+        ],
+        rejected: &[
+            "unused baseline capture",
+            "model equality implies applicability",
+            "unreviewed failure mapping",
+            "replay renews freshness",
+        ],
+        prose: include_str!("../resources/references/deployment-claim-status.md"),
+    },
+    ReferenceDescriptor {
         id: "release-publication",
         format_version: 1,
         accepted: &[

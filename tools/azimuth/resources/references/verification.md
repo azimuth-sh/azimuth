@@ -2,13 +2,13 @@
 
 Routine Claims owe no enrolled Checks or evidence review. Ordinary engineering tests remain outside the Azimuth evidence graph unless deliberately enrolled for an applicable non-routine Claim.
 
-`verification.md` owns Check methods, inline Check–Case Evidence Bindings, package declarations and machine-executed Challengers. Independent Claim Reviews and exact-Subject Claim Health assessments belong in separate review artifacts. Method Qualification, Applicability Decision, Claim Judgment and Check Review are not mandatory stages of the current compact account. Historical declaration and review contracts retain their original meanings; do not convert those records into positive current assessments.
+`verification.md` owns Check methods, inline Check–Case Evidence Bindings, package declarations and machine-executed Challengers. Independent Claim Reviews belong in separate review artifacts. Deployment Claim Status is computed in ASS from the observed release composition and applicable evidence; historical authored Claim Health records retain their original meaning. Method Qualification, Applicability Decision, Claim Judgment and Check Review are not mandatory stages of the current compact account. Historical declaration and review contracts retain their original meanings; do not convert those records into positive current assessments.
 
 Claim, Case, Mechanism, Check and Challenger IDs are stable project-wide names in typed namespaces. Module membership and Case parent relationships are separately authored. Qualified spellings are not aliases.
 
 ## Checks and package declarations
 
-A document-owned Check has a stable ID and substantive prose describing assertions, controls and limits. Inline `Evidence bindings` relate it to stable Cases through nonempty Contributions; a Case-nested Contribution may inherit the Case. The Check–Case pair identifies the binding. Source markers identify implementations only. Do not add binding IDs, Context, Decision Policy or Method Qualification metadata to the compact form.
+A document-owned Check has a stable ID and substantive prose describing assertions, controls and limits. Inline `Evidence bindings` relate it to stable Cases through nonempty Contributions; a Case-nested Contribution may inherit the Case. The Check–Case pair identifies the binding. Source markers identify implementations only. Do not add binding IDs, Decision Policy or Method Qualification metadata to the compact form. Declare execution scope and deployment contribution in the Check’s `Deployment:` metadata; pin context contract revisions when effective settings affect applicability.
 
 Enable verification packages explicitly. `azimuth.surface` supplies Surfaces and independent Expectation Sets; `azimuth.network` supplies Probes and origins. Checks reference them through `Surface`, `Expectations`, `Select`, `Probe` and `Origin`. Publish field names, not duplicate language types; ecosystem emitters derive types and supported values from producer schemas. Expectations must be independent of the implementation metadata being examined.
 
@@ -26,7 +26,7 @@ Validate intent and structure with `azimuth change validate --scope structure`; 
 
 Prepare definition review packets with `azimuth assurance review-input`, author a Claim Review and compile aggregate Markdown with `review-compile`. Definition review examines Cases, design, implementations, oracles, coverage, Challengers and limitations without requiring an execution Subject. Execute Checks and Challengers only through explicitly configured bounded adapters against exact source, artifact or deployment Subjects. Local and CI are provenance, not interchangeable evidence from different content.
 
-Prepare Claim Health against the current accepted Claim Review and exact Run/Observation basis. Health records `supported | violated | unresolved` and residual risks. Missing measurements, broken controls and incomplete scope remain gaps. A successful Run or clean Challenge does not create an assessment.
+Execute source/artifact Checks locally or in CI against their exact Subjects and retain typed Runs and effective-context captures. Deployment-only Checks and Monitors execute after rollout. ASS computes deployment Claim Status using the current Claim Review, release provenance, actual deployment and compatible context evidence. Missing measurements, broken controls and incomplete scope remain gaps. A successful Run or clean Challenge alone does not confirm a deployed Claim. Authored Claim Health compilation remains available for historical pinned workflows; it is not a revision-9 publication prerequisite.
 
 ## Change-local records and publication
 

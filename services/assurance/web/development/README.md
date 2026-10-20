@@ -14,7 +14,7 @@ OAuth application, credentials, Tailscale or API process is needed.
 
 | Scenario | Purpose |
 | --- | --- |
-| `mixed` (default) | Two supported Claims, one violated Claim, missing execution, stale review, rejected review and stopped reporting; deployed release awaiting acceptance. |
+| `mixed` (default) | Two supported Claims, one violated Claim, missing execution, stale review, context mismatch and overdue monitoring; deployed release awaiting acceptance. |
 | `healthy` | All seven Claims supported; accepted deployed release. |
 | `incident` | Mixed scenario plus a delivery deadline violation. |
 | `empty` | Project with no model, releases, reviews or Runs. |
@@ -22,10 +22,11 @@ OAuth application, credentials, Tailscale or API process is needed.
 These are synthetic **UI read models**, not native authority projections, Run
 bundles or assessor output. Never ingest them into ASS. They deliberately permit
 exploring proposed experiences before the API supports them. Deployment observation freshness is provided by an explicit synthetic observation.
-Claim-level lost visibility remains an authored scenario description, not an
-automatic Claim assessment rule.
-CI applicability in the content Claim is illustrative explicit review, not inferred
-from deployment provenance. Dates are relative to page reads so scenarios remain
+The read models mirror computed deployment Status: source evidence is linked through
+release provenance, effective-context mismatches remain unresolved, and Monitor
+freshness is independent of deployment-observation freshness. Historical authored
+assessments remain inspectable without overriding computed Status.
+Dates are relative to page reads so scenarios remain
 useful; they are not a real event history. Identities are deterministic synthetic
 link keys, not protocol content fingerprints.
 
@@ -120,3 +121,12 @@ an explicitly selected deployment so evidence cannot follow the wrong environmen
 The local fixture includes production and staging; staging has seven unresolved
 Claims with no execution evidence. Environment selection never deploys or updates
 ASS records.
+
+## Deployment Claim Status
+
+Claim details show production Monitors first, deployment Checks second, then source
+and artifact verification. Each Check identifies its execution Subject, component
+scope, context requirements and applicability reasons. Overdue monitoring is not
+a product violation. Adverse observations stay visible even when they cannot
+establish a definitive Claim violation. `npm test` verifies the actual React view
+with mixed evidence, including definitions-only navigation.

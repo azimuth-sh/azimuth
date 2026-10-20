@@ -52,7 +52,7 @@ export default async function ProjectPage({
         <h2>Claim Reviews</h2>
         <p>
           Definition assessments are independent of execution Subjects. An
-          accepted review does not establish deployed Claim Health.
+          accepted review does not establish deployed Claim Status.
         </p>
         {view.claimReviews?.claims.map((claim) => (
           <article key={claim.claim}>

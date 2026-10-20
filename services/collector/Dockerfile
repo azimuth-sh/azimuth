@@ -6,7 +6,7 @@ FROM python:3.13-slim
 WORKDIR /app
 COPY --from=build /source/tools/azimuth/target/release/azimuth /usr/local/bin/azimuth
 COPY packages/python/azimuth_run /app/azimuth_run
-COPY services/collector/collector.py /app/collector.py
+COPY services/collector/collector.py services/collector/contexts.py /app/
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 USER 65532:65532
 ENTRYPOINT ["python", "/app/collector.py"]

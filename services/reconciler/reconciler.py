@@ -57,6 +57,7 @@ def exchange(url, token, body=None, context=None):
             require(len(raw) <= 4 * 1024 * 1024, "response exceeds observation bound")
             return json.loads(raw, object_pairs_hook=unique)
     except urllib.error.HTTPError as error:
+        error.close()
         if error.code == 404 and body is None:
             return None
         raise
@@ -96,13 +97,14 @@ def declared_template(actual, declared):
 
 
 class KubernetesArgo:
-    def __init__(self, binding):
+    def __init__(self, binding, origin="https://kubernetes.default.svc", token_file=TOKEN, ca=CA):
         self.binding = binding
-        self.context = ssl.create_default_context(cafile=CA)
-        self.origin = "https://kubernetes.default.svc"
+        self.context = ssl.create_default_context(cafile=ca)
+        self.origin = origin.rstrip("/")
+        self.token_file = Path(token_file)
 
     def get(self, path):
-        return exchange(self.origin + path, TOKEN.read_text().strip(), context=self.context)
+        return exchange(self.origin + path, self.token_file.read_text().strip(), context=self.context)
 
     def observe(self):
         b = self.binding
@@ -119,6 +121,8 @@ class KubernetesArgo:
         rollout_id = status.get("operationState", {}).get("finishedAt")
         matched, ready, components, templates = True, True, [], {}
         workload_versions = {}
+        pod_observations = {}
+        observed_instances = set()
         for name, workload in b["workloads"].items():
             expected = desired["components"][name]
             require(set(expected) == {"image", "template_fingerprint", "template"} and "@sha256:" in expected["image"] and SHA.fullmatch(expected["template_fingerprint"]), "invalid component binding")
@@ -132,7 +136,14 @@ class KubernetesArgo:
             require(set(selector) == {"matchLabels"}, "only exact matchLabels workload selectors are supported")
             labels = ",".join(f"{key}={value}" for key, value in sorted(selector["matchLabels"].items()))
             pods = self.get(f"/api/v1/namespaces/{b['namespace']}/pods?labelSelector=" + urllib.parse.quote(labels, safe=""))
-            require(pods is not None, "Pod observation unavailable")
+            require(pods is not None and not pods.get("metadata", {}).get("continue"), "Pod observation unavailable or paginated")
+            replicasets = self.get(f"/apis/apps/v1/namespaces/{b['namespace']}/replicasets?labelSelector=" + urllib.parse.quote(labels, safe=""))
+            require(replicasets and not replicasets.get("metadata", {}).get("continue"), "ReplicaSet ownership observation unavailable")
+            owners = set()
+            for replicas in replicasets.get("items", []):
+                references = [ref for ref in replicas.get("metadata", {}).get("ownerReferences", []) if ref.get("controller") is True]
+                if len(references) == 1 and references[0].get("kind") == "Deployment" and references[0].get("uid") == deployment["metadata"]["uid"]:
+                    owners.add(replicas["metadata"]["uid"])
             active = [p for p in pods.get("items", []) if not p["metadata"].get("deletionTimestamp")]
             count = deployment["spec"].get("replicas", 1)
             rollout = deployment.get("status", {})
@@ -141,7 +152,12 @@ class KubernetesArgo:
                 and all(rollout.get(field, 0) == count for field in ("replicas", "updatedReplicas", "readyReplicas", "availableReplicas"))
                 and rollout.get("unavailableReplicas", 0) == 0)
             actual_images = set()
+            instances = set()
+            pod_observations[labels] = sorted((p["metadata"]["uid"], p["metadata"]["resourceVersion"]) for p in active)
             for pod in active:
+                references = [ref for ref in pod["metadata"].get("ownerReferences", []) if ref.get("controller") is True]
+                owned = len(references) == 1 and references[0].get("kind") == "ReplicaSet" and references[0].get("uid") in owners
+                healthy = healthy and owned
                 statuses = [c for c in pod.get("status", {}).get("containerStatuses", []) if c["name"] == workload["container"]]
                 if len(statuses) != 1:
                     healthy = False
@@ -152,12 +168,25 @@ class KubernetesArgo:
                     healthy = False
                     continue
                 actual_images.add(image)
-                healthy = healthy and c.get("ready") is True and any(v.get("type") == "Ready" and v.get("status") == "True" for v in pod.get("status", {}).get("conditions", []))
+                instance = c.get("containerID", "")
+                instance_valid = isinstance(instance, str) and bool(re.fullmatch(r"[a-z0-9][a-z0-9+.-]*://[A-Za-z0-9_.:-]+", instance)) and len(instance) <= 512
+                if not instance_valid or instance in instances or instance in observed_instances:
+                    healthy = False
+                elif c.get("ready") is True:
+                    instances.add(instance)
+                    observed_instances.add(instance)
+                healthy = healthy and instance_valid and c.get("ready") is True and any(v.get("type") == "Ready" and v.get("status") == "True" for v in pod.get("status", {}).get("conditions", []))
             images_match = actual_images == {expected["image"]}
             matched = matched and template_matches and images_match
             ready = ready and healthy
             components.append({"name": name, "image": next(iter(actual_images)) if len(actual_images) == 1 else None,
-                "template_fingerprint": fingerprint(template), "ready": healthy and images_match and template_matches})
+                "template_fingerprint": fingerprint(template), "ready": healthy and images_match and template_matches,
+                "instances": sorted(instances)})
+        for labels, initial_pods in pod_observations.items():
+            current = self.get(f"/api/v1/namespaces/{b['namespace']}/pods?labelSelector=" + urllib.parse.quote(labels, safe=""))
+            require(current and not current.get("metadata", {}).get("continue"), "Pod observation is incomplete")
+            final_pods = sorted((p["metadata"]["uid"], p["metadata"]["resourceVersion"]) for p in current.get("items", []) if not p["metadata"].get("deletionTimestamp"))
+            require(final_pods == initial_pods, "Pod lifetime or readiness changed during observation")
         for name, resource_version in workload_versions.items():
             current = self.get(f"/apis/apps/v1/namespaces/{b['namespace']}/deployments/{name}")
             require(current and current["metadata"]["resourceVersion"] == resource_version,
