@@ -1,6 +1,7 @@
 # Spec: framework/consumer-installation
 
 ## Claim: self-contained-installation
+Title: Self contained installation
 Criticality: routine
 
 An initialized repository SHALL contain a release-matched Azimuth account and every selected agent workflow needed to use that account without a canonical-source checkout or network documentation.
@@ -26,6 +27,7 @@ An initialized repository SHALL contain a release-matched Azimuth account and ev
 - Additional condition or outcome: the CLI does not create a symlink
 
 ## Claim: version-matched-guidance
+Title: Version matched guidance
 Criticality: routine
 
 The installed CLI SHALL be the complete offline source for its artifact grammar and stage choreography.
@@ -45,6 +47,7 @@ The installed CLI SHALL be the complete offline source for its artifact grammar 
 - Additional condition or outcome: the retired `azimuth change instructions` operation is rejected
 
 ## Claim: coherent-installation-maintenance
+Title: Coherent installation maintenance
 Criticality: routine
 
 Azimuth SHALL synchronize one complete managed-resource cohort without taking ownership of ecosystem package installation or user-authored account meaning.
@@ -64,6 +67,7 @@ Azimuth SHALL synchronize one complete managed-resource cohort without taking ow
 - Additional condition or outcome: it performs no network discovery, CLI self-upgrade, package-manager operation or semantic account rewrite
 
 ## Claim: reviewed-account-migration
+Title: Reviewed account migration
 Criticality: routine
 
 An incompatible account transition SHALL be planned and applied separately from managed-resource synchronization.

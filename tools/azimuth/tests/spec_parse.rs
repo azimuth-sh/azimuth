@@ -948,3 +948,57 @@ fn verification_with_binding(owner: &str, binding: &str, include_check: bool) ->
          Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n"
     )
 }
+
+#[test]
+fn claim_titles_are_display_metadata_with_distinct_model_revisions() {
+    use azimuth::model::Model;
+    let source = "# Spec: example\n\n## Claim: stays-safe\nCriticality: routine\n\nThe value stays safe.\n\n### Case: update\nAn update preserves the value.\n";
+    let titled = source.replace(
+        "Criticality:",
+        "Title: Updates preserve safety\nCriticality:",
+    );
+    let before = Model {
+        specs: vec![parse_spec("example.md", source).unwrap()],
+        ..Model::default()
+    };
+    let after = Model {
+        specs: vec![parse_spec("example.md", &titled).unwrap()],
+        ..Model::default()
+    };
+    assert_eq!(
+        after.specs[0].claims[0].title.as_deref(),
+        Some("Updates preserve safety")
+    );
+    assert_eq!(
+        before.claim_digest("stays-safe"),
+        after.claim_digest("stays-safe")
+    );
+    assert_eq!(before.case_digest("update"), after.case_digest("update"));
+    assert_ne!(
+        azimuth::fingerprint::authority_model_digest(&before),
+        azimuth::fingerprint::authority_model_digest(&after)
+    );
+    let catalog = azimuth::release::catalog(&after);
+    assert_eq!(
+        catalog.get("claims").unwrap().as_array().unwrap()[0]
+            .get("title")
+            .unwrap()
+            .as_str(),
+        Some("Updates preserve safety")
+    );
+    for invalid in ["Title: \n", "Title: First\nTitle: Second\n"] {
+        assert!(parse_spec(
+            "example.md",
+            &source.replace("Criticality:", &format!("{invalid}Criticality:"))
+        )
+        .is_err());
+    }
+    assert!(parse_spec(
+        "example.md",
+        &source.replace(
+            "Criticality:",
+            &format!("Title: {}\nCriticality:", "x".repeat(121))
+        )
+    )
+    .is_err());
+}

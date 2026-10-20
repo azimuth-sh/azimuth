@@ -1,6 +1,7 @@
 # Spec: framework/release-orchestration
 
 ## Claim: qualification-lanes-converge
+Title: Qualification lanes converge
 Criticality: routine
 
 The release workflow SHALL qualify independent artifact lanes before publication can begin.
@@ -22,6 +23,7 @@ The release workflow SHALL qualify independent artifact lanes before publication
 - Additional condition or outcome: no missing, duplicate or unexpected release artifact is accepted
 
 ## Claim: tagged-candidates-are-verifiable
+Title: Tagged candidates are verifiable
 Criticality: routine
 
 Every published release artifact SHALL remain attributable to the source revision named by its
@@ -43,6 +45,7 @@ release tag until public verification completes.
 - Additional condition or outcome: direct provenance or an archive-to-published-image provenance chain names the tagged source revision
 
 ## Claim: qualified-candidates-compose
+Title: Qualified candidates compose
 Criticality: routine
 
 Every selected first-alpha candidate SHALL expose its declared public entry point from the retained
@@ -63,6 +66,7 @@ distribution shape.
 - Additional condition or outcome: every catalog-selected image and platform is represented
 
 ## Claim: partial-publication-resumes-safely
+Title: Partial publication resumes safely
 Criticality: routine
 
 The first-alpha publication SHALL preserve successful immutable targets and resume only targets

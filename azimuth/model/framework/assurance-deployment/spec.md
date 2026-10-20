@@ -1,6 +1,7 @@
 # Spec: framework/assurance-deployment
 
 ## Claim: private-network-containment
+Title: Private network containment
 Criticality: routine
 
 The private assurance profile SHALL expose its unauthenticated processes only through an explicit
@@ -22,6 +23,7 @@ operator-controlled network boundary.
 - Additional condition or outcome: application authentication and direct-internet readiness are explicitly denied
 
 ## Claim: assurance-ledger-durability
+Title: Assurance ledger durability
 Criticality: routine
 
 The private assurance profile SHALL preserve accepted ledger history through its documented
@@ -39,6 +41,7 @@ service lifecycle.
 - Additional condition or outcome: downgrade migration is not a supported operation
 
 ## Claim: selected-image-platforms-build
+Title: Selected image platforms build
 Criticality: routine
 
 Every assurance image and platform selected by the release contract SHALL produce a buildable OCI

@@ -41,7 +41,7 @@ export default async function ProjectPage({
   } = await environmentView(projectId, selected, environment);
   const claims = state?.claims ?? [];
   const title = (id: string) =>
-    catalog?.claims.find((c) => c.id === id)?.statement ?? id;
+    catalog?.claims.find((c) => c.id === id)?.title ?? id;
   const moduleName = (id: string) =>
     catalog?.modules.find((m) => m.claims.includes(id))?.id ?? "Unassigned";
   const modelLink = (id?: string) =>

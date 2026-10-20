@@ -608,14 +608,18 @@ fn apply_operation(
         Kind::Replace => {
             let (labels, body) = labels_and_body(
                 &operation.source,
-                &["From", "Because", "Criticality", "Remove cases"],
+                &["From", "Because", "Title", "Criticality", "Remove cases"],
             )?;
             let from = required(&labels, "From")?;
             let because = required(&labels, "Because")?;
             let _ = because;
             let criticality = required(&labels, "Criticality")?;
+            let title = labels
+                .get("Title")
+                .map(|value| format!("Title: {value}\n"))
+                .unwrap_or_default();
             let block = format!(
-                "## Claim: {claim_id}\nCriticality: {criticality}\n\n{}",
+                "## Claim: {claim_id}\n{title}Criticality: {criticality}\n\n{}",
                 body.trim()
             );
             let target = parse_claim(&operation.spec, &block)?;
@@ -803,6 +807,7 @@ fn same_claim(left: &str, right: &str, spec: &str) -> Result<bool, String> {
     let a = parse_claim(spec, left)?;
     let b = parse_claim(spec, right)?;
     Ok(a.id == b.id
+        && a.title == b.title
         && a.criticality == b.criticality
         && a.statement == b.statement
         && a.cases.len() == b.cases.len()

@@ -1,6 +1,7 @@
 # Spec: framework/adapter-capability-protocol
 
 ## Claim: adapter-configuration-is-explicit-and-pinned
+Title: Adapter configuration is explicit and pinned
 Criticality: routine
 
 Azimuth SHALL invoke only explicitly configured adapters whose protocol, description, limits and
@@ -39,6 +40,7 @@ capabilities are pinned before provider interaction.
 - Additional condition or outcome: locator relocation or prose does not change either semantic fingerprint
 
 ## Claim: semantic-planning-uses-the-complete-model
+Title: Semantic planning uses the complete model
 Criticality: routine
 
 Azimuth SHALL derive Check and Challenge execution plans from one complete unselected current
@@ -62,6 +64,7 @@ model without delegating semantic resolution to an adapter.
 - Additional condition or outcome: it freezes traceability-derived semantic scope before adapter translation
 
 ## Claim: launch-plans-bind-capability-routing
+Title: Launch plans bind capability routing
 Criticality: routine
 
 Azimuth SHALL bind an exact Subject, operation and complete Run-bundle semantic plan to explicit
@@ -79,6 +82,7 @@ capability routes in one canonical launch plan.
 - Additional condition or outcome: every route retains its exact capability fingerprint
 
 ## Claim: adapter-invocation-is-strict-and-bounded
+Title: Adapter invocation is strict and bounded
 Criticality: routine
 
 Azimuth SHALL invoke an adapter as a bounded short-lived process with one strict JSON request and
@@ -107,6 +111,7 @@ exactly one strict JSON response.
 - Additional condition or outcome: it creates no adapter process or output bundle
 
 ## Claim: execute-validates-normalized-run-semantics
+Title: Execute validates normalized run semantics
 Criticality: routine
 
 Azimuth SHALL accept an executed adapter response only after validating its request identity,
@@ -128,6 +133,7 @@ provenance, actual selection and complete Run bundle.
 - Additional condition or outcome: neither result implies the other
 
 ## Claim: import-inputs-are-content-addressed
+Title: Import inputs are content addressed
 Criticality: routine
 
 Azimuth SHALL bind every native import input to the exact file content core supplied to the
@@ -152,6 +158,7 @@ configured adapter.
 - Additional condition or outcome: the response is exactly the next revision correcting the terminal predecessor
 
 ## Claim: capability-classes-and-provider-identities-stay-separate
+Title: Capability classes and provider identities stay separate
 Criticality: routine
 
 Azimuth SHALL use a closed semantic capability-class vocabulary with open configured-adapter
@@ -166,6 +173,7 @@ capability addresses, separate open provider-family identities and open challeng
 - Required outcome: the E Run command surface does not plan or invoke it as a Run operation
 
 ## Claim: runtime-command-results-have-stable-exit-classes
+Title: Runtime command results have stable exit classes
 Criticality: routine
 
 Azimuth SHALL distinguish valid execution facts from semantic or transport mismatches and from

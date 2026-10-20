@@ -136,13 +136,12 @@ execution details and normalized findings into its Run. Existing Run fingerprint
 Catalog shape is `{modules, claims, cases, checks}`:
 
 - Module: `{id, title, claims: [claim-id], parent?: module-id}`;
-- Claim: `{id, statement}`;
+- Claim: `{id, statement, title?: string}`;
 - Case and Check: `{id, description}`.
 
 Catalog identities must exactly cover native authority identities; each Claim belongs to one
 Module. Explicit parent links must exist and be acyclic. `assurance catalog` derives membership and
-statements from the loaded model. The current Spec format has no declared parent/title fields, so
-its export uses module ID as display title and omits parents rather than infer hierarchy from paths.
+statements and optional authored Claim titles from the loaded model. Claim titles contain 1–120 characters on one line and are navigation metadata, not normative statements. Untitled Claims display their stable IDs. The current Spec format has no declared module parent/title fields, so its export uses module ID as display title and omits parents rather than infer hierarchy from paths.
 Catalog describes navigation; native authority/reviews/Runs determine assessment semantics.
 
 ## API and authority

@@ -10,7 +10,8 @@
       "check": "delivery-delay",
       "method": "Scheduled production probe",
       "status": "supported",
-      "reason": "The delivery probe and latency measurements support the delivery deadline."
+      "reason": "The delivery probe and latency measurements support the delivery deadline.",
+      "title": "Reminders arrive on time"
     },
     {
       "id": "reminders-follow-current-payment",
@@ -20,7 +21,8 @@
       "check": "concurrent-payment-update",
       "method": "Integration job",
       "status": "violated",
-      "reason": "A reminder contained the previous amount after the payment was updated."
+      "reason": "A reminder contained the previous amount after the payment was updated.",
+      "title": "Reminders reflect current payments"
     },
     {
       "id": "delivery-recovers-after-outage",
@@ -31,7 +33,8 @@
       "method": "Recovery job",
       "status": "unresolved",
       "reason": "The recovery job has not run for the deployed release.",
-      "gap": "missing-execution"
+      "gap": "missing-execution",
+      "title": "Delivery retries avoid duplicates"
     },
     {
       "id": "personal-data-remains-private",
@@ -42,7 +45,8 @@
       "method": "Access policy analysis and production probe",
       "status": "unresolved",
       "reason": "The policy changed after its Claim Review; a successor review is needed.",
-      "gap": "stale-review"
+      "gap": "stale-review",
+      "title": "Workers access only necessary payment data"
     },
     {
       "id": "delivery-remains-observable",
@@ -53,7 +57,8 @@
       "method": "Monitoring rule and alert delivery job",
       "status": "unresolved",
       "reason": "The alert delivery job stopped reporting. Its last result does not establish current visibility.",
-      "gap": "lost-visibility"
+      "gap": "lost-visibility",
+      "title": "Delivery failures reach the operations team"
     },
     {
       "id": "notification-content-is-complete",
@@ -63,7 +68,8 @@
       "check": "notification-content",
       "method": "Component tests",
       "status": "supported",
-      "reason": "The reviewed release assessment includes explicitly approved applicability of the CI content checks."
+      "reason": "The reviewed release assessment includes explicitly approved applicability of the CI content checks.",
+      "title": "Reminders contain complete payment details"
     },
     {
       "id": "workers-use-restricted-credentials",
@@ -74,7 +80,8 @@
       "method": "Configuration analysis",
       "status": "unresolved",
       "reason": "The reviewer rejected the verification: credential scope is declared but effective provider permissions are not checked.",
-      "gap": "rejected-review"
+      "gap": "rejected-review",
+      "title": "Workers use restricted delivery credentials"
     }
   ]
 }

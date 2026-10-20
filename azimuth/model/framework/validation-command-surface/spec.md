@@ -1,6 +1,7 @@
 # Spec: framework/validation-command-surface
 
 ## Claim: validation-is-distinct-from-check-execution
+Title: Validation is distinct from check execution
 Criticality: routine
 
 Azimuth SHALL expose deterministic model validation separately from enrolled Check execution and
