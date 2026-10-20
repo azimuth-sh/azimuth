@@ -1,6 +1,7 @@
 # Spec: framework/release-artifacts
 
 ## Claim: first-alpha-contract
+Title: First alpha contract
 Criticality: routine
 
 The first public alpha artifacts SHALL have one explicit and internally consistent release
@@ -42,6 +43,7 @@ contract before publication.
 - Required outcome: it has no first-alpha public artifact identity or support promise
 
 ## Claim: experimental-source-isolation
+Title: Experimental source isolation
 Criticality: routine
 
 The canonical repository's experimental source SHALL remain continuously verifiable without

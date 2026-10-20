@@ -1,6 +1,7 @@
 # Spec: framework/run-bundle-protocol
 
 ## Claim: subjects-have-exact-identity
+Title: Subjects have exact identity
 Criticality: routine
 
 Azimuth SHALL bind every Run to one exact typed Subject and accountable execution provenance.
@@ -21,6 +22,7 @@ Azimuth SHALL bind every Run to one exact typed Subject and accountable executio
 - Additional condition or outcome: import time and provider execution identity remain provenance
 
 ## Claim: actual-selection-is-bounded-by-plan
+Title: Actual selection is bounded by plan
 Criticality: routine
 
 Azimuth SHALL freeze planned and actual semantic selection and SHALL fail closed on substituted or
@@ -42,6 +44,7 @@ additional targets.
 - Required outcome: protocol verification rejects the bundle for acceptance
 
 ## Claim: execution-reduces-to-cardinal-results
+Title: Execution reduces to cardinal results
 Criticality: routine
 
 Azimuth SHALL reduce activities, work units and ordered attempts to exactly cardinal terminal
@@ -64,6 +67,7 @@ Observations and Challenge Results without conflating their meaning.
 - Additional condition or outcome: one separately targeted Challenge Result without implication between them
 
 ## Claim: bundle-history-is-immutable-and-deterministic
+Title: Bundle history is immutable and deterministic
 Criticality: routine
 
 Azimuth SHALL identify Run bundles by versioned canonical fingerprints and SHALL represent changed
@@ -84,6 +88,7 @@ content only through a linear immutable correction chain.
 - Required outcome: protocol verification rejects the correction history
 
 ## Claim: run-protocol-is-service-independent
+Title: Run protocol is service independent
 Criticality: routine
 
 Azimuth SHALL verify and inspect normalized Run bundles locally without an adapter or Assurance

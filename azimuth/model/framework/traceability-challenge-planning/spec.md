@@ -1,6 +1,7 @@
 # Spec: framework/traceability-challenge-planning
 
 ## Claim: claim-judgments-bind-total-composition
+Title: Claim judgments bind total composition
 Criticality: routine
 
 Azimuth SHALL identify one current Claim Judgment by the complete applicable assurance composition
@@ -22,6 +23,7 @@ for one non-routine parent Claim.
 - Required outcome: a Claim Judgment declaration for it is inapplicable
 
 ## Claim: challenge-resolution-preserves-every-candidate
+Title: Challenge resolution preserves every candidate
 Criticality: routine
 
 Azimuth SHALL resolve Challenge Plan selectors without hiding missing, stale, rejected,
@@ -47,6 +49,7 @@ invalid, inapplicable or unresolved decision candidates.
 - Required outcome: the Plan does not cover the Challenger's required form
 
 ## Claim: challenge-planning-binds-current-decisions
+Title: Challenge planning binds current decisions
 Criticality: routine
 
 Azimuth SHALL expand authored Challenge Plans from the complete current model into exact accepted
@@ -71,6 +74,7 @@ decision targets under one Run context.
 - Additional condition or outcome: it does not silently truncate the semantic selection
 
 ## Claim: adapters-receive-frozen-semantic-scope
+Title: Adapters receive frozen semantic scope
 Criticality: routine
 
 Azimuth SHALL freeze traceability-derived semantic scope and accountable launch inputs before an
@@ -93,6 +97,7 @@ adapter translates a Challenge into provider-native work.
 - Required outcome: Azimuth rejects the response before publishing a Run bundle
 
 ## Claim: challenge-outcomes-remain-negative-search-facts
+Title: Challenge outcomes remain negative search facts
 Criticality: routine
 
 Azimuth SHALL keep Challenge search outcomes, scheduling deferral and selection mismatch as
@@ -119,6 +124,7 @@ different states.
 - Additional condition or outcome: it does not publish a Challenge Result
 
 ## Claim: challenge-policy-is-form-and-cost-aware
+Title: Challenge policy is form and cost aware
 Criticality: routine
 
 Azimuth SHALL distinguish required semantic challenge forms from their gate or scheduled execution
@@ -142,6 +148,7 @@ lane without treating omitted expensive work as success.
 - Required outcome: this change defines no cache-validity or cross-Subject reuse inference
 
 ## Claim: challenged-decision-impact-does-not-duplicate-results
+Title: Challenged decision impact does not duplicate results
 Criticality: routine
 
 Azimuth SHALL propagate challenged-decision impact through the semantic graph without manufacturing

@@ -7,7 +7,7 @@ interface Deployment {
 }
 interface Catalog {
   modules: { id: string; title: string; claims: string[] }[];
-  claims: { id: string; statement: string }[];
+  claims: { id: string; title?: string; statement: string }[];
 }
 interface Release {
   publication: {

@@ -605,21 +605,32 @@ async fn model_revision_subject_state(
     headers: HeaderMap,
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
-    let observed: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM run_bundles WHERE project=$1 AND subject_fingerprint=$2)",
+    let deployment_registered: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM release_deployments d JOIN assurance_releases r          ON r.project=d.project AND r.fingerprint=d.release_fingerprint          WHERE d.project=$1 AND r.model_revision=$2          AND assurance_record_field('deployment',d.project,d.deployment_id,'subject_fingerprint')=to_jsonb($3::text))",
     )
     .bind(&project)
+    .bind(&revision)
     .bind(&subject)
     .fetch_one(&state.pool)
     .await?;
-    if !observed {
-        return Err(LedgerError::not_found());
+    if !deployment_registered {
+        let observed: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM run_bundles WHERE project=$1 AND subject_fingerprint=$2)",
+        )
+        .bind(&project)
+        .bind(&subject)
+        .fetch_one(&state.pool)
+        .await?;
+        if !observed {
+            return Err(LedgerError::not_found());
+        }
     }
     let (authority, reviews, bundles) =
         load_revision_snapshot(&state.pool, &project, Some(&revision)).await?;
-    if !bundles
-        .iter()
-        .any(|bundle| bundle.subject_fingerprint == subject)
+    if !deployment_registered
+        && !bundles
+            .iter()
+            .any(|bundle| bundle.subject_fingerprint == subject)
     {
         return Err(LedgerError::not_found());
     }
@@ -1129,4 +1140,118 @@ async fn compute<T: Send + 'static>(
     })
     .await
     .map_err(|_| LedgerError::invalid("assessment worker failed"))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use testcontainers_modules::{
+        postgres::Postgres,
+        testcontainers::{runners::AsyncRunner, ImageExt},
+    };
+
+    #[tokio::test]
+    async fn registered_deployment_without_runs_lists_unresolved_claims(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let postgres = Postgres::default().with_tag("17-alpine").start().await?;
+        let port = postgres.get_host_port_ipv4(5432).await?;
+        let pool = crate::connect(&format!(
+            "postgres://postgres:postgres@127.0.0.1:{port}/postgres"
+        ))
+        .await?;
+        crate::migrate(&pool).await?;
+        let model = azimuth::model::Model {
+            specs: vec![azimuth::spec::parse_spec(
+                "spec.md",
+                "# Spec: module\n\n## Claim: bounded\nCriticality: routine\n\nThe operation SHALL complete.\n\n### Case: completes\nGiven ordinary input, when invoked, then complete.\n",
+            ).unwrap()],
+            ..Default::default()
+        };
+        let authority = to_value(&assurance_review::authority(&model, "project")?)
+            .map_err(|error| error.detail)?;
+        let revision = authority["fingerprint"].as_str().unwrap();
+        let digest = format!("sha256:{}", "a".repeat(64));
+        let subject = json!({"kind":"deployment","environment":"production","deployment":"deployment","deployment_fingerprint":digest,"artifacts":[{"id":"service","digest":digest}]});
+        let subject_fingerprint = run::subject_fingerprint(&run::subject_from_json(
+            &core_json(subject.to_string().as_bytes()).map_err(|error| error.detail)?,
+        )?);
+        let deployment = json!({"id":"deployment","environment":"production","configuration_fingerprint":digest,"artifacts":[digest],"subject":subject,"subject_fingerprint":subject_fingerprint});
+        let mut tx = pool.begin().await?;
+        relational::store(&mut tx, "authority", "project", revision, &authority).await?;
+        sqlx::query("INSERT INTO assurance_authorities(project,fingerprint,registered_by) VALUES ('project',$1,'owner')").bind(revision).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO model_revisions(project,fingerprint,registered_by) VALUES ('project',$1,'owner')").bind(revision).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO assurance_releases(project,fingerprint,model_revision,label,baseline_model_revision,submitted_by) VALUES ('project',$1,$2,'Release',$2,'publisher')").bind(&digest).bind(revision).execute(&mut *tx).await?;
+        release::insert_deployment(&mut tx, "project", &digest, &deployment, "owner")
+            .await
+            .map_err(|error| error.detail)?;
+        tx.commit().await?;
+        let credential = "viewer-credential-for-http-regression-only";
+        let state = LedgerState::new(
+            pool.clone(),
+            BTreeMap::from([(
+                "project".into(),
+                ProjectCredentials {
+                    publishers: BTreeMap::new(),
+                    producers: BTreeMap::from([(
+                        "producer".into(),
+                        "producer-credential-for-http-regression-only".into(),
+                    )]),
+                    reviewers: BTreeMap::from([(
+                        "reviewer".into(),
+                        "reviewer-credential-for-http-regression-only".into(),
+                    )]),
+                    owners: BTreeMap::from([(
+                        "owner".into(),
+                        "owner-credential-for-http-regression-only".into(),
+                    )]),
+                    viewers: BTreeMap::from([("viewer".into(), credential.into())]),
+                },
+            )]),
+        )
+        .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let address = listener.local_addr()?;
+        let server = tokio::spawn(async move { axum::serve(listener, app(state)).await.unwrap() });
+        let client = reqwest::Client::new();
+        let url =
+            format!("http://{address}/v1/projects/project/model-revisions/{revision}/subjects");
+        let response = client
+            .get(format!("{url}/{subject_fingerprint}/state"))
+            .bearer_auth(credential)
+            .send()
+            .await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        let result: Value = response.json().await?;
+        assert_eq!(result["claims"].as_array().unwrap().len(), 1);
+        assert_eq!(result["claims"][0]["claim"], "bounded");
+        assert_eq!(result["claims"][0]["status"], "unresolved");
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM run_bundles")
+                .fetch_one(&pool)
+                .await?,
+            0
+        );
+        let unknown = format!("sha256:{}", "b".repeat(64));
+        assert_eq!(
+            client
+                .get(format!("{url}/{unknown}/state"))
+                .bearer_auth(credential)
+                .send()
+                .await?
+                .status(),
+            StatusCode::NOT_FOUND
+        );
+        let wrong_model = format!("http://{address}/v1/projects/project/model-revisions/{unknown}/subjects/{subject_fingerprint}/state");
+        assert_eq!(
+            client
+                .get(wrong_model)
+                .bearer_auth(credential)
+                .send()
+                .await?
+                .status(),
+            StatusCode::NOT_FOUND
+        );
+        server.abort();
+        Ok(())
+    }
 }

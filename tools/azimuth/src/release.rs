@@ -535,8 +535,17 @@ pub fn verify_catalog(catalog: &Json, authority: &Json) -> Result<(), String> {
                         "description"
                     },
                 ],
-                &[],
+                if key == "claims" { &["title"] } else { &[] },
             )?;
+            if let Some(title) = item.get("title") {
+                let value = title.as_str().ok_or("catalog Claim title must be text")?;
+                if value.trim().is_empty()
+                    || value.chars().count() > 120
+                    || value.contains(['\n', '\r'])
+                {
+                    return Err("catalog Claim title must contain 1 to 120 characters".into());
+                }
+            }
             text(
                 item,
                 if key == "claims" {
@@ -594,10 +603,14 @@ pub fn catalog(model: &crate::model::Model) -> Json {
                 model
                     .claims()
                     .map(|view| {
-                        Json::obj(vec![
+                        let mut fields = vec![
                             ("id", Json::str(&view.claim.id)),
                             ("statement", Json::str(&view.claim.statement)),
-                        ])
+                        ];
+                        if let Some(title) = &view.claim.title {
+                            fields.push(("title", Json::str(title)));
+                        }
+                        Json::obj(fields)
                     })
                     .collect(),
             ),

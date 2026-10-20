@@ -12,7 +12,7 @@ import { CopyValue } from '@/components/copy-value';
 export const dynamic = 'force-dynamic';
 type Catalog = {
   modules: { id: string; title: string; parent?: string; claims: string[] }[];
-  claims: { id: string; statement: string }[];
+  claims: { id: string; title?: string; statement: string }[];
   cases: { id: string; description: string }[];
   checks: { id: string; description: string }[];
 };
@@ -114,7 +114,7 @@ export default async function ModelPage({ params, searchParams }: {
   const modules = [...catalogModules, ...(unassigned.length ? [{ id: '__unassigned', title: 'Unassigned Claims', claims: unassigned.map(c => c.id) }] : [])];
   const moduleId = claim ? modules.find(m => m.claims.includes(claim.id))?.id : typeof query.module === 'string' ? query.module : undefined;
   const module = modules.find(m => m.id === moduleId);
-  const title = (id: string) => catalog?.claims.find(c => c.id === id)?.statement ?? id;
+  const title = (id: string) => catalog?.claims.find(c => c.id === id)?.title ?? id;
   const values = new URLSearchParams({ environment });
   if (release) values.set("release", release.fingerprint);
   if (context || deployment || release) values.set('context', deployment ? `deployment:${deployment.deployment.id}` : contextValue);
@@ -152,7 +152,8 @@ export default async function ModelPage({ params, searchParams }: {
         {claimId && !claim ? <div className="panelEmpty"><h2>Claim not found in this model</h2><Link className="textLink" href={base}>Browse modules →</Link></div> : claim ? <>
           <h2 className="claimStatement">{title(claim.id)}</h2>
           <section className="claimHealthSummary" aria-label="Claim Health"><div><span className={`badge ${subject ? tones[status] : 'neutral'}`}>{subject ? labels[status] : 'Definition'}</span><span className="modelDetailMuted">{systemName}</span></div><p>{state?.explanation.summary || (subject ? 'No Health assessment is available for this system version.' : 'Browsing definitions. Open a deployment context to inspect Claim status and evidence.')}</p><span className="reviewSummary">Claim Review: <strong>{review?.assessment ?? 'missing'}</strong></span></section>
-          <nav className="claimSections" aria-label="Claim sections"><a href="#claim-cases">Cases & Checks</a><a href="#claim-review">Review</a><a href="#claim-history">History</a></nav>
+          <nav className="claimSections" aria-label="Claim sections"><a href="#claim-statement">Statement</a><a href="#claim-cases">Cases & Checks</a><a href="#claim-review">Review</a><a href="#claim-history">History</a></nav>
+          <section id="claim-statement" className="claimDetailSection"><h3>Statement</h3><p>{catalog?.claims.find(c => c.id === claim.id)?.statement ?? 'No statement available for this Claim.'}</p></section>
           {state && state.explanation.reasons.length > 0 && <section className="healthReasons" aria-label="Assessment reasons"><h3>Assessment reasons</h3><ul>{state.explanation.reasons.map((reason,i) => <li key={`${reason.code}:${i}`}><span>{reason.message}</span>{reason.check && <small>Check: {reason.check}</small>}</li>)}</ul></section>}
           <section id="claim-cases" className="claimDetailSection"><h3>Cases & Checks</h3><p className="modelDetailMuted">{subject ? 'Recorded results for this deployment. Results alone do not establish Claim status.' : 'Declared Cases and Checks for this model.'}</p>{claim.cases.map(id => <article className="caseCard" key={id}><div className="caseHeading"><span className="fieldLabel">CASE</span><h4>{catalog?.cases.find(c => c.id === id)?.description ?? id}</h4></div>{claim.bindings.filter(b => b.case === id).map(b => {
             const coverage = state?.explanation.coverage.find(c => c.check === b.check && c.case === id);

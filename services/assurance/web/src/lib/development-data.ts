@@ -93,7 +93,7 @@ export function developmentRead(project: string, path: string): unknown {
   const catalog = {
     modules: [...new Set(claims.map(c => c.module.split('/')[0]))].map(id => ({ id, title: id, claims: claims.filter(c => c.module === id).map(c => c.id) })).concat(
       [...new Set(claims.map(c => c.module).filter(id => id.includes('/')))].map(id => ({ id, title: id.split('/')[1], parent: id.split('/')[0], claims: claims.filter(c => c.module === id).map(c => c.id) }))),
-    claims: claims.map(c => ({ id: c.id, statement: c.statement })),
+    claims: claims.map(c => ({ id: c.id, title: c.title, statement: c.statement })),
     cases: claims.map(c => ({ id: c.case, description: c.case.replaceAll('-', ' ') })),
     checks: claims.map(c => ({ id: c.check, description: c.method })),
   };

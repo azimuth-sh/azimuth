@@ -281,6 +281,7 @@ impl<'a> SpecParser<'a> {
 
         let mut i = start + 1;
         let mut criticality = None;
+        let mut title = None;
         let mut over = None;
         while i < lines.len() {
             let trimmed = lines[i].trim();
@@ -289,7 +290,22 @@ impl<'a> SpecParser<'a> {
                 break;
             }
             let ln = i + 1;
-            if let Some(value) = trimmed.strip_prefix("Criticality:") {
+            if let Some(value) = trimmed.strip_prefix("Title:") {
+                let value = value.trim();
+                if title.is_some() {
+                    self.errors
+                        .push(Diag::at(self.path, ln, "`Title:` is declared twice"));
+                }
+                if value.is_empty() || value.chars().count() > 120 {
+                    self.errors.push(Diag::expecting(
+                        self.path,
+                        ln,
+                        "invalid Claim title",
+                        "1 to 120 characters on one line",
+                    ));
+                }
+                title = Some(value.to_string());
+            } else if let Some(value) = trimmed.strip_prefix("Criticality:") {
                 match Criticality::parse(value.trim()) {
                     Some(c) => criticality = Some(c),
                     None => self.errors.push(Diag::expecting(
@@ -315,7 +331,7 @@ impl<'a> SpecParser<'a> {
                     self.path,
                     ln,
                     format!("unknown label `{label}:` on an invariant"),
-                    "Criticality: or Over:",
+                    "Title:, Criticality: or Over:",
                 ));
             } else {
                 self.errors.push(Diag::expecting(
@@ -341,6 +357,7 @@ impl<'a> SpecParser<'a> {
 
         self.claims.push(Claim {
             id: id.clone(),
+            title,
             criticality,
             statement,
             cases: vec![Case {
@@ -385,6 +402,7 @@ impl<'a> SpecParser<'a> {
 
         let mut i = start + 1;
         let mut criticality = None;
+        let mut title = None;
         let mut saw_criticality = false;
 
         // Labelled lines sit directly under the heading and end at the first blank line.
@@ -395,7 +413,23 @@ impl<'a> SpecParser<'a> {
                 break;
             }
             let ln = i + 1;
-            if let Some(value) = trimmed.strip_prefix("Criticality:") {
+            if let Some(value) = trimmed.strip_prefix("Title:") {
+                let value = value.trim();
+                if title.is_some() {
+                    self.errors
+                        .push(Diag::at(self.path, ln, "`Title:` is declared twice"));
+                }
+                if value.is_empty() || value.chars().count() > 120 {
+                    self.errors.push(Diag::expecting(
+                        self.path,
+                        ln,
+                        "invalid Claim title",
+                        "1 to 120 characters on one line",
+                    ));
+                }
+                title = Some(value.to_string());
+                i += 1;
+            } else if let Some(value) = trimmed.strip_prefix("Criticality:") {
                 let value = value.trim();
                 if saw_criticality {
                     self.errors
@@ -417,7 +451,7 @@ impl<'a> SpecParser<'a> {
                     self.path,
                     ln,
                     format!("unknown label `{label}:` on a claim"),
-                    "Criticality:",
+                    "Title: or Criticality:",
                 ));
                 i += 1;
             } else {
@@ -479,6 +513,7 @@ impl<'a> SpecParser<'a> {
 
         self.claims.push(Claim {
             id,
+            title,
             criticality,
             statement,
             cases,

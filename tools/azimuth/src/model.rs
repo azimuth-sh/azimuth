@@ -152,6 +152,7 @@ impl Domain {
 #[derive(Debug, Clone)]
 pub struct Claim {
     pub id: String,
+    pub title: Option<String>,
     /// `None` is the `unclassified` finding, not a parse error: a missing *declaration* is a
     /// semantic gap, while an unrecognized *construct* fails the parse.
     pub criticality: Option<Criticality>,
@@ -2504,7 +2505,7 @@ impl Model {
                                 ])
                             })
                             .collect();
-                        Json::obj(vec![
+                        let mut fields = vec![
                             ("id", Json::str(&r.id)),
                             (
                                 "criticality",
@@ -2518,7 +2519,11 @@ impl Model {
                             ("domain", Json::str(r.domain.name())),
                             ("over", r.over.as_ref().map(Json::str).unwrap_or(Json::Null)),
                             ("cases", Json::Arr(cases)),
-                        ])
+                        ];
+                        if let Some(title) = &r.title {
+                            fields.push(("title", Json::str(title)));
+                        }
+                        Json::obj(fields)
                     })
                     .collect();
                 Json::obj(vec![

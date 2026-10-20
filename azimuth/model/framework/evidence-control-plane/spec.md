@@ -1,6 +1,7 @@
 # Spec: framework/evidence-control-plane
 
 ## Claim: claims-own-governance-and-cases-own-addressability
+Title: Claims own governance and cases own addressability
 Criticality: routine
 
 Azimuth SHALL govern one product proposition as a Claim while retaining each normative
@@ -12,6 +13,7 @@ condition/outcome clause as an addressable Case within that Claim.
 - Additional condition or outcome: only the Claim owns criticality, production realization and total Judgment
 
 ## Claim: normative-text-remains-author-owned
+Title: Normative text remains author owned
 Criticality: routine
 
 Claim and Case bodies remain authored normative content whose meaning belongs to human and agent
@@ -28,6 +30,7 @@ Natural-language keywords, translations, tables, diagrams, code fences and domai
 gain parser-defined meaning merely by appearing in a normative body.
 
 ## Claim: checks-bind-atomic-outcomes-to-cases
+Title: Checks bind atomic outcomes to cases
 Criticality: routine
 
 Azimuth SHALL treat a Check as a deliberately enrolled verification method whose atomic outcome
@@ -42,6 +45,7 @@ bears on Cases only through explicit Evidence Bindings.
 - Required outcome: Azimuth represents them as separate Checks
 
 ## Claim: credibility-separates-method-from-applicability
+Title: Credibility separates method from applicability
 Criticality: routine
 
 Azimuth SHALL qualify shared Check-method credibility independently from the applicability of that
@@ -53,6 +57,7 @@ method to each Evidence Binding.
 - Additional condition or outcome: every binding retains its own Applicability Decision
 
 ## Claim: runs-contain-subject-bound-execution
+Title: Runs contain subject bound execution
 Criticality: routine
 
 Azimuth SHALL represent a Run as a bounded execution envelope over an exact Subject that can
@@ -67,6 +72,7 @@ contain Check executions, Challenger executions or both.
 - Required outcome: the Run contains a Challenge Result rather than product evidence
 
 ## Claim: challenges-target-semantic-decisions
+Title: Challenges target semantic decisions
 Criticality: routine
 
 Azimuth SHALL target each Challenge Result at one exact Method Qualification, Applicability
@@ -78,6 +84,7 @@ the result.
 - Required outcome: Azimuth records a violated Observation instead of reclassifying it as a Challenge Result
 
 ## Claim: core-owns-semantics-and-adapters-own-providers
+Title: Core owns semantics and adapters own providers
 Criticality: routine
 
 Azimuth SHALL keep model traversal, semantic target selection and normalized-result validation in

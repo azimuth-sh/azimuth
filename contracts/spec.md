@@ -14,6 +14,7 @@ Optional non-normative ownership prose.
 Non-empty module vocabulary definition in free-form Markdown. Repeat for each term.
 
 ## Claim: <claim-id>
+Title: <optional concise authored title>
 Criticality: critical | standard | routine
 
 Non-empty free-form normative Markdown stating the Claim.
@@ -55,6 +56,10 @@ normative condition/outcome clause within that Claim's predicate. It is addressa
 Run selection, Observations and Challenger impact but is not independently governed.
 
 Claims and Cases have stable project-wide lower-kebab IDs in separate typed namespaces. Module membership and Case parent relationships are authored separately. Evidence Bindings target stable Case IDs because one result must not appear to exhaust the broader Claim.
+
+## Title
+
+`Title:` is optional display metadata, declared once in the header of a Claim or site-domain Invariant. It contains 1–120 characters on one line. Titles appear in catalogs, lists and navigation; the normative statement remains authoritative. Titles do not participate in Claim or Case semantic fingerprints. An untitled Claim is displayed by its stable ID, never by an automatically generated summary. Editing only a title does not invalidate the normative Claim definition used by Claim Reviews. Titles do participate in the complete model export and model revision, so each immutable catalog remains bound to its authored display metadata.
 
 ## Identity
 

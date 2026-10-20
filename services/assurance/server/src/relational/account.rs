@@ -234,6 +234,7 @@ fn catalog() -> Schema {
             list(object(vec![
                 ("id", Schema::Text),
                 ("statement", Schema::Text),
+                ("title", Schema::Text),
             ])),
         ),
         (

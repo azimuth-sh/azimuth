@@ -1,6 +1,7 @@
 # Spec: framework/change-lifecycle
 
 ## Claim: framework-only-completion
+Title: Framework only completion
 Criticality: routine
 
 A framework-only change SHALL distinguish a deliberate absence of accepted-intent change from an

@@ -148,20 +148,24 @@ pub(crate) async fn initialize(pool: &PgPool) -> Result<(), sqlx::Error> {
         )
         .as_bytes(),
     );
-    let existing: Option<String> =
-        sqlx::query_scalar("SELECT signature FROM assurance_storage_schema WHERE version=1")
-            .fetch_optional(&mut *tx)
-            .await?;
-    if let Some(existing) = existing {
-        if existing != signature {
+    let existing: Option<(i32, String)> = sqlx::query_as(
+        "SELECT version,signature FROM assurance_storage_schema ORDER BY version DESC LIMIT 1",
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+    let upgrading = matches!(&existing, Some((1, value)) if value == "5f17f63dbf8b92e333cdc8ab106cf0cb0d5c6d4314c6a05533fe99af2042d598");
+    if let Some((version, existing)) = &existing {
+        if !upgrading && (*version != 2 || existing != &signature) {
             return Err(invalid(
                 "relational schema changed without an explicit schema version",
             ));
         }
-        tx.commit().await?;
-        return Ok(());
+        if !upgrading {
+            tx.commit().await?;
+            return Ok(());
+        }
     }
-    sqlx::query("CREATE TABLE assurance_records (id bigserial PRIMARY KEY, kind text NOT NULL, project text NOT NULL, record_key text NOT NULL, UNIQUE(kind,project,record_key))").execute(&mut *tx).await?;
+    sqlx::query("CREATE TABLE IF NOT EXISTS assurance_records (id bigserial PRIMARY KEY, kind text NOT NULL, project text NOT NULL, record_key text NOT NULL, UNIQUE(kind,project,record_key))").execute(&mut *tx).await?;
     for (id, node) in reg.nodes.iter().enumerate() {
         let mut columns = vec![
             "_record_id bigint NOT NULL REFERENCES assurance_records(id)".to_string(),
@@ -196,12 +200,26 @@ pub(crate) async fn initialize(pool: &PgPool) -> Result<(), sqlx::Error> {
             columns.push(format!("FOREIGN KEY(_record_id,_parent) REFERENCES {}(_record_id,_node) DEFERRABLE INITIALLY DEFERRED",quote(&reg.nodes[parent].name)));
         }
         sqlx::query(&format!(
-            "CREATE TABLE {} ({})",
+            "CREATE TABLE IF NOT EXISTS {} ({})",
             quote(&node.name),
             columns.join(",")
         ))
         .execute(&mut *tx)
         .await?;
+        if upgrading {
+            if let Schema::Object(fields) = &node.schema {
+                if fields.iter().any(|(field, _)| *field == "title")
+                    && node.name == "assurance_catalog_claims_item"
+                {
+                    sqlx::query(&format!(
+                        "ALTER TABLE {} ADD COLUMN f_title text",
+                        quote(&node.name)
+                    ))
+                    .execute(&mut *tx)
+                    .await?;
+                }
+            }
+        }
         assert_eq!(
             id,
             reg.nodes
@@ -212,10 +230,10 @@ pub(crate) async fn initialize(pool: &PgPool) -> Result<(), sqlx::Error> {
         );
     }
     // Ref readers may recurse, so their shared dispatcher must exist before SQL bodies are checked.
-    sqlx::query("CREATE FUNCTION assurance_record(k text,p text,r text) RETURNS jsonb LANGUAGE plpgsql STABLE AS $$ BEGIN RETURN NULL; END $$").execute(&mut *tx).await?;
+    sqlx::query("CREATE OR REPLACE FUNCTION assurance_record(k text,p text,r text) RETURNS jsonb LANGUAGE plpgsql STABLE AS $$ BEGIN RETURN NULL; END $$").execute(&mut *tx).await?;
     for node in reg.nodes.iter().rev() {
         let expression = read_expression(reg, node);
-        let sql = format!("CREATE FUNCTION {}(rid bigint,n bigint) RETURNS jsonb LANGUAGE sql STABLE AS $$ SELECT CASE WHEN t._is_null THEN 'null'::jsonb ELSE {expression} END FROM {} t WHERE t._record_id=rid AND t._node=n $$",quote(&format!("read_{}",node.name)),quote(&node.name));
+        let sql = format!("CREATE OR REPLACE FUNCTION {}(rid bigint,n bigint) RETURNS jsonb LANGUAGE sql STABLE AS $$ SELECT CASE WHEN t._is_null THEN 'null'::jsonb ELSE {expression} END FROM {} t WHERE t._record_id=rid AND t._node=n $$",quote(&format!("read_{}",node.name)),quote(&node.name));
         sqlx::query(&sql).execute(&mut *tx).await?;
     }
     let cases = reg
@@ -246,7 +264,7 @@ pub(crate) async fn initialize(pool: &PgPool) -> Result<(), sqlx::Error> {
                 })
                 .collect::<Vec<_>>()
                 .join(" ");
-            sqlx::query(&format!("CREATE FUNCTION {}(rid bigint,f text) RETURNS jsonb LANGUAGE sql STABLE AS $$ SELECT CASE f {cases} ELSE NULL END FROM {} t WHERE t._record_id=rid AND t._node=0 $$",quote(&format!("field_{}",node.name)),quote(&node.name))).execute(&mut *tx).await?;
+            sqlx::query(&format!("CREATE OR REPLACE FUNCTION {}(rid bigint,f text) RETURNS jsonb LANGUAGE sql STABLE AS $$ SELECT CASE f {cases} ELSE NULL END FROM {} t WHERE t._record_id=rid AND t._node=0 $$",quote(&format!("field_{}",node.name)),quote(&node.name))).execute(&mut *tx).await?;
             field_cases.push(format!(
                 "WHEN {} THEN {}(id,f)",
                 literal(kind),
@@ -259,8 +277,8 @@ pub(crate) async fn initialize(pool: &PgPool) -> Result<(), sqlx::Error> {
             ));
         }
     }
-    sqlx::query(&format!("CREATE FUNCTION assurance_record_field(k text,p text,r text,f text) RETURNS jsonb LANGUAGE sql STABLE AS $$ SELECT CASE k {} ELSE NULL END FROM assurance_records WHERE kind=k AND project=p AND record_key=r $$",field_cases.join(" "))).execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO assurance_storage_schema(version,signature) VALUES(1,$1)")
+    sqlx::query(&format!("CREATE OR REPLACE FUNCTION assurance_record_field(k text,p text,r text,f text) RETURNS jsonb LANGUAGE sql STABLE AS $$ SELECT CASE k {} ELSE NULL END FROM assurance_records WHERE kind=k AND project=p AND record_key=r $$",field_cases.join(" "))).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO assurance_storage_schema(version,signature) VALUES(2,$1)")
         .bind(signature)
         .execute(&mut *tx)
         .await?;
@@ -707,4 +725,52 @@ pub(crate) async fn store(
         pending.extend(writer.pending);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod title_upgrade_tests {
+    use super::*;
+    use testcontainers_modules::{postgres::Postgres, testcontainers::runners::AsyncRunner};
+
+    #[tokio::test]
+    async fn catalog_title_upgrade_preserves_retained_records(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let postgres = Postgres::default().start().await?;
+        let port = postgres.get_host_port_ipv4(5432).await?;
+        let pool = crate::connect(&format!(
+            "postgres://postgres:postgres@127.0.0.1:{port}/postgres"
+        ))
+        .await?;
+        crate::migrate(&pool).await?;
+        let retained = serde_json::json!({"modules":[], "claims":[{"id":"safe","statement":"The value remains safe."}], "cases":[], "checks":[]});
+        let mut tx = pool.begin().await?;
+        store(&mut *tx, "catalog", "example", "retained", &retained).await?;
+        tx.commit().await?;
+        sqlx::query("ALTER TABLE assurance_catalog_claims_item DROP COLUMN f_title CASCADE")
+            .execute(&pool)
+            .await?;
+        sqlx::query("DELETE FROM assurance_storage_schema")
+            .execute(&pool)
+            .await?;
+        sqlx::query("INSERT INTO assurance_storage_schema VALUES(1,'5f17f63dbf8b92e333cdc8ab106cf0cb0d5c6d4314c6a05533fe99af2042d598')").execute(&pool).await?;
+        initialize(&pool).await?;
+        initialize(&pool).await?;
+        assert_eq!(
+            load(&pool, "catalog", "example", "retained").await?,
+            Some(retained)
+        );
+        let titled = serde_json::json!({"modules":[], "claims":[{"id":"safe","title":"Values stay safe", "statement":"The value remains safe."}], "cases":[], "checks":[]});
+        let mut tx = pool.begin().await?;
+        store(&mut *tx, "catalog", "example", "titled", &titled).await?;
+        tx.commit().await?;
+        assert_eq!(
+            load(&pool, "catalog", "example", "titled").await?,
+            Some(titled)
+        );
+        let version: i32 = sqlx::query_scalar("SELECT max(version) FROM assurance_storage_schema")
+            .fetch_one(&pool)
+            .await?;
+        assert_eq!(version, 2);
+        Ok(())
+    }
 }
