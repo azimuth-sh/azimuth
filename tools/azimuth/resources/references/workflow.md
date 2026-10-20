@@ -110,7 +110,7 @@ The previous alpha hashed/string work references are replaced without aliases or
 
 Candidate preparation supplies the complete `candidate-authority` and an `assurance-snapshot` output. The snapshot retains exactly `{project, model_revision, authority, reviews, bundles}` and must match the prepared candidate. The update derives and pins the assurance inventory and expands tasks atomically; there is no `inventory-assurance-targets` agent task or authored inventory. Claim Review targets are declared Claims, independent of execution Subject selection. Fresh authority Claims contain an explicit Challenger array: an empty array establishes no declared Challenger work; a missing historical field establishes no such absence. Derivation creates no review, Observation, human decision or ASS publication.
 
-Check execution and Claim Health require explicitly selected exact Subjects. A preparation or subsequent review update may additionally supply an output of kind `assurance-subject-selection`. Its JSON has exactly:
+Revision 9 requires explicit exact Subjects for local Check execution; its `claims` selection may be empty because deployment Claim Status is computed after rollout. Earlier workflow revisions also selected exact Subjects for authored Claim Health. A preparation or subsequent review update may additionally supply an output of kind `assurance-subject-selection`. Its JSON has exactly:
 
 ```json
 {
@@ -131,7 +131,7 @@ References may include `repository`. Each resolves to a real native Run-protocol
 
 Selections may be absent or partial. `workflow next` reports missing selections in `required_inputs`, independently of its eligible Claim Review tasks. Each entry names kind `assurance-subject-selection`, typed target `{kind: check | claim, id}` and explanatory reason. Execution tasks exist only for selected Check/Subject pairs. A Claim Health task exists only when the Claim has an explicit selected Subject and every declared Check–Case contribution has a matching execution target on that same Subject. Incomplete selections leave the requirement visible and prevent registration. Empty eligible work is not successful assurance.
 
-A source Run and a deployment Run are different Subjects. The current native Claim Health contract does not compose their evidence into an invented common Subject. Matching candidate revision is insufficient. Cross-Subject composition needs a separately agreed contract; expose this limitation rather than silently joining evidence.
+A source Run and a deployment Run are different Subjects. Historical authored Claim Health records do not compose their evidence into a common Subject, and matching candidate revision alone is insufficient. Current deployment Claim Status instead uses the explicit deployment applicability contract: exact release/build lineage, observed deployment composition, effective contexts, required unit coverage and fresh monitoring. These validated relations permit applicability without rewriting a Run's actual Subject.
 
 The inventory is internal portable workflow metadata: Claim definitions, selected execution targets, derived contributions, complete Claim Health targets, and pending Subject selections. A corrective candidate preserves prior generations and immutable results. New derivation cannot rewrite any completed task definition. Within a candidate, selections can be completed explicitly while preserving completed work. Snapshots remain actual retained inputs and native currentness rules still apply.
 
