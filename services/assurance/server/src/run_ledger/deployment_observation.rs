@@ -209,19 +209,8 @@ pub(super) async fn record(
         let identity=core_json(json!({"environment":environment,"release":release,"configuration":config,"rollout_id":o["rollout_id"],"applied_revision":o["applied_revision"]}).to_string().as_bytes())?;
         let deployment_fp = run::canonical_fingerprint(&identity).map_err(LedgerError::invalid)?;
         let deployment_id = format!("observed-{}", &deployment_fp[7..]);
-        let native = run::Subject::Deployment {
-            environment: environment.clone(),
-            deployment: deployment_id.clone(),
-            deployment_fingerprint: config.into(),
-            artifacts: expected_components
-                .iter()
-                .map(|c| run::ArtifactState {
-                    id: c["id"].as_str().unwrap().into(),
-                    digest: c["digest"].as_str().unwrap().into(),
-                })
-                .collect(),
-        };
-        let subject = json!({"kind":"deployment","environment":environment,"deployment":deployment_id,"deployment_fingerprint":config,"artifacts":expected_components.iter().map(|c|json!({"id":c["id"],"digest":c["digest"]})).collect::<Vec<_>>()});
+        let (subject, native) =
+            observed_subject(&environment, &deployment_id, config, expected_components)?;
         observed_deployment = Some(deployment_id.clone());
         let deployment = json!({"id":deployment_id,"environment":environment,"configuration_fingerprint":config,"artifacts":seen,"subject":subject,"subject_fingerprint":run::subject_fingerprint(&native)});
         release::insert_deployment(&mut tx, &project, release, &deployment, &publisher).await?;
@@ -337,5 +326,63 @@ mod tests {
         missing.as_object_mut().unwrap().remove("image");
         assert!(validate_components(&json!([missing])).is_err());
         assert!(validate_components(&json!(["not an object"])).is_err());
+    }
+}
+
+fn observed_subject(
+    environment: &str,
+    deployment: &str,
+    configuration: &str,
+    components: &[Value],
+) -> Result<(Value, run::Subject), LedgerError> {
+    let mut artifacts: Vec<Value> = components
+        .iter()
+        .map(|component| json!({"id":component["id"],"digest":component["digest"]}))
+        .collect();
+    artifacts.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
+    let subject = json!({"kind":"deployment","environment":environment,"deployment":deployment,"deployment_fingerprint":configuration,"artifacts":artifacts});
+    let native = run::subject_from_json(&core_json(subject.to_string().as_bytes())?)
+        .map_err(LedgerError::invalid)?;
+    Ok((subject, native))
+}
+
+#[cfg(test)]
+mod subject_tests {
+    use super::*;
+
+    #[test]
+    fn release_component_order_does_not_change_the_valid_deployment_subject() {
+        let digest = format!("sha256:{}", "a".repeat(64));
+        let components = [
+            json!({"id":"web","digest":digest}),
+            json!({"id":"api","digest":digest}),
+            json!({"id":"gateway","digest":digest}),
+        ];
+        let (subject, native) = observed_subject("production", "rollout", &digest, &components)
+            .unwrap_or_else(|error| panic!("{}", error.detail));
+        let reordered = [
+            components[2].clone(),
+            components[0].clone(),
+            components[1].clone(),
+        ];
+        let (other, other_native) = observed_subject("production", "rollout", &digest, &reordered)
+            .unwrap_or_else(|error| panic!("{}", error.detail));
+        assert_eq!(subject, other);
+        assert_eq!(
+            run::subject_fingerprint(&native),
+            run::subject_fingerprint(&other_native)
+        );
+        let parsed = run::subject_from_json(
+            &core_json(subject.to_string().as_bytes())
+                .unwrap_or_else(|error| panic!("{}", error.detail)),
+        )
+        .unwrap();
+        assert_eq!(
+            run::subject_fingerprint(&native),
+            run::subject_fingerprint(&parsed)
+        );
+        assert_eq!(subject["artifacts"][0]["id"], "api");
+        assert_eq!(subject["artifacts"][1]["id"], "gateway");
+        assert_eq!(subject["artifacts"][2]["id"], "web");
     }
 }
