@@ -3696,6 +3696,22 @@ fn local_check(check: &Json, authored_health: bool) -> bool {
             != Some("deployment")
 }
 
+fn portable_assurance_reference(
+    reference: &Json,
+    locations: &BTreeMap<String, PathBuf>,
+) -> Result<Json, String> {
+    if reference.get("fingerprint").is_some() {
+        check_ref(reference, locations)?;
+    } else {
+        ref_shape(reference, false)?;
+    }
+    let mut portable = reference.clone();
+    if let Json::Obj(fields) = &mut portable {
+        fields.retain(|(key, _)| key != "fingerprint");
+    }
+    Ok(portable)
+}
+
 fn assurance_definition(
     state: &Json,
     snapshot_ref: &Json,
@@ -3707,7 +3723,8 @@ fn assurance_definition(
         .get("parameters")
         .ok_or("automatic assurance expansion requires a pinned template")?
         .clone();
-    let snapshot = read(&resolve(snapshot_ref, locations)?)?;
+    let snapshot_ref = portable_assurance_reference(snapshot_ref, locations)?;
+    let snapshot = read(&resolve(&snapshot_ref, locations)?)?;
     validate_snapshot(&snapshot)?;
     let authority = snapshot.get("authority").unwrap();
     let current = parameters.get("assurance").unwrap();
@@ -3722,7 +3739,7 @@ fn assurance_definition(
     let mut selected_claims = Vec::new();
     let mut subject_inputs = Vec::new();
     if let Some(reference) = selection_ref {
-        ref_shape(reference, false)?;
+        portable_assurance_reference(reference, locations)?;
         if text(reference, "kind")? != "assurance-subject-selection" {
             return Err("expected assurance-subject-selection reference".into());
         }
@@ -3887,7 +3904,7 @@ fn assurance_definition(
             "model_revision",
             snapshot.get("model_revision").unwrap().clone(),
         ),
-        ("snapshot", portable_ref(snapshot_ref)),
+        ("snapshot", snapshot_ref),
         ("methods", Json::Arr(methods)),
         (
             "claim_definitions",
@@ -4400,5 +4417,42 @@ mod deployment_status_workflow_tests {
             )]),
         )]);
         assert!(requires_authored_health(&historical));
+    }
+    #[test]
+    fn candidate_reference_materialization_preserves_identity_and_rejects_changed_content() {
+        let directory = std::env::temp_dir().join(format!(
+            "azimuth-candidate-references-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&directory).unwrap();
+        let directory = fs::canonicalize(directory).unwrap();
+        let locations = BTreeMap::from([(String::new(), directory.clone())]);
+        for kind in [
+            "candidate-authority",
+            "assurance-snapshot",
+            "assurance-subject-selection",
+        ] {
+            let path = directory.join(kind);
+            fs::write(&path, b"{\"selection\":\"exact\"}").unwrap();
+            let portable = Json::obj(vec![("kind", Json::str(kind)), ("ref", Json::str(kind))]);
+            let materialized = materialize(&portable, &locations).unwrap();
+            assert_eq!(
+                portable_assurance_reference(&materialized, &locations).unwrap(),
+                portable
+            );
+            assert_eq!(
+                portable_assurance_reference(&portable, &locations).unwrap(),
+                portable
+            );
+            fs::write(&path, b"{\"selection\":\"changed\"}").unwrap();
+            assert!(portable_assurance_reference(&materialized, &locations)
+                .unwrap_err()
+                .contains("record changed"));
+        }
+        fs::remove_dir_all(directory).unwrap();
     }
 }
