@@ -69,8 +69,9 @@ def validate_sources(config):
         identities.add(source["id"]); targets.add(target)
         require(source["namespace"] in config["namespaces"] and source["project"] in config["projects"], "context source outside approved namespace/project")
         require(type(source["port"]) is int and source["port"] == 9001 and source["path"] == "/internal/verification-context", "context scraping requires approved telemetry port and route")
-        refs = source["contracts"]
-        require(isinstance(refs, list) and 0 < len(refs) <= 32 and all(isinstance(value, str) and SHA.fullmatch(value) for value in refs) and len(refs) == len(set(refs)), "explicit unique context contract fingerprints required")
+        contracts = source["contracts"]
+        require(isinstance(contracts, list) and 0 < len(contracts) <= 32, "explicit full reviewed context contracts required")
+        registered_contracts({"records": [{"contract": contract} for contract in contracts]}, [contract.get("fingerprint") for contract in contracts])
         require(isinstance(source["token_file"], str) and source["token_file"].startswith("/credentials/") and ".." not in Path(source["token_file"]).parts, "context publisher credential must be separately mounted")
     return sources
 
@@ -88,7 +89,7 @@ class KubernetesContexts:
     def get(self, path):
         return request_json(self.origin + path, self.token_file.read_text().strip(), self.ca)[0]
 
-    def instances(self, source, expected_digest):
+    def instances(self, source, expected_digest=None):
         namespace = quote(source["namespace"], safe="")
         deployment = self.get("/apis/apps/v1/namespaces/" + namespace + "/deployments/" + quote(source["deployment"], safe=""))
         selector = deployment["spec"]["selector"]
@@ -113,7 +114,7 @@ class KubernetesContexts:
             container = matches[0]
             instance = container.get("containerID", "")
             image = container.get("imageID", "").removeprefix("docker-pullable://")
-            require(isinstance(instance, str) and INSTANCE.fullmatch(instance) and instance not in seen and image.endswith("@" + expected_digest), "container lifetime or deployed image differs")
+            require(isinstance(instance, str) and INSTANCE.fullmatch(instance) and instance not in seen and re.fullmatch(r"[^\s@]+@sha256:[0-9a-f]{64}", image) and (expected_digest is None or image.endswith("@" + expected_digest)), "container lifetime or deployed image differs")
             seen.add(instance)
             address = str(ipaddress.ip_address(pod["status"]["podIP"]))
             require(address not in addresses, "ready replicas share an ambiguous Pod address")
@@ -159,45 +160,26 @@ def snapshot(source, instance, contracts):
     return {"captured_at_ms": int(time.time() * 1000), "instance": instance["instance"], "report": select_report(report, contracts)}, boot
 
 
-def current_state(origin, source, token):
-    endpoint = origin.rstrip("/") + "/v1/projects/" + quote(source["project"], safe="") + "/environments/" + quote(source["environment"], safe="")
-    selected = request_json(endpoint + "/deployment", token)[0]
-    observed = request_json(endpoint + "/observations", token)[0]
-    require(observed.get("fresh") is True and observed.get("deployment_id") == selected["deployment"]["id"] and observed["observation"]["state"] == "complete", "current deployment is not freshly and completely observed")
-    return selected, observed
-
-
-def collect(origin, source, kube, token):
-    selected, observed = current_state(origin, source, token)
-    deployment = selected["deployment"]
-    require(SHA.fullmatch(deployment["subject_fingerprint"]) and deployment["subject"]["kind"] == "deployment" and deployment["environment"] == source["environment"], "selected deployment Subject is invalid")
-    artifacts = {item["id"]: item["digest"] for item in deployment["subject"]["artifacts"]}
-    require(source["component"] in artifacts, "approved component is not deployed")
-    components = [item for item in observed["observation"]["components"] if item["name"] == source["component"]]
-    require(len(components) == 1 and components[0]["ready"] is True and isinstance(components[0].get("instances"), list), "component process coverage is not observed")
-    contracts = registered_contracts(request_json(origin.rstrip("/") + "/v1/projects/" + quote(source["project"], safe="") + "/context-contracts", token)[0], source["contracts"])
-    initial = kube.instances(source, artifacts[source["component"]])
-    require({item["instance"] for item in initial["instances"]} == set(components[0]["instances"]), "ready replicas differ from deployment observation")
+def collect(origin, source, kube, token=None):
+    contracts = registered_contracts({"records": [{"contract": item} for item in source["contracts"]]}, [item["fingerprint"] for item in source["contracts"]])
+    initial = kube.instances(source)
     before = {item["instance"]: snapshot(source, item, contracts) for item in initial["instances"]}
     after = {item["instance"]: snapshot(source, item, contracts) for item in initial["instances"]}
-    require(kube.instances(source, artifacts[source["component"]]) == initial, "Pod lifetime, ownership or readiness changed during capture")
-    final_selected, final_observed = current_state(origin, source, token)
-    require(final_selected["deployment"] == deployment and final_observed["deployment_id"] == observed["deployment_id"], "selected deployment changed during capture")
-    final_components = [item for item in final_observed["observation"]["components"] if item["name"] == source["component"]]
-    require(len(final_components) == 1 and set(final_components[0].get("instances", [])) == set(before), "observed process coverage changed during capture")
-    observed_at = final_observed["observation"].get("observed_at_ms")
-    lifetime = final_observed["observation"].get("valid_for_seconds")
-    require(type(observed_at) is int and type(lifetime) is int and 15 <= lifetime <= 300, "deployment observation validity is missing")
+    require(kube.instances(source) == initial, "Pod lifetime, ownership or readiness changed during capture")
     captures = []
-    for instance in sorted(before):
+    for item in initial["instances"]:
+        instance = item["instance"]
         first, first_boot = before[instance]
         last, last_boot = after[instance]
         require(first_boot == last_boot and canonical_json(first["report"]) == canonical_json(last["report"]), "application boot or effective context changed during capture")
-        require(abs(last["captured_at_ms"] - observed_at) <= lifetime * 1000, "context capture is outside current deployment observation window")
-        captures.append({"kind": "deployment", "activity": None, "run": None, "bundle_fingerprint": None,
-                         "subject_fingerprint": deployment["subject_fingerprint"], "component": source["component"],
-                         "instance": instance, "started_at_ms": first["captured_at_ms"], "finished_at_ms": last["captured_at_ms"],
-                         "before": first, "after": last})
+        capture = {"component": source["component"], "instance": instance,
+                   "started_at_ms": first["captured_at_ms"], "finished_at_ms": last["captured_at_ms"],
+                   "before": first, "after": last}
+        captures.append({"format": "azimuth-target-observation", "version": 1, "kind": "context",
+                         "source": source["id"], "execution_id": fingerprint({"capture": capture, "boot": first_boot}),
+                         "environment": source["environment"], "started_at_ms": capture["started_at_ms"],
+                         "finished_at_ms": capture["finished_at_ms"], "targets": [{"component": source["component"], "image": item["image"], "instance": instance}],
+                         "check": None, "capture": capture})
     return captures
 
 

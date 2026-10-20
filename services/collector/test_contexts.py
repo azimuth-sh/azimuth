@@ -12,7 +12,8 @@ import time
 import unittest
 from urllib.parse import urlsplit
 
-from services.collector.contexts import KubernetesContexts, collect, fingerprint, initialize, publish, stage, validate_sources
+from services.collector.contexts import KubernetesContexts, collect, fingerprint, validate_sources
+from services.collector.collector import initialize, publish_targets, stage_targets, target_observation
 from services.reconciler.reconciler import KubernetesArgo, fingerprint as template_fingerprint
 
 DIGEST = "sha256:" + "a" * 64
@@ -95,7 +96,7 @@ class Cluster:
                 state.uploads.append(body)
                 if state.fail_upload: self.send_response(503); self.end_headers(); return
                 self.send_response(201); self.end_headers()
-                self.wfile.write(json.dumps({"fingerprint": fingerprint(json.loads(body)["capture"])}).encode())
+                self.wfile.write(json.dumps({"fingerprint": fingerprint(json.loads(body)["observation"])}).encode())
         self.server = http.server.ThreadingHTTPServer(("0.0.0.0", 0), Handler)
         self.thread = threading.Thread(target=self.server.serve_forever)
         self.thread.start()
@@ -114,24 +115,28 @@ class ContextCollectionTests(unittest.TestCase):
         self.kube = KubernetesContexts(self.cluster.origin, self.token, ca=None)
         self.source = {"id": "contexts", "project": "example", "environment": "production", "namespace": "application",
                        "component": "component", "deployment": "application", "container": "application", "port": self.cluster.server.server_port,
-                       "path": "/internal/verification-context", "contracts": [self.cluster.contract["fingerprint"]], "token_file": str(self.publisher)}
+                       "path": "/internal/verification-context", "contracts": [self.cluster.contract], "token_file": str(self.publisher)}
 
     def tearDown(self):
         self.cluster.close(); self.directory.cleanup()
 
     def test_all_ready_owned_replicas_are_captured_without_credential_forwarding(self):
         captures = collect(self.cluster.origin, self.source, self.kube, "publisher-only")
-        self.assertEqual([item["instance"] for item in captures], ["containerd://process-1", "containerd://process-2"])
-        for capture in captures:
+        self.assertEqual([item["capture"]["instance"] for item in captures], ["containerd://process-1", "containerd://process-2"])
+        for observation in captures:
+            self.assertNotIn("subject_fingerprint", observation)
+            self.assertEqual(observation["targets"][0]["image"], IMAGE)
+            capture = observation["capture"]
             self.assertNotIn("trusted", capture)
             self.assertEqual(capture["before"]["instance"], capture["after"]["instance"])
             self.assertEqual(capture["before"]["report"], capture["after"]["report"])
             self.assertLessEqual(capture["started_at_ms"], capture["finished_at_ms"])
+        self.assertFalse(any(path.startswith("/v1/") for path, _ in self.cluster.requests))
         for path, token in self.cluster.requests:
             self.assertEqual(token, None if path.startswith("/internal/") else "Bearer publisher-only" if path.startswith("/v1/") else "Bearer kube-only")
 
     def test_races_unready_replicas_ownership_and_context_fail_closed(self):
-        for mode in ("restart", "unready", "wrong-owner", "duplicate-instance", "pagination", "context-change", "boot-change", "missing-boot", "unavailable", "stale"):
+        for mode in ("restart", "unready", "wrong-owner", "duplicate-instance", "pagination", "context-change", "boot-change", "missing-boot", "unavailable"):
             with self.subTest(mode=mode):
                 self.cluster.mode = mode; self.cluster.pod_reads = 0; self.cluster.context_reads = {}
                 with self.assertRaises((ValueError, __import__("urllib.error").error.HTTPError)):
@@ -140,16 +145,16 @@ class ContextCollectionTests(unittest.TestCase):
     def test_durable_context_retry_preserves_exact_bytes(self):
         captures = collect(self.cluster.origin, self.source, self.kube, "publisher-only")
         db = sqlite3.connect(":memory:"); initialize(db)
-        stage(db, self.source, captures)
+        stage_targets(db, "example", captures, token_file=str(self.publisher))
         self.cluster.fail_upload = True
-        with self.assertLogs(level="ERROR") as logs: publish(db, self.cluster.origin)
+        with self.assertLogs(level="ERROR") as logs: publish_targets(db, {"assurance_url": self.cluster.origin, "projects": {"example": {"token_file": str(self.publisher)}}})
         self.assertEqual(len(logs.output), 2)
-        self.assertEqual(db.execute("SELECT COUNT(*) FROM context_outbox").fetchone()[0], 2)
+        self.assertEqual(db.execute("SELECT COUNT(*) FROM target_outbox").fetchone()[0], 2)
         initial = list(self.cluster.uploads)
         self.cluster.fail_upload = False
-        publish(db, self.cluster.origin)
+        publish_targets(db, {"assurance_url": self.cluster.origin, "projects": {"example": {"token_file": str(self.publisher)}}})
         self.assertEqual(self.cluster.uploads[2:], initial)
-        self.assertEqual(db.execute("SELECT COUNT(*) FROM context_outbox").fetchone()[0], 0)
+        self.assertEqual(db.execute("SELECT COUNT(*) FROM target_outbox").fetchone()[0], 0)
         db.close()
 
     def test_config_allows_only_explicit_scoped_telemetry_sources(self):
