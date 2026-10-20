@@ -83,3 +83,11 @@ Depends on: design-review
 Owns: tools/azimuth/src/workflow_state.rs, tools/azimuth/resources/workflows/change-development.json, tools/azimuth/resources/references/workflow.md, tools/azimuth/resources/references/verification.md, tools/azimuth/resources/references/assurance-reviews.md, tools/azimuth/resources/skills/azimuth-apply/SKILL.md, contracts/workflow.md
 Objective: Remove mandatory authored exact-Subject health from the standard workflow, derive local execution targets from the pinned template, defer deployment-only Checks to hosted monitoring, and retain historical task kinds and immutable pinned workflow semantics.
 Evidence: Actual workflow expansion tests cover hosted-only publication, missing local execution Subjects and historical scope rules; all library tests pass. Review/approval gates and explicit publication dependencies remain; packaged guidance explains computed deployment Status and owner acceptance.
+
+
+## Work package: hosted-client-destinations
+Status: complete
+Depends on: deployment-assessor
+Owns: drim-dev-argocd/policies/private_exposure.rego, drim-dev-argocd/scripts/capture_private_api_resources.py, drim-dev-argocd/scripts/hosted_destination.py, drim-dev-argocd/scripts/tests/test_hosted_destination.py
+Objective: Owning repository drim-dev/drim-dev-argocd; derive safe typed actual client destination bindings before redaction, verify selected Service and real EndpointSlice topology, and preserve a complete observed deployment Subject only after exact raw template and ready image verification.
+Evidence: Pure resource JSON mutation tests and actual Conftest evaluations for wrong destination, duplicate/override inputs and endpoint mismatch; no live connectivity inferred.

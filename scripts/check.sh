@@ -37,7 +37,7 @@ check_source() {
     npm ci
     npm test
   )
-  python3 -m unittest discover -s experiments/test-report-adapter -p 'test_*.py'
+  ./experiments/test-report-adapter/check.sh
 
   (
     cd tools/extractors/typescript
