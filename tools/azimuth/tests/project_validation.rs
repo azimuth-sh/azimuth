@@ -61,14 +61,14 @@ impl Fixture {
             r#"{"format":"azimuth-project","version":1,"project":"example","repositories":[{"id":"app","required":true}],"areas":[{"id":"api","repository":"app","mounts":[{"id":"code","path":"src"}]}],"model_sources":[{"id":"intent","repository":"app","path":"azimuth/model","required":true}],"standards":{"repository":"app","path":"azimuth/standards/verification.md"},"required_receipts":[]}"#,
         );
         write(&repo.join("src/example.txt"), "implementation");
-        write(&repo.join("azimuth/model/example/spec.md"),"# Spec: example\n\n## Claim: visible\nCriticality: routine\n\nThe state SHALL be visible.\n\n### Case: shown\nGiven a request, when served, then state is shown.\n");
+        write(&repo.join("azimuth/model/example/spec.md"),"# Spec: example\n\n## Requirement: visible\nCriticality: routine\n\nThe state SHALL be visible.\n\n### Scenario: shown\nGiven a request, when served, then state is shown.\n");
         write(
             &repo.join("azimuth/standards/verification.md"),
             "# Decision policies and Challenge schedule\n\n## Decision Policy: credible\nRequired challenge: implementation-perturbation\n\nReview the method.\n\n## Challenge Schedule: current\nGate challenge: implementation-perturbation\n\nChallenge required methods.\n",
         );
         write(
             &repo.join("azimuth/workspace.json"),
-            r#"{"format":"azimuth-workspace","version":1,"areas":[],"surfaces":[]}"#,
+            r#"{"format":"azimuth-workspace","version":2,"areas":[],"surfaces":[]}"#,
         );
         write(
             &repo.join("azimuth/changes/add-state/proposal.md"),
@@ -78,7 +78,7 @@ impl Fixture {
             &repo.join("azimuth/changes/add-state/plan.md"),
             "# Plan\n\n- [ ] Review evidence.\n",
         );
-        write(&repo.join("azimuth/changes/add-state/deltas/example/spec.md"),"# Intent delta: example\n\n## Add claim: stable\nCriticality: routine\n\nThe state SHALL remain stable.\n\n### Add case: retained\nGiven state, when inspected, then it remains stable.\n");
+        write(&repo.join("azimuth/changes/add-state/deltas/example/spec.md"),"# Intent delta: example\n\n## Add requirement: stable\nCriticality: routine\n\nThe state SHALL remain stable.\n\n### Add scenario: retained\nGiven state, when inspected, then it remains stable.\n");
         git(&repo, &["init", "-q"]);
         git(&repo, &["add", "."]);
         git(
@@ -179,7 +179,7 @@ fn project_and_candidate_validate_without_generated_workspaces_or_mutation() {
         Some("structure")
     );
     assert_eq!(fs::read(spec).unwrap(), before);
-    assert!(String::from_utf8_lossy(&candidate.stdout).contains("prospective 2 Claim(s)"));
+    assert!(String::from_utf8_lossy(&candidate.stdout).contains("prospective 2 Requirement(s)"));
 }
 #[test]
 fn incomplete_or_changed_workset_fails_closed() {
@@ -225,15 +225,15 @@ fn pending_reviews_are_readiness_obligations_not_structural_errors() {
         validation::FindingKind,
     };
     assert_eq!(
-        validation_facet(FindingKind::PendingClaimReview),
+        validation_facet(FindingKind::PendingRequirementReview),
         ValidationFacet::Readiness
     );
     assert_eq!(
-        validation_facet(FindingKind::MissingClaimJudgment),
+        validation_facet(FindingKind::MissingRequirementJudgment),
         ValidationFacet::Readiness
     );
     assert_eq!(
-        validation_facet(FindingKind::InvalidClaimReview),
+        validation_facet(FindingKind::InvalidRequirementReview),
         ValidationFacet::Structure
     );
     assert_eq!(
@@ -268,25 +268,25 @@ fn reports_cannot_replace_pinned_inputs_or_candidate_documents() {
 }
 
 #[test]
-fn compact_bindings_use_global_case_identity_and_require_real_implementation() {
+fn compact_bindings_use_global_scenario_identity_and_require_real_implementation() {
     use azimuth::{
         account_verification::parse_account_verification,
         model::{CheckImplementation, Model, SourceIdentity},
         validation::{self, FindingKind},
     };
     let mut model = Model::default();
-    model.specs.push(azimuth::spec::parse_spec("spec.md", "# Spec: example\n\n## Claim: admitted\nCriticality: critical\n\nOnly admitted requests SHALL succeed.\n\n### Case: denied\nGiven invalid admission, when requested, then deny.\n").unwrap());
-    model.account_verifications.push(parse_account_verification("verification.md", "# Verification: example\n\n## Claim verification: admitted\n\n### Case verification: denied\n\n#### Check: denies-request\n- Evidence bindings:\n  - Contribution: Establishes rejection.\n\nExercise denial and a successful control.\n").unwrap());
+    model.specs.push(azimuth::spec::parse_spec("spec.md", "# Spec: example\n\n## Requirement: admitted\nCriticality: critical\n\nOnly admitted requests SHALL succeed.\n\n### Scenario: denied\nGiven invalid admission, when requested, then deny.\n").unwrap());
+    model.account_verifications.push(parse_account_verification("verification.md", "# Verification: example\n\n## Requirement verification: admitted\n\n### Scenario verification: denied\n\n#### Check: denies-request\n- Evidence bindings:\n  - Contribution: Establishes rejection.\n\nExercise denial and a successful control.\n").unwrap());
     let findings = validation::validate(&model);
     assert!(!findings
         .iter()
-        .any(|finding| finding.kind == FindingKind::UnboundCase));
+        .any(|finding| finding.kind == FindingKind::UnboundScenario));
     assert!(findings
         .iter()
         .any(|finding| finding.kind == FindingKind::UnimplementedCheck));
     assert!(findings
         .iter()
-        .any(|finding| finding.kind == FindingKind::CaseCheckContributionUnresolved));
+        .any(|finding| finding.kind == FindingKind::ScenarioCheckContributionUnresolved));
     model.check_implementations.push(CheckImplementation {
         check: "denies-request".into(),
         site: "Example::denies".into(),
@@ -303,9 +303,9 @@ fn compact_bindings_use_global_case_identity_and_require_real_implementation() {
     let findings = validation::validate(&model);
     assert!(!findings.iter().any(|finding| matches!(
         finding.kind,
-        FindingKind::UnboundCase
+        FindingKind::UnboundScenario
             | FindingKind::CheckWithoutBinding
-            | FindingKind::CaseCheckContributionUnresolved
+            | FindingKind::ScenarioCheckContributionUnresolved
             | FindingKind::UnimplementedCheck
     )));
 }

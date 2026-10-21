@@ -3,13 +3,13 @@ use crate::adapter::AdapterConfiguration;
 use crate::diag::Diag;
 use crate::json::Json;
 use crate::model::Model;
-use crate::run::{self, Subject};
+use crate::run::{self, VerificationTarget};
 use crate::run_plan::{self, PlanRequest, RequestedCheck, RunOperation, SchemaError};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionRequirements {
-    pub subjects: Vec<String>,
+    pub verification_targets: Vec<String>,
     pub family: String,
     pub requirements: Vec<String>,
 }
@@ -17,8 +17,8 @@ pub struct ExecutionRequirements {
 pub struct SelectionPolicy {
     pub operation: RunOperation,
     pub planned_at_ms: u64,
-    pub subject: Subject,
-    pub required_context: BTreeMap<String, String>,
+    pub verification_target: VerificationTarget,
+    pub required_execution_context: BTreeMap<String, String>,
     pub families: Vec<String>,
     pub available_requirements: Vec<String>,
     pub routes: BTreeMap<String, String>,
@@ -93,7 +93,7 @@ pub fn extract_execution(
                 .and_then(|s| s.split_once(':'));
             if let Some((name, raw)) = entry {
                 let key = match name {
-                    "Subjects" => "execution-subjects",
+                    "Verification Targets" => "execution-verification-targets",
                     "Family" => "execution-family",
                     "Requirements" => "execution-requirements",
                     _ => "",
@@ -106,13 +106,13 @@ pub fn extract_execution(
                     }
                 };
                 if key.is_empty() || fields.insert(key.to_string(), value).is_some() {
-                    errors.push(Diag::at(path, at, "unknown or repeated Execution field; expected Subjects, Family or Requirements"));
+                    errors.push(Diag::at(path, at, "unknown or repeated Execution field; expected Verification Targets, Family or Requirements"));
                 }
             } else {
                 errors.push(Diag::at(
                     path,
                     at,
-                    "Execution field must have form '  - Subjects|Family|Requirements: value'",
+                    "Execution field must have form '  - Verification Targets|Family|Requirements: value'",
                 ));
             }
             filtered[cursor] = "\u{0}".into();
@@ -132,7 +132,7 @@ pub fn execution_from_inputs(
 ) -> Result<Option<ExecutionRequirements>, String> {
     let Some(family) = inputs.get("execution-family") else {
         return if inputs.keys().any(|key| key.starts_with("execution-")) {
-            Err("Execution requires Family and Subjects".into())
+            Err("Execution requires Family and Verification Targets".into())
         } else {
             Ok(None)
         };
@@ -140,18 +140,25 @@ pub fn execution_from_inputs(
     if !segment(family) {
         return Err("Execution Family must be one lower-kebab identifier".into());
     }
-    let raw_subjects = inputs
-        .get("execution-subjects")
-        .ok_or("Execution requires Subjects")?;
-    let subjects = csv(raw_subjects)?;
-    if subjects.is_empty() || subjects.iter().any(|s| !subject_kind_valid(s)) {
-        return Err("Execution Subjects must name supported Run Subject kinds".into());
+    let raw_verification_targets = inputs
+        .get("execution-verification-targets")
+        .ok_or("Execution requires Verification Targets")?;
+    let verification_targets = csv(raw_verification_targets)?;
+    if verification_targets.is_empty()
+        || verification_targets
+            .iter()
+            .any(|s| !verification_target_kind_valid(s))
+    {
+        return Err(
+            "Execution Verification Targets must name supported Run Verification Target kinds"
+                .into(),
+        );
     }
     let requirements = csv(inputs
         .get("execution-requirements")
         .map_or("", String::as_str))?;
     Ok(Some(ExecutionRequirements {
-        subjects,
+        verification_targets,
         family: family.clone(),
         requirements,
     }))
@@ -179,17 +186,17 @@ fn parse_policy_value(value: &Json) -> Result<SelectionPolicy, String> {
             "version",
             "operation",
             "planned_at_ms",
-            "subject",
-            "required_context",
+            "verification_target",
+            "required_execution_context",
             "families",
             "available_requirements",
             "routes",
         ],
     )?;
     if text(get(fields, "format")?)? != "azimuth-run-selection-policy"
-        || get(fields, "version")? != &Json::Num(1.0)
+        || get(fields, "version")? != &Json::Num(2.0)
     {
-        return Err("expected azimuth-run-selection-policy version 1".into());
+        return Err("expected azimuth-run-selection-policy version 2".into());
     }
     let operation = match text(get(fields, "operation")?)? {
         "execute" => RunOperation::Execute,
@@ -202,8 +209,9 @@ fn parse_policy_value(value: &Json) -> Result<SelectionPolicy, String> {
     if planned < 0.0 || planned.fract() != 0.0 || planned > 9_007_199_254_740_991.0 {
         return Err("planned_at_ms must be nonnegative safe integer".into());
     }
-    let subject = run::subject_from_json(get(fields, "subject")?)?;
-    let validation = run::validate_subject_component(&subject);
+    let verification_target =
+        run::verification_target_from_json(get(fields, "verification_target")?)?;
+    let validation = run::validate_verification_target_component(&verification_target);
     if !validation.is_empty() {
         return Err(validation
             .iter()
@@ -211,7 +219,7 @@ fn parse_policy_value(value: &Json) -> Result<SelectionPolicy, String> {
             .collect::<Vec<_>>()
             .join("; "));
     }
-    let required_context = string_map(get(fields, "required_context")?)?;
+    let required_execution_context = string_map(get(fields, "required_execution_context")?)?;
     let families = strings(get(fields, "families")?)?;
     if families.is_empty() {
         return Err("families must be nonempty".into());
@@ -238,8 +246,8 @@ fn parse_policy_value(value: &Json) -> Result<SelectionPolicy, String> {
     Ok(SelectionPolicy {
         operation,
         planned_at_ms: planned as u64,
-        subject,
-        required_context,
+        verification_target,
+        required_execution_context,
         families,
         available_requirements,
         routes,
@@ -262,7 +270,7 @@ pub fn select(
         ),
     };
     let mut selected = Vec::new();
-    let kind = subject_kind(&policy.subject);
+    let kind = verification_target_kind(&policy.verification_target);
     for check in model.checks() {
         let authored = model
             .account_verifications
@@ -278,12 +286,12 @@ pub fn select(
             Some(requirements) if !policy.families.contains(&requirements.family) => {
                 "outside-policy"
             }
-            Some(requirements) if !requirements.subjects.iter().any(|s| s == kind) => {
+            Some(requirements) if !requirements.verification_targets.iter().any(|s| s == kind) => {
                 finding(
                     &mut report,
                     &check.id,
-                    "incompatible-subject",
-                    "selected family cannot execute this Check against this Subject kind",
+                    "incompatible-verification-target",
+                    "selected family cannot execute this Check against this Verification Target kind",
                 );
                 "incompatible"
             }
@@ -338,7 +346,7 @@ pub fn select(
                         selected.push(RequestedCheck {
                             id: check.id.clone(),
                             capability: address.clone(),
-                            cases: Vec::new(),
+                            scenarios: Vec::new(),
                             units: run_plan::whole_units(),
                         });
                         "selected"
@@ -360,8 +368,8 @@ pub fn select(
         report.request = Some(PlanRequest {
             operation: policy.operation,
             planned_at_ms: policy.planned_at_ms,
-            subject: policy.subject.clone(),
-            required_context: policy.required_context.clone(),
+            verification_target: policy.verification_target.clone(),
+            required_execution_context: policy.required_execution_context.clone(),
             checks: selected,
             challenges: Vec::new(),
         });
@@ -378,7 +386,7 @@ fn finding(report: &mut SelectionReport, check: &str, code: &str, detail: &str) 
 pub fn to_json(report: &SelectionReport) -> Json {
     Json::obj(vec![
         ("format", Json::str("azimuth-run-selection")),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         ("policy", policy_to_json(&report.policy)),
         ("model_fingerprint", Json::str(&report.model_fingerprint)),
         (
@@ -421,18 +429,18 @@ pub fn to_json(report: &SelectionReport) -> Json {
         ),
     ])
 }
-pub fn subject_kind(subject: &Subject) -> &'static str {
-    match subject {
-        Subject::Source { .. } => "source",
-        Subject::Workspace { .. } => "workspace",
-        Subject::CiCandidate { .. } => "ci-candidate",
-        Subject::Artifact { .. } => "artifact",
-        Subject::Deployment { .. } => "deployment",
-        Subject::Service { .. } => "service",
-        Subject::MonitoringWindow { .. } => "monitoring-window",
+pub fn verification_target_kind(verification_target: &VerificationTarget) -> &'static str {
+    match verification_target {
+        VerificationTarget::Source { .. } => "source",
+        VerificationTarget::Workspace { .. } => "workspace",
+        VerificationTarget::CiCandidate { .. } => "ci-candidate",
+        VerificationTarget::Artifact { .. } => "artifact",
+        VerificationTarget::Deployment { .. } => "deployment",
+        VerificationTarget::Service { .. } => "service",
+        VerificationTarget::MonitoringWindow { .. } => "monitoring-window",
     }
 }
-fn subject_kind_valid(value: &str) -> bool {
+fn verification_target_kind_valid(value: &str) -> bool {
     [
         "source",
         "workspace",
@@ -503,7 +511,7 @@ fn strings(value: &Json) -> Result<Vec<String>, String> {
 }
 fn string_map(value: &Json) -> Result<BTreeMap<String, String>, String> {
     let Json::Obj(fields) = value else {
-        return Err("required_context must be a string map".into());
+        return Err("required_execution_context must be a string map".into());
     };
     fields
         .iter()
@@ -522,15 +530,18 @@ fn string_map(value: &Json) -> Result<BTreeMap<String, String>, String> {
 pub fn policy_to_json(policy: &SelectionPolicy) -> Json {
     Json::obj(vec![
         ("format", Json::str("azimuth-run-selection-policy")),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         ("operation", Json::str(policy.operation.name())),
         ("planned_at_ms", Json::Num(policy.planned_at_ms as f64)),
-        ("subject", run::subject_to_json(&policy.subject)),
         (
-            "required_context",
+            "verification_target",
+            run::verification_target_to_json(&policy.verification_target),
+        ),
+        (
+            "required_execution_context",
             Json::Obj(
                 policy
-                    .required_context
+                    .required_execution_context
                     .iter()
                     .map(|(k, v)| (k.clone(), Json::str(v)))
                     .collect(),
@@ -588,9 +599,9 @@ pub fn request_from_selection(
             ],
         )?;
         if text(get(fields, "format")?)? != "azimuth-run-selection"
-            || get(fields, "version")? != &Json::Num(1.0)
+            || get(fields, "version")? != &Json::Num(2.0)
         {
-            return Err("expected azimuth-run-selection version 1".into());
+            return Err("expected azimuth-run-selection version 2".into());
         }
         let policy = parse_policy_value(get(fields, "policy")?)?;
         let report = select(model, configuration, &policy);

@@ -36,7 +36,7 @@ fn valid_bundle() -> RunBundle {
     let check = CheckSelection {
         id: "recovery".into(),
         fingerprint: fp('b'),
-        cases: vec!["works".into()],
+        scenarios: vec!["works".into()],
         implementations: vec![Implementation {
             identity: "payments|rust-symbol|recovery::replay".into(),
             source_fingerprint: fp('c'),
@@ -53,27 +53,27 @@ fn valid_bundle() -> RunBundle {
         corrects: None,
         correction_reason: None,
         bundle_fingerprint: fp('0'),
-        subject: Subject::Workspace {
+        verification_target: VerificationTarget::Workspace {
             repositories: vec![RepositoryState {
                 id: "root".into(),
                 revision: "revision-a".into(),
                 content_fingerprint: fp('a'),
             }],
         },
-        subject_fingerprint: fp('0'),
+        verification_target_fingerprint: fp('0'),
         planned_at_ms: 1,
         started_at_ms: 2,
         finished_at_ms: 4,
         status: RunStatus::Complete,
         plan: Plan {
             model_fingerprint: fp('d'),
-            required_context: context(),
+            required_execution_context: context(),
             checks: vec![check.clone()],
             challenges: vec![],
             fingerprint: fp('0'),
         },
         actual_selection: ActualSelection {
-            context: context(),
+            execution_context: context(),
             plan_fingerprint: fp('0'),
             checks: vec![check],
             challenges: vec![],
@@ -138,36 +138,38 @@ fn valid_bundle() -> RunBundle {
                 attempts: vec![CheckAttempt {
                     ordinal: 1,
                     activity: "check-attempt".into(),
-                    outcomes: [("works".into(), ObservationOutcome::Satisfied)]
+                    outcomes: [("works".into(), CheckResultOutcome::Satisfied)]
                         .into_iter()
                         .collect(),
                 }],
             }],
-            observations: vec![Observation {
-                case: "works".into(),
-                outcome: ObservationOutcome::Satisfied,
+            results: vec![CheckResult {
+                scenario: "works".into(),
+                outcome: CheckResultOutcome::Satisfied,
                 observed_at_ms: 3,
                 fingerprint: fp('0'),
                 artifacts: vec![],
                 diagnostics: vec![],
             }],
         }],
-        challenger_executions: vec![],
+        verification_challenge_executions: vec![],
     };
     refresh(&mut bundle);
     bundle
 }
 
 fn refresh(bundle: &mut RunBundle) {
-    bundle.subject_fingerprint = subject_fingerprint(&bundle.subject);
-    bundle.plan.fingerprint = plan_fingerprint(&bundle.subject_fingerprint, &bundle.plan);
+    bundle.verification_target_fingerprint =
+        verification_target_fingerprint(&bundle.verification_target);
+    bundle.plan.fingerprint =
+        plan_fingerprint(&bundle.verification_target_fingerprint, &bundle.plan);
     bundle.actual_selection.plan_fingerprint = bundle.plan.fingerprint.clone();
     bundle.actual_selection.fingerprint = selection_fingerprint(&bundle.actual_selection);
     bundle.provenance.adapter.launch_fingerprint = launch_fingerprint(
         bundle.provenance.mode,
         bundle.planned_at_ms,
-        &bundle.subject,
-        &bundle.subject_fingerprint,
+        &bundle.verification_target,
+        &bundle.verification_target_fingerprint,
         &bundle.plan,
         &LaunchAdapterIdentity {
             id: bundle.provenance.adapter.id.clone(),
@@ -180,19 +182,20 @@ fn refresh(bundle: &mut RunBundle) {
     );
     bundle.run_id = run_id(bundle);
     for index in 0..bundle.check_executions.len() {
-        for observation_index in 0..bundle.check_executions[index].observations.len() {
-            let fingerprint = observation_fingerprint(
+        for check_result_index in 0..bundle.check_executions[index].results.len() {
+            let fingerprint = check_result_fingerprint(
                 bundle,
                 &bundle.check_executions[index],
-                &bundle.check_executions[index].observations[observation_index],
+                &bundle.check_executions[index].results[check_result_index],
             );
-            bundle.check_executions[index].observations[observation_index].fingerprint =
-                fingerprint;
+            bundle.check_executions[index].results[check_result_index].fingerprint = fingerprint;
         }
     }
-    for index in 0..bundle.challenger_executions.len() {
-        bundle.challenger_executions[index].result.fingerprint =
-            challenge_result_fingerprint(bundle, &bundle.challenger_executions[index]);
+    for index in 0..bundle.verification_challenge_executions.len() {
+        bundle.verification_challenge_executions[index]
+            .result
+            .fingerprint =
+            challenge_result_fingerprint(bundle, &bundle.verification_challenge_executions[index]);
     }
     bundle.bundle_fingerprint = bundle_fingerprint(bundle);
 }
@@ -220,7 +223,7 @@ fn help_exposes_only_current_run_operations() {
         assert!(stdout.contains("azimuth run import --plan <file>"));
         assert!(stdout.contains("Checks, Challenges, or both"));
         assert!(stdout.contains("contracts/run-launch-plan.md"));
-        assert!(!stdout.contains("--challenger"));
+        assert!(!stdout.contains("--verification-challenge"));
         assert!(!stdout.contains("--challenge-form"));
         assert!(!stdout.contains(" run ingest"));
     }
@@ -233,8 +236,8 @@ fn verify_accepts_negative_and_partial_execution_facts() {
     let mut violated = valid_bundle();
     violated.check_executions[0].units[0].attempts[0]
         .outcomes
-        .insert("works".into(), ObservationOutcome::Violated);
-    violated.check_executions[0].observations[0].outcome = ObservationOutcome::Violated;
+        .insert("works".into(), CheckResultOutcome::Violated);
+    violated.check_executions[0].results[0].outcome = CheckResultOutcome::Violated;
     refresh(&mut violated);
     write_bundle(&violated_path, &violated);
 
@@ -263,13 +266,13 @@ fn verify_distinguishes_findings_from_schema_and_usage_errors() {
     let root = root();
     let finding_path = root.join("finding.json");
     let mut finding = valid_bundle();
-    finding.subject_fingerprint = fp('9');
+    finding.verification_target_fingerprint = fp('9');
     write_bundle(&finding_path, &finding);
     let finding_output = azimuth(&["run", "verify", "--bundle", finding_path.to_str().unwrap()]);
     assert_eq!(finding_output.status.code(), Some(1));
     assert!(String::from_utf8(finding_output.stdout)
         .unwrap()
-        .contains("run/subject-fingerprint"));
+        .contains("run/verification-target-fingerprint"));
 
     let malformed_path = root.join("malformed.json");
     fs::write(&malformed_path, "{").unwrap();
@@ -366,7 +369,7 @@ fn inspect_json_stdout_and_file_are_exact_and_versioned() {
     );
     assert_eq!(
         json.get("version").and_then(azimuth::json::Json::as_num),
-        Some(1.0)
+        Some(2.0)
     );
     assert_eq!(
         json.get("protocol_consistent")
@@ -386,7 +389,7 @@ fn inspect_emits_findings_but_no_account_for_schema_errors() {
     let root = root();
     let finding_path = root.join("finding.json");
     let mut finding = valid_bundle();
-    finding.subject_fingerprint = fp('9');
+    finding.verification_target_fingerprint = fp('9');
     write_bundle(&finding_path, &finding);
     let finding_output = azimuth(&[
         "run",
@@ -399,7 +402,7 @@ fn inspect_emits_findings_but_no_account_for_schema_errors() {
     assert_eq!(finding_output.status.code(), Some(1));
     let account = String::from_utf8(finding_output.stdout).unwrap();
     assert!(account.contains("\"protocol_consistent\": false"));
-    assert!(account.contains("run/subject-fingerprint"));
+    assert!(account.contains("run/verification-target-fingerprint"));
 
     let malformed_path = root.join("malformed.json");
     let out_path = root.join("must-not-exist.json");

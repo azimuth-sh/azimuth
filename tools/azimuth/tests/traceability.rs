@@ -3,7 +3,7 @@ use azimuth::spec::parse_spec;
 use azimuth::traceability::{project, project_decision_impacts, DecisionReference, ImpactNodeKind};
 use azimuth::validation::{CandidateDisposition, DecisionKind};
 use azimuth::verification::{
-    parse_standards, parse_verification, ClaimJudgmentVerdict, MethodQualificationVerdict,
+    parse_standards, parse_verification, MethodQualificationVerdict, RequirementJudgmentVerdict,
 };
 
 const SHA: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -21,7 +21,7 @@ Terminal: works\n\n\
 Atomic.\n\n\
 ## Evidence Binding: alpha/edge\n\
 Check: alpha-check\n\
-Case: observed\n\
+Scenario: observed\n\
 Method qualification: alpha/method\n\
 Proposition: direct\n\
 Context: {}\n\
@@ -47,25 +47,25 @@ Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 Decided: 2026-08-21\n\
 Decider: owner\n\n\
 Applicable.\n\n\
-## Claim Judgment: works\n\
+## Requirement Judgment: works\n\
 Verdict: accepted\n\
 Policy: credible\n\
 Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
 Judged: 2026-08-21\n\
 Judge: owner\n\
-Basis: the Check directly exercises the case\n\
+Basis: the Check directly exercises the scenario\n\
 Residual risk: none identified\n\n\
 Accepted.\n\n\
-## Challenger: mutation/search\n\
+## Verification Challenge: mutation/search\n\
 Form: mutation\n\
 Searches for: an undetected change\n\
 Required scope: [\"context\"]\n\n\
 Searches the exact edge.\n\n\
 ## Challenge Plan: alpha/decisions\n\
-Challenger: mutation/search\n\
+Verification Challenge: mutation/search\n\
 Select: applicability-decision from binding alpha/edge\n\
 Select: method-qualification from method-qualification alpha/method\n\
-Select: claim-judgment from claim works\n\n\
+Select: requirement-judgment from requirement works\n\n\
 Targets both decisions.\n";
 
 fn source(address: &str) -> SourceIdentity {
@@ -91,8 +91,8 @@ fn check_implementation(check: &str, address: &str) -> CheckImplementation {
 fn model() -> Model {
     let spec = parse_spec(
         "spec.md",
-        "# Spec: alpha\n\n## Claim: works\nCriticality: standard\n\nA SHALL work.\n\n\
-         ### Case: observed\nEvent: invoked\nRequired: it works\n",
+        "# Spec: alpha\n\n## Requirement: works\nCriticality: standard\n\nA SHALL work.\n\n\
+         ### Scenario: observed\nEvent: invoked\nRequired: it works\n",
     )
     .unwrap();
     let mut model = Model {
@@ -100,7 +100,7 @@ fn model() -> Model {
         realizes: vec![
             Site {
                 spec: "alpha".into(),
-                claim: "works".into(),
+                requirement: "works".into(),
                 site: "z".into(),
                 file: "z.rs".into(),
                 lang: "rust".into(),
@@ -109,7 +109,7 @@ fn model() -> Model {
             },
             Site {
                 spec: "alpha".into(),
-                claim: "works".into(),
+                requirement: "works".into(),
                 site: "a".into(),
                 file: "a.rs".into(),
                 lang: "rust".into(),
@@ -150,27 +150,30 @@ fn refresh(model: &mut Model) {
         model.verifications[0].applicability_decisions[index].fingerprint = expected;
     }
     let expected = model
-        .expected_claim_judgment_fingerprint(&model.verifications[0].claim_judgments[0])
+        .expected_requirement_judgment_fingerprint(&model.verifications[0].requirement_judgments[0])
         .unwrap();
-    model.verifications[0].claim_judgments[0].fingerprint = expected;
+    model.verifications[0].requirement_judgments[0].fingerprint = expected;
 }
 
 #[test]
 fn projects_sorted_realization_verification_and_current_judgment_relationships() {
     let report = project(&model());
-    let case = &report.cases[0];
-    assert_eq!(case.id, "observed");
-    assert_eq!(case.realizations, ["core|rust-item|a", "core|rust-item|z"]);
-    assert_eq!(case.verification[0].binding, "alpha/edge");
-    assert!(case.verification[0].current);
+    let scenario = &report.scenarios[0];
+    assert_eq!(scenario.id, "observed");
     assert_eq!(
-        case.verification[0].method_verdict.as_deref(),
+        scenario.realizations,
+        ["core|rust-item|a", "core|rust-item|z"]
+    );
+    assert_eq!(scenario.verification[0].binding, "alpha/edge");
+    assert!(scenario.verification[0].current);
+    assert_eq!(
+        scenario.verification[0].method_verdict.as_deref(),
         Some("qualified")
     );
-    assert!(case.judgment.applicable);
-    assert!(case.judgment.current);
-    assert_eq!(case.judgment.verdict.as_deref(), Some("accepted"));
-    assert_eq!(case.judgment.policy.as_deref(), Some("credible"));
+    assert!(scenario.judgment.applicable);
+    assert!(scenario.judgment.current);
+    assert_eq!(scenario.judgment.verdict.as_deref(), Some("accepted"));
+    assert_eq!(scenario.judgment.policy.as_deref(), Some("credible"));
 }
 
 #[test]
@@ -231,7 +234,7 @@ fn impact_graph_deduplicates_one_dependent_judgment_across_qualifications() {
         .applicability_decisions
         .push(applicability);
     value.check_implementations.push(implementation);
-    value.verifications[0].claim_judgments[0].verdict = ClaimJudgmentVerdict::Rejected;
+    value.verifications[0].requirement_judgments[0].verdict = RequirementJudgmentVerdict::Rejected;
     refresh(&mut value);
 
     let targets = value.verifications[0]
@@ -248,7 +251,7 @@ fn impact_graph_deduplicates_one_dependent_judgment_across_qualifications() {
         impact
             .nodes
             .iter()
-            .filter(|node| node.kind == ImpactNodeKind::ClaimJudgment)
+            .filter(|node| node.kind == ImpactNodeKind::RequirementJudgment)
             .count(),
         1
     );
@@ -257,24 +260,27 @@ fn impact_graph_deduplicates_one_dependent_judgment_across_qualifications() {
 }
 
 #[test]
-fn direct_judgment_impact_reaches_only_its_claim_without_manufactured_results() {
+fn direct_judgment_impact_reaches_only_its_requirement_without_manufactured_results() {
     let value = model();
-    let judgment = &value.verifications[0].claim_judgments[0];
+    let judgment = &value.verifications[0].requirement_judgments[0];
     let impact = project_decision_impacts(
         &value,
         &[DecisionReference {
-            kind: DecisionKind::ClaimJudgment,
+            kind: DecisionKind::RequirementJudgment,
             id: judgment.id.clone(),
             fingerprint: judgment.fingerprint.clone(),
         }],
     );
     assert_eq!(impact.nodes.len(), 2);
     assert_eq!(impact.edges.len(), 1);
-    assert_eq!(impact.edges[0].from.kind, ImpactNodeKind::ClaimJudgment);
-    assert_eq!(impact.edges[0].to.kind, ImpactNodeKind::Claim);
+    assert_eq!(
+        impact.edges[0].from.kind,
+        ImpactNodeKind::RequirementJudgment
+    );
+    assert_eq!(impact.edges[0].to.kind, ImpactNodeKind::Requirement);
     let json = impact.to_json().to_string_pretty();
     assert!(json.contains("\"format\": \"azimuth-decision-impact-projection\""));
-    assert!(json.contains("\"version\": 1"));
+    assert!(json.contains("\"version\": 2"));
     assert!(!json.contains("result"));
     assert!(!json.contains("observation"));
     assert!(!json.contains("state"));
@@ -287,26 +293,26 @@ fn stale_decisions_are_not_presented_as_current_or_projected_as_impact() {
         .proposition
         .push_str(" changed");
     let report = project(&value);
-    assert!(!report.cases[0].verification[0].current);
-    assert!(!report.cases[0].judgment.current);
+    assert!(!report.scenarios[0].verification[0].current);
+    assert!(!report.scenarios[0].judgment.current);
     assert!(!report.decision_impacts.nodes.iter().any(|node| matches!(
         node.kind,
-        ImpactNodeKind::ApplicabilityDecision | ImpactNodeKind::ClaimJudgment
+        ImpactNodeKind::ApplicabilityDecision | ImpactNodeKind::RequirementJudgment
     )));
 }
 
 #[test]
 fn routine_relationships_are_inapplicable_and_never_current() {
     let mut value = model();
-    value.specs[0].claims[0].criticality = Some(Criticality::Routine);
+    value.specs[0].requirements[0].criticality = Some(Criticality::Routine);
     let report = project(&value);
-    assert!(report.cases[0].verification.iter().all(|relationship| {
+    assert!(report.scenarios[0].verification.iter().all(|relationship| {
         !relationship.applicable
             && !relationship.current
             && relationship.method_qualification.is_none()
     }));
-    assert!(!report.cases[0].judgment.applicable);
-    assert!(!report.cases[0].judgment.current);
+    assert!(!report.scenarios[0].judgment.applicable);
+    assert!(!report.scenarios[0].judgment.current);
 }
 
 #[test]
@@ -314,7 +320,7 @@ fn report_is_deterministic_and_creates_no_execution_or_authority_fields() {
     let left = project(&model()).to_json().to_string_pretty();
     let right = project(&model()).to_json().to_string_pretty();
     assert_eq!(left, right);
-    assert!(left.contains("\"version\": 4"));
+    assert!(left.contains("\"version\": 5"));
     assert!(!left.contains("observations"));
     assert!(!left.contains("challenge_results"));
     assert!(!left.contains("assurance_state"));
@@ -328,9 +334,11 @@ fn current_negative_qualification_remains_current_traceability_not_selected_reso
     value.verifications[0].method_qualifications[0].verdict = MethodQualificationVerdict::Rejected;
     refresh(&mut value);
     let report = project(&value);
-    assert!(report.cases[0].verification[0].current);
+    assert!(report.scenarios[0].verification[0].current);
     assert_eq!(
-        report.cases[0].verification[0].method_verdict.as_deref(),
+        report.scenarios[0].verification[0]
+            .method_verdict
+            .as_deref(),
         Some("rejected")
     );
     let candidate = report.challenge_resolutions[0]

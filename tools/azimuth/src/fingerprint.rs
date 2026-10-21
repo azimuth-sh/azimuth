@@ -120,17 +120,18 @@ pub fn authority_model_digest(model: &crate::model::Model) -> String {
                         for spec in specs {
                             remove_fields(spec, &["path"]);
                             if let Json::Obj(fields) = spec {
-                                if let Some((_, Json::Arr(claims))) =
-                                    fields.iter_mut().find(|(key, _)| key == "claims")
+                                if let Some((_, Json::Arr(requirements))) =
+                                    fields.iter_mut().find(|(key, _)| key == "requirements")
                                 {
-                                    for claim in claims {
-                                        remove_fields(claim, &["line"]);
-                                        if let Json::Obj(fields) = claim {
-                                            if let Some((_, Json::Arr(cases))) =
-                                                fields.iter_mut().find(|(key, _)| key == "cases")
+                                    for requirement in requirements {
+                                        remove_fields(requirement, &["line"]);
+                                        if let Json::Obj(fields) = requirement {
+                                            if let Some((_, Json::Arr(scenarios))) = fields
+                                                .iter_mut()
+                                                .find(|(key, _)| key == "scenarios")
                                             {
-                                                for case in cases {
-                                                    remove_fields(case, &["line"]);
+                                                for scenario in scenarios {
+                                                    remove_fields(scenario, &["line"]);
                                                 }
                                             }
                                         }
@@ -202,32 +203,64 @@ pub fn schedule_fingerprint(schedule: &crate::verification::ChallengeSchedule) -
     canonical_sha256(&crate::verification::schedule_json(schedule))
 }
 
-pub fn challenger_fingerprint(challenger: &crate::verification::Challenger) -> String {
+pub fn verification_challenge_fingerprint(
+    verification_challenge: &crate::verification::VerificationChallenge,
+) -> String {
     use crate::json::Json;
-    let mut required_scope = challenger.required_scope.clone();
+    let mut required_scope = verification_challenge.required_scope.clone();
     required_scope.sort();
     required_scope.dedup();
     canonical_sha256(&Json::obj(vec![
-        ("format", Json::str("azimuth-challenger-fingerprint")),
-        ("version", Json::Num(1.0)),
-        ("id", Json::str(&challenger.id)),
-        ("form", Json::str(&challenger.form)),
-        ("searches_for", Json::str(&challenger.searches_for)),
         (
-            "targets",
-            Json::Arr(challenger.targets.iter().map(Json::str).collect()),
+            "format",
+            Json::str("azimuth-verification-challenge-fingerprint"),
+        ),
+        ("version", Json::Num(2.0)),
+        ("id", Json::str(&verification_challenge.id)),
+        ("form", Json::str(&verification_challenge.form)),
+        (
+            "searches_for",
+            Json::str(&verification_challenge.searches_for),
         ),
         (
-            "claims",
-            Json::Arr(challenger.claims.iter().map(Json::str).collect()),
+            "targets",
+            Json::Arr(
+                verification_challenge
+                    .targets
+                    .iter()
+                    .map(Json::str)
+                    .collect(),
+            ),
+        ),
+        (
+            "requirements",
+            Json::Arr(
+                verification_challenge
+                    .requirements
+                    .iter()
+                    .map(Json::str)
+                    .collect(),
+            ),
         ),
         (
             "mechanisms",
-            Json::Arr(challenger.mechanisms.iter().map(Json::str).collect()),
+            Json::Arr(
+                verification_challenge
+                    .mechanisms
+                    .iter()
+                    .map(Json::str)
+                    .collect(),
+            ),
         ),
         (
             "checks",
-            Json::Arr(challenger.checks.iter().map(Json::str).collect()),
+            Json::Arr(
+                verification_challenge
+                    .checks
+                    .iter()
+                    .map(Json::str)
+                    .collect(),
+            ),
         ),
         (
             "required_scope",
@@ -241,7 +274,7 @@ pub fn challenger_fingerprint(challenger: &crate::verification::Challenger) -> S
     ]))
 }
 
-pub fn claim_judgment_fingerprint(preimage: &crate::json::Json) -> String {
+pub fn requirement_judgment_fingerprint(preimage: &crate::json::Json) -> String {
     canonical_sha256(preimage)
 }
 
@@ -272,12 +305,12 @@ pub fn area_digest(id: &str) -> String {
     ]))
 }
 
-pub fn realization_obligation_digest(claim: &str, areas: &[String]) -> String {
+pub fn realization_obligation_digest(requirement: &str, areas: &[String]) -> String {
     use crate::json::Json;
     canonical_sha256(&Json::obj(vec![
         ("format", Json::str("azimuth-realization-obligation-digest")),
-        ("version", Json::Num(1.0)),
-        ("claim", Json::str(claim)),
+        ("version", Json::Num(2.0)),
+        ("requirement", Json::str(requirement)),
         ("areas", Json::Arr(areas.iter().map(Json::str).collect())),
     ]))
 }
@@ -304,7 +337,7 @@ pub fn enumerated_surface_member_digest(surface: &str, file: &str) -> String {
 
 pub fn binding_fingerprint(
     binding: &crate::verification::EvidenceBinding,
-    case_digest: &str,
+    scenario_digest: &str,
     method_qualification_fingerprint: &str,
     policy_digest: &str,
 ) -> String {
@@ -318,10 +351,10 @@ pub fn binding_fingerprint(
     challenge_domain.dedup();
     canonical_sha256(&Json::obj(vec![
         ("format", Json::str("azimuth-evidence-binding-fingerprint")),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         ("id", Json::str(&binding.id)),
         ("check", Json::str(&binding.check)),
-        ("case_digest", Json::str(case_digest)),
+        ("scenario_digest", Json::str(scenario_digest)),
         (
             "method_qualification_fingerprint",
             Json::str(method_qualification_fingerprint),

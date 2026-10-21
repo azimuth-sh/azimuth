@@ -7,7 +7,7 @@ use crate::fingerprint::sha256;
 use crate::json::Json;
 
 pub const FORMAT: &str = "azimuth-assurance-project-snapshot";
-pub const VERSION: u64 = 2;
+pub const VERSION: u64 = 3;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractMount {
@@ -47,20 +47,20 @@ pub struct ContractVerification {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ClaimContract {
+pub struct RequirementContract {
     pub spec: String,
-    pub claim: String,
     pub requirement: String,
+    pub requirement_kind: String,
     pub criticality: String,
     pub statement: String,
-    pub case_statement: String,
+    pub scenario_statement: String,
     pub domain: String,
     pub verification: ContractVerification,
     pub surface: Option<ContractSurface>,
     pub obligated_areas: Vec<ContractArea>,
 }
 
-impl ClaimContract {
+impl RequirementContract {
     pub fn fingerprint(&self) -> String {
         sha256(
             contract_json(&self.canonicalized(), false)
@@ -70,7 +70,7 @@ impl ClaimContract {
     }
 
     pub fn identity(&self) -> String {
-        self.claim.clone()
+        self.requirement.clone()
     }
 
     fn canonicalized(&self) -> Self {
@@ -101,17 +101,21 @@ pub struct ProjectSnapshot {
     pub id: String,
     pub project: String,
     pub model_fingerprint: String,
-    pub claims: Vec<ClaimContract>,
+    pub requirements: Vec<RequirementContract>,
 }
 
 impl ProjectSnapshot {
-    pub fn derive(project: &str, model_fingerprint: &str, mut claims: Vec<ClaimContract>) -> Self {
-        claims.sort_by_key(ClaimContract::identity);
+    pub fn derive(
+        project: &str,
+        model_fingerprint: &str,
+        mut requirements: Vec<RequirementContract>,
+    ) -> Self {
+        requirements.sort_by_key(RequirementContract::identity);
         let mut snapshot = Self {
             id: String::new(),
             project: project.to_string(),
             model_fingerprint: model_fingerprint.to_string(),
-            claims,
+            requirements,
         };
         snapshot.id = snapshot.fingerprint();
         snapshot
@@ -119,7 +123,9 @@ impl ProjectSnapshot {
 
     pub fn fingerprint(&self) -> String {
         let mut canonical = self.clone();
-        canonical.claims.sort_by_key(ClaimContract::identity);
+        canonical
+            .requirements
+            .sort_by_key(RequirementContract::identity);
         sha256(
             snapshot_json(&canonical, false)
                 .to_string_pretty()
@@ -129,7 +135,9 @@ impl ProjectSnapshot {
 
     pub fn to_json(&self) -> Json {
         let mut canonical = self.clone();
-        canonical.claims.sort_by_key(ClaimContract::identity);
+        canonical
+            .requirements
+            .sort_by_key(RequirementContract::identity);
         snapshot_json(&canonical, true)
     }
 }
@@ -149,10 +157,10 @@ fn snapshot_json(snapshot: &ProjectSnapshot, include_id: bool) -> Json {
             Json::str(&snapshot.model_fingerprint),
         ),
         (
-            "claims".to_string(),
+            "requirements".to_string(),
             Json::Arr(
                 snapshot
-                    .claims
+                    .requirements
                     .iter()
                     .map(|contract| contract_json(&contract.canonicalized(), true))
                     .collect(),
@@ -162,7 +170,7 @@ fn snapshot_json(snapshot: &ProjectSnapshot, include_id: bool) -> Json {
     Json::Obj(fields)
 }
 
-fn contract_json(contract: &ClaimContract, include_fingerprint: bool) -> Json {
+fn contract_json(contract: &RequirementContract, include_fingerprint: bool) -> Json {
     let mut fields = Vec::new();
     if include_fingerprint {
         fields.push((
@@ -172,13 +180,16 @@ fn contract_json(contract: &ClaimContract, include_fingerprint: bool) -> Json {
     }
     fields.extend([
         ("spec".to_string(), Json::str(&contract.spec)),
-        ("claim".to_string(), Json::str(&contract.claim)),
         ("requirement".to_string(), Json::str(&contract.requirement)),
+        (
+            "requirementKind".to_string(),
+            Json::str(&contract.requirement_kind),
+        ),
         ("criticality".to_string(), Json::str(&contract.criticality)),
         ("statement".to_string(), Json::str(&contract.statement)),
         (
-            "caseStatement".to_string(),
-            Json::str(&contract.case_statement),
+            "scenarioStatement".to_string(),
+            Json::str(&contract.scenario_statement),
         ),
         ("domain".to_string(), Json::str(&contract.domain)),
         (

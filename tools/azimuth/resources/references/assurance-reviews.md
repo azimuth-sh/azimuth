@@ -1,52 +1,52 @@
-# Claim Review and Claim Health
+# Requirement Review and Requirement Status
 
-Claim Review assesses definitions. Claim Health assesses observed behavior for an exact Subject.
+Requirement Review assesses definitions. Requirement Status assesses observed behavior for an exact Verification Target.
 Neither execution, structural validation nor an implementation tag authors an independent review.
-Check Review, Method Qualification, Applicability Decision and Claim Judgment are not mandatory
+Check Review, Method Qualification, Applicability Decision and Requirement Judgment are not mandatory
 steps in the current compact account. Their earlier records remain historical facts with their
-original meanings; see [the previous contract](https://github.com/azimuth-sh/azimuth/blob/main/contracts/history/assurance-reviews-before-claim-health.md).
+original meanings; see [the previous contract](https://github.com/azimuth-sh/azimuth/blob/main/contracts/history/assurance-reviews-before-requirement-status.md).
 
 ## Authority and dependencies
 
-`azimuth assurance authority` exports the complete unselected model projection with stable Claim,
-Case, Check and Mechanism identities, inline Check–Case contributions and source support.
+`azimuth assurance authority` exports the complete unselected model projection with stable Requirement,
+Scenario, Check and Mechanism identities, inline Check–Scenario contributions and source support.
 Candidate registration does not select accepted authority or authorize deployment.
 Review currentness follows relevant definitions and implementation/input fingerprints, rather
 than unrelated changes to the whole model. Changing a relevant dependency requires reassessment.
 The latest unambiguous assessment of a typed target is current; never fall back to an earlier
 positive record when a newer record is rejected, stale or invalid.
 
-## Claim Review
+## Requirement Review
 
-Native kind: `claim-review`. The independent reviewer examines Claim/Case completeness, design,
+Native kind: `requirement-review`. The independent reviewer examines Requirement/Scenario completeness, design,
 realizations, Check implementations, input and expectation independence, oracles, coverage,
-Challenger definitions and resolved source scopes, assumptions and limitations.
+Verification Challenge definitions and resolved source scopes, assumptions and limitations.
 
-A record pins `claim`, `claim_fingerprint` and exact `dependencies`, with
-`decision: accepted | rejected`. It requires no execution Subject or Observation basis.
+A record pins `requirement`, `requirement_fingerprint` and exact `dependencies`, with
+`decision: accepted | rejected`. It requires no execution Verification Target or Check Result basis.
 Common record metadata retains the accountable `reviewer`, actual `reviewed_at_ms`, substantive
 `rationale`, supporting `artifacts` and canonical `fingerprint`.
 Acceptance expresses credibility of the reviewed account, not observed product health.
 
-`dependencies` is the exact packet `{checks, cases, claims, bindings}` selected for this Claim.
+`dependencies` is the exact packet `{checks, scenarios, requirements, bindings}` selected for this Requirement.
 Its definitions include realization sites and fingerprints, mechanisms, Check implementations,
-Challenger declarations and implementation/configuration support. Source paths are locators, not
+Verification Challenge declarations and implementation/configuration support. Source paths are locators, not
 entity identities. Review currentness checks these dependencies; a matching reviewer label or
 unchanged prose alone cannot establish currentness.
 
-## Claim Health
+## Requirement Status
 
-Native kind: `claim-health`. The assessor examines Observations against the current reviewed
-Claim and its Case contributions for the exact Subject and recorded examination scope. Current
-execution Subject kinds are `source`, `artifact` and `deployment`; local/CI origin is provenance.
+Native kind: `requirement-status`. The assessor examines Check Results against the current reviewed
+Requirement and its Scenario contributions for the exact Verification Target and recorded examination scope. Current
+execution Verification Target kinds are `source`, `artifact` and `deployment`; local/CI origin is provenance.
 Historical variants retain their original meanings and do not create automatic reuse.
 
-A record pins `claim`, `claim_fingerprint`, exact `dependencies`, `subject_fingerprint`,
-`claim_review_fingerprint` and `basis` references to `{run, bundle_fingerprint, observation}`.
+A record pins `requirement`, `requirement_fingerprint`, exact `dependencies`, `verification_target_fingerprint`,
+`requirement_review_fingerprint` and `basis` references to `{run, bundle_fingerprint, check_result}`.
 It retains `conclusion: supported | violated | unresolved` and `residual_risks`, plus the common
-review metadata. Supported health requires a current accepted Claim Review, complete applicable
-Case support, credible controls and no unresolved structural or evidence gaps. A failed Check
-alone is an adverse observation, not an independently assessed violated Claim.
+review metadata. Supported Requirement Status requires a current accepted Requirement Review, complete applicable
+Scenario support, credible controls and no unresolved structural or evidence gaps. A failed Check
+alone is an adverse Check Result, not an independently assessed violated Requirement.
 Missing measurements, broken controls, incomplete examination and conflicting evidence remain
 unresolved. A definition review is not repeated merely because unchanged Checks execute again.
 
@@ -60,14 +60,14 @@ Native records may carry optional `provenance` with exactly:
 
 `agent` and `model` are null or nonempty labels supplied by the authoring harness. `reassesses`
 is null or the canonical fingerprint of an earlier retained assessment. The predecessor must
-have the same typed target; Claim Health therefore also requires the same exact Subject. The
+have the same typed target; Requirement Status therefore also requires the same exact Verification Target. The
 reassessment must have a strictly later `reviewed_at_ms`. Missing predecessors remain visible
 missing dependencies, not an implicit approval. Labels retain provenance but do not prove
 independence, authenticate the reviewer or grant publication permission.
 
 ## Challenge proof dependencies
 
-New Claim Review and Claim Health records may carry optional `challenge_basis`, an array of
+New Requirement Review and Requirement Status records may carry optional `challenge_basis`, an array of
 exact references:
 
 ```json
@@ -91,23 +91,23 @@ positive current assurance.
 A matching adverse Challenge Result attacking the assessment's own exact fingerprint leaves it
 unresolved pending reassessment. An independently authored successor can assess the prior-target
 objection in its rationale and retain these exact proof dependencies. A clean result remains a
-negative search fact. These references do not give Claim Review an execution Subject or product
-Observation basis: the Challenger Run retains its execution Subject separately.
+negative search fact. These references do not give Requirement Review an execution Verification Target or product
+Check Result basis: the Verification Challenge Run retains its execution Verification Target separately.
 
 ## Authored records and preparation
 
-Keep aggregate files such as `reviews/claim-reviews.md` and `reviews/claim-health.md` in the change.
-Names are conventions, not identities. Headings use `## Claim review: <record-id>` or
-`## Claim health: <record-id>`. Metadata pins an `Input` packet, `Input fingerprint`, `Claim`,
+Keep aggregate files such as `reviews/requirement-reviews.md` and `reviews/requirement-status.md` in the change.
+Names are conventions, not identities. Headings use `## Requirement review: <record-id>` or
+`## Requirement status: <record-id>`. Metadata pins an `Input` packet, `Input fingerprint`, `Requirement`,
 `Reviewer`, actual UTC `Reviewed at`, and `Decision` or `Conclusion`; rationale is substantive
-Markdown. Health also retains residual risks. Optional `Agent`, `Model` and `Reassesses` retain
+Markdown. Requirement Status also retains residual risks. Optional `Agent`, `Model` and `Reassesses` retain
 provenance and correction relationships. Markdown `Reassesses` names an earlier record ID in
 the aggregate bundle; compilation resolves that ID to its native fingerprint. Supplied labels alone confer no independence or permission.
 
 `azimuth assurance review-input` retains selected assessments and their transitive reassessment predecessors in deterministic fingerprint order. This history allows compilation to reproduce review states; a genuinely absent predecessor remains a gap. Unrelated histories are not added.
 
 `azimuth assurance review-input` prepares exact definitions, dependencies, existing assessments,
-visible gaps and, for health only, matching Subjects/Observations. Packets may also include optional
+visible gaps and, for Requirement Status only, matching Verification Targets/Check Results. Packets may also include optional
 `challenge_bundles`: scoped native Run proofs for the selected assessment objections, not a
 dump of all project execution history. Compilation validates those bundles and pins the
 corresponding `challenge_basis` references. It creates no reviewer, time,
@@ -117,23 +117,23 @@ Generated packets, compiled bundles and execution reports belong in ignored chan
 
 ## Challenging an assessment
 
-A machine-executed Challenger targets an exact Claim Review or Claim Health assessment selected
-at planning time. Its execution Subject is separate from the assessment target. The current
+A machine-executed Verification Challenge targets an exact Requirement Review or Requirement Status assessment selected
+at planning time. Its execution Verification Target is separate from the assessment target. The current
 Stryker integration pins the exact source input for an isolated mutation batch and retains native
-mutation statuses and locations. It does not materialize exact per-mutant Subjects or mutant-specific
-product Observations. Such captures would require distinct Subjects before those observations
-could be used as product evidence; a batch result is not evidence of unmodified deployment health.
+mutation statuses and locations. It does not materialize exact per-mutant Verification Targets or mutant-specific
+product Check Results. Such captures would require distinct Verification Targets before those Check Results
+could be used as product evidence; a batch result is not evidence of unmodified deployment Requirement Status.
 Results are `clean | findings | inconclusive`. Clean only means the bounded search found no
 objection. Findings require disposition and correction/reassessment where relevant, and cannot
 be silently ignored when relying on the attacked assessment. No mutation score or clean search
-establishes positive health.
+establishes a supported Requirement Status.
 
 ## Publication and service authority
 
 Local drafts, correction attempts and exploratory Runs remain local by default. CI publishes the
-current package relied on for delivery, including exact Subjects, unchanged local reviewer
+current package relied on for delivery, including exact Verification Targets, unchanged local reviewer
 records, relevant adverse/unresolved evidence and provenance. Subsequent hosted evidence and
-health assessments are published after authorized deployment.
+Requirement Status assessments are published after authorized deployment.
 CI transport does not change the author of a review. Submission still requires an authorized
 reviewer credential matching the recorded reviewer; producer permission alone cannot submit one.
 Publish relied-on Runs before their dependent review records, and predecessors before
@@ -142,17 +142,17 @@ the revision-linked review history and existing latest Run correction heads; nat
 fields are retained unchanged in the immutable record.
 The service preserves immutable histories and exposes currentness and dependency gaps against
 explicit model authority. Source, artifact and deployed evidence cannot be joined solely because
-their model revision matches. Any cross-Subject reliance requires an explicit applicability and
+their model revision matches. Any cross-target reliance requires an explicit applicability and
 provenance contract; unsupported composition remains a visible gap.
 
 ## Service inspection and migration
 
 The service preserves native JSONB records and explicit model-revision links without rewriting
-older reviews. New review submissions accept Claim Review and Claim Health only. Definition
-assessments are exposed independently of Subjects through selected and candidate
-`claim-reviews` resources; exact-Subject state exposes Review currentness and Health separately.
+older reviews. New review submissions accept Requirement Review and Requirement Status only. Definition
+assessments are exposed independently of Verification Targets through selected and candidate
+`requirement-reviews` resources; exact-target state exposes Review currentness and Requirement Status separately.
 Authenticated submitter and receive time are transport facts, distinct from authored review
-provenance. Missing, stale, rejected and ambiguous records cannot infer supported health.
+provenance. Missing, stale, rejected and ambiguous records cannot infer supported Requirement Status.
 
 There is no automatic authority selection, deployment acceptance or reassessment from execution.
 Historical parsers retain their original meanings for inspection; they do not convert old
@@ -161,6 +161,6 @@ requires a parser capable of those records or an isolated pre-rollout database r
 or rewriting immutable history is not a migration strategy.
 
 
-## Deployment Claim Status
+## Deployment Requirement Status
 
-The standard change-development revision 9 requires independent Claim Reviews and machine execution facts before publication, not an authored positive Claim Health record. ASS computes deployment Claim Status after deployment reconciliation, using reviewed definitions, exact Run Subjects, release provenance and compatible effective-context captures. Historical Claim Health records and the native compilation commands above retain their original wire contracts; they do not substitute for deployment applicability or create current positive Status. Release acceptance remains an explicit owner decision.
+The standard change-development revision 10 requires independent Requirement Reviews and machine execution facts before publication, not an authored positive Requirement Status record. ASS computes deployment Requirement Status after deployment reconciliation, using reviewed definitions, exact Run Verification Targets, release provenance and compatible effective-context captures. Historical Requirement Status records and the native compilation commands above retain their original wire contracts; they do not substitute for deployment applicability or create current positive Status. Release acceptance remains an explicit owner decision.

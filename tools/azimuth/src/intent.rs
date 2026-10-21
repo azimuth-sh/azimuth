@@ -1,7 +1,7 @@
 //! Deterministic projection of a reviewed intent delta onto accepted spec sources.
 
 use crate::fingerprint::sha256;
-use crate::model::{Claim, Model};
+use crate::model::{Model, Requirement};
 use crate::spec::parse_spec;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -18,7 +18,7 @@ pub struct FileProjection {
 pub struct Projection {
     pub files: Vec<FileProjection>,
     pub operations: Vec<(String, bool)>,
-    pub target_claims: usize,
+    pub target_requirements: usize,
 }
 
 impl Projection {
@@ -92,8 +92,8 @@ enum Kind {
     Add,
     AddTerm,
     Replace,
-    RemoveClaim,
-    RemoveCase,
+    RemoveRequirement,
+    RemoveScenario,
     Criticality,
 }
 
@@ -103,18 +103,18 @@ pub fn fingerprint(block: &str) -> String {
 
 pub fn project(change: &Path, model_root: &Path, model: &Model) -> Result<Projection, Vec<String>> {
     let operations = read_operations(change)?;
-    let retained_claims = operations
+    let retained_requirements = operations
         .iter()
         .filter(|operation| matches!(operation.kind, Kind::Add | Kind::Replace))
         .map(|operation| operation.id.clone())
         .collect::<BTreeSet<_>>();
-    let retained_cases = operations
+    let retained_scenarios = operations
         .iter()
         .filter(|operation| matches!(operation.kind, Kind::Add | Kind::Replace))
         .flat_map(|operation| {
             operation.source.lines().filter_map(|line| {
-                line.strip_prefix("### Case: ")
-                    .or_else(|| line.strip_prefix("### Add case: "))
+                line.strip_prefix("### Scenario: ")
+                    .or_else(|| line.strip_prefix("### Add scenario: "))
                     .map(str::to_string)
             })
         })
@@ -129,13 +129,13 @@ pub fn project(change: &Path, model_root: &Path, model: &Model) -> Result<Projec
     let mut files = Vec::new();
     let mut statuses = Vec::new();
     let mut errors = Vec::new();
-    let mut target_claims = model.claim_count();
+    let mut target_requirements = model.requirement_count();
     for (spec, operations) in grouped {
-        let old_claims = model
+        let old_requirements = model
             .specs
             .iter()
             .find(|item| item.id == spec)
-            .map_or(0, |item| item.claims.len());
+            .map_or(0, |item| item.requirements.len());
         let path = model
             .specs
             .iter()
@@ -156,10 +156,10 @@ pub fn project(change: &Path, model_root: &Path, model: &Model) -> Result<Projec
         let mut after = before.clone();
         let mut touched = BTreeSet::new();
         for operation in operations {
-            let claim_id = if operation.kind == Kind::RemoveCase {
+            let requirement_id = if operation.kind == Kind::RemoveScenario {
                 model
-                    .find_case(&operation.id)
-                    .map(|view| view.claim.id.as_str())
+                    .find_scenario(&operation.id)
+                    .map(|view| view.requirement.id.as_str())
                     .unwrap_or(&operation.id)
             } else {
                 operation.id.as_str()
@@ -167,7 +167,7 @@ pub fn project(change: &Path, model_root: &Path, model: &Model) -> Result<Projec
             let identity = if operation.kind == Kind::AddTerm {
                 format!("{spec} term {}", operation.id)
             } else {
-                claim_id.to_string()
+                requirement_id.to_string()
             };
             if !touched.insert(identity.clone()) {
                 errors.push(format!(
@@ -177,7 +177,13 @@ pub fn project(change: &Path, model_root: &Path, model: &Model) -> Result<Projec
                 ));
                 continue;
             }
-            match apply_operation(&after, &operation, model, &retained_claims, &retained_cases) {
+            match apply_operation(
+                &after,
+                &operation,
+                model,
+                &retained_requirements,
+                &retained_scenarios,
+            ) {
                 Ok((next, applied)) => {
                     after = next;
                     statuses.push((
@@ -198,11 +204,12 @@ pub fn project(change: &Path, model_root: &Path, model: &Model) -> Result<Projec
             }
         }
         match parse_spec(&path.display().to_string(), &after) {
-            Ok(parsed) if parsed.id == spec && !parsed.claims.is_empty() => {
-                target_claims = target_claims + parsed.claims.len() - old_claims;
+            Ok(parsed) if parsed.id == spec && !parsed.requirements.is_empty() => {
+                target_requirements =
+                    target_requirements + parsed.requirements.len() - old_requirements;
             }
-            Ok(parsed) if parsed.id == spec && parsed.claims.is_empty() => {
-                target_claims -= old_claims;
+            Ok(parsed) if parsed.id == spec && parsed.requirements.is_empty() => {
+                target_requirements -= old_requirements;
                 after.clear();
             }
             Ok(_) => errors.push(format!(
@@ -249,7 +256,7 @@ pub fn project(change: &Path, model_root: &Path, model: &Model) -> Result<Projec
         Ok(Projection {
             files,
             operations: statuses,
-            target_claims,
+            target_requirements,
         })
     } else {
         Err(errors)
@@ -262,7 +269,7 @@ pub fn capture(change: &Path, model: &Model) -> Result<Vec<PathBuf>, Vec<String>
     for operation in operations {
         if matches!(
             operation.kind,
-            Kind::Replace | Kind::RemoveClaim | Kind::RemoveCase
+            Kind::Replace | Kind::RemoveRequirement | Kind::RemoveScenario
         ) {
             by_file
                 .entry(operation.path.clone())
@@ -295,31 +302,33 @@ pub fn capture(change: &Path, model: &Model) -> Result<Vec<PathBuf>, Vec<String>
                     continue;
                 }
             };
-            let claim_id = if operation.kind == Kind::RemoveCase {
+            let requirement_id = if operation.kind == Kind::RemoveScenario {
                 model
-                    .find_case(&operation.id)
-                    .map(|view| view.claim.id.as_str())
+                    .find_scenario(&operation.id)
+                    .map(|view| view.requirement.id.as_str())
                     .unwrap_or(&operation.id)
             } else {
                 operation.id.as_str()
             };
-            let Some((start, end)) = find_block(&source, &format!("## Claim: {claim_id}")) else {
+            let Some((start, end)) =
+                find_block(&source, &format!("## Requirement: {requirement_id}"))
+            else {
                 errors.push(format!(
-                    "{}:{}: accepted Claim `{}` does not exist",
+                    "{}:{}: accepted Requirement `{}` does not exist",
                     path.display(),
                     operation.line,
-                    claim_id
+                    requirement_id
                 ));
                 continue;
             };
             let block = &source[start..end];
-            let subject = if operation.kind == Kind::RemoveCase {
-                let case_id = operation.id.as_str();
-                match find_block(block, &format!("### Case: {case_id}")) {
-                    Some((case_start, case_end)) => &block[case_start..case_end],
+            let subject = if operation.kind == Kind::RemoveScenario {
+                let scenario_id = operation.id.as_str();
+                match find_block(block, &format!("### Scenario: {scenario_id}")) {
+                    Some((scenario_start, scenario_end)) => &block[scenario_start..scenario_end],
                     None => {
                         errors.push(format!(
-                            "{}:{}: accepted Case `{}` does not exist",
+                            "{}:{}: accepted Scenario `{}` does not exist",
                             path.display(),
                             operation.line,
                             operation.id
@@ -364,8 +373,8 @@ fn operation_name(kind: &Kind) -> &'static str {
         Kind::Add => "add",
         Kind::AddTerm => "add term",
         Kind::Replace => "replace",
-        Kind::RemoveClaim => "remove claim",
-        Kind::RemoveCase => "remove case",
+        Kind::RemoveRequirement => "remove requirement",
+        Kind::RemoveScenario => "remove scenario",
         Kind::Criticality => "criticality",
     }
 }
@@ -489,11 +498,11 @@ fn read_operations(change: &Path) -> Result<Vec<Operation>, Vec<String>> {
             }
             let heading = lines[start].trim_start_matches("## ");
             let parsed = [
-                ("Add claim: ", Kind::Add),
+                ("Add requirement: ", Kind::Add),
                 ("Add term: ", Kind::AddTerm),
-                ("Replace claim: ", Kind::Replace),
-                ("Remove claim: ", Kind::RemoveClaim),
-                ("Remove case: ", Kind::RemoveCase),
+                ("Replace requirement: ", Kind::Replace),
+                ("Remove requirement: ", Kind::RemoveRequirement),
+                ("Remove scenario: ", Kind::RemoveScenario),
                 ("Change criticality: ", Kind::Criticality),
             ]
             .into_iter()
@@ -551,19 +560,19 @@ fn apply_operation(
     source: &str,
     operation: &Operation,
     model: &Model,
-    retained_claims: &BTreeSet<String>,
-    retained_cases: &BTreeSet<String>,
+    retained_requirements: &BTreeSet<String>,
+    retained_scenarios: &BTreeSet<String>,
 ) -> Result<(String, bool), String> {
-    let claim_id = if operation.kind == Kind::RemoveCase {
+    let requirement_id = if operation.kind == Kind::RemoveScenario {
         model
-            .find_case(&operation.id)
-            .map(|view| view.claim.id.as_str())
+            .find_scenario(&operation.id)
+            .map(|view| view.requirement.id.as_str())
             .unwrap_or(&operation.id)
     } else {
         operation.id.as_str()
     };
-    let current = find_block(source, &format!("## Claim: {claim_id}"));
-    let identity = claim_id.to_string();
+    let current = find_block(source, &format!("## Requirement: {requirement_id}"));
+    let identity = requirement_id.to_string();
     match operation.kind {
         Kind::AddTerm => {
             let block = format!("## Term: {}\n{}", operation.id, operation.source.trim_end());
@@ -589,11 +598,13 @@ fn apply_operation(
             Ok((candidate, false))
         }
         Kind::Add => {
-            let body = operation.source.replace("### Add case: ", "### Case: ");
-            let block = format!("## Claim: {}\n{}", operation.id, body.trim());
-            parse_claim(&operation.spec, &block)?;
+            let body = operation
+                .source
+                .replace("### Add scenario: ", "### Scenario: ");
+            let block = format!("## Requirement: {}\n{}", operation.id, body.trim());
+            parse_requirement(&operation.spec, &block)?;
             if let Some((start, end)) = current {
-                if same_claim(&source[start..end], &block, &operation.spec)? {
+                if same_requirement(&source[start..end], &block, &operation.spec)? {
                     return Ok((source.to_string(), true));
                 }
                 return Err(format!(
@@ -608,7 +619,13 @@ fn apply_operation(
         Kind::Replace => {
             let (labels, body) = labels_and_body(
                 &operation.source,
-                &["From", "Because", "Title", "Criticality", "Remove cases"],
+                &[
+                    "From",
+                    "Because",
+                    "Title",
+                    "Criticality",
+                    "Remove scenarios",
+                ],
             )?;
             let from = required(&labels, "From")?;
             let because = required(&labels, "Because")?;
@@ -619,27 +636,27 @@ fn apply_operation(
                 .map(|value| format!("Title: {value}\n"))
                 .unwrap_or_default();
             let block = format!(
-                "## Claim: {claim_id}\n{title}Criticality: {criticality}\n\n{}",
+                "## Requirement: {requirement_id}\n{title}Criticality: {criticality}\n\n{}",
                 body.trim()
             );
-            let target = parse_claim(&operation.spec, &block)?;
+            let target = parse_requirement(&operation.spec, &block)?;
             let Some((start, end)) = current else {
                 return Err(format!("`{identity}` does not exist"));
             };
             let old = &source[start..end];
-            if same_claim(old, &block, &operation.spec)? {
+            if same_requirement(old, &block, &operation.spec)? {
                 return Ok((source.to_string(), true));
             }
             check_from(from, old)?;
-            let accepted = parse_claim(&operation.spec, old)?;
+            let accepted = parse_requirement(&operation.spec, old)?;
             let removed: BTreeSet<_> = accepted
-                .cases
+                .scenarios
                 .iter()
-                .map(|case| case.id.as_str())
-                .filter(|id| !target.cases.iter().any(|case| case.id == *id))
+                .map(|scenario| scenario.id.as_str())
+                .filter(|id| !target.scenarios.iter().any(|scenario| scenario.id == *id))
                 .collect();
             let declared: BTreeSet<_> = labels
-                .get("Remove cases")
+                .get("Remove scenarios")
                 .map(|value| {
                     value
                         .split(',')
@@ -650,22 +667,22 @@ fn apply_operation(
                 .unwrap_or_default();
             if removed != declared {
                 return Err(format!(
-                    "`{identity}` removes Cases {:?}; declare exactly these in `Remove cases:`",
+                    "`{identity}` removes Scenarios {:?}; declare exactly these in `Remove scenarios:`",
                     removed
                 ));
             }
             for id in &removed {
-                if !retained_cases.contains(*id) {
-                    ensure_case_unreferenced(model, &operation.spec, claim_id, id)?;
+                if !retained_scenarios.contains(*id) {
+                    ensure_scenario_unreferenced(model, &operation.spec, requirement_id, id)?;
                 }
             }
             Ok((replace_range(source, start, end, &block), false))
         }
-        Kind::RemoveClaim => {
+        Kind::RemoveRequirement => {
             let (labels, body) =
                 labels_and_body(&operation.source, &["From", "Because", "Replaced-by"])?;
             if !body.trim().is_empty() {
-                return Err("remove claim accepts labels only".into());
+                return Err("remove requirement accepts labels only".into());
             }
             let from = required(&labels, "From")?;
             required(&labels, "Because")?;
@@ -673,45 +690,57 @@ fn apply_operation(
                 return Ok((source.to_string(), true));
             };
             check_from(from, &source[start..end])?;
-            if !retained_claims.contains(claim_id) {
-                ensure_claim_unreferenced(model, &operation.spec, claim_id)?;
+            if !retained_requirements.contains(requirement_id) {
+                ensure_requirement_unreferenced(model, &operation.spec, requirement_id)?;
             }
-            if let Some(accepted) = model.find_claim(claim_id) {
-                for case in &accepted.claim.cases {
-                    if !retained_cases.contains(&case.id) {
-                        ensure_case_unreferenced(model, &operation.spec, claim_id, &case.id)?;
+            if let Some(accepted) = model.find_requirement(requirement_id) {
+                for scenario in &accepted.requirement.scenarios {
+                    if !retained_scenarios.contains(&scenario.id) {
+                        ensure_scenario_unreferenced(
+                            model,
+                            &operation.spec,
+                            requirement_id,
+                            &scenario.id,
+                        )?;
                     }
                 }
             }
             Ok((replace_range(source, start, end, ""), false))
         }
-        Kind::RemoveCase => {
-            let case_id = operation.id.as_str();
-            if model.find_case(case_id).is_none() {
+        Kind::RemoveScenario => {
+            let scenario_id = operation.id.as_str();
+            if model.find_scenario(scenario_id).is_none() {
                 return Ok((source.to_string(), true));
             }
             let (labels, body) =
                 labels_and_body(&operation.source, &["From", "Because", "Replaced-by"])?;
             if !body.trim().is_empty() {
-                return Err("remove case accepts labels only".into());
+                return Err("remove scenario accepts labels only".into());
             }
             let from = required(&labels, "From")?;
             required(&labels, "Because")?;
-            let Some((claim_start, claim_end)) = current else {
+            let Some((requirement_start, requirement_end)) = current else {
                 return Err(format!("`{identity}` does not exist"));
             };
-            let block = &source[claim_start..claim_end];
-            let Some((case_start, case_end)) = find_block(block, &format!("### Case: {case_id}"))
+            let block = &source[requirement_start..requirement_end];
+            let Some((scenario_start, scenario_end)) =
+                find_block(block, &format!("### Scenario: {scenario_id}"))
             else {
                 return Ok((source.to_string(), true));
             };
-            check_from(from, &block[case_start..case_end])?;
-            if !retained_cases.contains(case_id) {
-                ensure_case_unreferenced(model, &operation.spec, claim_id, case_id)?;
+            check_from(from, &block[scenario_start..scenario_end])?;
+            if !retained_scenarios.contains(scenario_id) {
+                ensure_scenario_unreferenced(model, &operation.spec, requirement_id, scenario_id)?;
             }
-            let next = replace_range(source, claim_start + case_start, claim_start + case_end, "");
-            let (_, new_end) = find_block(&next, &format!("## Claim: {claim_id}")).unwrap();
-            parse_claim(&operation.spec, &next[claim_start..new_end])?;
+            let next = replace_range(
+                source,
+                requirement_start + scenario_start,
+                requirement_start + scenario_end,
+                "",
+            );
+            let (_, new_end) =
+                find_block(&next, &format!("## Requirement: {requirement_id}")).unwrap();
+            parse_requirement(&operation.spec, &next[requirement_start..new_end])?;
             Ok((next, false))
         }
         Kind::Criticality => {
@@ -787,7 +816,7 @@ fn check_from(expected: &str, source: &str) -> Result<(), String> {
     }
 }
 
-fn parse_claim(spec: &str, block: &str) -> Result<Claim, String> {
+fn parse_requirement(spec: &str, block: &str) -> Result<Requirement, String> {
     let source = format!("# Spec: {spec}\n\n{}\n", block.trim_end());
     parse_spec("<target intent>", &source)
         .map_err(|errors| {
@@ -797,23 +826,23 @@ fn parse_claim(spec: &str, block: &str) -> Result<Claim, String> {
                 .collect::<Vec<_>>()
                 .join("; ")
         })?
-        .claims
+        .requirements
         .into_iter()
         .next()
-        .ok_or_else(|| "operation contains no Claim".into())
+        .ok_or_else(|| "operation contains no Requirement".into())
 }
 
-fn same_claim(left: &str, right: &str, spec: &str) -> Result<bool, String> {
-    let a = parse_claim(spec, left)?;
-    let b = parse_claim(spec, right)?;
+fn same_requirement(left: &str, right: &str, spec: &str) -> Result<bool, String> {
+    let a = parse_requirement(spec, left)?;
+    let b = parse_requirement(spec, right)?;
     Ok(a.id == b.id
         && a.title == b.title
         && a.criticality == b.criticality
         && a.statement == b.statement
-        && a.cases.len() == b.cases.len()
-        && a.cases
+        && a.scenarios.len() == b.scenarios.len()
+        && a.scenarios
             .iter()
-            .zip(&b.cases)
+            .zip(&b.scenarios)
             .all(|(a, b)| a.id == b.id && a.statement == b.statement))
 }
 
@@ -853,65 +882,69 @@ fn replace_range(source: &str, start: usize, end: usize, block: &str) -> String 
     result
 }
 
-fn ensure_claim_unreferenced(model: &Model, spec: &str, claim: &str) -> Result<(), String> {
-    let identity = claim.to_string();
-    if model.account_design_for_claim(spec, claim).is_some()
-        || model.account_verifications.iter().any(|document| document.claims.iter().any(|scope| scope.claim == identity))
-        || model.account_reviews.iter().any(|document| document.claims.iter().any(|scope| scope.claim == identity))
-        || model.account_supports.iter().any(|support| support.elements.iter().any(|element| element.claim == identity))
-        || model.workspace.obligation(spec, claim).is_some()
+fn ensure_requirement_unreferenced(
+    model: &Model,
+    spec: &str,
+    requirement: &str,
+) -> Result<(), String> {
+    let identity = requirement.to_string();
+    if model.account_design_for_requirement(spec, requirement).is_some()
+        || model.account_verifications.iter().any(|document| document.requirements.iter().any(|scope| scope.requirement == identity))
+        || model.account_reviews.iter().any(|document| document.requirements.iter().any(|scope| scope.requirement == identity))
+        || model.account_supports.iter().any(|support| support.elements.iter().any(|element| element.requirement == identity))
+        || model.workspace.obligation(spec, requirement).is_some()
         || model
         .realizes
         .iter()
-        .any(|site| site.claim == claim)
+        .any(|site| site.requirement == requirement)
         || model
             .designs
             .iter()
-            .any(|design| design.spec == spec && design.for_claim(claim).is_some())
+            .any(|design| design.spec == spec && design.for_requirement(requirement).is_some())
         || model.verifications.iter().any(|verification| {
             verification.owner == spec
                 && (verification
-                    .claim_judgments
+                    .requirement_judgments
                     .iter()
-                    .any(|item| item.id == claim || item.id == identity)
-                    || verification.challenge_plans.iter().any(|plan| plan.selectors.iter().any(|selector| matches!(selector, crate::verification::Selector::ClaimJudgmentFromClaim(id) if id == &identity)))
+                    .any(|item| item.id == requirement || item.id == identity)
+                    || verification.challenge_plans.iter().any(|plan| plan.selectors.iter().any(|selector| matches!(selector, crate::verification::Selector::RequirementJudgmentFromRequirement(id) if id == &identity)))
                     || verification
                         .bindings
                         .iter()
-                        .any(|item| model.find_case(&item.case).is_some_and(|view| view.claim.id == claim)))
+                        .any(|item| model.find_scenario(&item.scenario).is_some_and(|view| view.requirement.id == requirement)))
         })
     {
         return Err(format!(
-            "Claim `{claim}` in module `{spec}` has current realization, design or verification references"
+            "Requirement `{requirement}` in module `{spec}` has current realization, design or verification references"
         ));
     }
     Ok(())
 }
 
-fn ensure_case_unreferenced(
+fn ensure_scenario_unreferenced(
     model: &Model,
     spec: &str,
-    claim: &str,
-    case: &str,
+    requirement: &str,
+    scenario: &str,
 ) -> Result<(), String> {
-    let identity = case.to_string();
-    if model.account_verifications.iter().any(|document| document.cases.iter().any(|scope| scope.case == identity) || document.checks.iter().any(|check| check.cases.contains(&identity)))
-        || model.account_reviews.iter().any(|document| document.claims.iter().any(|scope| scope.cases.contains(&identity)))
-        || model.account_supports.iter().any(|support| support.contributions.iter().any(|contribution| contribution.case == identity))
+    let identity = scenario.to_string();
+    if model.account_verifications.iter().any(|document| document.scenarios.iter().any(|scope| scope.scenario == identity) || document.checks.iter().any(|check| check.scenarios.contains(&identity)))
+        || model.account_reviews.iter().any(|document| document.requirements.iter().any(|scope| scope.scenarios.contains(&identity)))
+        || model.account_supports.iter().any(|support| support.contributions.iter().any(|contribution| contribution.scenario == identity))
         || model.verifications.iter().any(|verification| {
         verification
             .bindings
             .iter()
-            .any(|item| item.case == identity)
-            || verification.claim_judgments.iter().any(|judgment| judgment.basis.iter().any(|basis| basis == &identity))
-            || verification.challenge_plans.iter().any(|plan| plan.selectors.iter().any(|selector| matches!(selector, crate::verification::Selector::ApplicabilityDecisionFromCase(id) if id == &identity)))
+            .any(|item| item.scenario == identity)
+            || verification.requirement_judgments.iter().any(|judgment| judgment.basis.iter().any(|basis| basis == &identity))
+            || verification.challenge_plans.iter().any(|plan| plan.selectors.iter().any(|selector| matches!(selector, crate::verification::Selector::ApplicabilityDecisionFromScenario(id) if id == &identity)))
     }) || model.designs.iter().any(|design| {
         design.spec == spec
-            && design.for_claim(claim).is_some_and(|entry| {
+            && design.for_requirement(requirement).is_some_and(|entry| {
                 entry
                     .mechanisms
                     .iter()
-                    .any(|mechanism| mechanism.cases.iter().any(|id| id == case))
+                    .any(|mechanism| mechanism.scenarios.iter().any(|id| id == scenario))
             })
     }) {
         return Err(format!(

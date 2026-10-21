@@ -9,6 +9,7 @@ use std::path::{Component as PathComponent, Path, PathBuf};
 
 const INSTALLATION_FORMAT: &str = "azimuth-installation";
 const INSTALLATION_SCHEMA: u32 = 1;
+const MIGRATION_PLAN_SCHEMA: u32 = 2;
 
 #[derive(Clone, Debug)]
 pub struct ManagedResource {
@@ -417,12 +418,28 @@ pub fn migration_plan(root: &Path) -> Result<Json, String> {
     let installation = load(root)?;
     let repository = repository_root(root)?;
     let installation_relative = repository_relative(&repository, &installation_path)?;
-    let findings = retired_syntax_findings(&repository)?;
-    let supported =
+    let release_supported =
         resources::migration_reference(&installation.release_version, env!("CARGO_PKG_VERSION"))
             .is_some()
             || installation.release_version == env!("CARGO_PKG_VERSION");
-    let disposition = if !supported {
+    let rewrites_account = resources::migration_line_reference(
+        &installation.migration_line,
+        resources::MIGRATION_LINE,
+    )
+    .is_some();
+    let line_supported =
+        rewrites_account || installation.migration_line == resources::MIGRATION_LINE;
+    let edits = if release_supported && rewrites_account {
+        account_edits(root, &repository)?
+    } else {
+        Vec::new()
+    };
+    let findings = if rewrites_account {
+        Vec::new()
+    } else {
+        retired_syntax_findings(root)?
+    };
+    let disposition = if !release_supported || !line_supported {
         "unsupported"
     } else if findings.is_empty() {
         "automatic"
@@ -431,14 +448,18 @@ pub fn migration_plan(root: &Path) -> Result<Json, String> {
     };
     let base = Json::obj(vec![
         ("format", Json::str("azimuth-migration-plan")),
-        ("schemaVersion", Json::Num(1.0)),
+        ("schemaVersion", Json::Num(MIGRATION_PLAN_SCHEMA as f64)),
+        ("fromMigrationLine", Json::str(&installation.migration_line)),
         ("migrationLine", Json::str(resources::MIGRATION_LINE)),
         ("fromRelease", Json::str(&installation.release_version)),
         ("toRelease", Json::str(env!("CARGO_PKG_VERSION"))),
         ("installation", Json::str(installation_relative)),
         ("installationSha256", Json::str(sha256(source.as_bytes()))),
         ("disposition", Json::str(disposition)),
-        ("edits", Json::Arr(Vec::new())),
+        (
+            "edits",
+            Json::Arr(edits.iter().map(AccountEdit::to_json).collect()),
+        ),
         (
             "findings",
             Json::Arr(findings.into_iter().map(Json::str).collect()),
@@ -452,7 +473,8 @@ pub fn migration_plan(root: &Path) -> Result<Json, String> {
     Ok(Json::Obj(fields))
 }
 
-pub fn migration_apply(root: &Path, plan_path: &Path) -> Result<(), String> {
+/// Applies an automatic plan and returns the number of rewritten account files.
+pub fn migration_apply(root: &Path, plan_path: &Path) -> Result<usize, String> {
     let source = fs::read_to_string(plan_path)
         .map_err(|error| format!("cannot read {}: {error}", plan_path.display()))?;
     let plan = json::parse(&source).map_err(|error| format!("{}: {error}", plan_path.display()))?;
@@ -462,7 +484,7 @@ pub fn migration_apply(root: &Path, plan_path: &Path) -> Result<(), String> {
             plan_path.display()
         ));
     }
-    if require_number(&plan, "schemaVersion", plan_path)? != 1 {
+    if require_number(&plan, "schemaVersion", plan_path)? != MIGRATION_PLAN_SCHEMA {
         return Err(format!(
             "{}: unsupported migration plan schemaVersion",
             plan_path.display()
@@ -492,7 +514,7 @@ pub fn migration_apply(root: &Path, plan_path: &Path) -> Result<(), String> {
         return Err("migration plan fingerprint does not match its content".into());
     }
     let installation_path = root.join("installation.json");
-    let loaded = load(root)?;
+    let mut loaded = load(root)?;
     let repository = repository_root(root)?;
     if require_string(&plan, "installation", plan_path)?
         != repository_relative(&repository, &installation_path)?
@@ -502,15 +524,104 @@ pub fn migration_apply(root: &Path, plan_path: &Path) -> Result<(), String> {
     if require_string(&plan, "fromRelease", plan_path)? != loaded.release_version {
         return Err("migration plan source release differs from the installation".into());
     }
+    if require_string(&plan, "fromMigrationLine", plan_path)? != loaded.migration_line {
+        return Err("migration plan source migration line differs from the installation".into());
+    }
     let installation = fs::read(&installation_path)
         .map_err(|error| format!("cannot read {}: {error}", installation_path.display()))?;
     if sha256(&installation) != require_string(&plan, "installationSha256", plan_path)? {
         return Err("installation changed after migration planning; replan".into());
     }
-    if !object_array(&plan, "edits", plan_path)?.is_empty() {
-        return Err("this CLI cannot apply the plan's edit schema".into());
+    if loaded.migration_line == resources::MIGRATION_LINE {
+        if !object_array(&plan, "edits", plan_path)?.is_empty() {
+            return Err("a same-line migration plan carries no account edits".into());
+        }
+        return Ok(0);
     }
-    Ok(())
+    if resources::migration_line_reference(&loaded.migration_line, resources::MIGRATION_LINE)
+        .is_none()
+    {
+        return Err("no account migration edge reaches the running migration line".into());
+    }
+    let current = account_edits(root, &repository)?;
+    let planned = object_array(&plan, "edits", plan_path)?;
+    if planned.len() != current.len()
+        || planned
+            .iter()
+            .zip(&current)
+            .any(|(planned, current)| *planned != current.to_json())
+    {
+        return Err("account files changed after migration planning; replan".into());
+    }
+    let count = current.len();
+    let mut changes = current
+        .into_iter()
+        .map(|edit| (repository.join(&edit.path), Some(edit.content)))
+        .collect::<Vec<_>>();
+    loaded.migration_line = resources::MIGRATION_LINE.into();
+    changes.push((
+        installation_path,
+        Some(installation_json(&loaded).into_bytes()),
+    ));
+    apply_transaction(changes)?;
+    Ok(count)
+}
+
+struct AccountEdit {
+    path: String,
+    before: String,
+    after: String,
+    content: Vec<u8>,
+}
+
+impl AccountEdit {
+    fn to_json(&self) -> Json {
+        Json::obj(vec![
+            ("path", Json::str(&self.path)),
+            ("sha256", Json::str(&self.before)),
+            ("rewrittenSha256", Json::str(&self.after)),
+        ])
+    }
+}
+
+fn account_edits(root: &Path, repository: &Path) -> Result<Vec<AccountEdit>, String> {
+    let mut edits = Vec::new();
+    for file in active_account_markdown(root)? {
+        let source = fs::read_to_string(&file)
+            .map_err(|error| format!("cannot read {}: {error}", file.display()))?;
+        let rewritten = crate::account_syntax_migration::rewrite_markdown(&source);
+        if rewritten != source {
+            edits.push(account_edit(repository, &file, &source, rewritten)?);
+        }
+    }
+    let workspace = root.join("workspace.json");
+    match fs::read_to_string(&workspace) {
+        Ok(source) => {
+            let rewritten = crate::account_syntax_migration::rewrite_workspace(&source)
+                .map_err(|error| format!("{}: {error}", workspace.display()))?;
+            if let Some(rewritten) = rewritten {
+                edits.push(account_edit(repository, &workspace, &source, rewritten)?);
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("cannot read {}: {error}", workspace.display())),
+    }
+    edits.sort_by(|left, right| left.path.cmp(&right.path));
+    Ok(edits)
+}
+
+fn account_edit(
+    repository: &Path,
+    file: &Path,
+    source: &str,
+    rewritten: String,
+) -> Result<AccountEdit, String> {
+    Ok(AccountEdit {
+        path: repository_relative(repository, file)?,
+        before: sha256(source.as_bytes()),
+        after: sha256(rewritten.as_bytes()),
+        content: rewritten.into_bytes(),
+    })
 }
 
 fn desired_resources(agents: &[String], aliases: &[AdoptedAlias]) -> Vec<DesiredResource> {
@@ -829,26 +940,43 @@ fn json_declares_component(value: &Json, identity: &str) -> bool {
         == Some(env!("CARGO_PKG_VERSION"))
 }
 
-fn retired_syntax_findings(repository: &Path) -> Result<Vec<String>, String> {
-    let mut files = Vec::new();
-    collect_markdown(&repository.join("azimuth/model"), &mut files)?;
-    collect_active_change_markdown(&repository.join("azimuth/changes"), &mut files)?;
-    files.sort();
+fn retired_syntax_findings(root: &Path) -> Result<Vec<String>, String> {
     let mut findings = Vec::new();
-    for file in files {
+    for file in active_account_markdown(root)? {
         let source = fs::read_to_string(&file)
             .map_err(|error| format!("cannot read {}: {error}", file.display()))?;
-        for (index, line) in source.lines().enumerate() {
-            if line.starts_with("## Requirement:") || line.starts_with("### Scenario:") {
-                findings.push(format!(
-                    "{}:{}: retired Requirement/Scenario syntax requires semantic review",
-                    file.display(),
-                    index + 1
-                ));
-            }
+        for (line, text) in crate::account_syntax_migration::retired_syntax(&source) {
+            findings.push(format!(
+                "{}:{line}: retired Claim/Case syntax `{}` requires the Requirement/Scenario vocabulary",
+                file.display(),
+                text.trim()
+            ));
+        }
+    }
+    let workspace = root.join("workspace.json");
+    if let Ok(source) = fs::read_to_string(&workspace) {
+        if crate::account_syntax_migration::rewrite_workspace(&source)
+            .map_err(|error| format!("{}: {error}", workspace.display()))?
+            .is_some()
+        {
+            findings.push(format!(
+                "{}: workspace version 1 requires version 2 realization obligations",
+                workspace.display()
+            ));
         }
     }
     Ok(findings)
+}
+
+/// Active authored Markdown: the model, standards and unarchived changes. Archived changes and
+/// `history` directories are immutable records and are never rewritten or rejected.
+fn active_account_markdown(root: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut files = Vec::new();
+    collect_markdown(&root.join("model"), &mut files)?;
+    collect_markdown(&root.join("standards"), &mut files)?;
+    collect_active_change_markdown(&root.join("changes"), &mut files)?;
+    files.sort();
+    Ok(files)
 }
 
 fn collect_active_change_markdown(root: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
@@ -887,7 +1015,9 @@ fn collect_markdown(root: &Path, files: &mut Vec<PathBuf>) -> Result<(), String>
             .file_type()
             .map_err(|error| format!("cannot inspect {}: {error}", path.display()))?;
         if kind.is_dir() {
-            collect_markdown(&path, files)?;
+            if entry.file_name() != "history" {
+                collect_markdown(&path, files)?;
+            }
         } else if kind.is_file() && path.extension().and_then(|value| value.to_str()) == Some("md")
         {
             files.push(path);

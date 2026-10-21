@@ -38,7 +38,7 @@ pub struct Surface {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RealizationObligation {
     pub spec: String,
-    pub claim: String,
+    pub requirement: String,
     pub areas: Vec<String>,
 }
 
@@ -71,10 +71,10 @@ impl Workspace {
             .map(|(area, _)| area)
     }
 
-    pub fn obligation(&self, _spec: &str, claim: &str) -> Option<&RealizationObligation> {
+    pub fn obligation(&self, _spec: &str, requirement: &str) -> Option<&RealizationObligation> {
         self.realization_obligations
             .iter()
-            .find(|item| item.claim == claim)
+            .find(|item| item.requirement == requirement)
     }
 }
 
@@ -116,10 +116,10 @@ pub fn parse(path: &str, root: &Json) -> Result<Workspace, Vec<Diag>> {
     );
     expect_literal(path, root, "format", "azimuth-workspace", &mut errors);
     match root.get("version").and_then(Json::as_num) {
-        Some(1.0) => {}
+        Some(2.0) => {}
         Some(version) => errors.push(Diag::file(
             path,
-            format!("unsupported-version: {version}; this tool accepts 1"),
+            format!("unsupported-version: {version}; this tool accepts 2"),
         )),
         None => errors.push(Diag::file(path, "workspace has no numeric `version`")),
     }
@@ -240,13 +240,13 @@ pub fn parse(path: &str, root: &Json) -> Result<Workspace, Vec<Diag>> {
                     path,
                     &where_,
                     item,
-                    &["spec", "claim", "areas"],
+                    &["spec", "requirement", "areas"],
                     &mut errors,
                 );
                 let spec = string(path, item, &where_, "spec", &mut errors);
-                let claim = string(path, item, &where_, "claim", &mut errors);
+                let requirement = string(path, item, &where_, "requirement", &mut errors);
                 validate_declared_id(path, &where_, &spec, true, &mut errors);
-                validate_declared_id(path, &where_, &claim, false, &mut errors);
+                validate_declared_id(path, &where_, &requirement, false, &mut errors);
                 let areas = strings(path, item, &where_, "areas", &mut errors);
                 if areas.is_empty() {
                     errors.push(Diag::file(
@@ -256,11 +256,15 @@ pub fn parse(path: &str, root: &Json) -> Result<Workspace, Vec<Diag>> {
                 }
                 unique(
                     path,
-                    &format!("area in {spec}#{claim} obligation"),
+                    &format!("area in {spec}#{requirement} obligation"),
                     areas.iter(),
                     &mut errors,
                 );
-                RealizationObligation { spec, claim, areas }
+                RealizationObligation {
+                    spec,
+                    requirement,
+                    areas,
+                }
             })
             .collect::<Vec<_>>();
     unique(
@@ -268,7 +272,7 @@ pub fn parse(path: &str, root: &Json) -> Result<Workspace, Vec<Diag>> {
         "realization obligation",
         realization_obligations
             .iter()
-            .map(|item| item.claim.clone())
+            .map(|item| item.requirement.clone())
             .collect::<Vec<_>>()
             .iter(),
         &mut errors,
@@ -309,7 +313,7 @@ pub fn parse(path: &str, root: &Json) -> Result<Workspace, Vec<Diag>> {
                     path,
                     format!(
                         "unknown-area: realization obligation `{}#{}` names undeclared area `{area}`",
-                        obligation.spec, obligation.claim
+                        obligation.spec, obligation.requirement
                     ),
                 ));
             }
@@ -492,7 +496,7 @@ mod tests {
     fn parses_areas_surfaces_and_obligations() {
         let workspace = parse_text(
             r#"{
-              "format":"azimuth-workspace","version":1,
+              "format":"azimuth-workspace","version":2,
               "areas":[
                 {"id":"trips","mounts":[{"id":"code","path":"app/services/Trips"}]},
                 {"id":"rider-experience","mounts":[{"id":"code","path":"app/web/rider"}]}
@@ -501,7 +505,7 @@ mod tests {
                 {"area":"rider-experience","mount":"code","enumerator":"next-routes"}
               ]}],
               "realization_obligations":[{"spec":"referrals/rewards",
-                "claim":"referral-summary-explains-state","areas":["trips","rider-experience"]}]
+                "requirement":"referral-summary-explains-state","areas":["trips","rider-experience"]}]
             }"#,
         )
         .unwrap();
@@ -518,7 +522,7 @@ mod tests {
     #[test]
     fn rejects_unknown_surface_areas() {
         let errors = parse_text(
-            r#"{"format":"azimuth-workspace","version":1,"areas":[],
+            r#"{"format":"azimuth-workspace","version":2,"areas":[],
               "surfaces":[{"id":"trips/rider-view","contributions":[
                 {"area":"missing","mount":"code","enumerator":"next-routes"}
               ]}]}"#,
@@ -532,7 +536,7 @@ mod tests {
     #[test]
     fn rejects_fields_that_would_silently_drop_an_obligation() {
         let errors = parse_text(
-            r#"{"format":"azimuth-workspace","version":1,"areas":[],"surfaces":[],
+            r#"{"format":"azimuth-workspace","version":2,"areas":[],"surfaces":[],
               "realization-obligation":[]}"#,
         )
         .unwrap_err();
@@ -544,7 +548,7 @@ mod tests {
     #[test]
     fn rejects_an_ambiguous_area_mount_path() {
         let errors = parse_text(
-            r#"{"format":"azimuth-workspace","version":1,"areas":[
+            r#"{"format":"azimuth-workspace","version":2,"areas":[
               {"id":"first","mounts":[{"id":"code","path":"app/shared"}]},
               {"id":"second","mounts":[{"id":"code","path":"app/shared"}]}
             ],"surfaces":[]}"#,

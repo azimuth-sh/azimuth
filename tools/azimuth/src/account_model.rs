@@ -1,6 +1,6 @@
-//! Structural assembly of Claim-first account documents and available source linkage.
+//! Structural assembly of Requirement-first account documents and available source linkage.
 //!
-//! A finding records an unresolved relationship. This module does not judge a Claim, qualify a
+//! A finding records an unresolved relationship. This module does not judge a Requirement, qualify a
 //! method, interpret a Run, or establish deployment Assurance State.
 
 use crate::account_design::{self, AccountDesign, Declaration, DeclarationKind};
@@ -18,22 +18,22 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccountFindingKind {
-    UnknownDesignClaim,
-    UnknownDesignCase,
-    UnknownMechanismCase,
-    UnknownVerificationClaim,
-    UnknownVerificationCase,
+    UnknownDesignRequirement,
+    UnknownDesignScenario,
+    UnknownMechanismScenario,
+    UnknownVerificationRequirement,
+    UnknownVerificationScenario,
     DuplicateFacet,
-    MissingClaimDesign,
-    MissingClaimVerification,
-    MissingClaimReview,
-    PendingClaimReview,
-    InvalidClaimReview,
+    MissingRequirementDesign,
+    MissingRequirementVerification,
+    MissingRequirementReview,
+    PendingRequirementReview,
+    InvalidRequirementReview,
     UnknownArea,
     MissingAreaRealization,
     VerificationElementSupportUnresolved,
-    CaseCheckContributionUnresolved,
-    CheckWithoutCaseContribution,
+    ScenarioCheckContributionUnresolved,
+    CheckWithoutScenarioContribution,
     MechanismSupportUnresolved,
     CheckImplementationUnresolved,
 }
@@ -41,22 +41,22 @@ pub enum AccountFindingKind {
 impl AccountFindingKind {
     pub fn name(self) -> &'static str {
         match self {
-            Self::UnknownDesignClaim => "unknown-design-claim",
-            Self::UnknownDesignCase => "unknown-design-case",
-            Self::UnknownMechanismCase => "unknown-mechanism-case",
-            Self::UnknownVerificationClaim => "unknown-verification-claim",
-            Self::UnknownVerificationCase => "unknown-verification-case",
+            Self::UnknownDesignRequirement => "unknown-design-requirement",
+            Self::UnknownDesignScenario => "unknown-design-scenario",
+            Self::UnknownMechanismScenario => "unknown-mechanism-scenario",
+            Self::UnknownVerificationRequirement => "unknown-verification-requirement",
+            Self::UnknownVerificationScenario => "unknown-verification-scenario",
             Self::DuplicateFacet => "duplicate-account-facet",
-            Self::MissingClaimDesign => "missing-claim-design",
-            Self::MissingClaimVerification => "missing-claim-verification",
-            Self::MissingClaimReview => "missing-claim-review",
-            Self::PendingClaimReview => "pending-claim-review",
-            Self::InvalidClaimReview => "invalid-claim-review",
+            Self::MissingRequirementDesign => "missing-requirement-design",
+            Self::MissingRequirementVerification => "missing-requirement-verification",
+            Self::MissingRequirementReview => "missing-requirement-review",
+            Self::PendingRequirementReview => "pending-requirement-review",
+            Self::InvalidRequirementReview => "invalid-requirement-review",
             Self::UnknownArea => "unknown-design-area",
             Self::MissingAreaRealization => "missing-area-realization",
             Self::VerificationElementSupportUnresolved => "verification-element-support-unresolved",
-            Self::CaseCheckContributionUnresolved => "case-check-contribution-unresolved",
-            Self::CheckWithoutCaseContribution => "check-without-case-contribution",
+            Self::ScenarioCheckContributionUnresolved => "scenario-check-contribution-unresolved",
+            Self::CheckWithoutScenarioContribution => "check-without-scenario-contribution",
             Self::MechanismSupportUnresolved => "mechanism-support-unresolved",
             Self::CheckImplementationUnresolved => "check-implementation-unresolved",
         }
@@ -68,7 +68,7 @@ pub struct AccountFinding {
     pub kind: AccountFindingKind,
     pub path: String,
     pub line: usize,
-    pub claim: Option<String>,
+    pub requirement: Option<String>,
     pub detail: String,
 }
 
@@ -77,14 +77,14 @@ impl AccountFinding {
         kind: AccountFindingKind,
         path: &str,
         line: usize,
-        claim: Option<String>,
+        requirement: Option<String>,
         detail: impl Into<String>,
     ) -> Self {
         Self {
             kind,
             path: path.to_string(),
             line,
-            claim,
+            requirement,
             detail: detail.into(),
         }
     }
@@ -93,24 +93,24 @@ impl AccountFinding {
 #[derive(Debug, Default)]
 pub struct AccountReport {
     pub specs: usize,
-    pub claims: usize,
-    pub cases: usize,
+    pub requirements: usize,
+    pub scenarios: usize,
     pub design_facets: usize,
     pub verification_facets: usize,
     pub review_facets: usize,
     pub realizations: usize,
     pub support_artifacts: usize,
     pub support_checks: usize,
-    pub case_contributions: usize,
+    pub scenario_contributions: usize,
     pub findings: Vec<AccountFinding>,
 }
 
 impl AccountReport {
     pub fn render(&self) -> String {
         let mut output = format!(
-            "Account inspection: {} specs, {} claims, {} cases, {} design facets, {} verification facets, {} review facets, {} realizations, {} support artifacts, {} Checks, {} Case contributions, {} unresolved findings\n",
-            self.specs, self.claims, self.cases, self.design_facets,
-            self.verification_facets, self.review_facets, self.realizations, self.support_artifacts, self.support_checks, self.case_contributions, self.findings.len()
+            "Account inspection: {} specs, {} requirements, {} scenarios, {} design facets, {} verification facets, {} review facets, {} realizations, {} support artifacts, {} Checks, {} Scenario contributions, {} unresolved findings\n",
+            self.specs, self.requirements, self.scenarios, self.design_facets,
+            self.verification_facets, self.review_facets, self.realizations, self.support_artifacts, self.support_checks, self.scenario_contributions, self.findings.len()
         );
         for finding in &self.findings {
             let location = if finding.line == 0 {
@@ -161,12 +161,16 @@ pub fn inspect_with_support(
     let mut reviews = BTreeMap::<String, ReviewFacet>::new();
     let mut report = AccountReport {
         specs: loaded.specs.len(),
-        claims: loaded.specs.iter().map(|spec| spec.claims.len()).sum(),
-        cases: loaded
+        requirements: loaded
             .specs
             .iter()
-            .flat_map(|spec| &spec.claims)
-            .map(|claim| claim.cases.len())
+            .map(|spec| spec.requirements.len())
+            .sum(),
+        scenarios: loaded
+            .specs
+            .iter()
+            .flat_map(|spec| &spec.requirements)
+            .map(|requirement| requirement.scenarios.len())
             .sum(),
         realizations: manifests
             .iter()
@@ -174,7 +178,7 @@ pub fn inspect_with_support(
             .sum(),
         support_artifacts: supports.iter().map(|support| support.artifacts.len()).sum(),
         support_checks: supports.iter().map(|support| support.checks.len()).sum(),
-        case_contributions: supports
+        scenario_contributions: supports
             .iter()
             .map(|support| support.contributions.len())
             .sum(),
@@ -183,7 +187,7 @@ pub fn inspect_with_support(
     for path in files {
         let display = path.display().to_string();
         match path.file_name().and_then(|name| name.to_str()) {
-            Some("design.md") if uses_account_format(&path, "## Claim design")? => {
+            Some("design.md") if uses_account_format(&path, "## Requirement design")? => {
                 match account_design::load_account_design(&path) {
                     Ok(design) => {
                         if let Some(previous) = designs.insert(design.spec.clone(), design) {
@@ -199,7 +203,9 @@ pub fn inspect_with_support(
                     Err(mut diagnostics) => errors.append(&mut diagnostics),
                 }
             }
-            Some("verification.md") if uses_account_format(&path, "## Claim verification")? => {
+            Some("verification.md")
+                if uses_account_format(&path, "## Requirement verification")? =>
+            {
                 match account_verification::load_account_verification(&path) {
                     Ok(verification) => {
                         if let Some(previous) =
@@ -255,10 +261,10 @@ pub fn inspect_with_support(
         .values()
         .map(|file| file.checks.len())
         .sum::<usize>();
-    report.case_contributions += verifications
+    report.scenario_contributions += verifications
         .values()
         .flat_map(|file| &file.checks)
-        .map(|check| check.cases.len())
+        .map(|check| check.scenarios.len())
         .sum::<usize>();
     let definitions = crate::model::Model {
         specs: loaded.specs.clone(),
@@ -279,11 +285,11 @@ pub fn inspect_with_support(
                 .any(|contribution| contribution.check == check.id)
             {
                 report.findings.push(AccountFinding::new(
-                    AccountFindingKind::CheckWithoutCaseContribution,
+                    AccountFindingKind::CheckWithoutScenarioContribution,
                     &support.path,
                     0,
                     None,
-                    format!("Check `{}` has no explicit Case contribution", check.id),
+                    format!("Check `{}` has no explicit Scenario contribution", check.id),
                 ));
             }
         }
@@ -338,7 +344,7 @@ pub fn inspect_with_support(
         }
     }
     for account in verifications.values() {
-        for challenger in &account.challengers {
+        for verification_challenge in &account.verification_challenges {
             if !workspace
                 .packages
                 .iter()
@@ -347,17 +353,17 @@ pub fn inspect_with_support(
                 report.findings.push(AccountFinding::new(
                     AccountFindingKind::CheckImplementationUnresolved,
                     &account.path,
-                    challenger.line,
-                    Some(challenger.id.clone()),
-                    "Challenger package azimuth.challenge is not enabled",
+                    verification_challenge.line,
+                    Some(verification_challenge.id.clone()),
+                    "Verification Challenge package azimuth.challenge is not enabled",
                 ));
             }
             let implementations = package_producers
                 .iter()
                 .filter(|producer| {
                     producer.package == "azimuth.challenge"
-                        && producer.contract == "challenger-implementation"
-                        && producer.entity == challenger.id
+                        && producer.contract == "verification-challenge-implementation"
+                        && producer.entity == verification_challenge.id
                 })
                 .collect::<Vec<_>>();
             if implementations.len() != 1
@@ -368,9 +374,9 @@ pub fn inspect_with_support(
                 report.findings.push(AccountFinding::new(
                     AccountFindingKind::CheckImplementationUnresolved,
                     &account.path,
-                    challenger.line,
-                    Some(challenger.id.clone()),
-                    "Challenger must resolve exactly one qualified package implementation",
+                    verification_challenge.line,
+                    Some(verification_challenge.id.clone()),
+                    "Verification Challenge must resolve exactly one qualified package implementation",
                 ));
             }
         }
@@ -413,38 +419,38 @@ pub fn inspect_with_support(
         {
             continue;
         }
-        for claim in &spec.claims {
+        for requirement in &spec.requirements {
             if !matches!(
-                claim.criticality,
+                requirement.criticality,
                 Some(Criticality::Standard | Criticality::Critical)
             ) {
                 continue;
             }
-            let identity = claim.id.clone();
+            let identity = requirement.id.clone();
             if !designs
                 .get(&spec.id)
-                .is_some_and(|design| has_claim_design(design, &identity))
+                .is_some_and(|design| has_requirement_design(design, &identity))
             {
                 report.findings.push(AccountFinding::new(
-                    AccountFindingKind::MissingClaimDesign,
+                    AccountFindingKind::MissingRequirementDesign,
                     &spec.path,
-                    claim.line,
+                    requirement.line,
                     Some(identity.clone()),
-                    format!("non-routine Claim `{identity}` has no Claim design"),
+                    format!("non-routine Requirement `{identity}` has no Requirement design"),
                 ));
             }
             if !verifications.get(&spec.id).is_some_and(|verification| {
                 verification
-                    .claims
+                    .requirements
                     .iter()
-                    .any(|scope| scope.claim == identity)
+                    .any(|scope| scope.requirement == identity)
             }) {
                 report.findings.push(AccountFinding::new(
-                    AccountFindingKind::MissingClaimVerification,
+                    AccountFindingKind::MissingRequirementVerification,
                     &spec.path,
-                    claim.line,
+                    requirement.line,
                     Some(identity.clone()),
-                    format!("non-routine Claim `{identity}` has no Claim verification"),
+                    format!("non-routine Requirement `{identity}` has no Requirement verification"),
                 ));
             }
         }
@@ -463,14 +469,14 @@ pub fn inspect_with_support(
         .filter(|finding| {
             matches!(
                 finding.kind,
-                AccountFindingKind::UnknownDesignClaim
-                    | AccountFindingKind::UnknownDesignCase
-                    | AccountFindingKind::UnknownMechanismCase
-                    | AccountFindingKind::UnknownVerificationClaim
-                    | AccountFindingKind::UnknownVerificationCase
+                AccountFindingKind::UnknownDesignRequirement
+                    | AccountFindingKind::UnknownDesignScenario
+                    | AccountFindingKind::UnknownMechanismScenario
+                    | AccountFindingKind::UnknownVerificationRequirement
+                    | AccountFindingKind::UnknownVerificationScenario
                     | AccountFindingKind::DuplicateFacet
                     | AccountFindingKind::UnknownArea
-                    | AccountFindingKind::InvalidClaimReview
+                    | AccountFindingKind::InvalidRequirementReview
             )
         })
         .map(|finding| Diag::at(&finding.path, finding.line, finding.detail.clone()))
@@ -497,35 +503,42 @@ fn collect_facets(root: &Path, paths: &mut Vec<PathBuf>) -> std::io::Result<()> 
     Ok(())
 }
 
-fn claim<'a>(specs: &'a [Spec], identity: &str) -> Option<(&'a Spec, &'a crate::model::Claim)> {
+fn requirement<'a>(
+    specs: &'a [Spec],
+    identity: &str,
+) -> Option<(&'a Spec, &'a crate::model::Requirement)> {
     specs.iter().find_map(|spec| {
-        spec.claims
+        spec.requirements
             .iter()
-            .find(|claim| claim.id == identity)
-            .map(|claim| (spec, claim))
+            .find(|requirement| requirement.id == identity)
+            .map(|requirement| (spec, requirement))
     })
 }
 
-fn find_case_by_id<'a>(
+fn find_scenario_by_id<'a>(
     specs: &'a [Spec],
     identity: &str,
-) -> Option<(&'a Spec, &'a crate::model::Claim, &'a crate::model::Case)> {
+) -> Option<(
+    &'a Spec,
+    &'a crate::model::Requirement,
+    &'a crate::model::Scenario,
+)> {
     specs.iter().find_map(|spec| {
-        spec.claims.iter().find_map(|claim| {
-            claim
-                .cases
+        spec.requirements.iter().find_map(|requirement| {
+            requirement
+                .scenarios
                 .iter()
-                .find(|case| case.id == identity)
-                .map(|case| (spec, claim, case))
+                .find(|scenario| scenario.id == identity)
+                .map(|scenario| (spec, requirement, scenario))
         })
     })
 }
 
-fn has_claim_design(design: &AccountDesign, identity: &str) -> bool {
+fn has_requirement_design(design: &AccountDesign, identity: &str) -> bool {
     design
         .declarations
         .iter()
-        .any(|item| item.kind == DeclarationKind::Claim && item.id == identity)
+        .any(|item| item.kind == DeclarationKind::Requirement && item.id == identity)
 }
 
 fn inspect_design(
@@ -546,19 +559,19 @@ fn inspect_design_item(
     specs: &[Spec],
     workspace: &Workspace,
     manifests: &[Manifest],
-    enclosing_claim: Option<&str>,
+    enclosing_requirement: Option<&str>,
     report: &mut AccountReport,
 ) {
     match item.kind {
-        DeclarationKind::Claim => {
+        DeclarationKind::Requirement => {
             let identity = item.id.clone();
-            match claim(specs, &identity) {
+            match requirement(specs, &identity) {
                 None => report.findings.push(AccountFinding::new(
-                    AccountFindingKind::UnknownDesignClaim,
+                    AccountFindingKind::UnknownDesignRequirement,
                     &design.path,
                     item.line,
                     Some(identity.clone()),
-                    format!("Claim design `{identity}` names no spec Claim"),
+                    format!("Requirement design `{identity}` names no spec Requirement"),
                 )),
                 Some((_, target))
                     if target.domain != Domain::Behaviour
@@ -567,9 +580,9 @@ fn inspect_design_item(
                             Some(Criticality::Standard | Criticality::Critical)
                         ) =>
                 {
-                    report.findings.push(AccountFinding::new(AccountFindingKind::UnknownDesignClaim,
+                    report.findings.push(AccountFinding::new(AccountFindingKind::UnknownDesignRequirement,
                         &design.path, item.line, Some(identity.clone()),
-                        format!("Claim design `{identity}` does not target a non-routine behavioral Claim")));
+                        format!("Requirement design `{identity}` does not target a non-routine behavioral Requirement")));
                 }
                 Some(_) => {}
             }
@@ -580,16 +593,16 @@ fn inspect_design_item(
                         &design.path,
                         item.line,
                         Some(identity.clone()),
-                        format!("Claim design `{identity}` names undeclared Area `{area}`"),
+                        format!("Requirement design `{identity}` names undeclared Area `{area}`"),
                     ));
                     continue;
                 }
-                let claim_id = identity.as_str();
+                let requirement_id = identity.as_str();
                 let realized = manifests
                     .iter()
                     .flat_map(|manifest| &manifest.realizes)
                     .any(|site| {
-                        site.claim == claim_id
+                        site.requirement == requirement_id
                             && site
                                 .source
                                 .as_ref()
@@ -604,20 +617,20 @@ fn inspect_design_item(
                 if !realized {
                     report.findings.push(AccountFinding::new(AccountFindingKind::MissingAreaRealization,
                         &design.path, item.line, Some(identity.clone()),
-                        format!("Claim `{identity}` has no extracted Realizes site in required Area `{area}`")));
+                        format!("Requirement `{identity}` has no extracted Realizes site in required Area `{area}`")));
                 }
             }
         }
-        DeclarationKind::Case => {
-            if !find_case_by_id(specs, &item.id)
-                .is_some_and(|(_, claim, _)| enclosing_claim == Some(claim.id.as_str()))
-            {
+        DeclarationKind::Scenario => {
+            if !find_scenario_by_id(specs, &item.id).is_some_and(|(_, requirement, _)| {
+                enclosing_requirement == Some(requirement.id.as_str())
+            }) {
                 report.findings.push(AccountFinding::new(
-                    AccountFindingKind::UnknownDesignCase,
+                    AccountFindingKind::UnknownDesignScenario,
                     &design.path,
                     item.line,
                     None,
-                    format!("Case design `{}` names no spec Case", item.id),
+                    format!("Scenario design `{}` names no spec Scenario", item.id),
                 ));
             }
         }
@@ -635,14 +648,17 @@ fn inspect_design_item(
             }
         }
         DeclarationKind::Mechanism => {
-            for case in &item.cases {
-                if find_case_by_id(specs, case).is_none() {
+            for scenario in &item.scenarios {
+                if find_scenario_by_id(specs, scenario).is_none() {
                     report.findings.push(AccountFinding::new(
-                        AccountFindingKind::UnknownMechanismCase,
+                        AccountFindingKind::UnknownMechanismScenario,
                         &design.path,
                         item.line,
                         None,
-                        format!("Mechanism `{}` names unknown Case `{case}`", item.id),
+                        format!(
+                            "Mechanism `{}` names unknown Scenario `{scenario}`",
+                            item.id
+                        ),
                     ));
                 }
             }
@@ -667,10 +683,10 @@ fn inspect_design_item(
         DeclarationKind::Section => {}
     }
     for child in &item.children {
-        let owner = if item.kind == DeclarationKind::Claim {
+        let owner = if item.kind == DeclarationKind::Requirement {
             Some(item.id.as_str())
         } else {
-            enclosing_claim
+            enclosing_requirement
         };
         inspect_design_item(design, child, specs, workspace, manifests, owner, report);
     }
@@ -690,7 +706,7 @@ fn inspect_verification(
                 AccountFindingKind::CheckImplementationUnresolved,
                 &verification.path,
                 check.definition.line,
-                Some(check.claim.clone()),
+                Some(check.requirement.clone()),
                 format!(
                     "document-authored Check `{}` has no stable extracted implementation",
                     check.definition.id
@@ -698,15 +714,15 @@ fn inspect_verification(
             ));
         }
     }
-    for scope in &verification.claims {
-        let identity = &scope.claim;
-        let Some((_, target)) = claim(specs, identity) else {
+    for scope in &verification.requirements {
+        let identity = &scope.requirement;
+        let Some((_, target)) = requirement(specs, identity) else {
             report.findings.push(AccountFinding::new(
-                AccountFindingKind::UnknownVerificationClaim,
+                AccountFindingKind::UnknownVerificationRequirement,
                 &verification.path,
                 scope.line,
                 Some(identity.clone()),
-                format!("Claim verification `{identity}` names no spec Claim"),
+                format!("Requirement verification `{identity}` names no spec Requirement"),
             ));
             continue;
         };
@@ -716,24 +732,27 @@ fn inspect_verification(
                 Some(Criticality::Standard | Criticality::Critical)
             )
         {
-            report.findings.push(AccountFinding::new(AccountFindingKind::UnknownVerificationClaim,
+            report.findings.push(AccountFinding::new(AccountFindingKind::UnknownVerificationRequirement,
                 &verification.path, scope.line, Some(identity.clone()),
-                format!("Claim verification `{identity}` does not target a non-routine behavioral Claim")));
+                format!("Requirement verification `{identity}` does not target a non-routine behavioral Requirement")));
             continue;
         }
-        for case in verification
-            .cases
+        for scenario in verification
+            .scenarios
             .iter()
-            .filter(|case| case.claim == *identity)
+            .filter(|scenario| scenario.requirement == *identity)
         {
-            let local = case.case.as_str();
-            if !target.cases.iter().any(|item| item.id == local) {
+            let local = scenario.scenario.as_str();
+            if !target.scenarios.iter().any(|item| item.id == local) {
                 report.findings.push(AccountFinding::new(
-                    AccountFindingKind::UnknownVerificationCase,
+                    AccountFindingKind::UnknownVerificationScenario,
                     &verification.path,
-                    case.line,
+                    scenario.line,
                     Some(identity.clone()),
-                    format!("Case verification `{}` names no spec Case", case.case),
+                    format!(
+                        "Scenario verification `{}` names no spec Scenario",
+                        scenario.scenario
+                    ),
                 ));
             }
         }
@@ -742,29 +761,29 @@ fn inspect_verification(
             let supported = supports
                 .iter()
                 .flat_map(|support| &support.elements)
-                .any(|support| support.claim == *identity && support.element == qualified);
+                .any(|support| support.requirement == *identity && support.element == qualified);
             if !supported {
                 report.findings.push(AccountFinding::new(AccountFindingKind::VerificationElementSupportUnresolved,
                     &verification.path, scope.line, Some(identity.clone()),
                     format!("required verification Element `{qualified}` has no extracted source/configuration support for `{identity}`")));
             }
         }
-        for case in &target.cases {
-            let case_id = case.id.clone();
+        for scenario in &target.scenarios {
+            let scenario_id = scenario.id.clone();
             let contributed = authored_checks.iter().any(|check| {
-                check.cases.contains(&case_id)
+                check.scenarios.contains(&scenario_id)
                     && check_has_implementation(check, implementations.iter())
             }) || supports
                 .iter()
                 .flat_map(|support| &support.contributions)
-                .any(|contribution| contribution.case == case_id);
+                .any(|contribution| contribution.scenario == scenario_id);
             if !contributed {
                 report.findings.push(AccountFinding::new(
-                    AccountFindingKind::CaseCheckContributionUnresolved,
+                    AccountFindingKind::ScenarioCheckContributionUnresolved,
                     &verification.path,
                     scope.line,
                     Some(identity.clone()),
-                    format!("Case `{case_id}` has no extracted Check contribution"),
+                    format!("Scenario `{scenario_id}` has no extracted Check contribution"),
                 ));
             }
         }
@@ -775,13 +794,13 @@ fn inspect_verification(
 pub struct ReviewFacet {
     pub owner: String,
     pub path: String,
-    pub claims: Vec<ClaimReview>,
+    pub requirements: Vec<RequirementReview>,
 }
 
 #[derive(Debug)]
-pub struct ClaimReview {
-    pub claim: String,
-    pub cases: Vec<String>,
+pub struct RequirementReview {
+    pub requirement: String,
+    pub scenarios: Vec<String>,
     pub design: String,
     pub verification: String,
     pub line: usize,
@@ -813,7 +832,7 @@ fn parse_reviews(path: &str, source: &str) -> Result<ReviewFacet, Vec<Diag>> {
             "# Judgments: <module-id>",
         ));
     }
-    let mut claims = Vec::new();
+    let mut requirements = Vec::new();
     let mut index = 1;
     let mut fenced = false;
     while index < lines.len() {
@@ -827,14 +846,14 @@ fn parse_reviews(path: &str, source: &str) -> Result<ReviewFacet, Vec<Diag>> {
             index += 1;
             continue;
         }
-        if let Some(id) = text.strip_prefix("## Claim review: ") {
+        if let Some(id) = text.strip_prefix("## Requirement review: ") {
             let line = index + 1;
             if let Err(reason) = crate::diag::validate_id(id, false) {
                 errors.push(Diag::expecting(
                     path,
                     line,
-                    format!("invalid local Claim review identity `{id}`: {reason}"),
-                    "## Claim review: <claim-id> within the declared module",
+                    format!("invalid local Requirement review identity `{id}`: {reason}"),
+                    "## Requirement review: <requirement-id> within the declared module",
                 ));
             }
             let identity = id.to_string();
@@ -851,7 +870,7 @@ fn parse_reviews(path: &str, source: &str) -> Result<ReviewFacet, Vec<Diag>> {
                 end += 1;
             }
             let mut state = None;
-            let mut cases = Vec::new();
+            let mut scenarios = Vec::new();
             let mut design = None;
             let mut verification = None;
             let mut cursor = index + 1;
@@ -866,7 +885,7 @@ fn parse_reviews(path: &str, source: &str) -> Result<ReviewFacet, Vec<Diag>> {
                         path,
                         field_line,
                         "malformed review field",
-                        "- State:, - Cases:, - Design:, or - Verification:",
+                        "- State:, - Scenarios:, - Design:, or - Verification:",
                     ));
                     cursor += 1;
                     continue;
@@ -890,16 +909,16 @@ fn parse_reviews(path: &str, source: &str) -> Result<ReviewFacet, Vec<Diag>> {
                         }
                         verification = review_value(path, field_line, value, &mut errors);
                     }
-                    "Cases" => {
-                        if !cases.is_empty() {
-                            errors.push(Diag::at(path, field_line, "duplicate Cases"));
+                    "Scenarios" => {
+                        if !scenarios.is_empty() {
+                            errors.push(Diag::at(path, field_line, "duplicate Scenarios"));
                         }
                         if !value.trim().is_empty() {
                             errors.push(Diag::expecting(
                                 path,
                                 field_line,
-                                "Cases must be a list",
-                                "- Cases: followed by indented values",
+                                "Scenarios must be a list",
+                                "- Scenarios: followed by indented values",
                             ));
                         }
                         cursor += 1;
@@ -907,7 +926,7 @@ fn parse_reviews(path: &str, source: &str) -> Result<ReviewFacet, Vec<Diag>> {
                             if let Some(value) =
                                 review_value(path, cursor + 1, &lines[cursor][4..], &mut errors)
                             {
-                                cases.push(value);
+                                scenarios.push(value);
                             }
                             cursor += 1;
                         }
@@ -917,7 +936,7 @@ fn parse_reviews(path: &str, source: &str) -> Result<ReviewFacet, Vec<Diag>> {
                         path,
                         field_line,
                         format!("unknown review field `{name}`"),
-                        "State, Cases, Design, Verification",
+                        "State, Scenarios, Design, Verification",
                     )),
                 }
                 cursor += 1;
@@ -927,40 +946,40 @@ fn parse_reviews(path: &str, source: &str) -> Result<ReviewFacet, Vec<Diag>> {
                     path,
                     line,
                     format!(
-                        "Claim review `{id}` has no pending state or claims an accepted verdict"
+                        "Requirement review `{id}` has no pending state or claims an accepted verdict"
                     ),
                     "- State: `pending`; accepted verdicts require a separate reviewed transition",
                 ));
             }
-            if cases.is_empty() {
+            if scenarios.is_empty() {
                 errors.push(Diag::expecting(
                     path,
                     line,
-                    format!("Claim review `{id}` names no Cases"),
-                    "- Cases: with every current Case",
+                    format!("Requirement review `{id}` names no Scenarios"),
+                    "- Scenarios: with every current Scenario",
                 ));
             }
             if design.is_none() || verification.is_none() {
                 errors.push(Diag::expecting(
                     path,
                     line,
-                    format!("Claim review `{id}` lacks design or verification reference"),
-                    "- Design: and - Verification: naming this Claim",
+                    format!("Requirement review `{id}` lacks design or verification reference"),
+                    "- Design: and - Verification: naming this Requirement",
                 ));
             }
-            if claims
+            if requirements
                 .iter()
-                .any(|existing: &ClaimReview| existing.claim == identity)
+                .any(|existing: &RequirementReview| existing.requirement == identity)
             {
                 errors.push(Diag::at(
                     path,
                     line,
-                    format!("duplicate Claim review `{id}`"),
+                    format!("duplicate Requirement review `{id}`"),
                 ));
             }
-            claims.push(ClaimReview {
-                claim: identity,
-                cases,
+            requirements.push(RequirementReview {
+                requirement: identity,
+                scenarios,
                 design: design.unwrap_or_default(),
                 verification: verification.unwrap_or_default(),
                 line,
@@ -973,24 +992,24 @@ fn parse_reviews(path: &str, source: &str) -> Result<ReviewFacet, Vec<Diag>> {
                 path,
                 index + 1,
                 format!("unknown review declaration `{text}`"),
-                "## Section: or ## Claim review:",
+                "## Section: or ## Requirement review:",
             ));
         }
         index += 1;
     }
-    if claims.is_empty() {
+    if requirements.is_empty() {
         errors.push(Diag::expecting(
             path,
             1,
-            "review has no Claim accounts",
-            "at least one ## Claim review:",
+            "review has no Requirement accounts",
+            "at least one ## Requirement review:",
         ));
     }
     if errors.is_empty() {
         Ok(ReviewFacet {
             owner: owner.to_string(),
             path: path.to_string(),
-            claims,
+            requirements,
         })
     } else {
         Err(errors)
@@ -1031,44 +1050,46 @@ fn inspect_reviews(
     verifications: &BTreeMap<String, AccountVerification>,
     report: &mut AccountReport,
 ) {
-    for entry in &review.claims {
-        let identity = &entry.claim;
-        let Some((_, target)) = claim(specs, identity) else {
+    for entry in &review.requirements {
+        let identity = &entry.requirement;
+        let Some((_, target)) = requirement(specs, identity) else {
             report.findings.push(AccountFinding::new(
-                AccountFindingKind::InvalidClaimReview,
+                AccountFindingKind::InvalidRequirementReview,
                 &review.path,
                 entry.line,
                 Some(identity.clone()),
-                format!("Claim review `{identity}` names no spec Claim"),
+                format!("Requirement review `{identity}` names no spec Requirement"),
             ));
             continue;
         };
         let expected = target
-            .cases
+            .scenarios
             .iter()
-            .map(|case| case.id.clone())
+            .map(|scenario| scenario.id.clone())
             .collect::<BTreeSet<_>>();
-        let actual = entry.cases.iter().cloned().collect::<BTreeSet<_>>();
-        if expected != actual || entry.cases.len() != actual.len() {
+        let actual = entry.scenarios.iter().cloned().collect::<BTreeSet<_>>();
+        if expected != actual || entry.scenarios.len() != actual.len() {
             report.findings.push(AccountFinding::new(
-                AccountFindingKind::InvalidClaimReview,
+                AccountFindingKind::InvalidRequirementReview,
                 &review.path,
                 entry.line,
                 Some(identity.clone()),
-                format!("Claim review `{identity}` does not name exactly its current Cases"),
+                format!(
+                    "Requirement review `{identity}` does not name exactly its current Scenarios"
+                ),
             ));
         }
         if entry.design != *identity
             || !designs
                 .get(&review.owner)
-                .is_some_and(|design| has_claim_design(design, identity))
+                .is_some_and(|design| has_requirement_design(design, identity))
         {
             report.findings.push(AccountFinding::new(
-                AccountFindingKind::InvalidClaimReview,
+                AccountFindingKind::InvalidRequirementReview,
                 &review.path,
                 entry.line,
                 Some(identity.clone()),
-                format!("Claim review `{identity}` has no matching Design reference"),
+                format!("Requirement review `{identity}` has no matching Design reference"),
             ));
         }
         if entry.verification != *identity
@@ -1076,25 +1097,25 @@ fn inspect_reviews(
                 .get(&review.owner)
                 .is_some_and(|verification| {
                     verification
-                        .claims
+                        .requirements
                         .iter()
-                        .any(|scope| scope.claim == *identity)
+                        .any(|scope| scope.requirement == *identity)
                 })
         {
             report.findings.push(AccountFinding::new(
-                AccountFindingKind::InvalidClaimReview,
+                AccountFindingKind::InvalidRequirementReview,
                 &review.path,
                 entry.line,
                 Some(identity.clone()),
-                format!("Claim review `{identity}` has no matching Verification reference"),
+                format!("Requirement review `{identity}` has no matching Verification reference"),
             ));
         }
         report.findings.push(AccountFinding::new(
-            AccountFindingKind::PendingClaimReview,
+            AccountFindingKind::PendingRequirementReview,
             &review.path,
             entry.line,
             Some(identity.clone()),
-            format!("Claim review `{identity}` remains pending; no verdict is inferred"),
+            format!("Requirement review `{identity}` remains pending; no verdict is inferred"),
         ));
     }
 }
@@ -1154,13 +1175,13 @@ fn validate_supports(
             }
         }
         for contribution in &support.contributions {
-            let pair = (contribution.check.clone(), contribution.case.clone());
+            let pair = (contribution.check.clone(), contribution.scenario.clone());
             if let Some(previous) = contribution_pairs.insert(pair.clone(), &support.path) {
                 errors.push(Diag::at(
                     &support.path,
                     0,
                     format!(
-                        "Check-to-Case contribution `{} -> {}` is already declared by {previous}",
+                        "Check-to-Scenario contribution `{} -> {}` is already declared by {previous}",
                         pair.0, pair.1
                     ),
                 ));
@@ -1185,19 +1206,20 @@ fn validate_supports(
                     ),
                 ));
             }
-            if !claim(specs, &element.claim).is_some_and(|(spec, _)| spec.id == module) {
+            if !requirement(specs, &element.requirement).is_some_and(|(spec, _)| spec.id == module)
+            {
                 errors.push(Diag::at(
                     &support.path,
                     0,
                     format!(
-                        "Element `{}` is not owned by Claim `{}` module",
-                        element.element, element.claim
+                        "Element `{}` is not owned by Requirement `{}` module",
+                        element.element, element.requirement
                     ),
                 ));
             }
             let scoped = verifications.get(module).is_some_and(|verification| {
-                verification.claims.iter().any(|scope| {
-                    scope.claim == element.claim
+                verification.requirements.iter().any(|scope| {
+                    scope.requirement == element.requirement
                         && scope
                             .required_elements
                             .iter()
@@ -1209,8 +1231,8 @@ fn validate_supports(
                     &support.path,
                     0,
                     format!(
-                        "Element `{}` is not required by Claim `{}` verification scope",
-                        element.element, element.claim
+                        "Element `{}` is not required by Requirement `{}` verification scope",
+                        element.element, element.requirement
                     ),
                 ));
             }
@@ -1252,32 +1274,30 @@ fn validate_supports(
             }
         }
         for contribution in &support.contributions {
-            let case = find_case_by_id(specs, &contribution.case);
-            let valid_case = case.is_some();
-            let claim_id = case
-                .map(|(_, claim, _)| claim.id.as_str())
+            let scenario = find_scenario_by_id(specs, &contribution.scenario);
+            let valid_scenario = scenario.is_some();
+            let requirement_id = scenario
+                .map(|(_, requirement, _)| requirement.id.as_str())
                 .unwrap_or_default();
-            if !valid_case {
+            if !valid_scenario {
                 errors.push(Diag::at(
                     &support.path,
                     0,
                     format!(
-                        "Check `{}` contributes to unknown Case `{}`",
-                        contribution.check, contribution.case
+                        "Check `{}` contributes to unknown Scenario `{}`",
+                        contribution.check, contribution.scenario
                     ),
                 ));
             }
-            if !support
-                .elements
-                .iter()
-                .any(|element| element.claim == claim_id && element.element == contribution.element)
-            {
+            if !support.elements.iter().any(|element| {
+                element.requirement == requirement_id && element.element == contribution.element
+            }) {
                 errors.push(Diag::at(
                     &support.path,
                     0,
                     format!(
-                        "Check `{}` contribution to `{}` lacks Element `{}` support for its Claim",
-                        contribution.check, contribution.case, contribution.element
+                        "Check `{}` contribution to `{}` lacks Element `{}` support for its Requirement",
+                        contribution.check, contribution.scenario, contribution.element
                     ),
                 ));
             }
@@ -1392,8 +1412,8 @@ pub fn authored_check_issues<'a>(
                 errors.push(Diag::at(&document.path, line,
                     format!("document-authored Check `{id}` also has source-authored semantics; retain only ImplementsCheck linkage")));
             }
-            for case in &check.cases {
-                if !find_case_by_id(specs, case).is_some_and(|(_, target, _)| {
+            for scenario in &check.scenarios {
+                if !find_scenario_by_id(specs, scenario).is_some_and(|(_, target, _)| {
                     matches!(
                         target.criticality,
                         Some(Criticality::Standard | Criticality::Critical)
@@ -1402,7 +1422,7 @@ pub fn authored_check_issues<'a>(
                     errors.push(Diag::at(
                         &document.path,
                         line,
-                        format!("Check `{id}` references unknown or routine Case `{case}`"),
+                        format!("Check `{id}` references unknown or routine Scenario `{scenario}`"),
                     ));
                 }
             }

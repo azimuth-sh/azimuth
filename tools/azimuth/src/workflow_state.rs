@@ -25,15 +25,15 @@ const KINDS: &[&str] = &[
     "prepare-candidate-model-revision",
     "register-candidate-model-revision",
     "prepare-publication-inputs",
-    "review-claim",
+    "review-requirement",
     "execute-check",
-    "assess-claim-health",
-    "run-challengers",
-    "run-challenger",
+    "assess-requirement-status",
+    "run-verification-challenges",
+    "run-verification-challenge",
     "qualify-method",
     "execute-qualified-check",
     "assess-applicability",
-    "judge-claim",
+    "judge-requirement",
 ];
 fn obj(value: &Json, names: &[&str]) -> Result<(), String> {
     let Json::Obj(fields) = value else {
@@ -87,12 +87,12 @@ fn work_key(value: &Json) -> Result<String, String> {
             "project",
             "change",
             "module",
-            "claim",
-            "case",
+            "requirement",
+            "scenario",
             "check",
             "probe",
-            "challenger",
-            "subject",
+            "verification_challenge",
+            "verification_target",
             "model_revision",
         ]
         .contains(&key.as_str())
@@ -102,7 +102,7 @@ fn work_key(value: &Json) -> Result<String, String> {
         let value = value
             .as_str()
             .ok_or("work target requires string locators")?;
-        if key == "subject" || key == "model_revision" {
+        if key == "verification_target" || key == "model_revision" {
             fingerprint(value)?;
         } else {
             identifier(value)?;
@@ -447,8 +447,8 @@ fn definition(v: &Json) -> Result<(), String> {
         }
     }
     obj(v, &fields)?;
-    if text(v, "format")? != "azimuth-workflow-definition" || number(v, "version")? != 1 {
-        return Err("expected workflow definition version 1".into());
+    if text(v, "format")? != "azimuth-workflow-definition" || number(v, "version")? != 2 {
+        return Err("expected workflow definition version 2".into());
     }
     identifier(text(v, "id")?)?;
     let tasks = arr(v, "tasks")?;
@@ -498,31 +498,34 @@ fn definition(v: &Json) -> Result<(), String> {
                 "project",
                 "change",
                 "module",
-                "claim",
-                "case",
+                "requirement",
+                "scenario",
                 "check",
                 "probe",
-                "challenger",
-                "subject",
+                "verification_challenge",
+                "verification_target",
                 "model_revision",
             ]
             .contains(&k.as_str())
             {
                 return Err("unknown target locator".into());
             }
-            if k == "subject" || k == "model_revision" {
-                fingerprint(v.as_str().ok_or("subject requires fingerprint")?)?;
+            if k == "verification_target" || k == "model_revision" {
+                fingerprint(
+                    v.as_str()
+                        .ok_or("verification target requires fingerprint")?,
+                )?;
             } else {
                 identifier(v.as_str().ok_or("target requires identifiers")?)?;
             }
         }
         for required in match text(task, "kind")? {
             "qualify-method" | "execute-qualified-check" | "execute-check" => vec!["check"],
-            "review-claim" => vec!["claim"],
-            "run-challenger" => vec!["challenger"],
-            "assess-claim-health" => vec!["claim", "subject"],
-            "assess-applicability" => vec!["check", "case", "subject"],
-            "judge-claim" => vec!["claim", "subject"],
+            "review-requirement" => vec!["requirement"],
+            "run-verification-challenge" => vec!["verification_challenge"],
+            "assess-requirement-status" => vec!["requirement", "verification_target"],
+            "assess-applicability" => vec!["check", "scenario", "verification_target"],
+            "judge-requirement" => vec!["requirement", "verification_target"],
             _ => vec![],
         } {
             text(task.get("target").unwrap(), required)?;
@@ -597,10 +600,10 @@ fn definition(v: &Json) -> Result<(), String> {
         if [
             "qualify-method",
             "assess-applicability",
-            "judge-claim",
-            "review-claim",
-            "assess-claim-health",
-            "run-challenger",
+            "judge-requirement",
+            "review-requirement",
+            "assess-requirement-status",
+            "run-verification-challenge",
         ]
         .contains(&text(task, "kind")?)
             && arr(task, "inputs")?
@@ -654,8 +657,8 @@ fn instance(v: &Json) -> Result<(), String> {
             "history",
         ],
     )?;
-    if text(v, "format")? != "azimuth-workflow-instance" || number(v, "version")? != 1 {
-        return Err("expected workflow instance version 1".into());
+    if text(v, "format")? != "azimuth-workflow-instance" || number(v, "version")? != 2 {
+        return Err("expected workflow instance version 2".into());
     }
     identifier(text(v, "id")?)?;
     number(v, "revision")?;
@@ -709,7 +712,7 @@ fn result_shape(v: &Json) -> Result<(), String> {
         if !["no-findings", "findings", "inconclusive"].contains(&text(assessment, "assessment")?)
             || !matches!(assessment.get("execution_gaps"), Some(Json::Bool(_)))
         {
-            return Err("invalid derived Challenger assessment".into());
+            return Err("invalid derived Verification Challenge assessment".into());
         }
     }
     if let Some(inputs) = v.get("inputs") {
@@ -739,8 +742,8 @@ fn result_shape(v: &Json) -> Result<(), String> {
             ref_shape(reference, true)?;
         }
     }
-    if text(v, "format")? != "azimuth-workflow-result" || number(v, "version")? != 1 {
-        return Err("expected workflow result version 1".into());
+    if text(v, "format")? != "azimuth-workflow-result" || number(v, "version")? != 2 {
+        return Err("expected workflow result version 2".into());
     }
     require_work(text(v, "task")?)?;
     for key in ["id", "actor"] {
@@ -789,22 +792,22 @@ fn latest<'a>(state: &'a Json, id: &str) -> Option<&'a Json> {
         .map(|h| h.get("result").unwrap())
         .find(|r| r.get("task").and_then(Json::as_str) == Some(id))
 }
-fn challenger_claim_inventory(authority: &Json) -> Result<Json, String> {
+fn verification_challenge_requirement_inventory(authority: &Json) -> Result<Json, String> {
     let mut selected: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for claim in arr(authority, "claims")? {
-        for challenger in claim
-            .get("challengers")
+    for requirement in arr(authority, "requirements")? {
+        for verification_challenge in requirement
+            .get("verification_challenges")
             .and_then(Json::as_array)
             .unwrap_or(&[])
         {
-            for target in arr(challenger, "claims")? {
+            for target in arr(verification_challenge, "requirements")? {
                 selected
-                    .entry(text(challenger, "id")?.into())
+                    .entry(text(verification_challenge, "id")?.into())
                     .or_default()
                     .insert(
                         target
                             .as_str()
-                            .ok_or("Challenger Claim requires identity")?
+                            .ok_or("Verification Challenge Requirement requires identity")?
                             .into(),
                     );
             }
@@ -813,24 +816,30 @@ fn challenger_claim_inventory(authority: &Json) -> Result<Json, String> {
     Ok(Json::Arr(
         selected
             .into_iter()
-            .map(|(id, claims)| {
+            .map(|(id, requirements)| {
                 Json::obj(vec![
-                    ("challenger", Json::str(id)),
-                    ("claims", Json::Arr(claims.iter().map(Json::str).collect())),
+                    ("verification_challenge", Json::str(id)),
+                    (
+                        "requirements",
+                        Json::Arr(requirements.iter().map(Json::str).collect()),
+                    ),
                 ])
             })
             .collect(),
     ))
 }
-fn challenger_claims(bindings: &Json, target: &Json) -> Result<Vec<Json>, String> {
+fn verification_challenge_requirements(
+    bindings: &Json,
+    target: &Json,
+) -> Result<Vec<Json>, String> {
     let inventory = bindings
         .get("assurance")
-        .ok_or("Challenger inventory missing")?;
-    let mapping = arr(inventory, "challenger_claims")?
+        .ok_or("Verification Challenge inventory missing")?;
+    let mapping = arr(inventory, "verification_challenge_requirements")?
         .iter()
-        .find(|mapping| mapping.get("challenger") == target.get("challenger"))
-        .ok_or("Challenger Claim mapping missing; derive a fresh candidate inventory")?;
-    Ok(arr(mapping, "claims")?.to_vec())
+        .find(|mapping| mapping.get("verification_challenge") == target.get("verification_challenge"))
+        .ok_or("Verification Challenge Requirement mapping missing; derive a fresh candidate inventory")?;
+    Ok(arr(mapping, "requirements")?.to_vec())
 }
 fn challenge_assessment(
     result: &Json,
@@ -839,58 +848,68 @@ fn challenge_assessment(
 ) -> Result<Json, String> {
     let reference = record_of(arr(result, "records")?, "run-bundle")?;
     let path = resolve(reference, roots)?;
-    let bundle = crate::run::load(&path).map_err(|e| format!("invalid Challenger Run: {e:?}"))?;
+    let bundle = crate::run::load(&path)
+        .map_err(|e| format!("invalid Verification Challenge Run: {e:?}"))?;
     if !crate::run::verify(&bundle).is_empty()
         || !bundle.check_executions.is_empty()
-        || bundle.challenger_executions.is_empty()
+        || bundle.verification_challenge_executions.is_empty()
     {
-        return Err("Challenger task requires a valid nonempty Challenge-only Run".into());
+        return Err(
+            "Verification Challenge task requires a valid nonempty Challenge-only Run".into(),
+        );
     }
-    let challenger = text(target, "challenger")?;
+    let verification_challenge = text(target, "verification_challenge")?;
     if bundle
-        .challenger_executions
+        .verification_challenge_executions
         .iter()
-        .any(|e| e.challenger.id != challenger)
+        .any(|e| e.verification_challenge.id != verification_challenge)
     {
-        return Err("Run contains a different Challenger than the task target".into());
+        return Err("Run contains a different Verification Challenge than the task target".into());
     }
     let snapshot = read(&resolve(
         record_of(arr(result, "inputs")?, "assurance-snapshot")?,
         roots,
     )?)?;
     if snapshot.get("model_revision") != target.get("model_revision") {
-        return Err("Challenger Run candidate revision differs from task".into());
+        return Err("Verification Challenge Run candidate revision differs from task".into());
     }
-    let declarations = arr(snapshot.get("authority").unwrap(), "claims")?
+    let declarations = arr(snapshot.get("authority").unwrap(), "requirements")?
         .iter()
-        .flat_map(|c| c.get("challengers").and_then(Json::as_array).unwrap_or(&[]))
-        .filter(|d| d.get("id").and_then(Json::as_str) == Some(challenger))
+        .flat_map(|c| {
+            c.get("verification_challenges")
+                .and_then(Json::as_array)
+                .unwrap_or(&[])
+        })
+        .filter(|d| d.get("id").and_then(Json::as_str) == Some(verification_challenge))
         .collect::<Vec<_>>();
     let declaration = declarations
         .first()
-        .ok_or("task Challenger absent from candidate")?;
+        .ok_or("task Verification Challenge absent from candidate")?;
     if declarations.iter().any(|d| d != declaration) {
-        return Err("conflicting Challenger declarations".into());
+        return Err("conflicting Verification Challenge declarations".into());
     }
-    let expected = arr(declaration, "claims")?
+    let expected = arr(declaration, "requirements")?
         .iter()
         .map(|id| id.as_str().unwrap())
         .collect::<BTreeSet<_>>();
     let actual = bundle
-        .challenger_executions
+        .verification_challenge_executions
         .iter()
         .map(|e| e.target.id.as_str())
         .collect::<BTreeSet<_>>();
     if actual != expected
-        || bundle.challenger_executions.iter().any(|e| {
-            Some(e.challenger.fingerprint.as_str())
+        || bundle.verification_challenge_executions.iter().any(|e| {
+            Some(e.verification_challenge.fingerprint.as_str())
                 != declaration.get("fingerprint").and_then(Json::as_str)
         })
     {
-        return Err("Run does not cover the exact declared Challenger and all its Claims".into());
+        return Err(
+            "Run does not cover the exact declared Verification Challenge and all its Requirements"
+                .into(),
+        );
     }
     let findings = bundle
-        .challenger_executions
+        .verification_challenge_executions
         .iter()
         .any(|e| e.result.outcome.name() == "findings");
     let gaps = bundle.diagnostics.iter().any(|d| {
@@ -900,7 +919,7 @@ fn challenge_assessment(
         .activities
         .iter()
         .any(|a| a.status != crate::run::ActivityStatus::Completed)
-        || bundle.challenger_executions.iter().any(|e| {
+        || bundle.verification_challenge_executions.iter().any(|e| {
             e.result.outcome.name() == "inconclusive"
                 || e.units.iter().any(|u| {
                     u.attempts
@@ -944,24 +963,24 @@ fn challenge_disposition(
         record_of(arr(result, "records")?, "run-bundle")?,
         roots,
     )?)
-    .map_err(|error| format!("invalid Challenger Run: {error:?}"))?;
+    .map_err(|error| format!("invalid Verification Challenge Run: {error:?}"))?;
     let mut reviews = Vec::new();
     for dependency in dependencies {
         if text(dependency, "outcome")? != "accepted" {
             continue;
         }
         for reference in arr(dependency, "records")? {
-            if reference.get("kind").and_then(Json::as_str) == Some("claim-review") {
+            if reference.get("kind").and_then(Json::as_str) == Some("requirement-review") {
                 reviews.push(supporting_record(reference, roots)?);
             }
         }
     }
-    for execution in &bundle.challenger_executions {
+    for execution in &bundle.verification_challenge_executions {
         if execution.result.outcome.name() != "findings" {
             continue;
         }
         if !reviews.iter().any(|review| {
-            review.get("claim").and_then(Json::as_str) == Some(execution.target.id.as_str())
+            review.get("requirement").and_then(Json::as_str) == Some(execution.target.id.as_str())
                 && review.get("fingerprint").and_then(Json::as_str)
                     != Some(execution.target.fingerprint.as_str())
                 && review
@@ -1057,20 +1076,23 @@ fn evaluate(state: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Evaluation, S
             progress = true;
             let mut input_values = Vec::new();
             let mut reasons = Vec::new();
-            if let Some(subject) = task.get("target").and_then(|v| v.get("subject")) {
-                if let Some(subject_inputs) = state
+            if let Some(verification_target) = task
+                .get("target")
+                .and_then(|v| v.get("verification_target"))
+            {
+                if let Some(verification_target_inputs) = state
                     .get("definition")
                     .and_then(|v| v.get("parameters"))
                     .and_then(|v| v.get("assurance"))
-                    .and_then(|v| v.get("subject_inputs"))
+                    .and_then(|v| v.get("verification_target_inputs"))
                     .and_then(Json::as_array)
                 {
-                    for input in subject_inputs
+                    for input in verification_target_inputs
                         .iter()
-                        .filter(|v| v.get("subject") == Some(subject))
+                        .filter(|v| v.get("verification_target") == Some(verification_target))
                     {
                         if let Err(error) = check_ref(input.get("input").unwrap(), r) {
-                            reasons.push(format!("selected Subject input: {error}"));
+                            reasons.push(format!("selected Verification Target input: {error}"));
                         }
                     }
                 }
@@ -1092,7 +1114,7 @@ fn evaluate(state: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Evaluation, S
                     dep_results.push(result.clone());
                 }
             }
-            if text(task, "kind")? == "review-claim" {
+            if text(task, "kind")? == "review-requirement" {
                 let history = arr(state, "history")?;
                 let implementation_position = dep_results
                     .iter()
@@ -1145,7 +1167,7 @@ fn evaluate(state: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Evaluation, S
                         .find(|result| {
                             result.get("task").and_then(Json::as_str)
                                 == Some(text(review, "id").unwrap())
-                                && (text(review, "kind").ok() != Some("run-challenger")
+                                && (text(review, "kind").ok() != Some("run-verification-challenge")
                                     || result
                                         .get("challenge_assessment")
                                         .and_then(|v| v.get("assessment"))
@@ -1187,8 +1209,12 @@ fn evaluate(state: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Evaluation, S
             let mut basis_inputs = input_values.clone();
             let mut basis_dependencies = dep_results.clone();
             let normalization = (|| -> Result<(), String> {
-                if ["qualify-method", "assess-applicability", "judge-claim"]
-                    .contains(&text(task, "kind")?)
+                if [
+                    "qualify-method",
+                    "assess-applicability",
+                    "judge-requirement",
+                ]
+                .contains(&text(task, "kind")?)
                 {
                     for input in &mut basis_inputs {
                         if input.get("kind").and_then(Json::as_str) == Some("assurance-snapshot") {
@@ -1260,7 +1286,7 @@ fn evaluate(state: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Evaluation, S
             }
             if let Some(previous) = latest(state, id) {
                 if !successful(previous)
-                    && (text(task, "kind")? != "run-challenger"
+                    && (text(task, "kind")? != "run-verification-challenge"
                         || previous
                             .get("challenge_assessment")
                             .and_then(|v| v.get("assessment"))
@@ -1296,7 +1322,7 @@ fn evaluate(state: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Evaluation, S
                 }
             }
             let b = basis(task, &basis_inputs, &basis_dependencies, &corrections);
-            let disposition = text(task, "kind")? == "run-challenger"
+            let disposition = text(task, "kind")? == "run-verification-challenge"
                 && reasons.is_empty()
                 && latest(state, id).is_some_and(|result| {
                     challenge_disposition(result, task, &dep_results, r).unwrap_or(false)
@@ -1304,7 +1330,7 @@ fn evaluate(state: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Evaluation, S
             let valid = !correction_pending
                 && latest(state, id).is_some_and(|result| {
                     (successful(result) || disposition)
-                        && (text(task, "kind").ok() != Some("run-challenger")
+                        && (text(task, "kind").ok() != Some("run-verification-challenge")
                             || challenge_assessment(result, task.get("target").unwrap(), r)
                                 .is_ok_and(|value| {
                                     result.get("challenge_assessment") == Some(&value)
@@ -1334,7 +1360,7 @@ fn evaluate(state: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Evaluation, S
             }
             if reasons.is_empty() {
                 eligible.push(Json::obj(vec![("id",Json::str(id)),("task",Json::str(text(task,"kind")?)),("action",task.get("action").cloned().unwrap_or_else(|| Json::str(text(task,"kind").unwrap()))),("target",task.get("target").unwrap().clone()),("repositories",repository_locations(r)),("workflow_directory",Json::str(r.get("").unwrap().to_string_lossy())),("basis",Json::str(b)),("reason",Json::str(if !corrections.is_empty(){"Perform the configured correction after an adverse result; independent reassessment will follow."}else if latest(state,id).is_some(){"The previous result is adverse or its dependencies changed."}else{"The configured prerequisites are satisfied."})),("guidance",task.get("guidance").unwrap().clone()),("inputs",Json::Arr(input_values)),("dependencies",Json::Arr(dep_results)),("corrections",Json::Arr(corrections)),("required_output",task.get("required_output").unwrap().clone())]));
-                if text(task, "kind")? == "run-challenger" {
+                if text(task, "kind")? == "run-verification-challenge" {
                     if let Some(previous) = latest(state, id) {
                         set(
                             eligible.last_mut().unwrap(),
@@ -1461,10 +1487,10 @@ fn public_correction(result: &Json, roots: &BTreeMap<String, PathBuf>) -> Result
         if ["work-result", "run-bundle"].contains(&text(reference, "kind")?) {
             continue;
         }
-        if text(reference, "kind")? == "challenger-report" {
+        if text(reference, "kind")? == "verification-challenge-report" {
             check_ref(reference, roots)?;
             feedback.push(Json::obj(vec![
-                ("kind", Json::str("challenger-report")),
+                ("kind", Json::str("verification-challenge-report")),
                 ("report", reference.clone()),
                 (
                     "directory",
@@ -1509,7 +1535,7 @@ fn public_correction(result: &Json, roots: &BTreeMap<String, PathBuf>) -> Result
     }
     if let Some(assessment) = result.get("challenge_assessment") {
         feedback.push(Json::obj(vec![
-            ("kind", Json::str("challenger-assessment")),
+            ("kind", Json::str("verification-challenge-assessment")),
             ("assessment", assessment.clone()),
             ("guidance", Json::str("Investigate each objection; distinguish a product defect, inadequate Check coverage, equivalent or irrelevant mutation, and execution limitations. Record an independently reassessable disposition; do not turn surviving mutants into automatic product defects.")),
         ]));
@@ -1539,7 +1565,7 @@ fn public_correction(result: &Json, roots: &BTreeMap<String, PathBuf>) -> Result
             ("diagnostics", Json::Arr(diagnostics)),
         ])),
         ("reviews", Json::Arr(feedback)),
-        ("reviewed_artifacts", Json::Arr(inputs.iter().filter(|input| matches!(input.get("kind").and_then(Json::as_str), Some("candidate-facet" | "intent-delta" | "claim-design" | "verification-account" | "source-scope-report"))).cloned().collect())),
+        ("reviewed_artifacts", Json::Arr(inputs.iter().filter(|input| matches!(input.get("kind").and_then(Json::as_str), Some("candidate-facet" | "intent-delta" | "requirement-design" | "verification-account" | "source-scope-report"))).cloned().collect())),
     ]))
 }
 fn public_handoff(handoff: &Json, roots: &BTreeMap<String, PathBuf>) -> Result<Json, String> {
@@ -1575,11 +1601,11 @@ fn public_handoff(handoff: &Json, roots: &BTreeMap<String, PathBuf>) -> Result<J
             })
             .collect(),
     );
-    if text(handoff, "task")? == "run-challenger" {
+    if text(handoff, "task")? == "run-verification-challenge" {
         set(
             &mut result,
-            "challenger",
-            challenger_handoff(handoff, roots)?,
+            "verification_challenge",
+            verification_challenge_handoff(handoff, roots)?,
         );
     }
     if !corrections.is_empty() {
@@ -1595,41 +1621,46 @@ fn public_handoff(handoff: &Json, roots: &BTreeMap<String, PathBuf>) -> Result<J
     }
     Ok(result)
 }
-fn challenger_handoff(handoff: &Json, roots: &BTreeMap<String, PathBuf>) -> Result<Json, String> {
+fn verification_challenge_handoff(
+    handoff: &Json,
+    roots: &BTreeMap<String, PathBuf>,
+) -> Result<Json, String> {
     let snapshot = read(&resolve(
         record_of(arr(handoff, "inputs")?, "assurance-snapshot")?,
         roots,
     )?)?;
-    let identity = text(handoff.get("target").unwrap(), "challenger")?;
+    let identity = text(handoff.get("target").unwrap(), "verification_challenge")?;
     let mut declaration = None;
-    for claim in arr(snapshot.get("authority").unwrap(), "claims")? {
-        for challenger in claim
-            .get("challengers")
+    for requirement in arr(snapshot.get("authority").unwrap(), "requirements")? {
+        for verification_challenge in requirement
+            .get("verification_challenges")
             .and_then(Json::as_array)
             .unwrap_or(&[])
         {
-            if text(challenger, "id")? == identity {
-                if declaration.is_some_and(|previous| previous != challenger) {
-                    return Err("conflicting Challenger declarations".into());
+            if text(verification_challenge, "id")? == identity {
+                if declaration.is_some_and(|previous| previous != verification_challenge) {
+                    return Err("conflicting Verification Challenge declarations".into());
                 }
-                declaration = Some(challenger);
+                declaration = Some(verification_challenge);
             }
         }
     }
-    let declaration = declaration.ok_or("Challenger missing from candidate")?;
+    let declaration = declaration.ok_or("Verification Challenge missing from candidate")?;
     let mut reviews = Vec::new();
     for dependency in arr(handoff, "dependencies")? {
         for reference in arr(dependency, "records")? {
-            if reference.get("kind").and_then(Json::as_str) != Some("claim-review") {
+            if reference.get("kind").and_then(Json::as_str) != Some("requirement-review") {
                 continue;
             }
             let native = supporting_record(reference, roots)?;
-            if !arr(declaration, "claims")?.contains(native.get("claim").unwrap_or(&Json::Null)) {
+            if !arr(declaration, "requirements")?
+                .contains(native.get("requirement").unwrap_or(&Json::Null))
+            {
                 continue;
             }
             let source = correction_source(&native, roots);
             let mut fields = vec![
-                ("claim", native.get("claim").unwrap().clone()),
+                ("requirement", native.get("requirement").unwrap().clone()),
                 ("review", source.as_ref().cloned().unwrap_or(Json::Null)),
                 ("reviewed_model_revision", snapshot.get("model_revision").unwrap().clone()),
                 ("input_currentness", Json::str("Current prerequisite basis; recapture and reassess if implementation, scope or configuration changes.")),
@@ -1645,19 +1676,19 @@ fn challenger_handoff(handoff: &Json, roots: &BTreeMap<String, PathBuf>) -> Resu
     for input in handoff_inputs(handoff)? {
         if input.get("kind").and_then(Json::as_str) == Some("source-scope-report") {
             let scope = read(&resolve(&input, roots)?)?;
-            if scope.get("challenger").and_then(Json::as_str) == Some(identity) {
+            if scope.get("verification_challenge").and_then(Json::as_str) == Some(identity) {
                 scopes.push(scope);
                 scope_inputs.push(input);
             }
         } else if matches!(
             input.get("kind").and_then(Json::as_str),
-            Some("source-capture" | "challenger-configuration")
+            Some("source-capture" | "verification-challenge-configuration")
         ) {
             scope_inputs.push(input);
         }
     }
     if scopes.len() > 1 {
-        return Err("ambiguous prepared Challenger source scope".into());
+        return Err("ambiguous prepared Verification Challenge source scope".into());
     }
     let resolved_scope = scopes.pop().unwrap_or(Json::Null);
     Ok(Json::obj(vec![
@@ -1666,13 +1697,13 @@ fn challenger_handoff(handoff: &Json, roots: &BTreeMap<String, PathBuf>) -> Resu
         ("reviews", Json::Arr(reviews)),
         ("scope_inputs", Json::Arr(scope_inputs)),
         ("instructions", Json::Arr(vec![
-            Json::str("Read the declaration and authored Claim Reviews. Resolve its implementation configuration files and current source scope; retain selected sites, exclusions, unresolved mappings and tool expansions. Missing or stale scope is not permission for a repository-wide fallback."),
-            Json::str("Use explicit isolated tool/environment configuration and an exact source capture. Execute only this Challenger and its selected Checks. Preserve native reports, a readable challenger-report and the imported run-bundle in a fresh attempt directory."),
-            Json::str("Record execution as completed or failed. Azimuth derives assessment no-findings, findings or inconclusive from the Run (native clean means no-findings). Preserve findings together with execution gaps; no findings never establishes Claim Health."),
+            Json::str("Read the declaration and authored Requirement Reviews. Resolve its implementation configuration files and current source scope; retain selected sites, exclusions, unresolved mappings and tool expansions. Missing or stale scope is not permission for a repository-wide fallback."),
+            Json::str("Use explicit isolated tool/environment configuration and an exact source capture. Execute only this Verification Challenge and its selected Checks. Preserve native reports, a readable verification-challenge-report and the imported run-bundle in a fresh attempt directory."),
+            Json::str("Record execution as completed or failed. Azimuth derives assessment no-findings, findings or inconclusive from the Run (native clean means no-findings). Preserve findings together with execution gaps; no findings never establishes Requirement Status."),
             Json::str("For execution failure or inconclusive search, diagnose configuration, prerequisites, scope and tool limitations and retry this work. Do not classify an execution problem as a product defect. Surviving mutations require relevance/equivalence/coverage disposition and independent reassessment."),
         ])),
         ("destinations", Json::obj(vec![
-            ("directory", Json::str(format!("artifacts/challengers/{identity}/<fresh-attempt>"))),
+            ("directory", Json::str(format!("artifacts/verification-challenges/{identity}/<fresh-attempt>"))),
             ("readable_report", Json::str("report.md")),
             ("native_report", Json::str("native-report.json")),
             ("run_bundle", Json::str("run-bundle.json")),
@@ -1806,7 +1837,7 @@ fn review_record(
                         == Some(match kind {
                             "review-proposal" => "proposal",
                             "review-spec-delta" => "intent-delta",
-                            "review-design" => "claim-design",
+                            "review-design" => "requirement-design",
                             _ => "verification-account",
                         })
                 })
@@ -1820,27 +1851,27 @@ fn review_record(
     } else if [
         "qualify-method",
         "assess-applicability",
-        "judge-claim",
-        "review-claim",
-        "assess-claim-health",
+        "judge-requirement",
+        "review-requirement",
+        "assess-requirement-status",
     ]
     .contains(&kind)
     {
         let expected = match kind {
             "qualify-method" => "method-qualification",
             "assess-applicability" => "applicability-decision",
-            "review-claim" => "claim-review",
-            "assess-claim-health" => "claim-health",
-            _ => "claim-judgment",
+            "review-requirement" => "requirement-review",
+            "assess-requirement-status" => "requirement-status",
+            _ => "requirement-judgment",
         };
         let review = supporting_record(record_of(records, expected)?, r)?;
         crate::assurance_review::validate_record(&review)?;
         for key in if kind == "qualify-method" {
             vec!["check"]
         } else if kind == "assess-applicability" {
-            vec!["check", "case"]
+            vec!["check", "scenario"]
         } else {
-            vec!["claim"]
+            vec!["requirement"]
         } {
             if let Some(expected) = handoff.get("target").and_then(|t| t.get(key)) {
                 if review.get(key) != Some(expected) {
@@ -1853,7 +1884,7 @@ fn review_record(
         {
             return Err("assurance review kind or reviewer mismatch".into());
         }
-        if ["qualify-method", "review-claim"].contains(&kind) {
+        if ["qualify-method", "review-requirement"].contains(&kind) {
             for dependency in arr(handoff, "dependencies")? {
                 if dependency.get("actor") == result.get("actor")
                     && arr(dependency, "records")?.iter().any(|record| {
@@ -1872,10 +1903,12 @@ fn review_record(
         let authority = snapshot.get("authority").unwrap();
         let mut local_reviews = arr(&snapshot, "reviews")?.to_vec();
         let mut runs = snapshot_runs(&snapshot)?;
-        if ["review-claim", "assess-claim-health"].contains(&kind) {
+        if ["review-requirement", "assess-requirement-status"].contains(&kind) {
             for dependency in arr(handoff, "dependencies")? {
                 for reference in arr(dependency, "records")? {
-                    if ["claim-review", "claim-health"].contains(&text(reference, "kind")?) {
+                    if ["requirement-review", "requirement-status"]
+                        .contains(&text(reference, "kind")?)
+                    {
                         for prior in supporting_review_history(reference, r)? {
                             if !local_reviews.contains(&prior) {
                                 local_reviews.push(prior);
@@ -1908,15 +1941,18 @@ fn review_record(
                 "review has been superseded or snapshot current target is ambiguous".into(),
             );
         }
-        if let Some(subject) = handoff.get("target").and_then(|v| v.get("subject")) {
-            if review.get("subject_fingerprint") != Some(subject) {
-                return Err("review Subject differs from task target".into());
+        if let Some(verification_target) = handoff
+            .get("target")
+            .and_then(|v| v.get("verification_target"))
+        {
+            if review.get("verification_target_fingerprint") != Some(verification_target) {
+                return Err("review Verification Target differs from task target".into());
             }
         }
         let assessment = crate::assurance_review::assess_record(&review, authority, prior, &runs);
         let desired = text(result, "outcome")?;
         let matches = assessment.status == desired
-            || (["judge-claim", "assess-claim-health"].contains(&kind)
+            || (["judge-requirement", "assess-requirement-status"].contains(&kind)
                 && assessment.status == "accepted"
                 && review.get("conclusion").and_then(Json::as_str) == Some(desired));
         if !matches {
@@ -1989,7 +2025,7 @@ fn unchanged_inflight_assessment(
     else {
         return Ok(None);
     };
-    if !["review-claim", "run-challenger"].contains(&text(task, "kind")?) {
+    if !["review-requirement", "run-verification-challenge"].contains(&text(task, "kind")?) {
         return Ok(None);
     }
     let Some(handoff) = arr(captured, "eligible")?
@@ -2067,7 +2103,7 @@ fn authored_result(
         text(source, "report")?;
     }
     if handoffs.get("format").and_then(Json::as_str) != Some("azimuth-workflow-handoff")
-        || number(handoffs, "version")? != 1
+        || number(handoffs, "version")? != 2
         || handoffs.get("instance") != state.get("id")
     {
         return Err("--handoff requires this instance's workflow next output".into());
@@ -2165,7 +2201,7 @@ fn authored_result(
     ]));
     let mut result = Json::obj(vec![
         ("format", Json::str("azimuth-workflow-result")),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         ("id", Json::str(format!("attempt-{}", &identity[7..]))),
         ("task", handoff.get("id").unwrap().clone()),
         ("basis", handoff.get("basis").unwrap().clone()),
@@ -2174,14 +2210,14 @@ fn authored_result(
         ("records", Json::Arr(records)),
         ("inputs", Json::Arr(arr(handoff, "inputs")?.to_vec())),
     ]);
-    if text(handoff, "task")? == "run-challenger"
+    if text(handoff, "task")? == "run-verification-challenge"
         && (text(source, "outcome")? == "completed"
             || arr(&result, "records")?
                 .iter()
                 .any(|r| r.get("kind").and_then(Json::as_str) == Some("run-bundle")))
     {
         text(source, "report")?;
-        record_of(arr(&result, "records")?, "challenger-report")?;
+        record_of(arr(&result, "records")?, "verification-challenge-report")?;
         let assessment = challenge_assessment(&result, handoff.get("target").unwrap(), roots)?;
         set(&mut result, "challenge_assessment", assessment);
     }
@@ -2264,7 +2300,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             "--repositories",
             "--project",
             "--snapshot",
-            "--subjects",
+            "--verification-targets",
         ],
         "next" | "verify" => vec!["--instance", "--change", "--repositories", "--project"],
         "update" => vec![
@@ -2338,7 +2374,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
         }
         let state = Json::obj(vec![
             ("format", Json::str("azimuth-workflow-instance")),
-            ("version", Json::Num(1.0)),
+            ("version", Json::Num(2.0)),
             ("id", Json::str(text(&def, "id")?)),
             ("revision", Json::Num(0.0)),
             ("definition_fingerprint", Json::str(digest(&def))),
@@ -2367,9 +2403,9 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
                     )?),
                 ),
             ]);
-        let selection = get("--subjects").map(|value| {
+        let selection = get("--verification-targets").map(|value| {
             Json::obj(vec![
-                ("kind", Json::str("assurance-subject-selection")),
+                ("kind", Json::str("assurance-verification-target-selection")),
                 ("ref", Json::str(value)),
             ])
         });
@@ -2435,10 +2471,15 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
         let valid = if kind == "request-implementation-approval" {
             ["approved", "denied", "deferred"].contains(&outcome)
         } else if review_kind(kind)
-            || ["qualify-method", "assess-applicability", "review-claim"].contains(&kind)
+            || [
+                "qualify-method",
+                "assess-applicability",
+                "review-requirement",
+            ]
+            .contains(&kind)
         {
             ["accepted", "rejected"].contains(&outcome)
-        } else if ["judge-claim", "assess-claim-health"].contains(&kind) {
+        } else if ["judge-requirement", "assess-requirement-status"].contains(&kind) {
             ["supported", "violated", "unresolved"].contains(&outcome)
         } else {
             ["completed", "failed"].contains(&outcome)
@@ -2543,12 +2584,12 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
         if [
             "execute-qualified-check",
             "execute-check",
-            "run-challengers",
-            "run-challenger",
+            "run-verification-challenges",
+            "run-verification-challenge",
         ]
         .contains(&kind)
             && (outcome == "completed"
-                || kind == "run-challenger"
+                || kind == "run-verification-challenge"
                     && arr(&result, "records")?
                         .iter()
                         .any(|r| r.get("kind").and_then(Json::as_str) == Some("run-bundle")))
@@ -2558,12 +2599,14 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             let source = fs::read_to_string(&path).map_err(|e| e.to_string())?;
             let bundle = crate::run::parse(&path.display().to_string(), &source)
                 .map_err(|e| format!("invalid Run: {e:?}"))?;
-            if ["run-challengers", "run-challenger"].contains(&kind)
-                && bundle.challenger_executions.is_empty()
+            if ["run-verification-challenges", "run-verification-challenge"].contains(&kind)
+                && bundle.verification_challenge_executions.is_empty()
             {
-                return Err("Challenger execution requires recorded Challenge Results".into());
+                return Err(
+                    "Verification Challenge execution requires recorded Challenge Results".into(),
+                );
             }
-            if ["run-challengers", "run-challenger"].contains(&kind) {
+            if ["run-verification-challenges", "run-verification-challenge"].contains(&kind) {
                 let snapshot = read(&resolve(
                     record_of(arr(handoff, "inputs")?, "assurance-snapshot")?,
                     &r,
@@ -2573,7 +2616,9 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
                 let mut reviews = arr(&snapshot, "reviews")?.to_vec();
                 for dependency in arr(handoff, "dependencies")? {
                     for reference in arr(dependency, "records")? {
-                        if ["claim-review", "claim-health"].contains(&text(reference, "kind")?) {
+                        if ["requirement-review", "requirement-status"]
+                            .contains(&text(reference, "kind")?)
+                        {
                             for review in supporting_review_history(reference, &r)? {
                                 if !reviews.contains(&review) {
                                     reviews.push(review);
@@ -2598,32 +2643,39 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
                         }
                     }
                 }
-                for execution in &bundle.challenger_executions {
-                    let declarations = arr(authority, "claims")?.iter().flat_map(|claim| {
-                        claim
-                            .get("challengers")
-                            .and_then(Json::as_array)
-                            .unwrap_or(&[])
-                    });
-                    if !declarations.into_iter().any(|challenger| {
-                        challenger.get("id").and_then(Json::as_str)
-                            == Some(execution.challenger.id.as_str())
-                            && challenger.get("fingerprint").and_then(Json::as_str)
-                                == Some(execution.challenger.fingerprint.as_str())
-                            && challenger
-                                .get("claims")
+                for execution in &bundle.verification_challenge_executions {
+                    let declarations =
+                        arr(authority, "requirements")?
+                            .iter()
+                            .flat_map(|requirement| {
+                                requirement
+                                    .get("verification_challenges")
+                                    .and_then(Json::as_array)
+                                    .unwrap_or(&[])
+                            });
+                    if !declarations.into_iter().any(|verification_challenge| {
+                        verification_challenge.get("id").and_then(Json::as_str)
+                            == Some(execution.verification_challenge.id.as_str())
+                            && verification_challenge
+                                .get("fingerprint")
+                                .and_then(Json::as_str)
+                                == Some(execution.verification_challenge.fingerprint.as_str())
+                            && verification_challenge
+                                .get("requirements")
                                 .and_then(Json::as_array)
-                                .is_some_and(|claims| {
-                                    claims.iter().any(|claim| {
-                                        claim.as_str() == Some(execution.target.id.as_str())
+                                .is_some_and(|requirements| {
+                                    requirements.iter().any(|requirement| {
+                                        requirement.as_str() == Some(execution.target.id.as_str())
                                     })
                                 })
                     }) {
-                        return Err("Challenge does not match the current declared Challenger and Claim scope".into());
+                        return Err("Challenge does not match the current declared Verification Challenge and Requirement scope".into());
                     }
-                    if !["claim-review", "claim-health"].contains(&execution.target.kind.name()) {
+                    if !["requirement-review", "requirement-status"]
+                        .contains(&execution.target.kind.name())
+                    {
                         return Err(
-                            "New workflow Challenges must target Claim Review or Claim Health"
+                            "New workflow Challenges must target Requirement Review or Requirement Status"
                                 .into(),
                         );
                     }
@@ -2634,13 +2686,13 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
                                 == Some(execution.target.fingerprint.as_str())
                         })
                         .ok_or("Challenge target assessment missing from retained inputs")?;
-                    if review.get("claim").and_then(Json::as_str)
+                    if review.get("requirement").and_then(Json::as_str)
                         != Some(execution.target.id.as_str())
                         || review.get("kind").and_then(Json::as_str)
                             != Some(execution.target.kind.name())
                     {
                         return Err(
-                            "Challenge target kind or Claim differs from retained assessment"
+                            "Challenge target kind or Requirement differs from retained assessment"
                                 .into(),
                         );
                     }
@@ -2669,13 +2721,13 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
                     return Err("Run has no execution for configured Check".into());
                 }
             }
-            if let Some(subject) = handoff
+            if let Some(verification_target) = handoff
                 .get("target")
-                .and_then(|v| v.get("subject"))
+                .and_then(|v| v.get("verification_target"))
                 .and_then(Json::as_str)
             {
-                if bundle.subject_fingerprint != subject {
-                    return Err("Run Subject differs from task target".into());
+                if bundle.verification_target_fingerprint != verification_target {
+                    return Err("Run Verification Target differs from task target".into());
                 }
             }
             let findings = crate::run::verify(&bundle);
@@ -2712,13 +2764,15 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             && state.get("definition").unwrap().get("template").is_some()
             && (kind == "prepare-candidate-model-revision"
                 || records.iter().any(|r| {
-                    r.get("kind").and_then(Json::as_str) == Some("assurance-subject-selection")
+                    r.get("kind").and_then(Json::as_str)
+                        == Some("assurance-verification-target-selection")
                 })) {
             let snapshot = records.iter().find(|r| r.get("kind").and_then(Json::as_str) == Some("assurance-snapshot"))
                 .cloned().or_else(|| state.get("definition").unwrap().get("parameters")?.get("assurance")?.get("snapshot").cloned())
                 .ok_or("candidate preparation requires an assurance-snapshot output for automatic target derivation")?;
             let selection = records.iter().find(|r| {
-                r.get("kind").and_then(Json::as_str) == Some("assurance-subject-selection")
+                r.get("kind").and_then(Json::as_str)
+                    == Some("assurance-verification-target-selection")
             });
             let mut prepared = state.clone();
             if let Json::Obj(fields) = &mut prepared {
@@ -2808,7 +2862,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
     let evaluation = evaluate(&state, &r)?;
     Ok(Json::obj(vec![
         ("format", Json::str("azimuth-workflow-handoff")),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         ("workflow_revision", state.get("revision").unwrap().clone()),
         ("instance", Json::str(text(&state, "id")?)),
         ("required_inputs", assurance_requirements(&state)?),
@@ -2868,7 +2922,7 @@ pub fn validate_output(args: &[String], output: &Path) -> Result<(), String> {
             }
         }
     }
-    for flag in ["--snapshot", "--subjects"] {
+    for flag in ["--snapshot", "--verification-targets"] {
         if let Some(input) = value(flag) {
             let input = path.parent().unwrap_or(Path::new(".")).join(input);
             if canonical(&input)? == output {
@@ -2953,14 +3007,16 @@ fn set(value: &mut Json, key: &str, replacement: Json) {
 fn permitted_outcomes(kind: &str) -> &'static [&'static str] {
     match kind {
         "request-implementation-approval" => &["approved", "denied", "deferred"],
-        "review-claim"
+        "review-requirement"
         | "qualify-method"
         | "assess-applicability"
         | "review-proposal"
         | "review-spec-delta"
         | "review-design"
         | "review-verification" => &["accepted", "rejected"],
-        "judge-claim" | "assess-claim-health" => &["supported", "violated", "unresolved"],
+        "judge-requirement" | "assess-requirement-status" => {
+            &["supported", "violated", "unresolved"]
+        }
         _ => &["completed", "failed"],
     }
 }
@@ -2992,10 +3048,10 @@ fn outcome_contract(action: &Json) -> Result<(), String> {
 fn template(v: &Json) -> Result<(), String> {
     obj(v, &["format", "version", "id", "revision", "actions"])?;
     if text(v, "format")? != "azimuth-workflow-template"
-        || number(v, "version")? != 1
+        || number(v, "version")? != 2
         || number(v, "revision")? == 0
     {
-        return Err("expected workflow template version 1 with positive revision".into());
+        return Err("expected workflow template version 2 with positive revision".into());
     }
     identifier(text(v, "id")?)?;
     let actions = arr(v, "actions")?;
@@ -3027,11 +3083,11 @@ fn template(v: &Json) -> Result<(), String> {
             "change",
             "modules",
             "methods",
-            "claim-definitions",
-            "challengers",
+            "requirement-definitions",
+            "verification-challenges",
             "checks",
             "contributions",
-            "claims",
+            "requirements",
         ]
         .contains(&text(action, "collection")?)
         {
@@ -3066,10 +3122,10 @@ fn template(v: &Json) -> Result<(), String> {
         if [
             "qualify-method",
             "assess-applicability",
-            "judge-claim",
-            "review-claim",
-            "assess-claim-health",
-            "run-challenger",
+            "judge-requirement",
+            "review-requirement",
+            "assess-requirement-status",
+            "run-verification-challenge",
         ]
         .contains(&text(action, "kind")?)
             && !input_bindings.contains("snapshot")
@@ -3101,10 +3157,10 @@ fn template(v: &Json) -> Result<(), String> {
                     "all",
                     "same-module",
                     "same-check",
-                    "same-subject",
-                    "claim-contributions",
-                    "same-claim",
-                    "challenger-claims",
+                    "same-verification-target",
+                    "requirement-contributions",
+                    "same-requirement",
+                    "verification-challenge-requirements",
                 ]
                 .contains(&text(dep, "match")?)
             {
@@ -3122,15 +3178,19 @@ fn template(v: &Json) -> Result<(), String> {
                     ["methods", "checks", "contributions"].contains(&collection)
                         && ["methods", "checks", "contributions"].contains(&other)
                 }
-                "same-subject" => {
-                    ["checks", "contributions", "claims"].contains(&collection)
-                        && ["checks", "contributions", "claims"].contains(&other)
+                "same-verification-target" => {
+                    ["checks", "contributions", "requirements"].contains(&collection)
+                        && ["checks", "contributions", "requirements"].contains(&other)
                 }
-                "claim-contributions" => collection == "claims" && other == "contributions",
-                "challenger-claims" => collection == "challengers" && other == "claim-definitions",
-                "same-claim" => {
-                    ["claims", "claim-definitions"].contains(&collection)
-                        && ["claims", "claim-definitions"].contains(&other)
+                "requirement-contributions" => {
+                    collection == "requirements" && other == "contributions"
+                }
+                "verification-challenge-requirements" => {
+                    collection == "verification-challenges" && other == "requirement-definitions"
+                }
+                "same-requirement" => {
+                    ["requirements", "requirement-definitions"].contains(&collection)
+                        && ["requirements", "requirement-definitions"].contains(&other)
                 }
                 _ => true,
             };
@@ -3201,75 +3261,79 @@ fn inventory_shape(v: &Json) -> Result<(), String> {
         "snapshot",
         "checks",
         "contributions",
-        "claims",
+        "requirements",
     ];
     for optional in [
         "methods",
-        "claim_definitions",
-        "challengers",
-        "challenger_claims",
-        "pending_subjects",
+        "requirement_definitions",
+        "verification_challenges",
+        "verification_challenge_requirements",
+        "pending_verification_targets",
         "selection",
-        "subject_inputs",
+        "verification_target_inputs",
     ] {
         if v.get(optional).is_some() {
             fields.push(optional);
         }
     }
     obj(v, &fields)?;
-    if let Some(mapping) = v.get("challenger_claims") {
+    if let Some(mapping) = v.get("verification_challenge_requirements") {
         let mut ids = BTreeSet::new();
         for entry in mapping
             .as_array()
-            .ok_or("Challenger Claim mapping requires array")?
+            .ok_or("Verification Challenge Requirement mapping requires array")?
         {
-            obj(entry, &["challenger", "claims"])?;
-            identifier(text(entry, "challenger")?)?;
-            if !ids.insert(text(entry, "challenger")?) || arr(entry, "claims")?.is_empty() {
+            obj(entry, &["verification_challenge", "requirements"])?;
+            identifier(text(entry, "verification_challenge")?)?;
+            if !ids.insert(text(entry, "verification_challenge")?)
+                || arr(entry, "requirements")?.is_empty()
+            {
                 return Err(
-                    "Challenger mapping requires unique identities and nonempty Claim scope".into(),
+                    "Verification Challenge mapping requires unique identities and nonempty Requirement scope".into(),
                 );
             }
-            for claim in arr(entry, "claims")? {
+            for requirement in arr(entry, "requirements")? {
                 identifier(
-                    claim
+                    requirement
                         .as_str()
-                        .ok_or("Challenger Claim requires identifier")?,
+                        .ok_or("Verification Challenge Requirement requires identifier")?,
                 )?;
             }
         }
     }
-    if v.get("challengers").is_some() {
+    if v.get("verification_challenges").is_some() {
         let mut seen = BTreeSet::new();
-        for challenger in arr(v, "challengers")? {
-            let challenger = challenger.as_str().ok_or("Challenger ID requires string")?;
-            identifier(challenger)?;
-            if !seen.insert(challenger) {
-                return Err("duplicate inventory Challenger".into());
+        for verification_challenge in arr(v, "verification_challenges")? {
+            let verification_challenge = verification_challenge
+                .as_str()
+                .ok_or("Verification Challenge ID requires string")?;
+            identifier(verification_challenge)?;
+            if !seen.insert(verification_challenge) {
+                return Err("duplicate inventory Verification Challenge".into());
             }
         }
     }
-    if v.get("claim_definitions").is_some() {
+    if v.get("requirement_definitions").is_some() {
         let mut seen = BTreeSet::new();
-        for target in arr(v, "claim_definitions")? {
-            obj(target, &["claim"])?;
-            identifier(text(target, "claim")?)?;
-            if !seen.insert(text(target, "claim")?) {
-                return Err("duplicate Claim definition target".into());
+        for target in arr(v, "requirement_definitions")? {
+            obj(target, &["requirement"])?;
+            identifier(text(target, "requirement")?)?;
+            if !seen.insert(text(target, "requirement")?) {
+                return Err("duplicate Requirement definition target".into());
             }
         }
     }
-    if v.get("subject_inputs").is_some() {
-        for input in arr(v, "subject_inputs")? {
-            obj(input, &["subject", "input"])?;
-            fingerprint(text(input, "subject")?)?;
+    if v.get("verification_target_inputs").is_some() {
+        for input in arr(v, "verification_target_inputs")? {
+            obj(input, &["verification_target", "input"])?;
+            fingerprint(text(input, "verification_target")?)?;
             ref_shape(input.get("input").unwrap(), true)?;
         }
     }
     if let Some(selection) = v.get("selection") {
         ref_shape(selection, false)?;
     }
-    for field in ["methods", "pending_subjects"] {
+    for field in ["methods", "pending_verification_targets"] {
         if v.get(field).is_some() {
             let mut seen = BTreeSet::new();
             for target in arr(v, field)? {
@@ -3279,8 +3343,11 @@ fn inventory_shape(v: &Json) -> Result<(), String> {
                 } else {
                     obj(target, &["kind", "id"])?;
                     identifier(text(target, "id")?)?;
-                    if !["check", "claim"].contains(&text(target, "kind")?) {
-                        return Err("pending Subject target requires check or claim kind".into());
+                    if !["check", "requirement"].contains(&text(target, "kind")?) {
+                        return Err(
+                            "pending Verification Target target requires check or requirement kind"
+                                .into(),
+                        );
                     }
                 }
                 if !seen.insert(digest(target)) {
@@ -3289,8 +3356,8 @@ fn inventory_shape(v: &Json) -> Result<(), String> {
             }
         }
     }
-    if text(v, "format")? != "azimuth-assurance-target-inventory" || number(v, "version")? != 1 {
-        return Err("expected assurance target inventory version 1".into());
+    if text(v, "format")? != "azimuth-assurance-target-inventory" || number(v, "version")? != 2 {
+        return Err("expected assurance target inventory version 2".into());
     }
     identifier(text(v, "project")?)?;
     fingerprint(text(v, "model_revision")?)?;
@@ -3299,15 +3366,18 @@ fn inventory_shape(v: &Json) -> Result<(), String> {
         return Err("inventory snapshot requires assurance-snapshot kind".into());
     }
     for (collection, fields) in [
-        ("checks", vec!["check", "subject"]),
-        ("contributions", vec!["check", "case", "claim", "subject"]),
-        ("claims", vec!["claim", "subject"]),
+        ("checks", vec!["check", "verification_target"]),
+        (
+            "contributions",
+            vec!["check", "scenario", "requirement", "verification_target"],
+        ),
+        ("requirements", vec!["requirement", "verification_target"]),
     ] {
         let mut seen = BTreeSet::new();
         for target in arr(v, collection)? {
             obj(target, &fields)?;
             for field in &fields {
-                if *field == "subject" {
+                if *field == "verification_target" {
                     fingerprint(text(target, field)?)?;
                 } else {
                     identifier(text(target, field)?)?;
@@ -3338,12 +3408,12 @@ fn expand_generation(source: &Json, bindings: &Json) -> Result<Json, String> {
     ]);
     for action in arr(source, "actions")? {
         let collection = text(action, "collection")?;
-        if text(action, "kind")? == "run-challengers"
+        if text(action, "kind")? == "run-verification-challenges"
             && bindings
                 .get("assurance")
-                .and_then(|inventory| inventory.get("challengers"))
+                .and_then(|inventory| inventory.get("verification_challenges"))
                 .and_then(Json::as_array)
-                .is_some_and(|challengers| challengers.is_empty())
+                .is_some_and(|verification_challenges| verification_challenges.is_empty())
         {
             by_action.insert(text(action, "id")?.into(), Vec::new());
             continue;
@@ -3351,13 +3421,13 @@ fn expand_generation(source: &Json, bindings: &Json) -> Result<Json, String> {
         if collection == "change"
             && bindings
                 .get("assurance")
-                .and_then(|v| v.get("pending_subjects"))
+                .and_then(|v| v.get("pending_verification_targets"))
                 .and_then(Json::as_array)
                 .is_some_and(|v| !v.is_empty())
             && arr(action, "depends_on")?.iter().any(|dep| {
                 arr(source, "actions").unwrap().iter().any(|a| {
                     a.get("id") == dep.get("action")
-                        && matches!(text(a, "collection").ok(), Some("claims" | "checks"))
+                        && matches!(text(a, "collection").ok(), Some("requirements" | "checks"))
                 })
             })
         {
@@ -3377,21 +3447,28 @@ fn expand_generation(source: &Json, bindings: &Json) -> Result<Json, String> {
         let targets = match collection {
             "change" => vec![Json::obj(vec![])],
             "modules" => arr(bindings, "modules")?.to_vec(),
-            "claim-definitions" => {
+            "requirement-definitions" => {
                 if bindings.get("assurance") == Some(&Json::Null) {
                     vec![]
                 } else {
-                    arr(bindings.get("assurance").unwrap(), "claim_definitions")?.to_vec()
+                    arr(
+                        bindings.get("assurance").unwrap(),
+                        "requirement_definitions",
+                    )?
+                    .to_vec()
                 }
             }
-            "challengers" => {
+            "verification-challenges" => {
                 if bindings.get("assurance") == Some(&Json::Null) {
                     vec![]
                 } else {
-                    arr(bindings.get("assurance").unwrap(), "challengers")?
-                        .iter()
-                        .map(|id| Json::obj(vec![("challenger", id.clone())]))
-                        .collect()
+                    arr(
+                        bindings.get("assurance").unwrap(),
+                        "verification_challenges",
+                    )?
+                    .iter()
+                    .map(|id| Json::obj(vec![("verification_challenge", id.clone())]))
+                    .collect()
                 }
             }
             "methods" => {
@@ -3471,58 +3548,76 @@ fn expand_generation(source: &Json, bindings: &Json) -> Result<Json, String> {
                             "same-module" => target.get("module") == other.get("module"),
                             "same-check" => {
                                 target.get("check") == other.get("check")
-                                    && (other.get("subject").is_none()
-                                        || target.get("subject") == other.get("subject"))
+                                    && (other.get("verification_target").is_none()
+                                        || target.get("verification_target")
+                                            == other.get("verification_target"))
                             }
-                            "same-subject" => target.get("subject") == other.get("subject"),
-                            "same-claim" => target.get("claim") == other.get("claim"),
-                            "challenger-claims" => {
-                                challenger_claims(bindings, &target).is_ok_and(|claims| {
-                                    other
-                                        .get("claim")
-                                        .is_some_and(|claim| claims.contains(claim))
-                                })
+                            "same-verification-target" => {
+                                target.get("verification_target")
+                                    == other.get("verification_target")
                             }
-                            "claim-contributions" => {
-                                target.get("claim") == other.get("claim")
-                                    && target.get("subject") == other.get("subject")
+                            "same-requirement" => {
+                                target.get("requirement") == other.get("requirement")
+                            }
+                            "verification-challenge-requirements" => {
+                                verification_challenge_requirements(bindings, &target).is_ok_and(
+                                    |requirements| {
+                                        other.get("requirement").is_some_and(|requirement| {
+                                            requirements.contains(requirement)
+                                        })
+                                    },
+                                )
+                            }
+                            "requirement-contributions" => {
+                                target.get("requirement") == other.get("requirement")
+                                    && target.get("verification_target")
+                                        == other.get("verification_target")
                             }
                             _ => true,
                         }
                     })
                     .collect::<Vec<_>>();
                 if matched.is_empty() {
-                    let complete_empty_challengers = text(dependency, "match")? == "all"
+                    let complete_empty_verification_challenges = text(dependency, "match")?
+                        == "all"
                         && arr(source, "actions")?.iter().any(|action| {
                             action.get("id") == dependency.get("action")
                                 && matches!(
                                     text(action, "kind").ok(),
-                                    Some("run-challengers" | "run-challenger")
+                                    Some(
+                                        "run-verification-challenges"
+                                            | "run-verification-challenge"
+                                    )
                                 )
                         })
                         && bindings
                             .get("assurance")
-                            .and_then(|inventory| inventory.get("challengers"))
+                            .and_then(|inventory| inventory.get("verification_challenges"))
                             .and_then(Json::as_array)
-                            .is_some_and(|challengers| challengers.is_empty());
+                            .is_some_and(|verification_challenges| {
+                                verification_challenges.is_empty()
+                            });
                     let complete_empty_reviews = text(dependency, "match")? == "all"
                         && arr(source, "actions")?.iter().any(|action| {
                             action.get("id") == dependency.get("action")
-                                && text(action, "collection").ok() == Some("claim-definitions")
+                                && text(action, "collection").ok()
+                                    == Some("requirement-definitions")
                         })
                         && bindings
                             .get("assurance")
-                            .and_then(|inventory| inventory.get("claim_definitions"))
+                            .and_then(|inventory| inventory.get("requirement_definitions"))
                             .and_then(Json::as_array)
-                            .is_some_and(|claims| claims.is_empty());
-                    let complete_empty_claims = bindings
+                            .is_some_and(|requirements| requirements.is_empty());
+                    let complete_empty_requirements = bindings
                         .get("assurance")
                         .filter(|v| *v != &Json::Null)
-                        .is_some_and(|v| arr(v, "claims").is_ok_and(|claims| claims.is_empty()))
+                        .is_some_and(|v| {
+                            arr(v, "requirements").is_ok_and(|requirements| requirements.is_empty())
+                        })
                         && text(dependency, "match")? == "all"
                         && arr(source, "actions")?.iter().any(|a| {
                             text(a, "id").ok() == Some(id)
-                                && text(a, "collection").ok() == Some("claims")
+                                && text(a, "collection").ok() == Some("requirements")
                         });
                     let complete_empty_checks = text(dependency, "match")? == "all"
                         && arr(source, "actions")?.iter().any(|action| {
@@ -3535,8 +3630,8 @@ fn expand_generation(source: &Json, bindings: &Json) -> Result<Json, String> {
                             .and_then(Json::as_array)
                             .is_some_and(|methods| methods.is_empty());
                     if !complete_empty_checks
-                        && !complete_empty_claims
-                        && !complete_empty_challengers
+                        && !complete_empty_requirements
+                        && !complete_empty_verification_challenges
                         && !complete_empty_reviews
                     {
                         return Err(format!(
@@ -3571,16 +3666,15 @@ fn expand_generation(source: &Json, bindings: &Json) -> Result<Json, String> {
                     _ => unreachable!(),
                 }
             }
-            if target.get("subject").is_some() {
-                if let Some(subject_inputs) = bindings
+            if target.get("verification_target").is_some() {
+                if let Some(verification_target_inputs) = bindings
                     .get("assurance")
-                    .and_then(|v| v.get("subject_inputs"))
+                    .and_then(|v| v.get("verification_target_inputs"))
                     .and_then(Json::as_array)
                 {
-                    for selected in subject_inputs
-                        .iter()
-                        .filter(|v| v.get("subject") == target.get("subject"))
-                    {
+                    for selected in verification_target_inputs.iter().filter(|v| {
+                        v.get("verification_target") == target.get("verification_target")
+                    }) {
                         let mut input = selected.get("input").unwrap().clone();
                         if let Json::Obj(fields) = &mut input {
                             fields.retain(|(key, _)| key != "fingerprint");
@@ -3614,7 +3708,7 @@ fn expand_generation(source: &Json, bindings: &Json) -> Result<Json, String> {
     }
     Ok(Json::obj(vec![
         ("format", Json::str("azimuth-workflow-definition")),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         ("id", bindings.get("change").unwrap().clone()),
         ("tasks", Json::Arr(tasks)),
         ("template", source.clone()),
@@ -3658,21 +3752,21 @@ fn assurance_requirements(state: &Json) -> Result<Json, String> {
         .get("definition")
         .and_then(|v| v.get("parameters"))
         .and_then(|v| v.get("assurance"))
-        .and_then(|v| v.get("pending_subjects"))
+        .and_then(|v| v.get("pending_verification_targets"))
         .and_then(Json::as_array)
         .unwrap_or(&[]);
     Ok(Json::Arr(pending.iter().map(|target| Json::obj(vec![
-        ("kind", Json::str("assurance-subject-selection")),
+        ("kind", Json::str("assurance-verification-target-selection")),
         ("target", target.clone()),
-        ("reason", Json::str(if target.get("kind").and_then(Json::as_str) == Some("claim") {
-            "Select an exact execution Subject for this historical authored-health target. Every declared contribution must apply to that same Subject."
+        ("reason", Json::str(if target.get("kind").and_then(Json::as_str) == Some("requirement") {
+            "Select an exact execution Verification Target for this historical authored Requirement Status target. Every declared contribution must apply to that same Verification Target."
         } else {
-            "Select the exact source or artifact execution Subject for this Check. Deployment-only Checks execute after rollout; model equality alone does not transfer evidence."
+            "Select the exact source or artifact execution Verification Target for this Check. Deployment-only Checks execute after rollout; model equality alone does not transfer evidence."
         })),
     ])).collect()))
 }
 
-fn requires_authored_health(definition: &Json) -> bool {
+fn requires_authored_requirement_status(definition: &Json) -> bool {
     definition
         .get("template")
         .and_then(|template| template.get("actions"))
@@ -3681,17 +3775,17 @@ fn requires_authored_health(definition: &Json) -> bool {
             actions.iter().any(|action| {
                 matches!(
                     action.get("kind").and_then(Json::as_str),
-                    Some("assess-claim-health" | "judge-claim")
+                    Some("assess-requirement-status" | "judge-requirement")
                 )
             })
         })
 }
 
-fn local_check(check: &Json, authored_health: bool) -> bool {
-    authored_health
+fn local_check(check: &Json, authored_requirement_status: bool) -> bool {
+    authored_requirement_status
         || check
             .get("deployment")
-            .and_then(|policy| policy.get("subject"))
+            .and_then(|policy| policy.get("verification_target"))
             .and_then(Json::as_str)
             != Some("deployment")
 }
@@ -3736,12 +3830,12 @@ fn assurance_definition(
         }
     });
     let mut checks = Vec::new();
-    let mut selected_claims = Vec::new();
-    let mut subject_inputs = Vec::new();
+    let mut selected_requirements = Vec::new();
+    let mut verification_target_inputs = Vec::new();
     if let Some(reference) = selection_ref {
         portable_assurance_reference(reference, locations)?;
-        if text(reference, "kind")? != "assurance-subject-selection" {
-            return Err("expected assurance-subject-selection reference".into());
+        if text(reference, "kind")? != "assurance-verification-target-selection" {
+            return Err("expected assurance-verification-target-selection reference".into());
         }
         let selection = read(&resolve(reference, locations)?)?;
         obj(
@@ -3752,87 +3846,101 @@ fn assurance_definition(
                 "project",
                 "model_revision",
                 "checks",
-                "claims",
+                "requirements",
             ],
         )?;
-        if text(&selection, "format")? != "azimuth-assurance-subject-selection"
-            || number(&selection, "version")? != 1
+        if text(&selection, "format")? != "azimuth-assurance-verification-target-selection"
+            || number(&selection, "version")? != 2
         {
-            return Err("expected assurance Subject selection version 1".into());
+            return Err("expected assurance Verification Target selection version 2".into());
         }
         if selection.get("project") != snapshot.get("project")
             || selection.get("model_revision") != snapshot.get("model_revision")
         {
-            return Err("Subject selection differs from candidate project/revision".into());
+            return Err(
+                "Verification Target selection differs from candidate project/revision".into(),
+            );
         }
-        for collection in ["checks", "claims"] {
+        for collection in ["checks", "requirements"] {
             let field = if collection == "checks" {
                 "check"
             } else {
-                "claim"
+                "requirement"
             };
             let mut seen = BTreeSet::new();
             for target in arr(&selection, collection)? {
-                obj(target, &[field, "subject"])?;
+                obj(target, &[field, "verification_target"])?;
                 identifier(text(target, field)?)?;
                 let entity = arr(authority, collection)?
                     .iter()
                     .find(|entity| entity.get("id") == target.get(field))
                     .ok_or("selected target absent from candidate authority")?;
-                if collection == "claims" && text(entity, "criticality")? == "routine" {
-                    return Err("routine Claim has no Judgment obligation".into());
+                if collection == "requirements" && text(entity, "criticality")? == "routine" {
+                    return Err("routine Requirement has no Judgment obligation".into());
                 }
-                let reference = target.get("subject").unwrap();
+                let reference = target.get("verification_target").unwrap();
                 ref_shape(reference, false)?;
-                if text(reference, "kind")? != "subject" {
-                    return Err("selected Subject requires subject reference kind".into());
+                if text(reference, "kind")? != "verification-target" {
+                    return Err(
+                        "selected Verification Target requires verification target reference kind"
+                            .into(),
+                    );
                 }
                 let value = read(&resolve(reference, locations)?)?;
-                let subject = crate::run::subject_from_json(&value)?;
-                if !crate::run::validate_subject_component(&subject).is_empty() {
-                    return Err("selected Subject fails native protocol validation".into());
+                let verification_target = crate::run::verification_target_from_json(&value)?;
+                if !crate::run::validate_verification_target_component(&verification_target)
+                    .is_empty()
+                {
+                    return Err(
+                        "selected Verification Target fails native protocol validation".into(),
+                    );
                 }
                 let input = Json::obj(vec![
                     (
-                        "subject",
-                        Json::str(crate::run::subject_fingerprint(&subject)),
+                        "verification_target",
+                        Json::str(crate::run::verification_target_fingerprint(
+                            &verification_target,
+                        )),
                     ),
                     ("input", materialize(reference, locations)?),
                 ]);
-                if !subject_inputs.contains(&input) {
-                    subject_inputs.push(input);
+                if !verification_target_inputs.contains(&input) {
+                    verification_target_inputs.push(input);
                 }
                 let target = Json::obj(vec![
                     (field, target.get(field).unwrap().clone()),
                     (
-                        "subject",
-                        Json::str(crate::run::subject_fingerprint(&subject)),
+                        "verification_target",
+                        Json::str(crate::run::verification_target_fingerprint(
+                            &verification_target,
+                        )),
                     ),
                 ]);
                 if !seen.insert(digest(&target)) {
-                    return Err("duplicate selected target/Subject".into());
+                    return Err("duplicate selected target/Verification Target".into());
                 }
                 if collection == "checks" {
                     checks.push(target);
                 } else {
-                    selected_claims.push(target);
+                    selected_requirements.push(target);
                 }
             }
         }
     }
-    let authored_health = requires_authored_health(old);
+    let authored_requirement_status = requires_authored_requirement_status(old);
     checks.retain(|target| {
         arr(authority, "checks").unwrap().iter().any(|check| {
-            check.get("id") == target.get("check") && local_check(check, authored_health)
+            check.get("id") == target.get("check")
+                && local_check(check, authored_requirement_status)
         })
     });
     let methods = arr(authority, "checks")?
         .iter()
-        .filter(|check| local_check(check, authored_health))
+        .filter(|check| local_check(check, authored_requirement_status))
         .map(|check| Json::obj(vec![("check", check.get("id").unwrap().clone())]))
         .collect::<Vec<_>>();
     let mut contributions = Vec::new();
-    let mut claims = Vec::new();
+    let mut requirements = Vec::new();
     let mut pending = Vec::new();
     for method in &methods {
         if !checks
@@ -3845,47 +3953,50 @@ fn assurance_definition(
             ]));
         }
     }
-    for claim in arr(authority, "claims")? {
-        if text(claim, "criticality")? == "routine" {
+    for requirement in arr(authority, "requirements")? {
+        if text(requirement, "criticality")? == "routine" {
             continue;
         }
-        for binding in arr(claim, "bindings")? {
+        for binding in arr(requirement, "bindings")? {
             for check in checks
                 .iter()
                 .filter(|check| check.get("check") == binding.get("check"))
             {
                 contributions.push(Json::obj(vec![
                     ("check", binding.get("check").unwrap().clone()),
-                    ("case", binding.get("case").unwrap().clone()),
-                    ("claim", claim.get("id").unwrap().clone()),
-                    ("subject", check.get("subject").unwrap().clone()),
+                    ("scenario", binding.get("scenario").unwrap().clone()),
+                    ("requirement", requirement.get("id").unwrap().clone()),
+                    (
+                        "verification_target",
+                        check.get("verification_target").unwrap().clone(),
+                    ),
                 ]));
             }
         }
-        if !authored_health {
+        if !authored_requirement_status {
             continue;
         }
-        let targets = selected_claims
+        let targets = selected_requirements
             .iter()
-            .filter(|target| target.get("claim") == claim.get("id"))
+            .filter(|target| target.get("requirement") == requirement.get("id"))
             .collect::<Vec<_>>();
         let mut complete = !targets.is_empty();
         for target in targets {
-            if arr(claim, "bindings")?.iter().all(|binding| {
+            if arr(requirement, "bindings")?.iter().all(|binding| {
                 checks.iter().any(|check| {
                     check.get("check") == binding.get("check")
-                        && check.get("subject") == target.get("subject")
+                        && check.get("verification_target") == target.get("verification_target")
                 })
             }) {
-                claims.push(target.clone());
+                requirements.push(target.clone());
             } else {
                 complete = false;
             }
         }
         if !complete {
             pending.push(Json::obj(vec![
-                ("kind", Json::str("claim")),
-                ("id", claim.get("id").unwrap().clone()),
+                ("kind", Json::str("requirement")),
+                ("id", requirement.get("id").unwrap().clone()),
             ]));
         }
     }
@@ -3898,7 +4009,7 @@ fn assurance_definition(
     };
     let mut inventory = Json::obj(vec![
         ("format", Json::str("azimuth-assurance-target-inventory")),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         ("project", snapshot.get("project").unwrap().clone()),
         (
             "model_revision",
@@ -3907,40 +4018,48 @@ fn assurance_definition(
         ("snapshot", snapshot_ref),
         ("methods", Json::Arr(methods)),
         (
-            "claim_definitions",
+            "requirement_definitions",
             Json::Arr(
-                arr(authority, "claims")?
+                arr(authority, "requirements")?
                     .iter()
-                    .filter(|claim| text(claim, "criticality").ok() != Some("routine"))
-                    .map(|claim| Json::obj(vec![("claim", claim.get("id").unwrap().clone())]))
+                    .filter(|requirement| text(requirement, "criticality").ok() != Some("routine"))
+                    .map(|requirement| {
+                        Json::obj(vec![(
+                            "requirement",
+                            requirement.get("id").unwrap().clone(),
+                        )])
+                    })
                     .collect(),
             ),
         ),
         ("checks", Json::Arr(checks)),
         ("contributions", Json::Arr(contributions)),
-        ("claims", Json::Arr(claims)),
-        ("pending_subjects", Json::Arr(pending)),
-        ("subject_inputs", Json::Arr(subject_inputs)),
+        ("requirements", Json::Arr(requirements)),
+        ("pending_verification_targets", Json::Arr(pending)),
+        (
+            "verification_target_inputs",
+            Json::Arr(verification_target_inputs),
+        ),
     ]);
-    if arr(authority, "claims")?
+    if arr(authority, "requirements")?
         .iter()
-        .all(|claim| claim.get("challengers").is_some())
+        .all(|requirement| requirement.get("verification_challenges").is_some())
     {
-        let challengers = arr(authority, "claims")?
+        let verification_challenges = arr(authority, "requirements")?
             .iter()
-            .flat_map(|claim| arr(claim, "challengers").unwrap())
-            .map(|challenger| text(challenger, "id").unwrap().to_string())
+            .flat_map(|requirement| arr(requirement, "verification_challenges").unwrap())
+            .map(|verification_challenge| text(verification_challenge, "id").unwrap().to_string())
             .collect::<BTreeSet<_>>();
         set(
             &mut inventory,
-            "challengers",
-            Json::Arr(challengers.iter().map(Json::str).collect()),
+            "verification_challenges",
+            Json::Arr(verification_challenges.iter().map(Json::str).collect()),
         );
     }
     set(
         &mut inventory,
-        "challenger_claims",
-        challenger_claim_inventory(authority)?,
+        "verification_challenge_requirements",
+        verification_challenge_requirement_inventory(authority)?,
     );
     if let Some(selection) = selection_ref {
         set(&mut inventory, "selection", portable_ref(selection));
@@ -4029,39 +4148,47 @@ fn validate_inventory(
         );
     }
     let authority = snapshot.get("authority").unwrap();
-    if let Some(claims) = v.get("claim_definitions") {
+    if let Some(requirements) = v.get("requirement_definitions") {
         let expected = Json::Arr(
-            arr(authority, "claims")?
+            arr(authority, "requirements")?
                 .iter()
-                .filter(|claim| text(claim, "criticality").ok() != Some("routine"))
-                .map(|claim| Json::obj(vec![("claim", claim.get("id").unwrap().clone())]))
+                .filter(|requirement| text(requirement, "criticality").ok() != Some("routine"))
+                .map(|requirement| {
+                    Json::obj(vec![(
+                        "requirement",
+                        requirement.get("id").unwrap().clone(),
+                    )])
+                })
                 .collect(),
         );
-        if claims != &expected {
-            return Err("Claim definition targets differ from candidate authority".into());
+        if requirements != &expected {
+            return Err("Requirement definition targets differ from candidate authority".into());
         }
     }
-    if let Some(challengers) = v.get("challengers") {
-        if !arr(authority, "claims")?
+    if let Some(verification_challenges) = v.get("verification_challenges") {
+        if !arr(authority, "requirements")?
             .iter()
-            .all(|claim| claim.get("challengers").is_some())
+            .all(|requirement| requirement.get("verification_challenges").is_some())
         {
             return Err(
-                "Historical authority does not establish Challenger inventory completeness".into(),
+                "Historical authority does not establish Verification Challenge inventory completeness".into(),
             );
         }
-        let expected = arr(authority, "claims")?
+        let expected = arr(authority, "requirements")?
             .iter()
-            .flat_map(|claim| arr(claim, "challengers").unwrap())
-            .map(|challenger| text(challenger, "id").unwrap().to_string())
+            .flat_map(|requirement| arr(requirement, "verification_challenges").unwrap())
+            .map(|verification_challenge| text(verification_challenge, "id").unwrap().to_string())
             .collect::<BTreeSet<_>>();
-        if challengers != &Json::Arr(expected.iter().map(Json::str).collect()) {
-            return Err("Challenger inventory differs from candidate authority".into());
+        if verification_challenges != &Json::Arr(expected.iter().map(Json::str).collect()) {
+            return Err("Verification Challenge inventory differs from candidate authority".into());
         }
     }
-    if let Some(mapping) = v.get("challenger_claims") {
-        if mapping != &challenger_claim_inventory(authority)? {
-            return Err("Challenger Claim mapping differs from candidate authority".into());
+    if let Some(mapping) = v.get("verification_challenge_requirements") {
+        if mapping != &verification_challenge_requirement_inventory(authority)? {
+            return Err(
+                "Verification Challenge Requirement mapping differs from candidate authority"
+                    .into(),
+            );
         }
     }
     if let Some(methods) = v.get("methods").and_then(Json::as_array) {
@@ -4070,7 +4197,7 @@ fn validate_inventory(
             .filter(|check| {
                 local_check(
                     check,
-                    requires_authored_health(state.get("definition").unwrap()),
+                    requires_authored_requirement_status(state.get("definition").unwrap()),
                 )
             })
             .map(|check| text(check, "id").map(str::to_owned))
@@ -4088,7 +4215,7 @@ fn validate_inventory(
             c.get("id") == check.get("check")
                 && local_check(
                     c,
-                    requires_authored_health(state.get("definition").unwrap()),
+                    requires_authored_requirement_status(state.get("definition").unwrap()),
                 )
         }) {
             return Err("inventory Check absent from local candidate execution scope".into());
@@ -4097,65 +4224,70 @@ fn validate_inventory(
     for contribution in arr(v, "contributions")? {
         if !arr(v, "checks")?.iter().any(|c| {
             c.get("check") == contribution.get("check")
-                && c.get("subject") == contribution.get("subject")
+                && c.get("verification_target") == contribution.get("verification_target")
         }) {
-            return Err("contribution has no Check/Subject execution target".into());
+            return Err("contribution has no Check/Verification Target execution target".into());
         }
-        if !arr(authority, "cases")?.iter().any(|c| {
-            c.get("id") == contribution.get("case") && c.get("claim") == contribution.get("claim")
+        if !arr(authority, "scenarios")?.iter().any(|c| {
+            c.get("id") == contribution.get("scenario")
+                && c.get("requirement") == contribution.get("requirement")
         }) {
-            return Err("contribution Case/Claim absent from candidate authority".into());
+            return Err("contribution Scenario/Requirement absent from candidate authority".into());
         }
-        let claim = arr(authority, "claims")?
+        let requirement = arr(authority, "requirements")?
             .iter()
-            .find(|c| c.get("id") == contribution.get("claim"))
-            .ok_or("unknown contribution Claim")?;
-        if !arr(claim, "bindings")?.iter().any(|b| {
-            b.get("check") == contribution.get("check") && b.get("case") == contribution.get("case")
+            .find(|c| c.get("id") == contribution.get("requirement"))
+            .ok_or("unknown contribution Requirement")?;
+        if !arr(requirement, "bindings")?.iter().any(|b| {
+            b.get("check") == contribution.get("check")
+                && b.get("scenario") == contribution.get("scenario")
         }) {
-            return Err("contribution Check–Case relation absent from candidate authority".into());
+            return Err(
+                "contribution Check–Scenario relation absent from candidate authority".into(),
+            );
         }
     }
-    for claim in arr(v, "claims")? {
-        let candidate = arr(authority, "claims")?
+    for requirement in arr(v, "requirements")? {
+        let candidate = arr(authority, "requirements")?
             .iter()
-            .find(|c| c.get("id") == claim.get("claim"))
-            .ok_or("unknown inventory Claim")?;
+            .find(|c| c.get("id") == requirement.get("requirement"))
+            .ok_or("unknown inventory Requirement")?;
         for binding in arr(candidate, "bindings")? {
             if !arr(v, "contributions")?.iter().any(|c| {
-                c.get("claim") == claim.get("claim")
-                    && c.get("subject") == claim.get("subject")
+                c.get("requirement") == requirement.get("requirement")
+                    && c.get("verification_target") == requirement.get("verification_target")
                     && c.get("check") == binding.get("check")
-                    && c.get("case") == binding.get("case")
+                    && c.get("scenario") == binding.get("scenario")
             }) {
                 return Err(
-                    "inventory omits a declared Claim contribution for exact Subject".into(),
+                    "inventory omits a declared Requirement contribution for exact Verification Target".into(),
                 );
             }
         }
-        if !arr(authority, "claims")?.iter().any(|c| {
-            c.get("id") == claim.get("claim")
+        if !arr(authority, "requirements")?.iter().any(|c| {
+            c.get("id") == requirement.get("requirement")
                 && c.get("criticality").and_then(Json::as_str) != Some("routine")
         }) {
-            return Err("Judgment inventory requires a non-routine candidate Claim".into());
+            return Err("Judgment inventory requires a non-routine candidate Requirement".into());
         }
     }
-    for claim in arr(authority, "claims")? {
-        if requires_authored_health(state.get("definition").unwrap())
-            && text(claim, "criticality")? != "routine"
-            && !arr(v, "claims")?
+    for requirement in arr(authority, "requirements")? {
+        if requires_authored_requirement_status(state.get("definition").unwrap())
+            && text(requirement, "criticality")? != "routine"
+            && !arr(v, "requirements")?
                 .iter()
-                .any(|c| c.get("claim") == claim.get("id"))
+                .any(|c| c.get("requirement") == requirement.get("id"))
             && !v
-                .get("pending_subjects")
+                .get("pending_verification_targets")
                 .and_then(Json::as_array)
                 .is_some_and(|pending| {
                     pending.iter().any(|p| {
-                        text(p, "kind").ok() == Some("claim") && p.get("id") == claim.get("id")
+                        text(p, "kind").ok() == Some("requirement")
+                            && p.get("id") == requirement.get("id")
                     })
                 })
         {
-            return Err("inventory omits a non-routine candidate Claim".into());
+            return Err("inventory omits a non-routine candidate Requirement".into());
         }
     }
     Ok(())
@@ -4202,7 +4334,7 @@ fn registration(v: &Json, target: &Json) -> Result<(), String> {
 fn output_contract(action: &Json) -> Result<(), String> {
     let expected = match text(action, "kind")? {
         "author-spec-delta" => Some("intent-delta"),
-        "author-design" => Some("claim-design"),
+        "author-design" => Some("requirement-design"),
         "author-verification" => Some("verification-account"),
         "review-proposal" | "review-spec-delta" | "review-design" | "review-verification" => {
             Some("authoring-review")
@@ -4214,12 +4346,14 @@ fn output_contract(action: &Json) -> Result<(), String> {
         "register-candidate-model-revision" => Some("candidate-registration"),
         "prepare-publication-inputs" => Some("publication-inputs"),
         "qualify-method" => Some("method-qualification"),
-        "review-claim" => Some("claim-review"),
-        "execute-check" | "run-challengers" | "run-challenger" => Some("run-bundle"),
-        "assess-claim-health" => Some("claim-health"),
+        "review-requirement" => Some("requirement-review"),
+        "execute-check" | "run-verification-challenges" | "run-verification-challenge" => {
+            Some("run-bundle")
+        }
+        "assess-requirement-status" => Some("requirement-status"),
         "execute-qualified-check" => Some("run-bundle"),
         "assess-applicability" => Some("applicability-decision"),
-        "judge-claim" => Some("claim-judgment"),
+        "judge-requirement" => Some("requirement-judgment"),
         _ => None,
     };
     if expected.is_some_and(|kind| {
@@ -4322,7 +4456,7 @@ mod deployment_status_workflow_tests {
                 "assurance",
                 Json::obj(vec![
                     ("format", Json::str("azimuth-assurance-target-inventory")),
-                    ("version", Json::Num(1.0)),
+                    ("version", Json::Num(2.0)),
                     ("project", Json::str("sample-project")),
                     ("model_revision", fingerprint),
                     (
@@ -4342,18 +4476,18 @@ mod deployment_status_workflow_tests {
                     ),
                     ("checks", Json::Arr(vec![])),
                     ("contributions", Json::Arr(vec![])),
-                    ("claims", Json::Arr(vec![])),
+                    ("requirements", Json::Arr(vec![])),
                     (
-                        "claim_definitions",
+                        "requirement_definitions",
                         Json::Arr(vec![Json::obj(vec![(
-                            "claim",
+                            "requirement",
                             Json::str("restricted-access"),
                         )])]),
                     ),
-                    ("challengers", Json::Arr(vec![])),
-                    ("challenger_claims", Json::Arr(vec![])),
+                    ("verification_challenges", Json::Arr(vec![])),
+                    ("verification_challenge_requirements", Json::Arr(vec![])),
                     (
-                        "pending_subjects",
+                        "pending_verification_targets",
                         Json::Arr(if pending {
                             vec![Json::obj(vec![
                                 ("kind", Json::str("check")),
@@ -4369,10 +4503,10 @@ mod deployment_status_workflow_tests {
     }
 
     #[test]
-    fn hosted_only_inventory_can_prepare_publication_without_authored_health() {
+    fn hosted_only_inventory_can_prepare_publication_without_authored_requirement_status() {
         let template = shipped_template("change-development").unwrap();
         let definition = expand_generation(&template, &bindings(false)).unwrap();
-        assert!(!requires_authored_health(&definition));
+        assert!(!requires_authored_requirement_status(&definition));
         assert!(arr(&definition, "tasks")
             .unwrap()
             .iter()
@@ -4380,11 +4514,11 @@ mod deployment_status_workflow_tests {
         assert!(arr(&definition, "tasks")
             .unwrap()
             .iter()
-            .any(|task| text(task, "kind").unwrap() == "review-claim"));
+            .any(|task| text(task, "kind").unwrap() == "review-requirement"));
     }
 
     #[test]
-    fn missing_local_subject_blocks_publication_expansion() {
+    fn missing_local_verification_target_blocks_publication_expansion() {
         let template = shipped_template("change-development").unwrap();
         let definition = expand_generation(&template, &bindings(true)).unwrap();
         assert!(!arr(&definition, "tasks")
@@ -4394,14 +4528,14 @@ mod deployment_status_workflow_tests {
     }
 
     #[test]
-    fn execution_scope_preserves_historical_health_templates() {
+    fn execution_scope_preserves_historical_requirement_status_templates() {
         let hosted = Json::obj(vec![(
             "deployment",
-            Json::obj(vec![("subject", Json::str("deployment"))]),
+            Json::obj(vec![("verification_target", Json::str("deployment"))]),
         )]);
         let source = Json::obj(vec![(
             "deployment",
-            Json::obj(vec![("subject", Json::str("source"))]),
+            Json::obj(vec![("verification_target", Json::str("source"))]),
         )]);
         assert!(!local_check(&hosted, false));
         assert!(local_check(&hosted, true));
@@ -4412,11 +4546,11 @@ mod deployment_status_workflow_tests {
                 "actions",
                 Json::Arr(vec![Json::obj(vec![(
                     "kind",
-                    Json::str("assess-claim-health"),
+                    Json::str("assess-requirement-status"),
                 )])]),
             )]),
         )]);
-        assert!(requires_authored_health(&historical));
+        assert!(requires_authored_requirement_status(&historical));
     }
     #[test]
     fn candidate_reference_materialization_preserves_identity_and_rejects_changed_content() {
@@ -4434,7 +4568,7 @@ mod deployment_status_workflow_tests {
         for kind in [
             "candidate-authority",
             "assurance-snapshot",
-            "assurance-subject-selection",
+            "assurance-verification-target-selection",
         ] {
             let path = directory.join(kind);
             fs::write(&path, b"{\"selection\":\"exact\"}").unwrap();

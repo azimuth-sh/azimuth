@@ -1,4 +1,4 @@
-//! Extracted source/configuration support for Claim-first verification accounts.
+//! Extracted source/configuration support for Requirement-first verification accounts.
 //!
 //! Emitters own language and deployment-config analysis. Core reads only this strict manifest;
 //! declarations establish linkage, not method credibility, execution, or a positive Judgment.
@@ -20,7 +20,7 @@ pub struct SupportArtifact {
 
 #[derive(Debug, Clone)]
 pub struct ElementSupport {
-    pub claim: String,
+    pub requirement: String,
     pub element: String,
     pub artifacts: Vec<String>,
     pub depends_on: Vec<String>,
@@ -35,9 +35,9 @@ pub struct SupportCheck {
 }
 
 #[derive(Debug, Clone)]
-pub struct CaseContribution {
+pub struct ScenarioContribution {
     pub check: String,
-    pub case: String,
+    pub scenario: String,
     pub element: String,
     pub proposition: String,
 }
@@ -48,7 +48,7 @@ pub struct AccountSupport {
     pub artifacts: Vec<SupportArtifact>,
     pub elements: Vec<ElementSupport>,
     pub checks: Vec<SupportCheck>,
-    pub contributions: Vec<CaseContribution>,
+    pub contributions: Vec<ScenarioContribution>,
 }
 
 pub fn load(path: &Path) -> Result<AccountSupport, Vec<Diag>> {
@@ -92,12 +92,12 @@ pub fn parse(path: &str, root: &Json) -> Result<AccountSupport, Vec<Diag>> {
             "format: azimuth-account-support",
         ));
     }
-    if root.get("version").and_then(Json::as_num) != Some(1.0) {
+    if root.get("version").and_then(Json::as_num) != Some(2.0) {
         errors.push(Diag::expecting(
             path,
             0,
             "unsupported account support version",
-            "version: 1",
+            "version: 2",
         ));
     }
     let artifacts = objects(path, root, "artifacts", &mut errors)
@@ -181,11 +181,17 @@ pub fn parse(path: &str, root: &Json) -> Result<AccountSupport, Vec<Diag>> {
                 path,
                 &where_,
                 item,
-                &["claim", "element", "artifacts", "depends_on"],
+                &["requirement", "element", "artifacts", "depends_on"],
                 &mut errors,
             );
-            let claim = string(path, &where_, item, "claim", &mut errors);
-            identifier(path, &format!("{where_}.claim"), &claim, false, &mut errors);
+            let requirement = string(path, &where_, item, "requirement", &mut errors);
+            identifier(
+                path,
+                &format!("{where_}.requirement"),
+                &requirement,
+                false,
+                &mut errors,
+            );
             let element = string(path, &where_, item, "element", &mut errors);
             qualified(path, &format!("{where_}.element"), &element, &mut errors);
             let artifacts = strings(path, &where_, item, "artifacts", true, &mut errors);
@@ -199,7 +205,7 @@ pub fn parse(path: &str, root: &Json) -> Result<AccountSupport, Vec<Diag>> {
                 );
             }
             ElementSupport {
-                claim,
+                requirement,
                 element,
                 artifacts,
                 depends_on,
@@ -259,13 +265,13 @@ pub fn parse(path: &str, root: &Json) -> Result<AccountSupport, Vec<Diag>> {
                 path,
                 &where_,
                 item,
-                &["check", "case", "element", "proposition"],
+                &["check", "scenario", "element", "proposition"],
                 &mut errors,
             );
             let check = string(path, &where_, item, "check", &mut errors);
             identifier(path, &format!("{where_}.check"), &check, false, &mut errors);
-            let case = string(path, &where_, item, "case", &mut errors);
-            case_id(path, &format!("{where_}.case"), &case, &mut errors);
+            let scenario = string(path, &where_, item, "scenario", &mut errors);
+            scenario_id(path, &format!("{where_}.scenario"), &scenario, &mut errors);
             let element = string(path, &where_, item, "element", &mut errors);
             qualified(path, &format!("{where_}.element"), &element, &mut errors);
             let proposition = string(path, &where_, item, "proposition", &mut errors);
@@ -274,12 +280,12 @@ pub fn parse(path: &str, root: &Json) -> Result<AccountSupport, Vec<Diag>> {
                     path,
                     0,
                     format!("{where_}.proposition is empty"),
-                    "why this Check bears on this Case",
+                    "why this Check bears on this Scenario",
                 ));
             }
-            CaseContribution {
+            ScenarioContribution {
                 check,
-                case,
+                scenario,
                 element,
                 proposition,
             }
@@ -287,10 +293,10 @@ pub fn parse(path: &str, root: &Json) -> Result<AccountSupport, Vec<Diag>> {
         .collect::<Vec<_>>();
     unique(
         path,
-        "Check-to-Case contribution",
+        "Check-to-Scenario contribution",
         contributions
             .iter()
-            .map(|item| format!("{}|{}", item.check, item.case))
+            .map(|item| format!("{}|{}", item.check, item.scenario))
             .collect::<Vec<_>>()
             .iter()
             .map(String::as_str),
@@ -336,7 +342,7 @@ pub fn parse(path: &str, root: &Json) -> Result<AccountSupport, Vec<Diag>> {
                 path,
                 0,
                 format!(
-                    "Case contribution names unknown Check `{}`",
+                    "Scenario contribution names unknown Check `{}`",
                     contribution.check
                 ),
             ));
@@ -348,7 +354,7 @@ pub fn parse(path: &str, root: &Json) -> Result<AccountSupport, Vec<Diag>> {
                 path,
                 0,
                 format!(
-                    "Case contribution `{}` does not use Check element `{}`",
+                    "Scenario contribution `{}` does not use Check element `{}`",
                     contribution.check, contribution.element
                 ),
             ));
@@ -504,7 +510,7 @@ fn qualified(path: &str, where_: &str, value: &str, errors: &mut Vec<Diag>) {
     identifier(path, where_, local, false, errors);
 }
 
-fn case_id(path: &str, where_: &str, value: &str, errors: &mut Vec<Diag>) {
+fn scenario_id(path: &str, where_: &str, value: &str, errors: &mut Vec<Diag>) {
     identifier(path, where_, value, false, errors);
 }
 

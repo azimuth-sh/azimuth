@@ -8,9 +8,9 @@ fn fp() -> String {
     format!("sha256:{}", "a".repeat(64))
 }
 fn model() -> Model {
-    let document="# Verification: catalog\n\n## Claim verification: admission\n\n### Case verification: rejected\n\n#### Check: alpha\n- Execution:\n  - Subjects: artifact, ci-candidate, workspace\n  - Family: application\n  - Requirements: database\n- Evidence bindings:\n  - Contribution: Rejects invalid requests.\n\nExercise requests.\n\n#### Check: beta\n- Execution:\n  - Subjects: artifact, workspace\n  - Family: application\n- Evidence bindings:\n  - Contribution: Examines registrations.\n\nInspect registrations.\n";
+    let document="# Verification: catalog\n\n## Requirement verification: admission\n\n### Scenario verification: rejected\n\n#### Check: alpha\n- Execution:\n  - Verification Targets: artifact, ci-candidate, workspace\n  - Family: application\n  - Requirements: database\n- Evidence bindings:\n  - Contribution: Rejects invalid requests.\n\nExercise requests.\n\n#### Check: beta\n- Execution:\n  - Verification Targets: artifact, workspace\n  - Family: application\n- Evidence bindings:\n  - Contribution: Examines registrations.\n\nInspect registrations.\n";
     let account = parse_account_verification("verification.md", document).unwrap();
-    let spec=azimuth::spec::parse_spec("spec.md","# Spec: catalog\n\n## Claim: admission\nCriticality: standard\n\nThe API SHALL reject invalid callers.\n\n### Case: rejected\nGiven invalid authority, when invoked, then deny.\n").unwrap();
+    let spec=azimuth::spec::parse_spec("spec.md","# Spec: catalog\n\n## Requirement: admission\nCriticality: standard\n\nThe API SHALL reject invalid callers.\n\n### Scenario: rejected\nGiven invalid authority, when invoked, then deny.\n").unwrap();
     Model {
         account_verifications: vec![account],
         specs: vec![spec],
@@ -74,23 +74,23 @@ fn configuration() -> AdapterConfiguration {
     }
 }
 fn policy() -> SelectionPolicy {
-    parse_policy("policy.json",&format!(r#"{{"format":"azimuth-run-selection-policy","version":1,"operation":"execute","planned_at_ms":10,"subject":{{"kind":"artifact","artifacts":[{{"id":"candidate","digest":"{}"}}]}},"required_context":{{}},"families":["application"],"available_requirements":["database"],"routes":[{{"family":"application","execution-capability":"native/checks"}}]}}"#,fp())).unwrap()
+    parse_policy("policy.json",&format!(r#"{{"format":"azimuth-run-selection-policy","version":2,"operation":"execute","planned_at_ms":10,"verification_target":{{"kind":"artifact","artifacts":[{{"id":"candidate","digest":"{}"}}]}},"required_execution_context":{{}},"families":["application"],"available_requirements":["database"],"routes":[{{"family":"application","execution-capability":"native/checks"}}]}}"#,fp())).unwrap()
 }
 #[test]
-fn selects_all_eligible_checks_without_an_id_list_and_derives_cases_and_units() {
+fn selects_all_eligible_checks_without_an_id_list_and_derives_scenarios_and_units() {
     let m = model();
     let c = configuration();
     let report = select(&m, &c, &policy());
     assert!(report.findings.is_empty());
     let request = report.request.as_ref().unwrap();
     assert_eq!(request.checks.len(), 2);
-    assert!(request.checks.iter().all(|c| c.cases.is_empty()));
+    assert!(request.checks.iter().all(|c| c.scenarios.is_empty()));
     let launch = azimuth::run_plan::plan(&m, &c, request).unwrap();
     assert!(launch
         .plan
         .checks
         .iter()
-        .all(|c| c.cases == vec!["rejected"] && c.units[0].id == "whole"));
+        .all(|c| c.scenarios == vec!["rejected"] && c.units[0].id == "whole"));
     let source = azimuth::run::canonical_json(&to_json(&report)).unwrap();
     assert_eq!(
         request_from_selection(&m, &c, "selection.json", &source).unwrap(),
@@ -114,13 +114,13 @@ fn missing_routes_and_requirements_are_explicit_findings() {
     assert_eq!(r.request.unwrap().checks.len(), 1);
 }
 #[test]
-fn undeclared_execution_and_incompatible_subjects_are_not_silently_excluded() {
+fn undeclared_execution_and_incompatible_verification_targets_are_not_silently_excluded() {
     let mut m = model();
     m.account_verifications[0].checks[0].inputs.clear();
     let r = select(&m, &configuration(), &policy());
     assert!(r.findings.iter().any(|f| f.code == "undeclared-execution"));
     let mut p = policy();
-    p.subject = azimuth::run::Subject::Service {
+    p.verification_target = azimuth::run::VerificationTarget::Service {
         environment: "hosted".into(),
         service: "api".into(),
         deployment: "deployment-a".into(),
@@ -169,7 +169,7 @@ fn execution_maps_and_policy_routes_fail_closed_on_ambiguity() {
             .requirements,
         vec!["database"]
     );
-    let doc="# Verification: catalog\n\n## Claim verification: admission\n\n### Case verification: rejected\n\n#### Check: alpha\n- Execution:\n  - Subjects: nonexistent\n  - Family: application\n- Evidence bindings:\n  - Contribution: Examines request.\n\nRun.\n";
+    let doc="# Verification: catalog\n\n## Requirement verification: admission\n\n### Scenario verification: rejected\n\n#### Check: alpha\n- Execution:\n  - Verification Targets: nonexistent\n  - Family: application\n- Evidence bindings:\n  - Contribution: Examines request.\n\nRun.\n";
     assert!(parse_account_verification("verification.md", doc).is_err());
     let json = azimuth::run::canonical_json(&policy_to_json(&policy())).unwrap();
     let duplicate = json.replace(

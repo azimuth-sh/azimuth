@@ -10,7 +10,7 @@ use std::fs;
 use std::path::Path;
 
 pub const FORMAT: &str = "azimuth-run-bundle";
-pub const VERSION: u64 = 1;
+pub const VERSION: u64 = 2;
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,8 +39,8 @@ pub struct RunBundle {
     pub corrects: Option<String>,
     pub correction_reason: Option<String>,
     pub bundle_fingerprint: String,
-    pub subject: Subject,
-    pub subject_fingerprint: String,
+    pub verification_target: VerificationTarget,
+    pub verification_target_fingerprint: String,
     pub planned_at_ms: u64,
     pub started_at_ms: u64,
     pub finished_at_ms: u64,
@@ -52,12 +52,12 @@ pub struct RunBundle {
     pub diagnostics: Vec<Diagnostic>,
     pub activities: Vec<Activity>,
     pub check_executions: Vec<CheckExecution>,
-    pub challenger_executions: Vec<ChallengerExecution>,
+    pub verification_challenge_executions: Vec<VerificationChallengeExecution>,
     pub contributions: Vec<RunBundle>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Subject {
+pub enum VerificationTarget {
     Source {
         repositories: Vec<RepositoryState>,
     },
@@ -132,7 +132,7 @@ impl RunStatus {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Plan {
     pub model_fingerprint: String,
-    pub required_context: BTreeMap<String, String>,
+    pub required_execution_context: BTreeMap<String, String>,
     pub checks: Vec<CheckSelection>,
     pub challenges: Vec<ChallengeSelection>,
     pub fingerprint: String,
@@ -140,7 +140,7 @@ pub struct Plan {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActualSelection {
-    pub context: BTreeMap<String, String>,
+    pub execution_context: BTreeMap<String, String>,
     pub plan_fingerprint: String,
     pub checks: Vec<CheckSelection>,
     pub challenges: Vec<ChallengeSelection>,
@@ -151,7 +151,7 @@ pub struct ActualSelection {
 pub struct CheckSelection {
     pub id: String,
     pub fingerprint: String,
-    pub cases: Vec<String>,
+    pub scenarios: Vec<String>,
     pub implementations: Vec<Implementation>,
     pub units: Vec<WorkUnit>,
 }
@@ -171,7 +171,7 @@ pub struct WorkUnit {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChallengeSelection {
     pub id: String,
-    pub challenger: ChallengerRef,
+    pub verification_challenge: VerificationChallengeRef,
     pub target: ChallengeTarget,
     pub lane: ChallengeLane,
     pub scope: ChallengeScope,
@@ -209,14 +209,14 @@ pub struct ChallengeScopeItem {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ChallengeScopeKind {
-    ClaimReview,
-    ClaimHealth,
+    RequirementReview,
+    RequirementStatus,
     ApplicabilityDecision,
-    Case,
-    Claim,
+    Scenario,
+    Requirement,
     Binding,
     MethodQualification,
-    ClaimJudgment,
+    RequirementJudgment,
     Check,
     CheckImplementation,
     Realization,
@@ -235,14 +235,14 @@ pub enum ChallengeScopeKind {
 impl ChallengeScopeKind {
     pub fn name(self) -> &'static str {
         match self {
-            Self::ClaimReview => "claim-review",
-            Self::ClaimHealth => "claim-health",
+            Self::RequirementReview => "requirement-review",
+            Self::RequirementStatus => "requirement-status",
             Self::ApplicabilityDecision => "applicability-decision",
-            Self::Case => "case",
-            Self::Claim => "claim",
+            Self::Scenario => "scenario",
+            Self::Requirement => "requirement",
             Self::Binding => "binding",
             Self::MethodQualification => "method-qualification",
-            Self::ClaimJudgment => "claim-judgment",
+            Self::RequirementJudgment => "requirement-judgment",
             Self::Check => "check",
             Self::CheckImplementation => "check-implementation",
             Self::Realization => "realization",
@@ -261,7 +261,7 @@ impl ChallengeScopeKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChallengerRef {
+pub struct VerificationChallengeRef {
     pub id: String,
     pub fingerprint: String,
 }
@@ -275,20 +275,20 @@ pub struct ChallengeTarget {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChallengeTargetKind {
-    ClaimReview,
-    ClaimHealth,
+    RequirementReview,
+    RequirementStatus,
     ApplicabilityDecision,
-    ClaimJudgment,
+    RequirementJudgment,
     MethodQualification,
 }
 
 impl ChallengeTargetKind {
     pub fn name(self) -> &'static str {
         match self {
-            Self::ClaimReview => "claim-review",
-            Self::ClaimHealth => "claim-health",
+            Self::RequirementReview => "requirement-review",
+            Self::RequirementStatus => "requirement-status",
             Self::ApplicabilityDecision => "applicability-decision",
-            Self::ClaimJudgment => "claim-judgment",
+            Self::RequirementJudgment => "requirement-judgment",
             Self::MethodQualification => "method-qualification",
         }
     }
@@ -572,8 +572,8 @@ pub enum DiagnosticScope {
     Activity(String),
     CheckExecution(String),
     ChallengeSelection(String),
-    ChallengerExecution {
-        challenger_fingerprint: String,
+    VerificationChallengeExecution {
+        verification_challenge_fingerprint: String,
         target_fingerprint: String,
     },
 }
@@ -612,7 +612,7 @@ impl ActivityStatus {
 pub struct CheckExecution {
     pub check: CheckRef,
     pub units: Vec<CheckExecutionUnit>,
-    pub observations: Vec<Observation>,
+    pub results: Vec<CheckResult>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -631,17 +631,17 @@ pub struct CheckExecutionUnit {
 pub struct CheckAttempt {
     pub ordinal: u64,
     pub activity: String,
-    pub outcomes: BTreeMap<String, ObservationOutcome>,
+    pub outcomes: BTreeMap<String, CheckResultOutcome>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ObservationOutcome {
+pub enum CheckResultOutcome {
     Satisfied,
     Violated,
     Inconclusive,
 }
 
-impl ObservationOutcome {
+impl CheckResultOutcome {
     pub fn name(self) -> &'static str {
         match self {
             Self::Satisfied => "satisfied",
@@ -652,9 +652,9 @@ impl ObservationOutcome {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Observation {
-    pub case: String,
-    pub outcome: ObservationOutcome,
+pub struct CheckResult {
+    pub scenario: String,
+    pub outcome: CheckResultOutcome,
     pub observed_at_ms: u64,
     pub fingerprint: String,
     pub artifacts: Vec<String>,
@@ -662,9 +662,9 @@ pub struct Observation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChallengerExecution {
+pub struct VerificationChallengeExecution {
     pub challenge: String,
-    pub challenger: ChallengerRef,
+    pub verification_challenge: VerificationChallengeRef,
     pub target: ChallengeTarget,
     pub units: Vec<ChallengeExecutionUnit>,
     pub result: ChallengeResult,
@@ -759,10 +759,10 @@ fn strict_json_parse(source: &str) -> Result<Json, String> {
     Ok(value)
 }
 
-/// Parses one strict Run-bundle Subject value without deriving product-state content.
-pub fn subject_from_json(value: &Json) -> Result<Subject, String> {
+/// Parses one strict Run-bundle Verification Target value without deriving product-state content.
+pub fn verification_target_from_json(value: &Json) -> Result<VerificationTarget, String> {
     reject_duplicate_keys(value, "$".into())?;
-    parse_subject(value, "$")
+    parse_verification_target(value, "$")
 }
 
 /// Parses one strict Run-bundle semantic Plan value.
@@ -1098,8 +1098,8 @@ fn parse_root_depth(root: &Json, depth: usize) -> Result<RunBundle, String> {
             "corrects",
             "correction_reason",
             "bundle_fingerprint",
-            "subject",
-            "subject_fingerprint",
+            "verification_target",
+            "verification_target_fingerprint",
             "planned_at_ms",
             "started_at_ms",
             "finished_at_ms",
@@ -1111,7 +1111,7 @@ fn parse_root_depth(root: &Json, depth: usize) -> Result<RunBundle, String> {
             "diagnostics",
             "activities",
             "check_executions",
-            "challenger_executions",
+            "verification_challenge_executions",
             "contributions",
         ],
     )?;
@@ -1132,7 +1132,10 @@ fn parse_root_depth(root: &Json, depth: usize) -> Result<RunBundle, String> {
         }
         _ => {}
     }
-    let subject = parse_subject(required(object, "subject", "$")?, "$.subject")?;
+    let verification_target = parse_verification_target(
+        required(object, "verification_target", "$")?,
+        "$.verification_target",
+    )?;
     let status = match string(object, "status", "$")? {
         "complete" => RunStatus::Complete,
         "partial" => RunStatus::Partial,
@@ -1150,11 +1153,11 @@ fn parse_root_depth(root: &Json, depth: usize) -> Result<RunBundle, String> {
     let diagnostics = parse_array(object, "diagnostics", "$", parse_diagnostic)?;
     let activities = parse_array(object, "activities", "$", parse_activity)?;
     let check_executions = parse_array(object, "check_executions", "$", parse_check_execution)?;
-    let challenger_executions = parse_array(
+    let verification_challenge_executions = parse_array(
         object,
-        "challenger_executions",
+        "verification_challenge_executions",
         "$",
-        parse_challenger_execution,
+        parse_verification_challenge_execution,
     )?;
     let contributions = match object.iter().find(|(key, _)| key == "contributions") {
         Some((_, value)) => {
@@ -1178,8 +1181,12 @@ fn parse_root_depth(root: &Json, depth: usize) -> Result<RunBundle, String> {
         corrects,
         correction_reason,
         bundle_fingerprint: fingerprint(object, "bundle_fingerprint", "$")?,
-        subject,
-        subject_fingerprint: fingerprint(object, "subject_fingerprint", "$")?,
+        verification_target,
+        verification_target_fingerprint: fingerprint(
+            object,
+            "verification_target_fingerprint",
+            "$",
+        )?,
         planned_at_ms: integer(object, "planned_at_ms", "$")?,
         started_at_ms: integer(object, "started_at_ms", "$")?,
         finished_at_ms: integer(object, "finished_at_ms", "$")?,
@@ -1191,34 +1198,34 @@ fn parse_root_depth(root: &Json, depth: usize) -> Result<RunBundle, String> {
         diagnostics,
         activities,
         check_executions,
-        challenger_executions,
+        verification_challenge_executions,
         contributions,
     })
 }
 
-fn parse_subject(value: &Json, where_: &str) -> Result<Subject, String> {
+fn parse_verification_target(value: &Json, where_: &str) -> Result<VerificationTarget, String> {
     let base = object_pairs(value, where_)?;
     let kind = string(base, "kind", where_)?;
     match kind {
         "source" => {
             let object = object(value, where_, &["kind", "repositories"])?;
             let repositories = parse_array(object, "repositories", where_, parse_repository)?;
-            Ok(Subject::Source { repositories })
+            Ok(VerificationTarget::Source { repositories })
         }
         "workspace" => {
             let object = object(value, where_, &["kind", "repositories"])?;
             let repositories = parse_array(object, "repositories", where_, parse_repository)?;
-            Ok(Subject::Workspace { repositories })
+            Ok(VerificationTarget::Workspace { repositories })
         }
         "ci-candidate" => {
             let object = object(value, where_, &["kind", "repositories"])?;
             let repositories = parse_array(object, "repositories", where_, parse_repository)?;
-            Ok(Subject::CiCandidate { repositories })
+            Ok(VerificationTarget::CiCandidate { repositories })
         }
         "artifact" => {
             let object = object(value, where_, &["kind", "artifacts"])?;
             let artifacts = parse_array(object, "artifacts", where_, parse_artifact_state)?;
-            Ok(Subject::Artifact { artifacts })
+            Ok(VerificationTarget::Artifact { artifacts })
         }
         "deployment" => {
             let object = object(
@@ -1233,7 +1240,7 @@ fn parse_subject(value: &Json, where_: &str) -> Result<Subject, String> {
                 ],
             )?;
             let artifacts = parse_array(object, "artifacts", where_, parse_artifact_state)?;
-            Ok(Subject::Deployment {
+            Ok(VerificationTarget::Deployment {
                 environment: id(object, "environment", where_)?,
                 deployment: id(object, "deployment", where_)?,
                 deployment_fingerprint: fingerprint(object, "deployment_fingerprint", where_)?,
@@ -1252,7 +1259,7 @@ fn parse_subject(value: &Json, where_: &str) -> Result<Subject, String> {
                     "deployment_fingerprint",
                 ],
             )?;
-            Ok(Subject::Service {
+            Ok(VerificationTarget::Service {
                 environment: id(object, "environment", where_)?,
                 service: id(object, "service", where_)?,
                 deployment: id(object, "deployment", where_)?,
@@ -1272,7 +1279,7 @@ fn parse_subject(value: &Json, where_: &str) -> Result<Subject, String> {
                 ],
             )?;
             let services = parse_array(object, "services", where_, parse_service_state)?;
-            Ok(Subject::MonitoringWindow {
+            Ok(VerificationTarget::MonitoringWindow {
                 environment: id(object, "environment", where_)?,
                 services,
                 window_start_ms: integer(object, "window_start_ms", where_)?,
@@ -1319,7 +1326,7 @@ fn parse_plan(value: &Json, where_: &str) -> Result<Plan, String> {
         where_,
         &[
             "model_fingerprint",
-            "required_context",
+            "required_execution_context",
             "checks",
             "challenges",
             "fingerprint",
@@ -1329,9 +1336,9 @@ fn parse_plan(value: &Json, where_: &str) -> Result<Plan, String> {
     let challenges = parse_array(object, "challenges", where_, parse_challenge_selection)?;
     Ok(Plan {
         model_fingerprint: fingerprint(object, "model_fingerprint", where_)?,
-        required_context: string_map(
-            required(object, "required_context", where_)?,
-            &format!("{where_}.required_context"),
+        required_execution_context: string_map(
+            required(object, "required_execution_context", where_)?,
+            &format!("{where_}.required_execution_context"),
         )?,
         checks,
         challenges,
@@ -1344,7 +1351,7 @@ fn parse_actual(value: &Json, where_: &str) -> Result<ActualSelection, String> {
         value,
         where_,
         &[
-            "context",
+            "execution_context",
             "plan_fingerprint",
             "checks",
             "challenges",
@@ -1354,9 +1361,9 @@ fn parse_actual(value: &Json, where_: &str) -> Result<ActualSelection, String> {
     let checks = parse_array(object, "checks", where_, parse_check_selection)?;
     let challenges = parse_array(object, "challenges", where_, parse_challenge_selection)?;
     Ok(ActualSelection {
-        context: string_map(
-            required(object, "context", where_)?,
-            &format!("{where_}.context"),
+        execution_context: string_map(
+            required(object, "execution_context", where_)?,
+            &format!("{where_}.execution_context"),
         )?,
         plan_fingerprint: fingerprint(object, "plan_fingerprint", where_)?,
         checks,
@@ -1369,14 +1376,14 @@ fn parse_check_selection(value: &Json, where_: &str) -> Result<CheckSelection, S
     let object = object(
         value,
         where_,
-        &["id", "fingerprint", "cases", "implementations", "units"],
+        &["id", "fingerprint", "scenarios", "implementations", "units"],
     )?;
     let implementations = parse_array(object, "implementations", where_, parse_implementation)?;
     let units = parse_array(object, "units", where_, parse_work_unit)?;
     Ok(CheckSelection {
         id: check_id(object, "id", where_)?,
         fingerprint: fingerprint(object, "fingerprint", where_)?,
-        cases: string_set(object, "cases", where_)?,
+        scenarios: string_set(object, "scenarios", where_)?,
         implementations,
         units,
     })
@@ -1408,7 +1415,14 @@ fn parse_challenge_selection(value: &Json, where_: &str) -> Result<ChallengeSele
     let object = object(
         value,
         where_,
-        &["id", "challenger", "target", "lane", "scope", "units"],
+        &[
+            "id",
+            "verification_challenge",
+            "target",
+            "lane",
+            "scope",
+            "units",
+        ],
     )?;
     let units = parse_array(object, "units", where_, parse_work_unit)?;
     let lane = match string(object, "lane", where_)? {
@@ -1418,9 +1432,9 @@ fn parse_challenge_selection(value: &Json, where_: &str) -> Result<ChallengeSele
     };
     Ok(ChallengeSelection {
         id: id(object, "id", where_)?,
-        challenger: parse_challenger_ref(
-            required(object, "challenger", where_)?,
-            &format!("{where_}.challenger"),
+        verification_challenge: parse_verification_challenge_ref(
+            required(object, "verification_challenge", where_)?,
+            &format!("{where_}.verification_challenge"),
         )?,
         target: parse_target(
             required(object, "target", where_)?,
@@ -1447,14 +1461,14 @@ fn parse_challenge_scope(value: &Json, where_: &str) -> Result<ChallengeScope, S
 fn parse_challenge_scope_item(value: &Json, where_: &str) -> Result<ChallengeScopeItem, String> {
     let object = object(value, where_, &["kind", "id", "fingerprint"])?;
     let kind = match string(object, "kind", where_)? {
-        "claim-review" => ChallengeScopeKind::ClaimReview,
-        "claim-health" => ChallengeScopeKind::ClaimHealth,
+        "requirement-review" => ChallengeScopeKind::RequirementReview,
+        "requirement-status" => ChallengeScopeKind::RequirementStatus,
         "applicability-decision" => ChallengeScopeKind::ApplicabilityDecision,
-        "case" => ChallengeScopeKind::Case,
-        "claim" => ChallengeScopeKind::Claim,
+        "scenario" => ChallengeScopeKind::Scenario,
+        "requirement" => ChallengeScopeKind::Requirement,
         "binding" => ChallengeScopeKind::Binding,
         "method-qualification" => ChallengeScopeKind::MethodQualification,
-        "claim-judgment" => ChallengeScopeKind::ClaimJudgment,
+        "requirement-judgment" => ChallengeScopeKind::RequirementJudgment,
         "check" => ChallengeScopeKind::Check,
         "check-implementation" => ChallengeScopeKind::CheckImplementation,
         "realization" => ChallengeScopeKind::Realization,
@@ -1473,9 +1487,9 @@ fn parse_challenge_scope_item(value: &Json, where_: &str) -> Result<ChallengeSco
     Ok(ChallengeScopeItem {
         kind,
         id: match kind {
-            ChallengeScopeKind::Claim
-            | ChallengeScopeKind::Case
-            | ChallengeScopeKind::ClaimJudgment
+            ChallengeScopeKind::Requirement
+            | ChallengeScopeKind::Scenario
+            | ChallengeScopeKind::RequirementJudgment
             | ChallengeScopeKind::Mechanism
             | ChallengeScopeKind::Check => check_id(object, "id", where_)?,
             _ => nonempty(object, "id", where_)?,
@@ -1484,9 +1498,12 @@ fn parse_challenge_scope_item(value: &Json, where_: &str) -> Result<ChallengeSco
     })
 }
 
-fn parse_challenger_ref(value: &Json, where_: &str) -> Result<ChallengerRef, String> {
+fn parse_verification_challenge_ref(
+    value: &Json,
+    where_: &str,
+) -> Result<VerificationChallengeRef, String> {
     let object = object(value, where_, &["id", "fingerprint"])?;
-    Ok(ChallengerRef {
+    Ok(VerificationChallengeRef {
         id: id(object, "id", where_)?,
         fingerprint: fingerprint(object, "fingerprint", where_)?,
     })
@@ -1495,10 +1512,10 @@ fn parse_challenger_ref(value: &Json, where_: &str) -> Result<ChallengerRef, Str
 fn parse_target(value: &Json, where_: &str) -> Result<ChallengeTarget, String> {
     let object = object(value, where_, &["kind", "id", "fingerprint"])?;
     let kind = match string(object, "kind", where_)? {
-        "claim-review" => ChallengeTargetKind::ClaimReview,
-        "claim-health" => ChallengeTargetKind::ClaimHealth,
+        "requirement-review" => ChallengeTargetKind::RequirementReview,
+        "requirement-status" => ChallengeTargetKind::RequirementStatus,
         "applicability-decision" => ChallengeTargetKind::ApplicabilityDecision,
-        "claim-judgment" => ChallengeTargetKind::ClaimJudgment,
+        "requirement-judgment" => ChallengeTargetKind::RequirementJudgment,
         "method-qualification" => ChallengeTargetKind::MethodQualification,
         other => return Err(format!("{where_}.kind has unsupported value `{other}`")),
     };
@@ -1507,11 +1524,10 @@ fn parse_target(value: &Json, where_: &str) -> Result<ChallengeTarget, String> {
         ChallengeTargetKind::ApplicabilityDecision | ChallengeTargetKind::MethodQualification => {
             validate_id(&target_id, true).map_err(|reason| format!("{where_}.id: {reason}"))?
         }
-        ChallengeTargetKind::ClaimReview
-        | ChallengeTargetKind::ClaimHealth
-        | ChallengeTargetKind::ClaimJudgment => {
-            validate_claim_id(&target_id).map_err(|reason| format!("{where_}.id: {reason}"))?
-        }
+        ChallengeTargetKind::RequirementReview
+        | ChallengeTargetKind::RequirementStatus
+        | ChallengeTargetKind::RequirementJudgment => validate_requirement_id(&target_id)
+            .map_err(|reason| format!("{where_}.id: {reason}"))?,
     }
     Ok(ChallengeTarget {
         kind,
@@ -1911,14 +1927,22 @@ fn parse_scope(value: &Json, where_: &str) -> Result<DiagnosticScope, String> {
                 object, "id", where_,
             )?))
         }
-        "challenger-execution" => {
+        "verification-challenge-execution" => {
             let object = object(
                 value,
                 where_,
-                &["kind", "challenger_fingerprint", "target_fingerprint"],
+                &[
+                    "kind",
+                    "verification_challenge_fingerprint",
+                    "target_fingerprint",
+                ],
             )?;
-            Ok(DiagnosticScope::ChallengerExecution {
-                challenger_fingerprint: fingerprint(object, "challenger_fingerprint", where_)?,
+            Ok(DiagnosticScope::VerificationChallengeExecution {
+                verification_challenge_fingerprint: fingerprint(
+                    object,
+                    "verification_challenge_fingerprint",
+                    where_,
+                )?,
                 target_fingerprint: fingerprint(object, "target_fingerprint", where_)?,
             })
         }
@@ -1962,7 +1986,7 @@ fn parse_activity(value: &Json, where_: &str) -> Result<Activity, String> {
 }
 
 fn parse_check_execution(value: &Json, where_: &str) -> Result<CheckExecution, String> {
-    let object = object(value, where_, &["check", "units", "observations"])?;
+    let object = object(value, where_, &["check", "units", "results"])?;
     let units = parse_array(object, "units", where_, parse_check_unit)?;
     Ok(CheckExecution {
         check: parse_check_ref(
@@ -1970,7 +1994,7 @@ fn parse_check_execution(value: &Json, where_: &str) -> Result<CheckExecution, S
             &format!("{where_}.check"),
         )?,
         units,
-        observations: parse_array(object, "observations", where_, parse_observation)?,
+        results: parse_array(object, "results", where_, parse_check_result)?,
     })
 }
 
@@ -1993,7 +2017,7 @@ fn parse_check_unit(value: &Json, where_: &str) -> Result<CheckExecutionUnit, St
 
 fn parse_check_attempt(value: &Json, where_: &str) -> Result<CheckAttempt, String> {
     let object = object(value, where_, &["ordinal", "activity", "outcomes"])?;
-    let outcomes = observation_outcomes(
+    let outcomes = check_result_outcomes(
         required(object, "outcomes", where_)?,
         &format!("{where_}.outcomes"),
     )?;
@@ -2004,12 +2028,12 @@ fn parse_check_attempt(value: &Json, where_: &str) -> Result<CheckAttempt, Strin
     })
 }
 
-fn parse_observation(value: &Json, where_: &str) -> Result<Observation, String> {
+fn parse_check_result(value: &Json, where_: &str) -> Result<CheckResult, String> {
     let object = object(
         value,
         where_,
         &[
-            "case",
+            "scenario",
             "outcome",
             "observed_at_ms",
             "fingerprint",
@@ -2018,13 +2042,13 @@ fn parse_observation(value: &Json, where_: &str) -> Result<Observation, String> 
         ],
     )?;
     let outcome = match string(object, "outcome", where_)? {
-        "satisfied" => ObservationOutcome::Satisfied,
-        "violated" => ObservationOutcome::Violated,
-        "inconclusive" => ObservationOutcome::Inconclusive,
+        "satisfied" => CheckResultOutcome::Satisfied,
+        "violated" => CheckResultOutcome::Violated,
+        "inconclusive" => CheckResultOutcome::Inconclusive,
         other => return Err(format!("{where_}.outcome has unsupported value `{other}`")),
     };
-    Ok(Observation {
-        case: nonempty(object, "case", where_)?,
+    Ok(CheckResult {
+        scenario: nonempty(object, "scenario", where_)?,
         outcome,
         observed_at_ms: integer(object, "observed_at_ms", where_)?,
         fingerprint: fingerprint(object, "fingerprint", where_)?,
@@ -2033,45 +2057,59 @@ fn parse_observation(value: &Json, where_: &str) -> Result<Observation, String> 
     })
 }
 
-fn observation_outcomes(
+fn check_result_outcomes(
     value: &Json,
     where_: &str,
-) -> Result<BTreeMap<String, ObservationOutcome>, String> {
+) -> Result<BTreeMap<String, CheckResultOutcome>, String> {
     let entries = object_pairs(value, where_)?;
     if entries.is_empty() {
         return Err(format!("{where_} must not be empty"));
     }
     let mut outcomes = BTreeMap::new();
-    for (case, value) in entries {
+    for (scenario, value) in entries {
         let Json::Str(value) = value else {
-            return Err(format!("{where_}.{case} must be a string"));
+            return Err(format!("{where_}.{scenario} must be a string"));
         };
         let outcome = match value.as_str() {
-            "satisfied" => ObservationOutcome::Satisfied,
-            "violated" => ObservationOutcome::Violated,
-            "inconclusive" => ObservationOutcome::Inconclusive,
-            other => return Err(format!("{where_}.{case} has unsupported value `{other}`")),
+            "satisfied" => CheckResultOutcome::Satisfied,
+            "violated" => CheckResultOutcome::Violated,
+            "inconclusive" => CheckResultOutcome::Inconclusive,
+            other => {
+                return Err(format!(
+                    "{where_}.{scenario} has unsupported value `{other}`"
+                ))
+            }
         };
-        validate_case_id(case).map_err(|reason| format!("{where_}.{case}: {reason}"))?;
-        if outcomes.insert(case.clone(), outcome).is_some() {
-            return Err(format!("{where_} repeats Case `{case}`"));
+        validate_scenario_id(scenario)
+            .map_err(|reason| format!("{where_}.{scenario}: {reason}"))?;
+        if outcomes.insert(scenario.clone(), outcome).is_some() {
+            return Err(format!("{where_} repeats Scenario `{scenario}`"));
         }
     }
     Ok(outcomes)
 }
 
-fn parse_challenger_execution(value: &Json, where_: &str) -> Result<ChallengerExecution, String> {
+fn parse_verification_challenge_execution(
+    value: &Json,
+    where_: &str,
+) -> Result<VerificationChallengeExecution, String> {
     let object = object(
         value,
         where_,
-        &["challenge", "challenger", "target", "units", "result"],
+        &[
+            "challenge",
+            "verification_challenge",
+            "target",
+            "units",
+            "result",
+        ],
     )?;
     let units = parse_array(object, "units", where_, parse_challenge_unit)?;
-    Ok(ChallengerExecution {
+    Ok(VerificationChallengeExecution {
         challenge: id(object, "challenge", where_)?,
-        challenger: parse_challenger_ref(
-            required(object, "challenger", where_)?,
-            &format!("{where_}.challenger"),
+        verification_challenge: parse_verification_challenge_ref(
+            required(object, "verification_challenge", where_)?,
+            &format!("{where_}.verification_challenge"),
         )?,
         target: parse_target(
             required(object, "target", where_)?,
@@ -2423,11 +2461,11 @@ fn validate_capability_address(value: &str) -> Result<(), String> {
     validate_id(capability, false)
 }
 
-fn validate_claim_id(value: &str) -> Result<(), String> {
+fn validate_requirement_id(value: &str) -> Result<(), String> {
     validate_entity_id(value)
 }
 
-fn validate_case_id(value: &str) -> Result<(), String> {
+fn validate_scenario_id(value: &str) -> Result<(), String> {
     validate_entity_id(value)
 }
 
@@ -2528,16 +2566,26 @@ fn locator_shaped_address(address: &str) -> bool {
     line_suffix || source_line_fragment
 }
 
-fn unsafe_subject_number_paths(subject: &Subject) -> Vec<String> {
+fn unsafe_verification_target_number_paths(
+    verification_target: &VerificationTarget,
+) -> Vec<String> {
     let mut paths = Vec::new();
-    if let Subject::MonitoringWindow {
+    if let VerificationTarget::MonitoringWindow {
         window_start_ms,
         window_end_ms,
         ..
-    } = subject
+    } = verification_target
     {
-        record_unsafe_number(&mut paths, "subject.window_start_ms", *window_start_ms);
-        record_unsafe_number(&mut paths, "subject.window_end_ms", *window_end_ms);
+        record_unsafe_number(
+            &mut paths,
+            "verification_target.window_start_ms",
+            *window_start_ms,
+        );
+        record_unsafe_number(
+            &mut paths,
+            "verification_target.window_end_ms",
+            *window_end_ms,
+        );
     }
     paths
 }
@@ -2555,7 +2603,7 @@ fn unsafe_number_paths(bundle: &RunBundle) -> Vec<String> {
 }
 
 fn unsafe_number_paths_shallow(bundle: &RunBundle) -> Vec<String> {
-    let mut paths = unsafe_subject_number_paths(&bundle.subject);
+    let mut paths = unsafe_verification_target_number_paths(&bundle.verification_target);
     record_unsafe_number(&mut paths, "bundle_revision", bundle.bundle_revision);
     record_unsafe_number(&mut paths, "planned_at_ms", bundle.planned_at_ms);
     record_unsafe_number(&mut paths, "started_at_ms", bundle.started_at_ms);
@@ -2603,23 +2651,24 @@ fn unsafe_number_paths_shallow(bundle: &RunBundle) -> Vec<String> {
                 );
             }
         }
-        for (observation_index, observation) in execution.observations.iter().enumerate() {
+        for (check_result_index, check_result) in execution.results.iter().enumerate() {
             record_unsafe_number(
                 &mut paths,
                 &format!(
-                    "check_executions[{execution_index}].observations[{observation_index}].observed_at_ms"
+                    "check_executions[{execution_index}].results[{check_result_index}].observed_at_ms"
                 ),
-                observation.observed_at_ms,
+                check_result.observed_at_ms,
             );
         }
     }
-    for (execution_index, execution) in bundle.challenger_executions.iter().enumerate() {
+    for (execution_index, execution) in bundle.verification_challenge_executions.iter().enumerate()
+    {
         for (unit_index, unit) in execution.units.iter().enumerate() {
             for (attempt_index, attempt) in unit.attempts.iter().enumerate() {
                 record_unsafe_number(
                     &mut paths,
                     &format!(
-                        "challenger_executions[{execution_index}].units[{unit_index}].attempts[{attempt_index}].ordinal"
+                        "verification_challenge_executions[{execution_index}].units[{unit_index}].attempts[{attempt_index}].ordinal"
                     ),
                     attempt.ordinal,
                 );
@@ -2627,7 +2676,7 @@ fn unsafe_number_paths_shallow(bundle: &RunBundle) -> Vec<String> {
         }
         record_unsafe_number(
             &mut paths,
-            &format!("challenger_executions[{execution_index}].result.observed_at_ms"),
+            &format!("verification_challenge_executions[{execution_index}].result.observed_at_ms"),
             execution.result.observed_at_ms,
         );
     }
@@ -2640,51 +2689,62 @@ fn record_unsafe_number(paths: &mut Vec<String>, path: &str, value: u64) {
     }
 }
 
-pub fn subject_fingerprint(subject: &Subject) -> String {
+pub fn verification_target_fingerprint(verification_target: &VerificationTarget) -> String {
     assert!(
-        unsafe_subject_number_paths(subject).is_empty(),
-        "unsafe Subject number must be rejected before fingerprinting"
+        unsafe_verification_target_number_paths(verification_target).is_empty(),
+        "unsafe Verification Target number must be rejected before fingerprinting"
     );
     jcs_sha256(&Json::obj(vec![
-        ("format", Json::str("azimuth-subject-fingerprint")),
-        ("version", Json::Num(1.0)),
-        ("subject", subject_to_json(subject)),
+        (
+            "format",
+            Json::str("azimuth-verification-target-fingerprint"),
+        ),
+        ("version", Json::Num(2.0)),
+        (
+            "verification_target",
+            verification_target_to_json(verification_target),
+        ),
     ]))
 }
 
-/// Validates the standalone structural and canonical invariants of a typed Subject.
-pub fn validate_subject_component(subject: &Subject) -> Vec<SchemaError> {
+/// Validates the standalone structural and canonical invariants of a typed Verification Target.
+pub fn validate_verification_target_component(
+    verification_target: &VerificationTarget,
+) -> Vec<SchemaError> {
     let mut errors = Vec::new();
-    for path in unsafe_subject_number_paths(subject) {
+    for path in unsafe_verification_target_number_paths(verification_target) {
         errors.push(SchemaError {
             path,
             detail: format!("exceeds the maximum safe integer {MAX_SAFE_INTEGER}"),
         });
     }
     if errors.is_empty() {
-        if let Err(detail) = parse_subject(&subject_to_json(subject), "$") {
+        if let Err(detail) =
+            parse_verification_target(&verification_target_to_json(verification_target), "$")
+        {
             errors.push(SchemaError {
                 path: "$".into(),
                 detail,
             });
         }
     }
-    let (values, label): (Vec<String>, &str) = match subject {
-        Subject::Source { repositories }
-        | Subject::Workspace { repositories }
-        | Subject::CiCandidate { repositories } => (
+    let (values, label): (Vec<String>, &str) = match verification_target {
+        VerificationTarget::Source { repositories }
+        | VerificationTarget::Workspace { repositories }
+        | VerificationTarget::CiCandidate { repositories } => (
             repositories.iter().map(|item| item.id.clone()).collect(),
             "$.repositories",
         ),
-        Subject::Artifact { artifacts } | Subject::Deployment { artifacts, .. } => (
+        VerificationTarget::Artifact { artifacts }
+        | VerificationTarget::Deployment { artifacts, .. } => (
             artifacts.iter().map(|item| item.id.clone()).collect(),
             "$.artifacts",
         ),
-        Subject::MonitoringWindow { services, .. } => (
+        VerificationTarget::MonitoringWindow { services, .. } => (
             services.iter().map(|item| item.service.clone()).collect(),
             "$.services",
         ),
-        Subject::Service { .. } => (vec!["service".into()], "$"),
+        VerificationTarget::Service { .. } => (vec!["service".into()], "$"),
     };
     if values.is_empty() {
         errors.push(SchemaError {
@@ -2697,11 +2757,11 @@ pub fn validate_subject_component(subject: &Subject) -> Vec<SchemaError> {
             detail,
         });
     }
-    if let Subject::MonitoringWindow {
+    if let VerificationTarget::MonitoringWindow {
         window_start_ms,
         window_end_ms,
         ..
-    } = subject
+    } = verification_target
     {
         if window_end_ms <= window_start_ms {
             errors.push(SchemaError {
@@ -2719,13 +2779,19 @@ pub fn validate_subject_component(subject: &Subject) -> Vec<SchemaError> {
     errors
 }
 
-pub fn plan_fingerprint(subject_fingerprint: &str, plan: &Plan) -> String {
+pub fn plan_fingerprint(verification_target_fingerprint: &str, plan: &Plan) -> String {
     jcs_sha256(&Json::obj(vec![
         ("format", Json::str("azimuth-run-plan-fingerprint")),
-        ("version", Json::Num(1.0)),
-        ("subject_fingerprint", Json::str(subject_fingerprint)),
+        ("version", Json::Num(2.0)),
+        (
+            "verification_target_fingerprint",
+            Json::str(verification_target_fingerprint),
+        ),
         ("model_fingerprint", Json::str(&plan.model_fingerprint)),
-        ("required_context", map_json(&plan.required_context)),
+        (
+            "required_execution_context",
+            map_json(&plan.required_execution_context),
+        ),
         (
             "checks",
             Json::Arr(plan.checks.iter().map(check_selection_json).collect()),
@@ -2743,14 +2809,17 @@ pub fn plan_fingerprint(subject_fingerprint: &str, plan: &Plan) -> String {
 }
 
 pub fn challenge_selection_id(
-    challenger_fingerprint: &str,
+    verification_challenge_fingerprint: &str,
     target_kind: ChallengeTargetKind,
     target_fingerprint: &str,
 ) -> String {
     let fingerprint = jcs_sha256(&Json::obj(vec![
         ("format", Json::str("azimuth-challenge-selection-identity")),
-        ("version", Json::Num(1.0)),
-        ("challenger_fingerprint", Json::str(challenger_fingerprint)),
+        ("version", Json::Num(2.0)),
+        (
+            "verification_challenge_fingerprint",
+            Json::str(verification_challenge_fingerprint),
+        ),
         ("target_kind", Json::str(target_kind.name())),
         ("target_fingerprint", Json::str(target_fingerprint)),
     ]));
@@ -2760,7 +2829,7 @@ pub fn challenge_selection_id(
 pub fn challenge_scope_fingerprint(scope: &ChallengeScope) -> String {
     jcs_sha256(&Json::obj(vec![
         ("format", Json::str("azimuth-challenge-scope-fingerprint")),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         (
             "anchors",
             Json::Arr(
@@ -2782,19 +2851,25 @@ pub fn challenge_scope_fingerprint(scope: &ChallengeScope) -> String {
 pub fn launch_fingerprint(
     operation: ProvenanceMode,
     planned_at_ms: u64,
-    subject: &Subject,
-    subject_fingerprint: &str,
+    verification_target: &VerificationTarget,
+    verification_target_fingerprint: &str,
     plan: &Plan,
     adapter: &LaunchAdapterIdentity,
     routes: &[LaunchRoute],
 ) -> String {
     jcs_sha256(&Json::obj(vec![
         ("format", Json::str("azimuth-run-launch-fingerprint")),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         ("operation", Json::str(operation.name())),
         ("planned_at_ms", Json::Num(planned_at_ms as f64)),
-        ("subject", subject_to_json(subject)),
-        ("subject_fingerprint", Json::str(subject_fingerprint)),
+        (
+            "verification_target",
+            verification_target_to_json(verification_target),
+        ),
+        (
+            "verification_target_fingerprint",
+            Json::str(verification_target_fingerprint),
+        ),
         ("plan", plan_to_json(plan)),
         (
             "adapter",
@@ -3285,11 +3360,14 @@ fn validate_workspace_file(file: &str, where_: &str) -> Result<(), String> {
 }
 
 /// Validates one typed semantic Plan before it enters a launch plan or bundle.
-pub fn validate_plan_component(subject_fingerprint: &str, plan: &Plan) -> Vec<SchemaError> {
+pub fn validate_plan_component(
+    verification_target_fingerprint: &str,
+    plan: &Plan,
+) -> Vec<SchemaError> {
     let mut errors = Vec::new();
-    if !valid_fingerprint(subject_fingerprint) {
+    if !valid_fingerprint(verification_target_fingerprint) {
         errors.push(SchemaError {
-            path: "$.subject_fingerprint".into(),
+            path: "$.verification_target_fingerprint".into(),
             detail: "must be `sha256:` followed by 64 lowercase hex digits".into(),
         });
     }
@@ -3306,8 +3384,8 @@ pub fn validate_plan_component(subject_fingerprint: &str, plan: &Plan) -> Vec<Sc
         });
     }
     collect_plan_array_errors(plan, &mut errors);
-    if valid_fingerprint(subject_fingerprint) {
-        let expected = plan_fingerprint(subject_fingerprint, plan);
+    if valid_fingerprint(verification_target_fingerprint) {
+        let expected = plan_fingerprint(verification_target_fingerprint, plan);
         if plan.fingerprint != expected {
             errors.push(SchemaError {
                 path: "$.fingerprint".into(),
@@ -3349,16 +3427,17 @@ fn collect_plan_array_errors(plan: &Plan, errors: &mut Vec<SchemaError>) {
                 detail,
             });
         }
-        if check.cases.is_empty() || check.implementations.is_empty() || check.units.is_empty() {
+        if check.scenarios.is_empty() || check.implementations.is_empty() || check.units.is_empty()
+        {
             errors.push(SchemaError {
                 path: format!("$.checks.{}", check.id),
-                detail: "must have non-empty Case, implementation and unit sets".into(),
+                detail: "must have non-empty Scenario, implementation and unit sets".into(),
             });
         }
         for (suffix, result) in [
             (
-                "cases",
-                ensure_sorted_unique(&check.cases, Clone::clone, "cases"),
+                "scenarios",
+                ensure_sorted_unique(&check.scenarios, Clone::clone, "scenarios"),
             ),
             (
                 "implementations",
@@ -3380,10 +3459,10 @@ fn collect_plan_array_errors(plan: &Plan, errors: &mut Vec<SchemaError>) {
                 });
             }
         }
-        for case in &check.cases {
-            if let Err(detail) = validate_case_id(case) {
+        for scenario in &check.scenarios {
+            if let Err(detail) = validate_scenario_id(scenario) {
                 errors.push(SchemaError {
-                    path: format!("$.checks.{}.cases", check.id),
+                    path: format!("$.checks.{}.scenarios", check.id),
                     detail,
                 });
             }
@@ -3406,14 +3485,14 @@ fn collect_plan_array_errors(plan: &Plan, errors: &mut Vec<SchemaError>) {
             });
         }
         let key = (
-            challenge.challenger.fingerprint.clone(),
+            challenge.verification_challenge.fingerprint.clone(),
             challenge.target.kind.name(),
             challenge.target.fingerprint.clone(),
         );
         if !semantic_challenges.insert(key) {
             errors.push(SchemaError {
                 path: "$.challenges".into(),
-                detail: "contains a duplicate Challenger/target semantic tuple".into(),
+                detail: "contains a duplicate Verification Challenge/target semantic tuple".into(),
             });
         }
         collect_challenge_identity_and_scope_errors(challenge, "$.challenges", errors);
@@ -3431,7 +3510,7 @@ fn collect_challenge_identity_and_scope_errors(
         &format!("{path}.scope"),
     ));
     let expected_id = challenge_selection_id(
-        &challenge.challenger.fingerprint,
+        &challenge.verification_challenge.fingerprint,
         challenge.target.kind,
         &challenge.target.fingerprint,
     );
@@ -3471,9 +3550,9 @@ fn challenge_scope_structure_errors(scope: &ChallengeScope, path: &str) -> Vec<S
         for item in items {
             if matches!(
                 item.kind,
-                ChallengeScopeKind::Claim
-                    | ChallengeScopeKind::Case
-                    | ChallengeScopeKind::ClaimJudgment
+                ChallengeScopeKind::Requirement
+                    | ChallengeScopeKind::Scenario
+                    | ChallengeScopeKind::RequirementJudgment
                     | ChallengeScopeKind::Mechanism
                     | ChallengeScopeKind::Check
             ) {
@@ -3532,15 +3611,15 @@ fn challenge_scope_structure_errors(scope: &ChallengeScope, path: &str) -> Vec<S
 
 /// Constructs and fingerprints a strict semantic Plan from already resolved selections.
 pub fn construct_plan(
-    subject_fingerprint: &str,
+    verification_target_fingerprint: &str,
     model_fingerprint: String,
-    required_context: BTreeMap<String, String>,
+    required_execution_context: BTreeMap<String, String>,
     checks: Vec<CheckSelection>,
     challenges: Vec<ChallengeSelection>,
 ) -> Result<Plan, Vec<SchemaError>> {
     let mut plan = Plan {
         model_fingerprint,
-        required_context,
+        required_execution_context,
         checks,
         challenges,
         fingerprint: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
@@ -3576,10 +3655,10 @@ pub fn construct_plan(
         scope_errors.dedup();
         return Err(scope_errors);
     }
-    if valid_fingerprint(subject_fingerprint) {
-        plan.fingerprint = plan_fingerprint(subject_fingerprint, &plan);
+    if valid_fingerprint(verification_target_fingerprint) {
+        plan.fingerprint = plan_fingerprint(verification_target_fingerprint, &plan);
     }
-    let errors = validate_plan_component(subject_fingerprint, &plan);
+    let errors = validate_plan_component(verification_target_fingerprint, &plan);
     if errors.is_empty() {
         Ok(plan)
     } else {
@@ -3590,9 +3669,9 @@ pub fn construct_plan(
 pub fn selection_fingerprint(selection: &ActualSelection) -> String {
     jcs_sha256(&Json::obj(vec![
         ("format", Json::str("azimuth-run-selection-fingerprint")),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         ("plan_fingerprint", Json::str(&selection.plan_fingerprint)),
-        ("context", map_json(&selection.context)),
+        ("execution_context", map_json(&selection.execution_context)),
         (
             "checks",
             Json::Arr(selection.checks.iter().map(check_selection_json).collect()),
@@ -3613,15 +3692,15 @@ pub fn selection_fingerprint(selection: &ActualSelection) -> String {
 pub fn run_id(bundle: &RunBundle) -> String {
     jcs_sha256(&Json::obj(vec![
         ("format", Json::str("azimuth-run-identity")),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         ("source_system", Json::str(&bundle.provenance.source.system)),
         (
             "source_execution",
             Json::str(&bundle.provenance.source.execution),
         ),
         (
-            "subject_fingerprint",
-            Json::str(&bundle.subject_fingerprint),
+            "verification_target_fingerprint",
+            Json::str(&bundle.verification_target_fingerprint),
         ),
         ("plan_fingerprint", Json::str(&bundle.plan.fingerprint)),
         (
@@ -3631,22 +3710,22 @@ pub fn run_id(bundle: &RunBundle) -> String {
     ]))
 }
 
-pub fn observation_fingerprint(
+pub fn check_result_fingerprint(
     bundle: &RunBundle,
     execution: &CheckExecution,
-    observation: &Observation,
+    check_result: &CheckResult,
 ) -> String {
     assert!(
-        observation.observed_at_ms <= MAX_SAFE_INTEGER,
-        "unsafe Observation number must be rejected before fingerprinting"
+        check_result.observed_at_ms <= MAX_SAFE_INTEGER,
+        "unsafe Check Result number must be rejected before fingerprinting"
     );
     jcs_sha256(&Json::obj(vec![
-        ("format", Json::str("azimuth-observation-fingerprint")),
-        ("version", Json::Num(1.0)),
+        ("format", Json::str("azimuth-check-result-fingerprint")),
+        ("version", Json::Num(2.0)),
         ("run_id", Json::str(&bundle.run_id)),
         (
-            "subject_fingerprint",
-            Json::str(&bundle.subject_fingerprint),
+            "verification_target_fingerprint",
+            Json::str(&bundle.verification_target_fingerprint),
         ),
         (
             "check",
@@ -3655,27 +3734,36 @@ pub fn observation_fingerprint(
                 ("fingerprint", Json::str(&execution.check.fingerprint)),
             ]),
         ),
-        ("case", Json::str(&observation.case)),
-        ("context", map_json(&bundle.actual_selection.context)),
-        ("outcome", Json::str(observation.outcome.name())),
+        ("scenario", Json::str(&check_result.scenario)),
+        (
+            "execution_context",
+            map_json(&bundle.actual_selection.execution_context),
+        ),
+        ("outcome", Json::str(check_result.outcome.name())),
         (
             "observed_at_ms",
-            Json::Num(observation.observed_at_ms as f64),
+            Json::Num(check_result.observed_at_ms as f64),
         ),
     ]))
 }
 
-pub fn challenge_result_fingerprint(bundle: &RunBundle, execution: &ChallengerExecution) -> String {
+pub fn challenge_result_fingerprint(
+    bundle: &RunBundle,
+    execution: &VerificationChallengeExecution,
+) -> String {
     assert!(
         execution.result.observed_at_ms <= MAX_SAFE_INTEGER,
         "unsafe Challenge Result number must be rejected before fingerprinting"
     );
     jcs_sha256(&Json::obj(vec![
         ("format", Json::str("azimuth-challenge-result-fingerprint")),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         ("run_id", Json::str(&bundle.run_id)),
         ("challenge", Json::str(&execution.challenge)),
-        ("challenger", challenger_ref_json(&execution.challenger)),
+        (
+            "verification_challenge",
+            verification_challenge_ref_json(&execution.verification_challenge),
+        ),
         ("target", target_json(&execution.target)),
         ("outcome", Json::str(execution.result.outcome.name())),
         (
@@ -3692,7 +3780,7 @@ pub fn bundle_fingerprint(bundle: &RunBundle) -> String {
     );
     jcs_sha256(&Json::obj(vec![
         ("format", Json::str("azimuth-run-bundle-fingerprint")),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         ("bundle", bundle_json(bundle, false)),
     ]))
 }
@@ -3728,10 +3816,13 @@ fn bundle_json(bundle: &RunBundle, include_fingerprint: bool) -> Json {
         ));
     }
     fields.extend([
-        ("subject".into(), subject_to_json(&bundle.subject)),
         (
-            "subject_fingerprint".into(),
-            Json::str(&bundle.subject_fingerprint),
+            "verification_target".into(),
+            verification_target_to_json(&bundle.verification_target),
+        ),
+        (
+            "verification_target_fingerprint".into(),
+            Json::str(&bundle.verification_target_fingerprint),
         ),
         (
             "planned_at_ms".into(),
@@ -3775,12 +3866,12 @@ fn bundle_json(bundle: &RunBundle, include_fingerprint: bool) -> Json {
             ),
         ),
         (
-            "challenger_executions".into(),
+            "verification_challenge_executions".into(),
             Json::Arr(
                 bundle
-                    .challenger_executions
+                    .verification_challenge_executions
                     .iter()
-                    .map(challenger_execution_json)
+                    .map(verification_challenge_execution_json)
                     .collect(),
             ),
         ),
@@ -3794,41 +3885,41 @@ fn bundle_json(bundle: &RunBundle, include_fingerprint: bool) -> Json {
     Json::Obj(fields)
 }
 
-pub fn subject_to_json(subject: &Subject) -> Json {
+pub fn verification_target_to_json(verification_target: &VerificationTarget) -> Json {
     assert!(
-        unsafe_subject_number_paths(subject).is_empty(),
-        "unsafe Subject number must be rejected before serialization"
+        unsafe_verification_target_number_paths(verification_target).is_empty(),
+        "unsafe Verification Target number must be rejected before serialization"
     );
-    match subject {
-        Subject::Source { repositories } => Json::obj(vec![
+    match verification_target {
+        VerificationTarget::Source { repositories } => Json::obj(vec![
             ("kind", Json::str("source")),
             (
                 "repositories",
                 Json::Arr(repositories.iter().map(repository_json).collect()),
             ),
         ]),
-        Subject::Workspace { repositories } => Json::obj(vec![
+        VerificationTarget::Workspace { repositories } => Json::obj(vec![
             ("kind", Json::str("workspace")),
             (
                 "repositories",
                 Json::Arr(repositories.iter().map(repository_json).collect()),
             ),
         ]),
-        Subject::CiCandidate { repositories } => Json::obj(vec![
+        VerificationTarget::CiCandidate { repositories } => Json::obj(vec![
             ("kind", Json::str("ci-candidate")),
             (
                 "repositories",
                 Json::Arr(repositories.iter().map(repository_json).collect()),
             ),
         ]),
-        Subject::Artifact { artifacts } => Json::obj(vec![
+        VerificationTarget::Artifact { artifacts } => Json::obj(vec![
             ("kind", Json::str("artifact")),
             (
                 "artifacts",
                 Json::Arr(artifacts.iter().map(artifact_state_json).collect()),
             ),
         ]),
-        Subject::Deployment {
+        VerificationTarget::Deployment {
             environment,
             deployment,
             deployment_fingerprint,
@@ -3843,7 +3934,7 @@ pub fn subject_to_json(subject: &Subject) -> Json {
                 Json::Arr(artifacts.iter().map(artifact_state_json).collect()),
             ),
         ]),
-        Subject::Service {
+        VerificationTarget::Service {
             environment,
             service,
             deployment,
@@ -3855,7 +3946,7 @@ pub fn subject_to_json(subject: &Subject) -> Json {
             ("deployment", Json::str(deployment)),
             ("deployment_fingerprint", Json::str(deployment_fingerprint)),
         ]),
-        Subject::MonitoringWindow {
+        VerificationTarget::MonitoringWindow {
             environment,
             services,
             window_start_ms,
@@ -3902,7 +3993,10 @@ fn service_state_json(item: &ServiceState) -> Json {
 pub fn plan_to_json(plan: &Plan) -> Json {
     Json::obj(vec![
         ("model_fingerprint", Json::str(&plan.model_fingerprint)),
-        ("required_context", map_json(&plan.required_context)),
+        (
+            "required_execution_context",
+            map_json(&plan.required_execution_context),
+        ),
         (
             "checks",
             Json::Arr(plan.checks.iter().map(check_selection_json).collect()),
@@ -3922,7 +4016,7 @@ pub fn plan_to_json(plan: &Plan) -> Json {
 
 fn actual_selection_json(selection: &ActualSelection) -> Json {
     Json::obj(vec![
-        ("context", map_json(&selection.context)),
+        ("execution_context", map_json(&selection.execution_context)),
         ("plan_fingerprint", Json::str(&selection.plan_fingerprint)),
         (
             "checks",
@@ -3947,8 +4041,8 @@ fn check_selection_json(item: &CheckSelection) -> Json {
         ("id", Json::str(&item.id)),
         ("fingerprint", Json::str(&item.fingerprint)),
         (
-            "cases",
-            Json::Arr(item.cases.iter().map(Json::str).collect()),
+            "scenarios",
+            Json::Arr(item.scenarios.iter().map(Json::str).collect()),
         ),
         (
             "implementations",
@@ -3983,7 +4077,10 @@ fn work_unit_json(item: &WorkUnit) -> Json {
 fn challenge_selection_json(item: &ChallengeSelection) -> Json {
     Json::obj(vec![
         ("id", Json::str(&item.id)),
-        ("challenger", challenger_ref_json(&item.challenger)),
+        (
+            "verification_challenge",
+            verification_challenge_ref_json(&item.verification_challenge),
+        ),
         ("target", target_json(&item.target)),
         ("lane", Json::str(item.lane.name())),
         ("scope", challenge_scope_json(&item.scope)),
@@ -4016,7 +4113,7 @@ fn challenge_scope_item_json(item: &ChallengeScopeItem) -> Json {
     ])
 }
 
-fn challenger_ref_json(item: &ChallengerRef) -> Json {
+fn verification_challenge_ref_json(item: &VerificationChallengeRef) -> Json {
     Json::obj(vec![
         ("id", Json::str(&item.id)),
         ("fingerprint", Json::str(&item.fingerprint)),
@@ -4265,12 +4362,15 @@ fn scope_json(item: &DiagnosticScope) -> Json {
             ("kind", Json::str("challenge-selection")),
             ("id", Json::str(id)),
         ]),
-        DiagnosticScope::ChallengerExecution {
-            challenger_fingerprint,
+        DiagnosticScope::VerificationChallengeExecution {
+            verification_challenge_fingerprint,
             target_fingerprint,
         } => Json::obj(vec![
-            ("kind", Json::str("challenger-execution")),
-            ("challenger_fingerprint", Json::str(challenger_fingerprint)),
+            ("kind", Json::str("verification-challenge-execution")),
+            (
+                "verification_challenge_fingerprint",
+                Json::str(verification_challenge_fingerprint),
+            ),
             ("target_fingerprint", Json::str(target_fingerprint)),
         ]),
     }
@@ -4311,8 +4411,8 @@ fn check_execution_json(item: &CheckExecution) -> Json {
             Json::Arr(item.units.iter().map(check_execution_unit_json).collect()),
         ),
         (
-            "observations",
-            Json::Arr(item.observations.iter().map(observation_json).collect()),
+            "results",
+            Json::Arr(item.results.iter().map(check_result_json).collect()),
         ),
     ])
 }
@@ -4335,8 +4435,8 @@ fn check_execution_unit_json(item: &CheckExecutionUnit) -> Json {
                                     attempt
                                         .outcomes
                                         .iter()
-                                        .map(|(case, outcome)| {
-                                            (case.clone(), Json::str(outcome.name()))
+                                        .map(|(scenario, outcome)| {
+                                            (scenario.clone(), Json::str(outcome.name()))
                                         })
                                         .collect(),
                                 ),
@@ -4349,9 +4449,9 @@ fn check_execution_unit_json(item: &CheckExecutionUnit) -> Json {
     ])
 }
 
-fn observation_json(item: &Observation) -> Json {
+fn check_result_json(item: &CheckResult) -> Json {
     Json::obj(vec![
-        ("case", Json::str(&item.case)),
+        ("scenario", Json::str(&item.scenario)),
         ("outcome", Json::str(item.outcome.name())),
         ("observed_at_ms", Json::Num(item.observed_at_ms as f64)),
         ("fingerprint", Json::str(&item.fingerprint)),
@@ -4366,10 +4466,13 @@ fn observation_json(item: &Observation) -> Json {
     ])
 }
 
-fn challenger_execution_json(item: &ChallengerExecution) -> Json {
+fn verification_challenge_execution_json(item: &VerificationChallengeExecution) -> Json {
     Json::obj(vec![
         ("challenge", Json::str(&item.challenge)),
-        ("challenger", challenger_ref_json(&item.challenger)),
+        (
+            "verification_challenge",
+            verification_challenge_ref_json(&item.verification_challenge),
+        ),
         ("target", target_json(&item.target)),
         (
             "units",
@@ -4582,19 +4685,19 @@ pub fn verify(bundle: &RunBundle) -> Vec<Finding> {
             "provenance.generated_at_ms precedes finished_at_ms".into(),
         );
     }
-    validate_subject(bundle, &mut add);
+    validate_verification_target(bundle, &mut add);
     validate_canonical_arrays(bundle, &mut add);
     validate_provenance(bundle, &mut add);
     validate_contributions(bundle, &mut add);
 
-    let expected_subject = subject_fingerprint(&bundle.subject);
-    if bundle.subject_fingerprint != expected_subject {
+    let expected_verification_target = verification_target_fingerprint(&bundle.verification_target);
+    if bundle.verification_target_fingerprint != expected_verification_target {
         add(
-            "run/subject-fingerprint",
-            format!("subject fingerprint must be `{expected_subject}`"),
+            "run/verification-target-fingerprint",
+            format!("verification target fingerprint must be `{expected_verification_target}`"),
         );
     }
-    let expected_plan = plan_fingerprint(&bundle.subject_fingerprint, &bundle.plan);
+    let expected_plan = plan_fingerprint(&bundle.verification_target_fingerprint, &bundle.plan);
     if bundle.plan.fingerprint != expected_plan {
         add(
             "run/plan-fingerprint",
@@ -4618,7 +4721,7 @@ pub fn verify(bundle: &RunBundle) -> Vec<Finding> {
     if bundle.run_id != expected_run {
         add("run/identity", format!("Run id must be `{expected_run}`"));
     }
-    if bundle.plan.required_context != bundle.actual_selection.context {
+    if bundle.plan.required_execution_context != bundle.actual_selection.execution_context {
         add(
             "run/context-mismatch",
             "actual context must equal required context as a whole map".into(),
@@ -4639,27 +4742,28 @@ pub fn verify(bundle: &RunBundle) -> Vec<Finding> {
     findings
 }
 
-fn validate_subject(bundle: &RunBundle, add: &mut impl FnMut(&str, String)) {
-    match &bundle.subject {
-        Subject::Source { repositories }
-        | Subject::Workspace { repositories }
-        | Subject::CiCandidate { repositories, .. } => {
+fn validate_verification_target(bundle: &RunBundle, add: &mut impl FnMut(&str, String)) {
+    match &bundle.verification_target {
+        VerificationTarget::Source { repositories }
+        | VerificationTarget::Workspace { repositories }
+        | VerificationTarget::CiCandidate { repositories, .. } => {
             if repositories.is_empty() {
                 add(
-                    "run/subject-cardinality",
-                    "Subject repositories must not be empty".into(),
+                    "run/verification-target-cardinality",
+                    "Verification Target repositories must not be empty".into(),
                 );
             }
         }
-        Subject::Artifact { artifacts } | Subject::Deployment { artifacts, .. } => {
+        VerificationTarget::Artifact { artifacts }
+        | VerificationTarget::Deployment { artifacts, .. } => {
             if artifacts.is_empty() {
                 add(
-                    "run/subject-cardinality",
-                    "Subject artifacts must not be empty".into(),
+                    "run/verification-target-cardinality",
+                    "Verification Target artifacts must not be empty".into(),
                 );
             }
         }
-        Subject::MonitoringWindow {
+        VerificationTarget::MonitoringWindow {
             services,
             window_start_ms,
             window_end_ms,
@@ -4667,7 +4771,7 @@ fn validate_subject(bundle: &RunBundle, add: &mut impl FnMut(&str, String)) {
         } => {
             if services.is_empty() {
                 add(
-                    "run/subject-cardinality",
+                    "run/verification-target-cardinality",
                     "monitoring services must not be empty".into(),
                 );
             }
@@ -4684,7 +4788,7 @@ fn validate_subject(bundle: &RunBundle, add: &mut impl FnMut(&str, String)) {
                 );
             }
         }
-        Subject::Service { .. } => {}
+        VerificationTarget::Service { .. } => {}
     }
 }
 
@@ -4700,25 +4804,29 @@ fn canonical<T, K: Ord>(
 }
 
 fn validate_canonical_arrays(bundle: &RunBundle, add: &mut impl FnMut(&str, String)) {
-    match &bundle.subject {
-        Subject::Source { repositories }
-        | Subject::Workspace { repositories }
-        | Subject::CiCandidate { repositories, .. } => canonical(
+    match &bundle.verification_target {
+        VerificationTarget::Source { repositories }
+        | VerificationTarget::Workspace { repositories }
+        | VerificationTarget::CiCandidate { repositories, .. } => canonical(
             repositories,
             |item| item.id.clone(),
-            "subject.repositories",
+            "verification_target.repositories",
             add,
         ),
-        Subject::Artifact { artifacts } | Subject::Deployment { artifacts, .. } => {
-            canonical(artifacts, |item| item.id.clone(), "subject.artifacts", add)
-        }
-        Subject::MonitoringWindow { services, .. } => canonical(
+        VerificationTarget::Artifact { artifacts }
+        | VerificationTarget::Deployment { artifacts, .. } => canonical(
+            artifacts,
+            |item| item.id.clone(),
+            "verification_target.artifacts",
+            add,
+        ),
+        VerificationTarget::MonitoringWindow { services, .. } => canonical(
             services,
             |item| item.service.clone(),
-            "subject.services",
+            "verification_target.services",
             add,
         ),
-        Subject::Service { .. } => {}
+        VerificationTarget::Service { .. } => {}
     }
     canonical(
         &bundle.plan.checks,
@@ -4765,9 +4873,9 @@ fn validate_canonical_arrays(bundle: &RunBundle, add: &mut impl FnMut(&str, Stri
     ] {
         for check in checks {
             canonical(
-                &check.cases,
+                &check.scenarios,
                 Clone::clone,
-                &format!("{label}.{}.cases", check.id),
+                &format!("{label}.{}.scenarios", check.id),
                 add,
             );
             canonical(
@@ -4794,7 +4902,7 @@ fn validate_canonical_arrays(bundle: &RunBundle, add: &mut impl FnMut(&str, Stri
         let mut semantic = BTreeSet::new();
         for challenge in challenges {
             let expected_id = challenge_selection_id(
-                &challenge.challenger.fingerprint,
+                &challenge.verification_challenge.fingerprint,
                 challenge.target.kind,
                 &challenge.target.fingerprint,
             );
@@ -4811,14 +4919,14 @@ fn validate_canonical_arrays(bundle: &RunBundle, add: &mut impl FnMut(&str, Stri
                 add,
             );
             let key = (
-                challenge.challenger.fingerprint.clone(),
+                challenge.verification_challenge.fingerprint.clone(),
                 challenge.target.kind.name(),
                 challenge.target.fingerprint.clone(),
             );
             if !semantic.insert(key) {
                 add(
                     "run/duplicate-challenge-target",
-                    format!("{label} repeats one Challenger/target semantic tuple"),
+                    format!("{label} repeats one Verification Challenge/target semantic tuple"),
                 );
             }
             for (scope_name, items) in [
@@ -4900,9 +5008,9 @@ fn validate_canonical_arrays(bundle: &RunBundle, add: &mut impl FnMut(&str, Stri
         add,
     );
     canonical(
-        &bundle.challenger_executions,
+        &bundle.verification_challenge_executions,
         |item| item.challenge.clone(),
-        "challenger_executions",
+        "verification_challenge_executions",
         add,
     );
     for diagnostic in &bundle.diagnostics {
@@ -4930,27 +5038,27 @@ fn validate_canonical_arrays(bundle: &RunBundle, add: &mut impl FnMut(&str, Stri
             add,
         );
         canonical(
-            &execution.observations,
-            |item| item.case.clone(),
-            "observations",
+            &execution.results,
+            |item| item.scenario.clone(),
+            "results",
             add,
         );
-        for observation in &execution.observations {
+        for check_result in &execution.results {
             canonical(
-                &observation.artifacts,
+                &check_result.artifacts,
                 Clone::clone,
-                "observation.artifacts",
+                "result.artifacts",
                 add,
             );
             canonical(
-                &observation.diagnostics,
+                &check_result.diagnostics,
                 Clone::clone,
-                "observation.diagnostics",
+                "result.diagnostics",
                 add,
             );
         }
     }
-    for execution in &bundle.challenger_executions {
+    for execution in &bundle.verification_challenge_executions {
         canonical(
             &execution.units,
             |item| item.id.clone(),
@@ -5048,8 +5156,8 @@ fn validate_provenance(bundle: &RunBundle, add: &mut impl FnMut(&str, String)) {
     let expected_launch_fingerprint = launch_fingerprint(
         provenance.mode,
         bundle.planned_at_ms,
-        &bundle.subject,
-        &bundle.subject_fingerprint,
+        &bundle.verification_target,
+        &bundle.verification_target_fingerprint,
         &bundle.plan,
         &launch_adapter_identity(adapter),
         &adapter.routes,
@@ -5167,11 +5275,12 @@ fn validate_selection(bundle: &RunBundle, add: &mut impl FnMut(&str, String)) {
         );
     }
     for check in &bundle.plan.checks {
-        if check.cases.is_empty() || check.implementations.is_empty() || check.units.is_empty() {
+        if check.scenarios.is_empty() || check.implementations.is_empty() || check.units.is_empty()
+        {
             add(
                 "run/plan-cardinality",
                 format!(
-                    "planned Check `{}` has an empty Case, implementation or unit set",
+                    "planned Check `{}` has an empty Scenario, implementation or unit set",
                     check.id
                 ),
             );
@@ -5199,11 +5308,11 @@ fn validate_selection(bundle: &RunBundle, add: &mut impl FnMut(&str, String)) {
                 format!("actual Check `{}` changes its fingerprint", actual.id),
             );
         }
-        if actual.cases != planned.cases {
+        if actual.scenarios != planned.scenarios {
             add(
-                "run/check-case-substitution",
+                "run/check-scenario-substitution",
                 format!(
-                    "actual Check `{}` must repeat every planned Case",
+                    "actual Check `{}` must repeat every planned Scenario",
                     actual.id
                 ),
             );
@@ -5240,7 +5349,7 @@ fn validate_selection(bundle: &RunBundle, add: &mut impl FnMut(&str, String)) {
             );
             continue;
         };
-        if actual.challenger != planned.challenger
+        if actual.verification_challenge != planned.verification_challenge
             || actual.target != planned.target
             || actual.lane != planned.lane
             || actual.scope != planned.scope
@@ -5266,7 +5375,7 @@ fn validate_selection(bundle: &RunBundle, add: &mut impl FnMut(&str, String)) {
     if bundle.status == RunStatus::Complete
         && (bundle.actual_selection.checks != bundle.plan.checks
             || bundle.actual_selection.challenges != bundle.plan.challenges
-            || bundle.actual_selection.context != bundle.plan.required_context)
+            || bundle.actual_selection.execution_context != bundle.plan.required_execution_context)
     {
         add(
             "run/incomplete-complete-selection",
@@ -5337,18 +5446,18 @@ fn validate_references_and_results(bundle: &RunBundle, add: &mut impl FnMut(&str
                     ),
                 )
             }
-            DiagnosticScope::ChallengerExecution {
-                challenger_fingerprint,
+            DiagnosticScope::VerificationChallengeExecution {
+                verification_challenge_fingerprint,
                 target_fingerprint,
-            } if !bundle.challenger_executions.iter().any(|item| {
-                item.challenger.fingerprint == *challenger_fingerprint
+            } if !bundle.verification_challenge_executions.iter().any(|item| {
+                item.verification_challenge.fingerprint == *verification_challenge_fingerprint
                     && item.target.fingerprint == *target_fingerprint
             }) =>
             {
                 add(
                     "run/unresolved-diagnostic-scope",
                     format!(
-                        "diagnostic `{}` names unknown Challenger execution",
+                        "diagnostic `{}` names unknown Verification Challenge execution",
                         diagnostic.id
                     ),
                 )
@@ -5411,18 +5520,19 @@ fn validate_references_and_results(bundle: &RunBundle, add: &mut impl FnMut(&str
         .map(|item| item.id.as_str())
         .collect::<BTreeSet<_>>();
     let execution_challenges = bundle
-        .challenger_executions
+        .verification_challenge_executions
         .iter()
         .map(|item| item.challenge.as_str())
         .collect::<BTreeSet<_>>();
     if actual_challenges != execution_challenges {
         add(
             "run/challenge-execution-cardinality",
-            "Challenger executions must exactly match actually selected Challenges".into(),
+            "Verification Challenge executions must exactly match actually selected Challenges"
+                .into(),
         );
     }
-    for execution in &bundle.challenger_executions {
-        validate_challenger_execution(
+    for execution in &bundle.verification_challenge_executions {
+        validate_verification_challenge_execution(
             bundle,
             execution,
             &activities,
@@ -5599,24 +5709,26 @@ fn validate_check_execution(
             ),
         );
     }
-    let selected_cases = actual
-        .map(|item| item.cases.iter().cloned().collect::<BTreeSet<_>>())
+    let selected_scenarios = actual
+        .map(|item| item.scenarios.iter().cloned().collect::<BTreeSet<_>>())
         .unwrap_or_default();
-    let observation_cases = execution
-        .observations
+    let check_result_scenarios = execution
+        .results
         .iter()
-        .map(|observation| observation.case.clone())
+        .map(|check_result| check_result.scenario.clone())
         .collect::<BTreeSet<_>>();
-    if observation_cases != selected_cases || execution.observations.len() != selected_cases.len() {
+    if check_result_scenarios != selected_scenarios
+        || execution.results.len() != selected_scenarios.len()
+    {
         add(
-            "run/observation-case-cardinality",
+            "run/check-result-scenario-cardinality",
             format!(
-                "Check `{}` must produce exactly one Observation for every selected Case",
+                "Check `{}` must produce exactly one Check Result for every selected Scenario",
                 execution.check.id
             ),
         );
     }
-    let mut reduced = BTreeMap::<String, Vec<ObservationOutcome>>::new();
+    let mut reduced = BTreeMap::<String, Vec<CheckResultOutcome>>::new();
     let mut latest_finish = 0;
     for unit in &execution.units {
         if unit.attempts.is_empty() {
@@ -5627,11 +5739,11 @@ fn validate_check_execution(
                     execution.check.id, unit.id
                 ),
             );
-            for case in &selected_cases {
+            for scenario in &selected_scenarios {
                 reduced
-                    .entry(case.clone())
+                    .entry(scenario.clone())
                     .or_default()
-                    .push(ObservationOutcome::Inconclusive);
+                    .push(CheckResultOutcome::Inconclusive);
             }
             continue;
         }
@@ -5643,12 +5755,12 @@ fn validate_check_execution(
             add,
         );
         for attempt in &unit.attempts {
-            let attempt_cases = attempt.outcomes.keys().cloned().collect::<BTreeSet<_>>();
-            if attempt_cases != selected_cases {
+            let attempt_scenarios = attempt.outcomes.keys().cloned().collect::<BTreeSet<_>>();
+            if attempt_scenarios != selected_scenarios {
                 add(
-                    "run/check-attempt-case-cardinality",
+                    "run/check-attempt-scenario-cardinality",
                     format!(
-                        "Check `{}` unit `{}` attempt {} outcomes must exactly match selected Cases",
+                        "Check `{}` unit `{}` attempt {} outcomes must exactly match selected Scenarios",
                         execution.check.id, unit.id, attempt.ordinal
                     ),
                 );
@@ -5667,7 +5779,7 @@ fn validate_check_execution(
                         && attempt
                             .outcomes
                             .values()
-                            .any(|outcome| *outcome != ObservationOutcome::Inconclusive)
+                            .any(|outcome| *outcome != CheckResultOutcome::Inconclusive)
                     {
                         add(
                             "run/activity-outcome-mismatch",
@@ -5680,89 +5792,94 @@ fn validate_check_execution(
                 }
             }
         }
-        for case in &selected_cases {
-            let violation = unit
-                .attempts
-                .iter()
-                .any(|attempt| attempt.outcomes.get(case) == Some(&ObservationOutcome::Violated));
+        for scenario in &selected_scenarios {
+            let violation = unit.attempts.iter().any(|attempt| {
+                attempt.outcomes.get(scenario) == Some(&CheckResultOutcome::Violated)
+            });
             let unit_outcome = if violation {
-                ObservationOutcome::Violated
+                CheckResultOutcome::Violated
             } else if unit.attempts.last().is_some_and(|attempt| {
-                attempt.outcomes.get(case) == Some(&ObservationOutcome::Satisfied)
+                attempt.outcomes.get(scenario) == Some(&CheckResultOutcome::Satisfied)
                     && activities
                         .get(attempt.activity.as_str())
                         .is_some_and(|activity| activity.status == ActivityStatus::Completed)
             }) {
-                ObservationOutcome::Satisfied
+                CheckResultOutcome::Satisfied
             } else {
-                ObservationOutcome::Inconclusive
+                CheckResultOutcome::Inconclusive
             };
-            reduced.entry(case.clone()).or_default().push(unit_outcome);
+            reduced
+                .entry(scenario.clone())
+                .or_default()
+                .push(unit_outcome);
         }
     }
     let complete_planned_check = actual.zip(planned).is_some_and(|(actual, planned)| {
         actual.fingerprint == planned.fingerprint
-            && actual.cases == planned.cases
+            && actual.scenarios == planned.scenarios
             && actual.implementations == planned.implementations
             && actual.units == planned.units
     });
-    for observation in &execution.observations {
-        let case_outcomes = reduced.get(&observation.case).cloned().unwrap_or_default();
-        let expected = if case_outcomes.contains(&ObservationOutcome::Violated) {
-            ObservationOutcome::Violated
+    for check_result in &execution.results {
+        let scenario_outcomes = reduced
+            .get(&check_result.scenario)
+            .cloned()
+            .unwrap_or_default();
+        let expected = if scenario_outcomes.contains(&CheckResultOutcome::Violated) {
+            CheckResultOutcome::Violated
         } else if complete_planned_check
-            && !case_outcomes.is_empty()
-            && case_outcomes
+            && !scenario_outcomes.is_empty()
+            && scenario_outcomes
                 .iter()
-                .all(|item| *item == ObservationOutcome::Satisfied)
+                .all(|item| *item == CheckResultOutcome::Satisfied)
         {
-            ObservationOutcome::Satisfied
+            CheckResultOutcome::Satisfied
         } else {
-            ObservationOutcome::Inconclusive
+            CheckResultOutcome::Inconclusive
         };
-        if observation.outcome != expected {
+        if check_result.outcome != expected {
             add(
-                "run/observation-reduction",
+                "run/check-result-reduction",
                 format!(
-                    "Check `{}` Case `{}` Observation must reduce to `{}`",
+                    "Check `{}` Scenario `{}` Check Result must reduce to `{}`",
                     execution.check.id,
-                    observation.case,
+                    check_result.scenario,
                     expected.name()
                 ),
             );
         }
         validate_result_time(
-            observation.observed_at_ms,
+            check_result.observed_at_ms,
             latest_finish,
             bundle,
-            "Observation",
+            "Check Result",
             add,
         );
         validate_refs(
-            &observation.artifacts,
+            &check_result.artifacts,
             artifacts,
-            "Observation artifact",
+            "Check Result artifact",
             add,
         );
         validate_map_refs(
-            &observation.diagnostics,
+            &check_result.diagnostics,
             diagnostics,
-            "Observation diagnostic",
+            "Check Result diagnostic",
             add,
         );
-        let expected_fingerprint = observation_fingerprint(bundle, execution, observation);
-        if observation.fingerprint != expected_fingerprint {
+        let expected_fingerprint = check_result_fingerprint(bundle, execution, check_result);
+        if check_result.fingerprint != expected_fingerprint {
             add(
-                "run/observation-fingerprint",
-                format!("Observation fingerprint must be `{expected_fingerprint}`"),
+                "run/check-result-fingerprint",
+                format!("Check Result fingerprint must be `{expected_fingerprint}`"),
             );
         }
     }
 }
 
-fn validate_challenger_execution(
+fn validate_verification_challenge_execution(
     bundle: &RunBundle,
-    execution: &ChallengerExecution,
+    execution: &VerificationChallengeExecution,
     activities: &BTreeMap<&str, &Activity>,
     artifacts: &BTreeSet<&str>,
     diagnostics: &BTreeMap<&str, &Diagnostic>,
@@ -5779,10 +5896,11 @@ fn validate_challenger_execution(
         .iter()
         .find(|item| item.id == execution.challenge);
     if actual.is_some_and(|item| {
-        item.challenger != execution.challenger || item.target != execution.target
+        item.verification_challenge != execution.verification_challenge
+            || item.target != execution.target
     }) {
         add(
-            "run/challenger-execution-substitution",
+            "run/verification-challenge-execution-substitution",
             format!(
                 "Challenge execution `{}` changes its semantic target",
                 execution.challenge
@@ -5928,10 +6046,10 @@ fn validate_challenger_execution(
         };
         let correct_scope = matches!(
             &diagnostic.scope,
-            DiagnosticScope::ChallengerExecution {
-                challenger_fingerprint,
+            DiagnosticScope::VerificationChallengeExecution {
+                verification_challenge_fingerprint,
                 target_fingerprint,
-            } if *challenger_fingerprint == execution.challenger.fingerprint
+            } if *verification_challenge_fingerprint == execution.verification_challenge.fingerprint
                 && *target_fingerprint == execution.target.fingerprint
         );
         if diagnostic.class != DiagnosticClass::Objection || !correct_scope {
@@ -6176,12 +6294,13 @@ pub fn verify_set(bundles: &[RunBundle]) -> Vec<Finding> {
 }
 
 fn validate_anchors(initial: &RunBundle, correction: &RunBundle, findings: &mut Vec<Finding>) {
-    let changed = initial.subject != correction.subject
-        || initial.subject_fingerprint != correction.subject_fingerprint
+    let changed = initial.verification_target != correction.verification_target
+        || initial.verification_target_fingerprint != correction.verification_target_fingerprint
         || initial.plan != correction.plan
         || initial.plan.fingerprint != correction.plan.fingerprint
-        || initial.plan.required_context != correction.plan.required_context
-        || initial.actual_selection.context != correction.actual_selection.context
+        || initial.plan.required_execution_context != correction.plan.required_execution_context
+        || initial.actual_selection.execution_context
+            != correction.actual_selection.execution_context
         || initial.provenance.source.system != correction.provenance.source.system
         || initial.provenance.source.execution != correction.provenance.source.execution
         || initial.provenance.normalizer != correction.provenance.normalizer
@@ -6260,18 +6379,20 @@ pub fn refresh_bundle(bundle: &mut RunBundle) {
     bundle.actual_selection.fingerprint = selection_fingerprint(&bundle.actual_selection);
     bundle.run_id = run_id(bundle);
     for i in 0..bundle.check_executions.len() {
-        for j in 0..bundle.check_executions[i].observations.len() {
-            let fingerprint = observation_fingerprint(
+        for j in 0..bundle.check_executions[i].results.len() {
+            let fingerprint = check_result_fingerprint(
                 bundle,
                 &bundle.check_executions[i],
-                &bundle.check_executions[i].observations[j],
+                &bundle.check_executions[i].results[j],
             );
-            bundle.check_executions[i].observations[j].fingerprint = fingerprint;
+            bundle.check_executions[i].results[j].fingerprint = fingerprint;
         }
     }
-    for i in 0..bundle.challenger_executions.len() {
-        bundle.challenger_executions[i].result.fingerprint =
-            challenge_result_fingerprint(bundle, &bundle.challenger_executions[i]);
+    for i in 0..bundle.verification_challenge_executions.len() {
+        bundle.verification_challenge_executions[i]
+            .result
+            .fingerprint =
+            challenge_result_fingerprint(bundle, &bundle.verification_challenge_executions[i]);
     }
     bundle.bundle_fingerprint = bundle_fingerprint(bundle);
 }
@@ -6282,10 +6403,10 @@ pub fn coordinate_bundle(mut bundle: RunBundle, contributions: Vec<RunBundle>) -
     bundle.activities.clear();
     bundle.diagnostics.clear();
     bundle.check_executions.clear();
-    bundle.challenger_executions.clear();
+    bundle.verification_challenge_executions.clear();
     bundle.actual_selection.checks.clear();
     bundle.actual_selection.challenges.clear();
-    bundle.actual_selection.context = bundle.plan.required_context.clone();
+    bundle.actual_selection.execution_context = bundle.plan.required_execution_context.clone();
     bundle.actual_selection.plan_fingerprint = bundle.plan.fingerprint.clone();
     bundle.started_at_ms = bundle
         .contributions
@@ -6402,13 +6523,13 @@ pub fn coordinate_bundle(mut bundle: RunBundle, contributions: Vec<RunBundle>) -
                     attempt.activity = format!("{prefix}{}", attempt.activity);
                 }
             }
-            for observation in &mut e.observations {
-                observation.artifacts = refs(&observation.artifacts);
-                observation.diagnostics = refs(&observation.diagnostics);
+            for check_result in &mut e.results {
+                check_result.artifacts = refs(&check_result.artifacts);
+                check_result.diagnostics = refs(&check_result.diagnostics);
             }
             bundle.check_executions.push(e);
         }
-        for execution in &child.challenger_executions {
+        for execution in &child.verification_challenge_executions {
             let mut e = execution.clone();
             for unit in &mut e.units {
                 for attempt in &mut unit.attempts {
@@ -6418,7 +6539,7 @@ pub fn coordinate_bundle(mut bundle: RunBundle, contributions: Vec<RunBundle>) -
             e.result.objections = refs(&e.result.objections);
             e.result.artifacts = refs(&e.result.artifacts);
             e.result.diagnostics = refs(&e.result.diagnostics);
-            bundle.challenger_executions.push(e);
+            bundle.verification_challenge_executions.push(e);
         }
     }
     bundle
@@ -6440,13 +6561,13 @@ pub fn coordinate_bundle(mut bundle: RunBundle, contributions: Vec<RunBundle>) -
         .check_executions
         .sort_by(|a, b| a.check.id.cmp(&b.check.id));
     bundle
-        .challenger_executions
+        .verification_challenge_executions
         .sort_by(|a, b| a.challenge.cmp(&b.challenge));
     bundle.provenance.adapter.launch_fingerprint = launch_fingerprint(
         bundle.provenance.mode,
         bundle.planned_at_ms,
-        &bundle.subject,
-        &bundle.subject_fingerprint,
+        &bundle.verification_target,
+        &bundle.verification_target_fingerprint,
         &bundle.plan,
         &launch_adapter_identity(&bundle.provenance.adapter),
         &bundle.provenance.adapter.routes,
@@ -6501,17 +6622,17 @@ fn validate_contributions(bundle: &RunBundle, add: &mut impl FnMut(&str, String)
                 format!("contribution `{id}` revision must equal the coordinated revision"),
             );
         }
-        if child.subject != bundle.subject
-            || child.subject_fingerprint != bundle.subject_fingerprint
+        if child.verification_target != bundle.verification_target
+            || child.verification_target_fingerprint != bundle.verification_target_fingerprint
             || child.planned_at_ms != bundle.planned_at_ms
             || child.plan.model_fingerprint != bundle.plan.model_fingerprint
-            || child.plan.required_context != bundle.plan.required_context
-            || child.actual_selection.context != bundle.plan.required_context
+            || child.plan.required_execution_context != bundle.plan.required_execution_context
+            || child.actual_selection.execution_context != bundle.plan.required_execution_context
             || child.provenance.mode != bundle.provenance.mode
         {
             add(
                 "run/coordination",
-                format!("contribution `{id}` changes Subject, model, context, time or operation"),
+                format!("contribution `{id}` changes Verification Target, model, context, time or operation"),
             );
         }
         for finding in verify(child) {

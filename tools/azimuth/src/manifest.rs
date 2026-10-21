@@ -96,12 +96,12 @@ pub fn parse(path: &str, root: &Json) -> Result<Manifest, Vec<Diag>> {
                 path,
                 where_,
                 item,
-                &with_source(&["claim", "site", "file", "lang", "source_fingerprint"]),
+                &with_source(&["requirement", "site", "file", "lang", "source_fingerprint"]),
                 errors,
             );
             let value = Site {
                 spec: String::new(),
-                claim: required_string(path, where_, item, "claim", errors),
+                requirement: required_string(path, where_, item, "requirement", errors),
                 site: required_string(path, where_, item, "site", errors),
                 file: required_string(path, where_, item, "file", errors),
                 lang: required_string(path, where_, item, "lang", errors),
@@ -115,16 +115,16 @@ pub fn parse(path: &str, root: &Json) -> Result<Manifest, Vec<Diag>> {
                 )
                 .unwrap_or_default(),
             };
-            if let Err(reason) = crate::diag::validate_entity_id(&value.claim) {
+            if let Err(reason) = crate::diag::validate_entity_id(&value.requirement) {
                 errors.push(Diag::at(
                     path,
                     0,
-                    format!("{where_} has invalid Claim ID: {reason}"),
+                    format!("{where_} has invalid Requirement ID: {reason}"),
                 ));
             }
             let identity = format!(
                 "{}|{}|{}|{}|{}",
-                value.spec, value.claim, value.site, value.file, value.lang
+                value.spec, value.requirement, value.site, value.file, value.lang
             );
             if realizes.insert(identity.clone()) {
                 out.realizes.push(value);

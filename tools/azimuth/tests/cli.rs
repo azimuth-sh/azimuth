@@ -29,10 +29,10 @@ fn write_model(root: &std::path::Path, criticality: &str) -> PathBuf {
         model.join("sample/spec.md"),
         format!(
             "# Spec: sample\n\n\
-             ## Claim: visible\n\
+             ## Requirement: visible\n\
              Criticality: {criticality}\n\n\
              The system SHALL expose its state.\n\n\
-             ### Case: state-is-visible\n\
+             ### Scenario: state-is-visible\n\
              Event: the state is requested\n\
              Required: the state is exposed\n"
         ),
@@ -40,7 +40,7 @@ fn write_model(root: &std::path::Path, criticality: &str) -> PathBuf {
     .unwrap();
     fs::write(
         root.join("workspace.json"),
-        "{\"format\":\"azimuth-workspace\",\"version\":1,\
+        "{\"format\":\"azimuth-workspace\",\"version\":2,\
          \"areas\":[],\"surfaces\":[],\"realization_obligations\":[]}",
     )
     .unwrap();
@@ -86,7 +86,7 @@ fn export_preserves_current_shape_without_retired_evidence_keys() {
     let json = azimuth::json::parse(&rendered).unwrap();
     assert_eq!(
         json.get("version").and_then(azimuth::json::Json::as_num),
-        Some(5.0)
+        Some(6.0)
     );
     assert_no_retired_keys(&json);
     fs::remove_dir_all(root).unwrap();
@@ -110,7 +110,7 @@ fn only_export_is_a_populated_two_spec_graph_closure() {
         fs::write(
             package.join("design.md"),
             format!(
-                "# Design: {name}\n\n## Claim: {name}-holds\n\
+                "# Design: {name}\n\n## Requirement: {name}-holds\n\
                  Mechanism: {name}-mechanism\nEnforcement: schema\nBinding: {name}-artifact\n\n\
                  The artifact makes the invariant structural.\n"
             ),
@@ -120,7 +120,7 @@ fn only_export_is_a_populated_two_spec_graph_closure() {
     let workspace = root.join("workspace.json");
     fs::write(
         &workspace,
-        "{\"format\":\"azimuth-workspace\",\"version\":1,\"areas\":[\
+        "{\"format\":\"azimuth-workspace\",\"version\":2,\"areas\":[\
          {\"id\":\"alpha-area\",\"mounts\":[{\"id\":\"code\",\"path\":\"alpha-src\"}]},\
          {\"id\":\"beta-area\",\"mounts\":[{\"id\":\"code\",\"path\":\"beta-src\"}]},\
          {\"id\":\"unused-area\",\"mounts\":[{\"id\":\"code\",\"path\":\"unused-src\"}]}],\
@@ -194,7 +194,7 @@ fn strict_manifest_ingestion_accepts_check_linkage_and_rejects_alpha_one_keys() 
     let root = root();
     let model = write_model(&root, "routine");
     let manifest = root.join("manifest.json");
-    fs::write(root.join("workspace.json"), r#"{"format":"azimuth-workspace","version":1,"areas":[{"id":"tests","mounts":[{"id":"source","path":"tests"}]}],"surfaces":[],"realization_obligations":[]}"#).unwrap();
+    fs::write(root.join("workspace.json"), r#"{"format":"azimuth-workspace","version":2,"areas":[{"id":"tests","mounts":[{"id":"source","path":"tests"}]}],"surfaces":[],"realization_obligations":[]}"#).unwrap();
     fs::write(
         &manifest,
         "{\"check_implementations\":[{\"check\":\"sample-check\",\
@@ -246,19 +246,19 @@ fn retired_verification_and_judgment_facets_fail_explicitly() {
     let package = model.join("sample");
     fs::write(
         package.join("verification.md"),
-        "# Verification: sample\n\n## Claim: state-is-visible\nScope: unit\n",
+        "# Verification: sample\n\n## Requirement: state-is-visible\nScope: unit\n",
     )
     .unwrap();
     let old_verification = azimuth(&["validate", "--model", model.to_str().unwrap()]);
     assert_eq!(old_verification.status.code(), Some(2));
     assert!(String::from_utf8(old_verification.stderr)
         .unwrap()
-        .contains("unrecognized heading `## Claim:"));
+        .contains("unrecognized heading `## Requirement:"));
 
     fs::remove_file(package.join("verification.md")).unwrap();
     fs::write(
         package.join("judgments.md"),
-        "# Judgments: sample\n\n## Claim: state-is-visible\nVerdict: toothy\n",
+        "# Judgments: sample\n\n## Requirement: state-is-visible\nVerdict: toothy\n",
     )
     .unwrap();
     let old_judgment = azimuth(&["validate", "--model", model.to_str().unwrap()]);
@@ -312,7 +312,7 @@ fn validate_reports_clean_and_finding_exit_classes() {
     let finding = azimuth(&["validate", "--model", model.to_str().unwrap()]);
     let stdout = String::from_utf8(finding.stdout).unwrap();
     assert_eq!(finding.status.code(), Some(1));
-    assert!(stdout.contains("verification unbound-case"), "{stdout}");
+    assert!(stdout.contains("verification unbound-scenario"), "{stdout}");
     assert!(stdout.contains("help:"), "{stdout}");
 
     fs::write(model.join("sample/spec.md"), "not a spec").unwrap();

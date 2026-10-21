@@ -34,9 +34,9 @@ pub fn verify_snapshot(value: &Json) -> Result<Json, String> {
         crate::assurance_review::validate_record(review)?;
         if !matches!(
             review.get("kind").and_then(Json::as_str),
-            Some("claim-review" | "claim-health")
+            Some("requirement-review" | "requirement-status")
         ) {
-            return Err("publication requires current Claim Review/Health kinds; historical records remain in their existing ledger".into());
+            return Err("publication requires current Requirement Review/Status kinds; historical records remain in their existing ledger".into());
         }
     }
     let raw_bundles = value
@@ -74,7 +74,7 @@ pub fn verify_snapshot(value: &Json) -> Result<Json, String> {
             "format",
             Json::str("azimuth-assurance-publication-validation"),
         ),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         ("project", value.get("project").unwrap().clone()),
         (
             "model_revision",
@@ -90,7 +90,7 @@ pub fn verify_snapshot(value: &Json) -> Result<Json, String> {
     ]))
 }
 
-pub fn supported_claims(
+pub fn supported_requirements(
     model: &crate::model::Model,
     snapshot: &Json,
 ) -> Result<std::collections::BTreeSet<String>, String> {
@@ -121,31 +121,31 @@ pub fn supported_claims(
         })
         .collect::<Result<Vec<_>, String>>()?;
     let mut reviewed = std::collections::BTreeSet::new();
-    let mut healthy = std::collections::BTreeSet::new();
+    let mut status_supported = std::collections::BTreeSet::new();
     for record in reviews {
         let assessment =
             crate::assurance_review::assess_record(record, authority, reviews, &bundles);
         if assessment.status != "accepted" {
             continue;
         }
-        let claim = record
-            .get("claim")
+        let requirement = record
+            .get("requirement")
             .and_then(Json::as_str)
-            .ok_or("review Claim missing")?
+            .ok_or("review Requirement missing")?
             .to_string();
         match record.get("kind").and_then(Json::as_str) {
-            Some("claim-review")
+            Some("requirement-review")
                 if record.get("decision").and_then(Json::as_str) == Some("accepted") =>
             {
-                reviewed.insert(claim);
+                reviewed.insert(requirement);
             }
-            Some("claim-health")
+            Some("requirement-status")
                 if record.get("conclusion").and_then(Json::as_str) == Some("supported") =>
             {
-                healthy.insert(claim);
+                status_supported.insert(requirement);
             }
             _ => {}
         }
     }
-    Ok(reviewed.intersection(&healthy).cloned().collect())
+    Ok(reviewed.intersection(&status_supported).cloned().collect())
 }

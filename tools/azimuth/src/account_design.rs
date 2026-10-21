@@ -1,4 +1,4 @@
-//! Claim-first, prose-preserving design document parser.
+//! Requirement-first, prose-preserving design document parser.
 //!
 //! This parser is deliberately independent of the accepted alpha design model. Assembly and
 //! review semantics must be chosen before its declarations become model authority.
@@ -10,8 +10,8 @@ use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeclarationKind {
-    Claim,
-    Case,
+    Requirement,
+    Scenario,
     Section,
     Element,
     Mechanism,
@@ -26,7 +26,7 @@ pub struct Declaration {
     pub areas: Vec<String>,
     pub element_kind: Option<String>,
     pub writes: Vec<String>,
-    pub cases: Vec<String>,
+    pub scenarios: Vec<String>,
     /// All direct prose and Markdown outside subordinate declarations, including its whitespace.
     pub body: String,
     /// Exact authored text from this heading to the next declaration at this level or above.
@@ -123,7 +123,7 @@ pub fn parse_account_design(path: &str, source: &str) -> Result<AccountDesign, V
                     path,
                     line.number,
                     format!("malformed design declaration `{text}`"),
-                    "## Claim design: <claim>, ### Case design: <case>, or a Section, Element, or Mechanism heading",
+                    "## Requirement design: <requirement>, ### Scenario design: <scenario>, or a Section, Element, or Mechanism heading",
                 ));
             }
             continue;
@@ -141,7 +141,7 @@ pub fn parse_account_design(path: &str, source: &str) -> Result<AccountDesign, V
             level,
             parent.map(|index| (headings[index].kind, headings[index].level)),
         ) {
-            errors.push(Diag::expecting(path, line.number, "design declaration is at the wrong nesting level", "Claim design or Section at level two; Case design or Mechanism directly under a Claim at level three; Sections one level under a Claim, Case design or Section; Elements and nested Mechanisms one level under a Case design or Section"));
+            errors.push(Diag::expecting(path, line.number, "design declaration is at the wrong nesting level", "Requirement design or Section at level two; Scenario design or Mechanism directly under a Requirement at level three; Sections one level under a Requirement, Scenario design or Section; Elements and nested Mechanisms one level under a Scenario design or Section"));
         }
         let index = headings.len();
         headings.push(Heading {
@@ -166,40 +166,40 @@ pub fn parse_account_design(path: &str, source: &str) -> Result<AccountDesign, V
     if headings.iter().all(|heading| {
         !matches!(
             heading.kind,
-            DeclarationKind::Claim | DeclarationKind::Section
+            DeclarationKind::Requirement | DeclarationKind::Section
         )
     }) {
         errors.push(Diag::expecting(
             path,
             0,
-            "design has no Claim account or shared Section",
-            "at least one ## Claim design: <claim> or ## Section: <caption>",
+            "design has no Requirement account or shared Section",
+            "at least one ## Requirement design: <requirement> or ## Section: <caption>",
         ));
     }
 
-    let mut case_designs = BTreeSet::new();
+    let mut scenario_designs = BTreeSet::new();
     let mut sections = BTreeSet::new();
     let mut elements = BTreeSet::new();
     let mut mechanisms = BTreeSet::new();
-    let mut claims = BTreeSet::new();
+    let mut requirements = BTreeSet::new();
     let mut parsed: Vec<Option<Declaration>> = Vec::with_capacity(headings.len());
     for heading in &headings {
         let mut ancestor = heading.parent;
-        let mut enclosing_claim = None;
+        let mut enclosing_requirement = None;
         while let Some(parent) = ancestor {
-            if headings[parent].kind == DeclarationKind::Claim {
-                enclosing_claim = Some(headings[parent].id.clone());
+            if headings[parent].kind == DeclarationKind::Requirement {
+                enclosing_requirement = Some(headings[parent].id.clone());
                 break;
             }
             ancestor = headings[parent].parent;
         }
         let authored_id = &heading.id;
-        if heading.kind == DeclarationKind::Case && enclosing_claim.is_none() {
+        if heading.kind == DeclarationKind::Scenario && enclosing_requirement.is_none() {
             errors.push(Diag::expecting(
                 path,
                 heading.line,
-                "Case design has no enclosing Claim",
-                "a Case design directly beneath its Claim design",
+                "Scenario design has no enclosing Requirement",
+                "a Scenario design directly beneath its Requirement design",
             ));
         }
         let id = authored_id.clone();
@@ -213,8 +213,8 @@ pub fn parse_account_design(path: &str, source: &str) -> Result<AccountDesign, V
             ));
         }
         let identities = match heading.kind {
-            DeclarationKind::Claim => &mut claims,
-            DeclarationKind::Case => &mut case_designs,
+            DeclarationKind::Requirement => &mut requirements,
+            DeclarationKind::Scenario => &mut scenario_designs,
             DeclarationKind::Section => &mut sections,
             DeclarationKind::Element => &mut elements,
             DeclarationKind::Mechanism => &mut mechanisms,
@@ -231,11 +231,11 @@ pub fn parse_account_design(path: &str, source: &str) -> Result<AccountDesign, V
             .children
             .first()
             .map_or(heading.end, |child| headings[*child].start);
-        let (areas, element_kind, writes, cases) = metadata(
+        let (areas, element_kind, writes, scenarios) = metadata(
             path,
             heading,
             &source[heading.body_start..metadata_end],
-            enclosing_claim.as_deref(),
+            enclosing_requirement.as_deref(),
             &mut errors,
         );
         parsed.push(Some(Declaration {
@@ -246,7 +246,7 @@ pub fn parse_account_design(path: &str, source: &str) -> Result<AccountDesign, V
             areas,
             element_kind,
             writes,
-            cases,
+            scenarios,
             body,
             source: source[heading.start..heading.end].to_string(),
             children: Vec::new(),
@@ -340,8 +340,8 @@ fn markdown_heading(text: &str) -> Option<(usize, &str)> {
 
 fn declaration(level: usize, text: &str) -> Option<(DeclarationKind, &str)> {
     let kinds = [
-        ("Claim design: ", DeclarationKind::Claim),
-        ("Case design: ", DeclarationKind::Case),
+        ("Requirement design: ", DeclarationKind::Requirement),
+        ("Scenario design: ", DeclarationKind::Scenario),
         ("Section: ", DeclarationKind::Section),
         ("Element: ", DeclarationKind::Element),
         ("Mechanism: ", DeclarationKind::Mechanism),
@@ -356,8 +356,8 @@ fn declaration(level: usize, text: &str) -> Option<(DeclarationKind, &str)> {
 
 fn looks_reserved(text: &str) -> bool {
     [
-        "Claim design",
-        "Case design",
+        "Requirement design",
+        "Scenario design",
         "Section",
         "Element",
         "Mechanism",
@@ -372,24 +372,24 @@ fn allowed_parent(
     parent: Option<(DeclarationKind, usize)>,
 ) -> bool {
     match (kind, level, parent) {
-        (DeclarationKind::Claim | DeclarationKind::Section, 2, None) => true,
+        (DeclarationKind::Requirement | DeclarationKind::Section, 2, None) => true,
         (
-            DeclarationKind::Case | DeclarationKind::Mechanism,
+            DeclarationKind::Scenario | DeclarationKind::Mechanism,
             3,
-            Some((DeclarationKind::Claim, 2)),
+            Some((DeclarationKind::Requirement, 2)),
         ) => true,
         (
             DeclarationKind::Section,
             3..=6,
             Some((
-                DeclarationKind::Claim | DeclarationKind::Case | DeclarationKind::Section,
+                DeclarationKind::Requirement | DeclarationKind::Scenario | DeclarationKind::Section,
                 parent_level,
             )),
         ) if level == parent_level + 1 => true,
         (
             DeclarationKind::Element | DeclarationKind::Mechanism,
             3..=6,
-            Some((DeclarationKind::Case | DeclarationKind::Section, parent_level)),
+            Some((DeclarationKind::Scenario | DeclarationKind::Section, parent_level)),
         ) if level == parent_level + 1 => true,
         _ => false,
     }
@@ -411,7 +411,7 @@ fn metadata(
     path: &str,
     heading: &Heading,
     body: &str,
-    _enclosing_claim: Option<&str>,
+    _enclosing_requirement: Option<&str>,
     errors: &mut Vec<Diag>,
 ) -> (Vec<String>, Option<String>, Vec<String>, Vec<String>) {
     let mut fields: BTreeMap<&str, Vec<String>> = BTreeMap::new();
@@ -433,9 +433,9 @@ fn metadata(
         };
         let name = name.trim();
         let accepted = match heading.kind {
-            DeclarationKind::Claim => &["Areas"][..],
+            DeclarationKind::Requirement => &["Areas"][..],
             DeclarationKind::Element => &["Kind", "Areas", "Writes"][..],
-            DeclarationKind::Mechanism => &["Cases"][..],
+            DeclarationKind::Mechanism => &["Scenarios"][..],
             _ => &[][..],
         };
         let line = heading.line + 1 + index;
@@ -483,16 +483,16 @@ fn metadata(
             fields.insert(name, values);
         }
     }
-    let declared_cases = fields.contains_key("Cases");
-    let authored_cases = fields.remove("Cases").unwrap_or_default();
+    let declared_scenarios = fields.contains_key("Scenarios");
+    let authored_scenarios = fields.remove("Scenarios").unwrap_or_default();
     let areas = fields.remove("Areas").unwrap_or_default();
     let writes = fields.remove("Writes").unwrap_or_default();
     let kinds = fields.remove("Kind").unwrap_or_default();
-    if heading.kind == DeclarationKind::Claim && areas.is_empty() {
+    if heading.kind == DeclarationKind::Requirement && areas.is_empty() {
         errors.push(Diag::expecting(
             path,
             heading.line,
-            "Claim design has no Areas",
+            "Requirement design has no Areas",
             "- Areas: followed by at least one area",
         ));
     }
@@ -532,38 +532,38 @@ fn metadata(
             ));
         }
     }
-    if declared_cases && authored_cases.is_empty() {
+    if declared_scenarios && authored_scenarios.is_empty() {
         errors.push(Diag::expecting(
             path,
             heading.line,
-            "Mechanism Cases is empty",
-            "- Cases: followed by at least one stable Case ID",
+            "Mechanism Scenarios is empty",
+            "- Scenarios: followed by at least one stable Scenario ID",
         ));
     }
-    let mut cases = Vec::new();
-    let mut seen_cases = BTreeSet::new();
-    for case in &authored_cases {
-        let resolved = case.clone();
+    let mut scenarios = Vec::new();
+    let mut seen_scenarios = BTreeSet::new();
+    for scenario in &authored_scenarios {
+        let resolved = scenario.clone();
         if let Err(reason) = validate_id(&resolved, false) {
             errors.push(Diag::expecting(
                 path,
                 heading.line,
-                format!("invalid Mechanism Case `{case}`: {reason}"),
-                "a stable Case ID independent of module or parent",
+                format!("invalid Mechanism Scenario `{scenario}`: {reason}"),
+                "a stable Scenario ID independent of module or parent",
             ));
         }
-        if !seen_cases.insert(resolved.clone()) {
+        if !seen_scenarios.insert(resolved.clone()) {
             errors.push(Diag::at(
                 path,
                 heading.line,
-                format!("duplicate Mechanism Case `{resolved}`"),
+                format!("duplicate Mechanism Scenario `{resolved}`"),
             ));
         }
-        cases.push(resolved);
+        scenarios.push(resolved);
     }
     if matches!(
         heading.kind,
-        DeclarationKind::Mechanism | DeclarationKind::Case
+        DeclarationKind::Mechanism | DeclarationKind::Scenario
     ) && body_lines[index..]
         .iter()
         .all(|line| line.trim().is_empty())
@@ -572,10 +572,10 @@ fn metadata(
             path,
             heading.line,
             format!("{:?} design has no explanation", heading.kind),
-            "prose explaining the Case implementation or selected control and failure boundary",
+            "prose explaining the Scenario implementation or selected control and failure boundary",
         ));
     }
-    (areas, kinds.into_iter().next(), writes, cases)
+    (areas, kinds.into_iter().next(), writes, scenarios)
 }
 
 fn scalar_value(value: &str) -> Option<&str> {

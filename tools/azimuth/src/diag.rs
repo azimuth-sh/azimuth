@@ -65,7 +65,7 @@ impl fmt::Display for Diag {
     }
 }
 
-/// Identifier charset, shared by Spec, Claim and Case ids.
+/// Identifier charset, shared by Spec, Requirement and Scenario ids.
 ///
 /// Lowercase kebab-case. Spec ids additionally admit `/` as a namespace separator — the slash is
 /// part of the id string, never derived from the filesystem (contracts/spec.md).
@@ -109,16 +109,16 @@ pub fn resolve_check_id(id: &str) -> Result<String, String> {
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum EntityKind {
-    Claim,
-    Case,
+    Requirement,
+    Scenario,
     Mechanism,
     Check,
 }
 impl EntityKind {
     pub fn name(self) -> &'static str {
         match self {
-            Self::Claim => "claim",
-            Self::Case => "case",
+            Self::Requirement => "requirement",
+            Self::Scenario => "scenario",
             Self::Mechanism => "mechanism",
             Self::Check => "check",
         }

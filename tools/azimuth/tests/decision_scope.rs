@@ -33,7 +33,7 @@ Terminal: the behavior works\n\n\
 Atomic.\n\n\
 ## Evidence Binding: alpha/edge\n\
 Check: alpha-check\n\
-Case: works\n\
+Scenario: works\n\
 Method qualification: alpha/method\n\
 Proposition: direct\n\
 Context: {}\n\
@@ -59,7 +59,7 @@ Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 Decided: 2026-08-22\n\
 Decider: owner\n\n\
 Applicable.\n\n\
-## Claim Judgment: behavior\n\
+## Requirement Judgment: behavior\n\
 Verdict: accepted\n\
 Policy: credible\n\
 Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
@@ -68,14 +68,14 @@ Judge: owner\n\
 Basis: the exact composition is accepted\n\
 Residual risk: none identified\n\n\
 Accepted.\n\n\
-## Challenger: mutation/search\n\
+## Verification Challenge: mutation/search\n\
 Form: mutation\n\
 Searches for: an undetected change\n\
 Required scope: [\"mechanism\"]\n\n\
 Searches exact semantics.\n\n\
 ## Challenge Plan: alpha/plan\n\
-Challenger: mutation/search\n\
-Select: claim-judgment from mechanism guard\n\n\
+Verification Challenge: mutation/search\n\
+Select: requirement-judgment from mechanism guard\n\n\
 Targets the total decision.\n";
 
 fn source(area: &str, mount: &str, kind: &str, address: &str) -> SourceIdentity {
@@ -90,14 +90,14 @@ fn source(area: &str, mount: &str, kind: &str, address: &str) -> SourceIdentity 
 fn model() -> Model {
     let alpha = parse_spec(
         "alpha/spec.md",
-        "# Spec: alpha\n\n## Claim: behavior\nCriticality: standard\n\n\
-         The system SHALL work.\n\n### Case: works\nEvent: invoked\nRequired: it works\n",
+        "# Spec: alpha\n\n## Requirement: behavior\nCriticality: standard\n\n\
+         The system SHALL work.\n\n### Scenario: works\nEvent: invoked\nRequired: it works\n",
     )
     .unwrap();
     let surface = parse_spec(
         "surface/spec.md",
-        "# Spec: surface\n\n## Claim: routes\nCriticality: routine\n\n\
-         Every route SHALL exist.\n\n### Case: tagged\nEvent: built\nRequired: it exists\n",
+        "# Spec: surface\n\n## Requirement: routes\nCriticality: routine\n\n\
+         Every route SHALL exist.\n\n### Scenario: tagged\nEvent: built\nRequired: it exists\n",
     )
     .unwrap();
     let mut model = Model {
@@ -105,7 +105,7 @@ fn model() -> Model {
         realizes: vec![
             Site {
                 spec: "alpha".into(),
-                claim: "behavior".into(),
+                requirement: "behavior".into(),
                 site: "alpha::works".into(),
                 file: "src/alpha.rs".into(),
                 lang: "rust".into(),
@@ -114,7 +114,7 @@ fn model() -> Model {
             },
             Site {
                 spec: "surface".into(),
-                claim: "routes".into(),
+                requirement: "routes".into(),
                 site: "GET /tagged".into(),
                 file: "app/tagged.ts".into(),
                 lang: "typescript".into(),
@@ -164,11 +164,11 @@ fn model() -> Model {
             spec: "alpha".into(),
             path: "alpha/design.md".into(),
             entries: vec![DesignEntry {
-                target: Target::Claim("behavior".into()),
+                target: Target::Requirement("behavior".into()),
                 mechanisms: vec![Mechanism {
                     id: "guard".into(),
                     kind: Enforcement::Guard,
-                    cases: vec!["works".into()],
+                    scenarios: vec!["works".into()],
                     binding: Some("artifact:guard".into()),
                     expected_unique: None,
                     expected_columns: vec!["key".into()],
@@ -208,13 +208,13 @@ fn model() -> Model {
             }],
             realization_obligations: vec![RealizationObligation {
                 spec: "alpha".into(),
-                claim: "behavior".into(),
+                requirement: "behavior".into(),
                 areas: vec!["core".into()],
             }],
         },
         ..Default::default()
     };
-    model.specs[0].claims[0].over = Some("surface".into());
+    model.specs[0].requirements[0].over = Some("surface".into());
     refresh(&mut model);
     model
 }
@@ -229,9 +229,9 @@ fn refresh(model: &mut Model) {
         .unwrap();
     model.verifications[0].applicability_decisions[0].fingerprint = applicability;
     let judgment = model
-        .expected_claim_judgment_fingerprint(&model.verifications[0].claim_judgments[0])
+        .expected_requirement_judgment_fingerprint(&model.verifications[0].requirement_judgments[0])
         .unwrap();
-    model.verifications[0].claim_judgments[0].fingerprint = judgment;
+    model.verifications[0].requirement_judgments[0].fingerprint = judgment;
 }
 
 #[test]
@@ -245,7 +245,8 @@ fn export_resolutions_match_validation_order_and_an_independent_golden() {
         .map(|plan| resolve_challenge_plan(&model, plan))
         .collect::<Vec<_>>();
     expected.sort_by(|left, right| {
-        (&left.plan, &left.challenger).cmp(&(&right.plan, &right.challenger))
+        (&left.plan, &left.verification_challenge)
+            .cmp(&(&right.plan, &right.verification_challenge))
     });
     let expected = Json::Arr(expected.iter().map(|item| item.to_json()).collect());
     let exported = model.to_json(&[]);
@@ -258,25 +259,25 @@ fn export_resolutions_match_validation_order_and_an_independent_golden() {
         r#"[
   {
     "format": "azimuth-challenge-resolution",
-    "version": 1,
+    "version": 2,
     "plan": "alpha/earlier",
-    "challenger": "mutation/search",
+    "verification_challenge": "mutation/search",
     "candidates": [
       {
         "selector": {
-          "target": "claim-judgment",
+          "target": "requirement-judgment",
           "from": "mechanism",
           "id": "guard"
         },
         "relation": {
-          "kind": "claim",
+          "kind": "requirement",
           "id": "behavior"
         },
         "target": {
-          "kind": "claim-judgment",
+          "kind": "requirement-judgment",
           "id": "behavior",
-          "expected_fingerprint": "sha256:34d694fe71ff89ded4c6ef370f41b92f7417a120aee1707c9a7f2d24240190c2",
-          "authored_fingerprint": "sha256:34d694fe71ff89ded4c6ef370f41b92f7417a120aee1707c9a7f2d24240190c2"
+          "expected_fingerprint": "sha256:3cb5f230ec00fc5eed35cbd8bac0d8acc2d34cf795024c53ff771369eb137ee9",
+          "authored_fingerprint": "sha256:3cb5f230ec00fc5eed35cbd8bac0d8acc2d34cf795024c53ff771369eb137ee9"
         },
         "disposition": "selected"
       }
@@ -285,25 +286,25 @@ fn export_resolutions_match_validation_order_and_an_independent_golden() {
   },
   {
     "format": "azimuth-challenge-resolution",
-    "version": 1,
+    "version": 2,
     "plan": "alpha/plan",
-    "challenger": "mutation/search",
+    "verification_challenge": "mutation/search",
     "candidates": [
       {
         "selector": {
-          "target": "claim-judgment",
+          "target": "requirement-judgment",
           "from": "mechanism",
           "id": "guard"
         },
         "relation": {
-          "kind": "claim",
+          "kind": "requirement",
           "id": "behavior"
         },
         "target": {
-          "kind": "claim-judgment",
+          "kind": "requirement-judgment",
           "id": "behavior",
-          "expected_fingerprint": "sha256:34d694fe71ff89ded4c6ef370f41b92f7417a120aee1707c9a7f2d24240190c2",
-          "authored_fingerprint": "sha256:34d694fe71ff89ded4c6ef370f41b92f7417a120aee1707c9a7f2d24240190c2"
+          "expected_fingerprint": "sha256:3cb5f230ec00fc5eed35cbd8bac0d8acc2d34cf795024c53ff771369eb137ee9",
+          "authored_fingerprint": "sha256:3cb5f230ec00fc5eed35cbd8bac0d8acc2d34cf795024c53ff771369eb137ee9"
         },
         "disposition": "selected"
       }
@@ -332,7 +333,7 @@ fn direct_mechanism_and_total_judgment_scope_preserve_every_component_variant() 
     assert!(scope
         .inputs
         .iter()
-        .any(|item| item.kind == SemanticScopeKind::ClaimJudgment));
+        .any(|item| item.kind == SemanticScopeKind::RequirementJudgment));
     assert_eq!(
         scope
             .inputs
@@ -366,7 +367,7 @@ fn direct_mechanism_and_total_judgment_scope_preserve_every_component_variant() 
     );
     assert_eq!(
         azimuth::fingerprint::realization_obligation_digest("behavior", &["core".into()]),
-        "sha256:868bdaf37f40b3a8369b0db5b5c3f286f9f2a5a5a3d52e7974bbab65b42b8887"
+        "sha256:712549144ccf5bb814e0eaa4c149e52f11b9ede364659f73a16be869eef3a974"
     );
     assert_eq!(
         azimuth::fingerprint::enumerated_surface_member_digest("surface", "app/enumerated.ts"),
@@ -410,7 +411,7 @@ fn marker_derived_mechanism_adds_one_source_implementation() {
 
 #[test]
 fn every_selector_projects_its_exact_authored_anchor() {
-    let cases = [
+    let scenarios = [
         (
             Selector::ApplicabilityDecisionFromBinding("alpha/edge".into()),
             SemanticScopeKind::Binding,
@@ -436,26 +437,26 @@ fn every_selector_projects_its_exact_authored_anchor() {
             SemanticScopeKind::MethodQualification,
         ),
         (
-            Selector::ClaimJudgmentFromClaim("behavior".into()),
-            SemanticScopeKind::Claim,
+            Selector::RequirementJudgmentFromRequirement("behavior".into()),
+            SemanticScopeKind::Requirement,
             "behavior",
-            SemanticScopeKind::ClaimJudgment,
+            SemanticScopeKind::RequirementJudgment,
         ),
         (
-            Selector::ClaimJudgmentFromRealization("core|rust-item|alpha::works".into()),
+            Selector::RequirementJudgmentFromRealization("core|rust-item|alpha::works".into()),
             SemanticScopeKind::Realization,
             "core|rust-item|alpha::works",
-            SemanticScopeKind::ClaimJudgment,
+            SemanticScopeKind::RequirementJudgment,
         ),
         (
-            Selector::ClaimJudgmentFromMechanism("guard".into()),
+            Selector::RequirementJudgmentFromMechanism("guard".into()),
             SemanticScopeKind::Mechanism,
             "guard",
-            SemanticScopeKind::ClaimJudgment,
+            SemanticScopeKind::RequirementJudgment,
         ),
     ];
 
-    for (selector, anchor_kind, anchor_id, decision_kind) in cases {
+    for (selector, anchor_kind, anchor_id, decision_kind) in scenarios {
         let mut model = model();
         model.verifications[0].challenge_plans[0].selectors = vec![selector];
         let resolution = resolve_challenge_plan(&model, &model.verifications[0].challenge_plans[0]);
@@ -480,7 +481,7 @@ fn every_selector_projects_its_exact_authored_anchor() {
 fn selector_scopes_merge_exactly_and_reject_component_conflicts() {
     let mut model = model();
     let plan = &mut model.verifications[0].challenge_plans[0];
-    plan.selectors = vec![Selector::ClaimJudgmentFromRealization(
+    plan.selectors = vec![Selector::RequirementJudgmentFromRealization(
         "core|rust-item|alpha::works".into(),
     )];
     let realization = resolve_challenge_plan(&model, model.challenge_plans().next().unwrap());
@@ -489,7 +490,7 @@ fn selector_scopes_merge_exactly_and_reject_component_conflicts() {
         .unwrap();
 
     model.verifications[0].challenge_plans[0].selectors =
-        vec![Selector::ClaimJudgmentFromMechanism("guard".into())];
+        vec![Selector::RequirementJudgmentFromMechanism("guard".into())];
     let mechanism = resolve_challenge_plan(&model, model.challenge_plans().next().unwrap());
     let mechanism_scope = model
         .challenge_candidate_scope(&mechanism.candidates[0])
@@ -506,7 +507,7 @@ fn selector_scopes_merge_exactly_and_reject_component_conflicts() {
         merged
             .inputs
             .iter()
-            .filter(|item| item.kind == SemanticScopeKind::ClaimJudgment)
+            .filter(|item| item.kind == SemanticScopeKind::RequirementJudgment)
             .count(),
         1
     );
@@ -515,7 +516,7 @@ fn selector_scopes_merge_exactly_and_reject_component_conflicts() {
     conflict
         .inputs
         .iter_mut()
-        .find(|item| item.kind == SemanticScopeKind::ClaimJudgment)
+        .find(|item| item.kind == SemanticScopeKind::RequirementJudgment)
         .unwrap()
         .fingerprint = B.into();
     assert!(SemanticChallengeScope::merge([realization_scope, conflict]).is_none());
@@ -529,23 +530,23 @@ fn selected_view_retains_exact_plan_dependencies_and_resolution_bytes() {
     fs::create_dir_all(model_dir.join("beta")).unwrap();
     fs::write(
         model_dir.join("alpha/spec.md"),
-        "# Spec: alpha\n\n## Claim: alpha-works\nCriticality: standard\n\nA SHALL work.\n\n\
-         ### Case: alpha-yes\nEvent: invoked\nRequired: it works\n",
+        "# Spec: alpha\n\n## Requirement: alpha-works\nCriticality: standard\n\nA SHALL work.\n\n\
+         ### Scenario: alpha-yes\nEvent: invoked\nRequired: it works\n",
     )
     .unwrap();
     fs::write(
         model_dir.join("beta/spec.md"),
-        "# Spec: beta\n\n## Claim: beta-works\nCriticality: standard\n\nB SHALL work.\n\n\
-         ### Case: beta-yes\nEvent: invoked\nRequired: it works\n\n\
-         ### Case: unrelated\nEvent: invoked elsewhere\nRequired: the sibling works\n",
+        "# Spec: beta\n\n## Requirement: beta-works\nCriticality: standard\n\nB SHALL work.\n\n\
+         ### Scenario: beta-yes\nEvent: invoked\nRequired: it works\n\n\
+         ### Scenario: unrelated\nEvent: invoked elsewhere\nRequired: the sibling works\n",
     )
     .unwrap();
     fs::write(
         model_dir.join("beta/design.md"),
-        "# Design: beta\n\n## Claim: beta-works\nMechanism: selected-guard\nEnforcement: guard\nCases: [\"beta-yes\"]\n\
-         Binding: artifact:beta-selected\n\nThe selected guard establishes this Claim.\n\n\
-         Mechanism: sibling-guard\nEnforcement: guard\nCases: [\"unrelated\"]\n\
-         Binding: artifact:beta-sibling\n\nThe sibling guard establishes only its Claim.\n",
+        "# Design: beta\n\n## Requirement: beta-works\nMechanism: selected-guard\nEnforcement: guard\nScenarios: [\"beta-yes\"]\n\
+         Binding: artifact:beta-selected\n\nThe selected guard establishes this Requirement.\n\n\
+         Mechanism: sibling-guard\nEnforcement: guard\nScenarios: [\"unrelated\"]\n\
+         Binding: artifact:beta-sibling\n\nThe sibling guard establishes only its Requirement.\n",
     )
     .unwrap();
     fs::write(
@@ -553,15 +554,15 @@ fn selected_view_retains_exact_plan_dependencies_and_resolution_bytes() {
         "# Verification: alpha\n\n\
          ## Check: alpha-check\nMethod: invoke\nTerminal: alpha works\n\nAtomic.\n\n\
          ## Check: beta-check\nMethod: invoke\nTerminal: beta works\n\nAtomic.\n\n\
-         ## Evidence Binding: alpha/edge\nCheck: alpha-check\nCase: alpha-yes\n\
+         ## Evidence Binding: alpha/edge\nCheck: alpha-check\nScenario: alpha-yes\n\
          Method qualification: alpha/method\nProposition: direct\nContext: {}\n\
          Challenge domain: [\"realization\"]\nPolicy: credible\n\nReviewable.\n\n\
-         ## Evidence Binding: beta/edge\nCheck: beta-check\nCase: beta-yes\n\
+         ## Evidence Binding: beta/edge\nCheck: beta-check\nScenario: beta-yes\n\
          Method qualification: beta/method\nProposition: direct\nContext: {}\n\
          Challenge domain: [\"mechanism\"]\nPolicy: credible\n\nReviewable.\n\n\
-         ## Challenger: mutation/search\nForm: mutation\nSearches for: an undetected change\n\
+         ## Verification Challenge: mutation/search\nForm: mutation\nSearches for: an undetected change\n\
          Required scope: [\"binding\"]\n\nSearches edges.\n\n\
-         ## Challenge Plan: alpha/plan\nChallenger: mutation/search\n\
+         ## Challenge Plan: alpha/plan\nVerification Challenge: mutation/search\n\
          Select: applicability-decision from binding alpha/edge\n\
          Select: applicability-decision from binding beta/edge\n\nRetain both.\n",
     )
@@ -571,7 +572,7 @@ fn selected_view_retains_exact_plan_dependencies_and_resolution_bytes() {
     let workspace = root.join("workspace.json");
     fs::write(
         &workspace,
-        "{\"format\":\"azimuth-workspace\",\"version\":1,\
+        "{\"format\":\"azimuth-workspace\",\"version\":2,\
          \"areas\":[{\"id\":\"core\",\"mounts\":[{\"id\":\"code\",\"path\":\"src\"}]}],\
          \"surfaces\":[],\"realization_obligations\":[]}",
     )
@@ -581,9 +582,9 @@ fn selected_view_retains_exact_plan_dependencies_and_resolution_bytes() {
         &manifest,
         format!(
             "{{\"realizes\":[\
-             {{\"claim\":\"beta-works\",\"site\":\"beta::yes\",\
+             {{\"requirement\":\"beta-works\",\"site\":\"beta::yes\",\
              \"file\":\"src/beta.rs\",\"lang\":\"rust\",\"source_fingerprint\":\"{A}\"}},\
-             {{\"claim\":\"beta-works\",\"site\":\"beta::sibling\",\
+             {{\"requirement\":\"beta-works\",\"site\":\"beta::sibling\",\
              \"file\":\"src/sibling.rs\",\"lang\":\"rust\",\"source_fingerprint\":\"{B}\"}}],\
              \"artifacts\":[\
              {{\"id\":\"artifact:beta-selected\",\"kind\":\"rust-item\",\
@@ -619,10 +620,10 @@ fn selected_view_retains_exact_plan_dependencies_and_resolution_bytes() {
         .iter()
         .find(|spec| spec.id == "beta")
         .unwrap();
-    assert_eq!(beta.claims[0].statement, "B SHALL work.");
+    assert_eq!(beta.requirements[0].statement, "B SHALL work.");
     assert_eq!(
-        beta.claims[0]
-            .cases
+        beta.requirements[0]
+            .scenarios
             .iter()
             .map(|scenario| scenario.id.as_str())
             .collect::<Vec<_>>(),
@@ -633,7 +634,7 @@ fn selected_view_retains_exact_plan_dependencies_and_resolution_bytes() {
             .realizes
             .iter()
             .filter(|site| site.spec == "beta")
-            .map(|site| site.claim.as_str())
+            .map(|site| site.requirement.as_str())
             .collect::<Vec<_>>(),
         ["beta-works", "beta-works"]
     );
@@ -673,13 +674,13 @@ fn local_marker_relocation_preserves_semantics_and_changes_only_locator_accounts
     fs::create_dir_all(model_dir.join("alpha")).unwrap();
     fs::write(
         model_dir.join("alpha/spec.md"),
-        "# Spec: alpha\n\n## Claim: behavior\nCriticality: standard\n\n\
-         The system SHALL work.\n\n### Case: works\nEvent: invoked\nRequired: it works\n",
+        "# Spec: alpha\n\n## Requirement: behavior\nCriticality: standard\n\n\
+         The system SHALL work.\n\n### Scenario: works\nEvent: invoked\nRequired: it works\n",
     )
     .unwrap();
     fs::write(
         model_dir.join("alpha/design.md"),
-        "# Design: alpha\n\n## Claim: behavior\nMechanism: guard\nEnforcement: guard\nCases: [\"works\"]\n\n\
+        "# Design: alpha\n\n## Requirement: behavior\nMechanism: guard\nEnforcement: guard\nScenarios: [\"works\"]\n\n\
          The qualified implementation establishes the guard.\n",
     )
     .unwrap();
@@ -689,7 +690,7 @@ fn local_marker_relocation_preserves_semantics_and_changes_only_locator_accounts
     let workspace = root.join("workspace.json");
     fs::write(
         &workspace,
-        "{\"format\":\"azimuth-workspace\",\"version\":1,\
+        "{\"format\":\"azimuth-workspace\",\"version\":2,\
          \"areas\":[{\"id\":\"core\",\"mounts\":[{\"id\":\"code\",\"path\":\"src\"}]}],\
          \"surfaces\":[],\"realization_obligations\":[]}",
     )
@@ -699,7 +700,7 @@ fn local_marker_relocation_preserves_semantics_and_changes_only_locator_accounts
         fs::write(
             &manifest,
             format!(
-                "{{\"realizes\":[{{\"claim\":\"behavior\",\
+                "{{\"realizes\":[{{\"requirement\":\"behavior\",\
                  \"site\":\"alpha::works\",\"file\":\"src/alpha.rs\",\"lang\":\"rust\",\
                  \"source_fingerprint\":\"{A}\"}}],\
                  \"check_implementations\":[{{\"check\":\"alpha-check\",\
@@ -732,14 +733,16 @@ fn local_marker_relocation_preserves_semantics_and_changes_only_locator_accounts
     assert_eq!(before.artifacts[0].columns, ["key"]);
     assert_eq!(before.artifacts[0].unique, Some(false));
     let judgment_before = before
-        .expected_claim_judgment_fingerprint(&before.verifications[0].claim_judgments[0])
+        .expected_requirement_judgment_fingerprint(
+            &before.verifications[0].requirement_judgments[0],
+        )
         .unwrap();
     let judgment_after = after
-        .expected_claim_judgment_fingerprint(&after.verifications[0].claim_judgments[0])
+        .expected_requirement_judgment_fingerprint(&after.verifications[0].requirement_judgments[0])
         .unwrap();
     assert_eq!(judgment_before, judgment_after);
-    before.verifications[0].claim_judgments[0].fingerprint = judgment_before;
-    after.verifications[0].claim_judgments[0].fingerprint = judgment_after;
+    before.verifications[0].requirement_judgments[0].fingerprint = judgment_before;
+    after.verifications[0].requirement_judgments[0].fingerprint = judgment_after;
     let scope_for = |model: &Model| {
         let resolution = resolve_challenge_plan(model, model.challenge_plans().next().unwrap());
         model
@@ -777,7 +780,7 @@ fn local_marker_relocation_preserves_semantics_and_changes_only_locator_accounts
         fs::write(
             model_dir.join("alpha/design.md"),
             format!(
-                "# Design: alpha\n\n## Claim: works\nMechanism: explicit-guard\n\
+                "# Design: alpha\n\n## Requirement: works\nMechanism: explicit-guard\n\
                  Enforcement: guard\nBinding: {forbidden}\n\n\
                  A marker companion cannot cross into the explicit route.\n"
             ),

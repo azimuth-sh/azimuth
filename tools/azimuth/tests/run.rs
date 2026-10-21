@@ -15,7 +15,7 @@ fn map(values: &[(&str, &str)]) -> BTreeMap<String, String> {
 }
 
 fn valid_bundle() -> RunBundle {
-    let subject = Subject::Workspace {
+    let verification_target = VerificationTarget::Workspace {
         repositories: vec![RepositoryState {
             id: "root".into(),
             revision: "revision-a".into(),
@@ -26,7 +26,7 @@ fn valid_bundle() -> RunBundle {
     let check = CheckSelection {
         id: "recovery".into(),
         fingerprint: fp('b'),
-        cases: vec!["works".into()],
+        scenarios: vec!["works".into()],
         implementations: vec![Implementation {
             identity: "payments|rust-symbol|recovery::replay".into(),
             source_fingerprint: fp('c'),
@@ -51,7 +51,7 @@ fn valid_bundle() -> RunBundle {
     .unwrap();
     let mut challenge = ChallengeSelection {
         id: "challenge/placeholder".into(),
-        challenger: ChallengerRef {
+        verification_challenge: VerificationChallengeRef {
             id: "mutation/perturbation".into(),
             fingerprint: fp('d'),
         },
@@ -68,7 +68,7 @@ fn valid_bundle() -> RunBundle {
         }],
     };
     challenge.id = challenge_selection_id(
-        &challenge.challenger.fingerprint,
+        &challenge.verification_challenge.fingerprint,
         challenge.target.kind,
         &challenge.target.fingerprint,
     );
@@ -79,21 +79,21 @@ fn valid_bundle() -> RunBundle {
         corrects: None,
         correction_reason: None,
         bundle_fingerprint: fp('0'),
-        subject,
-        subject_fingerprint: fp('0'),
+        verification_target,
+        verification_target_fingerprint: fp('0'),
         planned_at_ms: 1,
         started_at_ms: 2,
         finished_at_ms: 4,
         status: RunStatus::Complete,
         plan: Plan {
             model_fingerprint: fp('f'),
-            required_context: context.clone(),
+            required_execution_context: context.clone(),
             checks: vec![check.clone()],
             challenges: vec![challenge.clone()],
             fingerprint: fp('0'),
         },
         actual_selection: ActualSelection {
-            context,
+            execution_context: context,
             plan_fingerprint: fp('0'),
             checks: vec![check],
             challenges: vec![challenge.clone()],
@@ -190,8 +190,11 @@ fn valid_bundle() -> RunBundle {
             severity: Severity::Error,
             code: "mutation/survived".into(),
             message: "A mutation survived.".into(),
-            scope: DiagnosticScope::ChallengerExecution {
-                challenger_fingerprint: challenge.challenger.fingerprint.clone(),
+            scope: DiagnosticScope::VerificationChallengeExecution {
+                verification_challenge_fingerprint: challenge
+                    .verification_challenge
+                    .fingerprint
+                    .clone(),
                 target_fingerprint: challenge.target.fingerprint.clone(),
             },
             artifacts: vec!["native-report".into()],
@@ -216,23 +219,23 @@ fn valid_bundle() -> RunBundle {
                 attempts: vec![CheckAttempt {
                     ordinal: 1,
                     activity: "fault-probe".into(),
-                    outcomes: [("works".into(), ObservationOutcome::Satisfied)]
+                    outcomes: [("works".into(), CheckResultOutcome::Satisfied)]
                         .into_iter()
                         .collect(),
                 }],
             }],
-            observations: vec![Observation {
-                case: "works".into(),
-                outcome: ObservationOutcome::Satisfied,
+            results: vec![CheckResult {
+                scenario: "works".into(),
+                outcome: CheckResultOutcome::Satisfied,
                 observed_at_ms: 3,
                 fingerprint: fp('0'),
                 artifacts: vec!["native-report".into()],
                 diagnostics: vec![],
             }],
         }],
-        challenger_executions: vec![ChallengerExecution {
+        verification_challenge_executions: vec![VerificationChallengeExecution {
             challenge: challenge.id.clone(),
-            challenger: challenge.challenger,
+            verification_challenge: challenge.verification_challenge,
             target: challenge.target,
             units: vec![ChallengeExecutionUnit {
                 id: "whole".into(),
@@ -260,8 +263,8 @@ fn current_launch_fingerprint(bundle: &RunBundle) -> String {
     launch_fingerprint(
         bundle.provenance.mode,
         bundle.planned_at_ms,
-        &bundle.subject,
-        &bundle.subject_fingerprint,
+        &bundle.verification_target,
+        &bundle.verification_target_fingerprint,
         &bundle.plan,
         &LaunchAdapterIdentity {
             id: bundle.provenance.adapter.id.clone(),
@@ -275,27 +278,30 @@ fn current_launch_fingerprint(bundle: &RunBundle) -> String {
 }
 
 fn refresh(bundle: &mut RunBundle) {
-    bundle.subject_fingerprint = subject_fingerprint(&bundle.subject);
-    bundle.plan.fingerprint = plan_fingerprint(&bundle.subject_fingerprint, &bundle.plan);
+    bundle.verification_target_fingerprint =
+        verification_target_fingerprint(&bundle.verification_target);
+    bundle.plan.fingerprint =
+        plan_fingerprint(&bundle.verification_target_fingerprint, &bundle.plan);
     bundle.actual_selection.plan_fingerprint = bundle.plan.fingerprint.clone();
     bundle.actual_selection.fingerprint = selection_fingerprint(&bundle.actual_selection);
     bundle.provenance.adapter.launch_fingerprint = current_launch_fingerprint(bundle);
     bundle.run_id = run_id(bundle);
     for index in 0..bundle.check_executions.len() {
-        for observation_index in 0..bundle.check_executions[index].observations.len() {
-            let fingerprint = observation_fingerprint(
+        for check_result_index in 0..bundle.check_executions[index].results.len() {
+            let fingerprint = check_result_fingerprint(
                 bundle,
                 &bundle.check_executions[index],
-                &bundle.check_executions[index].observations[observation_index],
+                &bundle.check_executions[index].results[check_result_index],
             );
-            bundle.check_executions[index].observations[observation_index].fingerprint =
-                fingerprint;
+            bundle.check_executions[index].results[check_result_index].fingerprint = fingerprint;
         }
     }
-    for index in 0..bundle.challenger_executions.len() {
+    for index in 0..bundle.verification_challenge_executions.len() {
         let fingerprint =
-            challenge_result_fingerprint(bundle, &bundle.challenger_executions[index]);
-        bundle.challenger_executions[index].result.fingerprint = fingerprint;
+            challenge_result_fingerprint(bundle, &bundle.verification_challenge_executions[index]);
+        bundle.verification_challenge_executions[index]
+            .result
+            .fingerprint = fingerprint;
     }
     bundle.bundle_fingerprint = bundle_fingerprint(bundle);
 }
@@ -326,7 +332,7 @@ fn terminal_without_selection(status: RunStatus) -> RunBundle {
     };
     bundle.activities.clear();
     bundle.check_executions.clear();
-    bundle.challenger_executions.clear();
+    bundle.verification_challenge_executions.clear();
     refresh(&mut bundle);
     bundle
 }
@@ -385,19 +391,19 @@ fn valid_dual_role_bundle_round_trips_and_verifies() {
 }
 
 #[test]
-fn subject_fingerprint_uses_the_literal_jcs_envelope() {
-    let subject = Subject::Artifact {
+fn verification_target_fingerprint_uses_the_literal_jcs_envelope() {
+    let verification_target = VerificationTarget::Artifact {
         artifacts: vec![ArtifactState {
             id: "api".into(),
             digest: fp('a'),
         }],
     };
     let literal = format!(
-        "{{\"format\":\"azimuth-subject-fingerprint\",\"subject\":{{\"artifacts\":[{{\"digest\":\"{}\",\"id\":\"api\"}}],\"kind\":\"artifact\"}},\"version\":1}}",
+        "{{\"format\":\"azimuth-verification-target-fingerprint\",\"verification_target\":{{\"artifacts\":[{{\"digest\":\"{}\",\"id\":\"api\"}}],\"kind\":\"artifact\"}},\"version\":2}}",
         fp('a')
     );
     assert_eq!(
-        subject_fingerprint(&subject),
+        verification_target_fingerprint(&verification_target),
         format!("sha256:{}", sha256(literal.as_bytes()))
     );
 }
@@ -406,7 +412,7 @@ fn subject_fingerprint_uses_the_literal_jcs_envelope() {
 fn published_challenge_identity_and_scope_vectors_stay_stable() {
     assert_eq!(
         challenge_selection_id(&fp('a'), ChallengeTargetKind::MethodQualification, &fp('b')),
-        "challenge/71518eefaf1f73fa6fe99b690d178f71dd7b760d803ca361997dd9b697ec78e1"
+        "challenge/5fb09eceaf657d64c39b90dbd28a3455045be1cd55f15bbebe5bcb0d0881d635"
     );
     let scope = ChallengeScope {
         anchors: vec![ChallengeScopeItem {
@@ -423,7 +429,7 @@ fn published_challenge_identity_and_scope_vectors_stay_stable() {
     };
     assert_eq!(
         challenge_scope_fingerprint(&scope),
-        "sha256:29cdeb0c856e2172f0693eba0962d038f6916f0ed0f3dde464c1b0052326a977"
+        "sha256:19eb92d4097f865323d98e4ad33b579cf538d81a94c63dfb93995aa6f1d03dc5"
     );
 }
 
@@ -443,7 +449,7 @@ fn typed_scope_construction_rejects_invalid_inputs_before_plan_identity() {
     assert_eq!(scope.fingerprint, challenge_scope_fingerprint(&scope));
 
     let mut earlier = item.clone();
-    earlier.kind = ChallengeScopeKind::Claim;
+    earlier.kind = ChallengeScopeKind::Requirement;
     assert!(construct_challenge_scope(vec![item.clone(), earlier], vec![input.clone()]).is_err());
 
     let mut conflict = item.clone();
@@ -463,9 +469,9 @@ fn typed_scope_construction_rejects_invalid_inputs_before_plan_identity() {
     let mut stale_scope = bundle.plan.challenges.clone();
     stale_scope[0].scope.fingerprint = fp('9');
     assert!(construct_plan(
-        &bundle.subject_fingerprint,
+        &bundle.verification_target_fingerprint,
         bundle.plan.model_fingerprint,
-        bundle.plan.required_context,
+        bundle.plan.required_execution_context,
         bundle.plan.checks,
         stale_scope,
     )
@@ -473,7 +479,7 @@ fn typed_scope_construction_rejects_invalid_inputs_before_plan_identity() {
 }
 
 #[test]
-fn every_subject_variant_is_structurally_round_trippable() {
+fn every_verification_target_variant_is_structurally_round_trippable() {
     let repository = RepositoryState {
         id: "root".into(),
         revision: "revision".into(),
@@ -483,29 +489,29 @@ fn every_subject_variant_is_structurally_round_trippable() {
         id: "api".into(),
         digest: fp('b'),
     };
-    let subjects = vec![
-        Subject::Workspace {
+    let verification_targets = vec![
+        VerificationTarget::Workspace {
             repositories: vec![repository.clone()],
         },
-        Subject::CiCandidate {
+        VerificationTarget::CiCandidate {
             repositories: vec![repository],
         },
-        Subject::Artifact {
+        VerificationTarget::Artifact {
             artifacts: vec![artifact.clone()],
         },
-        Subject::Deployment {
+        VerificationTarget::Deployment {
             environment: "production".into(),
             deployment: "orders/release".into(),
             deployment_fingerprint: fp('c'),
             artifacts: vec![artifact],
         },
-        Subject::Service {
+        VerificationTarget::Service {
             environment: "production".into(),
             service: "orders/api".into(),
             deployment: "orders/release".into(),
             deployment_fingerprint: fp('c'),
         },
-        Subject::MonitoringWindow {
+        VerificationTarget::MonitoringWindow {
             environment: "production".into(),
             services: vec![ServiceState {
                 service: "orders/api".into(),
@@ -516,12 +522,16 @@ fn every_subject_variant_is_structurally_round_trippable() {
             window_end_ms: 3,
         },
     ];
-    for subject in subjects {
+    for verification_target in verification_targets {
         let mut bundle = valid_bundle();
-        bundle.subject = subject;
+        bundle.verification_target = verification_target;
         refresh(&mut bundle);
-        let parsed = parse("subject.json", &to_json(&bundle).to_string_pretty()).unwrap();
-        assert_eq!(parsed.subject, bundle.subject);
+        let parsed = parse(
+            "verification-target.json",
+            &to_json(&bundle).to_string_pretty(),
+        )
+        .unwrap();
+        assert_eq!(parsed.verification_target, bundle.verification_target);
         assert!(verify(&parsed).is_empty());
     }
 }
@@ -562,8 +572,8 @@ fn strict_json_handles_surrogates_and_rejects_lexical_gaps() {
         Some("ci/😀")
     );
     for integral_spelling in [
-        source.replacen("\"version\": 1", "\"version\": 1.0", 1),
-        source.replacen("\"version\": 1", "\"version\": 1e0", 1),
+        source.replacen("\"version\": 2", "\"version\": 2.0", 1),
+        source.replacen("\"version\": 2", "\"version\": 2e0", 1),
         source.replacen(
             "\"planned_at_ms\": 1",
             "\"planned_at_ms\": 9007199254740991.0",
@@ -581,7 +591,7 @@ fn strict_json_handles_surrogates_and_rejects_lexical_gaps() {
         source.replace("ci/principal", "ci/\\ud83d"),
         source.replace("ci/principal", "ci/\\ude00"),
         source.replace("ci/principal", "ci/\u{1}"),
-        source.replacen("\"version\": 1", "\"version\": 01", 1),
+        source.replacen("\"version\": 2", "\"version\": 02", 1),
         source.replacen("\"planned_at_ms\": 1", "\"planned_at_ms\": 1.5", 1),
         source.replacen(
             "\"planned_at_ms\": 1",
@@ -593,7 +603,7 @@ fn strict_json_handles_surrogates_and_rejects_lexical_gaps() {
             "\"planned_at_ms\": 90071992547409905e-1",
             1,
         ),
-        source.replacen("\"version\": 1", "\"version\": -1", 1),
+        source.replacen("\"version\": 2", "\"version\": -1", 1),
         source.replacen(
             "\"planned_at_ms\": 1",
             "\"planned_at_ms\": 9007199254740992",
@@ -608,29 +618,34 @@ fn strict_json_handles_surrogates_and_rejects_lexical_gaps() {
 }
 
 #[test]
-fn claim_judgment_targets_and_semantic_implementation_identities_are_strict() {
-    let mut claim_target = valid_bundle();
+fn requirement_judgment_targets_and_semantic_implementation_identities_are_strict() {
+    let mut requirement_target = valid_bundle();
     for challenge in [
-        &mut claim_target.plan.challenges[0],
-        &mut claim_target.actual_selection.challenges[0],
+        &mut requirement_target.plan.challenges[0],
+        &mut requirement_target.actual_selection.challenges[0],
     ] {
-        challenge.target.kind = ChallengeTargetKind::ClaimJudgment;
+        challenge.target.kind = ChallengeTargetKind::RequirementJudgment;
         challenge.target.id = "accepted-write".into();
         challenge.id = challenge_selection_id(
-            &challenge.challenger.fingerprint,
+            &challenge.verification_challenge.fingerprint,
             challenge.target.kind,
             &challenge.target.fingerprint,
         );
     }
-    claim_target.provenance.adapter.routes[1].selection.id =
-        claim_target.plan.challenges[0].id.clone();
-    claim_target.challenger_executions[0].challenge = claim_target.plan.challenges[0].id.clone();
-    claim_target.challenger_executions[0].target.kind = ChallengeTargetKind::ClaimJudgment;
-    claim_target.challenger_executions[0].target.id = "accepted-write".into();
-    refresh(&mut claim_target);
+    requirement_target.provenance.adapter.routes[1].selection.id =
+        requirement_target.plan.challenges[0].id.clone();
+    requirement_target.verification_challenge_executions[0].challenge =
+        requirement_target.plan.challenges[0].id.clone();
+    requirement_target.verification_challenge_executions[0]
+        .target
+        .kind = ChallengeTargetKind::RequirementJudgment;
+    requirement_target.verification_challenge_executions[0]
+        .target
+        .id = "accepted-write".into();
+    refresh(&mut requirement_target);
     assert!(parse(
-        "claim-target.json",
-        &to_json(&claim_target).to_string_pretty()
+        "requirement-target.json",
+        &to_json(&requirement_target).to_string_pretty()
     )
     .is_ok());
 
@@ -693,7 +708,7 @@ fn challenge_identity_scope_order_conflicts_and_fingerprints_fail_closed() {
         .scope
         .anchors
         .push(ChallengeScopeItem {
-            kind: ChallengeScopeKind::Claim,
+            kind: ChallengeScopeKind::Requirement,
             id: "accepted-write".into(),
             fingerprint: fp('8'),
         });
@@ -781,44 +796,45 @@ fn optional_provenance_attributes_preserve_presence_and_empty_map_values() {
 #[test]
 fn result_fingerprints_bind_context_check_and_plan_local_challenge_id() {
     let bundle = valid_bundle();
-    let observation = observation_fingerprint(
+    let check_result = check_result_fingerprint(
         &bundle,
         &bundle.check_executions[0],
-        &bundle.check_executions[0].observations[0],
+        &bundle.check_executions[0].results[0],
     );
     let mut changed_context = bundle.clone();
     changed_context
         .actual_selection
-        .context
+        .execution_context
         .insert("platform".into(), "other".into());
     assert_ne!(
-        observation,
-        observation_fingerprint(
+        check_result,
+        check_result_fingerprint(
             &changed_context,
             &changed_context.check_executions[0],
-            &changed_context.check_executions[0].observations[0],
+            &changed_context.check_executions[0].results[0],
         )
     );
 
     let mut changed_check = bundle.clone();
     changed_check.check_executions[0].check.fingerprint = fp('8');
     assert_ne!(
-        observation,
-        observation_fingerprint(
+        check_result,
+        check_result_fingerprint(
             &changed_check,
             &changed_check.check_executions[0],
-            &changed_check.check_executions[0].observations[0],
+            &changed_check.check_executions[0].results[0],
         )
     );
 
-    let result = challenge_result_fingerprint(&bundle, &bundle.challenger_executions[0]);
+    let result =
+        challenge_result_fingerprint(&bundle, &bundle.verification_challenge_executions[0]);
     let mut changed_challenge = bundle.clone();
-    changed_challenge.challenger_executions[0].challenge = "other-address".into();
+    changed_challenge.verification_challenge_executions[0].challenge = "other-address".into();
     assert_ne!(
         result,
         challenge_result_fingerprint(
             &changed_challenge,
-            &changed_challenge.challenger_executions[0]
+            &changed_challenge.verification_challenge_executions[0]
         )
     );
 }
@@ -828,10 +844,10 @@ fn run_identity_binds_the_frozen_launch_route() {
     let bundle = valid_bundle();
     let identity = run_id(&bundle);
     let literal = format!(
-        "{{\"format\":\"azimuth-run-identity\",\"launch_fingerprint\":\"{}\",\"plan_fingerprint\":\"{}\",\"source_execution\":\"native-17\",\"source_system\":\"local-runner\",\"subject_fingerprint\":\"{}\",\"version\":1}}",
+        "{{\"format\":\"azimuth-run-identity\",\"launch_fingerprint\":\"{}\",\"plan_fingerprint\":\"{}\",\"source_execution\":\"native-17\",\"source_system\":\"local-runner\",\"verification_target_fingerprint\":\"{}\",\"version\":2}}",
         bundle.provenance.adapter.launch_fingerprint,
         bundle.plan.fingerprint,
-        bundle.subject_fingerprint,
+        bundle.verification_target_fingerprint,
     );
     assert_eq!(identity, format!("sha256:{}", sha256(literal.as_bytes())));
     let mut different_launch = bundle.clone();
@@ -869,7 +885,7 @@ fn published_launch_fingerprint_vector_stays_stable() {
     ],
     "fingerprint": "sha256:b75606956b9c1857f8b401d9bad207253b90f6948efddb5532a769b9f488fbfb",
     "model_fingerprint": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
-    "required_context": {}
+    "required_execution_context": {}
   },
   "planned_at_ms": 1787300000000,
   "routes": [
@@ -882,7 +898,7 @@ fn published_launch_fingerprint_vector_stays_stable() {
       "selection": {"id": "check", "kind": "check"}
     }
   ],
-  "subject": {
+  "verification_target": {
     "artifacts": [
       {
         "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
@@ -891,14 +907,14 @@ fn published_launch_fingerprint_vector_stays_stable() {
     ],
     "kind": "artifact"
   },
-  "subject_fingerprint": "sha256:22478698e6731ce5984658e366386e466fe173216bc7cb721168e1638d2dee02",
-  "version": 1
+  "verification_target_fingerprint": "sha256:339156da3a55df33136e71859f1a3482bb39ee9aa45c11a30780334ee9e63759",
+  "version": 2
 }
 "#;
     let launch = strict_json("launch-vector.json", source).unwrap();
     assert_eq!(
         canonical_fingerprint(&launch).unwrap(),
-        "sha256:d462a72c83f1e17096c03de4b5872bb61dabb26f6c73098def320c3cde213955"
+        "sha256:1fed0abd20f4df6e7ba522b0cab896d241bf7d625f23a1a8eb077027d6cb89b7"
     );
 }
 
@@ -1252,24 +1268,24 @@ fn published_run_id_vector_stays_stable() {
     let mut bundle = valid_bundle();
     bundle.provenance.source.system = "synthetic".into();
     bundle.provenance.source.execution = "run-1".into();
-    bundle.subject_fingerprint =
-        "sha256:22478698e6731ce5984658e366386e466fe173216bc7cb721168e1638d2dee02".into();
+    bundle.verification_target_fingerprint =
+        "sha256:339156da3a55df33136e71859f1a3482bb39ee9aa45c11a30780334ee9e63759".into();
     bundle.plan.fingerprint =
         "sha256:b75606956b9c1857f8b401d9bad207253b90f6948efddb5532a769b9f488fbfb".into();
     bundle.provenance.adapter.launch_fingerprint =
         "sha256:980dc9e544f41414e3a2735e84a6d9733aee85b2961899bb538f1f34c4347237".into();
     assert_eq!(
         run_id(&bundle),
-        "sha256:45acaf027cc7abee8a7a8ba8c0ff3ac80c6af61a16dbc904f6406e0fe11642dc"
+        "sha256:2bf29414172cc5dffce83955f95be42a9d56fd3ed098a25f6c7cc070547395f5"
     );
 }
 
 #[test]
 fn lexical_fingerprints_parse_but_mismatches_are_semantic_findings() {
     let mut bundle = valid_bundle();
-    bundle.subject_fingerprint = fp('7');
+    bundle.verification_target_fingerprint = fp('7');
     let parsed = parse("mismatch.json", &to_json(&bundle).to_string_pretty()).unwrap();
-    assert!(has(&verify(&parsed), "run/subject-fingerprint"));
+    assert!(has(&verify(&parsed), "run/verification-target-fingerprint"));
 }
 
 #[test]
@@ -1279,7 +1295,7 @@ fn actual_checks_repeat_implementations_and_subset_only_units() {
     refresh(&mut bundle);
     let findings = verify(&bundle);
     assert!(has(&findings, "run/check-implementation-substitution"));
-    assert!(has(&findings, "run/observation-reduction"));
+    assert!(has(&findings, "run/check-result-reduction"));
 
     let mut extra = valid_bundle();
     extra.actual_selection.checks[0].units.push(WorkUnit {
@@ -1310,7 +1326,7 @@ fn retry_reduction_recovers_technical_inconclusion_but_preserves_violation() {
         CheckAttempt {
             ordinal: 1,
             activity: "earlier".into(),
-            outcomes: [("works".into(), ObservationOutcome::Inconclusive)]
+            outcomes: [("works".into(), CheckResultOutcome::Inconclusive)]
                 .into_iter()
                 .collect(),
         },
@@ -1321,18 +1337,18 @@ fn retry_reduction_recovers_technical_inconclusion_but_preserves_violation() {
 
     recovered.check_executions[0].units[0].attempts[0]
         .outcomes
-        .insert("works".into(), ObservationOutcome::Violated);
+        .insert("works".into(), CheckResultOutcome::Violated);
     refresh(&mut recovered);
-    assert!(has(&verify(&recovered), "run/observation-reduction"));
+    assert!(has(&verify(&recovered), "run/check-result-reduction"));
 }
 
 #[test]
-fn violated_observations_are_valid_terminal_facts() {
+fn violated_check_results_are_valid_terminal_facts() {
     let mut bundle = valid_bundle();
     bundle.check_executions[0].units[0].attempts[0]
         .outcomes
-        .insert("works".into(), ObservationOutcome::Violated);
-    bundle.check_executions[0].observations[0].outcome = ObservationOutcome::Violated;
+        .insert("works".into(), CheckResultOutcome::Violated);
+    bundle.check_executions[0].results[0].outcome = CheckResultOutcome::Violated;
     refresh(&mut bundle);
     assert!(verify(&bundle).is_empty());
 }
@@ -1345,7 +1361,7 @@ fn attempts_cannot_repeat_activity_and_noncompleted_activity_is_inconclusive() {
         .push(CheckAttempt {
             ordinal: 2,
             activity: "fault-probe".into(),
-            outcomes: [("works".into(), ObservationOutcome::Satisfied)]
+            outcomes: [("works".into(), CheckResultOutcome::Satisfied)]
                 .into_iter()
                 .collect(),
         });
@@ -1361,8 +1377,9 @@ fn cardinality_references_and_objections_fail_closed() {
     let mut bundle = valid_bundle();
     bundle.check_executions.clear();
     bundle.activities[0].artifacts = vec!["missing".into()];
-    bundle.challenger_executions[0].units[0].attempts[0].outcome = ChallengeOutcome::Clean;
-    bundle.challenger_executions[0].result.outcome = ChallengeOutcome::Clean;
+    bundle.verification_challenge_executions[0].units[0].attempts[0].outcome =
+        ChallengeOutcome::Clean;
+    bundle.verification_challenge_executions[0].result.outcome = ChallengeOutcome::Clean;
     refresh(&mut bundle);
     let findings = verify(&bundle);
     assert!(has(&findings, "run/check-execution-cardinality"));
@@ -1454,9 +1471,13 @@ fn selected_partial_challenge_work_reduces_clean_to_inconclusive() {
         id: "whole-second".into(),
         parameters: BTreeMap::new(),
     });
-    bundle.challenger_executions[0].units[0].attempts[0].outcome = ChallengeOutcome::Clean;
-    bundle.challenger_executions[0].result.outcome = ChallengeOutcome::Inconclusive;
-    bundle.challenger_executions[0].result.objections.clear();
+    bundle.verification_challenge_executions[0].units[0].attempts[0].outcome =
+        ChallengeOutcome::Clean;
+    bundle.verification_challenge_executions[0].result.outcome = ChallengeOutcome::Inconclusive;
+    bundle.verification_challenge_executions[0]
+        .result
+        .objections
+        .clear();
     refresh(&mut bundle);
     assert!(verify(&bundle).is_empty());
 }
@@ -1494,7 +1515,7 @@ fn timestamp_relations_and_monitoring_closure_are_findings() {
     assert!(has(&findings, "run/provenance-time"));
 
     let mut monitoring = valid_bundle();
-    monitoring.subject = Subject::MonitoringWindow {
+    monitoring.verification_target = VerificationTarget::MonitoringWindow {
         environment: "production".into(),
         services: vec![ServiceState {
             service: "orders/api".into(),
@@ -1541,16 +1562,18 @@ fn every_in_memory_number_is_guarded_before_lossy_serialization() {
     bundle.check_executions[0].units[0].attempts[0].ordinal = unsafe_value;
     variants.push(bundle);
     let mut bundle = valid_bundle();
-    bundle.check_executions[0].observations[0].observed_at_ms = unsafe_value;
+    bundle.check_executions[0].results[0].observed_at_ms = unsafe_value;
     variants.push(bundle);
     let mut bundle = valid_bundle();
-    bundle.challenger_executions[0].units[0].attempts[0].ordinal = unsafe_value;
+    bundle.verification_challenge_executions[0].units[0].attempts[0].ordinal = unsafe_value;
     variants.push(bundle);
     let mut bundle = valid_bundle();
-    bundle.challenger_executions[0].result.observed_at_ms = unsafe_value;
+    bundle.verification_challenge_executions[0]
+        .result
+        .observed_at_ms = unsafe_value;
     variants.push(bundle);
     let mut bundle = valid_bundle();
-    bundle.subject = Subject::MonitoringWindow {
+    bundle.verification_target = VerificationTarget::MonitoringWindow {
         environment: "production".into(),
         services: vec![ServiceState {
             service: "orders/api".into(),
@@ -1575,7 +1598,7 @@ fn standalone_provenance_verification_never_canonicalizes_unsafe_times() {
     planned.planned_at_ms = unsafe_value;
 
     let mut monitoring = valid_bundle();
-    monitoring.subject = Subject::MonitoringWindow {
+    monitoring.verification_target = VerificationTarget::MonitoringWindow {
         environment: "production".into(),
         services: vec![ServiceState {
             service: "orders/api".into(),
@@ -1588,7 +1611,7 @@ fn standalone_provenance_verification_never_canonicalizes_unsafe_times() {
 
     for (expected_path, bundle) in [
         ("planned_at_ms", planned),
-        ("subject.window_start_ms", monitoring),
+        ("verification_target.window_start_ms", monitoring),
     ] {
         let outcome = std::panic::catch_unwind(|| verify_provenance(&bundle));
         let findings = outcome.expect("unsafe typed Run must return a Finding, not panic");
@@ -1692,21 +1715,22 @@ fn sparse_revision_checks_do_not_enumerate_the_revision_range() {
 #[test]
 fn public_component_helpers_construct_and_parse_strict_run_bundle_values() {
     let bundle = valid_bundle();
-    assert!(validate_subject_component(&bundle.subject).is_empty());
+    assert!(validate_verification_target_component(&bundle.verification_target).is_empty());
     assert_eq!(
-        subject_from_json(&subject_to_json(&bundle.subject)).unwrap(),
-        bundle.subject
+        verification_target_from_json(&verification_target_to_json(&bundle.verification_target))
+            .unwrap(),
+        bundle.verification_target
     );
 
     let plan = construct_plan(
-        &bundle.subject_fingerprint,
+        &bundle.verification_target_fingerprint,
         bundle.plan.model_fingerprint.clone(),
-        bundle.plan.required_context.clone(),
+        bundle.plan.required_execution_context.clone(),
         bundle.plan.checks.clone(),
         bundle.plan.challenges.clone(),
     )
     .unwrap();
-    assert!(validate_plan_component(&bundle.subject_fingerprint, &plan).is_empty());
+    assert!(validate_plan_component(&bundle.verification_target_fingerprint, &plan).is_empty());
     assert_eq!(plan_from_json(&plan_to_json(&plan)).unwrap(), plan);
     assert_eq!(
         canonical_fingerprint(&Json::obj(vec![("value", Json::Num(1.0))])).unwrap(),
@@ -1721,9 +1745,9 @@ fn public_component_helpers_construct_and_parse_strict_run_bundle_values() {
     earlier.id = "aaa/check".into();
     unsorted.push(earlier);
     assert!(construct_plan(
-        &bundle.subject_fingerprint,
+        &bundle.verification_target_fingerprint,
         bundle.plan.model_fingerprint,
-        bundle.plan.required_context,
+        bundle.plan.required_execution_context,
         unsorted,
         bundle.plan.challenges,
     )
@@ -1948,7 +1972,7 @@ fn coordinated_protocol_fixture() -> RunBundle {
     let mut check = original.clone();
     check.plan.challenges.clear();
     check.actual_selection.challenges.clear();
-    check.challenger_executions.clear();
+    check.verification_challenge_executions.clear();
     check.diagnostics.clear();
     check.activities[0].diagnostics.clear();
     check
@@ -1982,15 +2006,17 @@ fn coordinated_challenge_objections_and_local_artifact_references_are_retained()
     let bundle = coordinated_protocol_fixture();
     assert!(verify(&bundle).is_empty(), "{:?}", verify(&bundle));
     assert_eq!(
-        bundle.challenger_executions[0].result.objections,
+        bundle.verification_challenge_executions[0]
+            .result
+            .objections,
         vec!["beta/mutation/survivor"]
     );
     assert_eq!(
-        bundle.challenger_executions[0].result.artifacts,
+        bundle.verification_challenge_executions[0].result.artifacts,
         vec!["beta/native-report"]
     );
     assert_eq!(
-        bundle.check_executions[0].observations[0].artifacts,
+        bundle.check_executions[0].results[0].artifacts,
         vec!["alpha/native-report"]
     );
 }

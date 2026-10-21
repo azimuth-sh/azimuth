@@ -4,6 +4,7 @@ pub mod account_delta;
 pub mod account_design;
 pub mod account_model;
 pub mod account_support;
+pub mod account_syntax_migration;
 pub mod account_verification;
 pub mod adapter;
 pub mod adapter_host;
@@ -408,7 +409,7 @@ fn load_design_facets(
     for path in paths {
         let display = path.display().to_string();
         match fs::read_to_string(&path) {
-            Ok(source) if uses_compact_facet(&source, "## Claim design: ") => {
+            Ok(source) if uses_compact_facet(&source, "## Requirement design: ") => {
                 match account_design::parse_account_design(&display, &source) {
                     Ok(item) => accounts.push(item),
                     Err(mut diagnostics) => errors.append(&mut diagnostics),
@@ -450,7 +451,7 @@ fn load_verification_facets(
     for path in paths {
         let display = path.display().to_string();
         match fs::read_to_string(&path) {
-            Ok(source) if uses_compact_facet(&source, "## Claim verification: ") => {
+            Ok(source) if uses_compact_facet(&source, "## Requirement verification: ") => {
                 match account_verification::parse_account_verification(&display, &source) {
                     Ok(item) => accounts.push(item),
                     Err(mut diagnostics) => errors.append(&mut diagnostics),
@@ -526,9 +527,9 @@ fn collect_named(dir: &Path, name: &str, out: &mut Vec<PathBuf>) -> std::io::Res
 }
 
 fn needs_standards(model: &Model) -> bool {
-    model.cases().any(|claim| {
+    model.scenarios().any(|requirement| {
         matches!(
-            claim.claim.criticality,
+            requirement.requirement.criticality,
             Some(Criticality::Standard | Criticality::Critical)
         )
     })
@@ -564,7 +565,7 @@ fn merged_manifest_issues(model: &Model) -> Vec<Diag> {
         let Some(source) = realization.source.as_ref() else {
             continue;
         };
-        let key = (realization.claim.clone(), source.key());
+        let key = (realization.requirement.clone(), source.key());
         if let Some((previous_file, previous_fingerprint)) = realizations.get(&key) {
             issues.push(Diag::file(
                 &realization.file,
@@ -719,14 +720,14 @@ fn apply_selection(model: &mut Model, only: &[String]) {
     if only.is_empty() {
         return;
     }
-    let mut selected_claims = model
-        .cases()
-        .filter(|claim| only.iter().any(|pattern| selects(pattern, &claim.spec.id)))
-        .map(|claim| claim.id())
+    let mut selected_requirements = model
+        .scenarios()
+        .filter(|requirement| only.iter().any(|pattern| selects(pattern, &requirement.spec.id)))
+        .map(|requirement| requirement.id())
         .collect::<BTreeSet<_>>();
     let initial_bindings = model
         .evidence_bindings()
-        .filter(|binding| selected_claims.contains(&binding.case))
+        .filter(|binding| selected_requirements.contains(&binding.scenario))
         .map(|binding| binding.id.clone())
         .collect::<BTreeSet<_>>();
     let initial_checks = model
@@ -740,7 +741,7 @@ fn apply_selection(model: &mut Model, only: &[String]) {
             crate::validation::challenge_plan_relevant_to_selection(
                 model,
                 plan,
-                &selected_claims,
+                &selected_requirements,
                 &initial_bindings,
                 &initial_checks,
             )
@@ -757,7 +758,7 @@ fn apply_selection(model: &mut Model, only: &[String]) {
     let mut anchored_mechanisms = BTreeSet::new();
     for plan in &selected_plans {
         for selector in &plan.selectors {
-            selected_claims.extend(selector_claims(model, selector));
+            selected_requirements.extend(selector_requirements(model, selector));
             match selector {
                 Selector::MethodQualificationFromCheck(id)
                 | Selector::ApplicabilityDecisionFromCheck(id) => {
@@ -765,35 +766,35 @@ fn apply_selection(model: &mut Model, only: &[String]) {
                 }
                 Selector::MethodQualificationFromRealization(identity)
                 | Selector::ApplicabilityDecisionFromRealization(identity)
-                | Selector::ClaimJudgmentFromRealization(identity) => {
+                | Selector::RequirementJudgmentFromRealization(identity) => {
                     anchored_realizations.insert(identity.clone());
                 }
                 Selector::MethodQualificationFromMechanism(identity)
                 | Selector::ApplicabilityDecisionFromMechanism(identity)
-                | Selector::ClaimJudgmentFromMechanism(identity) => {
+                | Selector::RequirementJudgmentFromMechanism(identity) => {
                     anchored_mechanisms.insert(identity.clone());
                 }
                 Selector::MethodQualificationFromMethodQualification(_)
                 | Selector::ApplicabilityDecisionFromBinding(_)
-                | Selector::ApplicabilityDecisionFromCase(_)
-                | Selector::ClaimJudgmentFromClaim(_) => {}
+                | Selector::ApplicabilityDecisionFromScenario(_)
+                | Selector::RequirementJudgmentFromRequirement(_) => {}
             }
         }
     }
-    let selected_parent_claims = selected_claims
+    let selected_parent_requirements = selected_requirements
         .iter()
-        .filter_map(|case| model.find_case(case).map(|view| view.claim.id.clone()))
+        .filter_map(|scenario| model.find_scenario(scenario).map(|view| view.requirement.id.clone()))
         .collect::<BTreeSet<_>>();
     // Retaining the parent composition prevents partial selection from inventing a narrower assurance account.
-    selected_claims.extend(
+    selected_requirements.extend(
         model
-            .cases()
-            .filter(|case| selected_parent_claims.contains(&case.claim.id.clone()))
-            .map(|case| case.id()),
+            .scenarios()
+            .filter(|scenario| selected_parent_requirements.contains(&scenario.requirement.id.clone()))
+            .map(|scenario| scenario.id()),
     );
     let selected_bindings = model
         .evidence_bindings()
-        .filter(|binding| selected_claims.contains(&binding.case))
+        .filter(|binding| selected_requirements.contains(&binding.scenario))
         .map(|binding| binding.id.clone())
         .collect::<BTreeSet<_>>();
     let mut selected_checks = model
@@ -803,31 +804,31 @@ fn apply_selection(model: &mut Model, only: &[String]) {
         .collect::<BTreeSet<_>>();
     selected_checks.extend(directly_selected_checks);
     let selected_specs = model
-        .cases()
-        .filter(|claim| selected_claims.contains(&claim.id()))
-        .map(|claim| claim.spec.id.clone())
+        .scenarios()
+        .filter(|requirement| selected_requirements.contains(&requirement.id()))
+        .map(|requirement| requirement.spec.id.clone())
         .collect::<BTreeSet<_>>();
     let selected_surfaces = model
-        .cases()
-        .filter(|claim| selected_claims.contains(&claim.id()))
-        .filter_map(|claim| claim.claim.over.clone())
+        .scenarios()
+        .filter(|requirement| selected_requirements.contains(&requirement.id()))
+        .filter_map(|requirement| requirement.requirement.over.clone())
         .collect::<BTreeSet<_>>();
     let mut retained_mechanisms = anchored_mechanisms;
-    for claim in model
-        .cases()
-        .filter(|claim| selected_claims.contains(&claim.id()))
+    for requirement in model
+        .scenarios()
+        .filter(|requirement| selected_requirements.contains(&requirement.id()))
     {
-        if let Some(design) = model.design_for(&claim.spec.id) {
+        if let Some(design) = model.design_for(&requirement.spec.id) {
             for entry in &design.entries {
-                let attached = entry.target.id() == claim.claim.id;
+                let attached = entry.target.id() == requirement.requirement.id;
                 if attached {
                     retained_mechanisms.extend(
                         entry
                             .mechanisms
                             .iter()
                             .filter(|mechanism| {
-                                mechanism.cases.is_empty()
-                                    || mechanism.cases.contains(&claim.case.id)
+                                mechanism.scenarios.is_empty()
+                                    || mechanism.scenarios.contains(&requirement.scenario.id)
                             })
                             .map(|mechanism| mechanism.id.clone()),
                     );
@@ -849,16 +850,16 @@ fn apply_selection(model: &mut Model, only: &[String]) {
             }
         }
     }
-    let selected_challengers = model
+    let selected_verification_challenges = model
         .challenge_plans()
         .filter(|plan| selected_plan_ids.contains(&plan.id))
-        .map(|plan| plan.challenger.clone())
+        .map(|plan| plan.verification_challenge.clone())
         .collect::<BTreeSet<_>>();
     let retained_sources = model
         .realizes
         .iter()
         .filter(|site| {
-            selected_parent_claims.contains(&site.claim.clone())
+            selected_parent_requirements.contains(&site.requirement.clone())
                 || selected_surfaces.contains(&site.spec)
                 || site
                     .source
@@ -906,7 +907,7 @@ fn apply_selection(model: &mut Model, only: &[String]) {
     let obligation_areas = model
         .realization_obligations()
         .iter()
-        .filter(|obligation| selected_parent_claims.contains(&obligation.claim.clone()))
+        .filter(|obligation| selected_parent_requirements.contains(&obligation.requirement.clone()))
         .flat_map(|obligation| obligation.areas.iter().cloned())
         .collect::<BTreeSet<_>>();
     let surface_mounts = model
@@ -929,13 +930,13 @@ fn apply_selection(model: &mut Model, only: &[String]) {
         if !selected_specs.contains(&spec.id) {
             return false;
         }
-        spec.claims.retain_mut(|claim| {
-            claim
-                .cases
-                .retain(|case| selected_claims.contains(&case.id.clone()));
-            !claim.cases.is_empty()
+        spec.requirements.retain_mut(|requirement| {
+            requirement
+                .scenarios
+                .retain(|scenario| selected_requirements.contains(&scenario.id.clone()));
+            !requirement.scenarios.is_empty()
         });
-        !spec.claims.is_empty()
+        !spec.requirements.is_empty()
     });
     model
         .account_designs
@@ -956,7 +957,7 @@ fn apply_selection(model: &mut Model, only: &[String]) {
         !design.entries.is_empty()
     });
     model.realizes.retain(|site| {
-        selected_parent_claims.contains(&site.claim.clone())
+        selected_parent_requirements.contains(&site.requirement.clone())
             || selected_surfaces.contains(&site.spec)
             || site
                 .source
@@ -969,7 +970,7 @@ fn apply_selection(model: &mut Model, only: &[String]) {
     model
         .workspace
         .realization_obligations
-        .retain(|obligation| selected_parent_claims.contains(&obligation.claim.clone()));
+        .retain(|obligation| selected_parent_requirements.contains(&obligation.requirement.clone()));
     model
         .check_implementations
         .retain(|implementation| selected_checks.contains(&implementation.check));
@@ -1009,10 +1010,10 @@ fn apply_selection(model: &mut Model, only: &[String]) {
             .retain(|qualification| selected_method_qualifications.contains(&qualification.id));
         file.applicability_decisions
             .retain(|decision| selected_bindings.contains(&decision.id));
-        file.claim_judgments
-            .retain(|judgment| selected_parent_claims.contains(&judgment.id));
-        file.challengers
-            .retain(|challenger| selected_challengers.contains(&challenger.id));
+        file.requirement_judgments
+            .retain(|judgment| selected_parent_requirements.contains(&judgment.id));
+        file.verification_challenges
+            .retain(|verification_challenge| selected_verification_challenges.contains(&verification_challenge.id));
         file.challenge_plans
             .retain(|plan| selected_plan_ids.contains(&plan.id));
     }
@@ -1021,33 +1022,33 @@ fn apply_selection(model: &mut Model, only: &[String]) {
             || !file.bindings.is_empty()
             || !file.method_qualifications.is_empty()
             || !file.applicability_decisions.is_empty()
-            || !file.claim_judgments.is_empty()
-            || !file.challengers.is_empty()
+            || !file.requirement_judgments.is_empty()
+            || !file.verification_challenges.is_empty()
             || !file.challenge_plans.is_empty()
     });
 }
 
-fn selector_claims(model: &Model, selector: &Selector) -> BTreeSet<String> {
+fn selector_requirements(model: &Model, selector: &Selector) -> BTreeSet<String> {
     match selector {
         Selector::ApplicabilityDecisionFromBinding(id) => model
             .evidence_bindings()
             .filter(|binding| binding.id == *id)
-            .map(|binding| binding.case.clone())
+            .map(|binding| binding.scenario.clone())
             .collect(),
         Selector::MethodQualificationFromMethodQualification(id) => model
             .evidence_bindings()
             .filter(|binding| binding.method_qualification == *id)
-            .map(|binding| binding.case.clone())
+            .map(|binding| binding.scenario.clone())
             .collect(),
         Selector::MethodQualificationFromCheck(id)
         | Selector::ApplicabilityDecisionFromCheck(id) => model
             .evidence_bindings()
             .filter(|binding| binding.check == *id)
-            .map(|binding| binding.case.clone())
+            .map(|binding| binding.scenario.clone())
             .collect(),
         Selector::MethodQualificationFromRealization(identity)
         | Selector::ApplicabilityDecisionFromRealization(identity)
-        | Selector::ClaimJudgmentFromRealization(identity) => model
+        | Selector::RequirementJudgmentFromRealization(identity) => model
             .realizes
             .iter()
             .filter(|site| {
@@ -1055,41 +1056,41 @@ fn selector_claims(model: &Model, selector: &Selector) -> BTreeSet<String> {
                     .as_ref()
                     .is_some_and(|source| source.key() == *identity)
             })
-            .filter(|site| model.has_claim(&site.claim))
+            .filter(|site| model.has_requirement(&site.requirement))
             .flat_map(|site| {
                 model
-                    .find_claim(&site.claim)
+                    .find_requirement(&site.requirement)
                     .into_iter()
-                    .flat_map(move |claim| {
-                        claim.claim.cases.iter().map(move |case| case.id.clone())
+                    .flat_map(move |requirement| {
+                        requirement.requirement.scenarios.iter().map(move |scenario| scenario.id.clone())
                     })
             })
             .collect(),
         Selector::MethodQualificationFromMechanism(identity)
         | Selector::ApplicabilityDecisionFromMechanism(identity)
-        | Selector::ClaimJudgmentFromMechanism(identity) => {
-            selected_mechanism_claims(model, identity)
+        | Selector::RequirementJudgmentFromMechanism(identity) => {
+            selected_mechanism_requirements(model, identity)
         }
-        Selector::ApplicabilityDecisionFromCase(id) => model
-            .find_case(id)
-            .map(|case| BTreeSet::from([case.id()]))
+        Selector::ApplicabilityDecisionFromScenario(id) => model
+            .find_scenario(id)
+            .map(|scenario| BTreeSet::from([scenario.id()]))
             .unwrap_or_default(),
-        Selector::ClaimJudgmentFromClaim(id) => model
-            .claims()
-            .find(|claim| claim.id() == *id)
-            .map(|claim| {
-                claim
-                    .claim
-                    .cases
+        Selector::RequirementJudgmentFromRequirement(id) => model
+            .requirements()
+            .find(|requirement| requirement.id() == *id)
+            .map(|requirement| {
+                requirement
+                    .requirement
+                    .scenarios
                     .iter()
-                    .map(|case| case.id.clone())
+                    .map(|scenario| scenario.id.clone())
                     .collect()
             })
             .unwrap_or_default(),
     }
 }
 
-fn selected_mechanism_claims(model: &Model, identity: &str) -> BTreeSet<String> {
+fn selected_mechanism_requirements(model: &Model, identity: &str) -> BTreeSet<String> {
     let mechanism_id = identity;
     let Some(design) = model.designs.iter().find(|design| {
         design.entries.iter().any(|entry| {
@@ -1102,20 +1103,20 @@ fn selected_mechanism_claims(model: &Model, identity: &str) -> BTreeSet<String> 
         return BTreeSet::new();
     };
     model
-        .cases()
-        .filter(|claim| {
+        .scenarios()
+        .filter(|requirement| {
             design
                 .entries
                 .iter()
-                .filter(|entry| entry.target.id() == claim.claim.id)
+                .filter(|entry| entry.target.id() == requirement.requirement.id)
                 .any(|entry| {
                     entry.mechanisms.iter().any(|item| {
                         item.id == mechanism_id
-                            && (item.cases.is_empty() || item.cases.contains(&claim.case.id))
+                            && (item.scenarios.is_empty() || item.scenarios.contains(&requirement.scenario.id))
                     })
                 })
         })
-        .map(|claim| claim.id())
+        .map(|requirement| requirement.id())
         .collect()
 }
 
@@ -1466,7 +1467,7 @@ fn warn_if_not_sibling(
 
 #[cfg(test)]
 mod tests {
-    use super::{needs_standards, selected_mechanism_claims};
+    use super::{needs_standards, selected_mechanism_requirements};
     use crate::design::{Design, DesignEntry, Enforcement, Mechanism, Target};
     use crate::model::Model;
 
@@ -1474,7 +1475,7 @@ mod tests {
         Mechanism {
             id: id.into(),
             kind: Enforcement::Guard,
-            cases: Vec::new(),
+            scenarios: Vec::new(),
             binding: Some(format!("{id}-artifact")),
             expected_unique: None,
             expected_columns: Vec::new(),
@@ -1487,8 +1488,8 @@ mod tests {
     fn mechanism_selection_closure_reads_every_matching_design_entry() {
         let spec = crate::spec::parse_spec(
             "spec.md",
-            "# Spec: example\n\n## Claim: works\nCriticality: standard\n\nThe example \
-             SHALL work.\n\n### Case: succeeds\nIt succeeds when invoked.\n",
+            "# Spec: example\n\n## Requirement: works\nCriticality: standard\n\nThe example \
+             SHALL work.\n\n### Scenario: succeeds\nIt succeeds when invoked.\n",
         )
         .unwrap();
         let model = Model {
@@ -1498,12 +1499,12 @@ mod tests {
                 path: "design.md".into(),
                 entries: vec![
                     DesignEntry {
-                        target: Target::Claim("works".into()),
+                        target: Target::Requirement("works".into()),
                         mechanisms: vec![mechanism("first")],
                         line: 1,
                     },
                     DesignEntry {
-                        target: Target::Claim("works".into()),
+                        target: Target::Requirement("works".into()),
                         mechanisms: vec![mechanism("second")],
                         line: 2,
                     },
@@ -1514,17 +1515,17 @@ mod tests {
         };
 
         assert_eq!(
-            selected_mechanism_claims(&model, "second"),
+            selected_mechanism_requirements(&model, "second"),
             ["succeeds".to_string()].into_iter().collect()
         );
     }
 
     #[test]
-    fn every_nonroutine_claim_needs_decision_standards_even_without_declarations() {
+    fn every_nonroutine_requirement_needs_decision_standards_even_without_declarations() {
         let spec = crate::spec::parse_spec(
             "spec.md",
-            "# Spec: example\n\n## Claim: works\nCriticality: standard\n\nThe example \
-             SHALL work.\n\n### Case: succeeds\nIt succeeds when invoked.\n",
+            "# Spec: example\n\n## Requirement: works\nCriticality: standard\n\nThe example \
+             SHALL work.\n\n### Scenario: succeeds\nIt succeeds when invoked.\n",
         )
         .unwrap();
         assert!(needs_standards(&Model {

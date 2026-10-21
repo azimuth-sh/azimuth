@@ -53,24 +53,24 @@ impl Facet {
 
     fn declaration(self, level: usize, label: &str) -> Option<&'static str> {
         match (self, level, label) {
-            (Self::Spec, 2, "claim") => Some("Claim"),
+            (Self::Spec, 2, "requirement") => Some("Requirement"),
             (Self::Spec, 2, "term") => Some("Term"),
-            (Self::Spec, 3, "case") => Some("Case"),
-            (Self::Design, 2, "claim design") => Some("Claim design"),
-            (Self::Design, 3, "case design") => Some("Case design"),
+            (Self::Spec, 3, "scenario") => Some("Scenario"),
+            (Self::Design, 2, "requirement design") => Some("Requirement design"),
+            (Self::Design, 3, "scenario design") => Some("Scenario design"),
             (Self::Design, 2..=6, "section") => Some("Section"),
             (Self::Design, 3..=6, "element") => Some("Element"),
             (Self::Design, 3..=6, "mechanism") => Some("Mechanism"),
-            (Self::Verification, 2, "claim verification") => Some("Claim verification"),
-            (Self::Verification, 3, "case verification") => Some("Case verification"),
+            (Self::Verification, 2, "requirement verification") => Some("Requirement verification"),
+            (Self::Verification, 3, "scenario verification") => Some("Scenario verification"),
             (Self::Verification, 2 | 3, "section") => Some("Section"),
             (Self::Verification, 3 | 4, "element") => Some("Element"),
             (Self::Verification, 3..=6, "check") => Some("Check"),
-            (Self::Verification, 3..=6, "challenger") => Some("Challenger"),
+            (Self::Verification, 3..=6, "verification challenge") => Some("Verification Challenge"),
             (Self::Verification, 3, "surface") => Some("Surface"),
             (Self::Verification, 3, "expectation set") => Some("Expectation set"),
             (Self::Verification, 3, "probe") => Some("Probe"),
-            (Self::Judgments, 2, "claim review") => Some("Claim review"),
+            (Self::Judgments, 2, "requirement review") => Some("Requirement review"),
             (Self::Judgments, 2, "section") => Some("Section"),
             _ => None,
         }
@@ -203,14 +203,14 @@ pub fn project_additions(path: &Path, module: &str, facet: Facet) -> Result<Stri
             if matches!(
                 bare,
                 Some(
-                    "Claim"
-                        | "Case"
+                    "Requirement"
+                        | "Scenario"
                         | "Term"
-                        | "Claim design"
-                        | "Case design"
-                        | "Claim verification"
-                        | "Case verification"
-                        | "Claim review"
+                        | "Requirement design"
+                        | "Scenario design"
+                        | "Requirement verification"
+                        | "Scenario verification"
+                        | "Requirement review"
                         | "Section"
                         | "Element"
                         | "Mechanism"

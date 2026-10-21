@@ -1,7 +1,7 @@
 # azimuth
 
 The dependency-free Rust core for Azimuth's evidence control plane. It derives repository-owned
-Claims, their normative Cases and assurance graph, validates that graph, reports traceability,
+Requirements, their normative Scenarios and assurance graph, validates that graph, reports traceability,
 exports version 5 JSON and plans and hosts bounded adapter exchanges for provider-neutral Run
 bundles.
 
@@ -61,7 +61,7 @@ azimuth project accept-change --project project.json --before active.json \
 
 `azimuth validate` is the sole top-level deterministic validation command. It accepts only explicit
 options. Exit code `0` means clean, `1` means Findings were reported and `2` means the account could
-not be derived. `azimuth report traceability` is a pure projection over selected Cases with
+not be derived. `azimuth report traceability` is a pure projection over selected Scenarios with
 inherited parent context; it creates no authored authority or execution fact. `azimuth export`
 writes model version 4.
 
@@ -73,22 +73,22 @@ writes model version 4.
 
 Model input defaults to `azimuth/model`. Decision Policies and the current Challenge Schedule default to `azimuth/standards/verification.md`, the workspace defaults beside the model root, and `--manifest` is repeatable. Selection operates on declared ids, not paths.
 
-The former top-level validator alias and positional selector are absent. Claim Judgments are repository declarations rather than a separate command. There is no Assurance Service export. Nested change and project commands retain their bounded lifecycle meanings.
+The former top-level validator alias and positional selector are absent. Requirement Judgments are repository declarations rather than a separate command. There is no Assurance Service export. Nested change and project commands retain their bounded lifecycle meanings.
 
-`azimuth run verify` validates one or more revisions of the strict [`azimuth-run-bundle` version 1](../../contracts/run-bundle.md) protocol. Protocol-consistent violations, challenge findings and partial Runs exit `0`; internal protocol Findings exit `1`; and malformed JSON, schema errors or usage exit `2`. `azimuth run inspect` emits a deterministic text or JSON account, including protocol Findings on exit `1`, and labels repository authority and Assurance State unresolved.
+`azimuth run verify` validates one or more revisions of the strict [`azimuth-run-bundle` version 2](../../contracts/run-bundle.md) protocol. Protocol-consistent violations, challenge findings and partial Runs exit `0`; internal protocol Findings exit `1`; and malformed JSON, schema errors or usage exit `2`. `azimuth run inspect` emits a deterministic text or JSON account, including protocol Findings on exit `1`, and labels repository authority and Assurance State unresolved.
 
 Adapter configuration defaults to strict [`azimuth/adapters.json`](../../contracts/adapter.md). `azimuth adapter verify` stages each configured executable and resource, performs the version 1 description handshake and fails closed on content, identity or capability drift. Core never searches `PATH`, invokes a shell or inherits the ambient environment.
 
-`azimuth run plan` loads the complete unselected model and accepts Check-only, Challenge-only or mixed strict requests. It creates a provider-neutral semantic Plan, then freezes Subject, operation, one configured adapter and one explicit capability route per selection in a separate [launch plan](../../contracts/run-launch-plan.md). Both request arrays are required and their union is non-empty. There is no partial-model or `--only` path.
+`azimuth run plan` loads the complete unselected model and accepts Check-only, Challenge-only or mixed strict requests. It creates a provider-neutral semantic Plan, then freezes Verification Target, operation, one configured adapter and one explicit capability route per selection in a separate [launch plan](../../contracts/run-launch-plan.md). Both request arrays are required and their union is non-empty. There is no partial-model or `--only` path.
 
-Check requests name an exact capability, finite Cases and finite units. Challenge requests name an
+Check requests name an exact capability, finite Scenarios and finite units. Challenge requests name an
 authored Plan, exact capability, finite units and nonzero candidate cap. Planning resolves all
-twelve Method Qualification, Applicability Decision and Claim Judgment selector forms and
+twelve Method Qualification, Applicability Decision and Requirement Judgment selector forms and
 preserves `selected | missing-decision | stale-decision | rejected-decision | invalid-decision |
 inapplicable | unresolved-relation`. Every candidate counts before cross-Plan deduplication. Any
 adverse candidate, cap overflow, context mismatch or conflicting route fails planning.
 
-The fixed requested Plan union must supply a runnable selection for every form required by each selected decision's Policy. Core validates the exact operation class, current Challenger form and one-adapter boundary; it never chooses or adds a capability. Generated Challenges carry a stable target-derived id, `gate | scheduled` lane and exact semantic scope. Challenge routes project every source-backed scope item to one accountable locator input. Scope affects Plan identity; locator projection affects launch identity.
+The fixed requested Plan union must supply a runnable selection for every form required by each selected decision's Policy. Core validates the exact operation class, current Verification Challenge form and one-adapter boundary; it never chooses or adds a capability. Generated Challenges carry a stable target-derived id, `gate | scheduled` lane and exact semantic scope. Challenge routes project every source-backed scope item to one accountable locator input. Scope affects Plan identity; locator projection affects launch identity.
 
 `azimuth run execute` invokes an execute launch. `azimuth run import` invokes an import launch and requires one or more exact `<id>=<file>` inputs. Executable, resource and import bytes are staged and hashed from the same opened streams. Both operations independently bound output bytes. On a supported host, core starts the adapter in a fresh process group before adapter code runs. One deadline bounds core request writing, response and diagnostic reads and process wait; core signals remaining group members on every terminal path. A host without the required primitive fails before spawn with exit `1`.
 
@@ -96,46 +96,46 @@ An authorized descendant can deliberately use `setsid`, `setpgid` or an equivale
 
 Core validates the complete response and publishes only by atomic replacement. Repeatable predecessors must form one exact correction chain; a response is revision zero or exactly the next revision with the terminal correction anchor.
 
-A valid violated Observation, Challenge finding, partial or cancelled Run, or adapter-returned protocol-valid `timed-out` Run fact exits `0`. A host-enforced process deadline is a transport timeout and exits `1`, as does a semantic, identity, content, other transport or bundle mismatch. The returned `timed-out` fact is valid only when its complete bundle arrives inside the host deadline; the host timeout publishes no bundle. CLI and schema failures exit `2`. Neither nonzero class leaves the requested output file.
+A valid violated Check Result, Challenge finding, partial or cancelled Run, or adapter-returned protocol-valid `timed-out` Run fact exits `0`. A host-enforced process deadline is a transport timeout and exits `1`, as does a semantic, identity, content, other transport or bundle mismatch. The returned `timed-out` fact is valid only when its complete bundle arrives inside the host deadline; the host timeout publishes no bundle. CLI and schema failures exit `2`. Neither nonzero class leaves the requested output file.
 
 ## Model
 
-The intent graph has one assurance centre. A parent Claim states the independently governed
-normative proposition and owns criticality, production realization, total Claim Judgment and future
-Assurance State. Its Cases are normative constituents with identities
-`<spec>#<claim>/<case>`—addressable for evidence, Runs, Observations and impact, but not governed
+The intent graph has one assurance centre. A parent Requirement states the independently governed
+normative proposition and owns criticality, production realization, total Requirement Judgment and future
+Assurance State. Its Scenarios are normative constituents with identities
+`<spec>#<requirement>/<scenario>`—addressable for evidence, Runs, Check Results and impact, but not governed
 independently.
 
-All current framework Claims are routine. They owe no realization, Check, Evidence Binding or
+All current framework Requirements are routine. They owe no realization, Check, Evidence Binding or
 decision. Ordinary tests still protect the implementation, but they are outside the Azimuth
 evidence graph.
 
-For a non-routine Claim, `verification.md` owns:
+For a non-routine Requirement, `verification.md` owns:
 
 - a Check with one atomic terminal proposition;
-- sparse Evidence Bindings from that Check to individual Cases;
+- sparse Evidence Bindings from that Check to individual Scenarios;
 - shared Method Qualifications for exact Check method compositions;
 - exactly one Applicability Decision for each binding;
-- exactly one total-composition Claim Judgment for each standard or critical parent Claim;
-- Challengers that name open objection forms; and
+- exactly one total-composition Requirement Judgment for each standard or critical parent Requirement;
+- Verification Challenges that name open objection forms; and
 - Challenge Plans with semantic selectors over the graph.
 
-Evidence Bindings and Claim Judgments name project Decision Policies. One current Challenge Schedule assigns every required or declared form exactly once to `gate | scheduled`.
+Evidence Bindings and Requirement Judgments name project Decision Policies. One current Challenge Schedule assigns every required or declared form exactly once to `gate | scheduled`.
 
-One Check may bind to several Cases and one Case may receive several Checks. Source only declares
+One Check may bind to several Scenarios and one Scenario may receive several Checks. Source only declares
 `ImplementsCheck(<project-global-check-id>)`. Workspace or federation assembly attaches semantic
 source identity. Evidence meaning never comes from the source marker.
 
 Method Qualification fingerprints compose the exact Check, form, common context and policy.
-Applicability Decision fingerprints compose the Case digest, binding-specific proposition and
-context, current Method Qualification and policy. Claim Judgment fingerprints bind the exact total
-parent composition, including every Case and evidence edge. Challenge selection traverses stable
-decision, Case, Claim, realization, mechanism, Check and binding relations. Paths, line numbers and
+Applicability Decision fingerprints compose the Scenario digest, binding-specific proposition and
+context, current Method Qualification and policy. Requirement Judgment fingerprints bind the exact total
+parent composition, including every Scenario and evidence edge. Challenge selection traverses stable
+decision, Scenario, Requirement, realization, mechanism, Check and binding relations. Paths, line numbers and
 globs are not semantic selectors, and zero selection never widens to a suite.
 
 ## Implementation map
 
-- `spec.rs` parses strict parent Claims and normative Cases.
+- `spec.rs` parses strict parent Requirements and normative Scenarios.
 - `design.rs` parses current mechanisms and structural bindings.
 - `verification.rs` parses verification declarations, Decision Policies and the schedule.
 - `manifest.rs` reads strict linkage collections.
@@ -162,15 +162,15 @@ The ecosystem account is closed: .NET uses namespace/type/method/metadata signat
 ## Run and adapter execution plane
 
 Azimuth implements one immutable provider-neutral bundle revision for a bounded Run over one exact
-Subject and semantic plan. The bundle records actual selection, physical activities, ordered
-attempts, one terminal Observation per selected Check-to-Case projection and one Challenge Result
-per selected Challenger target. Canonical fingerprints and full-replacement corrections make the
+Verification Target and semantic plan. The bundle records actual selection, physical activities, ordered
+attempts, one terminal Check Result per selected Check-to-Scenario projection and one Challenge Result
+per selected Verification Challenge target. Canonical fingerprints and full-replacement corrections make the
 standalone account deterministic without making it current repository acceptance.
 
 The semantic Plan is provider-neutral. A separate launch plan binds it to one configured adapter and exact capability routes so provider substitution changes launch identity and the derived Run id. Adapters expose a closed semantic capability dictionary with open configured addresses: `model.extract`, `check.execute`, `check.import`, `challenge.execute` and `challenge.import`.
 
 Current planning resolves exact current positive Method Qualifications, Applicability Decisions
-and Claim Judgments from the complete model. Every Challenge selection contains its lane, target
+and Requirement Judgments from the complete model. Every Challenge selection contains its lane, target
 and semantic scope; every Challenge route repeats the exact form and explicit capability and
 carries accountable inputs for source-backed scope. A Check request does not require either
 decision, because executing a Check and judging evidentiary applicability remain separate meanings.
@@ -184,9 +184,9 @@ dependent applicability edges; applicability findings stay local to the exact bi
 
 `model.extract` execution is not implemented. Adapters are bounded short-lived processes; there is no long-running adapter, daemon, service bridge or webhook boundary.
 
-The current Run bundle version 1 requires adapter provenance and rejects the unpublished earlier shape without a compatibility reader.
+The current Run bundle version 2 requires adapter provenance and rejects the unpublished earlier shape without a compatibility reader.
 
-The optional Assurance Service remains isolated on its alpha 1 v1 wire until a Run-ledger change replaces it. Core does not ingest Run bundles or service execution records, and the service is not model authority. Authorization, durable storage, retention and Subject-specific Assurance State remain ledger responsibilities. Current planning defines no cache validity, cadence, cross-Subject reuse or historical applicability. `azimuth run ingest` is unknown.
+The optional Assurance Service remains isolated on its alpha 1 v1 wire until a Run-ledger change replaces it. Core does not ingest Run bundles or service execution records, and the service is not model authority. Authorization, durable storage, retention and target-specific Assurance State remain ledger responsibilities. Current planning defines no cache validity, cadence, cross-target reuse or historical applicability. `azimuth run ingest` is unknown.
 
 ## Federation
 

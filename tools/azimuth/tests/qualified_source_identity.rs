@@ -14,12 +14,12 @@ impl Fixture {
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(root.join("model/catalog")).unwrap();
-        fs::write(root.join("model/catalog/spec.md"), "# Spec: catalog\n\n## Claim: list-is-returned\nCriticality: routine\n\nThe catalog SHALL return its list.\n\n### Case: list-requested\nEvent: list is requested\nRequired: list is returned\n").unwrap();
-        fs::write(root.join("manifest.json"), format!(r#"{{"realizes":[{{"claim":"list-is-returned","site":"Catalog::List","file":"relocated/list.rs","lang":"rust","source_fingerprint":"{SHA}","area":"api","address_kind":"rust-item","address":"Catalog::List","mount":"implementation"}}]}}"#)).unwrap();
+        fs::write(root.join("model/catalog/spec.md"), "# Spec: catalog\n\n## Requirement: list-is-returned\nCriticality: routine\n\nThe catalog SHALL return its list.\n\n### Scenario: list-requested\nEvent: list is requested\nRequired: list is returned\n").unwrap();
+        fs::write(root.join("manifest.json"), format!(r#"{{"realizes":[{{"requirement":"list-is-returned","site":"Catalog::List","file":"relocated/list.rs","lang":"rust","source_fingerprint":"{SHA}","area":"api","address_kind":"rust-item","address":"Catalog::List","mount":"implementation"}}]}}"#)).unwrap();
         Self(root)
     }
     fn workspace(&self, areas: &str) {
-        fs::write(self.0.join("workspace.json"), format!(r#"{{"format":"azimuth-workspace","version":1,"areas":{areas},"surfaces":[],"realization_obligations":[]}}"#)).unwrap();
+        fs::write(self.0.join("workspace.json"), format!(r#"{{"format":"azimuth-workspace","version":2,"areas":{areas},"surfaces":[],"realization_obligations":[]}}"#)).unwrap();
     }
     fn load(&self) -> Result<azimuth::Loaded, Vec<azimuth::diag::Diag>> {
         load(

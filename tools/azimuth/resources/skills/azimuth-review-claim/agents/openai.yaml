@@ -1,4 +1,0 @@
-interface:
-  display_name: "Review an Azimuth Claim"
-  short_description: "Assess Claim and verification readiness independently"
-  default_prompt: "Use $azimuth-review-claim to independently review the selected Claim against its exact candidate and retain the decision and findings."
