@@ -23,7 +23,7 @@ Write Rust whose correctness is visible from its types and control flow. Let the
 - Make invalid transitions unrepresentable where a small local type can do so. Do not construct a type-state framework for a one-function invariant.
 - Keep domain functions synchronous, deterministic and side-effect free where practical. Inject time, identifiers, filesystem input and external results.
 - Use `BTreeMap`, `BTreeSet` or explicit sorting when order reaches a fingerprint, protocol, diagnostic or persisted decision.
-- Keep fingerprints, provenance and exact Subject or Claim identity explicit. Never infer semantic identity from a path, line number, ambient process state or provider label.
+- Keep fingerprints, provenance and exact Verification Target or Requirement identity explicit. Never infer semantic identity from a path, line number, ambient process state or provider label.
 
 ## Prefer concrete code
 
@@ -61,7 +61,7 @@ Write Rust whose correctness is visible from its types and control flow. Let the
 - Put AST, compiler, call-graph and schema analysis in an ecosystem extractor; core reads manifests.
 - Never discover adapter executables through `PATH`, invoke a shell or inherit ambient environment.
 - Treat adapters as bounded provider translations, not semantic authorities, daemons or supervisors.
-- Preserve valid adverse facts. A violated Observation, finding, partial Run or clean Challenge is not a transport failure and is not evidence of a stronger proposition.
+- Preserve valid adverse facts. A violated Check Result, finding, partial Run or clean Challenge is not a transport failure and is not evidence of a stronger proposition.
 - Do not give repository declarations, standalone bundles or legacy service records authority they do not currently possess.
 
 ## Keep a modular service honest

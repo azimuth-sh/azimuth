@@ -1,6 +1,6 @@
 ---
 name: azimuth-propose
-description: Create or revise one bounded, approval-ready Azimuth change from a clear request or approved exploration. Use to establish singular authority, author current Claim/Case intent deltas, define scope and solution decisions, plan compatibility and migration, add safe work packages when useful, and validate a comprehensive proposal before implementation.
+description: Create or revise one bounded, approval-ready Azimuth change from a clear request or approved exploration. Use to establish singular authority, author current Requirement/Scenario intent deltas, define scope and solution decisions, plan compatibility and migration, add safe work packages when useful, and validate a comprehensive proposal before implementation.
 ---
 
 # Propose one change
@@ -39,7 +39,7 @@ Author the proposal from evidence gathered in the repository and any approved ex
 - **Outcome:** State the accepted end state in observable terms. Avoid promising later-change behavior merely because this change creates an extension point for it.
 - **In scope:** Enumerate the behavior, data, contracts, components, migration work and documentation this change owns.
 - **Out of scope:** Name adjacent behavior, later changes, operational rollout, destructive cleanup and attractive refactors that are intentionally excluded.
-- **Affected claims:** List exact `<spec-id>#<claim-id>` identities added or deliberately affected. Do not use file paths or informal headings as identity.
+- **Affected requirements:** List exact `<spec-id>#<requirement-id>` identities added or deliberately affected. Do not use file paths or informal headings as identity.
 - **Originating decisions:** When applicable, cite the exploration and the exact decision or change-map entries carried by this proposal. Record any necessary refinement and why it does not contradict the approved direction.
 - **Completion conditions:** Make every condition inspectable after implementation. Cover observable behavior, persisted invariants, compatibility or migration results, required current-facet updates, documentation and permitted engineering checks. Do not use vague conditions such as "works" or "tests pass."
 
@@ -52,26 +52,26 @@ Add an intent delta only for an observable obligation that will become accepted 
 ```markdown
 # Intent delta: <spec-id>
 
-## Add claim: <falsifiable-claim-id>
+## Add requirement: <falsifiable-requirement-id>
 Criticality: routine
 
-Non-empty free-form normative Markdown stating this Claim.
+Non-empty free-form normative Markdown stating this Requirement.
 
-### Add case: <standalone-case-id>
-Non-empty free-form normative Markdown stating this Case.
+### Add scenario: <standalone-scenario-id>
+Non-empty free-form normative Markdown stating this Scenario.
 ```
 
 Follow these rules:
 
-- Use `## Add claim:` and `### Add case:` exactly. Never use the removed `Requirement`/`Scenario` vocabulary.
-- Give every added Claim `Criticality: routine` during the current fast-moving alpha.
-- Give each Claim one or more Cases. A Claim owns governance and criticality; Cases express distinct normative conditions within its predicate.
-- Write one independently governable, falsifiable proposition per Claim. Split conjunctions that carry different consequences, owners or acceptance decisions.
-- Make Claim and Case ids lower-kebab, proposition-like and visibly distinct. Cases must stand alone in traceability output.
-- Put universal meaning in the Claim and materially distinct normative conditions in Cases. Cases describe behavior, never test mechanics, source paths or implementation structure.
-- Claim and Case bodies are non-empty free-form normative Markdown in any human language. Core preserves and fingerprints their prose, tables, diagrams and code fences without interpreting natural-language keywords, translations or notation. Reserve `# Spec:`, `## Claim:` or `## Invariant:` and `### Case:` for structure; use level-four headings or fenced content inside a body. Keep orientation, rationale and generated duplicate views outside normative bodies.
-- Do not add package `verification.md`, Checks, Evidence Bindings, Qualifications or Claim Judgments for routine Claims. Ordinary engineering checks remain outside the Azimuth evidence graph.
-- The current delta parser machine-projects whole Claim additions and criticality changes. Do not invent modify, remove, rename or add-Case-to-existing-Claim operations. If the transition requires one, surface the parser/model limitation and resolve it explicitly before proceeding.
+- Use `## Add requirement:` and `### Add scenario:` exactly. The retired `Claim`/`Case` syntax (`## Claim:`, `### Case:`, `## Add claim:`, `### Add case:`) is rejected in active artifacts; migrate any remaining occurrence with `azimuth migrate plan` and `azimuth migrate apply` instead of authoring it.
+- Give every added Requirement `Criticality: routine` during the current fast-moving alpha.
+- Give each Requirement one or more Scenarios. A Requirement owns governance and criticality; Scenarios express distinct normative conditions within its predicate.
+- Write one independently governable, falsifiable proposition per Requirement. Split conjunctions that carry different consequences, owners or acceptance decisions.
+- Make Requirement and Scenario ids lower-kebab, proposition-like and visibly distinct. Scenarios must stand alone in traceability output.
+- Put universal meaning in the Requirement and materially distinct normative conditions in Scenarios. Scenarios describe behavior, never test mechanics, source paths or implementation structure.
+- Requirement and Scenario bodies are non-empty free-form normative Markdown in any human language. Core preserves and fingerprints their prose, tables, diagrams and code fences without interpreting natural-language keywords, translations or notation. Reserve `# Spec:`, `## Requirement:` or `## Invariant:` and `### Scenario:` for structure; use level-four headings or fenced content inside a body. Keep orientation, rationale and generated duplicate views outside normative bodies.
+- Do not add package `verification.md`, Checks, Evidence Bindings, Qualifications or Requirement Judgments for routine Requirements. Ordinary engineering checks remain outside the Azimuth evidence graph.
+- The current delta parser machine-projects whole Requirement additions and criticality changes. Do not invent modify, remove, rename or add-Scenario-to-existing-Requirement operations. If the transition requires one, surface the parser/model limitation and resolve it explicitly before proceeding.
 
 When accepted intent truly does not change, add this metadata directly after `Status: proposed` and before the first section instead of creating an empty or cosmetic delta:
 
@@ -101,7 +101,7 @@ Add `design.md` whenever implementation would otherwise have to choose behavior 
 
 Do not claim reversibility when deployed writes or destructive migrations make it false. Do not use a feature flag to avoid deciding data authority. For additive foundations, state explicitly what begins using the foundation in this change and what remains unchanged until a later cutover.
 
-Keep design decisions traceable to a scoped outcome, Claim, Case or completion condition. Remove speculative machinery that none of them requires.
+Keep design decisions traceable to a scoped outcome, Requirement, Scenario or completion condition. Remove speculative machinery that none of them requires.
 
 ## Write an executable implementation plan
 
@@ -150,6 +150,6 @@ Declare every dependency, use checkout-relative owned paths, and make each packa
 3. Run the repository's normal `azimuth validate` command again. Distinguish newly introduced Findings from an explicitly recorded pre-existing baseline.
 4. Run `azimuth change show <id>` and inspect the complete rendered account, then inspect the working diff for omissions, accidental files and conflicts with user-owned changes.
 5. Audit the proposal against this question: can an implementer proceed without inventing product behavior, identity, ownership, compatibility, migration, failure or completion decisions? If not, resolve the gap or identify it as a blocking owner decision.
-6. Present the change id, authored artifacts, intent Claims/Cases, central solution decisions, scope exclusions, validation results and any residual questions. Ask for explicit approval of the actual proposal files.
+6. Present the change id, authored artifacts, intent Requirements/Scenarios, central solution decisions, scope exclusions, validation results and any residual questions. Ask for explicit approval of the actual proposal files.
 
 Do not implement, mark the change active, finalize, archive, commit or claim engineering results in the proposal-authoring turn unless the user separately and explicitly authorizes the applicable next action.

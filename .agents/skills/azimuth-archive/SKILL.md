@@ -11,7 +11,7 @@ Archive records an accepted semantic transition. It is not a branch merge or dep
 
 1. Read completion conditions and verify every plan and work-package item is complete.
 2. Confirm intent deltas are applied and current design names only mechanisms that exist.
-3. Confirm every current framework Claim remains routine and has no inapplicable Check, Evidence Binding, Qualification or Claim Judgment. For any authorized non-routine consumer Claim, confirm its strict Claim Judgment, Decision Policy required forms and one project Challenge Schedule are current before accepting planning behavior.
+3. Confirm every current framework Requirement remains routine and has no inapplicable Check, Evidence Binding, Qualification or Requirement Judgment. For any authorized non-routine consumer Requirement, confirm its strict Requirement Judgment, Decision Policy required forms and one project Challenge Schedule are current before accepting planning behavior.
 4. Run required builds, ordinary tests and composed gates. Emit fresh manifests and run `azimuth validate` over their union.
 5. Inspect `azimuth report traceability` when relationships changed. Confirm version 4 export for public graph changes.
 6. When Run bundles changed, use `azimuth run verify --bundle <file>...` over every relevant correction set and `azimuth run inspect --bundle <file>...` for its deterministic account. Apply the strict [Run bundle format](../../../contracts/run-bundle.md) without treating a valid negative or partial fact as a protocol failure.
