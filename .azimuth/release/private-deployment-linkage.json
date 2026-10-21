@@ -1,35 +1,35 @@
 {
   "realizes": [
     {
-      "claim": "private-network-containment",
+      "requirement": "private-network-containment",
       "site": "private_compose_profile",
       "file": "services/assurance/docker-compose.yml",
       "lang": "yaml",
       "source_fingerprint": "sha256:2ccd45d1e15b27fe5430780ed2ea0f66364fb824ddbd496eaa753ef4ca7847e8"
     },
     {
-      "claim": "private-network-containment",
+      "requirement": "private-network-containment",
       "site": "private_deployment_account",
       "file": "services/assurance/README.md",
       "lang": "markdown",
       "source_fingerprint": "sha256:93da373c098cba1edc918d730b46e4d979ae087fde593c559b85b5b8b1ffc816"
     },
     {
-      "claim": "assurance-ledger-durability",
+      "requirement": "assurance-ledger-durability",
       "site": "assurance_data_volume",
       "file": "services/assurance/docker-compose.yml",
       "lang": "yaml",
       "source_fingerprint": "sha256:2ccd45d1e15b27fe5430780ed2ea0f66364fb824ddbd496eaa753ef4ca7847e8"
     },
     {
-      "claim": "assurance-ledger-durability",
+      "requirement": "assurance-ledger-durability",
       "site": "assurance_server_startup",
       "file": "services/assurance/server/src/main.rs",
       "lang": "rust",
       "source_fingerprint": "sha256:ebd9615bfad1467598f1fa947271aa6c2e558fa6694846321f72da139e233bb8"
     },
     {
-      "claim": "selected-image-platforms-build",
+      "requirement": "selected-image-platforms-build",
       "site": "build_selected_images",
       "file": "services/assurance/deployment/qualify.py",
       "lang": "python",

@@ -834,7 +834,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             qualification = json.loads((output / "publication.json").read_text())
             self.assertEqual(
                 {
-                    (entry["claim"], entry["site"], entry["file"])
+                    (entry["requirement"], entry["site"], entry["file"])
                     for entry in linkage["realizes"]
                 },
                 {

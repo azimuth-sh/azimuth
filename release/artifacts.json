@@ -2,9 +2,9 @@
   "format": "azimuth-release-artifacts",
   "schemaVersion": 1,
   "release": {
-    "version": "0.1.0-alpha.6",
-    "tag": "v0.1.0-alpha.6",
-    "migrationLine": "alpha-claim-case",
+    "version": "0.1.0-alpha.7",
+    "tag": "v0.1.0-alpha.7",
+    "migrationLine": "alpha-requirement-scenario",
     "license": "Apache-2.0",
     "repository": "https://github.com/azimuth-sh/azimuth",
     "homepage": "https://azimuth.sh"
@@ -185,7 +185,7 @@
   "protocols": [
     {
       "id": "model-export",
-      "version": 4,
+      "version": 8,
       "produces": true,
       "accepts": true
     },
@@ -197,19 +197,19 @@
     },
     {
       "id": "run-bundle",
-      "version": 1,
+      "version": 2,
       "produces": true,
       "accepts": true
     },
     {
       "id": "run-launch-plan",
-      "version": 1,
+      "version": 2,
       "produces": true,
       "accepts": true
     },
     {
       "id": "workspace",
-      "version": 1,
+      "version": 2,
       "produces": true,
       "accepts": true
     },
@@ -221,13 +221,13 @@
     },
     {
       "id": "migration-plan",
-      "version": 1,
+      "version": 2,
       "produces": true,
       "accepts": true
     },
     {
-      "id": "verification-context",
-      "version": 1,
+      "id": "execution-context",
+      "version": 2,
       "produces": true,
       "accepts": true
     },
@@ -239,7 +239,7 @@
     },
     {
       "id": "test-mapping",
-      "version": 1,
+      "version": 2,
       "produces": false,
       "accepts": true
     },
@@ -251,13 +251,13 @@
     },
     {
       "id": "deployment-assessment",
-      "version": 1,
+      "version": 2,
       "produces": false,
       "accepts": true
     },
     {
       "id": "deployment-status",
-      "version": 1,
+      "version": 2,
       "produces": true,
       "accepts": true
     }

@@ -116,7 +116,7 @@ version = "0.1.0-alpha.7"
 
 [[package]]
 name = "azimuth-assurance-domain"
-version = "0.1.0-alpha.6"
+version = "0.1.0-alpha.7"
 dependencies = [
  "azimuth",
  "serde",
@@ -125,7 +125,7 @@ dependencies = [
 
 [[package]]
 name = "azimuth-assurance-server"
-version = "0.1.0-alpha.6"
+version = "0.1.0-alpha.7"
 dependencies = [
  "axum",
  "azimuth",

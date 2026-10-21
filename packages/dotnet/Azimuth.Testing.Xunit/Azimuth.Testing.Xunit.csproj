@@ -4,7 +4,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <PackageId>Azimuth.Testing.Xunit</PackageId>
-    <Version>0.1.0-alpha.6</Version>
+    <Version>0.1.0-alpha.7</Version>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <Description>Effective Execution Context capture and execution facts for xUnit v2.</Description>
     <RepositoryUrl>https://github.com/azimuth-sh/azimuth</RepositoryUrl>

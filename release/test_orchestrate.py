@@ -352,9 +352,9 @@ class ReleaseOrchestrationTests(unittest.TestCase):
         )
         for entry in linkage["realizes"]:
             self.assertEqual(
-                set(entry), {"claim", "site", "file", "lang", "source_fingerprint"}
+                set(entry), {"requirement", "site", "file", "lang", "source_fingerprint"}
             )
-            self.assertRegex(entry["claim"], r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
+            self.assertRegex(entry["requirement"], r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
         self.assertTrue(
             all(
                 re.fullmatch(r"sha256:[0-9a-f]{64}", entry["source_fingerprint"])
