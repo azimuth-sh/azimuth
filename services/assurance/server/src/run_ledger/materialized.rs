@@ -280,10 +280,18 @@ async fn refresh(
     };
     let (result, request) =
         deployment_status::compute_deployment(state, project, deployment, selected).await?;
-    publish(
+    let publication = std::time::Instant::now();
+    let published = publish(
         state, project, deployment, generation, &rows, &result, &request,
     )
-    .await
+    .await;
+    tracing::info!(
+        project,
+        deployment,
+        publish_ms = publication.elapsed().as_millis() as u64,
+        "assessment published"
+    );
+    published
 }
 
 async fn publish(
