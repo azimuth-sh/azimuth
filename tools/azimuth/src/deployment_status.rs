@@ -1428,7 +1428,28 @@ fn evaluate(
     ]))
 }
 
+/// Binding reasons are prefixed with `check/scenario: ` and may quote ids in backticks; ids such as
+/// `source-scan` must not steer the classification of the message itself.
+fn reason_message(reason: &str) -> String {
+    let message = match reason.split_once(": ") {
+        Some((prefix, rest)) if !prefix.contains(' ') && prefix.contains('/') => rest,
+        _ => reason,
+    };
+    let mut stripped = String::with_capacity(message.len());
+    let mut quoted = false;
+    for character in message.chars() {
+        if character == '`' {
+            quoted = !quoted;
+        } else if !quoted {
+            stripped.push(character);
+        }
+    }
+    stripped
+}
+
 fn reason_code(reason: &str) -> &'static str {
+    let reason = reason_message(reason);
+    let reason = reason.as_str();
     if reason.contains("Review") {
         "review-not-current"
     } else if reason.contains("overdue") {
@@ -1492,4 +1513,41 @@ fn contains_context(capture: &Json, name: &str) -> bool {
             .and_then(|contexts| contexts.get(name))
             .is_some()
     })
+}
+
+#[cfg(test)]
+mod reason_code_tests {
+    use super::reason_code;
+
+    #[test]
+    fn ids_inside_binding_reasons_do_not_steer_the_code() {
+        assert_eq!(
+            reason_code("source-scan/credential-delivery: no applicable current Check Result"),
+            "evidence-missing"
+        );
+        assert_eq!(
+            reason_code("component-artifact-check/a: no applicable current Check Result"),
+            "evidence-missing"
+        );
+        assert_eq!(
+            reason_code("Scenario `source-component` lacks applicable supporting evidence"),
+            "evidence-missing"
+        );
+    }
+
+    #[test]
+    fn messages_keep_their_codes() {
+        assert_eq!(
+            reason_code("a/b: current Check Result is inconclusive"),
+            "execution-inconclusive"
+        );
+        assert_eq!(
+            reason_code("deployment observation is stale or future-dated"),
+            "observation-future"
+        );
+        assert_eq!(
+            reason_code("Requirement Review is rejected"),
+            "review-not-current"
+        );
+    }
 }
