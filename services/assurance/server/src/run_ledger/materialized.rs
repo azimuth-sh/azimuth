@@ -247,9 +247,17 @@ async fn publish(
     let mut tx = state.pool.begin().await?;
     let (current,published): (i64,i64) = sqlx::query_as("SELECT generation,published_generation FROM deployment_assessments WHERE project=$1 AND deployment=$2 FOR UPDATE").bind(project).bind(deployment).fetch_one(&mut *tx).await?;
     let initial_or_unbound:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM assessment_events WHERE project=$1 AND (NOT invalidated OR $2))").bind(project).bind(published==0).fetch_one(&mut *tx).await?;
-    if current != generation || published == generation || initial_or_unbound {
+    // Evidence that arrives while a computation runs invalidates only the Requirements it touches, so
+    // an overtaken computation still publishes every Requirement whose own generation is unchanged.
+    let overtaken = current != generation;
+    if (overtaken && (published == 0 || rows.is_empty()))
+        || published == generation
+        || initial_or_unbound
+    {
         return Ok(());
     }
+    let current_requirements: BTreeMap<String, i64> = sqlx::query_as::<_, (String, i64)>("SELECT requirement,generation FROM assessment_requirements WHERE project=$1 AND deployment=$2")
+        .bind(project).bind(deployment).fetch_all(&mut *tx).await?.into_iter().collect();
     let authority = &request["publication"]["snapshot"]["authority"];
     for requirement in result["requirements"].as_array().unwrap() {
         let id = requirement["requirement"].as_str().unwrap();
@@ -259,6 +267,13 @@ async fn publish(
             .find(|(requirement, _)| requirement == id)
             .map(|(_, generation)| *generation)
             .unwrap_or(1);
+        if !rows.is_empty()
+            && current_requirements
+                .get(id)
+                .is_some_and(|current| *current != requirement_generation)
+        {
+            continue;
+        }
         let key = format!("{deployment}:{id}:{requirement_generation}");
         let previous:Option<String>=sqlx::query_scalar("SELECT record_key FROM assessment_requirements WHERE project=$1 AND deployment=$2 AND requirement=$3").bind(project).bind(deployment).bind(id).fetch_optional(&mut *tx).await?.flatten();
         relational::store(
@@ -343,8 +358,11 @@ async fn publish(
             sqlx::query("INSERT INTO assessment_scenarios(project,deployment,requirement,scenario_id,check_id,status,generation,result_fingerprint) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(project,deployment,requirement,scenario_id,check_id) DO UPDATE SET status=excluded.status,generation=excluded.generation,result_fingerprint=excluded.result_fingerprint WHERE assessment_scenarios.status IS DISTINCT FROM excluded.status OR assessment_scenarios.result_fingerprint IS DISTINCT FROM excluded.result_fingerprint").bind(project).bind(deployment).bind(id).bind(binding["scenario"].as_str()).bind(binding["check"].as_str()).bind(binding["status"].as_str()).bind(requirement_generation).bind(evidence).execute(&mut *tx).await?;
         }
     }
+    let unpublished: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM assessment_requirements WHERE project=$1 AND deployment=$2 AND generation<>published_generation)")
+        .bind(project).bind(deployment).fetch_one(&mut *tx).await?;
+    let published_generation = if unpublished { published } else { current };
     sqlx::query("UPDATE deployment_assessments SET authority=$3,model=$4,verification_target=$5,published_generation=$6,evaluated_at_ms=$7,valid_until_ms=(SELECT min(valid_until_ms) FROM assessment_requirements WHERE project=$1 AND deployment=$2),observed_current=$8,last_error=NULL,retry_at=now() WHERE project=$1 AND deployment=$2")
-        .bind(project).bind(deployment).bind(result["authority_fingerprint"].as_str()).bind(result["model_fingerprint"].as_str()).bind(result["verification_target_fingerprint"].as_str()).bind(generation).bind(result["evaluated_at_ms"].as_i64()).bind(request["deployment_observation"]["state"]=="complete" && request["deployment_observation"]["trusted"]==true).execute(&mut *tx).await?;
+        .bind(project).bind(deployment).bind(result["authority_fingerprint"].as_str()).bind(result["model_fingerprint"].as_str()).bind(result["verification_target_fingerprint"].as_str()).bind(published_generation).bind(result["evaluated_at_ms"].as_i64()).bind(request["deployment_observation"]["state"]=="complete" && request["deployment_observation"]["trusted"]==true).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(())
 }
@@ -385,7 +403,7 @@ pub(super) async fn read(
     } else {
         "ready"
     };
-    let entries=sqlx::query("SELECT requirement,record_key,status,review,summary,evaluated_at_ms FROM assessment_requirements WHERE project=$1 AND deployment=$2 ORDER BY requirement").bind(project).bind(deployment).fetch_all(&mut *tx).await?;
+    let entries=sqlx::query("SELECT requirement,record_key,status,review,summary,evaluated_at_ms,generation<>published_generation AS unpublished,valid_until_ms FROM assessment_requirements WHERE project=$1 AND deployment=$2 ORDER BY requirement").bind(project).bind(deployment).fetch_all(&mut *tx).await?;
     let mut requirements = Vec::new();
     for entry in entries {
         let mut requirement = if summary {
@@ -399,8 +417,24 @@ pub(super) async fn read(
             .fetch_one(&mut *tx)
             .await?
         };
-        if freshness != "ready" {
-            let message = format!("Assessment is {freshness}; current evidence is being evaluated");
+        // A Requirement is as current as its own evidence: another Requirement's pending evidence does not hide it.
+        let requirement_freshness = if published == 0
+            || row.get::<bool, _>("unbound")
+            || entry.get::<bool, _>("unpublished")
+        {
+            "pending"
+        } else if entry
+            .get::<Option<i64>, _>("valid_until_ms")
+            .is_some_and(|due| due <= now)
+        {
+            "expired"
+        } else {
+            "ready"
+        };
+        if requirement_freshness != "ready" {
+            let message = format!(
+                "Assessment is {requirement_freshness}; current evidence is being evaluated"
+            );
             requirement["status"] = json!("unresolved");
             requirement["diagnostics"] = json!([message]);
             requirement["explanation"] = json!({"summary":message,"status":"unresolved","reasons":[{"code":"assessment-pending","category":"freshness","message":message}],"coverage":[],"evidence":{"supporting":[],"violations":[],"inconclusive":[],"unassessed":[]}});
@@ -1035,6 +1069,210 @@ mod tests {
         assert_eq!(sqlx::query_scalar::<_,i64>("SELECT generation FROM deployment_assessments WHERE deployment='bootstrap-deployment'").fetch_one(&pool).await?,2,"a snapshot that predates initialization is replayed against current dependency rows");
         let columns:Vec<String>=sqlx::query_scalar("SELECT table_name||'.'||column_name FROM information_schema.columns WHERE table_schema='public' AND udt_name IN ('json','jsonb')").fetch_all(&pool).await?;
         assert!(columns.is_empty(), "{columns:?}");
+        Ok(())
+    }
+
+    async fn migrated_state(
+    ) -> Result<(LedgerState, PgPool, impl Sized), Box<dyn std::error::Error>> {
+        let postgres = Postgres::default().with_tag("17-alpine").start().await?;
+        let pool = crate::connect(&format!(
+            "postgres://postgres:postgres@127.0.0.1:{}/postgres",
+            postgres.get_host_port_ipv4(5432).await?
+        ))
+        .await?;
+        crate::migrate(&pool).await?;
+        let state = LedgerState {
+            pool: pool.clone(),
+            credentials: Arc::new(BTreeMap::new()),
+        };
+        Ok((state, pool, postgres))
+    }
+
+    async fn requirement_generation(pool: &PgPool) -> Result<i64, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT generation FROM assessment_requirements WHERE requirement='restricted'",
+        )
+        .fetch_one(pool)
+        .await
+    }
+
+    async fn store_deployment_capture(
+        pool: &PgPool,
+        key: &str,
+        finished_at_ms: i64,
+        mode: &str,
+    ) -> Result<(), LedgerError> {
+        let snapshot = json!({"captured_at_ms":finished_at_ms,"instance":"process-a","report":{"format":"azimuth-execution-context","version":2,"contexts":{"settings":{"contract_revision":"contract-a","values":{"mode":mode}}}}});
+        let capture = json!({"kind":"deployment","activity":null,"run":null,"bundle_fingerprint":null,"verification_target_fingerprint":"deployment-target","component":"api","instance":"process-a","started_at_ms":finished_at_ms,"finished_at_ms":finished_at_ms,"before":snapshot,"after":snapshot,"trusted":true});
+        let mut tx = pool.begin().await?;
+        relational::store(&mut tx, "context_capture", "project", key, &json!({"fingerprint":key,"capture":capture,"submitted_by":"collector","received_at_ms":finished_at_ms})).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn store_observation(
+        pool: &PgPool,
+        revision: i64,
+        observed_at_ms: i64,
+        instances: &[&str],
+    ) -> Result<(), LedgerError> {
+        let observation = json!({"format":"azimuth-deployment-observation","version":1,"observed_at_ms":observed_at_ms,"valid_for_seconds":60,"state":"complete","release_fingerprint":"release","applied_revision":"a".repeat(40),"rollout_id":"rollout-1","configuration_fingerprint":"configuration","components":[{"name":"api","image":"registry/api@digest","template_fingerprint":"template","ready":true,"instances":instances}],"diagnostics":[]});
+        let fingerprint = format!("observation-{revision}");
+        let mut tx = pool.begin().await?;
+        relational::store(
+            &mut tx,
+            "deployment_observation",
+            "project",
+            &fingerprint,
+            &observation,
+        )
+        .await?;
+        sqlx::query("INSERT INTO deployment_observations(project,environment,revision,fingerprint,submitted_by,deployment_id,observed_at_ms,valid_for_seconds,state,release_fingerprint) VALUES('project','production',$1,$2,'reconciler',NULL,$3,60,'complete','release')").bind(revision).bind(&fingerprint).bind(observed_at_ms).execute(&mut *tx).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn heartbeats_repeating_the_previous_fact_do_not_invalidate_but_changes_do(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (_state, pool, _postgres) = migrated_state().await?;
+        sqlx::query("INSERT INTO deployment_assessments(project,deployment,release,authority,model,verification_target,generation,published_generation,valid_until_ms,observed_current) VALUES('project','deployment','release','authority','model','deployment-target',1,1,9007199254740991,true)").execute(&pool).await?;
+        sqlx::query("INSERT INTO assessment_requirements(project,deployment,requirement,generation,published_generation,status,review,summary,valid_until_ms) VALUES('project','deployment','restricted',1,1,'unresolved','not-required','No evidence',9007199254740991)").execute(&pool).await?;
+        for (kind, identity) in [("context", "contract-a"), ("environment", "production")] {
+            sqlx::query("INSERT INTO assessment_dependencies(project,deployment,requirement,kind,identity) VALUES('project','deployment','restricted',$1,$2)").bind(kind).bind(identity).execute(&pool).await?;
+        }
+
+        store_deployment_capture(&pool, "capture-1", 100, "restricted").await?;
+        assert_eq!(
+            requirement_generation(&pool).await?,
+            2,
+            "the first capture of an instance is new evidence"
+        );
+        store_deployment_capture(&pool, "capture-2", 130, "restricted").await?;
+        assert_eq!(
+            requirement_generation(&pool).await?,
+            2,
+            "an identical later capture only extends freshness"
+        );
+        store_deployment_capture(&pool, "capture-3", 160, "open").await?;
+        assert_eq!(
+            requirement_generation(&pool).await?,
+            3,
+            "a changed effective context invalidates"
+        );
+
+        store_observation(&pool, 1, 1_000, &["process-a"]).await?;
+        assert_eq!(
+            requirement_generation(&pool).await?,
+            4,
+            "the first observation of an environment is new evidence"
+        );
+        store_observation(&pool, 2, 2_000, &["process-a"]).await?;
+        assert_eq!(
+            requirement_generation(&pool).await?,
+            4,
+            "an identical composition only extends freshness"
+        );
+        store_observation(&pool, 3, 3_000, &["process-a", "process-b"]).await?;
+        assert_eq!(
+            requirement_generation(&pool).await?,
+            5,
+            "a changed composition invalidates"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn an_overtaken_computation_publishes_requirements_whose_evidence_is_unchanged(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (state, pool, _postgres) = migrated_state().await?;
+        let request = evidence::request_with_criticality(10, "standard");
+        let result = to_value(
+            &azimuth::deployment_status::assess(&core_json(request.to_string().as_bytes())?)
+                .unwrap(),
+        )?;
+        sqlx::query("INSERT INTO deployment_assessments(project,deployment,release) VALUES('project','deployment','release')").execute(&pool).await?;
+        publish(&state, "project", "deployment", 1, &[], &result, &request).await?;
+        sqlx::query("INSERT INTO assessment_requirements(project,deployment,requirement,generation,published_generation,status,review,summary,valid_until_ms) VALUES('project','deployment','other',1,1,'unresolved','not-required','No evidence',9007199254740991)").execute(&pool).await?;
+
+        // Evidence for both Requirements arrives and the computation starts; then more evidence reaches only `other`.
+        sqlx::query("UPDATE deployment_assessments SET generation=2")
+            .execute(&pool)
+            .await?;
+        sqlx::query("UPDATE assessment_requirements SET generation=2")
+            .execute(&pool)
+            .await?;
+        sqlx::query("UPDATE deployment_assessments SET generation=3")
+            .execute(&pool)
+            .await?;
+        sqlx::query("UPDATE assessment_requirements SET generation=3 WHERE requirement='other'")
+            .execute(&pool)
+            .await?;
+        publish(
+            &state,
+            "project",
+            "deployment",
+            2,
+            &[("restricted".into(), 2)],
+            &result,
+            &request,
+        )
+        .await?;
+
+        let published: i64 = sqlx::query_scalar("SELECT published_generation FROM assessment_requirements WHERE requirement='restricted'").fetch_one(&pool).await?;
+        assert_eq!(
+            published, 2,
+            "the Requirement whose evidence did not change is published"
+        );
+        let header: i64 =
+            sqlx::query_scalar("SELECT published_generation FROM deployment_assessments")
+                .fetch_one(&pool)
+                .await?;
+        assert_eq!(
+            header, 1,
+            "the assessment stays behind while another Requirement awaits evaluation"
+        );
+        sqlx::query("UPDATE assessment_requirements SET valid_until_ms=9007199254740991")
+            .execute(&pool)
+            .await?;
+        let view = read(&state, "project", "deployment", true).await?;
+        assert_eq!(view["assessment"]["state"], "pending");
+        for entry in view["requirements"].as_array().unwrap() {
+            let pending = entry["explanation"]["reasons"]
+                .as_array()
+                .is_some_and(|reasons| {
+                    reasons
+                        .iter()
+                        .any(|reason| reason["code"] == "assessment-pending")
+                });
+            assert_eq!(pending, entry["requirement"] == "other", "{entry}");
+        }
+
+        // Once nothing awaits evaluation the assessment catches up to the current generation.
+        sqlx::query("UPDATE assessment_requirements SET published_generation=generation WHERE requirement='other'").execute(&pool).await?;
+        sqlx::query("UPDATE deployment_assessments SET generation=4")
+            .execute(&pool)
+            .await?;
+        sqlx::query(
+            "UPDATE assessment_requirements SET generation=4 WHERE requirement='restricted'",
+        )
+        .execute(&pool)
+        .await?;
+        publish(
+            &state,
+            "project",
+            "deployment",
+            4,
+            &[("restricted".into(), 4)],
+            &result,
+            &request,
+        )
+        .await?;
+        let header: i64 =
+            sqlx::query_scalar("SELECT published_generation FROM deployment_assessments")
+                .fetch_one(&pool)
+                .await?;
+        assert_eq!(header, 4);
         Ok(())
     }
 }
