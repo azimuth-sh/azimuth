@@ -65,6 +65,10 @@ DECLARE
     bundle text;
     review_fingerprints text[] := '{}';
     logical_run text;
+    previous_key text;
+    previous_capture jsonb;
+    latest_observation record;
+    previous_observation record;
 BEGIN
     PERFORM pg_advisory_xact_lock(hashtextextended('assessment initialization|'||NEW.project,0));
     PERFORM 1 FROM deployment_assessments WHERE project=NEW.project ORDER BY deployment FOR UPDATE;
@@ -85,6 +89,24 @@ BEGIN
             captured_verification_target := capture->>'verification_target_fingerprint';
             SELECT COALESCE(array_agg(value->>'contract_revision'),'{}') INTO context_ids
               FROM jsonb_each(capture->'before'->'report'->'contexts');
+            -- A heartbeat that repeats the instance's previous capture cannot change any Requirement; its freshness
+            -- is picked up when the published assessment expires. Replayed events always invalidate.
+            IF NOT NEW.replayed THEN
+                SELECT r.record_key INTO previous_key
+                  FROM {context_capture_capture} c JOIN assurance_records r ON r.id=c._record_id
+                 WHERE c.f_kind='deployment' AND c.f_verification_target_fingerprint=captured_verification_target
+                   AND c.f_component=capture->>'component' AND c.f_instance=capture->>'instance'
+                   AND r.kind='context_capture' AND r.project=NEW.project AND r.record_key<>NEW.record_key
+                 ORDER BY c.f_finished_at_ms DESC LIMIT 1;
+                IF previous_key IS NOT NULL THEN
+                    previous_capture := assurance_record('context_capture',NEW.project,previous_key)->'capture';
+                    IF previous_capture->'before'->'report'->'contexts' = capture->'before'->'report'->'contexts'
+                       AND previous_capture->'after'->'report'->'contexts' = capture->'after'->'report'->'contexts'
+                       AND previous_capture->'trusted' = capture->'trusted' THEN
+                        context_ids := '{}';
+                    END IF;
+                END IF;
+            END IF;
         ELSE
             SELECT COALESCE(array_agg(DISTINCT c.f_id),'{}') INTO check_ids
               FROM assurance_records a JOIN assurance_run_plan_checks_item c ON c._record_id=a.id
@@ -94,6 +116,22 @@ BEGIN
         context_ids := ARRAY[NEW.record_key];
     ELSIF NEW.kind='reconciliation' THEN
         environment_name := NEW.record_key;
+        -- An observation that repeats the previous composition only extends its freshness, which expiry re-evaluates.
+        IF NOT NEW.replayed THEN
+            SELECT * INTO latest_observation FROM deployment_observations
+             WHERE project=NEW.project AND environment=NEW.record_key ORDER BY revision DESC LIMIT 1;
+            SELECT * INTO previous_observation FROM deployment_observations
+             WHERE project=NEW.project AND environment=NEW.record_key ORDER BY revision DESC OFFSET 1 LIMIT 1;
+            IF latest_observation.fingerprint IS NOT NULL AND previous_observation.fingerprint IS NOT NULL
+               AND previous_observation.state=latest_observation.state
+               AND previous_observation.valid_for_seconds=latest_observation.valid_for_seconds
+               AND previous_observation.deployment_id IS NOT DISTINCT FROM latest_observation.deployment_id
+               AND previous_observation.release_fingerprint IS NOT DISTINCT FROM latest_observation.release_fingerprint
+               AND assurance_record('deployment_observation',NEW.project,previous_observation.fingerprint)->'components'
+                 = assurance_record('deployment_observation',NEW.project,latest_observation.fingerprint)->'components' THEN
+                environment_name := NULL;
+            END IF;
+        END IF;
     END IF;
     WITH affected AS (
         UPDATE assessment_requirements c SET generation=c.generation+1
@@ -120,3 +158,5 @@ BEGIN
 END $$;
 DROP TRIGGER IF EXISTS invalidate_assessment_event ON assessment_events;
 CREATE CONSTRAINT TRIGGER invalidate_assessment_event AFTER INSERT ON assessment_events DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION invalidate_assessment_event();
+CREATE INDEX IF NOT EXISTS assessment_deployment_capture_heads ON {context_capture_capture}
+    (f_verification_target_fingerprint,f_component,f_instance,f_finished_at_ms) WHERE f_kind='deployment';

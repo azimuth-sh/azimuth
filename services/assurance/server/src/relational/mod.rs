@@ -126,6 +126,10 @@ pub(crate) fn with_tables(sql: &str) -> String {
         "{verification_challenge_executions}",
         &table("assurance_run_verification_challenge_executions_item"),
     )
+    .replace(
+        "{context_capture_capture}",
+        &table("assurance_context_capture_capture"),
+    )
 }
 
 pub(crate) fn assessment_triggers() -> String {
