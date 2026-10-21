@@ -250,7 +250,7 @@ pub(super) async fn record(
             .bind(&project).bind(&fp).bind(body.observation["source"].as_str()).bind(body.observation["execution_id"].as_str()).bind(body.observation["environment"].as_str()).bind(&principal).bind(time).execute(&mut *tx).await?;
     }
     tx.commit().await?;
-    resolve_pending(&state, &project).await?;
+    resolve_pending(&state, &project, 0).await?;
     Ok((
         if replayed {
             StatusCode::OK
@@ -396,14 +396,20 @@ fn bracket(raw: &Value, history: &[Reconciliation]) -> Option<(Reconciliation, R
     Some((before.clone(), after.clone()))
 }
 
-pub(super) async fn resolve_pending(state: &LedgerState, project: &str) -> Result<(), LedgerError> {
+// Observations outside every reconciliation bracket stay pending; the background worker retries them only after
+// `retry_after_ms` so a backlog is not re-read on every tick, while ingestion retries immediately (0).
+pub(super) async fn resolve_pending(
+    state: &LedgerState,
+    project: &str,
+    retry_after_ms: i64,
+) -> Result<(), LedgerError> {
     let mut tx = state.pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(format!("{project}|target-observations"))
         .execute(&mut *tx)
         .await?;
-    let pending: Vec<(String,Value,String)> = sqlx::query_as("SELECT t.fingerprint,assurance_record('target_observation',t.project,t.fingerprint),t.submitted_by FROM target_observations t WHERE t.project=$1 AND NOT EXISTS(SELECT 1 FROM target_observation_resolutions r WHERE r.project=t.project AND r.observation_fingerprint=t.fingerprint) ORDER BY t.last_resolution_attempt_ms,t.sequence LIMIT 500")
-        .bind(project).fetch_all(&mut *tx).await?;
+    let pending: Vec<(String,Value,String)> = sqlx::query_as("SELECT t.fingerprint,assurance_record('target_observation',t.project,t.fingerprint),t.submitted_by FROM target_observations t WHERE t.project=$1 AND t.last_resolution_attempt_ms <= (extract(epoch FROM clock_timestamp())*1000)::bigint-$2 AND NOT EXISTS(SELECT 1 FROM target_observation_resolutions r WHERE r.project=t.project AND r.observation_fingerprint=t.fingerprint) ORDER BY t.last_resolution_attempt_ms,t.sequence LIMIT 500")
+        .bind(project).bind(retry_after_ms).fetch_all(&mut *tx).await?;
     for (fp, raw, principal) in pending {
         sqlx::query("UPDATE target_observations SET last_resolution_attempt_ms=(extract(epoch FROM clock_timestamp())*1000)::bigint WHERE project=$1 AND fingerprint=$2").bind(project).bind(&fp).execute(&mut *tx).await?;
         let mut item = tx.begin().await?;

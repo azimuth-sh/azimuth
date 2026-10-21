@@ -232,7 +232,7 @@ pub(super) async fn record(
     crate::relational::store(&mut *tx, "deployment_observation", &project, &fp, o).await?;
     sqlx::query("INSERT INTO deployment_observations(project,environment,revision,fingerprint,submitted_by,deployment_id,observed_at_ms,valid_for_seconds,state,release_fingerprint) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)").bind(&project).bind(&environment).bind(revision).bind(&fp).bind(&publisher).bind(observed_deployment).bind(observed).bind(lifetime).bind(status).bind(o["release_fingerprint"].as_str()).execute(&mut *tx).await?;
     tx.commit().await?;
-    target_observation::resolve_pending(&state, &project).await?;
+    target_observation::resolve_pending(&state, &project, 0).await?;
     Ok(Json(
         json!({"fingerprint":fp,"revision":revision,"replayed":false}),
     ))
