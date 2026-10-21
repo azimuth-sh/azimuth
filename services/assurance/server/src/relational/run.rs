@@ -2,7 +2,7 @@ use super::{list, map, object, Schema};
 
 pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
     vec![
-        ("subject", subject()),
+        ("verification_target", verification_target()),
         (
             "run",
             object(vec![
@@ -13,8 +13,8 @@ pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
                 ("corrects", Schema::Text),
                 ("correction_reason", Schema::Text),
                 ("bundle_fingerprint", Schema::Text),
-                ("subject", subject()),
-                ("subject_fingerprint", Schema::Text),
+                ("verification_target", verification_target()),
+                ("verification_target_fingerprint", Schema::Text),
                 ("planned_at_ms", Schema::Number),
                 ("started_at_ms", Schema::Number),
                 ("finished_at_ms", Schema::Number),
@@ -23,7 +23,7 @@ pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
                     "plan",
                     object(vec![
                         ("model_fingerprint", Schema::Text),
-                        ("required_context", map(Schema::Text)),
+                        ("required_execution_context", map(Schema::Text)),
                         ("checks", list(check_selection())),
                         ("challenges", list(challenge_selection())),
                         ("fingerprint", Schema::Text),
@@ -32,7 +32,7 @@ pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
                 (
                     "actual_selection",
                     object(vec![
-                        ("context", map(Schema::Text)),
+                        ("execution_context", map(Schema::Text)),
                         ("plan_fingerprint", Schema::Text),
                         ("checks", list(check_selection())),
                         ("challenges", list(challenge_selection())),
@@ -68,7 +68,7 @@ pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
                                 ("kind", Schema::Text),
                                 ("id", Schema::Text),
                                 ("check", Schema::Text),
-                                ("challenger_fingerprint", Schema::Text),
+                                ("verification_challenge_fingerprint", Schema::Text),
                                 ("target_fingerprint", Schema::Text),
                             ]),
                         ),
@@ -107,9 +107,9 @@ pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
                             ])),
                         ),
                         (
-                            "observations",
+                            "results",
                             list(object(vec![
-                                ("case", Schema::Text),
+                                ("scenario", Schema::Text),
                                 ("outcome", Schema::Text),
                                 ("observed_at_ms", Schema::Number),
                                 ("fingerprint", Schema::Text),
@@ -120,10 +120,10 @@ pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
                     ])),
                 ),
                 (
-                    "challenger_executions",
+                    "verification_challenge_executions",
                     list(object(vec![
                         ("challenge", Schema::Text),
-                        ("challenger", identity()),
+                        ("verification_challenge", identity()),
                         ("target", target()),
                         (
                             "units",
@@ -170,7 +170,7 @@ fn target() -> Schema {
     ])
 }
 
-fn subject() -> Schema {
+fn verification_target() -> Schema {
     object(vec![
         ("kind", Schema::Text),
         (
@@ -213,7 +213,7 @@ fn check_selection() -> Schema {
     object(vec![
         ("id", Schema::Text),
         ("fingerprint", Schema::Text),
-        ("cases", list(Schema::Text)),
+        ("scenarios", list(Schema::Text)),
         (
             "implementations",
             list(object(vec![
@@ -228,7 +228,7 @@ fn check_selection() -> Schema {
 fn challenge_selection() -> Schema {
     object(vec![
         ("id", Schema::Text),
-        ("challenger", identity()),
+        ("verification_challenge", identity()),
         ("target", target()),
         ("lane", Schema::Text),
         (

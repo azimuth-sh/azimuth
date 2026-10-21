@@ -44,17 +44,17 @@ def fingerprint(value):
 
 def seed(base, tokens):
     baseline = {"project": "checkout", "model_fingerprint": fingerprint({"fixture": "baseline"}),
-        "checks": [], "cases": [{"id": "recorded", "claim": "history-is-retained", "fingerprint": fingerprint({"case": "recorded"})}], "bindings": [],
-        "claims": [{"id": "history-is-retained", "criticality": "routine", "fingerprint": fingerprint({"claim": "history-is-retained"}), "cases": ["recorded"], "mechanisms": [], "bindings": [], "gaps": []}]}
+        "checks": [], "scenarios": [{"id": "recorded", "requirement": "history-is-retained", "fingerprint": fingerprint({"scenario": "recorded"})}], "bindings": [],
+        "requirements": [{"id": "history-is-retained", "criticality": "routine", "fingerprint": fingerprint({"requirement": "history-is-retained"}), "scenarios": ["recorded"], "mechanisms": [], "bindings": [], "gaps": []}]}
     baseline["fingerprint"] = fingerprint(baseline)
     request(base, "/v1/projects/checkout/authority", tokens["owners"], baseline, {"if-none-match": "*"})
     candidate = {**baseline, "model_fingerprint": fingerprint({"fixture": "candidate"})}
     candidate.pop("fingerprint")
     candidate["fingerprint"] = fingerprint(candidate)
     request(base, "/v1/projects/checkout/model-revisions", tokens["owners"], candidate)
-    catalog = {"modules": [{"id": "history", "title": "History", "claims": ["history-is-retained"]}],
-        "claims": [{"id": "history-is-retained", "statement": "Recorded history survives runtime recreation."}],
-        "cases": [{"id": "recorded", "description": "Previously recorded content remains available."}], "checks": []}
+    catalog = {"modules": [{"id": "history", "title": "History", "requirements": ["history-is-retained"]}],
+        "requirements": [{"id": "history-is-retained", "statement": "Recorded history survives runtime recreation."}],
+        "scenarios": [{"id": "recorded", "description": "Previously recorded content remains available."}], "checks": []}
     request(base, "/v1/projects/checkout/model-revisions/" + candidate["fingerprint"] + "/catalog", tokens["owners"], catalog)
     return candidate["fingerprint"]
 

@@ -16,7 +16,7 @@ CREATE TABLE target_observation_resolutions (
     project text NOT NULL,
     observation_fingerprint text NOT NULL,
     deployment_id text NOT NULL,
-    subject_fingerprint text NOT NULL,
+    verification_target_fingerprint text NOT NULL,
     before_fingerprint text NOT NULL,
     after_fingerprint text NOT NULL,
     run_fingerprint text,

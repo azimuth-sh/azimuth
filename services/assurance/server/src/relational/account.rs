@@ -17,7 +17,7 @@ fn identity() -> Schema {
         (
             "deployment",
             object(vec![
-                ("subject", Schema::Text),
+                ("verification_target", Schema::Text),
                 ("components", list(Schema::Text)),
                 ("contexts", list(Schema::Text)),
                 ("contribution", Schema::Text),
@@ -46,21 +46,21 @@ fn identity() -> Schema {
 fn binding() -> Schema {
     object(vec![
         ("check", Schema::Text),
-        ("case", Schema::Text),
+        ("scenario", Schema::Text),
         ("check_fingerprint", Schema::Text),
-        ("case_fingerprint", Schema::Text),
+        ("scenario_fingerprint", Schema::Text),
         ("contribution", Schema::Text),
         ("fingerprint", Schema::Text),
     ])
 }
 
-fn challenger() -> Schema {
+fn verification_challenge() -> Schema {
     object(vec![
         ("id", Schema::Text),
         ("fingerprint", Schema::Text),
         ("form", Schema::Text),
         ("targets", list(Schema::Text)),
-        ("claims", list(Schema::Text)),
+        ("requirements", list(Schema::Text)),
         ("mechanisms", list(Schema::Text)),
         ("checks", list(Schema::Text)),
         ("searches_for", Schema::Text),
@@ -93,22 +93,22 @@ fn challenger() -> Schema {
     ])
 }
 
-fn claim() -> Schema {
+fn requirement() -> Schema {
     object(vec![
         ("id", Schema::Text),
         ("criticality", Schema::Text),
         ("fingerprint", Schema::Text),
-        ("cases", list(Schema::Text)),
+        ("scenarios", list(Schema::Text)),
         ("mechanisms", list(identity())),
         (
             "bindings",
             list(object(vec![
                 ("check", Schema::Text),
-                ("case", Schema::Text),
+                ("scenario", Schema::Text),
             ])),
         ),
         ("gaps", list(Schema::Text)),
-        ("challengers", list(challenger())),
+        ("verification_challenges", list(verification_challenge())),
     ])
 }
 
@@ -116,15 +116,15 @@ fn dependencies() -> Schema {
     object(vec![
         ("checks", list(identity())),
         (
-            "cases",
+            "scenarios",
             list(object(vec![
                 ("id", Schema::Text),
-                ("claim", Schema::Text),
+                ("requirement", Schema::Text),
                 ("fingerprint", Schema::Text),
             ])),
         ),
         ("bindings", list(binding())),
-        ("claims", list(claim())),
+        ("requirements", list(requirement())),
     ])
 }
 
@@ -144,7 +144,7 @@ fn basis() -> Schema {
     list(object(vec![
         ("run", Schema::Text),
         ("bundle_fingerprint", Schema::Text),
-        ("observation", Schema::Text),
+        ("check_result", Schema::Text),
     ]))
 }
 
@@ -182,18 +182,18 @@ fn review() -> Schema {
     };
     let variants = vec![
         vec![
-            ("claim", Schema::Text),
-            ("claim_fingerprint", Schema::Text),
+            ("requirement", Schema::Text),
+            ("requirement_fingerprint", Schema::Text),
             ("dependencies", dependencies()),
             ("decision", Schema::Text),
             ("challenge_basis", challenge_basis()),
         ],
         vec![
-            ("claim", Schema::Text),
-            ("claim_fingerprint", Schema::Text),
+            ("requirement", Schema::Text),
+            ("requirement_fingerprint", Schema::Text),
             ("dependencies", dependencies()),
-            ("subject_fingerprint", Schema::Text),
-            ("claim_review_fingerprint", Schema::Text),
+            ("verification_target_fingerprint", Schema::Text),
+            ("requirement_review_fingerprint", Schema::Text),
             ("basis", basis()),
             ("conclusion", Schema::Text),
             ("residual_risks", list(Schema::Text)),
@@ -206,27 +206,27 @@ fn review() -> Schema {
         ],
         vec![
             ("check", Schema::Text),
-            ("case", Schema::Text),
+            ("scenario", Schema::Text),
             ("check_fingerprint", Schema::Text),
-            ("case_fingerprint", Schema::Text),
+            ("scenario_fingerprint", Schema::Text),
             ("binding_fingerprint", Schema::Text),
-            ("subject_fingerprint", Schema::Text),
+            ("verification_target_fingerprint", Schema::Text),
             ("method_qualification_fingerprint", Schema::Text),
             ("basis", basis()),
             ("decision", Schema::Text),
             ("limitations", list(Schema::Text)),
         ],
         vec![
-            ("claim", Schema::Text),
-            ("claim_fingerprint", Schema::Text),
-            ("subject_fingerprint", Schema::Text),
-            ("cases", list(identity())),
+            ("requirement", Schema::Text),
+            ("requirement_fingerprint", Schema::Text),
+            ("verification_target_fingerprint", Schema::Text),
+            ("scenarios", list(identity())),
             ("mechanisms", list(identity())),
             (
                 "bindings",
                 list(object(vec![
                     ("check", Schema::Text),
-                    ("case", Schema::Text),
+                    ("scenario", Schema::Text),
                     ("fingerprint", Schema::Text),
                     ("applicability_fingerprint", Schema::Text),
                 ])),
@@ -254,12 +254,12 @@ fn catalog() -> Schema {
             list(object(vec![
                 ("id", Schema::Text),
                 ("title", Schema::Text),
-                ("claims", list(Schema::Text)),
+                ("requirements", list(Schema::Text)),
                 ("parent", Schema::Text),
             ])),
         ),
         (
-            "claims",
+            "requirements",
             list(object(vec![
                 ("id", Schema::Text),
                 ("statement", Schema::Text),
@@ -267,7 +267,7 @@ fn catalog() -> Schema {
             ])),
         ),
         (
-            "cases",
+            "scenarios",
             list(object(vec![
                 ("id", Schema::Text),
                 ("description", Schema::Text),
@@ -350,16 +350,16 @@ mod tests {
                 json!({"check":"check","check_fingerprint":DIGEST,"decision":"accepted"})
             }
             "applicability-decision" => {
-                json!({"check":"check","case":"case","check_fingerprint":DIGEST,"case_fingerprint":DIGEST,"binding_fingerprint":DIGEST,"subject_fingerprint":DIGEST,"method_qualification_fingerprint":DIGEST,"basis":[{"run":DIGEST,"bundle_fingerprint":DIGEST,"observation":DIGEST}],"decision":"rejected","limitations":["Limited execution context"]})
+                json!({"check":"check","scenario":"scenario","check_fingerprint":DIGEST,"scenario_fingerprint":DIGEST,"binding_fingerprint":DIGEST,"verification_target_fingerprint":DIGEST,"method_qualification_fingerprint":DIGEST,"basis":[{"run":DIGEST,"bundle_fingerprint":DIGEST,"check_result":DIGEST}],"decision":"rejected","limitations":["Limited execution context"]})
             }
-            "claim-judgment" => {
-                json!({"claim":"claim","claim_fingerprint":DIGEST,"subject_fingerprint":DIGEST,"cases":[{"id":"case","fingerprint":DIGEST}],"mechanisms":[],"bindings":[{"check":"check","case":"case","fingerprint":DIGEST,"applicability_fingerprint":null}],"conclusion":"unresolved","residual_risks":["Missing applicability"]})
+            "requirement-judgment" => {
+                json!({"requirement":"requirement","requirement_fingerprint":DIGEST,"verification_target_fingerprint":DIGEST,"scenarios":[{"id":"scenario","fingerprint":DIGEST}],"mechanisms":[],"bindings":[{"check":"check","scenario":"scenario","fingerprint":DIGEST,"applicability_fingerprint":null}],"conclusion":"unresolved","residual_risks":["Missing applicability"]})
             }
-            "claim-review" => {
-                json!({"claim":"claim","claim_fingerprint":DIGEST,"dependencies":{"checks":[],"cases":[],"claims":[],"bindings":[]},"decision":"rejected","challenge_basis":[]})
+            "requirement-review" => {
+                json!({"requirement":"requirement","requirement_fingerprint":DIGEST,"dependencies":{"checks":[],"scenarios":[],"requirements":[],"bindings":[]},"decision":"rejected","challenge_basis":[]})
             }
-            "claim-health" => {
-                json!({"claim":"claim","claim_fingerprint":DIGEST,"dependencies":{"checks":[],"cases":[],"claims":[],"bindings":[]},"subject_fingerprint":DIGEST,"claim_review_fingerprint":DIGEST,"basis":[],"conclusion":"unresolved","residual_risks":[],"challenge_basis":[]})
+            "requirement-status" => {
+                json!({"requirement":"requirement","requirement_fingerprint":DIGEST,"dependencies":{"checks":[],"scenarios":[],"requirements":[],"bindings":[]},"verification_target_fingerprint":DIGEST,"requirement_review_fingerprint":DIGEST,"basis":[],"conclusion":"unresolved","residual_risks":[],"challenge_basis":[]})
             }
             _ => unreachable!(),
         };
@@ -381,11 +381,11 @@ mod tests {
         .await?;
         crate::relational::initialize(&pool).await?;
         for kind in [
-            "claim-review",
-            "claim-health",
+            "requirement-review",
+            "requirement-status",
             "method-qualification",
             "applicability-decision",
-            "claim-judgment",
+            "requirement-judgment",
         ] {
             let value = review(kind);
             let native = azimuth::json::parse(&value.to_string())?;
@@ -405,17 +405,17 @@ mod tests {
         let model = azimuth::model::Model {
             specs: vec![azimuth::spec::parse_spec(
                 "spec.md",
-                "# Spec: module\n\n## Claim: bounded\nCriticality: routine\n\nThe operation SHALL complete.\n\n### Case: completes\nGiven ordinary input, when invoked, then complete.\n",
+                "# Spec: module\n\n## Requirement: bounded\nCriticality: routine\n\nThe operation SHALL complete.\n\n### Scenario: completes\nGiven ordinary input, when invoked, then complete.\n",
             ).unwrap()],
             ..azimuth::model::Model::default()
         };
         let current = azimuth::assurance_review::authority(&model, "project")?;
         let current: Value = serde_json::from_str(&current.to_string_pretty())?;
         let mut historical = current.clone();
-        historical["claims"][0]
+        historical["requirements"][0]
             .as_object_mut()
             .unwrap()
-            .remove("challengers");
+            .remove("verification_challenges");
         historical = fingerprint_record(historical);
         for value in [current, historical] {
             azimuth::assurance_review::validate_authority(&azimuth::json::parse(
@@ -430,7 +430,7 @@ mod tests {
                 Some(value)
             );
         }
-        let mut unknown = review("claim-review");
+        let mut unknown = review("requirement-review");
         unknown["dependencies"]["unknown"] = true.into();
         let registry = crate::relational::registry();
         let root = registry.roots["review"];

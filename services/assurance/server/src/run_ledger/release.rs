@@ -151,9 +151,9 @@ pub(super) async fn publish(
                 &payload,
             )
             .await?;
-            sqlx::query("INSERT INTO run_bundles(project,run_id,revision,fingerprint,subject_fingerprint,model_fingerprint) VALUES($1,$2,$3,$4,$5,$6)")
+            sqlx::query("INSERT INTO run_bundles(project,run_id,revision,fingerprint,verification_target_fingerprint,model_fingerprint) VALUES($1,$2,$3,$4,$5,$6)")
                 .bind(&project).bind(&bundle.run_id).bind(bundle.bundle_revision as i64).bind(&bundle.bundle_fingerprint)
-                .bind(&bundle.subject_fingerprint).bind(&bundle.plan.model_fingerprint).execute(&mut *tx).await?;
+                .bind(&bundle.verification_target_fingerprint).bind(&bundle.plan.model_fingerprint).execute(&mut *tx).await?;
         }
         deployment_status::attribute_run(
             &mut tx,
@@ -468,19 +468,21 @@ pub(super) async fn accept(
     let current_authority: Value = sqlx::query_scalar(
         "SELECT assurance_record('authority',project,fingerprint) FROM assurance_authorities WHERE project=$1 AND fingerprint=$2",
     ).bind(&project).bind(revision).fetch_one(&mut *tx).await?;
-    for claim in current_authority["claims"]
+    for requirement in current_authority["requirements"]
         .as_array()
-        .ok_or_else(|| LedgerError::invalid("authority Claims missing"))?
+        .ok_or_else(|| LedgerError::invalid("authority Requirements missing"))?
     {
-        if claim["criticality"] != "routine"
-            && !assessment["claims"].as_array().is_some_and(|claims| {
-                claims
-                    .iter()
-                    .any(|c| c["claim"] == claim["id"] && c["status"] == "supported")
-            })
+        if requirement["criticality"] != "routine"
+            && !assessment["requirements"]
+                .as_array()
+                .is_some_and(|requirements| {
+                    requirements.iter().any(|c| {
+                        c["requirement"] == requirement["id"] && c["status"] == "supported"
+                    })
+                })
         {
             return Err(LedgerError::conflict(
-                "non-routine Claims require current supported Claim Status for the selected deployment",
+                "non-routine Requirements require current supported Requirement Status for the selected deployment",
             ));
         }
     }

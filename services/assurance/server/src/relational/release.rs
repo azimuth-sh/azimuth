@@ -144,8 +144,8 @@ fn deployment() -> Schema {
         ("environment", Schema::Text),
         ("configuration_fingerprint", Schema::Text),
         ("artifacts", list(Schema::Text)),
-        ("subject", Schema::Ref("subject")),
-        ("subject_fingerprint", Schema::Text),
+        ("verification_target", Schema::Ref("verification_target")),
+        ("verification_target_fingerprint", Schema::Text),
     ])
 }
 
@@ -196,12 +196,12 @@ mod tests {
             "changes":[{"id":"change","revision":DIGEST,"files":[{"path":"module/spec.md","before_fingerprint":null,"content":"# Spec: module\n"}]}]
         }))).unwrap();
         let composition: Value = serde_json::from_str(&composition.to_string_pretty()).unwrap();
-        let subject = json!({"kind":"deployment","environment":"production","deployment":"deployment","deployment_fingerprint":DIGEST,"artifacts":[{"id":"service","digest":DIGEST}]});
-        let subject_fingerprint = azimuth::run::subject_fingerprint(
-            &azimuth::run::subject_from_json(&native(&subject)).unwrap(),
+        let verification_target = json!({"kind":"deployment","environment":"production","deployment":"deployment","deployment_fingerprint":DIGEST,"artifacts":[{"id":"service","digest":DIGEST}]});
+        let verification_target_fingerprint = azimuth::run::verification_target_fingerprint(
+            &azimuth::run::verification_target_from_json(&native(&verification_target)).unwrap(),
         );
         let request = json!({
-            "format":"azimuth-release-request","version":1,"project":"project","label":"Release 1",
+            "format":"azimuth-release-request","version":2,"project":"project","label":"Release 1",
             "baseline_model_revision":DIGEST,
             "changes":[{"id":"change","revision":DIGEST,"metadata":{
                 "request":{"title":"Bounded change","ref":"https://example.com/issues/1"},
@@ -211,10 +211,10 @@ mod tests {
             "sources":[{"repository":"source","commit":"a".repeat(40),"content_fingerprint":DIGEST}],
             "builds":[{"id":"build","sources":["source"],"toolchain":{"rust":"1.90","node":"24"},"configuration_fingerprint":DIGEST,"artifacts":[DIGEST]}],
             "artifacts":[{"digest":DIGEST,"kind":"oci"}],"components":[{"id":"service","digest":DIGEST}],
-            "deployments":[{"id":"deployment","environment":"production","configuration_fingerprint":DIGEST,"artifacts":[DIGEST],"subject":subject,"subject_fingerprint":subject_fingerprint}],
+            "deployments":[{"id":"deployment","environment":"production","configuration_fingerprint":DIGEST,"artifacts":[DIGEST],"verification_target":verification_target,"verification_target_fingerprint":verification_target_fingerprint}],
             "snapshot":{"project":"project","model_revision":authority["fingerprint"],"authority":authority,"reviews":[],"bundles":[]},
             "evidence":[{"digest":DIGEST,"media_type":"text/plain","availability":"unavailable"}],
-            "catalog":{"modules":[],"claims":[],"cases":[],"checks":[]},"composition":composition,"required_reviews":[]
+            "catalog":{"modules":[],"requirements":[],"scenarios":[],"checks":[]},"composition":composition,"required_reviews":[]
         });
         let prepared = azimuth::release::prepare(&native(&request)).unwrap();
         serde_json::from_str(&prepared.to_string_pretty()).unwrap()

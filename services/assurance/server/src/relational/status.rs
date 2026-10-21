@@ -56,7 +56,7 @@ pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
                         ("run", Schema::Text),
                         ("activity", Schema::Text),
                         ("bundle_fingerprint", Schema::Text),
-                        ("subject_fingerprint", Schema::Text),
+                        ("verification_target_fingerprint", Schema::Text),
                         ("component", Schema::Text),
                         ("instance", Schema::Text),
                         ("started_at_ms", Schema::Number),

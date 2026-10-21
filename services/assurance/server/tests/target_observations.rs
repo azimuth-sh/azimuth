@@ -35,18 +35,18 @@ fn publication_policy(policy: Value) -> Value {
 fn publication_variant(policy: Value, artifact: char) -> Value {
     let deployment_id = format!("deployment-{artifact}");
     let model=azimuth::model::Model {
-        specs:vec![azimuth::spec::parse_spec("spec.md","# Spec: sample\n\n## Claim: restricted\nCriticality: routine\n\nAccess SHALL be restricted.\n\n### Case: works\nEvent: request\nRequired: restricted access\n").unwrap()],
-        account_verifications:vec![azimuth::account_verification::parse_account_verification("verification.md",&format!("# Verification: sample\n\n## Claim verification: restricted\n\n### Check: recovery\n- Deployment: {policy}\n- Evidence bindings:\n  - Case: `works`\n    - Contribution: Establishes access restrictions.\n\nExercise access restrictions.\n")).unwrap()],
+        specs:vec![azimuth::spec::parse_spec("spec.md","# Spec: sample\n\n## Requirement: restricted\nCriticality: routine\n\nAccess SHALL be restricted.\n\n### Scenario: works\nEvent: request\nRequired: restricted access\n").unwrap()],
+        account_verifications:vec![azimuth::account_verification::parse_account_verification("verification.md",&format!("# Verification: sample\n\n## Requirement verification: restricted\n\n### Check: recovery\n- Deployment: {policy}\n- Evidence bindings:\n  - Scenario: `works`\n    - Contribution: Establishes access restrictions.\n\nExercise access restrictions.\n")).unwrap()],
         ..Default::default()
     };
     let authority = value(&azimuth::assurance_review::authority(&model, "project").unwrap());
-    let subject = json!({"kind":"deployment","environment":"production","deployment":deployment_id,"deployment_fingerprint":fp('c'),"artifacts":[{"id":"api","digest":fp(artifact)}]});
-    let subject_fp = azimuth::run::subject_fingerprint(
-        &azimuth::run::subject_from_json(&native(&subject)).unwrap(),
+    let verification_target = json!({"kind":"deployment","environment":"production","deployment":deployment_id,"deployment_fingerprint":fp('c'),"artifacts":[{"id":"api","digest":fp(artifact)}]});
+    let verification_target_fp = azimuth::run::verification_target_fingerprint(
+        &azimuth::run::verification_target_from_json(&native(&verification_target)).unwrap(),
     );
-    let deployment = json!({"id":deployment_id,"environment":"production","configuration_fingerprint":fp('c'),"artifacts":[fp(artifact)],"subject":subject,"subject_fingerprint":subject_fp});
+    let deployment = json!({"id":deployment_id,"environment":"production","configuration_fingerprint":fp('c'),"artifacts":[fp(artifact)],"verification_target":verification_target,"verification_target_fingerprint":verification_target_fp});
     value(&azimuth::release::prepare(&native(&json!({
-        "format":"azimuth-release-request","version":1,"project":"project","label":"Synthetic release",
+        "format":"azimuth-release-request","version":2,"project":"project","label":"Synthetic release",
         "baseline_model_revision":fp('a'),"changes":[{"id":"restricted","revision":fp('a')}],
         "sources":[{"repository":"root","commit":artifact.to_string().repeat(40),"content_fingerprint":fp('a')}],
         "builds":[{"id":"build-api","sources":["root"],"toolchain":{"compiler":"1"},"configuration_fingerprint":fp('b'),"artifacts":[fp(artifact)]}],
@@ -62,7 +62,7 @@ fn valid_bundle() -> RunBundle {
     let check = CheckSelection {
         id: "recovery".into(),
         fingerprint: fp('b'),
-        cases: vec!["works".into()],
+        scenarios: vec!["works".into()],
         implementations: vec![Implementation {
             identity: "payments|rust-symbol|recovery::replay".into(),
             source_fingerprint: fp('c'),
@@ -79,27 +79,27 @@ fn valid_bundle() -> RunBundle {
         corrects: None,
         correction_reason: None,
         bundle_fingerprint: fp('0'),
-        subject: Subject::Workspace {
+        verification_target: VerificationTarget::Workspace {
             repositories: vec![RepositoryState {
                 id: "root".into(),
                 revision: "revision-a".into(),
                 content_fingerprint: fp('a'),
             }],
         },
-        subject_fingerprint: fp('0'),
+        verification_target_fingerprint: fp('0'),
         planned_at_ms: 1,
         started_at_ms: 2,
         finished_at_ms: 4,
         status: RunStatus::Complete,
         plan: Plan {
             model_fingerprint: fp('d'),
-            required_context: context(),
+            required_execution_context: context(),
             checks: vec![check.clone()],
             challenges: vec![],
             fingerprint: fp('0'),
         },
         actual_selection: ActualSelection {
-            context: context(),
+            execution_context: context(),
             plan_fingerprint: fp('0'),
             checks: vec![check],
             challenges: vec![],
@@ -164,35 +164,37 @@ fn valid_bundle() -> RunBundle {
                 attempts: vec![CheckAttempt {
                     ordinal: 1,
                     activity: "check-attempt".into(),
-                    outcomes: [("works".into(), ObservationOutcome::Satisfied)]
+                    outcomes: [("works".into(), CheckResultOutcome::Satisfied)]
                         .into_iter()
                         .collect(),
                 }],
             }],
-            observations: vec![Observation {
-                case: "works".into(),
-                outcome: ObservationOutcome::Satisfied,
+            results: vec![CheckResult {
+                scenario: "works".into(),
+                outcome: CheckResultOutcome::Satisfied,
                 observed_at_ms: 3,
                 fingerprint: fp('0'),
                 artifacts: vec![],
                 diagnostics: vec![],
             }],
         }],
-        challenger_executions: vec![],
+        verification_challenge_executions: vec![],
     };
     refresh(&mut bundle);
     bundle
 }
 fn refresh(bundle: &mut RunBundle) {
-    bundle.subject_fingerprint = subject_fingerprint(&bundle.subject);
-    bundle.plan.fingerprint = plan_fingerprint(&bundle.subject_fingerprint, &bundle.plan);
+    bundle.verification_target_fingerprint =
+        verification_target_fingerprint(&bundle.verification_target);
+    bundle.plan.fingerprint =
+        plan_fingerprint(&bundle.verification_target_fingerprint, &bundle.plan);
     bundle.actual_selection.plan_fingerprint = bundle.plan.fingerprint.clone();
     bundle.actual_selection.fingerprint = selection_fingerprint(&bundle.actual_selection);
     bundle.provenance.adapter.launch_fingerprint = launch_fingerprint(
         bundle.provenance.mode,
         bundle.planned_at_ms,
-        &bundle.subject,
-        &bundle.subject_fingerprint,
+        &bundle.verification_target,
+        &bundle.verification_target_fingerprint,
         &bundle.plan,
         &LaunchAdapterIdentity {
             id: bundle.provenance.adapter.id.clone(),
@@ -205,26 +207,27 @@ fn refresh(bundle: &mut RunBundle) {
     );
     bundle.run_id = run_id(bundle);
     for index in 0..bundle.check_executions.len() {
-        for observation_index in 0..bundle.check_executions[index].observations.len() {
-            let fingerprint = observation_fingerprint(
+        for result_index in 0..bundle.check_executions[index].results.len() {
+            let fingerprint = check_result_fingerprint(
                 bundle,
                 &bundle.check_executions[index],
-                &bundle.check_executions[index].observations[observation_index],
+                &bundle.check_executions[index].results[result_index],
             );
-            bundle.check_executions[index].observations[observation_index].fingerprint =
-                fingerprint;
+            bundle.check_executions[index].results[result_index].fingerprint = fingerprint;
         }
     }
-    for index in 0..bundle.challenger_executions.len() {
-        bundle.challenger_executions[index].result.fingerprint =
-            challenge_result_fingerprint(bundle, &bundle.challenger_executions[index]);
+    for index in 0..bundle.verification_challenge_executions.len() {
+        bundle.verification_challenge_executions[index]
+            .result
+            .fingerprint =
+            challenge_result_fingerprint(bundle, &bundle.verification_challenge_executions[index]);
     }
     bundle.bundle_fingerprint = bundle_fingerprint(bundle);
 }
 
 fn target(start: i64, end: i64, execution: &str, contract: &Value) -> Value {
-    let report = json!({"format":"azimuth-verification-context","version":1,"contexts":{"settings":{"contract_revision":contract["fingerprint"],"values":{"enabled":true,"revision":1,"mode":"strict"}}}});
-    json!({"format":"azimuth-target-observation","version":1,"kind":"context","source":"runtime","execution_id":execution,"environment":"production","started_at_ms":start,"finished_at_ms":end,"targets":[{"component":"api","image":format!("registry/api@{}",fp('e')),"instance":"process-a"}],"check":null,"capture":{"component":"api","instance":"process-a","started_at_ms":start,"finished_at_ms":end,"before":{"captured_at_ms":start,"instance":"process-a","report":report},"after":{"captured_at_ms":end,"instance":"process-a","report":report}}})
+    let report = json!({"format":"azimuth-execution-context","version":2,"contexts":{"settings":{"contract_revision":contract["fingerprint"],"values":{"enabled":true,"revision":1,"mode":"strict"}}}});
+    json!({"format":"azimuth-target-observation","version":2,"kind":"context","source":"runtime","execution_id":execution,"environment":"production","started_at_ms":start,"finished_at_ms":end,"targets":[{"component":"api","image":format!("registry/api@{}",fp('e')),"instance":"process-a"}],"check":null,"capture":{"component":"api","instance":"process-a","started_at_ms":start,"finished_at_ms":end,"before":{"captured_at_ms":start,"instance":"process-a","report":report},"after":{"captured_at_ms":end,"instance":"process-a","report":report}}})
 }
 fn check_target(mut raw: Value, package: &Value, execution: &str) -> Value {
     let bundle = valid_bundle();
@@ -291,7 +294,7 @@ async fn retained_target_evidence_resolves_historically_with_exact_replay_and_ro
         response.text().await?
     );
     let package = publication_policy(
-        json!({"subject":"deployment","components":["api"],"contexts":[],"contribution":"counterexample","monitor":null}),
+        json!({"verification_target":"deployment","components":["api"],"contexts":[],"contribution":"counterexample","monitor":null}),
     );
     let response = client
         .post(format!("{base}/releases"))
@@ -548,6 +551,20 @@ async fn retained_target_evidence_resolves_historically_with_exact_replay_and_ro
             .status(),
         StatusCode::UNPROCESSABLE_ENTITY
     );
+    let mut previous_version = check.clone();
+    previous_version["execution_id"] = json!("previous-version");
+    previous_version["version"] = json!(1);
+    let response = client
+        .post(&endpoint)
+        .bearer_auth(PRODUCER)
+        .json(&json!({"observation":previous_version}))
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(response
+        .text()
+        .await?
+        .contains("expected bounded azimuth-target-observation version 2"));
     let mut unknown = check.clone();
     unknown["execution_id"] = json!("unknown");
     unknown["check"]["definition"]["plan"]["checks"][0]["fingerprint"] = json!(fp('9'));
@@ -587,11 +604,11 @@ async fn retained_target_evidence_resolves_historically_with_exact_replay_and_ro
         .await?;
     assert!(records["records"][5]["resolution"].is_null());
     assert!(records["records"][6]["resolution"].is_null());
-    sqlx::query("UPDATE assurance_deployment SET f_subject_fingerprint=$3 WHERE _record_id IN (SELECT id FROM assurance_records WHERE kind='deployment' AND project=$1 AND record_key=$2)").bind("project").bind(old_deployment.as_str()).bind(fp('8')).execute(&pool).await?;
+    sqlx::query("UPDATE assurance_deployment SET f_verification_target_fingerprint=$3 WHERE _record_id IN (SELECT id FROM assurance_records WHERE kind='deployment' AND project=$1 AND record_key=$2)").bind("project").bind(old_deployment.as_str()).bind(fp('8')).execute(&pool).await?;
     let poison = check_target(
         target(now - 4000, now - 3000, "unused", &contract),
         &package,
-        "legacy-invalid-subject",
+        "legacy-invalid-verification-target",
     );
     let response = client
         .post(&endpoint)
@@ -634,7 +651,7 @@ async fn retained_target_evidence_resolves_historically_with_exact_replay_and_ro
         retained["records"][7]["diagnostics"][0]
             .as_str()
             .unwrap()
-            .contains("Subject fingerprint differs"),
+            .contains("Verification Target fingerprint differs"),
         "{retained}"
     );
     assert!(
@@ -651,7 +668,7 @@ async fn retained_target_evidence_resolves_historically_with_exact_replay_and_ro
         .await?;
     assert_eq!(status.status(), StatusCode::OK, "{}", status.text().await?);
     let second_package = publication_variant(
-        json!({"subject":"deployment","components":["api"],"contexts":[],"contribution":"counterexample","monitor":null}),
+        json!({"verification_target":"deployment","components":["api"],"contexts":[],"contribution":"counterexample","monitor":null}),
         'f',
     );
     let response = client
@@ -740,7 +757,10 @@ async fn retained_target_evidence_resolves_historically_with_exact_replay_and_ro
     .bind(second_run)
     .fetch_one(&pool)
     .await?;
-    assert_eq!(second_run["subject"]["artifacts"][0]["digest"], fp('f'));
+    assert_eq!(
+        second_run["verification_target"]["artifacts"][0]["digest"],
+        fp('f')
+    );
     assert_eq!(
         second_run["plan"]["model_fingerprint"],
         run["plan"]["model_fingerprint"]
@@ -750,8 +770,8 @@ async fn retained_target_evidence_resolves_historically_with_exact_replay_and_ro
         run["provenance"]["normalizer"]
     );
     assert_ne!(
-        second_run["subject_fingerprint"],
-        run["subject_fingerprint"]
+        second_run["verification_target_fingerprint"],
+        run["verification_target_fingerprint"]
     );
     let columns: i64 = sqlx::query_scalar("SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND udt_name IN ('json','jsonb')").fetch_one(&pool).await?;
     assert_eq!(columns, 0);

@@ -139,8 +139,8 @@ async fn context_contracts_and_capture_authorization_preserve_relational_storage
         response.text().await?
     );
     let result = ready_status(&client, &base, "deployment").await?;
-    assert_eq!(result["claims"][0]["status"], "unresolved");
-    assert_eq!(result["claims"][0]["claim"], "restricted");
+    assert_eq!(result["requirements"][0]["status"], "unresolved");
+    assert_eq!(result["requirements"][0]["requirement"], "restricted");
     assert_eq!(
         client
             .get(format!("{base}/deployments/absent/status"))
@@ -150,8 +150,8 @@ async fn context_contracts_and_capture_authorization_preserve_relational_storage
             .status(),
         StatusCode::NOT_FOUND
     );
-    let snapshot = json!({"captured_at_ms":1,"instance":"process-a","report":{"format":"azimuth-verification-context","version":1,"contexts":{"settings":{"contract_revision":contract["fingerprint"],"values":{"enabled":true,"revision":1,"mode":"restricted"}}}}});
-    let mut capture = json!({"kind":"execution","activity":null,"run":fp('1'),"bundle_fingerprint":fp('2'),"subject_fingerprint":fp('3'),"component":"api","instance":"process-a","started_at_ms":1,"finished_at_ms":1,"before":snapshot,"after":snapshot});
+    let snapshot = json!({"captured_at_ms":1,"instance":"process-a","report":{"format":"azimuth-execution-context","version":2,"contexts":{"settings":{"contract_revision":contract["fingerprint"],"values":{"enabled":true,"revision":1,"mode":"restricted"}}}}});
+    let mut capture = json!({"kind":"execution","activity":null,"run":fp('1'),"bundle_fingerprint":fp('2'),"verification_target_fingerprint":fp('3'),"component":"api","instance":"process-a","started_at_ms":1,"finished_at_ms":1,"before":snapshot,"after":snapshot});
     assert_eq!(
         client
             .post(format!("{base}/context-captures"))
@@ -188,7 +188,7 @@ async fn context_contracts_and_capture_authorization_preserve_relational_storage
         .as_str()
         .unwrap()
         .to_string();
-    bundle.subject = Subject::Source {
+    bundle.verification_target = VerificationTarget::Source {
         repositories: vec![RepositoryState {
             id: "root".into(),
             revision: "a".repeat(40),
@@ -205,11 +205,11 @@ async fn context_contracts_and_capture_authorization_preserve_relational_storage
     let context_key = format!("context/{}", contract["fingerprint"].as_str().unwrap());
     bundle
         .plan
-        .required_context
+        .required_execution_context
         .insert(context_key.clone(), context_fp.clone());
     bundle
         .actual_selection
-        .context
+        .execution_context
         .insert(context_key, context_fp);
     refresh(&mut bundle);
     assert!(azimuth::run::verify(&bundle).is_empty());
@@ -228,7 +228,7 @@ async fn context_contracts_and_capture_authorization_preserve_relational_storage
     capture.as_object_mut().unwrap().remove("trusted");
     capture["run"] = json!(bundle.run_id);
     capture["bundle_fingerprint"] = json!(bundle.bundle_fingerprint);
-    capture["subject_fingerprint"] = json!(bundle.subject_fingerprint);
+    capture["verification_target_fingerprint"] = json!(bundle.verification_target_fingerprint);
     capture["finished_at_ms"] = json!(5);
     capture["after"]["captured_at_ms"] = json!(5);
     let response = client
@@ -288,12 +288,12 @@ async fn context_contracts_and_capture_authorization_preserve_relational_storage
         .await?;
     let deployment_id = observed["deployment_id"].as_str().unwrap();
     let status = ready_status(&client, &base, deployment_id).await?;
-    assert_eq!(status["claims"][0]["status"], "supported", "{status}");
+    assert_eq!(status["requirements"][0]["status"], "supported", "{status}");
     let acceptance = json!({"environment":"production","expected_accepted_model_revision":package["snapshot"]["authority"]["fingerprint"],"reason":"Owner accepts the observed synthetic composition."});
     let mut projection_lock = pool.begin().await?;
     sqlx::query("SELECT generation FROM deployment_assessments WHERE project='project' AND deployment=$1 FOR UPDATE").bind(deployment_id).execute(&mut *projection_lock).await?;
     sqlx::query("UPDATE deployment_assessments SET generation=generation+1,retry_at='infinity' WHERE project='project' AND deployment=$1").bind(deployment_id).execute(&mut *projection_lock).await?;
-    sqlx::query("UPDATE assessment_claims SET generation=generation+1 WHERE project='project' AND deployment=$1").bind(deployment_id).execute(&mut *projection_lock).await?;
+    sqlx::query("UPDATE assessment_requirements SET generation=generation+1 WHERE project='project' AND deployment=$1").bind(deployment_id).execute(&mut *projection_lock).await?;
     projection_lock.commit().await?;
     let response = client
         .post(format!(
@@ -378,7 +378,8 @@ async fn context_contracts_and_capture_authorization_preserve_relational_storage
     capture["kind"] = json!("deployment");
     capture["run"] = Value::Null;
     capture["bundle_fingerprint"] = Value::Null;
-    capture["subject_fingerprint"] = deployed["deployment"]["subject_fingerprint"].clone();
+    capture["verification_target_fingerprint"] =
+        deployed["deployment"]["verification_target_fingerprint"].clone();
     capture["started_at_ms"] = json!(at + 1);
     capture["before"]["captured_at_ms"] = json!(at + 1);
     capture["finished_at_ms"] = json!(at + 2);
@@ -414,7 +415,7 @@ async fn context_contracts_and_capture_authorization_preserve_relational_storage
             .await?;
     assert_eq!(count, 2);
     let monitored = publication_policy(
-        json!({"subject":"deployment","components":["api"],"contexts":[],"contribution":"both","monitor":{"id":"access-monitor","interval_seconds":1,"freshness_seconds":60}}),
+        json!({"verification_target":"deployment","components":["api"],"contexts":[],"contribution":"both","monitor":{"id":"access-monitor","interval_seconds":1,"freshness_seconds":60}}),
     );
     let response = client
         .post(format!("{base}/releases"))
@@ -464,7 +465,9 @@ async fn context_contracts_and_capture_authorization_preserve_relational_storage
         .json()
         .await?;
     let mut poll = valid_bundle();
-    poll.subject = azimuth::run::subject_from_json(&native(&deployed["deployment"]["subject"]))?;
+    poll.verification_target = azimuth::run::verification_target_from_json(&native(
+        &deployed["deployment"]["verification_target"],
+    ))?;
     poll.plan.model_fingerprint = fp('f');
     let definition = monitored["snapshot"]["authority"]["checks"][0]["fingerprint"]
         .as_str()
@@ -479,7 +482,7 @@ async fn context_contracts_and_capture_authorization_preserve_relational_storage
     poll.provenance.generated_at_ms = current as u64;
     poll.activities[0].started_at_ms = poll.started_at_ms;
     poll.activities[0].finished_at_ms = poll.finished_at_ms;
-    poll.check_executions[0].observations[0].observed_at_ms = poll.finished_at_ms;
+    poll.check_executions[0].results[0].observed_at_ms = poll.finished_at_ms;
     refresh(&mut poll);
     assert!(azimuth::run::verify(&poll).is_empty());
     let response = client
@@ -519,9 +522,9 @@ async fn context_contracts_and_capture_authorization_preserve_relational_storage
             .join(",");
         sqlx::query(&format!("INSERT INTO {table}({names}) SELECT {selections} FROM assurance_records a CROSS JOIN {table} source JOIN assurance_records template ON template.id=source._record_id WHERE a.project='project' AND a.kind='run' AND a.record_key LIKE 'expired-monitor-%' AND template.project='project' AND template.kind='run' AND template.record_key=$1")).bind(&poll.bundle_fingerprint).execute(&pool).await?;
     }
-    sqlx::query("INSERT INTO run_bundles(project,run_id,revision,fingerprint,subject_fingerprint,model_fingerprint) SELECT 'project',record_key,0,record_key,$1,$2 FROM assurance_records WHERE project='project' AND kind='run' AND record_key LIKE 'expired-monitor-%'").bind(&poll.subject_fingerprint).bind(&poll.plan.model_fingerprint).execute(&pool).await?;
+    sqlx::query("INSERT INTO run_bundles(project,run_id,revision,fingerprint,verification_target_fingerprint,model_fingerprint) SELECT 'project',record_key,0,record_key,$1,$2 FROM assurance_records WHERE project='project' AND kind='run' AND record_key LIKE 'expired-monitor-%'").bind(&poll.verification_target_fingerprint).bind(&poll.plan.model_fingerprint).execute(&pool).await?;
     let result = ready_status(&client, &base, &selected).await?;
-    assert_eq!(result["claims"][0]["status"], "supported", "{result}");
+    assert_eq!(result["requirements"][0]["status"], "supported", "{result}");
     let columns:Vec<String>=sqlx::query_scalar("SELECT table_name||'.'||column_name FROM information_schema.columns WHERE table_schema='public' AND udt_name IN ('json','jsonb')").fetch_all(&pool).await?;
     assert!(
         columns.is_empty(),

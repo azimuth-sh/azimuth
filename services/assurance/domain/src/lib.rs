@@ -13,7 +13,7 @@ pub fn record_fingerprint<T: Serialize>(record: &T) -> Result<String, serde_json
 #[serde(rename_all = "camelCase")]
 pub struct EvidenceDefinition {
     pub id: String,
-    pub claim: ClaimReference,
+    pub requirement: RequirementReference,
     pub assertion: String,
     pub scope: String,
     pub quantification: String,
@@ -27,7 +27,7 @@ pub struct EvidenceDefinition {
 impl EvidenceDefinition {
     pub fn fingerprint(&self) -> String {
         record_fingerprint(&(
-            &self.claim,
+            &self.requirement,
             &self.assertion,
             &self.scope,
             &self.quantification,
@@ -42,9 +42,9 @@ impl EvidenceDefinition {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ClaimReference {
+pub struct RequirementReference {
     pub spec: String,
-    pub claim: String,
+    pub requirement: String,
     pub contract_fingerprint: String,
 }
 
@@ -92,41 +92,41 @@ pub struct ContractVerification {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ClaimContract {
+pub struct RequirementContract {
     pub contract_fingerprint: String,
     pub spec: String,
-    pub claim: String,
     pub requirement: String,
+    pub requirement_kind: String,
     pub criticality: String,
     pub statement: String,
-    pub case_statement: String,
+    pub scenario_statement: String,
     pub domain: String,
     pub verification: ContractVerification,
     pub surface: Option<ContractSurface>,
     pub obligated_areas: Vec<ContractArea>,
 }
 
-impl ClaimContract {
+impl RequirementContract {
     pub fn fingerprint(&self) -> String {
         self.as_core().fingerprint()
     }
 
-    pub fn reference(&self) -> ClaimReference {
-        ClaimReference {
+    pub fn reference(&self) -> RequirementReference {
+        RequirementReference {
             spec: self.spec.clone(),
-            claim: self.claim.clone(),
+            requirement: self.requirement.clone(),
             contract_fingerprint: self.contract_fingerprint.clone(),
         }
     }
 
-    fn as_core(&self) -> azimuth::assurance::ClaimContract {
-        azimuth::assurance::ClaimContract {
+    fn as_core(&self) -> azimuth::assurance::RequirementContract {
+        azimuth::assurance::RequirementContract {
             spec: self.spec.clone(),
-            claim: self.claim.clone(),
             requirement: self.requirement.clone(),
+            requirement_kind: self.requirement_kind.clone(),
             criticality: self.criticality.clone(),
             statement: self.statement.clone(),
-            case_statement: self.case_statement.clone(),
+            scenario_statement: self.scenario_statement.clone(),
             domain: self.domain.clone(),
             verification: azimuth::assurance::ContractVerification {
                 strength: self.verification.strength.clone(),
@@ -180,25 +180,29 @@ pub struct ProjectModelSnapshot {
     pub id: String,
     pub project: String,
     pub model_fingerprint: String,
-    pub claims: Vec<ClaimContract>,
+    pub requirements: Vec<RequirementContract>,
 }
 
 impl ProjectModelSnapshot {
     pub fn fingerprint(&self) -> String {
-        let claims = self.claims.iter().map(ClaimContract::as_core).collect();
+        let requirements = self
+            .requirements
+            .iter()
+            .map(RequirementContract::as_core)
+            .collect();
         azimuth::assurance::ProjectSnapshot {
             id: self.id.clone(),
             project: self.project.clone(),
             model_fingerprint: self.model_fingerprint.clone(),
-            claims,
+            requirements,
         }
         .fingerprint()
     }
 
-    pub fn contains(&self, reference: &ClaimReference) -> bool {
-        self.claims.iter().any(|contract| {
+    pub fn contains(&self, reference: &RequirementReference) -> bool {
+        self.requirements.iter().any(|contract| {
             contract.spec == reference.spec
-                && contract.claim == reference.claim
+                && contract.requirement == reference.requirement
                 && contract.contract_fingerprint == reference.contract_fingerprint
         })
     }
@@ -330,7 +334,7 @@ pub enum GateStatus {
 pub enum GateReason {
     DefinitionMissing,
     ProjectSnapshotMissing,
-    ClaimContractInapplicable,
+    RequirementContractInapplicable,
     QualificationMissing,
     QualificationRejected,
     QualificationStale,
@@ -400,12 +404,12 @@ impl AssuranceAccount {
                 vec![WorkKind::RegisterProjectSnapshot],
             );
         };
-        if !snapshot.contains(&definition.claim) {
+        if !snapshot.contains(&definition.requirement) {
             return closed(
                 Some(fingerprint),
                 None,
                 None,
-                vec![GateReason::ClaimContractInapplicable],
+                vec![GateReason::RequirementContractInapplicable],
                 vec![WorkKind::ReviseDefinition, WorkKind::QualifyDefinition],
             );
         }
@@ -607,13 +611,13 @@ mod tests {
 
     #[test]
     fn cli_snapshot_json_is_the_service_wire_contract() {
-        let contract = azimuth::assurance::ClaimContract {
+        let contract = azimuth::assurance::RequirementContract {
             spec: "checkout/performance".into(),
-            claim: "latency-objective".into(),
-            requirement: "performance".into(),
+            requirement: "latency-objective".into(),
+            requirement_kind: "performance".into(),
             criticality: "standard".into(),
             statement: "Checkout latency remains bounded.".into(),
-            case_statement: "Latency is below the threshold.".into(),
+            scenario_statement: "Latency is below the threshold.".into(),
             domain: "behaviour".into(),
             verification: azimuth::assurance::ContractVerification {
                 strength: Some("demonstration".into()),
@@ -639,8 +643,8 @@ mod tests {
         assert_eq!(wire.id, snapshot.id);
         assert_eq!(wire.id, wire.fingerprint());
         assert_eq!(
-            wire.claims[0].contract_fingerprint,
-            wire.claims[0].fingerprint()
+            wire.requirements[0].contract_fingerprint,
+            wire.requirements[0].fingerprint()
         );
     }
 }

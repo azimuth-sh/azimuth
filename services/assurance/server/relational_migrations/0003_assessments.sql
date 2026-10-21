@@ -4,36 +4,36 @@ CREATE TABLE assessment_events (
 CREATE INDEX assessment_events_project ON assessment_events(project,sequence);
 CREATE TABLE deployment_assessments (
     project text NOT NULL, deployment text NOT NULL, release text NOT NULL,
-    authority text, model text, subject text,
+    authority text, model text, verification_target text,
     generation bigint NOT NULL DEFAULT 1, published_generation bigint NOT NULL DEFAULT 0,
     evaluated_at_ms bigint, valid_until_ms bigint,
     observed_current boolean NOT NULL DEFAULT false,
     last_error text, retry_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY(project,deployment)
 );
-CREATE TABLE assessment_claims (
-    project text NOT NULL, deployment text NOT NULL, claim text NOT NULL,
+CREATE TABLE assessment_requirements (
+    project text NOT NULL, deployment text NOT NULL, requirement text NOT NULL,
     generation bigint NOT NULL DEFAULT 1, published_generation bigint NOT NULL DEFAULT 0,
     record_key text, status text NOT NULL DEFAULT 'unresolved', review text NOT NULL DEFAULT 'missing',
     summary text NOT NULL DEFAULT 'Assessment is pending', evaluated_at_ms bigint, valid_until_ms bigint,
-    PRIMARY KEY(project,deployment,claim),
+    PRIMARY KEY(project,deployment,requirement),
     FOREIGN KEY(project,deployment) REFERENCES deployment_assessments(project,deployment)
 );
 CREATE TABLE assessment_dependencies (
-    project text NOT NULL, deployment text NOT NULL, claim text NOT NULL,
+    project text NOT NULL, deployment text NOT NULL, requirement text NOT NULL,
     kind text NOT NULL, identity text NOT NULL,
-    PRIMARY KEY(project,deployment,claim,kind,identity),
-    FOREIGN KEY(project,deployment,claim) REFERENCES assessment_claims(project,deployment,claim)
+    PRIMARY KEY(project,deployment,requirement,kind,identity),
+    FOREIGN KEY(project,deployment,requirement) REFERENCES assessment_requirements(project,deployment,requirement)
 );
 CREATE INDEX assessment_dependency_lookup ON assessment_dependencies(project,kind,identity);
-CREATE TABLE assessment_cases (
-    project text NOT NULL, deployment text NOT NULL, claim text NOT NULL,
-    case_id text NOT NULL, check_id text NOT NULL, status text NOT NULL, generation bigint NOT NULL, result_fingerprint text NOT NULL,
-    PRIMARY KEY(project,deployment,claim,case_id,check_id),
-    FOREIGN KEY(project,deployment,claim) REFERENCES assessment_claims(project,deployment,claim)
+CREATE TABLE assessment_scenarios (
+    project text NOT NULL, deployment text NOT NULL, requirement text NOT NULL,
+    scenario_id text NOT NULL, check_id text NOT NULL, status text NOT NULL, generation bigint NOT NULL, result_fingerprint text NOT NULL,
+    PRIMARY KEY(project,deployment,requirement,scenario_id,check_id),
+    FOREIGN KEY(project,deployment,requirement) REFERENCES assessment_requirements(project,deployment,requirement)
 );
 
-CREATE INDEX assessment_claim_expiry ON assessment_claims(valid_until_ms) WHERE generation=published_generation;
+CREATE INDEX assessment_requirement_expiry ON assessment_requirements(valid_until_ms) WHERE generation=published_generation;
 CREATE INDEX assessment_jobs ON deployment_assessments(retry_at) WHERE generation<>published_generation OR authority IS NULL;
 
 CREATE TABLE definition_assessments (
@@ -42,10 +42,10 @@ CREATE TABLE definition_assessments (
     retry_at timestamptz NOT NULL DEFAULT now(), last_error text,
     PRIMARY KEY(project,revision)
 );
-CREATE TABLE definition_claims (
-    project text NOT NULL, revision text NOT NULL, claim text NOT NULL,
+CREATE TABLE definition_requirements (
+    project text NOT NULL, revision text NOT NULL, requirement text NOT NULL,
     record_fingerprint text, status text NOT NULL, diagnostics text[] NOT NULL,
-    PRIMARY KEY(project,revision,claim),
+    PRIMARY KEY(project,revision,requirement),
     FOREIGN KEY(project,revision) REFERENCES definition_assessments(project,revision)
 );
 CREATE TABLE definition_run_dependencies (
