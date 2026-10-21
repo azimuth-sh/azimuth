@@ -5,12 +5,13 @@ Account transformation: automatic authored-syntax rewrite
 
 Claims become Requirements, specification Cases become Scenarios, assurance Subjects become Verification Targets, Check Observations become Check Results, Verification Context becomes Execution Context, Challengers become Verification Challenges, and Claim Review and Claim Health become Requirement Review and Requirement Status. Obligations, stable identifiers, evidence semantics and assessment rules do not change.
 
-`azimuth migrate plan` rewrites only syntax positions in active Markdown under `azimuth/model`, `azimuth/standards` and active changes, never inside `archive` or `history` directories or fenced blocks:
+`azimuth migrate plan` rewrites only syntax positions in active Markdown under `azimuth/model`, `azimuth/standards` and active changes, never inside `archive`, `history`, retained `reviews` or local `.azimuth` runtime directories, or fenced blocks:
 
-- headings `## Claim:`, `### Case:`, `Claim design`, `Case design`, `Claim verification`, `Case verification`, `Claim review`, `Claim health`, `Claim judgment`, `Challenger` and the intent-delta operations `Add claim`, `Add case`, `Replace claim`, `Remove claim`, `Remove case`;
+- headings `## Claim:`, `### Case:`, `Claim design`, `Case design`, `Claim verification`, `Case verification`, `Claim review`, `Claim health`, `Claim judgment`, `Challenger` and every intent- and account-delta operation `Add`, `Replace` or `Remove` naming `claim`, `case`, `claim design`, `case design`, `claim verification`, `case verification`, `claim review` or `challenger`;
 - metadata labels `Claim`, `Claims`, `Case`, `Cases`, `Challenger`, `Subjects` and `Remove cases`;
 - the closed vocabularies in `Select`, `Required scope` and `Targets` values (`claim`, `case`, `claim-review`, `claim-health`, `claim-judgment`);
-- the `Context:` label of `Evidence Binding` and `Method Qualification` blocks, which becomes `Execution Context:`; `Context:` elsewhere is ordinary text and stays.
+- the `Context:` label of `Evidence Binding` and `Method Qualification` blocks, which becomes `Execution Context:`; `Context:` elsewhere is ordinary text and stays;
+- the top-level `subject` key of a Check's `Deployment:` policy, which becomes `verification_target`.
 
 It also rewrites `azimuth/workspace.json` from version 1 to version 2, renaming each realization obligation `claim` to `requirement`. Identifiers that contain retired words, such as `verification-context-is-observed-and-bounded`, are preserved; renaming one is a remove-and-add decision. Prose is not rewritten.
 

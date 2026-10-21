@@ -582,25 +582,18 @@ impl AccountEdit {
 
 fn account_edits(root: &Path, repository: &Path) -> Result<Vec<AccountEdit>, String> {
     let mut edits = Vec::new();
-    for file in active_account_markdown(root)? {
+    for file in active_account_files(root)? {
         let source = fs::read_to_string(&file)
             .map_err(|error| format!("cannot read {}: {error}", file.display()))?;
-        let rewritten = crate::account_syntax_migration::rewrite_markdown(&source);
-        if rewritten != source {
+        let rewritten = if is_workspace(&file) {
+            crate::account_syntax_migration::rewrite_workspace(&source)
+                .map_err(|error| format!("{}: {error}", file.display()))?
+        } else {
+            Some(crate::account_syntax_migration::rewrite_markdown(&source))
+        };
+        if let Some(rewritten) = rewritten.filter(|rewritten| *rewritten != source) {
             edits.push(account_edit(repository, &file, &source, rewritten)?);
         }
-    }
-    let workspace = root.join("workspace.json");
-    match fs::read_to_string(&workspace) {
-        Ok(source) => {
-            let rewritten = crate::account_syntax_migration::rewrite_workspace(&source)
-                .map_err(|error| format!("{}: {error}", workspace.display()))?;
-            if let Some(rewritten) = rewritten {
-                edits.push(account_edit(repository, &workspace, &source, rewritten)?);
-            }
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(format!("cannot read {}: {error}", workspace.display())),
     }
     edits.sort_by(|left, right| left.path.cmp(&right.path));
     Ok(edits)
@@ -953,15 +946,26 @@ fn residual_retired_syntax(edits: &[AccountEdit]) -> Vec<String> {
     findings
 }
 
-/// Active authored Markdown: the model, standards and unarchived changes. Archived changes and
-/// `history` directories are immutable records and are never rewritten or rejected.
-fn active_account_markdown(root: &Path) -> Result<Vec<PathBuf>, String> {
+/// Active authored Markdown and workspace documents: the root workspace, the model, standards and
+/// unarchived changes. Archived changes,
+/// `history` directories and retained `reviews` are immutable records and `.azimuth` holds local
+/// runtime artifacts; none of them is rewritten or rejected.
+fn active_account_files(root: &Path) -> Result<Vec<PathBuf>, String> {
     let mut files = Vec::new();
+    let workspace = root.join("workspace.json");
+    if workspace.is_file() {
+        files.push(workspace);
+    }
     collect_markdown(&root.join("model"), &mut files)?;
     collect_markdown(&root.join("standards"), &mut files)?;
     collect_active_change_markdown(&root.join("changes"), &mut files)?;
     files.sort();
     Ok(files)
+}
+
+/// A change may carry its own proposed workspace beside its deltas; it migrates like the root one.
+fn is_workspace(path: &Path) -> bool {
+    path.file_name().and_then(|name| name.to_str()) == Some("workspace.json")
 }
 
 fn collect_active_change_markdown(root: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
@@ -1000,10 +1004,19 @@ fn collect_markdown(root: &Path, files: &mut Vec<PathBuf>) -> Result<(), String>
             .file_type()
             .map_err(|error| format!("cannot inspect {}: {error}", path.display()))?;
         if kind.is_dir() {
-            if entry.file_name() != "history" {
+            // Retained review records keep the bytes their fingerprints and reviewers saw, exactly
+            // like history; they are never rewritten, and validate does not parse them. `.azimuth`
+            // holds local runtime artifacts (staged previews, drafts, inputs) that are regenerated,
+            // never authored, and must not be rewritten under a newer vocabulary either.
+            if !matches!(
+                entry.file_name().to_str(),
+                Some("history" | "reviews" | ".azimuth")
+            ) {
                 collect_markdown(&path, files)?;
             }
-        } else if kind.is_file() && path.extension().and_then(|value| value.to_str()) == Some("md")
+        } else if kind.is_file()
+            && (path.extension().and_then(|value| value.to_str()) == Some("md")
+                || is_workspace(&path))
         {
             files.push(path);
         }

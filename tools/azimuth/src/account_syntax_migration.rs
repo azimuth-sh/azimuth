@@ -1,8 +1,9 @@
 //! Rewrites authored account syntax from the `alpha-claim-case` line to the Requirement, Scenario,
 //! Verification Target and Verification Challenge vocabulary.
 //!
-//! Only whitelisted syntax positions change: heading labels, metadata labels and the closed
-//! vocabularies carried by `Select`, `Required scope` and `Targets`. Identifiers, prose and fenced
+//! Only whitelisted syntax positions change: heading labels, delta operation declarations, metadata
+//! labels, the closed vocabularies carried by `Select`, `Required scope` and `Targets`, and the
+//! `subject` key of a Check's `Deployment:` policy. Identifiers, prose and fenced
 //! blocks are never touched, so stable Claim and Case identifiers survive even when they contain the
 //! retired words, and recorded history text keeps its original wording.
 
@@ -20,11 +21,21 @@ const HEADINGS: &[(&str, &str)] = &[
     ("Claim judgment", "Requirement judgment"),
     ("Claim Judgment", "Requirement Judgment"),
     ("Challenger", "Verification Challenge"),
-    ("Add claim", "Add requirement"),
-    ("Add case", "Add scenario"),
-    ("Replace claim", "Replace requirement"),
-    ("Remove claim", "Remove requirement"),
-    ("Remove case", "Remove scenario"),
+];
+
+const OPERATIONS: &[&str] = &["Add ", "Replace ", "Remove "];
+
+/// Every declaration an intent or account delta operation could name on the earlier line, with its
+/// canonical capitalized spelling on the current line.
+const DECLARATIONS: &[(&str, &str)] = &[
+    ("claim", "Requirement"),
+    ("case", "Scenario"),
+    ("claim design", "Requirement design"),
+    ("case design", "Scenario design"),
+    ("claim verification", "Requirement verification"),
+    ("case verification", "Scenario verification"),
+    ("claim review", "Requirement review"),
+    ("challenger", "Verification Challenge"),
 ];
 
 const LABELS: &[(&str, &str)] = &[
@@ -121,8 +132,12 @@ fn rewrite_targets(value: &str) -> String {
         .split(',')
         .map(|item| {
             let trimmed = item.trim();
-            match mapped(KINDS, trimmed) {
-                Some(new) => item.replacen(trimmed, new, 1),
+            let kind = trimmed
+                .strip_prefix('`')
+                .and_then(|kind| kind.strip_suffix('`'))
+                .unwrap_or(trimmed);
+            match mapped(KINDS, kind) {
+                Some(new) => item.replacen(kind, new, 1),
                 None => item.to_string(),
             }
         })
@@ -130,15 +145,91 @@ fn rewrite_targets(value: &str) -> String {
         .join(",")
 }
 
-/// Evidence Binding and Method Qualification blocks carry the retired `Context:` label for their
-/// Execution Context; elsewhere `Context:` is ordinary authored text and stays.
-fn declares_execution_context(line: &str) -> Option<bool> {
-    heading(line).map(|(_, label, _)| matches!(label, "Evidence Binding" | "Method Qualification"))
+/// `Add claim design`, `Remove case verification`, `Add challenger` and the other delta operations.
+/// A lowercase declaration keeps lowercase, as the account delta parser requires; a capitalized one
+/// takes the canonical spelling.
+fn rewrite_operation(label: &str) -> Option<String> {
+    let operation = OPERATIONS
+        .iter()
+        .find(|operation| label.starts_with(**operation))?;
+    let declaration = &label[operation.len()..];
+    let (_, new) = DECLARATIONS
+        .iter()
+        .find(|(old, _)| old.eq_ignore_ascii_case(declaration))?;
+    let new = if declaration.starts_with(|c: char| c.is_ascii_lowercase()) {
+        new.to_lowercase()
+    } else {
+        new.to_string()
+    };
+    Some(format!("{operation}{new}"))
 }
 
-fn rewrite_line(line: &str, execution_context_block: bool) -> String {
+/// The heading block a line belongs to decides which positional rewrites apply to its metadata.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Block {
+    Other,
+    /// Evidence Binding and Method Qualification blocks carry the retired `Context:` label for their
+    /// Execution Context; elsewhere `Context:` is ordinary authored text and stays.
+    ExecutionContext,
+    /// A Check's `Deployment:` policy names its execution scope under the retired `subject` key.
+    Check,
+}
+
+fn block(line: &str) -> Option<Block> {
+    heading(line).map(|(_, label, _)| {
+        let declaration = OPERATIONS
+            .iter()
+            .find_map(|operation| label.strip_prefix(operation))
+            .unwrap_or(label);
+        if declaration.eq_ignore_ascii_case("check") {
+            Block::Check
+        } else if matches!(declaration, "Evidence Binding" | "Method Qualification") {
+            Block::ExecutionContext
+        } else {
+            Block::Other
+        }
+    })
+}
+
+/// Renames only the top-level `"subject"` key of a deployment policy object; nested values, other
+/// keys and string contents are left byte-identical.
+fn rewrite_deployment_policy(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut depth = 0usize;
+    let mut index = 0usize;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'{' | b'[' => depth += 1,
+            b'}' | b']' => depth = depth.saturating_sub(1),
+            b'"' => {
+                let start = index;
+                index += 1;
+                while index < bytes.len() && bytes[index] != b'"' {
+                    index += if bytes[index] == b'\\' { 2 } else { 1 };
+                }
+                let token = &value[start..(index + 1).min(value.len())];
+                let after = value[(index + 1).min(value.len())..].trim_start();
+                if depth == 1 && token == "\"subject\"" && after.starts_with(':') {
+                    return format!(
+                        "{}\"verification_target\"{}",
+                        &value[..start],
+                        &value[index + 1..]
+                    );
+                }
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    value.to_string()
+}
+
+fn rewrite_line(line: &str, block: Block) -> String {
     if let Some((marks, label, tail)) = heading(line) {
         if let Some(new) = mapped(HEADINGS, label) {
+            return format!("{marks}{new}:{tail}");
+        }
+        if let Some(new) = rewrite_operation(label) {
             return format!("{marks}{new}:{tail}");
         }
         return line.to_string();
@@ -149,8 +240,11 @@ fn rewrite_line(line: &str, execution_context_block: bool) -> String {
     if let Some(new) = mapped(LABELS, label) {
         return format!("{prefix}{new}:{tail}");
     }
-    if execution_context_block && prefix.is_empty() && label == "Context" {
+    if block == Block::ExecutionContext && prefix.is_empty() && label == "Context" {
         return format!("Execution Context:{tail}");
+    }
+    if block == Block::Check && label == "Deployment" {
+        return format!("{prefix}{label}:{}", rewrite_deployment_policy(tail));
     }
     match label {
         "Select" => rewrite_select(tail)
@@ -165,8 +259,7 @@ fn rewrite_line(line: &str, execution_context_block: bool) -> String {
 /// Rewrites one authored Markdown document. Line endings and fenced content are preserved exactly.
 pub fn rewrite_markdown(source: &str) -> String {
     let mut out = String::with_capacity(source.len());
-    let mut fenced = false;
-    let mut execution_context_block = false;
+    let mut position = Position::default();
     for line in source.split_inclusive('\n') {
         let (body, ending) = match line.strip_suffix('\n') {
             Some(body) => match body.strip_suffix('\r') {
@@ -175,19 +268,12 @@ pub fn rewrite_markdown(source: &str) -> String {
             },
             None => (line, ""),
         };
-        if fence(body) {
-            fenced = !fenced;
-            out.push_str(line);
-            continue;
-        }
-        if fenced {
-            out.push_str(line);
-        } else {
-            if let Some(declares) = declares_execution_context(body) {
-                execution_context_block = declares;
+        match position.rewrite(body) {
+            Some(rewritten) => {
+                out.push_str(&rewritten);
+                out.push_str(ending);
             }
-            out.push_str(&rewrite_line(body, execution_context_block));
-            out.push_str(ending);
+            None => out.push_str(line),
         }
     }
     out
@@ -195,25 +281,69 @@ pub fn rewrite_markdown(source: &str) -> String {
 
 /// Lines of an active artifact that still use retired syntax, as `(line number, line)`.
 pub fn retired_syntax(source: &str) -> Vec<(usize, String)> {
-    let mut fenced = false;
-    let mut execution_context_block = false;
+    let mut position = Position::default();
     let mut found = Vec::new();
     for (index, line) in source.lines().enumerate() {
-        if fence(line) {
-            fenced = !fenced;
-            continue;
-        }
-        if fenced {
-            continue;
-        }
-        if let Some(declares) = declares_execution_context(line) {
-            execution_context_block = declares;
-        }
-        if rewrite_line(line, execution_context_block) != line {
+        if position
+            .rewrite(line)
+            .is_some_and(|rewritten| rewritten != line)
+        {
             found.push((index + 1, line.to_string()));
         }
     }
     found
+}
+
+/// Where a line sits: inside a fence, which heading block, and whether it continues a `Targets:`
+/// list whose items are closed assessment kinds.
+#[derive(Default)]
+struct Position {
+    fenced: bool,
+    block: Option<Block>,
+    targets_list: bool,
+}
+
+impl Position {
+    /// Returns the rewritten line, or `None` for a fence marker or fenced content left verbatim.
+    fn rewrite(&mut self, line: &str) -> Option<String> {
+        if fence(line) {
+            self.fenced = !self.fenced;
+            return None;
+        }
+        if self.fenced {
+            return None;
+        }
+        if let Some(next) = block(line) {
+            self.block = Some(next);
+            self.targets_list = false;
+            return Some(rewrite_line(line, next));
+        }
+        if self.targets_list {
+            if let Some(item) = list_item(line) {
+                return Some(item);
+            }
+            self.targets_list = false;
+        }
+        if let Some((_, "Targets", tail)) = metadata(line) {
+            self.targets_list = tail.trim().is_empty();
+        }
+        Some(rewrite_line(line, self.block.unwrap_or(Block::Other)))
+    }
+}
+
+/// An indented `- \`claim-review\`` item of a `Targets:` list, with its kind renamed.
+fn list_item(line: &str) -> Option<String> {
+    let indent = line.bytes().take_while(|byte| *byte == b' ').count();
+    let value = line[indent..].strip_prefix("- ")?;
+    if indent == 0 {
+        return None;
+    }
+    let (open, kind, close) = match value.strip_prefix('`').and_then(|v| v.strip_suffix('`')) {
+        Some(kind) => ("`", kind, "`"),
+        None => ("", value, ""),
+    };
+    let kind = mapped(KINDS, kind).unwrap_or(kind);
+    Some(format!("{}- {open}{kind}{close}", &line[..indent]))
 }
 
 /// Rewrites a version 1 workspace to version 2, renaming realization obligation `claim` keys.
@@ -273,11 +403,11 @@ mod tests {
 
     #[test]
     fn rewrites_metadata_labels_and_closed_vocabulary_values() {
-        let source = "### Challenger: mutation/search\n- Form: mutation\n- Targets: claim-review, claim-health\n\
+        let source = "### Challenger: mutation/search\n- Form: mutation\n- Targets: claim-review, claim-health\n- Targets: `claim-review`\n\
                       - Claims: claim-review\n  - Subjects: artifact\nRequired scope: [\"claim\",\"case\",\"mechanism\"]\n\
                       Select: claim-judgment from claim claim\nSelect: applicability-decision from case case-id\n\
                       Remove cases: a, b\n";
-        let expected = "### Verification Challenge: mutation/search\n- Form: mutation\n- Targets: requirement-review, requirement-status\n\
+        let expected = "### Verification Challenge: mutation/search\n- Form: mutation\n- Targets: requirement-review, requirement-status\n- Targets: `requirement-review`\n\
                         - Requirements: claim-review\n  - Verification Targets: artifact\nRequired scope: [\"requirement\",\"scenario\",\"mechanism\"]\n\
                         Select: requirement-judgment from requirement claim\nSelect: applicability-decision from scenario case-id\n\
                         Remove scenarios: a, b\n";
@@ -297,6 +427,25 @@ mod tests {
         assert_eq!(rewrite_markdown(source), expected);
         assert_eq!(retired_syntax(source).len(), 2);
         assert!(retired_syntax(expected).is_empty());
+    }
+
+    #[test]
+    fn rewrites_every_delta_operation_declaration_and_check_deployment_scope() {
+        let source = "## Add claim design: a\n### Add case design: a/s\n## Replace claim verification: a\n\
+                      ### Remove case verification: a/s\n## Add claim review: a\n### Add challenger: m/s\n\
+                      ### Replace challenger: m/s\n### Remove challenger: m/s\n## Add Claim design: b\n\
+                      ## Add term: subject\n\n### Check: admission\n\
+                      - Deployment: {\"subject\":\"source\",\"components\":[\"api\"],\"monitor\":{\"subject\":\"x\"}}\n\
+                      - Note: {\"subject\":\"source\"}\n\n## Section: other\n- Deployment: {\"subject\":\"source\"}\n";
+        let expected = "## Add requirement design: a\n### Add scenario design: a/s\n## Replace requirement verification: a\n\
+                        ### Remove scenario verification: a/s\n## Add requirement review: a\n### Add verification challenge: m/s\n\
+                        ### Replace verification challenge: m/s\n### Remove verification challenge: m/s\n## Add Requirement design: b\n\
+                        ## Add term: subject\n\n### Check: admission\n\
+                        - Deployment: {\"verification_target\":\"source\",\"components\":[\"api\"],\"monitor\":{\"subject\":\"x\"}}\n\
+                        - Note: {\"subject\":\"source\"}\n\n## Section: other\n- Deployment: {\"subject\":\"source\"}\n";
+        assert_eq!(rewrite_markdown(source), expected);
+        assert!(retired_syntax(expected).is_empty());
+        assert_eq!(retired_syntax(source).len(), 10);
     }
 
     #[test]

@@ -373,3 +373,149 @@ fn current_line_plan_rewrites_retired_syntax_without_changing_the_line() {
     );
     fs::remove_dir_all(root).unwrap();
 }
+
+const OLD_DELTAS: &[(&str, &str, &str)] = &[
+    (
+        "spec.md",
+        "# Intent delta: sample\n\n## Add claim: visible\nCriticality: standard\n\n\
+         The system SHALL expose its state.\n\n### Add case: state-is-visible\n\
+         Event: the state is requested\nRequired: the state is exposed\n",
+        "# Intent delta: sample\n\n## Add requirement: visible\nCriticality: standard\n\n\
+         The system SHALL expose its state.\n\n### Add scenario: state-is-visible\n\
+         Event: the state is requested\nRequired: the state is exposed\n",
+    ),
+    (
+        "design.md",
+        "# Design delta: sample\n\n## Add claim design: visible\n- Areas:\n  - `api`\n\n\
+         The handler returns the state.\n\n### Add case design: state-is-visible\n\n\
+         The handler reads the stored state.\n",
+        "# Design delta: sample\n\n## Add requirement design: visible\n- Areas:\n  - `api`\n\n\
+         The handler returns the state.\n\n### Add scenario design: state-is-visible\n\n\
+         The handler reads the stored state.\n",
+    ),
+    (
+        "verification.md",
+        "# Verification delta: sample\n\n## Add claim verification: visible\n\n\
+         ### Add case verification: state-is-visible\n\n#### Add check: state-request\n\
+         - Deployment: {\"subject\":\"source\",\"components\":[\"api\"],\"contexts\":[],\"contribution\":\"both\",\"monitor\":null}\n\
+         - Evidence bindings:\n  - Case: `state-is-visible`\n    - Contribution: Requests the state.\n\n\
+         Request the state and compare it.\n\n### Add challenger: mutation-search\n\
+         - Form:\n  - `mutation`\n- Targets:\n  - `claim-review`\n\nSearch for an undetected change.\n",
+        "# Verification delta: sample\n\n## Add requirement verification: visible\n\n\
+         ### Add scenario verification: state-is-visible\n\n#### Add check: state-request\n\
+         - Deployment: {\"verification_target\":\"source\",\"components\":[\"api\"],\"contexts\":[],\"contribution\":\"both\",\"monitor\":null}\n\
+         - Evidence bindings:\n  - Scenario: `state-is-visible`\n    - Contribution: Requests the state.\n\n\
+         Request the state and compare it.\n\n### Add verification challenge: mutation-search\n\
+         - Form:\n  - `mutation`\n- Targets:\n  - `requirement-review`\n\nSearch for an undetected change.\n",
+    ),
+    (
+        "judgments.md",
+        "# Judgments delta: sample\n\n## Add claim review: visible\n\n- State: `pending`\n\
+         - Cases:\n  - `state-is-visible`\n- Verification: `visible`\n- Design: `visible`\n\n\
+         Pending independent review.\n",
+        "# Judgments delta: sample\n\n## Add requirement review: visible\n\n- State: `pending`\n\
+         - Scenarios:\n  - `state-is-visible`\n- Verification: `visible`\n- Design: `visible`\n\n\
+         Pending independent review.\n",
+    ),
+];
+
+const RETAINED_REVIEW: &str = "# Requirement reviews\n\n## Claim review: visible-1\n- Claim: `visible`\n\
+- Cases:\n  - `state-is-visible`\n- Deployment: {\"subject\":\"source\"}\n\nRetained as reviewed.\n";
+
+#[test]
+fn migrated_account_delta_operations_and_deployment_scope_pass_change_validate() {
+    let (root, azimuth_root) = earlier_line_repository();
+    write(
+        &azimuth_root.join("workspace.json"),
+        "{\"format\":\"azimuth-workspace\",\"version\":1,\"areas\":[],\"surfaces\":[],\
+         \"realization_obligations\":[],\"packages\":[\"azimuth.challenge\"]}\n",
+    );
+    let change = azimuth_root.join("changes/show-state");
+    write(
+        &change.join("proposal.md"),
+        "# Change: show-state\n\nStatus: proposed\n\n## Problem\n\nState is invisible.\n\n\
+         ## Outcome\n\nState is visible.\n\n## Scope\n\nThe sample module.\n\n\
+         ## Affected requirements\n\n- `visible`\n\n## Completion conditions\n\n- The state is visible.\n",
+    );
+    write(&change.join("plan.md"), "# Plan\n\n- [ ] Show the state.\n");
+    write(
+        &change.join("workspace.json"),
+        "{\"format\":\"azimuth-workspace\",\"version\":1,\"areas\":[],\"surfaces\":[],\
+         \"realization_obligations\":[],\"packages\":[\"azimuth.challenge\"]}\n",
+    );
+    for (file, old, _) in OLD_DELTAS {
+        write(&change.join("deltas/sample").join(file), old);
+    }
+    write(&change.join("reviews/0001-visible.md"), RETAINED_REVIEW);
+    write(&change.join(".azimuth/artifacts/draft.md"), RETAINED_REVIEW);
+
+    let plan_path = root.join("plan.json");
+    let planned = plan(&azimuth_root, &plan_path);
+    assert_eq!(text(&planned, "disposition"), "automatic");
+    let edited = planned
+        .get("edits")
+        .and_then(azimuth::json::Json::as_array)
+        .unwrap()
+        .iter()
+        .map(|edit| text(edit, "path").to_string())
+        .collect::<Vec<_>>();
+    for (file, _, _) in OLD_DELTAS {
+        assert!(edited.contains(&format!("azimuth/changes/show-state/deltas/sample/{file}")));
+    }
+    assert!(edited.contains(&"azimuth/changes/show-state/workspace.json".to_string()));
+    assert!(!edited
+        .iter()
+        .any(|path| path.contains("/reviews/") || path.contains("/.azimuth/")));
+
+    let applied = azimuth(&[
+        "migrate",
+        "apply",
+        "--root",
+        azimuth_root.to_str().unwrap(),
+        "--plan",
+        plan_path.to_str().unwrap(),
+    ]);
+    assert!(
+        applied.status.success(),
+        "{}",
+        String::from_utf8_lossy(&applied.stderr)
+    );
+    for (file, _, new) in OLD_DELTAS {
+        assert_eq!(
+            fs::read_to_string(change.join("deltas/sample").join(file)).unwrap(),
+            *new,
+            "{file}"
+        );
+    }
+    for retained in ["reviews/0001-visible.md", ".azimuth/artifacts/draft.md"] {
+        assert_eq!(
+            fs::read_to_string(change.join(retained)).unwrap(),
+            RETAINED_REVIEW
+        );
+    }
+
+    let validated = azimuth(&[
+        "change",
+        "validate",
+        "show-state",
+        "--changes",
+        azimuth_root.join("changes").to_str().unwrap(),
+        "--model",
+        azimuth_root.join("model").to_str().unwrap(),
+        "--standards",
+        azimuth_root
+            .join("standards/verification.md")
+            .to_str()
+            .unwrap(),
+        "--workspace",
+        change.join("workspace.json").to_str().unwrap(),
+    ]);
+    assert!(
+        validated.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&validated.stdout),
+        String::from_utf8_lossy(&validated.stderr)
+    );
+    assert!(String::from_utf8_lossy(&validated.stdout).contains("prospective"));
+    fs::remove_dir_all(root).unwrap();
+}
