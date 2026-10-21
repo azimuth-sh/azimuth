@@ -35,6 +35,7 @@ export interface ReviewPage {
   next: string | null;
 }
 export interface ClaimReviewState {
+  assessment?: AssessmentFreshness;
   authority_fingerprint: string;
   claims: Array<{
     claim: string;
@@ -97,7 +98,18 @@ export interface ClaimBindingStatus {
   monitor?: MonitorPolicy | null;
   reasons?: string[];
 }
+export interface AssessmentFreshness {
+  state: 'ready' | 'pending' | 'expired';
+  generation: number;
+  published_generation: number | null;
+  evaluated_at_ms: number | null;
+  valid_until_ms: number | null;
+}
+export type DeploymentStatusSummary = Omit<SubjectState, 'claims'> & {
+  claims: Array<Pick<SubjectState['claims'][number], 'claim' | 'status' | 'review' | 'diagnostics' | 'gaps'> & { explanation: Pick<StatusExplanation, 'summary'> }>;
+};
 export interface SubjectState {
+  assessment?: AssessmentFreshness;
   authority_fingerprint: string;
   model_fingerprint: string;
   format?: string;

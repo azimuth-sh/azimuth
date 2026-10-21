@@ -32,6 +32,7 @@ export default async function ProjectPage({
     revision,
     subject,
     state,
+    freshness,
     authority,
     hasMore,
     catalog,
@@ -173,6 +174,11 @@ export default async function ProjectPage({
           )}
         </section>
       )}
+      {freshness && <section className="dashboardPanel" role="status" aria-label="Assessment freshness">
+        <h2>{freshness.state === "ready" ? "Assessment current" : freshness.state === "expired" ? "Assessment overdue" : "Assessment updating"}</h2>
+        <p>{freshness.state === "ready" ? "The displayed Claim Status reflects the current evidence." : "Evidence is being reassessed. Previous conclusions are not shown as current."}
+          {freshness.evaluated_at_ms ? ` Last evaluated ${new Date(freshness.evaluated_at_ms).toISOString().replace("T", " ").slice(0, 19)} UTC.` : ""}</p>
+      </section>}
       <div className="metricGrid">
         {(
           [
@@ -333,18 +339,18 @@ export default async function ProjectPage({
                         {m.id}
                       </Link>
                     </td>
-                    <td>{rows.length}</td>
+                    <td>{m.claims.length}</td>
                     <td className="goodText">
-                      {rows.filter((c) => c.status === "supported").length}
+                      {state ? rows.filter((c) => c.status === "supported").length : "—"}
                     </td>
                     <td className="badText">
-                      {rows.filter((c) => c.status === "violated").length}
+                      {state ? rows.filter((c) => c.status === "violated").length : "—"}
                     </td>
                     <td className="warnText">
                       {
-                        rows.filter(
+                        state ? rows.filter(
                           (c) => !["supported", "violated"].includes(c.status),
-                        ).length
+                        ).length : "—"
                       }
                     </td>
                     <td>

@@ -6,7 +6,7 @@
 4. Make drim.dev probe observe target process/image identities across the request and remove per-release values from GitOps/infra configuration.
 5. Verify native validity, rollout races, delayed delivery, rollback, duplicate/conflicting ingestion, and separation of inconclusive exposure from proof of isolation. Preserve all prior records and current deployment.
 
-Implementation and independent review are complete locally. No commits, publication or production rollout have been performed for this adjustment.
+Implementation, independent review, image publication and the production rollout are complete. Release acceptance and archival remain pending.
 
 ## Verification
 
@@ -17,6 +17,17 @@ Implementation and independent review are complete locally. No commits, publicat
 - Observer chart lint/render/configuration validation and Terraform configuration validation pass. Publication activation intentionally requires a newly published version 2 probe receipt; the retained production image receipt is version 1 and cannot authorize these staged values.
 - Independent implementation review approved after correcting empty-target attribution, per-item semantic isolation, truthful resolver provenance and Prometheus temporal/process attribution. No Claim acceptance is inferred.
 
-## One-time activation remaining
+## Activation and production verification
 
-Publish the new images, back up ASS, deploy its additive schema 4 upgrade, prepare reviewed collector version 2 configuration with stable source IDs and full local contracts, refresh affected Check definitions and independent Claim Reviews, then perform the gated one-time collector/probe rollout. Keep PVCs, queues, history and credentials. The previous server binary cannot read schema 4; image-only rollback is unsupported. After activation, ordinary application releases need no observer/collector configuration or rollout. Check or collection definition changes still require deliberate updates. Release acceptance and archival remain separate.
+The one-time activation completed on 2026-10-20. The independently reviewed Terraform plan updated only the API image, collector image and collector configuration. An owner-approved database backup was verified before the additive schema 4 upgrade; all 6,289 pre-upgrade records remained unchanged. PVCs, queues and credentials were preserved. The previous server binary cannot read schema 4; image-only rollback is unsupported.
+
+- Framework implementation: PR #32, merge `cd8c59e4a03d694afd500d08ffc20683f1756df0`.
+- Observer activation: consumer GitOps PR #19; the subsequent application release used PR #20 and passed release CI run `39460301312` and publication/configuration gates.
+- Release: `sha256:b79b78b8a9ea3b76acaea5b98ce8638dd4f96a1806f37c2224bec6bf9972dac6`.
+- Actual reconciled deployment: `observed-837531a856b73b7d5ba8554ca48ab329a7e2115974c7f666b52ae5ef5ed6662a`; exact Subject `sha256:23be5b8b371b5d2f27e6aefb3f6079d49211d3be95610af3394252550a9b1f42`.
+- Both Argo applications were Healthy with successful sync operations. Fresh target observations for Check and effective context mapped to the new deployment and retained actual native normalizer provenance.
+- Collector and observer deployment generations, templates, Pod UIDs and container IDs were identical before and after the application release. No per-release binding update or runtime-service rollout occurred.
+- The caller-authority Claim was Confirmed: 25 bindings, no gaps or diagnostics. Both API instances had fresh stable authentication and feature contexts. The service-admission Claim remained Unresolved; the exposure monitor was applicable and inconclusive, not proof of isolation. The remaining 12 baseline Claims remained unresolved.
+- Run, context and target observation delivery queues were empty at verification. Collection recovered after rollout transition failures.
+
+Ordinary application releases need no observer/collector configuration or rollout. Check or collection definition changes still require deliberate updates. No release acceptance or archival was performed.

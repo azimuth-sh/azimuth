@@ -324,12 +324,12 @@ pub(super) async fn show(
         .map(Json)
 }
 
-pub(super) async fn assess_deployment(
+pub(super) async fn compute_deployment(
     state: &LedgerState,
     project: &str,
     deployment: &str,
-) -> Result<Value, LedgerError> {
-    target_observation::resolve_pending(state, project).await?;
+    selected: Option<std::collections::BTreeSet<String>>,
+) -> Result<(Value, Value), LedgerError> {
     let mut tx = state.pool.begin().await?;
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         .execute(&mut *tx)
@@ -386,6 +386,26 @@ pub(super) async fn assess_deployment(
         .unwrap_or(0)
         .saturating_mul(1000);
     let cutoff = time.saturating_sub(monitor_window);
+    let reviews: Vec<Value> = sqlx::query_scalar("SELECT assurance_record('review',r.project,r.fingerprint) FROM assurance_reviews r JOIN model_revision_reviews m ON m.project=r.project AND m.review_fingerprint=r.fingerprint WHERE r.project=$1 AND m.revision_fingerprint=$2 ORDER BY r.fingerprint LIMIT 5001")
+        .bind(project).bind(revision).fetch_all(&mut *tx).await?;
+    let review_fingerprints: Vec<&str> = reviews
+        .iter()
+        .filter_map(|review| review["fingerprint"].as_str())
+        .collect();
+    let review_runs: Vec<&str> = reviews
+        .iter()
+        .flat_map(|review| {
+            ["basis", "challenge_basis"]
+                .into_iter()
+                .flat_map(move |field| {
+                    review[field]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|basis| basis["run"].as_str())
+                })
+        })
+        .collect();
     let bundles: Vec<Value> = sqlx::query_scalar(r#"
         SELECT assurance_record('run',b.project,b.fingerprint)
         FROM run_bundles b
@@ -393,7 +413,7 @@ pub(super) async fn assess_deployment(
             SELECT r.run_id FROM run_bundles r
             JOIN assurance_records a ON a.kind='run' AND a.project=r.project AND a.record_key=r.fingerprint
             JOIN assurance_run execution ON execution._record_id=a.id
-            WHERE r.project=$1 AND EXISTS (
+            WHERE r.project=$1 AND (r.run_id=ANY($7::text[]) OR EXISTS(SELECT 1 FROM jsonb_array_elements(CASE WHEN EXISTS(SELECT 1 FROM assurance_run_challenger_executions_item target WHERE target._record_id=a.id) THEN assurance_record_field('run',r.project,r.fingerprint,'challenger_executions') ELSE '[]'::jsonb END) challenge WHERE challenge->'target'->>'fingerprint'=ANY($8::text[])) OR EXISTS (
                 SELECT 1 FROM assurance_run_plan_checks_item c
                 JOIN unnest($2::text[],$3::text[]) current_check(id,fingerprint)
                   ON c.f_id=current_check.id AND c.f_fingerprint=current_check.fingerprint
@@ -401,12 +421,10 @@ pub(super) async fn assess_deployment(
                     c.f_id=ANY($4::text[]) OR
                     (r.subject_fingerprint=$5 AND COALESCE(execution.f_finished_at_ms,execution.f_started_at_ms)>= $6)
                 )
-            )
+            ))
         ) ORDER BY b.run_id,b.revision LIMIT 5001
     "#).bind(project).bind(&check_ids).bind(&check_fingerprints).bind(&persistent_checks)
-        .bind(deployment_record["subject_fingerprint"].as_str()).bind(cutoff).fetch_all(&mut *tx).await?;
-    let reviews: Vec<Value> = sqlx::query_scalar("SELECT assurance_record('review',r.project,r.fingerprint) FROM assurance_reviews r JOIN model_revision_reviews m ON m.project=r.project AND m.review_fingerprint=r.fingerprint WHERE r.project=$1 AND m.revision_fingerprint=$2 ORDER BY r.fingerprint LIMIT 5001")
-        .bind(project).bind(revision).fetch_all(&mut *tx).await?;
+        .bind(deployment_record["subject_fingerprint"].as_str()).bind(cutoff).bind(&review_runs).bind(&review_fingerprints).fetch_all(&mut *tx).await?;
     let contract_records = records(&mut *tx, project, "context_contract").await?;
     let bundle_fingerprints: Vec<&str> = bundles
         .iter()
@@ -447,11 +465,34 @@ pub(super) async fn assess_deployment(
         ));
     }
     tx.commit().await?;
-    compute(move || {
-        let result =
-            azimuth::deployment_status::assess(&core_json(request.to_string().as_bytes())?)
-                .map_err(LedgerError::invalid)?;
+    let snapshot = request.clone();
+    let result = compute(move || {
+        let result = azimuth::deployment_status::assess_selected(
+            &core_json(request.to_string().as_bytes())?,
+            selected.as_ref(),
+        )
+        .map_err(LedgerError::invalid)?;
         to_value(&result)
     })
-    .await
+    .await?;
+    Ok((result, snapshot))
+}
+
+pub(super) async fn assess_deployment(
+    state: &LedgerState,
+    project: &str,
+    deployment: &str,
+) -> Result<Value, LedgerError> {
+    super::materialized::read(state, project, deployment, false).await
+}
+
+pub(super) async fn summary(
+    State(state): State<LedgerState>,
+    Path((project, deployment)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, LedgerError> {
+    state.authorize(&project, &headers, None)?;
+    super::materialized::read(&state, &project, &deployment, true)
+        .await
+        .map(Json)
 }

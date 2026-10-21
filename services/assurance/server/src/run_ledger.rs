@@ -16,6 +16,8 @@ use std::{collections::BTreeMap, sync::Arc};
 mod deployment_observation;
 mod deployment_status;
 mod environment;
+mod materialized;
+mod materialized_reviews;
 mod model_catalog;
 mod release;
 mod target_normalizer;
@@ -144,6 +146,7 @@ impl LedgerState {
 }
 
 pub fn app(state: LedgerState) -> Router {
+    materialized::start(state.clone());
     Router::new()
         .route(
             "/v1/projects/{project}/target-observations",
@@ -165,6 +168,14 @@ pub fn app(state: LedgerState) -> Router {
         .route(
             "/v1/projects/{project}/context-captures",
             post(deployment_status::record_capture).get(deployment_status::captures),
+        )
+        .route(
+            "/v1/projects/{project}/deployments/{deployment}/status/rebuild",
+            post(materialized::rebuild),
+        )
+        .route(
+            "/v1/projects/{project}/deployments/{deployment}/status/summary",
+            get(deployment_status::summary),
         )
         .route(
             "/v1/projects/{project}/deployments/{deployment}/status",
@@ -423,8 +434,7 @@ async fn claim_reviews(
     headers: HeaderMap,
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
-    let (authority, reviews, bundles) = load_snapshot(&state.pool, &project).await?;
-    compute(move || definition_reviews(&authority, &reviews, &bundles)).await
+    materialized_reviews::read(&state, &project, None).await
 }
 
 async fn model_revision_claim_reviews(
@@ -433,9 +443,7 @@ async fn model_revision_claim_reviews(
     headers: HeaderMap,
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
-    let (authority, reviews, bundles) =
-        load_revision_snapshot(&state.pool, &project, Some(&revision)).await?;
-    compute(move || definition_reviews(&authority, &reviews, &bundles)).await
+    materialized_reviews::read(&state, &project, Some(&revision)).await
 }
 
 fn definition_reviews(
@@ -1092,10 +1100,17 @@ fn parse_bundle(source: &str) -> Result<run::RunBundle, LedgerError> {
     Ok(bundle)
 }
 
+#[derive(Debug)]
 pub struct LedgerError {
     status: StatusCode,
     detail: String,
 }
+impl std::fmt::Display for LedgerError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.detail)
+    }
+}
+impl std::error::Error for LedgerError {}
 impl LedgerError {
     fn denied() -> Self {
         Self {
@@ -1264,7 +1279,21 @@ mod tests {
             .send()
             .await?;
         assert_eq!(response.status(), StatusCode::OK);
-        let result: Value = response.json().await?;
+        let mut result: Value = response.json().await?;
+        for _ in 0..400 {
+            if result["assessment"]["state"] == "ready" {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            result = client
+                .get(format!("{url}/{subject_fingerprint}/state"))
+                .bearer_auth(credential)
+                .send()
+                .await?
+                .json()
+                .await?;
+        }
+        assert_eq!(result["assessment"]["state"], "ready", "{result}");
         assert_eq!(result["claims"].as_array().unwrap().len(), 1);
         assert_eq!(result["claims"][0]["claim"], "bounded");
         assert_eq!(result["claims"][0]["status"], "unresolved");
