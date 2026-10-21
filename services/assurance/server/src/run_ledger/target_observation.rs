@@ -250,7 +250,7 @@ pub(super) async fn record(
             .bind(&project).bind(&fp).bind(body.observation["source"].as_str()).bind(body.observation["execution_id"].as_str()).bind(body.observation["environment"].as_str()).bind(&principal).bind(time).bind(body.observation["started_at_ms"].as_i64()).bind(body.observation["finished_at_ms"].as_i64()).execute(&mut *tx).await?;
     }
     tx.commit().await?;
-    resolve_pending(&state, &project, 0).await?;
+    resolve_pending(&state, &project).await?;
     Ok((
         if replayed {
             StatusCode::OK
@@ -397,21 +397,19 @@ fn bracket(raw: &Value, history: &[Reconciliation]) -> Option<(Reconciliation, R
 }
 
 // Only observations with a reconciliation before their start and after their end can resolve, so the rest are not
-// loaded at all. The worker retries a bracketed observation only after `retry_after_ms`; ingestion retries at once (0).
-pub(super) async fn resolve_pending(
-    state: &LedgerState,
-    project: &str,
-    retry_after_ms: i64,
-) -> Result<(), LedgerError> {
+// loaded at all. A bracketed observation that still fails is retried with exponential backoff (10 s doubling to 15 min).
+pub(super) async fn resolve_pending(state: &LedgerState, project: &str) -> Result<(), LedgerError> {
     let mut tx = state.pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(format!("{project}|target-observations"))
         .execute(&mut *tx)
         .await?;
-    let pending: Vec<(String,Value,String)> = sqlx::query_as("SELECT t.fingerprint,assurance_record('target_observation',t.project,t.fingerprint),t.submitted_by FROM target_observations t WHERE t.project=$1 AND t.last_resolution_attempt_ms <= (extract(epoch FROM clock_timestamp())*1000)::bigint-$2 AND NOT EXISTS(SELECT 1 FROM target_observation_resolutions r WHERE r.project=t.project AND r.observation_fingerprint=t.fingerprint) AND (t.started_at_ms IS NULL OR (EXISTS(SELECT 1 FROM deployment_observations d WHERE d.project=t.project AND d.environment=t.environment AND d.observed_at_ms<=t.started_at_ms) AND EXISTS(SELECT 1 FROM deployment_observations d WHERE d.project=t.project AND d.environment=t.environment AND d.observed_at_ms>=t.finished_at_ms AND d.observed_at_ms>t.started_at_ms))) ORDER BY t.last_resolution_attempt_ms,t.sequence LIMIT 500")
-        .bind(project).bind(retry_after_ms).fetch_all(&mut *tx).await?;
+    let pending: Vec<(String,Value,String)> = sqlx::query_as("SELECT t.fingerprint,assurance_record('target_observation',t.project,t.fingerprint),t.submitted_by FROM target_observations t WHERE t.project=$1 AND t.last_resolution_attempt_ms <= (extract(epoch FROM clock_timestamp())*1000)::bigint-LEAST(10000::bigint<<LEAST(t.resolution_attempts,7),900000) AND NOT EXISTS(SELECT 1 FROM target_observation_resolutions r WHERE r.project=t.project AND r.observation_fingerprint=t.fingerprint) AND (t.started_at_ms IS NULL OR (EXISTS(SELECT 1 FROM deployment_observations d WHERE d.project=t.project AND d.environment=t.environment AND d.observed_at_ms<=t.started_at_ms) AND EXISTS(SELECT 1 FROM deployment_observations d WHERE d.project=t.project AND d.environment=t.environment AND d.observed_at_ms>=t.finished_at_ms AND d.observed_at_ms>t.started_at_ms))) ORDER BY t.last_resolution_attempt_ms,t.sequence LIMIT 500")
+        .bind(project).fetch_all(&mut *tx).await?;
     for (fp, raw, principal) in pending {
-        sqlx::query("UPDATE target_observations SET last_resolution_attempt_ms=(extract(epoch FROM clock_timestamp())*1000)::bigint WHERE project=$1 AND fingerprint=$2").bind(project).bind(&fp).execute(&mut *tx).await?;
+        sqlx::query("UPDATE target_observations SET started_at_ms=$3,finished_at_ms=$4 WHERE project=$1 AND fingerprint=$2 AND started_at_ms IS NULL")
+            .bind(project).bind(&fp).bind(raw["started_at_ms"].as_i64()).bind(raw["finished_at_ms"].as_i64()).execute(&mut *tx).await?;
+        sqlx::query("UPDATE target_observations SET resolution_attempts=resolution_attempts+1,last_resolution_attempt_ms=(extract(epoch FROM clock_timestamp())*1000)::bigint WHERE project=$1 AND fingerprint=$2").bind(project).bind(&fp).execute(&mut *tx).await?;
         let mut item = tx.begin().await?;
         match resolve_one(&mut item, project, &fp, &raw, &principal).await {
             Ok(_) => item.commit().await?,
