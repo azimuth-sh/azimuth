@@ -1,4 +1,4 @@
-"""Capture approved effective contexts from every current ready workload instance."""
+"""Capture approved effective Execution Contexts from every current ready workload instance."""
 import hashlib
 import ipaddress
 import json
@@ -17,6 +17,8 @@ ID = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\Z")
 SHA = re.compile(r"sha256:[0-9a-f]{64}\Z")
 INSTANCE = re.compile(r"[a-z0-9][a-z0-9+.-]*://[A-Za-z0-9_.:-]{1,480}\Z")
 BOOT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
+CONTEXT_PATH = "/internal/execution-context"
+TARGET_OBSERVATION_VERSION = 2
 
 
 def require(value, message):
@@ -68,7 +70,7 @@ def validate_sources(config):
         require(source["id"] not in identities and target not in targets, "duplicate context source or component target")
         identities.add(source["id"]); targets.add(target)
         require(source["namespace"] in config["namespaces"] and source["project"] in config["projects"], "context source outside approved namespace/project")
-        require(type(source["port"]) is int and source["port"] == 9001 and source["path"] == "/internal/verification-context", "context scraping requires approved telemetry port and route")
+        require(type(source["port"]) is int and source["port"] == 9001 and source["path"] == CONTEXT_PATH, "context scraping requires approved telemetry port and route")
         contracts = source["contracts"]
         require(isinstance(contracts, list) and 0 < len(contracts) <= 32, "explicit full reviewed context contracts required")
         registered_contracts({"records": [{"contract": contract} for contract in contracts]}, [contract.get("fingerprint") for contract in contracts])
@@ -140,7 +142,7 @@ def registered_contracts(response, references):
 
 
 def select_report(report, contracts):
-    require(isinstance(report, dict) and set(report) == {"format", "version", "contexts"} and report["format"] == "azimuth-verification-context" and type(report["version"]) is int and report["version"] == 1 and isinstance(report["contexts"], dict), "unsupported application context report")
+    require(isinstance(report, dict) and set(report) == {"format", "version", "contexts"} and report["format"] == "azimuth-execution-context" and type(report["version"]) is int and report["version"] == 2 and isinstance(report["contexts"], dict), "unsupported application Execution Context report; azimuth-execution-context version 2 required")
     selected = {}
     for name, contract in contracts.items():
         context = report["contexts"].get(name)
@@ -175,7 +177,7 @@ def collect(origin, source, kube, token=None):
         capture = {"component": source["component"], "instance": instance,
                    "started_at_ms": first["captured_at_ms"], "finished_at_ms": last["captured_at_ms"],
                    "before": first, "after": last}
-        captures.append({"format": "azimuth-target-observation", "version": 1, "kind": "context",
+        captures.append({"format": "azimuth-target-observation", "version": TARGET_OBSERVATION_VERSION, "kind": "context",
                          "source": source["id"], "execution_id": fingerprint({"capture": capture, "boot": first_boot}),
                          "environment": source["environment"], "started_at_ms": capture["started_at_ms"],
                          "finished_at_ms": capture["finished_at_ms"], "targets": [{"component": source["component"], "image": item["image"], "instance": instance}],
@@ -202,4 +204,4 @@ def publish(db, origin):
             with db:
                 db.execute("DELETE FROM context_outbox WHERE fingerprint=?", (identity,))
         except Exception as failure:
-            logging.error("context-publication-failed source=%s fingerprint=%s error=%s", source, identity, type(failure).__name__)
+            logging.error("context-publication-failed source=%s fingerprint=%s error=%s status=%s", source, identity, type(failure).__name__, getattr(failure, "code", None))

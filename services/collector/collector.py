@@ -15,6 +15,9 @@ from urllib.request import Request, build_opener, HTTPRedirectHandler, HTTPSHand
 from azimuth_run import build_check_bundle, canonical_json, fingerprint
 
 MAX_BYTES = 4 * 1024 * 1024
+TARGET_OBSERVATION_VERSION = 2
+# Native plan without its Verification-Target-dependent fingerprint (contracts/target-observation.md).
+PLAN_FIELDS = frozenset({'model_fingerprint', 'required_execution_context', 'checks', 'challenges'})
 
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, *args):
@@ -42,7 +45,7 @@ def fetch(url, token=None, method='GET', body=None, ca=None):
 
 def native_bundle(binding, record, import_inputs=None):
     launch = binding['launch']
-    if record['subject_fingerprint'] != launch['subject_fingerprint'] or record['binding'] != binding['id']:
+    if record['verification_target_fingerprint'] != launch['verification_target_fingerprint'] or record['binding'] != binding['id']:
         raise ValueError('Observation deployment binding differs')
     if not binding['valid_from_ms'] <= record['started_at_ms'] <= record['finished_at_ms'] <= binding['valid_until_ms']:
         raise ValueError('Observation outside explicit deployment binding interval')
@@ -59,9 +62,9 @@ def native_bundle(binding, record, import_inputs=None):
     return build_check_bundle(launch, source={'system': binding['source_system'], 'execution': record['execution_id']},
         normalizer={'id': 'adapter/' + adapter['id'], 'version': adapter['adapter_version'], 'build_fingerprint': adapter['adapter_fingerprint']},
         generated_at_ms=record['finished_at_ms'], started_at_ms=record['started_at_ms'], finished_at_ms=record['finished_at_ms'],
-        actual_context=launch['plan']['required_context'], activities=[activity], artifacts=[], diagnostics=[],
+        actual_context=launch['plan']['required_execution_context'], activities=[activity], artifacts=[], diagnostics=[],
         units_by_check={record['check']: [{'id': checks[0]['units'][0]['id'], 'attempts': [{'ordinal': 0, 'activity': 'measurement',
-            'outcomes': {case: record['outcome'] for case in checks[0]['cases']}}]}]},
+            'outcomes': {scenario: record['outcome'] for scenario in checks[0]['scenarios']}}]}]},
         import_inputs=import_inputs if import_inputs is not None else [{'id': 'native-report', 'digest': 'sha256:' + hashlib.sha256(raw).hexdigest(), 'size_bytes': len(raw)}])
 
 class ProbeResults:
@@ -192,7 +195,7 @@ def validate_targets(targets):
 
 
 def validate_binding(binding, *unused):
-    if any(key in binding for key in ('launch', 'subject', 'subject_fingerprint', 'valid_from_ms', 'valid_until_ms')):
+    if any(key in binding for key in ('launch', 'verification_target', 'verification_target_fingerprint', 'valid_from_ms', 'valid_until_ms')):
         fail('Release bindings are not supported by collector configuration version 2')
     import re
     for key in ('id', 'project', 'environment'):
@@ -218,11 +221,11 @@ def validate_binding(binding, *unused):
         if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
             fail('Invalid approved Prometheus endpoint')
     definition = binding['definition']
-    if set(definition) != {'plan', 'adapters', 'routes'} or 'fingerprint' in definition['plan']:
-        fail('Subject-free native definition required')
+    if set(definition) != {'plan', 'adapters', 'routes'} or not isinstance(definition['plan'], dict) or set(definition['plan']) != PLAN_FIELDS:
+        fail('Verification-Target-free native definition with plan fields ' + ', '.join(sorted(PLAN_FIELDS)) + ' required')
     checks = definition['plan']['checks']
-    if len(checks) != 1 or len(checks[0]['units']) != 1 or len(definition['adapters']) != 1 or definition['adapters'][0]['id'] != binding['adapter']:
-        fail('One Check, unit and configured adapter required')
+    if not isinstance(checks, list) or len(checks) != 1 or not isinstance(checks[0], dict) or not isinstance(checks[0].get('scenarios'), list) or len(checks[0]['units']) != 1 or len(definition['adapters']) != 1 or definition['adapters'][0]['id'] != binding['adapter']:
+        fail('One Check with selected Scenarios, one unit and configured adapter required')
     if set(binding['allowed_outcomes']) != {'violated', 'inconclusive'}:
         fail('Runtime collection permits only adverse or inconclusive facts')
 
@@ -238,12 +241,13 @@ def target_observation(source, record):
         fail('Invalid measurement execution')
     if not record['targets'] and record['outcome'] != 'inconclusive':
         fail('Unattributed collection facts must remain inconclusive')
-    if any(key in record for key in ('binding', 'subject', 'subject_fingerprint', 'deployment', 'release')):
+    # `subject`/`subject_fingerprint` are earlier names of the Verification Target binding; a stale producer must not embed one in details.
+    if any(key in record for key in ('binding', 'verification_target', 'verification_target_fingerprint', 'subject', 'subject_fingerprint', 'deployment', 'release')):
         fail('Runtime reports cannot carry configured release bindings')
     details = canonical_json(record)
     if len(details.encode()) > 65536:
         fail('Measurement details exceed limit')
-    return {'format': 'azimuth-target-observation', 'version': 1, 'kind': 'check',
+    return {'format': 'azimuth-target-observation', 'version': TARGET_OBSERVATION_VERSION, 'kind': 'check',
             'source': source['id'], 'execution_id': record['execution_id'], 'environment': source['environment'],
             'started_at_ms': started, 'finished_at_ms': finished, 'targets': record['targets'],
             'check': {'definition': source['definition'], 'outcome': record['outcome'], 'details': details}, 'capture': None}
@@ -278,7 +282,7 @@ def publish_targets(db, config):
             with db:
                 db.execute('DELETE FROM target_outbox WHERE fingerprint=?', (identity,))
         except Exception as failure:
-            logging.error('target-publication-failed fingerprint=%s error=%s', identity, type(failure).__name__)
+            logging.error('target-publication-failed fingerprint=%s error=%s status=%s', identity, type(failure).__name__, getattr(failure, 'code', None))
 
 
 def main():
