@@ -51,6 +51,13 @@ Owns: services/collector, services/reconciler
 Objective: Rename envelope, payload and Execution Context constants; endpoint default `/internal/execution-context`; keep Observation names for runtime facts.
 Evidence: Collector and reconciler tests; outbox behavior against a renamed ASS.
 
+## Work package: experiments
+Status: pending
+Depends on: packages-and-extractors, ass-server
+Owns: experiments
+Objective: Update the synthetic conformance experiments (test-report-adapter, adapter-capabilities, challenge-planning, mechanism-identities, run-bundles, assurance-service) and their generators to the renamed wire names, regenerating published vectors from the renamed contracts.
+Evidence: Each experiment's own check script passes.
+
 ## Work package: release-and-ci
 Status: pending
 Depends on: packages-and-extractors, ass-server, collector-and-reconciler

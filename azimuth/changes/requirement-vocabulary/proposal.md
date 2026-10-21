@@ -1,10 +1,10 @@
 # Change: Rename Claim-first vocabulary to Requirement, Scenario and Verification Target
 
 Status: proposed
-Intent delta: none
-Because: Obligations, stable identifiers, evidence semantics and assessment rules are unchanged. This change renames domain terms, authored syntax, serialized names, schemas, routes and labels; the framework's own accepted model is migrated mechanically with every Claim and Case identifier preserved.
 
-Dima explicitly authorized implementation, a fresh Assurance State Service (ASS) database without data migration, a new drim.dev release, and redeployment of every component this requires. Commits, pushes and the ASS reset are authorized; merges, release acceptance and change archival are not.
+Obligations, stable identifiers, evidence semantics and assessment rules are unchanged. This change renames domain terms, authored syntax, serialized names, schemas, routes and labels; the framework's own accepted model is migrated mechanically with every Claim and Case identifier preserved. The single intent delta (`specs/framework/release-artifacts.md`) moves the values the first-alpha release contract pins to the new source version and migration line without changing the obligation.
+
+Dima explicitly authorized implementation, a fresh Assurance State Service (ASS) database without data migration (all ASS data deleted), deletion of the unused legacy gate API, a new drim.dev release, redeployment of every component this requires, and all merges. Commits, pushes and the ASS reset are authorized; release acceptance and change archival are not.
 
 ## Problem
 
