@@ -411,6 +411,8 @@ pub(super) async fn resolve_pending(
     let pending: Vec<(String,Value,String)> = sqlx::query_as("SELECT t.fingerprint,assurance_record('target_observation',t.project,t.fingerprint),t.submitted_by FROM target_observations t WHERE t.project=$1 AND t.last_resolution_attempt_ms <= (extract(epoch FROM clock_timestamp())*1000)::bigint-$2 AND NOT EXISTS(SELECT 1 FROM target_observation_resolutions r WHERE r.project=t.project AND r.observation_fingerprint=t.fingerprint) AND (t.started_at_ms IS NULL OR (EXISTS(SELECT 1 FROM deployment_observations d WHERE d.project=t.project AND d.environment=t.environment AND d.observed_at_ms<=t.started_at_ms) AND EXISTS(SELECT 1 FROM deployment_observations d WHERE d.project=t.project AND d.environment=t.environment AND d.observed_at_ms>=t.finished_at_ms AND d.observed_at_ms>t.started_at_ms))) ORDER BY t.last_resolution_attempt_ms,t.sequence LIMIT 500")
         .bind(project).bind(retry_after_ms).fetch_all(&mut *tx).await?;
     for (fp, raw, principal) in pending {
+        sqlx::query("UPDATE target_observations SET started_at_ms=$3,finished_at_ms=$4 WHERE project=$1 AND fingerprint=$2 AND started_at_ms IS NULL")
+            .bind(project).bind(&fp).bind(raw["started_at_ms"].as_i64()).bind(raw["finished_at_ms"].as_i64()).execute(&mut *tx).await?;
         sqlx::query("UPDATE target_observations SET last_resolution_attempt_ms=(extract(epoch FROM clock_timestamp())*1000)::bigint WHERE project=$1 AND fingerprint=$2").bind(project).bind(&fp).execute(&mut *tx).await?;
         let mut item = tx.begin().await?;
         match resolve_one(&mut item, project, &fp, &raw, &principal).await {
