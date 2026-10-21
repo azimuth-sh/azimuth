@@ -954,6 +954,60 @@ fn current_independent_review_enables_confirmation_and_policy_change_stales_it()
         Some("stale")
     );
 }
+fn verified_assessment(request: &Json) -> Json {
+    let publication = request.get("publication").unwrap();
+    deployment_status::verify_publication(publication).unwrap();
+    let snapshot = publication.get("snapshot").unwrap();
+    let bundles = snapshot
+        .get("bundles")
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(request.get("bundles").unwrap().as_array().unwrap())
+        .map(|bundle| deployment_status::verify_run(&bundle.to_string_pretty()).unwrap())
+        .collect::<Vec<_>>();
+    assert!(azimuth::run::verify_history(&bundles).is_empty());
+    let reviews = snapshot
+        .get("reviews")
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(request.get("reviews").unwrap().as_array().unwrap())
+        .cloned()
+        .collect::<Vec<_>>();
+    deployment_status::assess_evidence(
+        &deployment_status::Evidence {
+            publication,
+            deployment: request.get("deployment").unwrap(),
+            observation: request.get("deployment_observation").unwrap(),
+            contracts: request
+                .get("context_contracts")
+                .unwrap()
+                .as_array()
+                .unwrap(),
+            captures: request.get("captures").unwrap().as_array().unwrap(),
+            bundles: &bundles,
+            reviews: &reviews,
+            evaluated_at_ms: request.get("evaluated_at_ms").unwrap().as_num().unwrap() as u64,
+        },
+        None,
+    )
+    .unwrap()
+}
+#[test]
+fn verified_evidence_is_evaluated_exactly_as_the_complete_request() {
+    let mut request = request_with_criticality(policy("source"), "critical");
+    let review = accepted_review(&request);
+    set(&mut request, "reviews", Json::Arr(vec![review]));
+    let bundle = bundle_for(&request, source(), 100, CheckResultOutcome::Satisfied);
+    attach(&mut request, &[bundle]);
+    assert_eq!(
+        verified_assessment(&request),
+        deployment_status::assess(&request).unwrap()
+    );
+}
 #[test]
 fn incomplete_new_monitor_execution_does_not_leave_previous_green_result_current() {
     let mut p = policy("deployment");
