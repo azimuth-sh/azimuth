@@ -29,8 +29,8 @@ internal static class Collector
         "Azimuth.Annotations.SupportsVerificationElementAttribute";
     private const string DefinesVerificationCheckName =
         "Azimuth.Annotations.DefinesVerificationCheckAttribute";
-    private const string ContributesCheckToCaseName =
-        "Azimuth.Annotations.ContributesCheckToCaseAttribute";
+    private const string ContributesCheckToScenarioName =
+        "Azimuth.Annotations.ContributesCheckToScenarioAttribute";
     private const BindingFlags Members = BindingFlags.Public
         | BindingFlags.NonPublic
         | BindingFlags.Instance
@@ -38,7 +38,7 @@ internal static class Collector
         | BindingFlags.DeclaredOnly;
 
     public sealed record Entry(
-        string Claim,
+        string Requirement,
         string Site,
         string File,
         string SourceFingerprint,
@@ -86,7 +86,7 @@ internal static class Collector
         string Site);
 
     public sealed record ElementSupport(
-        string Claim,
+        string Requirement,
         string Element,
         IReadOnlyList<string> Artifacts,
         IReadOnlyList<string> DependsOn);
@@ -97,9 +97,9 @@ internal static class Collector
         IReadOnlyList<string> Artifacts,
         IReadOnlyList<string> Elements);
 
-    public sealed record CaseContribution(
+    public sealed record ScenarioContribution(
         string Check,
-        string Case,
+        string Scenario,
         string Element,
         string Proposition);
 
@@ -108,7 +108,7 @@ internal static class Collector
         public List<SupportArtifact> Artifacts { get; } = [];
         public List<ElementSupport> Elements { get; } = [];
         public List<VerificationCheck> Checks { get; } = [];
-        public List<CaseContribution> Contributions { get; } = [];
+        public List<ScenarioContribution> Contributions { get; } = [];
     }
 
     public sealed record PackageProducer(string Package, string Contract, string Entity, string Site, string File, string Lang, string SourceFingerprint, System.Text.Json.Nodes.JsonObject? Schema, IReadOnlyList<ProducerInput> Inputs);
@@ -124,14 +124,14 @@ internal static class Collector
                 "Azimuth.Surface.Annotations.SurfaceEnumeratorAttribute" => "surface-enumerator",
                 "Azimuth.Surface.Annotations.SurfaceExpectationsAttribute" => "surface-expectations",
                 "Azimuth.Network.Annotations.ImplementsProbeAttribute" => "probe-implementation",
-                "Azimuth.Challenge.Annotations.ImplementsChallengerAttribute" => "challenger-implementation",
+                "Azimuth.Challenge.Annotations.ImplementsVerificationChallengeAttribute" => "verification-challenge-implementation",
                 _ => null
             };
             if (contract is null) continue;
             var entity = EntityArgument(attribute, file, site);
             EnsureMechanismFingerprint(site, fingerprint, file);
             System.Text.Json.Nodes.JsonObject? schema = null;
-            if (contract is not "probe-implementation" and not "challenger-implementation")
+            if (contract is not "probe-implementation" and not "verification-challenge-implementation")
             {
                 var method = member as MethodInfo;
                 if (method is null && member is Type type)
@@ -149,7 +149,7 @@ internal static class Collector
             var configuration = attribute.NamedArguments.FirstOrDefault(argument => argument.MemberName == "ConfigurationFile").TypedValue.Value as string;
             if (configuration is not null)
             {
-                if (contract is not "surface-expectations" and not "challenger-implementation" || configuration.Length == 0 || Path.IsPathRooted(configuration) || configuration.Contains("\\") || configuration.Split('/').Any(segment => segment is "" or "." or ".."))
+                if (contract is not "surface-expectations" and not "verification-challenge-implementation" || configuration.Length == 0 || Path.IsPathRooted(configuration) || configuration.Contains("\\") || configuration.Split('/').Any(segment => segment is "" or "." or ".."))
                     throw new InvalidOperationException($"{site}: ConfigurationFile requires a normalized repository-relative file");
                 var path = Path.GetFullPath(configuration, Path.GetFullPath(root));
                 if (!File.Exists(path)) throw new InvalidOperationException($"{site}: missing configuration input {configuration}");
@@ -162,7 +162,7 @@ internal static class Collector
                 }
                 inputs.Add(new ProducerInput(configuration, "sha256:" + Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant()));
             }
-            result.Extensions.Add(new PackageProducer(contract == "challenger-implementation" ? "azimuth.challenge" : contract == "probe-implementation" ? "azimuth.network" : "azimuth.surface", contract, entity, site, file, Lang, fingerprint, schema, inputs));
+            result.Extensions.Add(new PackageProducer(contract == "verification-challenge-implementation" ? "azimuth.challenge" : contract == "probe-implementation" ? "azimuth.network" : "azimuth.surface", contract, entity, site, file, Lang, fingerprint, schema, inputs));
         }
     }
 
@@ -289,10 +289,10 @@ internal static class Collector
             var name = FullName(attribute);
             if (name == RealizesName)
             {
-                var claim = EntityArgument(attribute, file: typeFile, site: typeName);
+                var requirement = EntityArgument(attribute, file: typeFile, site: typeName);
                 result.Realizes.Add(
                     new Entry(
-                        claim,
+                        requirement,
                         type.FullName ?? type.Name,
                         typeFile,
                         typeFingerprint,
@@ -363,9 +363,9 @@ internal static class Collector
                 var name = FullName(attribute);
                 if (name == RealizesName)
                 {
-                    var claim = EntityArgument(attribute, file: file, site: site);
+                    var requirement = EntityArgument(attribute, file: file, site: site);
                     result.Realizes.Add(
-                        new Entry(claim, site, file, sourceFingerprint, null, null, null));
+                        new Entry(requirement, site, file, sourceFingerprint, null, null, null));
                 }
                 else if (name == ImplementsCheckName)
                 {
@@ -412,9 +412,9 @@ internal static class Collector
                         $"{method.Module.Assembly.GetName().Name}!{mechanismSite}",
                         file, sourceFingerprint);
                 }
-                else if (includeAccountSupport && name == ContributesCheckToCaseName)
+                else if (includeAccountSupport && name == ContributesCheckToScenarioName)
                 {
-                    AddCaseContribution(
+                    AddScenarioContribution(
                         result.AccountSupport, attribute,
                         $"{method.Module.Assembly.GetName().Name}!{mechanismSite}", data);
                 }
@@ -581,8 +581,8 @@ internal static class Collector
 
     private static int Compare(Entry a, Entry b)
     {
-        var byClaim = string.CompareOrdinal(a.Claim, b.Claim);
-        return byClaim != 0 ? byClaim : string.CompareOrdinal(a.Site, b.Site);
+        var byRequirement = string.CompareOrdinal(a.Requirement, b.Requirement);
+        return byRequirement != 0 ? byRequirement : string.CompareOrdinal(a.Site, b.Site);
     }
 
     private static int CompareMechanismImplementation(
@@ -663,7 +663,7 @@ internal static class Collector
         support.Checks.Add(new VerificationCheck(values[0], values[1], [artifact.Id], [values[2]]));
     }
 
-    private static void AddCaseContribution(
+    private static void AddScenarioContribution(
         AccountSupportResult support,
         CustomAttributeData attribute,
         string site,
@@ -680,11 +680,11 @@ internal static class Collector
         if (!localCheck)
         {
             throw new InvalidOperationException(
-                $"{site}: Case contribution requires a Check definition on this method "
+                $"{site}: Scenario contribution requires a Check definition on this method "
                 + $"for {values[0]} and {values[2]}");
         }
         support.Contributions.Add(
-            new CaseContribution(values[0], values[1], values[2], values[3]));
+            new ScenarioContribution(values[0], values[1], values[2], values[3]));
     }
 
     private static void EnsureEntityId(string check, string site)
@@ -766,11 +766,11 @@ internal static class Collector
         support.Artifacts.AddRange(artifacts);
 
         var elements = support.Elements
-            .GroupBy(item => (item.Claim, item.Element))
-            .OrderBy(group => group.Key.Claim, StringComparer.Ordinal)
+            .GroupBy(item => (item.Requirement, item.Element))
+            .OrderBy(group => group.Key.Requirement, StringComparer.Ordinal)
             .ThenBy(group => group.Key.Element, StringComparer.Ordinal)
             .Select(group => new ElementSupport(
-                group.Key.Claim,
+                group.Key.Requirement,
                 group.Key.Element,
                 group.SelectMany(item => item.Artifacts)
                     .Distinct(StringComparer.Ordinal)
@@ -808,15 +808,15 @@ internal static class Collector
         support.Checks.AddRange(checks);
 
         var contributions = support.Contributions
-            .GroupBy(item => (item.Check, item.Case))
+            .GroupBy(item => (item.Check, item.Scenario))
             .OrderBy(group => group.Key.Check, StringComparer.Ordinal)
-            .ThenBy(group => group.Key.Case, StringComparer.Ordinal)
+            .ThenBy(group => group.Key.Scenario, StringComparer.Ordinal)
             .Select(group =>
             {
                 if (group.Distinct().Count() != 1)
                 {
                     throw new InvalidOperationException(
-                        $"Check {group.Key.Check} has conflicting contribution to {group.Key.Case}");
+                        $"Check {group.Key.Check} has conflicting contribution to {group.Key.Scenario}");
                 }
                 return group.First();
             }).ToArray();
@@ -829,7 +829,7 @@ internal static class Collector
         var body = new
         {
             format = "azimuth-account-support",
-            version = 1,
+            version = 2,
             artifacts = result.AccountSupport.Artifacts,
             elements = result.AccountSupport.Elements,
             checks = result.AccountSupport.Checks,
@@ -903,7 +903,7 @@ internal static class Collector
         foreach (var entry in entries)
         {
             writer.WriteStartObject();
-            writer.WriteString("claim", entry.Claim);
+            writer.WriteString("requirement", entry.Requirement);
             writer.WriteString("site", entry.Site);
             writer.WriteString("file", entry.File);
             writer.WriteString("lang", Lang);

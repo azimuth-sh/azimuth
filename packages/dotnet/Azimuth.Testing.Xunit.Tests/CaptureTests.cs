@@ -115,7 +115,7 @@ public sealed class CaptureTests : IAsyncLifetime
     [InlineData("{}")]
     public void Rejects_non_contract_scalar_values(string value)
     {
-        var json = "{\"format\":\"azimuth-verification-context\",\"version\":1,\"contexts\":{\"configuration\":{\"contract_revision\":\"sha256:" + new string('a', 64) + "\",\"values\":{\"field\":" + value + "}}}}";
+        var json = "{\"format\":\"azimuth-execution-context\",\"version\":2,\"contexts\":{\"configuration\":{\"contract_revision\":\"sha256:" + new string('a', 64) + "\",\"values\":{\"field\":" + value + "}}}}";
         Assert.Throws<JsonException>(() => ContextProtocol.Parse(json));
     }
 
@@ -187,7 +187,7 @@ public sealed class CaptureTests : IAsyncLifetime
 
         public async Task<ContextCapture> ReadAsync(CancellationToken cancellationToken)
         {
-            var json = await client.GetStringAsync("/internal/verification-context", cancellationToken);
+            var json = await client.GetStringAsync("/internal/execution-context", cancellationToken);
             return new(instance, ContextProtocol.Parse(json));
         }
 
@@ -201,7 +201,7 @@ public sealed class CaptureTests : IAsyncLifetime
                     await using var stream = connection.GetStream();
                     using var reader = new StreamReader(stream, leaveOpen: true);
                     while (!string.IsNullOrEmpty(await reader.ReadLineAsync(shutdown.Token))) { }
-                    var report = VerificationContextReport.Create(new Dictionary<string, ContextDefinition>
+                    var report = ExecutionContextReport.Create(new Dictionary<string, ContextDefinition>
                     {
                         ["authentication"] = new("sha256:" + new string('a', 64), new Dictionary<string, JsonElement>
                         { ["enabled"] = JsonSerializer.SerializeToElement(Enabled) })

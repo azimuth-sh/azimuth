@@ -23,7 +23,7 @@ public sealed class CollectorTests
     {
         var entry = Assert.Single(
             Collect().Realizes,
-            r => r.Claim == "type-level-thing");
+            r => r.Requirement == "type-level-thing");
         Assert.Null(entry.GetType().GetProperty("Spec"));
         Assert.Equal("Azimuth.Fixture.Production", entry.Site);
     }
@@ -33,16 +33,16 @@ public sealed class CollectorTests
     {
         var entry = Assert.Single(
             Collect().Realizes,
-            r => r.Claim == "method-level-thing");
+            r => r.Requirement == "method-level-thing");
         Assert.Equal("Azimuth.Fixture.Production.Method", entry.Site);
     }
 
     [Fact]
-    public void A_site_may_realize_several_claims()
+    public void A_site_may_realize_several_requirements()
     {
         var branches = Collect()
             .Realizes.Where(r => r.Site == "Azimuth.Fixture.Production.Branching")
-            .Select(r => r.Claim)
+            .Select(r => r.Requirement)
             .OrderBy(s => s, StringComparer.Ordinal)
             .ToList();
         Assert.Equal(["first-branch", "second-branch"], branches);
@@ -58,7 +58,7 @@ public sealed class CollectorTests
     {
         var entry = Assert.Single(
             Collect().Realizes,
-            r => r.Claim == "struct-level-thing");
+            r => r.Requirement == "struct-level-thing");
         Assert.Equal("Azimuth.Fixture.Amount", entry.Site);
     }
 
@@ -268,7 +268,7 @@ public sealed class CollectorTests
     {
         var entry = Assert.Single(
             Collect().Realizes,
-            item => item.Claim == "constructor-only-thing");
+            item => item.Requirement == "constructor-only-thing");
 
         Assert.EndsWith("tools/extractors/dotnet/fixture/Fixture.cs", entry.File);
         Assert.Matches("^sha256:[0-9a-f]{64}$", entry.SourceFingerprint);
@@ -302,15 +302,15 @@ public sealed class CollectorTests
     {
         var entry = Assert.Single(
             Collect().Realizes,
-            r => r.Claim == "async-thing");
+            r => r.Requirement == "async-thing");
         Assert.EndsWith("Fixture.cs", entry.File);
     }
 
     [Fact]
     public void Entries_are_ordered_so_the_manifest_diffs()
     {
-        var claims = Collect().Realizes.Select(r => r.Claim).ToList();
-        Assert.Equal(claims.OrderBy(claim => claim, StringComparer.Ordinal), claims);
+        var requirements = Collect().Realizes.Select(r => r.Requirement).ToList();
+        Assert.Equal(requirements.OrderBy(requirement => requirement, StringComparer.Ordinal), requirements);
     }
 
     [Fact]
@@ -321,7 +321,7 @@ public sealed class CollectorTests
 
         var realizes = root.GetProperty("realizes")[0];
         Assert.False(realizes.TryGetProperty("spec", out _));
-        Assert.True(realizes.TryGetProperty("claim", out _));
+        Assert.True(realizes.TryGetProperty("requirement", out _));
         Assert.False(realizes.TryGetProperty("req", out _));
         Assert.Equal("csharp", realizes.GetProperty("lang").GetString());
         Assert.Matches(
@@ -368,5 +368,42 @@ public sealed class CollectorTests
                     entry.GetProperty("source_fingerprint").GetString()!));
         }
         Assert.False(root.TryGetProperty("observations", out _));
+    }
+
+    [Fact]
+    public void Account_support_names_requirements_and_scenarios()
+    {
+        var result = Collector.Collect(
+            [typeof(Azimuth.Fixture.Production).Assembly],
+            WorkspaceRoot(),
+            includeAccountSupport: true);
+        using var document = JsonDocument.Parse(Collector.ToAccountSupportJson(result));
+        var root = document.RootElement;
+
+        Assert.Equal("azimuth-account-support", root.GetProperty("format").GetString());
+        Assert.Equal(2, root.GetProperty("version").GetInt32());
+        var element = Assert.Single(root.GetProperty("elements").EnumerateArray());
+        Assert.Equal(
+            new[] { "requirement", "element", "artifacts", "depends_on" },
+            element.EnumerateObject().Select(property => property.Name));
+        Assert.Equal("supported-requirement", element.GetProperty("requirement").GetString());
+        var contribution = Assert.Single(root.GetProperty("contributions").EnumerateArray());
+        Assert.Equal(
+            new[] { "check", "scenario", "element", "proposition" },
+            contribution.EnumerateObject().Select(property => property.Name));
+        Assert.Equal("fixture-scenario", contribution.GetProperty("scenario").GetString());
+    }
+
+    [Fact]
+    public void Verification_challenge_implementations_use_the_package_contract()
+    {
+        using var document = JsonDocument.Parse(Collector.ToJson(Collect()));
+        var producer = Assert.Single(
+            document.RootElement.GetProperty("extensions").EnumerateArray(),
+            item => item.GetProperty("package").GetString() == "azimuth.challenge");
+        Assert.Equal(
+            "verification-challenge-implementation",
+            producer.GetProperty("contract").GetString());
+        Assert.Equal("fixture-mutation", producer.GetProperty("entity").GetString());
     }
 }

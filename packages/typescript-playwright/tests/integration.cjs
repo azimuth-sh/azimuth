@@ -14,7 +14,7 @@ const { spawn } = require('node:child_process');
       contract_revision: `sha256:${'a'.repeat(64)}`,
       values: { enabled: true, revision: req.url === '/changing' ? changing++ : 1 }
     } };
-    res.end(JSON.stringify({ format: 'azimuth-verification-context', version: 1, contexts }));
+    res.end(JSON.stringify({ format: 'azimuth-execution-context', version: 2, contexts }));
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'azimuth-playwright-'));

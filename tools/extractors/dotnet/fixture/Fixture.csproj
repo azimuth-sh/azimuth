@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../../../packages/dotnet/Azimuth.Annotations/Azimuth.Annotations.csproj" />
+    <ProjectReference Include="../../../../packages/dotnet/Azimuth.Challenge.Annotations/Azimuth.Challenge.Annotations.csproj" />
   </ItemGroup>
 
 </Project>

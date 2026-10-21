@@ -4,7 +4,7 @@ Runs under ordinary `playwright test`; no browser is required for request-only t
 The fixture reads effective settings from the actual application before and after
 **each attempt**, after project overrides. The reporter retains unsuccessful
 attempts, retries and skipped tests in the shared `azimuth-test-report` v1 format.
-It does not infer Claims, build native Runs, hold ASS credentials or publish.
+It does not infer Requirements, build native Runs, hold ASS credentials or publish.
 
 ```ts
 // fixtures.ts
@@ -24,7 +24,7 @@ export default defineConfig<AzimuthOptions>({
   use: {
     azimuthContexts: [{
       name: 'authorization',
-      url: 'http://127.0.0.1:8080/internal/verification-context',
+      url: 'http://127.0.0.1:8080/internal/execution-context',
       instance: 'application-under-test',
       // Optional exact expected contract identity:
       // contractRevision: 'sha256:<64 lowercase hexadecimal characters>',
@@ -36,14 +36,14 @@ export default defineConfig<AzimuthOptions>({
 
 Tests import the extended `test`, not the unextended Playwright base. Existing
 fixtures can extend it with `test.extend`. Projects explicitly map native
-`testInfo.testId` identities to Check/Case units, or set `azimuthTestId` through
+`testInfo.testId` identities to Check/Scenario units, or set `azimuthTestId` through
 `test.use` for an explicitly owned identity. Do not guess from display names.
 Per-test context overrides remain per-attempt captures, not a suite-wide snapshot.
 Use `azimuthContexts: []` only when the test explicitly has no configuration
 context dependency. A context endpoint is configured for one actual test instance;
 load-balanced or mutable instance routing is unsuitable for this binding.
 
-The endpoint must return the general `azimuth-verification-context` v1 envelope.
+The endpoint must return the general `azimuth-execution-context` v2 envelope.
 Reports retain only the named context, reject unknown envelope fields, validate
 contract fingerprints and primitive values, and never record response error bodies
 or credentials. Contract field/type completeness is checked by the shared result

@@ -1,8 +1,8 @@
 # Azimuth.Testing.Xunit
 
-Reusable xUnit **v2** fixture integration for startup-fixed effective verification contexts.
+Reusable xUnit **v2** fixture integration for startup-fixed effective Execution Contexts.
 Targets .NET 8 and supports .NET 10 consumers. Tests still run with `dotnet test`.
-No ASS connection, credential, publisher, Check mapping or Claim assessment is included.
+No ASS connection, credential, publisher, Check mapping or Requirement assessment is included.
 
 ## Consumer fixture
 
@@ -45,7 +45,7 @@ For configuration-dependent tests, supply real capture delegates:
 var source = new ContextSource("caller-authentication", async cancellationToken =>
 {
     var json = await applicationClient.GetStringAsync(
-        "/internal/verification-context", cancellationToken);
+        "/internal/execution-context", cancellationToken);
     return new ContextCapture(applicationInstanceId, ContextProtocol.Parse(json));
 });
 await fixture.Evidence.RunAsync(exactNativeTestId, attempt, testBody, new[] { source });
@@ -53,7 +53,7 @@ await fixture.Evidence.RunAsync(exactNativeTestId, attempt, testBody, new[] { so
 
 `applicationInstanceId` must identify the actual test application, not just its URL or
 configuration profile. Reusing a deployment URL across process replacements is insufficient.
-The reporting protocol is `azimuth-verification-context` version 1 with named contexts,
+The reporting protocol is `azimuth-execution-context` version 2 with named contexts,
 SHA-256 `contract_revision`, and flat typed values. Application endpoint protection and
 allowed non-secret fields are application responsibilities. The integration never logs
 capture exception messages because these may disclose credentials.
@@ -94,7 +94,7 @@ The integration writes `azimuth-test-report` version 1, framework `xunit-v2`:
 `outcome`, timestamps, `contexts` and `diagnostics`; a context entry has `name`, `before` and
 `after`, each containing `captured_at_ms`, `instance`, and the context `report` envelope.
 Raw TRX reports/logs remain separate artifacts. A result adapter reconciles this report with
-selected native test identities and maps explicit Check/Case bindings to native Runs.
+selected native test identities and maps explicit Check/Scenario bindings to native Runs.
 A separate publisher uploads those validated Runs, including unsuccessful executions.
 
 ## Use an unpublished exact Git revision in CI

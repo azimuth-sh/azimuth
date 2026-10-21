@@ -62,8 +62,8 @@ def timestamp(value):
 
 def validate_context(report):
     fields(report, ("format", "version", "contexts"))
-    if report["format"] != "azimuth-verification-context" or type(report["version"]) is not int or report["version"] != 1:
-        raise ValueError("unsupported verification context format")
+    if report["format"] != "azimuth-execution-context" or type(report["version"]) is not int or report["version"] != 2:
+        raise ValueError("unsupported Execution Context format")
     if not isinstance(report["contexts"], dict):
         raise ValueError("contexts requires object")
     for name, context in report["contexts"].items():
@@ -126,7 +126,7 @@ def validate_report(report):
 
 def validate_mapping(mapping):
     fields(mapping, ("format", "version", "framework", "source_system", "tests"))
-    if mapping["format"] != "azimuth-test-mapping" or type(mapping["version"]) is not int or mapping["version"] != 1:
+    if mapping["format"] != "azimuth-test-mapping" or type(mapping["version"]) is not int or mapping["version"] != 2:
         raise ValueError("unsupported mapping")
     if mapping["framework"] not in ("xunit-v2", "playwright"):
         raise ValueError("unsupported mapping framework")
@@ -134,7 +134,7 @@ def validate_mapping(mapping):
     seen = set()
     native = set()
     for item in array(mapping["tests"]):
-        if not isinstance(item, dict) or set(item) not in ({"id", "native_id", "check", "unit", "cases", "components", "contexts"}, {"id", "native_id", "check", "unit", "cases", "components", "contexts", "failed_outcome"}):
+        if not isinstance(item, dict) or set(item) not in ({"id", "native_id", "check", "unit", "scenarios", "components", "contexts"}, {"id", "native_id", "check", "unit", "scenarios", "components", "contexts", "failed_outcome"}):
             raise ValueError("unexpected test mapping fields")
         for key in ("id", "native_id", "check", "unit"):
             text(item[key])
@@ -143,14 +143,14 @@ def validate_mapping(mapping):
             raise ValueError("duplicate test mapping")
         seen.add(identity)
         native.add(item["native_id"])
-        for key in ("cases", "components", "contexts"):
+        for key in ("scenarios", "components", "contexts"):
             values = array(item[key])
             if len(values) != len(set(values)):
                 raise ValueError("duplicate mapping value")
             for value in values:
                 digest(value) if key == "contexts" else text(value)
-        if not item["cases"] or not item["components"]:
-            raise ValueError("mapping requires explicit Case and component scope")
+        if not item["scenarios"] or not item["components"]:
+            raise ValueError("mapping requires explicit Scenario and component scope")
         if item.get("failed_outcome", "inconclusive") not in ("inconclusive", "violated"):
             raise ValueError("failed outcome requires an explicit inconclusive or reviewed violated interpretation")
     for identity in {item["id"] for item in mapping["tests"]}:
@@ -342,8 +342,8 @@ def normalize_report(launch, report, mapping, *, native_results, import_inputs, 
         execution += "/partition/" + fingerprint(selection)[7:]
     all_facts = [fact for item in selected_mapping for fact in facts[item["id"]]]
     for item in selected_mapping:
-        if not set(item["cases"]) <= set(selected[item["check"], item["unit"]]["cases"]):
-            raise ValueError("mapping names an unselected Case")
+        if not set(item["scenarios"]) <= set(selected[item["check"], item["unit"]]["scenarios"]):
+            raise ValueError("mapping names an unselected Scenario")
     contexts = {}
     captures = []
     for item in selected_mapping:
@@ -363,12 +363,12 @@ def normalize_report(launch, report, mapping, *, native_results, import_inputs, 
             for context in fact["contexts"] if not fact["diagnostics"] else []:
                 for component in item["components"]:
                     captures.append((component, context, activity))
-    actual_context = dict(launch["plan"]["required_context"])
+    actual_context = dict(launch["plan"]["required_execution_context"])
     for key, value in contexts.items():
         if key in actual_context and actual_context[key] != value:
             raise ValueError("captured context differs from planned context")
         actual_context[key] = value
-    if actual_context != launch["plan"]["required_context"]:
+    if actual_context != launch["plan"]["required_execution_context"]:
         raise ValueError("context fingerprints must be explicitly pinned in the planned launch")
     start = min((fact["started_at_ms"] for fact in all_facts), default=report["started_at_ms"])
     finish = max((fact["finished_at_ms"] for fact in all_facts), default=report["finished_at_ms"])
@@ -385,10 +385,10 @@ def normalize_report(launch, report, mapping, *, native_results, import_inputs, 
                 activity_id = activity_identity(check["id"], unit["id"], ordinal)
                 outcomes = {}
                 messages = []
-                for case in check["cases"]:
+                for scenario in check["scenarios"]:
                     results = []
                     for item in items:
-                        if case not in item["cases"]:
+                        if scenario not in item["scenarios"]:
                             continue
                         attempts_for_test = facts[item["id"]]
                         if not attempts_for_test:
@@ -407,7 +407,7 @@ def normalize_report(launch, report, mapping, *, native_results, import_inputs, 
                             result = "inconclusive"
                             messages.append("native-test-" + fact["outcome"] + ":" + item["id"])
                         results.append(result)
-                    outcomes[case] = "violated" if "violated" in results else "satisfied" if results and set(results) == {"satisfied"} else "inconclusive"
+                    outcomes[scenario] = "violated" if "violated" in results else "satisfied" if results and set(results) == {"satisfied"} else "inconclusive"
                 diagnostic_ids = []
                 for index, message in enumerate(sorted(set(messages))):
                     diagnostic_id = activity_id + "-" + str(index)
@@ -437,7 +437,7 @@ def normalize_report(launch, report, mapping, *, native_results, import_inputs, 
     sidecar = []
     for component, context, activity in captures:
         capture = {"kind": "execution", "activity": activity, "run": bundle["run_id"], "bundle_fingerprint": bundle["bundle_fingerprint"],
-                   "subject_fingerprint": bundle["subject_fingerprint"], "component": component,
+                   "verification_target_fingerprint": bundle["verification_target_fingerprint"], "component": component,
                    "instance": context["before"]["instance"], "started_at_ms": context["before"]["captured_at_ms"],
                    "finished_at_ms": context["after"]["captured_at_ms"], "before": context["before"], "after": context["after"]}
         if capture not in sidecar:

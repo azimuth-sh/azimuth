@@ -1,3 +1,3 @@
-export function implementsChallenger(identity: string): void {
+export function implementsVerificationChallenge(identity: string): void {
   void identity;
 }

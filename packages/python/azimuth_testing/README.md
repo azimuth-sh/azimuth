@@ -2,7 +2,7 @@
 
 These standard-library Python modules connect public xUnit/Playwright capture integrations to
 Azimuth's existing configured adapter protocol. Harness reports are execution facts, not Runs.
-Explicit project mappings give those facts their Check/Case meaning. Publication is independent.
+Explicit project mappings give those facts their Check/Scenario meaning. Publication is independent.
 Expose the commit-pinned `packages/python` directory through `PYTHONPATH`; nothing uses an
 installed floating release, ambient source discovery, or a connection from tests to ASS.
 
@@ -11,7 +11,7 @@ installed floating release, ambient source discovery, or a connection from tests
 ```json
 {
   "format": "azimuth-test-mapping",
-  "version": 1,
+  "version": 2,
   "framework": "xunit-v2",
   "source_system": "example-ci",
   "tests": [{
@@ -19,7 +19,7 @@ installed floating release, ambient source discovery, or a connection from tests
     "native_id": "Example.Tests.RejectsMissingPermission|Example.Tests.RejectsMissingPermission",
     "check": "caller-permissions",
     "unit": "rejects-missing-permission",
-    "cases": ["missing-permission"],
+    "scenarios": ["missing-permission"],
     "components": ["api"],
     "contexts": [],
     "failed_outcome": "inconclusive"
@@ -34,13 +34,13 @@ installed floating release, ambient source discovery, or a connection from tests
 - Playwright JSON reporter: `spec.id` + `|` + `test.projectId` (empty project ID is allowed).
 
 Use `python -m azimuth_testing inventory --trx results.trx` or
-`--playwright-json results.json` to inspect identities. Inventory does not assign Claims/Checks.
+`--playwright-json results.json` to inspect identities. Inventory does not assign Requirements/Checks.
 No fuzzy matching or display-name inference is performed. A typed identity can map to several
-Check/unit/Case bindings, but one native identity cannot stand for different typed identities.
+Check/unit/Scenario bindings, but one native identity cannot stand for different typed identities.
 
-Passing tests contribute satisfied only for their declared Cases. Failure defaults to inconclusive.
+Passing tests contribute satisfied only for their declared Scenarios. Failure defaults to inconclusive.
 `failed_outcome: violated` is an explicit terminal interpretation whose suitability must be pinned
-by independent Claim Review; generic assertion/setup failures are not automatically counterexamples.
+by independent Requirement Review; generic assertion/setup failures are not automatically counterexamples.
 Skipped, interrupted, timed-out, missing or diagnostically incomplete executions are inconclusive.
 A static xUnit skip may have no harness fact: its TRX execution is still reconciled and retained as
 inconclusive. Missing selected native tests never become success. Native runner outcome disagreement
@@ -71,7 +71,7 @@ Typed harness report format is the shared `azimuth-test-report` version 1.
 
 `contexts` in the mapping lists the exact context contract fingerprints required by the test.
 Captures require identical before/after process-lifetime identity and selected effective values.
-The planned context must already contain
+The planned required Execution Context must already contain
 `context/<contract-fingerprint>/activity/<activity-id>` with the canonical SHA-256 fingerprint of
 `{contract_revision, values}`. `activity_identity(check, unit, ordinal)` derives the stable ID
 from the exact mapped Check, unit and zero-based attempt ordinal. No ambient setting is inferred.
@@ -86,7 +86,7 @@ inconclusive. `partition_report(...)` offers explicit per-attempt selections whe
 `selection=[{id, attempt}]` imports the selected attempt under a distinct source execution identity.
 Plan each selection before importing; partitioning never silently discards retries.
 
-Capture sidecars bind exact Run ID, bundle fingerprint, Subject, **activity**, component, instance
+Capture sidecars bind exact Run ID, bundle fingerprint, Verification Target fingerprint, **activity**, component, instance
 and actual before/after snapshots. They never assert `trusted`; ASS derives attribution from
 authentication. Startup-fixed context is supported. Each capture covers its referenced activity's
 actual body interval, rather than a fictitious whole-suite interval. Native producers may instead
@@ -96,7 +96,7 @@ A Check's reviewed deployment policy may pin an exact `units` inventory and expl
 `controls:[{unit,contexts:[contractFingerprint]}]`. Only those unit/contract pairs may intentionally
 differ from deployed context; their capture stability and Run context pins are still required.
 The full declared unit inventory must match both plan and execution. Controls cannot alone
-establish positive Case support. The adapter never infers controls from mismatching settings.
+establish positive Scenario support. The adapter never infers controls from mismatching settings.
 
 ## Configure and import
 
@@ -115,7 +115,7 @@ never replace another project's configuration implicitly. After any source modif
 the configuration and plan. Core stages/hash-verifies opened resources and imports before spawn.
 For a partition add `--input selection=selection.json`. Corrections require native core predecessor
 arguments and an additional `--input correction=correction.json` containing an explicit `reason`.
-Unchanged source execution, Subject, launch, context and start anchors remain mandatory.
+Unchanged source execution, Verification Target, launch, Execution Context and start anchors remain mandatory.
 
 Generate the deterministic sidecar and confirm equality with the core-imported bundle:
 

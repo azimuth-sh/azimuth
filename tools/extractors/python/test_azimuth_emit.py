@@ -23,6 +23,8 @@ class EmitterTests(unittest.TestCase):
             manifest = scan(path, "service.py")
 
             self.assertEqual(manifest["realizes"][0]["site"], "identity")
+            self.assertEqual(manifest["realizes"][0]["requirement"], "python-identifies")
+            self.assertNotIn("claim", manifest["realizes"][0])
             implementations = manifest["check_implementations"]
             self.assertEqual([item["site"] for item in implementations], ["test_first", "test_second"])
             for item in implementations:

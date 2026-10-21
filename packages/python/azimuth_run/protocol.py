@@ -47,7 +47,7 @@ def build_check_bundle(launch, *, source, normalizer, generated_at_ms,
     """Construct a Check-only import; Azimuth's Run verifier is the final gate.
 
     units_by_check maps Check IDs to {id, attempts} records. Every attempt has
-    ordinal, activity and an outcomes map covering exactly the selected Cases.
+    ordinal, activity and an outcomes map covering exactly the selected Scenarios.
     Missing planned units receive explicit inconclusive attempts, never success.
     predecessors contains the complete prior wire bundles for this same Run.
     """
@@ -64,14 +64,14 @@ def build_check_bundle(launch, *, source, normalizer, generated_at_ms,
         raise ValueError("this builder accepts Check-only import launches")
     if not launch["planned_at_ms"] <= started_at_ms <= finished_at_ms <= generated_at_ms:
         raise ValueError("invalid native execution time interval")
-    subject_fp = fingerprint({"format": "azimuth-subject-fingerprint", "version": 1,
-                              "subject": launch["subject"]})
-    if subject_fp != launch["subject_fingerprint"]:
-        raise ValueError("Subject fingerprint mismatch")
+    target_fp = fingerprint({"format": "azimuth-verification-target-fingerprint", "version": 2,
+                             "verification_target": launch["verification_target"]})
+    if target_fp != launch["verification_target_fingerprint"]:
+        raise ValueError("Verification Target fingerprint mismatch")
     launch_payload = {key: launch[key] for key in (
-        "operation", "planned_at_ms", "subject", "subject_fingerprint", "plan", "routes")}
+        "operation", "planned_at_ms", "verification_target", "verification_target_fingerprint", "plan", "routes")}
     launch_payload["adapter"] = deepcopy(selected_adapter)
-    launch_payload.update(format="azimuth-run-launch-fingerprint", version=1)
+    launch_payload.update(format="azimuth-run-launch-fingerprint", version=2)
     if fingerprint(launch_payload) != launch["fingerprint"]:
         raise ValueError("launch fingerprint mismatch")
     checks = launch["plan"]["checks"]
@@ -88,29 +88,30 @@ def build_check_bundle(launch, *, source, normalizer, generated_at_ms,
                    import_inputs=sorted(deepcopy(import_inputs), key=lambda item: item["id"]))
     if not adapter["import_inputs"]:
         raise ValueError("imports require accountable input identities")
-    selection = {"context": deepcopy(actual_context), "plan_fingerprint": launch["plan"]["fingerprint"],
+    selection = {"execution_context": deepcopy(actual_context), "plan_fingerprint": launch["plan"]["fingerprint"],
                  "checks": deepcopy(checks), "challenges": []}
-    selection["fingerprint"] = fingerprint(dict(format="azimuth-run-selection-fingerprint", version=1, **selection))
-    bundle = {"format": "azimuth-run-bundle", "version": 1, "bundle_revision": len(predecessors),
-              "subject": launch["subject"], "subject_fingerprint": subject_fp,
+    selection["fingerprint"] = fingerprint(dict(format="azimuth-run-selection-fingerprint", version=2, **selection))
+    bundle = {"format": "azimuth-run-bundle", "version": 2, "bundle_revision": len(predecessors),
+              "verification_target": launch["verification_target"], "verification_target_fingerprint": target_fp,
               "planned_at_ms": launch["planned_at_ms"], "started_at_ms": started_at_ms,
               "finished_at_ms": finished_at_ms, "status": "complete", "plan": launch["plan"],
               "actual_selection": selection,
               "provenance": {"mode": "import", "source": deepcopy(source), "normalizer": deepcopy(normalizer),
                              "adapter": adapter, "generated_at_ms": generated_at_ms},
-              "check_executions": [], "challenger_executions": []}
-    bundle["run_id"] = fingerprint({"format": "azimuth-run-identity", "version": 1,
+              "check_executions": [], "verification_challenge_executions": []}
+    bundle["run_id"] = fingerprint({"format": "azimuth-run-identity", "version": 2,
                                    "source_system": source["system"], "source_execution": source["execution"],
-                                   "subject_fingerprint": subject_fp, "plan_fingerprint": selection["plan_fingerprint"],
+                                   "verification_target_fingerprint": target_fp,
+                                   "plan_fingerprint": selection["plan_fingerprint"],
                                    "launch_fingerprint": launch["fingerprint"]})
     used_activities = set()
     for check in checks:
         units = _identity_map(units_by_check.get(check["id"], []), "unit")
         if set(units) - {unit["id"] for unit in check["units"]}:
             raise ValueError("native account names an unplanned unit")
-        reduced = {case: [] for case in check["cases"]}
+        reduced = {scenario: [] for scenario in check["scenarios"]}
         execution = {"check": {"id": check["id"], "fingerprint": check["fingerprint"]},
-                     "units": [], "observations": []}
+                     "units": [], "results": []}
         refs, findings = set(), set()
         for planned_unit in check["units"]:
             unit = units.get(planned_unit["id"])
@@ -126,12 +127,12 @@ def build_check_bundle(launch, *, source, normalizer, generated_at_ms,
                 activity_map[activity_id] = {"id": activity_id, "status": "failed", "started_at_ms": finished_at_ms,
                     "finished_at_ms": finished_at_ms, "artifacts": [], "diagnostics": [diagnostic_id], "attributes": {}}
                 unit = {"id": planned_unit["id"], "attempts": [{"ordinal": 0, "activity": activity_id,
-                        "outcomes": {case: "inconclusive" for case in check["cases"]}}]}
+                        "outcomes": {scenario: "inconclusive" for scenario in check["scenarios"]}}]}
             for ordinal, attempt in enumerate(unit["attempts"]):
-                if attempt["ordinal"] != ordinal or set(attempt["outcomes"]) != set(check["cases"]):
-                    raise ValueError("attempt ordinal or Case selection mismatch")
+                if attempt["ordinal"] != ordinal or set(attempt["outcomes"]) != set(check["scenarios"]):
+                    raise ValueError("attempt ordinal or Scenario selection mismatch")
                 if any(outcome not in _OUTCOMES for outcome in attempt["outcomes"].values()):
-                    raise ValueError("unsupported native Case outcome")
+                    raise ValueError("unsupported native Scenario outcome")
                 activity_id = attempt["activity"]
                 if activity_id in used_activities or activity_id not in activity_map:
                     raise ValueError("attempt activities must exist and be unique")
@@ -141,24 +142,25 @@ def build_check_bundle(launch, *, source, normalizer, generated_at_ms,
                     raise ValueError("failed native activity cannot establish a proposition")
                 refs.update(activity["artifacts"])
                 findings.update(activity["diagnostics"])
-            for case in check["cases"]:
+            for scenario in check["scenarios"]:
                 attempts = unit["attempts"]
-                outcome = ("violated" if any(attempt["outcomes"][case] == "violated" for attempt in attempts)
-                           else attempts[-1]["outcomes"][case])
-                reduced[case].append(outcome)
+                outcome = ("violated" if any(attempt["outcomes"][scenario] == "violated" for attempt in attempts)
+                           else attempts[-1]["outcomes"][scenario])
+                reduced[scenario].append(outcome)
             wire_unit = deepcopy(unit)
             for attempt in wire_unit["attempts"]:
                 attempt["ordinal"] += 1
             execution["units"].append(wire_unit)
-        for case in check["cases"]:
-            values = reduced[case]
+        for scenario in check["scenarios"]:
+            values = reduced[scenario]
             outcome = "violated" if "violated" in values else "satisfied" if values and set(values) == {"satisfied"} else "inconclusive"
-            observation = {"case": case, "outcome": outcome, "observed_at_ms": finished_at_ms,
-                           "artifacts": sorted(refs), "diagnostics": sorted(findings)}
-            observation["fingerprint"] = fingerprint({"format": "azimuth-observation-fingerprint", "version": 1,
-                "run_id": bundle["run_id"], "subject_fingerprint": subject_fp, "check": execution["check"],
-                "case": case, "context": actual_context, "outcome": outcome, "observed_at_ms": finished_at_ms})
-            execution["observations"].append(observation)
+            result = {"scenario": scenario, "outcome": outcome, "observed_at_ms": finished_at_ms,
+                      "artifacts": sorted(refs), "diagnostics": sorted(findings)}
+            result["fingerprint"] = fingerprint({"format": "azimuth-check-result-fingerprint", "version": 2,
+                "run_id": bundle["run_id"], "verification_target_fingerprint": target_fp, "check": execution["check"],
+                "scenario": scenario, "execution_context": actual_context, "outcome": outcome,
+                "observed_at_ms": finished_at_ms})
+            execution["results"].append(result)
         bundle["check_executions"].append(execution)
     bundle.update(activities=sorted(activity_map.values(), key=lambda item: item["id"]),
                   artifacts=sorted(artifact_map.values(), key=lambda item: item["id"]),
@@ -170,13 +172,14 @@ def build_check_bundle(launch, *, source, normalizer, generated_at_ms,
             if previous["run_id"] != bundle["run_id"] or previous["bundle_revision"] != revision:
                 raise ValueError("correction history identity mismatch")
             payload = {key: value for key, value in previous.items() if key != "bundle_fingerprint"}
-            if fingerprint({"format": "azimuth-run-bundle-fingerprint", "version": 1, "bundle": payload}) != previous["bundle_fingerprint"]:
+            if fingerprint({"format": "azimuth-run-bundle-fingerprint", "version": 2, "bundle": payload}) != previous["bundle_fingerprint"]:
                 raise ValueError("correction predecessor fingerprint mismatch")
-            for key in ("subject", "subject_fingerprint", "planned_at_ms", "started_at_ms", "plan"):
+            for key in ("verification_target", "verification_target_fingerprint", "planned_at_ms", "started_at_ms", "plan"):
                 if previous[key] != bundle[key]:
                     raise ValueError("correction changes an execution anchor")
-            if previous["actual_selection"]["context"] != actual_context or previous["provenance"]["normalizer"] != normalizer:
-                raise ValueError("correction changes context or normalizer anchors")
+            if (previous["actual_selection"]["execution_context"] != actual_context
+                    or previous["provenance"]["normalizer"] != normalizer):
+                raise ValueError("correction changes Execution Context or normalizer anchors")
             previous_adapter = previous["provenance"]["adapter"]
             if any(previous_adapter[key] != adapter[key] for key in adapter if key != "import_inputs"):
                 raise ValueError("correction changes adapter anchors")
@@ -187,7 +190,7 @@ def build_check_bundle(launch, *, source, normalizer, generated_at_ms,
         bundle.update(corrects=predecessors[-1]["bundle_fingerprint"], correction_reason=correction_reason)
     elif correction_reason:
         raise ValueError("initial import cannot supply a correction reason")
-    bundle["bundle_fingerprint"] = fingerprint({"format": "azimuth-run-bundle-fingerprint", "version": 1, "bundle": bundle})
+    bundle["bundle_fingerprint"] = fingerprint({"format": "azimuth-run-bundle-fingerprint", "version": 2, "bundle": bundle})
     return bundle
 
 
@@ -197,18 +200,20 @@ def build_challenge_bundle(launch, *, source, normalizer, generated_at_ms,
                            import_inputs):
     launch = deepcopy(launch)
     if len(launch.get('adapters', [])) != 1 or launch['operation'] != 'import' or launch['plan']['checks']:
-        raise ValueError('Challenger builder requires one partitioned Challenge-only import launch')
+        raise ValueError('Verification Challenge builder requires one partitioned Challenge-only import launch')
     adapter = launch['adapters'][0]
     expected = {'id': 'adapter/' + adapter['id'], 'version': adapter['adapter_version'], 'build_fingerprint': adapter['adapter_fingerprint']}
     if normalizer != expected:
         raise ValueError('normalizer does not identify selected adapter')
     if not launch['planned_at_ms'] <= started_at_ms <= finished_at_ms <= generated_at_ms:
         raise ValueError('invalid execution time interval')
-    subject_fp = fingerprint({'format':'azimuth-subject-fingerprint','version':1,'subject':launch['subject']})
-    if subject_fp != launch['subject_fingerprint']:
-        raise ValueError('Subject fingerprint mismatch')
-    launch_payload = {key:launch[key] for key in ('operation','planned_at_ms','subject','subject_fingerprint','plan','routes')}
-    launch_payload.update(format='azimuth-run-launch-fingerprint',version=1,adapter=deepcopy(adapter))
+    target_fp = fingerprint({'format':'azimuth-verification-target-fingerprint','version':2,
+                             'verification_target':launch['verification_target']})
+    if target_fp != launch['verification_target_fingerprint']:
+        raise ValueError('Verification Target fingerprint mismatch')
+    launch_payload = {key:launch[key] for key in ('operation','planned_at_ms','verification_target',
+                                                  'verification_target_fingerprint','plan','routes')}
+    launch_payload.update(format='azimuth-run-launch-fingerprint',version=2,adapter=deepcopy(adapter))
     if fingerprint(launch_payload) != launch['fingerprint']:
         raise ValueError('launch fingerprint mismatch')
     activity_map = _identity_map(activities,'activity')
@@ -220,16 +225,16 @@ def build_challenge_bundle(launch, *, source, normalizer, generated_at_ms,
     if not import_inputs:
         raise ValueError('native import requires accountable inputs')
     adapter.update(launch_fingerprint=launch['fingerprint'],routes=launch['routes'],import_inputs=sorted(deepcopy(import_inputs),key=lambda item:item['id']))
-    selection = {'context':deepcopy(actual_context),'plan_fingerprint':launch['plan']['fingerprint'],
+    selection = {'execution_context':deepcopy(actual_context),'plan_fingerprint':launch['plan']['fingerprint'],
                  'checks':[],'challenges':deepcopy(challenges)}
-    selection['fingerprint'] = fingerprint(dict(format='azimuth-run-selection-fingerprint',version=1,**selection))
-    bundle = {'format':'azimuth-run-bundle','version':1,'bundle_revision':0,'subject':launch['subject'],
-              'subject_fingerprint':subject_fp,'planned_at_ms':launch['planned_at_ms'],'started_at_ms':started_at_ms,
+    selection['fingerprint'] = fingerprint(dict(format='azimuth-run-selection-fingerprint',version=2,**selection))
+    bundle = {'format':'azimuth-run-bundle','version':2,'bundle_revision':0,
+              'verification_target':launch['verification_target'],'verification_target_fingerprint':target_fp,'planned_at_ms':launch['planned_at_ms'],'started_at_ms':started_at_ms,
               'finished_at_ms':finished_at_ms,'status':'complete','plan':launch['plan'],'actual_selection':selection,
               'provenance':{'mode':'import','source':deepcopy(source),'normalizer':deepcopy(normalizer),'adapter':adapter,'generated_at_ms':generated_at_ms},
-              'check_executions':[],'challenger_executions':[]}
-    bundle['run_id'] = fingerprint({'format':'azimuth-run-identity','version':1,'source_system':source['system'],
-                                   'source_execution':source['execution'],'subject_fingerprint':subject_fp,
+              'check_executions':[],'verification_challenge_executions':[]}
+    bundle['run_id'] = fingerprint({'format':'azimuth-run-identity','version':2,'source_system':source['system'],
+                                   'source_execution':source['execution'],'verification_target_fingerprint':target_fp,
                                    'plan_fingerprint':selection['plan_fingerprint'],'launch_fingerprint':launch['fingerprint']})
     used = set()
     for challenge in challenges:
@@ -266,19 +271,20 @@ def build_challenge_bundle(launch, *, source, normalizer, generated_at_ms,
             raise ValueError('findings require concrete objections')
         if outcome == 'clean' and objections:
             raise ValueError('clean result cannot hide objections')
-        execution = {'challenge':challenge['id'],'challenger':deepcopy(challenge['challenger']),
+        execution = {'challenge':challenge['id'],'verification_challenge':deepcopy(challenge['verification_challenge']),
                      'target':deepcopy(challenge['target']),'units':wire_units}
         result = {'outcome':outcome,'observed_at_ms':finished_at_ms,'objections':sorted(objections),
                   'artifacts':sorted(refs),'diagnostics':sorted(diagnostic_refs)}
-        result['fingerprint'] = fingerprint({'format':'azimuth-challenge-result-fingerprint','version':1,'run_id':bundle['run_id'],
-            'challenge':execution['challenge'],'challenger':execution['challenger'],'target':execution['target'],
+        result['fingerprint'] = fingerprint({'format':'azimuth-challenge-result-fingerprint','version':2,'run_id':bundle['run_id'],
+            'challenge':execution['challenge'],'verification_challenge':execution['verification_challenge'],
+            'target':execution['target'],
             'outcome':outcome,'observed_at_ms':finished_at_ms})
         execution['result'] = result
-        bundle['challenger_executions'].append(execution)
+        bundle['verification_challenge_executions'].append(execution)
     if used != set(activity_map):
         raise ValueError('native activity not accounted by planned Challenge')
     bundle.update(activities=sorted(activity_map.values(),key=lambda item:item['id']),
                   artifacts=sorted(artifact_map.values(),key=lambda item:item['id']),
                   diagnostics=sorted(diagnostic_map.values(),key=lambda item:item['id']))
-    bundle['bundle_fingerprint'] = fingerprint({'format':'azimuth-run-bundle-fingerprint','version':1,'bundle':bundle})
+    bundle['bundle_fingerprint'] = fingerprint({'format':'azimuth-run-bundle-fingerprint','version':2,'bundle':bundle})
     return bundle

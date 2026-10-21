@@ -6,7 +6,7 @@
     <PackageId>Azimuth.Testing.Xunit</PackageId>
     <Version>0.1.0-alpha.6</Version>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <Description>Effective verification context capture and execution facts for xUnit v2.</Description>
+    <Description>Effective Execution Context capture and execution facts for xUnit v2.</Description>
     <RepositoryUrl>https://github.com/azimuth-sh/azimuth</RepositoryUrl>
     <PackageProjectUrl>https://azimuth.sh</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>

@@ -65,6 +65,9 @@ public final class MainTest {
 
         if (!manifest.contains("\"lang\":\"java\"")) throw new AssertionError(manifest);
         if (!manifest.contains("fixture.Identity.identity")) throw new AssertionError(manifest);
+        if (!manifest.contains("\"requirement\":\"java-identifies\"") || manifest.contains("\"claim\"")) {
+            throw new AssertionError(manifest);
+        }
         if (!manifest.equals(repeated)) throw new AssertionError("manifest was not deterministic");
         if (count(manifest, "\"check\":\"java-identity\"") != 2) {
             throw new AssertionError(manifest);

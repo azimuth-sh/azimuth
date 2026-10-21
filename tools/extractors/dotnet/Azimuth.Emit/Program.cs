@@ -79,7 +79,7 @@ if (options.AccountSupport is { } accountSupport)
     Console.Error.WriteLine(
         $"{result.AccountSupport.Elements.Count} verification Element supports, "
         + $"{result.AccountSupport.Checks.Count} Checks, "
-        + $"{result.AccountSupport.Contributions.Count} Case contributions → {accountSupport}");
+        + $"{result.AccountSupport.Contributions.Count} Scenario contributions → {accountSupport}");
 }
 Console.Error.WriteLine(
     $"{result.Realizes.Count} realizes, "
@@ -97,7 +97,7 @@ internal readonly record struct Options(
         "usage: azimuth-emit-dotnet --output <path> [--account-support <path>] "
         + "[--root <dir>] <assembly.dll>...\n"
         + "  --output       where the manifest is written\n"
-        + "  --account-support  emit Claim-first verification support separately\n"
+        + "  --account-support  emit Requirement verification support separately\n"
         + "  --root         paths in the manifest are made relative to this (default: cwd)";
 
     public static Options? Parse(string[] args)

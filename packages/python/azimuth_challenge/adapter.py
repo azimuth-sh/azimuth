@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Import native machine Challenger reports through the bounded Azimuth adapter host."""
+"""Import native machine Verification Challenge reports through the bounded Azimuth adapter host."""
 import hashlib
 import json
 from pathlib import Path
@@ -76,8 +76,9 @@ def main():
         if digest(data)!=item['digest'] or len(data)!=item['size_bytes']:
             raise ValueError('native input digest mismatch')
         account=json.loads(data,object_pairs_hook=unique)
-        if account.get('format')!='azimuth-challenge-native-account' or account.get('version')!=1 or account['subject']!=launch['subject']:
-            raise ValueError('native account or Subject mismatch')
+        if (account.get('format')!='azimuth-challenge-native-account' or account.get('version')!=2
+                or account['verification_target']!=launch['verification_target']):
+            raise ValueError('native account or Verification Target mismatch')
         if (len(launch.get('adapters', [])) != 1
                 or launch['adapters'][0]['id'] != 'azimuth-challenge'
                 or launch['adapters'][0]['configuration_fingerprint'] != expected_configuration):
@@ -85,15 +86,16 @@ def main():
         for challenge in launch['plan']['challenges']:
             for unit in challenge['units']:
                 report=account['reports'][challenge['id']][unit['id']]
-                if report.get('format')!='azimuth-challenge-native-report' or report.get('version')!=1 or report.get('challenger')!=challenge['challenger']['id']:
+                if (report.get('format')!='azimuth-challenge-native-report' or report.get('version')!=2
+                        or report.get('verification_challenge')!=challenge['verification_challenge']['id']):
                     raise ValueError('native report identity mismatch')
                 if helper.fingerprint({key:value for key,value in report.items() if key!='fingerprint'})!=report.get('fingerprint'):
                     raise ValueError('native report fingerprint mismatch')
-                if report.get('subject') != launch['subject']:
-                    raise ValueError('native report execution Subject differs from plan')
+                if report.get('verification_target') != launch['verification_target']:
+                    raise ValueError('native report Verification Target differs from plan')
                 if report['scope_fingerprint']!=unit['parameters']['scope_fingerprint']:
                     raise ValueError('native report differs from planned reviewed scope')
-                expected_tool='stryker-net' if challenge['challenger']['id'] and next(route for route in launch['routes'] if route['selection']['id']==challenge['id'])['capability']['challenge_form']=='mutation' else 'semgrep'
+                expected_tool='stryker-net' if challenge['verification_challenge']['id'] and next(route for route in launch['routes'] if route['selection']['id']==challenge['id'])['capability']['challenge_form']=='mutation' else 'semgrep'
                 if report['tool']!=expected_tool:
                     raise ValueError('native tool differs from configured Challenge form')
                 outcome,objections,gaps,_=native.normalize(report['tool'],json.loads(report['native_report_json']),execution_failed=report['timed_out'] or report['tool_exit']!=0)
@@ -106,7 +108,8 @@ def main():
         expected=helper.fingerprint({'format':'azimuth-adapter-request-fingerprint','version':1,'operation':'import',
             'launch_fingerprint':launch['fingerprint'],'inputs':[{key:item[key] for key in ('id','digest','size_bytes')}],'predecessors':[]})
         bundle=helper.build_challenge_bundle(launch,source=account['source'],normalizer={'id':'adapter/azimuth-challenge','version':identity['adapter_version'],'build_fingerprint':adapter_fp},
-            **{key:account[key] for key in ('started_at_ms','finished_at_ms','generated_at_ms','actual_context','activities','units_by_challenge','artifacts','diagnostics')},
+            actual_context=account['actual_execution_context'],
+            **{key:account[key] for key in ('started_at_ms','finished_at_ms','generated_at_ms','activities','units_by_challenge','artifacts','diagnostics')},
             import_inputs=[{key:item[key] for key in ('id','digest','size_bytes')}])
         response.update(launch_fingerprint=launch['fingerprint'],bundle=bundle)
     if request['request_id']!=expected:

@@ -178,8 +178,15 @@ func Unmarked() { println("unmarked") }
 			t.Fatalf("unexpected implementation: %#v", implementation)
 		}
 	}
-	if len(result.Realizes) != 1 || result.Realizes[0].Site != "Identity" {
+	if len(result.Realizes) != 1 || result.Realizes[0].Site != "Identity" || result.Realizes[0].Requirement != "go-identifies" {
 		t.Fatalf("realization was not retained: %#v", result.Realizes)
+	}
+	encoded, err := json.Marshal(result.Realizes[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"requirement":"go-identifies"`) || strings.Contains(string(encoded), `"claim"`) {
+		t.Fatalf("realization manifest key is not requirement: %s", encoded)
 	}
 }
 

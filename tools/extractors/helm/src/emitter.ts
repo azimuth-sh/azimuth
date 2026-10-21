@@ -87,7 +87,7 @@ export function emit(options: Options): void {
     }
     fingerprint.update(JSON.stringify(resource));
     links.push({
-      claim: marker[1], site, file, lang: 'helm',
+      requirement: marker[1], site, file, lang: 'helm',
       source_fingerprint: `sha256:${fingerprint.digest('hex')}`,
     });
   }

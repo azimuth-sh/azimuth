@@ -8,7 +8,7 @@ export function handler(): string {
 
 export const projection = (phase: string): string => {
   realizes('alpha', 'projection-thing');
-  realizes('alpha', 'second-claim');
+  realizes('alpha', 'second-requirement');
   return phase;
 };
 

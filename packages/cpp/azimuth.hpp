@@ -1,7 +1,7 @@
 #pragma once
 
-#define AZIMUTH_REALIZES(claim) \
-    [[clang::annotate("azimuth|realizes|" claim)]]
+#define AZIMUTH_REALIZES(requirement) \
+    [[clang::annotate("azimuth|realizes|" requirement)]]
 
 #define AZIMUTH_IMPLEMENTS_CHECK(check) \
     [[clang::annotate("azimuth|implements-check|" check)]]

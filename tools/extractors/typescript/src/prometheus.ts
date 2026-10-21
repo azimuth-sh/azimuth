@@ -58,7 +58,7 @@ function taggedRules(source: string, file: string): Entry[] {
   const pattern = /^\s*#\s*azimuth-realizes:\s+(\S+)\s*\n\s*-\s+alert:\s+([A-Za-z][A-Za-z0-9_]*)\s*$/gm;
   const markers = [...source.matchAll(/^\s*#\s*azimuth-realizes:[^\r\n]*$/gm)];
   const matches = [...source.matchAll(pattern)];
-  if (markers.length !== matches.length) throw new Error(`${file}: azimuth-realizes needs one stable Claim ID and an alert rule`);
+  if (markers.length !== matches.length) throw new Error(`${file}: azimuth-realizes needs one stable Requirement ID and an alert rule`);
   return matches.map((match) => {
     if (!isEntityId(match[1])) {
       const line = source.slice(0, match.index).split('\n').length;
@@ -92,9 +92,9 @@ function taggedChecks(source: string, file: string): CheckImplementation[] {
     left.check.localeCompare(right.check) || left.site.localeCompare(right.site));
 }
 
-function entry(claim: string, site: string, file: string, source: string): Entry {
+function entry(requirement: string, site: string, file: string, source: string): Entry {
   return {
-    claim, site, file, lang: 'prometheus',
+    requirement, site, file, lang: 'prometheus',
     source_fingerprint: fingerprint(source),
   };
 }
