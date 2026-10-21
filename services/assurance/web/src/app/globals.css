@@ -248,11 +248,11 @@ h3 { font-size: 14px; line-height: 1.5; font-weight: 600; }
 .warn { color: var(--amber); background: var(--amber-soft); }
 .neutral { color: var(--neutral-ink); background: var(--neutral-soft); }
 .metricGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
-.healthMetric { display: flex; flex-direction: column; padding: 17px 22px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
-.healthMetric:hover { border-color: var(--border-hover); }
-.healthMetric > span { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 550; color: var(--ink); }
-.healthMetric strong { font-size: 35px; font-weight: 600; letter-spacing: -1px; line-height: 1.2; margin: 13px 0 7px; font-variant-numeric: tabular-nums; }
-.healthMetric small { font-size: 10px; color: var(--muted); }
+.statusMetric { display: flex; flex-direction: column; padding: 17px 22px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.statusMetric:hover { border-color: var(--border-hover); }
+.statusMetric > span { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 550; color: var(--ink); }
+.statusMetric strong { font-size: 35px; font-weight: 600; letter-spacing: -1px; line-height: 1.2; margin: 13px 0 7px; font-variant-numeric: tabular-nums; }
+.statusMetric small { font-size: 10px; color: var(--muted); }
 .statusDot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .dashboardColumns { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 20px; align-items: start; margin-bottom: 24px; }
 .dashboardPanel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
@@ -315,8 +315,8 @@ form { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; margin: 24px
 form label { display: grid; gap: 8px; max-width: 100%; font-size: 12px; }
 footer { padding: 14px 26px; display: flex; justify-content: space-between; border-top: 1px solid var(--line); background: var(--surface); color: var(--footer-ink); font-size: 10px; }
 @media (max-width: 1150px) { .dashboard { padding: 25px 24px; } .dashboardColumns { grid-template-columns: minmax(0, 1fr) 220px; } .deploymentBar { gap: 18px; flex-wrap: wrap; } }
-@media (max-width: 900px) { .workspace { grid-template-columns: 180px minmax(0, 1fr); } .dashboardColumns { grid-template-columns: 1fr; } .assessmentPanel { display: none; } .healthMetric { padding: 15px; } .healthMetric small { font-size: 9px; } .boundary { display: none; } }
-@media (max-width: 640px) { .masthead { padding: 0 16px; height: 56px; } .brand small { margin-left: 8px; } .workspace { display: block; } .sidebar { padding: 12px 16px; border-right: 0; border-bottom: 1px solid var(--line); } .workspaceLabel, .navHeading, .sidebarNote { display: none; } .projectSelector { margin: 0 0 8px; border: 0; background: none; padding: 0; } .sidebar nav { display: flex; flex-wrap: wrap; gap: 0; } .sidebar nav a { padding: 6px 12px 6px 0; font-size: 11px; } .sidebar nav a span { display: none; } .dashboard { padding: 20px 16px; } .pageBreadcrumb { margin-bottom: 22px; } .dashboardHeading h1 { font-size: 26px; } .dashboardHeading { gap: 10px; } .dashboardHeading p:not(.overline) { font-size: 10px; } .environmentBadge { font-size: 10px; } .metricGrid { gap: 8px; } .healthMetric { padding: 12px; } .healthMetric > span { font-size: 10px; } .healthMetric strong { font-size: 28px; } .healthMetric small { display: none; } .panelHeading, .attentionRow { padding: 16px; } .deploymentBar { padding: 16px; } .deploymentBar > div:first-child { flex-basis: 100%; } .developmentBanner { padding: 7px 16px; } .developmentBanner span { display: none; } .shell { width: calc(100% - 32px); } th, td { padding: 12px 16px; } }
+@media (max-width: 900px) { .workspace { grid-template-columns: 180px minmax(0, 1fr); } .dashboardColumns { grid-template-columns: 1fr; } .assessmentPanel { display: none; } .statusMetric { padding: 15px; } .statusMetric small { font-size: 9px; } .boundary { display: none; } }
+@media (max-width: 640px) { .masthead { padding: 0 16px; height: 56px; } .brand small { margin-left: 8px; } .workspace { display: block; } .sidebar { padding: 12px 16px; border-right: 0; border-bottom: 1px solid var(--line); } .workspaceLabel, .navHeading, .sidebarNote { display: none; } .projectSelector { margin: 0 0 8px; border: 0; background: none; padding: 0; } .sidebar nav { display: flex; flex-wrap: wrap; gap: 0; } .sidebar nav a { padding: 6px 12px 6px 0; font-size: 11px; } .sidebar nav a span { display: none; } .dashboard { padding: 20px 16px; } .pageBreadcrumb { margin-bottom: 22px; } .dashboardHeading h1 { font-size: 26px; } .dashboardHeading { gap: 10px; } .dashboardHeading p:not(.overline) { font-size: 10px; } .environmentBadge { font-size: 10px; } .metricGrid { gap: 8px; } .statusMetric { padding: 12px; } .statusMetric > span { font-size: 10px; } .statusMetric strong { font-size: 28px; } .statusMetric small { display: none; } .panelHeading, .attentionRow { padding: 16px; } .deploymentBar { padding: 16px; } .deploymentBar > div:first-child { flex-basis: 100%; } .developmentBanner { padding: 7px 16px; } .developmentBanner span { display: none; } .shell { width: calc(100% - 32px); } th, td { padding: 12px 16px; } }
 
 .headerActions { display: flex; align-items: center; gap: 24px; }
 .themeControl { display: flex; align-items: center; gap: 8px; color: var(--header-secondary); font-size: 11px; }
@@ -324,16 +324,16 @@ footer { padding: 14px 26px; display: flex; justify-content: space-between; bord
 .themeControl select:focus-visible { outline-color: var(--header-ink); }
 @media (max-width: 640px) { .themeControl > span { display: none; } .headerActions { gap: 8px; } }
 
-.claimsPage > .backLink { margin-bottom: 24px; }
-.claimFilters { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0; }
-.claimFilters a { display: inline-flex; align-items: center; gap: 9px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--muted); font-size: 12px; }
-.claimFilters a[aria-current='page'] { color: var(--ink); border-color: var(--border-hover); background: var(--subtle); font-weight: 600; }
-.claimFilters a span { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
-.claimGroups { display: grid; gap: 20px; }
-.claimGroup .panelHeading h2 { display: flex; align-items: center; gap: 8px; margin: 0; overflow-wrap: anywhere; }
-.claimGroup .moduleIcon { margin: 0; }
-.claimGroup .attentionRow > div { width: 100%; }
-@media (max-width: 640px) { .claimFilters { gap: 6px; } .claimFilters a { padding: 7px 9px; font-size: 11px; } }
+.requirementsPage > .backLink { margin-bottom: 24px; }
+.requirementFilters { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0; }
+.requirementFilters a { display: inline-flex; align-items: center; gap: 9px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--muted); font-size: 12px; }
+.requirementFilters a[aria-current='page'] { color: var(--ink); border-color: var(--border-hover); background: var(--subtle); font-weight: 600; }
+.requirementFilters a span { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.requirementGroups { display: grid; gap: 20px; }
+.requirementGroup .panelHeading h2 { display: flex; align-items: center; gap: 8px; margin: 0; overflow-wrap: anywhere; }
+.requirementGroup .moduleIcon { margin: 0; }
+.requirementGroup .attentionRow > div { width: 100%; }
+@media (max-width: 640px) { .requirementFilters { gap: 6px; } .requirementFilters a { padding: 7px 9px; font-size: 11px; } }
 
 .sidebar nav a[aria-current='page'] { color: var(--nav-hover-ink); background: var(--nav-hover); }
 .modelPage { padding: 26px 32px 36px; max-width: 1650px; margin: 0 auto; }
@@ -378,34 +378,34 @@ footer { padding: 14px 26px; display: flex; justify-content: space-between; bord
 .modelTreeRow.selectedModule .treeModuleIcon { color: var(--nav-hover-ink); }
 .treeEmpty { color: var(--muted); padding: 10px; font-size: 12px; }
 .modelDetail { min-width: 0; padding: 27px 30px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
-.claimBreadcrumb { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; margin-bottom: 18px; }
-.claimBreadcrumb span { color: var(--separator); }
-.claimStatement { font-size: 23px; line-height: 1.5; font-weight: 600; letter-spacing: -.4px; margin: 0 0 22px; }
-.claimHealthSummary { padding: 18px 20px; background: var(--subtle); border: 1px solid var(--line); border-radius: 7px; margin-bottom: 25px; }
-.claimHealthSummary > div { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
-.claimHealthSummary p { font-size: 13px; line-height: 1.8; margin-bottom: 12px; }
+.requirementBreadcrumb { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; margin-bottom: 18px; }
+.requirementBreadcrumb span { color: var(--separator); }
+.requirementStatement { font-size: 23px; line-height: 1.5; font-weight: 600; letter-spacing: -.4px; margin: 0 0 22px; }
+.requirementStatusSummary { padding: 18px 20px; background: var(--subtle); border: 1px solid var(--line); border-radius: 7px; margin-bottom: 25px; }
+.requirementStatusSummary > div { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
+.requirementStatusSummary p { font-size: 13px; line-height: 1.8; margin-bottom: 12px; }
 .reviewSummary { font-size: 11px; color: var(--muted); }
 .reviewSummary strong { font-weight: 550; color: var(--ink); text-transform: capitalize; }
 .modelDetailMuted { color: var(--muted); font-size: 12px; line-height: 1.8; }
-.claimSections { display: flex; flex-wrap: wrap; gap: 24px; padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 7px; }
-.claimSections a { font-size: 12px; color: var(--muted); }
-.claimSections a:hover { color: var(--blue); }
-.claimDetailSection { padding: 24px 0; border-bottom: 1px solid var(--line); scroll-margin-top: 20px; }
-.claimDetailSection > h3, .claimSectionHeading h3 { font-size: 15px; margin-bottom: 9px; }
-.claimDetailSection > p { font-size: 12px; line-height: 1.8; }
-.caseCard { border: 1px solid var(--line); border-radius: 6px; margin-top: 16px; overflow: hidden; }
-.caseHeading { padding: 15px 18px; background: var(--subtle); }
-.caseHeading h4 { font-size: 13px; font-weight: 550; margin: 6px 0 0; }
-.caseCheck { padding: 17px 18px; border-top: 1px solid var(--line); }
-.caseCheck h4 { font-size: 12px; margin: 0 0 6px; font-weight: 550; }
-.caseCheck > p { margin-bottom: 0; font-size: 11px; }
-.caseNoChecks { padding: 15px 18px; margin: 0; color: var(--muted); font-size: 12px; }
+.requirementSections { display: flex; flex-wrap: wrap; gap: 24px; padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 7px; }
+.requirementSections a { font-size: 12px; color: var(--muted); }
+.requirementSections a:hover { color: var(--blue); }
+.requirementDetailSection { padding: 24px 0; border-bottom: 1px solid var(--line); scroll-margin-top: 20px; }
+.requirementDetailSection > h3, .requirementSectionHeading h3 { font-size: 15px; margin-bottom: 9px; }
+.requirementDetailSection > p { font-size: 12px; line-height: 1.8; }
+.scenarioCard { border: 1px solid var(--line); border-radius: 6px; margin-top: 16px; overflow: hidden; }
+.scenarioHeading { padding: 15px 18px; background: var(--subtle); }
+.scenarioHeading h4 { font-size: 13px; font-weight: 550; margin: 6px 0 0; }
+.scenarioCheck { padding: 17px 18px; border-top: 1px solid var(--line); }
+.scenarioCheck h4 { font-size: 12px; margin: 0 0 6px; font-weight: 550; }
+.scenarioCheck > p { margin-bottom: 0; font-size: 11px; }
+.scenarioNoChecks { padding: 15px 18px; margin: 0; color: var(--muted); font-size: 12px; }
 .recordedResult { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; padding-top: 13px; margin-top: 13px; border-top: 1px solid var(--line); }
 .recordedResult time { font-size: 10px; color: var(--muted); }
 .recordedResult a { margin-left: auto; }
 .recordedResult p { flex-basis: 100%; color: var(--muted); font-size: 11px; line-height: 1.8; margin: 0; }
-.claimSectionHeading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 13px; }
-.claimSectionHeading h3 { margin: 0; }
+.requirementSectionHeading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 13px; }
+.requirementSectionHeading h3 { margin: 0; }
 .reviewFacts { display: flex; flex-wrap: wrap; gap: 32px; margin: 18px 0; }
 .reviewFacts dt { color: var(--muted); font-size: 10px; margin-bottom: 4px; }
 .reviewFacts dd { margin: 0; font-size: 12px; }
@@ -427,13 +427,13 @@ footer { padding: 14px 26px; display: flex; justify-content: space-between; bord
 .moduleOverview strong { font-weight: 550; }
 .moduleOverview > a > span:nth-last-child(2) { margin-left: auto; color: var(--muted); font-size: 11px; }
 .moduleOverview .moduleIcon { margin: 0; }
-.moduleClaimList { margin-top: 20px; border-top: 1px solid var(--line); }
-.modelClaimRow { display: flex; gap: 12px; align-items: center; padding: 19px 0; border-bottom: 1px solid var(--line); }
-.modelClaimRow:hover { color: var(--ink); background: var(--row-hover); }
-.modelHealthDot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
-.modelClaimRow > div:first-of-type { flex: 1; min-width: 0; }
-.modelClaimRow h3 { font-size: 12px; margin-bottom: 6px; }
-.modelClaimRow p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.moduleRequirementList { margin-top: 20px; border-top: 1px solid var(--line); }
+.modelRequirementRow { display: flex; gap: 12px; align-items: center; padding: 19px 0; border-bottom: 1px solid var(--line); }
+.modelRequirementRow:hover { color: var(--ink); background: var(--row-hover); }
+.modelStatusDot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.modelRequirementRow > div:first-of-type { flex: 1; min-width: 0; }
+.modelRequirementRow h3 { font-size: 12px; margin-bottom: 6px; }
+.modelRequirementRow p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
 .modelRowStatuses { display: grid; justify-items: end; gap: 7px; }
 .modelRowStatuses small { color: var(--muted); font-size: 9px; white-space: nowrap; }
 .releaseListRow { display: flex; align-items: center; gap: 20px; padding: 20px; border-bottom: 1px solid var(--line); }
@@ -441,7 +441,7 @@ footer { padding: 14px 26px; display: flex; justify-content: space-between; bord
 .releaseListRow strong { margin-right: auto; font-size: 14px; }
 @media (max-width: 1200px) { .modelPage { padding: 25px 22px; } .modelWorkspace { gap: 18px; } .modelWorkspaceExpanded { grid-template-columns: 210px minmax(0,1fr); } .modelDetail { padding: 24px; } }
 @media (max-width: 1000px) { .modelWorkspace, .modelWorkspaceExpanded { grid-template-columns: minmax(0,1fr); } .inlineModules { display: none; } .modelNavigation { position: static; max-height: none; } .modelTree { display: block; } .modelPageHeading h1 { font-size: 25px; } }
-@media (max-width: 640px) { .modelPage { padding: 20px 16px; } .modelDetail { padding: 20px 16px; } .claimStatement { font-size: 20px; } .modelContext { padding: 15px; } .modelContext > div { gap: 9px; } .modelContext .contextSystem { flex-basis: 100%; } .contextChange form { flex-direction: column; align-items: stretch; } .contextChange label, .contextChange select { width: 100%; } .modelClaimRow { flex-wrap: wrap; } .modelRowStatuses { display: flex; justify-items: start; flex-basis: 100%; padding-left: 19px; align-items: center; } .historyRecord time { margin-left: 0; flex-basis: 100%; } .recordedResult a { margin-left: 0; } .modelPageHeading { align-items: flex-start; } }
+@media (max-width: 640px) { .modelPage { padding: 20px 16px; } .modelDetail { padding: 20px 16px; } .requirementStatement { font-size: 20px; } .modelContext { padding: 15px; } .modelContext > div { gap: 9px; } .modelContext .contextSystem { flex-basis: 100%; } .contextChange form { flex-direction: column; align-items: stretch; } .contextChange label, .contextChange select { width: 100%; } .modelRequirementRow { flex-wrap: wrap; } .modelRowStatuses { display: flex; justify-items: start; flex-basis: 100%; padding-left: 19px; align-items: center; } .historyRecord time { margin-left: 0; flex-basis: 100%; } .recordedResult a { margin-left: 0; } .modelPageHeading { align-items: flex-start; } }
 
 .modelWorkspaceToolbar { display: flex; align-items: center; gap: 16px; margin: 0 0 18px; min-width: 0; }
 .modulesButton { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 7px 11px; font-size: 12px; flex-shrink: 0; }
@@ -465,11 +465,11 @@ footer { padding: 14px 26px; display: flex; justify-content: space-between; bord
 body:has(.moduleOverlay[open]) { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
-.healthReasons { border: 1px solid var(--line); background: var(--subtle); border-radius: 6px; padding: 16px 18px; margin-top: 22px; }
-.healthReasons h3 { margin-bottom: 8px; font-size: 13px; }
-.healthReasons ul { padding-left: 17px; margin: 0; }
-.healthReasons li { color: var(--muted); font-size: 12px; line-height: 1.8; margin-top: 8px; }
-.healthReasons small { display: block; font-size: 10px; color: var(--quiet); }
+.statusReasonList { border: 1px solid var(--line); background: var(--subtle); border-radius: 6px; padding: 16px 18px; margin-top: 22px; }
+.statusReasonList h3 { margin-bottom: 8px; font-size: 13px; }
+.statusReasonList ul { padding-left: 17px; margin: 0; }
+.statusReasonList li { color: var(--muted); font-size: 12px; line-height: 1.8; margin-top: 8px; }
+.statusReasonList small { display: block; font-size: 10px; color: var(--quiet); }
 
 .releaseColumns { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 24px; align-items: start; }
 .releaseSections { display: grid; gap: 20px; min-width: 0; }
@@ -501,7 +501,7 @@ body:has(.moduleOverlay[open]) { overflow: hidden; }
 .statusReasons small { display: block; }
 .verificationCard { padding: 18px; margin-top: 16px; border: 1px solid var(--line); border-radius: 7px; background: var(--subtle); }
 .verificationCard h4 { margin: 0; font-size: 14px; line-height: 1.5; }
-.verificationCase { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 8px 0 16px; }
+.verificationScenario { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 8px 0 16px; }
 .verificationFacts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 22px; margin: 0; }
 .verificationFacts dt { color: var(--quiet); font-size: 10px; line-height: 1.5; margin-bottom: 4px; }
 .verificationFacts dd { margin: 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
@@ -510,4 +510,4 @@ body:has(.moduleOverlay[open]) { overflow: hidden; }
 .verificationContracts { margin-top: 16px; color: var(--muted); font-size: 11px; line-height: 1.7; }
 .verificationContracts summary { cursor: pointer; }
 .verificationContracts code { overflow-wrap: anywhere; font-size: 10px; }
-@media (max-width: 640px) { .verificationFacts { grid-template-columns: minmax(0, 1fr); } .verificationCard { padding: 14px; } .verificationCard .claimSectionHeading { flex-wrap: wrap; } }
+@media (max-width: 640px) { .verificationFacts { grid-template-columns: minmax(0, 1fr); } .verificationCard { padding: 14px; } .verificationCard .requirementSectionHeading { flex-wrap: wrap; } }

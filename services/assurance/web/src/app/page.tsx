@@ -11,10 +11,15 @@ export default async function Home() {
         <p className="eyebrow">
           Inspection only · GitHub ID {session.githubId}
         </p>
-        <h1>Assurance for exact Subjects</h1>
+        <h1>Assurance for exact Verification Targets</h1>
         <p className="lede">
-          Inspect current authority, Runs and independent reviews. An accepted
-          execution does not establish a supported Claim.
+          Modules organize Requirements. Scenarios describe expected behavior.
+          Checks produce Results. ASS assesses the evidence and shows
+          Requirement Status for a deployment.
+        </p>
+        <p className="lede">
+          Inspect current authority, Runs and independent reviews. A passing
+          Check alone does not make a Requirement satisfied.
         </p>
         {!developmentScenario() && <SignOut />}
       </section>

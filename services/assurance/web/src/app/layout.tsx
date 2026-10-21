@@ -9,7 +9,7 @@ import { developmentScenario } from '@/lib/development';
 export const metadata: Metadata = {
   title: 'Azimuth Assurance',
   description:
-    'Private inspection of exact-Subject Assurance State, independent reviews and Runs.',
+    'Private inspection of Requirement Status for exact Verification Targets, independent reviews and Runs.',
 };
 
 export default async function RootLayout({

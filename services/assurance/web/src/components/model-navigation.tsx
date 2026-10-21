@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
-type Module = { id: string; title: string; parent?: string; claims: string[] };
+type Module = { id: string; title: string; parent?: string; requirements: string[] };
 export function ModelNavigation({ modules, selectedModule, base }: {
   modules: Module[];
   selectedModule?: string; base: string;
@@ -26,7 +26,7 @@ export function ModelNavigation({ modules, selectedModule, base }: {
   function total(id: string, trail: string[] = []): number {
     if (trail.includes(id)) return 0;
     const module = modules.find(m => m.id === id);
-    return (module?.claims.length ?? 0) + modules.filter(m => m.parent === id).reduce((sum,m) => sum + total(m.id,[...trail,id]),0);
+    return (module?.requirements.length ?? 0) + modules.filter(m => m.parent === id).reduce((sum,m) => sum + total(m.id,[...trail,id]),0);
   }
   const rendered = new Set<string>();
   function branch(module: Module) {
@@ -41,7 +41,7 @@ export function ModelNavigation({ modules, selectedModule, base }: {
         <Link href={`${base}&module=${encodeURIComponent(module.id)}`} scroll={false} aria-current={selectedModule === module.id ? 'location' : undefined}>
           <svg className="treeModuleIcon" viewBox="0 0 20 20" width="15" height="15" fill="none" aria-hidden="true"><path d="M3 5.5h5l1.5 2H17v8.5H3V5.5Z M3 7.5h14" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /></svg>
           <span className="treeModuleTitle" title={module.title || module.id}>{module.title || module.id}</span>
-          <small title={`${count} Claims, including nested modules`} aria-label={`${count} Claims`}>{count}</small>
+          <small title={`${count} Requirements, including nested modules`} aria-label={`${count} Requirements`}>{count}</small>
         </Link>
       </div>
       {open && children.length > 0 && <ul>{children.map(branch)}</ul>}

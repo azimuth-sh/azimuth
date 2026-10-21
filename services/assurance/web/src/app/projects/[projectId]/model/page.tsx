@@ -3,30 +3,30 @@ import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { requireViewer } from '@/lib/auth';
-import { readProject, routeFingerprint, type Page, type ClaimReviewState, type SubjectState, type DeploymentCheckPolicy } from '@/lib/assurance';
-import { claimStatus } from '@/lib/production';
+import { readProject, routeFingerprint, type Page, type RequirementReviewState, type VerificationTargetState, type DeploymentCheckPolicy } from '@/lib/assurance';
+import { requirementStatus } from '@/lib/production';
 import { ModelNavigation } from '@/components/model-navigation';
 import { ModelWorkspace } from '@/components/model-workspace';
 import { CopyValue } from '@/components/copy-value';
-import { ClaimVerification } from '@/components/claim-verification';
+import { RequirementVerification } from '@/components/requirement-verification';
 
 export const dynamic = 'force-dynamic';
 type Catalog = {
-  modules: { id: string; title: string; parent?: string; claims: string[] }[];
-  claims: { id: string; title?: string; statement: string }[];
-  cases: { id: string; description: string }[];
+  modules: { id: string; title: string; parent?: string; requirements: string[] }[];
+  requirements: { id: string; title?: string; statement: string }[];
+  scenarios: { id: string; description: string }[];
   checks: { id: string; description: string }[];
 };
 type Authority = {
   fingerprint: string;
-  claims: { id: string; cases: string[]; bindings: { check: string; case: string }[]; gaps: unknown }[];
+  requirements: { id: string; scenarios: string[]; bindings: { check: string; scenario: string }[]; gaps: unknown }[];
   checks: { id: string; fingerprint: string; deployment?: DeploymentCheckPolicy | null }[];
 };
 type Revision = { revision: string; selected: boolean };
 type ReleaseSummary = { fingerprint: string; release: { label: string; model_revision: string }; accepted: boolean };
-type Deployment = { deployment: { id: string; environment: string; subject_fingerprint?: string }; release_fingerprint: string };
+type Deployment = { deployment: { id: string; environment: string; verification_target_fingerprint?: string }; release_fingerprint: string };
 type Snapshot = { reviews: Record<string, unknown>[] };
-const labels = { supported: 'Confirmed', violated: 'Violated', unresolved: 'Unresolved' };
+const labels = { supported: 'Satisfied', violated: 'Not satisfied', unresolved: 'Unresolved' };
 const tones = { supported: 'good', violated: 'bad', unresolved: 'warn' };
 function date(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value)
@@ -43,10 +43,11 @@ export default async function ModelPage({ params, searchParams }: {
   const query = await searchParams;
   const environment = await selectedEnvironment(projectId, query.environment);
   const pinned = (await cookies()).get('assurance-modules-pinned')?.value === '1';
-  if (['revision', 'subject', 'module', 'claim', 'context'].some(key => Array.isArray(query[key]))) notFound();
+  if (['revision', 'verification-target', 'module', 'requirement', 'context'].some(key => Array.isArray(query[key]))) notFound();
   const requestedRevision = typeof query.revision === 'string' ? routeFingerprint(query.revision) : null;
-  let subject = typeof query.subject === 'string' ? routeFingerprint(query.subject) : null;
-  if (query.revision && !requestedRevision || query.subject && !subject) notFound();
+  const requestedTarget = query['verification-target'];
+  let verificationTarget = typeof requestedTarget === 'string' ? routeFingerprint(requestedTarget) : null;
+  if (query.revision && !requestedRevision || requestedTarget && !verificationTarget) notFound();
   const root = `/projects/${encodeURIComponent(projectId)}`;
   const [revisions, deployments, releases, currentEnvironment] = await Promise.all([
     readProject<Page<Revision>>(projectId, '/model-revisions?limit=100'),
@@ -66,8 +67,8 @@ export default async function ModelPage({ params, searchParams }: {
   if (context?.startsWith('deployment:')) {
     deployment = await readProject<Deployment>(projectId, `/deployments/${encodeURIComponent(context.slice(11))}`);
     if (!deployment) notFound();
-  } else if (!context && subject) {
-    deployment = deployments?.items.find(d => d.deployment.subject_fingerprint === subject) ?? null;
+  } else if (!context && verificationTarget) {
+    deployment = deployments?.items.find(d => d.deployment.verification_target_fingerprint === verificationTarget) ?? null;
     if (!deployment) notFound();
   }
   if (deployment && deployment.deployment.environment !== environment) notFound();
@@ -78,10 +79,10 @@ export default async function ModelPage({ params, searchParams }: {
     release = { fingerprint: releaseFingerprint, release: record.publication.release, accepted: !!record.acceptance };
     revision = release.release.model_revision;
     deployment ??= environmentDeployment(releaseFingerprint);
-    subject = deployment?.deployment.subject_fingerprint ?? null;
+    verificationTarget = deployment?.deployment.verification_target_fingerprint ?? null;
   } else if (context === 'accepted') {
     revision = revisions?.items.find(r => r.selected)?.revision;
-    subject = null;
+    verificationTarget = null;
   } else if (context) {
     notFound();
   } else {
@@ -89,7 +90,7 @@ export default async function ModelPage({ params, searchParams }: {
     release = matching.length === 1 ? matching[0] : undefined;
     if (release) {
       deployment = environmentDeployment(release.fingerprint);
-      subject = deployment?.deployment.subject_fingerprint ?? null;
+      verificationTarget = deployment?.deployment.verification_target_fingerprint ?? null;
     }
   }
   const contextValue = release ? `release:${release.fingerprint}` : 'accepted';
@@ -103,32 +104,32 @@ export default async function ModelPage({ params, searchParams }: {
   const [catalogRecord, model, reviewState, deploymentStatus] = revision ? await Promise.all([
     readProject<{ catalog: Catalog }>(projectId, `/model-revisions/${encodeURIComponent(revision)}/catalog`),
     readProject<{ authority: Authority; selected: boolean }>(projectId, `/model-revisions/${encodeURIComponent(revision)}`),
-    readProject<ClaimReviewState>(projectId, `/model-revisions/${encodeURIComponent(revision)}/claim-reviews`),
-    subject ? readProject<SubjectState>(projectId, `/model-revisions/${encodeURIComponent(revision)}/subjects/${encodeURIComponent(subject)}/state`) : Promise.resolve(null),
+    readProject<RequirementReviewState>(projectId, `/model-revisions/${encodeURIComponent(revision)}/requirement-reviews`),
+    verificationTarget ? readProject<VerificationTargetState>(projectId, `/model-revisions/${encodeURIComponent(revision)}/verification-targets/${encodeURIComponent(verificationTarget)}/state`) : Promise.resolve(null),
   ]) : [null, null, null, null];
   const catalog = catalogRecord?.catalog;
-  const definitions = model?.authority.claims ?? [];
-  const claimId = typeof query.claim === 'string' ? query.claim : undefined;
-  const claim = definitions.find(c => c.id === claimId);
+  const definitions = model?.authority.requirements ?? [];
+  const requirementId = typeof query.requirement === 'string' ? query.requirement : undefined;
+  const requirement = definitions.find(c => c.id === requirementId);
   const catalogModules = catalog?.modules ?? [];
-  const unassigned = definitions.filter(c => !catalogModules.some(m => m.claims.includes(c.id)));
-  const modules = [...catalogModules, ...(unassigned.length ? [{ id: '__unassigned', title: 'Unassigned Claims', claims: unassigned.map(c => c.id) }] : [])];
-  const moduleId = claim ? modules.find(m => m.claims.includes(claim.id))?.id : typeof query.module === 'string' ? query.module : undefined;
+  const unassigned = definitions.filter(c => !catalogModules.some(m => m.requirements.includes(c.id)));
+  const modules = [...catalogModules, ...(unassigned.length ? [{ id: '__unassigned', title: 'Unassigned Requirements', requirements: unassigned.map(c => c.id) }] : [])];
+  const moduleId = requirement ? modules.find(m => m.requirements.includes(requirement.id))?.id : typeof query.module === 'string' ? query.module : undefined;
   const module = modules.find(m => m.id === moduleId);
-  const title = (id: string) => catalog?.claims.find(c => c.id === id)?.title ?? id;
+  const title = (id: string) => catalog?.requirements.find(c => c.id === id)?.title ?? id;
   const values = new URLSearchParams({ environment });
   if (release) values.set("release", release.fingerprint);
   if (context || deployment || release) values.set('context', deployment ? `deployment:${deployment.deployment.id}` : contextValue);
   else if (revision) values.set('revision', revision);
   const base = `${root}/model?${values}`;
   const historyRequested = query.history === '1';
-  const snapshot = claim && revision && historyRequested ? await readProject<Snapshot>(projectId, `/model-revisions/${encodeURIComponent(revision)}/snapshot`) : null;
+  const snapshot = requirement && revision && historyRequested ? await readProject<Snapshot>(projectId, `/model-revisions/${encodeURIComponent(revision)}/snapshot`) : null;
   const assessmentFresh = deploymentStatus?.assessment?.state === 'ready' && deploymentStatus.assessment.valid_until_ms !== null && deploymentStatus.assessment.valid_until_ms > Date.now();
-  const state = assessmentFresh ? deploymentStatus?.claims.find(c => c.claim === claim?.id) : undefined;
+  const state = assessmentFresh ? deploymentStatus?.requirements.find(c => c.requirement === requirement?.id) : undefined;
   const reviewFresh = reviewState?.assessment?.state === 'ready';
   const reviewFallback = reviewFresh ? 'missing' : 'Updating';
-  const review = reviewFresh ? reviewState?.claims.find(c => c.claim === claim?.id) : undefined;
-  const status = claimStatus(state?.status ?? 'unresolved');
+  const review = reviewFresh ? reviewState?.requirements.find(c => c.requirement === requirement?.id) : undefined;
+  const status = requirementStatus(state?.status ?? 'unresolved');
   const systemName = deployment ? `${deployment.deployment.environment} · ${deployment.deployment.id}` : release ? `No ${environment} deployment selected · definitions only` : 'Definitions only';
   const modelName = release?.release.label ?? (model?.selected ? 'Accepted baseline' : 'Selected model');
   function descendants(id: string, trail: string[] = []): string[] {
@@ -136,13 +137,13 @@ export default async function ModelPage({ params, searchParams }: {
     return [id, ...modules.filter(m => m.parent === id).flatMap(m => descendants(m.id,[...trail,id]))];
   }
   const visibleModules = module ? descendants(module.id) : modules.map(m => m.id);
-  const visibleClaims = definitions.filter(c => !module || modules.some(m => visibleModules.includes(m.id) && m.claims.includes(c.id)));
-  const history = snapshot?.reviews.filter(r => r.claim === claim?.id && (r.kind !== 'claim-health' || r.subject_fingerprint === subject)) ?? [];
-  const claimRow = (id: string) => {
-    const assessment = assessmentFresh ? deploymentStatus?.claims.find(c => c.claim === id) : undefined;
-    const status = claimStatus(assessment?.status ?? 'unresolved');
-    const review = reviewFresh ? reviewState?.claims.find(c => c.claim === id) : undefined;
-    return <Link className="modelClaimRow" href={`${base}&claim=${encodeURIComponent(id)}`} key={id} scroll={false}><span className={`modelHealthDot ${subject ? tones[status] : 'neutral'}`} /><div><h3>{title(id)}</h3><p>{assessment?.explanation.summary || (subject ? 'No assessment available for this system version.' : 'Claim definition · open a deployment context to inspect evidence.')}</p></div><div className="modelRowStatuses"><span className={`badge ${subject ? tones[status] : 'neutral'}`}>{subject ? labels[status] : 'Definition'}</span><small>Review: {review?.assessment ?? reviewFallback}</small></div><span aria-hidden="true">›</span></Link>;
+  const visibleRequirements = definitions.filter(c => !module || modules.some(m => visibleModules.includes(m.id) && m.requirements.includes(c.id)));
+  const history = snapshot?.reviews.filter(r => r.requirement === requirement?.id && (r.kind !== 'requirement-status' || r.verification_target_fingerprint === verificationTarget)) ?? [];
+  const requirementRow = (id: string) => {
+    const assessment = assessmentFresh ? deploymentStatus?.requirements.find(c => c.requirement === id) : undefined;
+    const status = requirementStatus(assessment?.status ?? 'unresolved');
+    const review = reviewFresh ? reviewState?.requirements.find(c => c.requirement === id) : undefined;
+    return <Link className="modelRequirementRow" href={`${base}&requirement=${encodeURIComponent(id)}`} key={id} scroll={false}><span className={`modelStatusDot ${verificationTarget ? tones[status] : 'neutral'}`} /><div><h3>{title(id)}</h3><p>{assessment?.explanation.summary || (verificationTarget ? 'No assessment available for this system version.' : 'Requirement definition · open a deployment context to inspect evidence.')}</p></div><div className="modelRowStatuses"><span className={`badge ${verificationTarget ? tones[status] : 'neutral'}`}>{verificationTarget ? labels[status] : 'Definition'}</span><small>Review: {review?.assessment ?? reviewFallback}</small></div><span aria-hidden="true">›</span></Link>;
   };
   return <div className="modelPage">
     <header className="modelPageHeading"><div><p className="overline">MODEL WORKSPACE</p><h1>Model</h1></div><Link className="textLink" href={`${root}?environment=${encodeURIComponent(environment)}`}>← Environment overview</Link></header>
@@ -150,26 +151,26 @@ export default async function ModelPage({ params, searchParams }: {
     {deploymentStatus?.assessment && !assessmentFresh && <section className="dashboardPanel" role="status"><h2>{deploymentStatus.assessment.state === 'expired' ? 'Assessment overdue' : 'Assessment updating'}</h2><p>Evidence is being reassessed. Previous conclusions are not shown as current.</p></section>}
     {(deployments?.next || releases?.next) && <p className="modelContextNotice">Showing the first 100 release and deployment contexts. Exact links remain available for older records.</p>}
     <ModelWorkspace
-      initialPinned={pinned} selection={`${revision}:${moduleId}:${claimId}`}
+      initialPinned={pinned} selection={`${revision}:${moduleId}:${requirementId}`}
       navigation={<ModelNavigation key={revision ?? 'empty'} modules={modules} selectedModule={module?.id} base={base} />}
-      breadcrumb={<>{module ? <Link href={`${base}&module=${encodeURIComponent(module.id)}`}>{module.id === '__unassigned' ? module.title : module.id}</Link> : <Link href={base}>All modules</Link>}{claim && <><span>/</span><span>Claim</span></>}</>}
+      breadcrumb={<>{module ? <Link href={`${base}&module=${encodeURIComponent(module.id)}`}>{module.id === '__unassigned' ? module.title : module.id}</Link> : <Link href={base}>All modules</Link>}{requirement && <><span>/</span><span>Requirement</span></>}</>}
     >
-      <section className="modelDetail" aria-label="Selected module or Claim">
-        {claimId && !claim ? <div className="panelEmpty"><h2>Claim not found in this model</h2><Link className="textLink" href={base}>Browse modules →</Link></div> : claim ? <>
-          <h2 className="claimStatement">{title(claim.id)}</h2>
-          <section className="claimHealthSummary" aria-label="Claim Status"><div><span className={`badge ${subject ? tones[status] : 'neutral'}`}>{subject ? labels[status] : 'Definition'}</span><span className="modelDetailMuted">{systemName}</span></div><p>{state?.explanation.summary || (subject ? 'No Claim Status is available for this deployment.' : 'Browsing definitions. Open a deployment context to inspect Claim status and evidence.')}</p><span className="reviewSummary">{state?.evaluated_at_ms ? <>Evaluated {date(state.evaluated_at_ms)} · </> : null}Claim Review: <strong>{review?.assessment ?? reviewFallback}</strong></span></section>
-          <nav className="claimSections" aria-label="Claim sections"><a href="#claim-monitors">Monitoring</a><a href="#claim-deployment">Deployment</a><a href="#claim-implementation">Implementation</a><a href="#claim-statement">Statement</a><a href="#claim-review">Review</a><Link prefetch={false} href={`${base}&claim=${encodeURIComponent(claim.id)}&history=1#claim-history`}>History</Link></nav>
-          {state && state.explanation.reasons.length > 0 && <details className="statusReasons"><summary>Why this Claim is {labels[status].toLowerCase()}</summary><ul>{state.explanation.reasons.map((reason,i) => <li key={`${reason.code}:${i}`}><span>{reason.message}</span>{reason.check && <small>Check: {reason.check}</small>}</li>)}</ul></details>}
-          <ClaimVerification bindings={claim.bindings} checks={model?.authority.checks ?? []} descriptions={catalog?.checks ?? []} cases={catalog?.cases ?? []} caseIds={claim.cases} state={state} evaluatedAt={state?.evaluated_at_ms ?? deploymentStatus?.evaluated_at_ms} hasDeployment={!!subject} projectRoot={root} />
-          <section id="claim-statement" className="claimDetailSection"><h3>Statement</h3><p>{catalog?.claims.find(c => c.id === claim.id)?.statement ?? 'No statement available for this Claim.'}</p></section>
-          <section id="claim-review" className="claimDetailSection"><div className="claimSectionHeading"><h3>Claim Review</h3><span className="badge neutral">{review?.assessment ?? reviewFallback}</span></div><p>{typeof review?.record?.rationale === 'string' ? review.record.rationale : 'No review rationale is available.'}</p>{review?.diagnostics.map((d,i) => <p className="reviewDiagnostic" key={i}>{d}</p>)}<dl className="reviewFacts"><div><dt>Reviewer</dt><dd>{typeof review?.record?.reviewer === 'string' ? review.record.reviewer : 'Not recorded'}</dd></div><div><dt>Reviewed</dt><dd>{date(review?.record?.reviewed_at_ms)}</dd></div></dl><p className="modelDetailMuted">Review assesses the Claim, implementation and verification. Claim Status is computed from applicable evidence for the selected deployment.</p>{review?.record && <details><summary>Review record & provenance</summary><pre>{JSON.stringify(review.record,null,2)}</pre><p className="modelDetailMuted">Author provenance may be a publisher-transported assertion.</p></details>}</section>
-          <section id="claim-history" className="claimDetailSection"><h3>Review & authored assessment history</h3><p className="modelDetailMuted">Historical authored assessments are retained records. They do not override computed deployment Claim Status.</p>{history.length ? history.map((r,i) => <details className="historyRecord" key={String(r.fingerprint ?? i)}><summary><span>{r.kind === 'claim-review' ? 'Claim Review' : 'Historical authored assessment (Claim Health)'}</span><span>{String(r.decision ?? r.conclusion ?? 'Recorded')}</span><time>{date(r.reviewed_at_ms)}</time></summary><pre>{JSON.stringify(r,null,2)}</pre></details>) : historyRequested ? <p className="modelDetailMuted">No assessment history recorded for this selection.</p> : <Link className="textLink" prefetch={false} href={`${base}&claim=${encodeURIComponent(claim.id)}&history=1#claim-history`}>Load review history →</Link>}</section>
+      <section className="modelDetail" aria-label="Selected module or Requirement">
+        {requirementId && !requirement ? <div className="panelEmpty"><h2>Requirement not found in this model</h2><Link className="textLink" href={base}>Browse modules →</Link></div> : requirement ? <>
+          <h2 className="requirementStatement">{title(requirement.id)}</h2>
+          <section className="requirementStatusSummary" aria-label="Requirement Status"><div><span className={`badge ${verificationTarget ? tones[status] : 'neutral'}`}>{verificationTarget ? labels[status] : 'Definition'}</span><span className="modelDetailMuted">{systemName}</span></div><p>{state?.explanation.summary || (verificationTarget ? 'No Requirement Status is available for this deployment.' : 'Browsing definitions. Open a deployment context to inspect Requirement Status and evidence.')}</p><span className="reviewSummary">{state?.evaluated_at_ms ? <>Evaluated {date(state.evaluated_at_ms)} · </> : null}Requirement Review: <strong>{review?.assessment ?? reviewFallback}</strong></span></section>
+          <nav className="requirementSections" aria-label="Requirement sections"><a href="#requirement-monitors">Monitoring</a><a href="#requirement-deployment">Deployment</a><a href="#requirement-implementation">Implementation</a><a href="#requirement-statement">Statement</a><a href="#requirement-review">Review</a><Link prefetch={false} href={`${base}&requirement=${encodeURIComponent(requirement.id)}&history=1#requirement-history`}>History</Link></nav>
+          {state && state.explanation.reasons.length > 0 && <details className="statusReasons"><summary>Why this Requirement is {labels[status].toLowerCase()}</summary><ul>{state.explanation.reasons.map((reason,i) => <li key={`${reason.code}:${i}`}><span>{reason.message}</span>{reason.check && <small>Check: {reason.check}</small>}</li>)}</ul></details>}
+          <RequirementVerification bindings={requirement.bindings} checks={model?.authority.checks ?? []} descriptions={catalog?.checks ?? []} scenarios={catalog?.scenarios ?? []} scenarioIds={requirement.scenarios} state={state} evaluatedAt={state?.evaluated_at_ms ?? deploymentStatus?.evaluated_at_ms} hasDeployment={!!verificationTarget} projectRoot={root} />
+          <section id="requirement-statement" className="requirementDetailSection"><h3>Statement</h3><p>{catalog?.requirements.find(c => c.id === requirement.id)?.statement ?? 'No statement available for this Requirement.'}</p></section>
+          <section id="requirement-review" className="requirementDetailSection"><div className="requirementSectionHeading"><h3>Requirement Review</h3><span className="badge neutral">{review?.assessment ?? reviewFallback}</span></div><p>{typeof review?.record?.rationale === 'string' ? review.record.rationale : 'No review rationale is available.'}</p>{review?.diagnostics.map((d,i) => <p className="reviewDiagnostic" key={i}>{d}</p>)}<dl className="reviewFacts"><div><dt>Reviewer</dt><dd>{typeof review?.record?.reviewer === 'string' ? review.record.reviewer : 'Not recorded'}</dd></div><div><dt>Reviewed</dt><dd>{date(review?.record?.reviewed_at_ms)}</dd></div></dl><p className="modelDetailMuted">Review assesses the Requirement, implementation and verification. Requirement Status is computed from applicable evidence for the selected deployment.</p>{review?.record && <details><summary>Review record & provenance</summary><pre>{JSON.stringify(review.record,null,2)}</pre><p className="modelDetailMuted">Author provenance may be a publisher-transported assertion.</p></details>}</section>
+          <section id="requirement-history" className="requirementDetailSection"><h3>Review & authored assessment history</h3><p className="modelDetailMuted">Historical authored assessments are retained records. They do not override computed deployment Requirement Status.</p>{history.length ? history.map((r,i) => <details className="historyRecord" key={String(r.fingerprint ?? i)}><summary><span>{r.kind === 'requirement-review' ? 'Requirement Review' : 'Historical authored assessment (Requirement Status record)'}</span><span>{String(r.decision ?? r.conclusion ?? 'Recorded')}</span><time>{date(r.reviewed_at_ms)}</time></summary><pre>{JSON.stringify(r,null,2)}</pre></details>) : historyRequested ? <p className="modelDetailMuted">No assessment history recorded for this selection.</p> : <Link className="textLink" prefetch={false} href={`${base}&requirement=${encodeURIComponent(requirement.id)}&history=1#requirement-history`}>Load review history →</Link>}</section>
         </> : <>
-          <p className="overline">{module ? 'MODULE' : 'MODEL STRUCTURE'}</p><h2 className="moduleDetailTitle">{module ? module.title : 'Modules & Claims'}</h2><p className="modelDetailMuted">{module ? 'Claims owned by this module and its nested modules.' : 'Select a module to explore its Claims, reviews and evidence.'}</p>
-          {!module && <div className="moduleOverview">{modules.filter(m => !m.parent || !modules.some(parent => parent.id === m.parent)).map(m => <Link href={`${base}&module=${encodeURIComponent(m.id)}`} key={m.id}><span className="moduleIcon">◇</span><strong>{m.title}</strong><span>{definitions.filter(c => modules.some(n => descendants(m.id).includes(n.id) && n.claims.includes(c.id))).length} Claims</span><span aria-hidden="true">›</span></Link>)}</div>}
-          {module ? <div className="moduleClaimList">{visibleClaims.map(c => claimRow(c.id))}{!visibleClaims.length && <p className="panelEmpty">No Claims in this module.</p>}</div> : !definitions.length && <div className="panelEmpty"><h3>{model ? 'No Claims in this model' : 'No model available'}</h3><p>Use Change context to select a published model.</p></div>}
+          <p className="overline">{module ? 'MODULE' : 'MODEL STRUCTURE'}</p><h2 className="moduleDetailTitle">{module ? module.title : 'Modules & Requirements'}</h2><p className="modelDetailMuted">{module ? 'Requirements owned by this module and its nested modules.' : 'Select a module to explore its Requirements, reviews and evidence.'}</p>
+          {!module && <div className="moduleOverview">{modules.filter(m => !m.parent || !modules.some(parent => parent.id === m.parent)).map(m => <Link href={`${base}&module=${encodeURIComponent(m.id)}`} key={m.id}><span className="moduleIcon">◇</span><strong>{m.title}</strong><span>{definitions.filter(c => modules.some(n => descendants(m.id).includes(n.id) && n.requirements.includes(c.id))).length} Requirements</span><span aria-hidden="true">›</span></Link>)}</div>}
+          {module ? <div className="moduleRequirementList">{visibleRequirements.map(c => requirementRow(c.id))}{!visibleRequirements.length && <p className="panelEmpty">No Requirements in this module.</p>}</div> : !definitions.length && <div className="panelEmpty"><h3>{model ? 'No Requirements in this model' : 'No model available'}</h3><p>Use Change context to select a published model.</p></div>}
         </>}
-        <details className="modelTechnical"><summary>Technical details</summary>{revision && <CopyValue label="Model revision" value={revision} />}{subject && <CopyValue label="System fingerprint" value={subject} />}{claim && <CopyValue label="Claim ID" value={claim.id} />}{module && <CopyValue label="Module ID" value={module.id} />}{state && <details><summary>Complete Claim Status</summary><pre>{JSON.stringify(state,null,2)}</pre></details>}{claim && <details><summary>Definition gaps</summary><pre>{JSON.stringify(claim.gaps ?? [],null,2)}</pre></details>}</details>
+        <details className="modelTechnical"><summary>Technical details</summary>{revision && <CopyValue label="Model revision" value={revision} />}{verificationTarget && <CopyValue label="Verification Target fingerprint" value={verificationTarget} />}{requirement && <CopyValue label="Requirement ID" value={requirement.id} />}{module && <CopyValue label="Module ID" value={module.id} />}{state && <details><summary>Complete Requirement Status</summary><pre>{JSON.stringify(state,null,2)}</pre></details>}{requirement && <details><summary>Definition gaps</summary><pre>{JSON.stringify(requirement.gaps ?? [],null,2)}</pre></details>}</details>
       </section>
     </ModelWorkspace>
   </div>;

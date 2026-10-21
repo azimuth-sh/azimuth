@@ -6,7 +6,7 @@ const ts = require('typescript');
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 
-const filename = path.resolve(__dirname, '../src/components/claim-verification.tsx');
+const filename = path.resolve(__dirname, '../src/components/requirement-verification.tsx');
 const source = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
 }).outputText;
@@ -14,51 +14,54 @@ const componentModule = new Module(filename, module);
 componentModule.filename = filename;
 componentModule.paths = Module._nodeModulePaths(path.dirname(filename));
 componentModule._compile(source, filename);
-const { ClaimVerification } = componentModule.exports;
+const { RequirementVerification } = componentModule.exports;
 const at = 1792400000000;
 const context = `sha256:${'c'.repeat(64)}`;
-const sourcePolicy = { subject: 'source', components: ['notifications'], contexts: [context], contribution: 'both', monitor: null };
+const sourcePolicy = { verification_target: 'source', components: ['notifications'], contexts: [context], contribution: 'both', monitor: null };
 const monitor = { id: 'delivery-monitor', interval_seconds: 60, freshness_seconds: 300 };
-const observation = (check, outcome, applicable, time) => ({
-  check, case: check, run: check, bundle_fingerprint: check, observation: check,
+const checkResult = (check, outcome, applicable, time) => ({
+  check, scenario: check, run: check, bundle_fingerprint: check, check_result: check,
   outcome, observed_at_ms: time, selected_in_basis: applicable, accepted_basis: applicable, applicable, diagnostics: [],
 });
 const props = {
-  bindings: [{ check: 'source', case: 'source' }, { check: 'monitor', case: 'monitor' }, { check: 'deployment', case: 'deployment' }],
+  bindings: [{ check: 'source', scenario: 'source' }, { check: 'monitor', scenario: 'monitor' }, { check: 'deployment', scenario: 'deployment' }],
   checks: [
     { id: 'source', fingerprint: 'source', deployment: sourcePolicy },
-    { id: 'monitor', fingerprint: 'monitor', deployment: { ...sourcePolicy, subject: 'deployment', contexts: [], monitor } },
-    { id: 'deployment', fingerprint: 'deployment', deployment: { ...sourcePolicy, subject: 'deployment', contexts: [] } },
+    { id: 'monitor', fingerprint: 'monitor', deployment: { ...sourcePolicy, verification_target: 'deployment', contexts: [], monitor } },
+    { id: 'deployment', fingerprint: 'deployment', deployment: { ...sourcePolicy, verification_target: 'deployment', contexts: [] } },
   ],
   descriptions: [{ id: 'source', description: 'Caller permissions tests' }, { id: 'monitor', description: 'Network isolation probe' }, { id: 'deployment', description: 'Rollout smoke Check' }],
-  cases: [], caseIds: ['source','monitor','deployment','uncovered'], evaluatedAt: at, hasDeployment: true, projectRoot: '/projects/example',
+  scenarios: [], scenarioIds: ['source','monitor','deployment','uncovered'], evaluatedAt: at, hasDeployment: true, projectRoot: '/projects/example',
   state: { bindings: [
-    { check: 'source', case: 'source', status: 'unresolved', reasons: ['Effective context differs on instance process-b.'] },
-    { check: 'monitor', case: 'monitor', status: 'unresolved', monitor, reasons: ['Monitor observation is overdue.'] },
-    { check: 'deployment', case: 'deployment', status: 'unresolved', reasons: [] },
+    { check: 'source', scenario: 'source', status: 'unresolved', reasons: ['Effective context differs on instance process-b.'] },
+    { check: 'monitor', scenario: 'monitor', status: 'unresolved', monitor, reasons: ['Monitor Check Result is overdue.'] },
+    { check: 'deployment', scenario: 'deployment', status: 'unresolved', reasons: [] },
   ], explanation: { coverage: [
-    { check: 'source', case: 'source', status: 'unresolved', observations: [observation('source', 'satisfied', false, at - 1000)] },
-    { check: 'monitor', case: 'monitor', status: 'unresolved', observations: [observation('monitor', 'satisfied', false, at - 600000)] },
-    { check: 'deployment', case: 'deployment', status: 'unresolved', observations: [observation('deployment', 'violated', true, at - 1000)] },
+    { check: 'source', scenario: 'source', status: 'unresolved', check_results: [checkResult('source', 'satisfied', false, at - 1000)] },
+    { check: 'monitor', scenario: 'monitor', status: 'unresolved', check_results: [checkResult('monitor', 'satisfied', false, at - 600000)] },
+    { check: 'deployment', scenario: 'deployment', status: 'unresolved', check_results: [checkResult('deployment', 'violated', true, at - 1000)] },
   ] } },
 };
-const html = renderToStaticMarkup(React.createElement(ClaimVerification, props));
+const html = renderToStaticMarkup(React.createElement(RequirementVerification, props));
 assert(html.indexOf('Production monitoring') < html.indexOf('Deployment verification'));
 assert(html.indexOf('Deployment verification') < html.indexOf('Implementation verification'));
 assert(html.includes('Overdue'));
-assert(html.includes('Cases without contributing Checks'));
+assert(html.includes('Scenarios without contributing Checks'));
 assert(html.includes('uncovered'));
 assert(html.includes('Effective context differs on instance process-b.'));
-assert(html.includes('Required context match not established'));
+assert(html.includes('Required Execution Context match not established'));
 assert(html.includes('Retained fact · not applicable to this deployment'));
-assert(html.includes('Adverse observation'));
+assert(html.includes('Failed Check Result'));
+assert(html.includes('>Failed</span>'));
+assert(html.includes('>Passed</span>'));
+assert(!html.includes('>Satisfied</span>'));
 assert(html.includes('Exact deployment verified'));
 assert(html.includes('/projects/example/runs/deployment'));
-const definitions = renderToStaticMarkup(React.createElement(ClaimVerification, { ...props, state: undefined, hasDeployment: false }));
+const definitions = renderToStaticMarkup(React.createElement(RequirementVerification, { ...props, state: undefined, hasDeployment: false }));
 assert(definitions.includes('Select a deployment'));
 assert(!definitions.includes('Exact deployment verified'));
 assert(!definitions.includes('Verified through the deployed composition'));
-console.log('Claim verification rendering passed: monitoring order, overdue evidence, context mismatch, adverse facts and definitions-only state.');
+console.log('Requirement verification rendering passed: monitoring order, overdue evidence, Execution Context mismatch, failed Check Results, Check Result labels and definitions-only state.');
 
 function loadSource(relative, stubs) {
   const file = path.resolve(__dirname, relative);
@@ -101,16 +104,17 @@ async function verifyMaterializedOverview() {
     const markup = renderToStaticMarkup(await Page({ params: Promise.resolve({ projectId: 'payments-demo' }), searchParams: Promise.resolve({}) }));
     if (value === 'healthy') {
       assert(markup.includes('Assessment current'));
-      assert(markup.includes('All 7 assessed Claims are confirmed'));
+      assert(markup.includes('All 7 assessed Requirements are satisfied'));
+      assert(markup.includes('Modules organize Requirements. Scenarios describe expected behavior.'));
     } else {
       assert(markup.includes(value === 'expired' ? 'Assessment overdue' : 'Assessment updating'));
-      assert(!markup.includes('No Claims need attention'));
-      assert(!markup.includes('All 7 assessed Claims are confirmed'));
+      assert(!markup.includes('No Requirements need attention'));
+      assert(!markup.includes('All 7 assessed Requirements are satisfied'));
       assert(markup.includes('<td>2</td>'));
       assert(markup.includes('goodText">—'));
     }
   }
-  console.log('Materialized overview passed: compact reads, fresh counts, pending/expired suppression and preserved Claim inventory.');
+  console.log('Materialized overview passed: compact reads, fresh counts, pending/expired suppression and preserved Requirement inventory.');
 }
 verifyMaterializedOverview().catch(error => { console.error(error); process.exitCode = 1; });
 
@@ -125,32 +129,32 @@ async function verifyModelAssessmentFreshness() {
     '@/lib/assurance': { routeFingerprint: value => value, readProject: async (project, route) => {
       if (route.endsWith('/snapshot')) snapshotReads += 1;
       const record = structuredClone(developmentRead(project, route));
-      if (route.endsWith('/state') || route.endsWith('/claim-reviews')) {
+      if (route.endsWith('/state') || route.endsWith('/requirement-reviews')) {
         if (freshness === 'missing') delete record.assessment;
         else { record.assessment.state = freshness === 'elapsed' ? 'ready' : freshness; if (freshness === 'elapsed' && route.endsWith('/state')) record.assessment.valid_until_ms = 0; }
-        for (const claim of record.claims) if (claim.explanation) claim.explanation.summary = 'Current assessment evidence sentinel';
+        for (const requirement of record.requirements) if (requirement.explanation) requirement.explanation.summary = 'Current assessment evidence sentinel';
       }
       return record;
     } },
-    '@/lib/production': { claimStatus: value => ['supported', 'violated'].includes(value) ? value : 'unresolved' },
+    '@/lib/production': { requirementStatus: value => ['supported', 'violated'].includes(value) ? value : 'unresolved' },
     'next/headers': { cookies: async () => ({ get: () => undefined }) },
     'next/navigation': { notFound: () => { throw Error('Unexpected missing fixture'); } },
     'next/link': ({ children, prefetch, ...props }) => React.createElement('a', props, children),
     '@/components/model-navigation': { ModelNavigation: () => null },
     '@/components/model-workspace': { ModelWorkspace: ({ children }) => React.createElement('div', null, children) },
     '@/components/copy-value': { CopyValue: () => null },
-    '@/components/claim-verification': { ClaimVerification },
+    '@/components/requirement-verification': { RequirementVerification },
   }).default;
   for (const value of ['ready', 'pending', 'expired', 'missing', 'elapsed']) {
     freshness = value;
-    const markup = renderToStaticMarkup(await Page({ params: Promise.resolve({ projectId: 'payments-demo' }), searchParams: Promise.resolve({ context: `deployment:${deployment}`, claim: 'reminders-arrive-on-time' }) }));
+    const markup = renderToStaticMarkup(await Page({ params: Promise.resolve({ projectId: 'payments-demo' }), searchParams: Promise.resolve({ context: `deployment:${deployment}`, requirement: 'reminders-arrive-on-time' }) }));
     assert.equal(markup.includes('Current assessment evidence sentinel'), value === 'ready', value);
-    assert.equal(markup.includes('>Confirmed</span>'), value === 'ready', value);
-    assert.equal(markup.includes('Claim Review: <strong>accepted</strong>'), value === 'ready' || value === 'elapsed', value);
+    assert.equal(markup.includes('>Satisfied</span>'), value === 'ready', value);
+    assert.equal(markup.includes('Requirement Review: <strong>accepted</strong>'), value === 'ready' || value === 'elapsed', value);
   }
-  assert.equal(snapshotReads, 0, 'Claim details must not eagerly load the complete evidence snapshot');
+  assert.equal(snapshotReads, 0, 'Requirement details must not eagerly load the complete evidence snapshot');
   freshness = 'ready';
-  await Page({ params: Promise.resolve({ projectId: 'payments-demo' }), searchParams: Promise.resolve({ context: `deployment:${deployment}`, claim: 'reminders-arrive-on-time', history: '1' }) });
+  await Page({ params: Promise.resolve({ projectId: 'payments-demo' }), searchParams: Promise.resolve({ context: `deployment:${deployment}`, requirement: 'reminders-arrive-on-time', history: '1' }) });
   assert.equal(snapshotReads, 1, 'History remains available on explicit request');
   console.log('Model assessment freshness passed: current-only conclusions, evidence and on-demand history.');
 }

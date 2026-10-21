@@ -5,9 +5,9 @@ import { environmentView } from "@/lib/production";
 export const dynamic = "force-dynamic";
 const statusLabel = (status: string) =>
   status === "supported"
-    ? "Confirmed"
+    ? "Satisfied"
     : status === "violated"
-      ? "Violated"
+      ? "Not satisfied"
       : "Unresolved";
 const tone = (status: string) =>
   status === "supported" ? "good" : status === "violated" ? "bad" : "warn";
@@ -30,7 +30,7 @@ export default async function ProjectPage({
     deployment,
     release,
     revision,
-    subject,
+    verificationTarget,
     state,
     freshness,
     authority,
@@ -40,39 +40,39 @@ export default async function ProjectPage({
     observation,
     observationFresh,
   } = await environmentView(projectId, selected, environment);
-  const claims = state?.claims ?? [];
+  const requirements = state?.requirements ?? [];
   const title = (id: string) =>
-    catalog?.claims.find((c) => c.id === id)?.title ?? id;
+    catalog?.requirements.find((c) => c.id === id)?.title ?? id;
   const moduleName = (id: string) =>
-    catalog?.modules.find((m) => m.claims.includes(id))?.id ?? "Unassigned";
+    catalog?.modules.find((m) => m.requirements.includes(id))?.id ?? "Unassigned";
   const modelLink = (id?: string) =>
-    `${root}/model?environment=${encodeURIComponent(environment)}&revision=${encodeURIComponent(revision ?? "")}&subject=${encodeURIComponent(subject ?? "")}${id ? `&claim=${encodeURIComponent(id)}` : ""}`;
-  const claimListLink = (status: string) => {
+    `${root}/model?environment=${encodeURIComponent(environment)}&revision=${encodeURIComponent(revision ?? "")}&verification-target=${encodeURIComponent(verificationTarget ?? "")}${id ? `&requirement=${encodeURIComponent(id)}` : ""}`;
+  const requirementListLink = (status: string) => {
     const query = new URLSearchParams({ status, environment });
     if (deployment) query.set("deployment", deployment.deployment.id);
-    return `${root}/claims?${query}`;
+    return `${root}/requirements?${query}`;
   };
   const counts = {
-    supported: claims.filter((c) => c.status === "supported").length,
-    violated: claims.filter((c) => c.status === "violated").length,
-    unresolved: claims.filter(
+    supported: requirements.filter((c) => c.status === "supported").length,
+    violated: requirements.filter((c) => c.status === "violated").length,
+    unresolved: requirements.filter(
       (c) => !["supported", "violated"].includes(c.status),
     ).length,
   };
-  const attention = claims
+  const attention = requirements
     .filter((c) => c.status !== "supported")
     .sort(
       (a, b) =>
         Number(b.status === "violated") - Number(a.status === "violated"),
     );
   const modules =
-    catalog?.modules.filter((m) => m.claims.length) ??
-    (claims.length
+    catalog?.modules.filter((m) => m.requirements.length) ??
+    (requirements.length
       ? [
           {
             id: "unassigned",
-            title: "Unassigned Claims",
-            claims: claims.map((c) => c.claim),
+            title: "Unassigned Requirements",
+            requirements: requirements.map((c) => c.requirement),
           },
         ]
       : []);
@@ -156,7 +156,7 @@ export default async function ProjectPage({
           <h2>Select a environment deployment</h2>
           <p>
             No current deployment is selected. Choose a recorded deployment to
-            inspect its Claim Status. This does not change what is designated current.
+            inspect its Requirement Status. This does not change what is designated current.
           </p>
           {environmentDeployments.map((d) => (
             <Link
@@ -176,22 +176,22 @@ export default async function ProjectPage({
       )}
       {freshness && <section className="dashboardPanel" role="status" aria-label="Assessment freshness">
         <h2>{freshness.state === "ready" ? "Assessment current" : freshness.state === "expired" ? "Assessment overdue" : "Assessment updating"}</h2>
-        <p>{freshness.state === "ready" ? "The displayed Claim Status reflects the current evidence." : "Evidence is being reassessed. Previous conclusions are not shown as current."}
+        <p>{freshness.state === "ready" ? "The displayed Requirement Status reflects the current evidence." : "Evidence is being reassessed. Previous conclusions are not shown as current."}
           {freshness.evaluated_at_ms ? ` Last evaluated ${new Date(freshness.evaluated_at_ms).toISOString().replace("T", " ").slice(0, 19)} UTC.` : ""}</p>
       </section>}
       <div className="metricGrid">
         {(
           [
-            ["supported", "Confirmed", "Current evidence supports the Claim"],
-            ["violated", "Violated", "Evidence contradicts the Claim"],
+            ["supported", "Satisfied", "Current evidence satisfies the Requirement"],
+            ["violated", "Not satisfied", "Evidence contradicts the Requirement"],
             ["unresolved", "Unresolved", "More evidence or review is needed"],
           ] as const
         ).map(([status, label, description]) => (
           <Link
             key={status}
-            href={claimListLink(status)}
-            aria-label={`View ${label.toLowerCase()} Claims`}
-            className={`healthMetric ${tone(status)}`}
+            href={requirementListLink(status)}
+            aria-label={`View ${label.toLowerCase()} Requirements`}
+            className={`statusMetric ${tone(status)}`}
           >
             <span>
               {label}
@@ -214,19 +214,19 @@ export default async function ProjectPage({
           {!state ? (
             <div className="panelEmpty">
               <span className="emptySymbol">◇</span>
-              <h3>Deployment Claim Status is not available</h3>
+              <h3>Deployment Requirement Status is not available</h3>
               <p>
                 {deployment
-                  ? "This deployment has no available model assessment. No confirmed status is inferred."
-                  : "Select a recorded deployment to see its Claim Status."}
+                  ? "This deployment has no available model assessment. No Requirement is treated as satisfied."
+                  : "Select a recorded deployment to see its Requirement Status."}
               </p>
             </div>
           ) : !attention.length ? (
             <div className="panelEmpty">
               <span className="emptySymbol good">✓</span>
-              <h3>No Claims need attention</h3>
+              <h3>No Requirements need attention</h3>
               <p>
-                All {claims.length} assessed Claims are confirmed for this
+                All {requirements.length} assessed Requirements are satisfied for this
                 deployment.
               </p>
             </div>
@@ -235,23 +235,23 @@ export default async function ProjectPage({
               {attention.map((c) => (
                 <Link
                   className="attentionRow"
-                  key={c.claim}
-                  href={modelLink(c.claim)}
+                  key={c.requirement}
+                  href={modelLink(c.requirement)}
                 >
                   <span className={`attentionIcon ${tone(c.status)}`}>
                     {c.status === "violated" ? "!" : "?"}
                   </span>
                   <div>
                     <div className="rowMeta">
-                      <span>{moduleName(c.claim)}</span>
+                      <span>{moduleName(c.requirement)}</span>
                       <span className={`badge ${tone(c.status)}`}>
                         {statusLabel(c.status)}
                       </span>
                     </div>
-                    <h3>{title(c.claim)}</h3>
+                    <h3>{title(c.requirement)}</h3>
                     <p>{c.explanation.summary}</p>
                     <span className="rowAction">
-                      Inspect Claim & evidence{" "}
+                      Inspect Requirement & evidence{" "}
                       <span aria-hidden="true">↗</span>
                     </span>
                   </div>
@@ -264,13 +264,18 @@ export default async function ProjectPage({
           <span className="overline">ASSESSMENT CONTEXT</span>
           <h2>Evidence, with boundaries.</h2>
           <p>
-            Claim Status describes the selected deployment. A passing Check or an
-            accepted review alone does not confirm a Claim.
+            Modules organize Requirements. Scenarios describe expected behavior.
+            Checks produce Results. ASS assesses the evidence and shows
+            Requirement Status for a deployment.
+          </p>
+          <p>
+            A passing Check or an accepted Requirement Review alone does not
+            make a Requirement satisfied.
           </p>
           <dl>
             <div>
-              <dt>Claims assessed</dt>
-              <dd>{state ? claims.length : "—"}</dd>
+              <dt>Requirements assessed</dt>
+              <dd>{state ? requirements.length : "—"}</dd>
             </div>
             <div>
               <dt>Model</dt>
@@ -305,7 +310,7 @@ export default async function ProjectPage({
         <div className="panelHeading">
           <div>
             <h2>Status by module</h2>
-            <p>Navigate from responsibilities to the Claims they contain.</p>
+            <p>Navigate from responsibilities to the Requirements they contain.</p>
           </div>
           <Link
             className="textLink"
@@ -319,9 +324,9 @@ export default async function ProjectPage({
             <thead>
               <tr>
                 <th>Module</th>
-                <th>Claims</th>
-                <th>Confirmed</th>
-                <th>Violated</th>
+                <th>Requirements</th>
+                <th>Satisfied</th>
+                <th>Not satisfied</th>
                 <th>Unresolved</th>
                 <th>
                   <span className="srOnly">Details</span>
@@ -330,16 +335,16 @@ export default async function ProjectPage({
             </thead>
             <tbody>
               {modules.map((m) => {
-                const rows = claims.filter((c) => m.claims.includes(c.claim));
+                const rows = requirements.filter((c) => m.requirements.includes(c.requirement));
                 return (
                   <tr key={m.id}>
                     <td>
-                      <Link href={modelLink(m.claims[0])}>
+                      <Link href={modelLink(m.requirements[0])}>
                         <span className="moduleIcon">◇</span>
                         {m.id}
                       </Link>
                     </td>
-                    <td>{m.claims.length}</td>
+                    <td>{m.requirements.length}</td>
                     <td className="goodText">
                       {state ? rows.filter((c) => c.status === "supported").length : "—"}
                     </td>
@@ -356,7 +361,7 @@ export default async function ProjectPage({
                     <td>
                       <Link
                         aria-label={`Inspect ${m.id}`}
-                        href={modelLink(m.claims[0])}
+                        href={modelLink(m.requirements[0])}
                       >
                         ↗
                       </Link>
