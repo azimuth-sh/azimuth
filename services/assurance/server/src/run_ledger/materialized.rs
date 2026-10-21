@@ -23,6 +23,8 @@ async fn time(conn: &mut sqlx::PgConnection) -> Result<i64, LedgerError> {
     )
 }
 
+const RENEWAL_LEAD_MS: i64 = 30_000;
+
 async fn events(state: &LedgerState) -> Result<(), LedgerError> {
     let mut tx = state.pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(848332105)")
@@ -62,7 +64,9 @@ async fn events(state: &LedgerState) -> Result<(), LedgerError> {
         .execute(&mut *tx)
         .await?;
     let now = time(&mut tx).await?;
-    let expired: Vec<(String,String)> = sqlx::query_as("UPDATE assessment_requirements SET generation=generation+1 WHERE generation=published_generation AND valid_until_ms <= $1 RETURNING project,deployment").bind(now).fetch_all(&mut *tx).await?;
+    // Renewal starts before expiry, while the published assessment is still current, so a Requirement is never
+    // read as pending merely because its evidence ages: the new evaluation replaces it at publication.
+    let expired: Vec<(String,String)> = sqlx::query_as("UPDATE assessment_requirements SET generation=generation+1,renewing=true WHERE generation=published_generation AND valid_until_ms-$1 <= LEAST($2,(valid_until_ms-COALESCE(evaluated_at_ms,0))/2) RETURNING project,deployment").bind(now).bind(RENEWAL_LEAD_MS).fetch_all(&mut *tx).await?;
     for (project, deployment) in expired {
         sqlx::query("UPDATE deployment_assessments SET generation=generation+1,retry_at=now() WHERE project=$1 AND deployment=$2").bind(project).bind(deployment).execute(&mut *tx).await?;
     }
@@ -150,6 +154,30 @@ fn deadline(request: &Value, requirement: &Value) -> i64 {
             }
         }
     }
+    // Only the newest deployment capture of an instance is ever selected, so older ones cannot change a status by ageing out.
+    let capture_instance = |capture: &Value| {
+        (
+            capture["verification_target_fingerprint"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            capture["component"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            capture["instance"].as_str().unwrap_or_default().to_string(),
+        )
+    };
+    let mut newest_deployment_capture: BTreeMap<(String, String, String), i64> = BTreeMap::new();
+    for capture in request["captures"].as_array().unwrap() {
+        if capture["kind"] == "deployment" {
+            let at = capture["finished_at_ms"].as_i64().unwrap();
+            let newest = newest_deployment_capture
+                .entry(capture_instance(capture))
+                .or_insert(at);
+            *newest = (*newest).max(at);
+        }
+    }
     for capture in request["captures"].as_array().unwrap() {
         let matches = capture["before"]["report"]["contexts"]
             .as_object()
@@ -162,6 +190,11 @@ fn deadline(request: &Value, requirement: &Value) -> i64 {
             });
         if matches {
             let at = capture["finished_at_ms"].as_i64().unwrap();
+            if capture["kind"] == "deployment"
+                && newest_deployment_capture.get(&capture_instance(capture)) != Some(&at)
+            {
+                continue;
+            }
             add(
                 at,
                 if capture["kind"] == "deployment" {
@@ -172,6 +205,15 @@ fn deadline(request: &Value, requirement: &Value) -> i64 {
             );
         }
     }
+    // A monitored Check is judged by the Check Results the evaluation selected; superseded results never regain
+    // influence by ageing, so their freshness windows are not boundaries.
+    let selected_results: BTreeSet<&str> =
+        ["supporting", "violations", "inconclusive", "unassessed"]
+            .into_iter()
+            .filter_map(|group| requirement["explanation"]["evidence"][group].as_array())
+            .flatten()
+            .filter_map(|reference| reference["check_result"].as_str())
+            .collect();
     let bundles = request["bundles"].as_array().unwrap().iter().chain(
         request["publication"]["snapshot"]["bundles"]
             .as_array()
@@ -186,15 +228,24 @@ fn deadline(request: &Value, requirement: &Value) -> i64 {
                 else {
                     continue;
                 };
+                let mut selected = window.is_none();
                 if let Some(results) = execution["results"].as_array() {
                     for result in results {
+                        if window.is_some()
+                            && !result["fingerprint"]
+                                .as_str()
+                                .is_some_and(|fingerprint| selected_results.contains(fingerprint))
+                        {
+                            continue;
+                        }
+                        selected = true;
                         add(
                             result["observed_at_ms"].as_i64().unwrap(),
                             window.unwrap_or(0),
                         );
                     }
                 }
-                if let Some(window) = window {
+                if let (Some(window), true) = (window, selected) {
                     add(bundle["finished_at_ms"].as_i64().unwrap_or(0), *window);
                     add(
                         bundle["finished_at_ms"].as_i64().unwrap_or(0),
@@ -284,7 +335,7 @@ async fn publish(
             requirement,
         )
         .await?;
-        sqlx::query("INSERT INTO assessment_requirements(project,deployment,requirement,generation,published_generation,record_key,status,review,summary,evaluated_at_ms,valid_until_ms) VALUES($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(project,deployment,requirement) DO UPDATE SET published_generation=excluded.published_generation,record_key=excluded.record_key,status=excluded.status,review=excluded.review,summary=excluded.summary,evaluated_at_ms=excluded.evaluated_at_ms,valid_until_ms=excluded.valid_until_ms")
+        sqlx::query("INSERT INTO assessment_requirements(project,deployment,requirement,generation,published_generation,record_key,status,review,summary,evaluated_at_ms,valid_until_ms) VALUES($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(project,deployment,requirement) DO UPDATE SET published_generation=excluded.published_generation,record_key=excluded.record_key,status=excluded.status,review=excluded.review,summary=excluded.summary,evaluated_at_ms=excluded.evaluated_at_ms,valid_until_ms=excluded.valid_until_ms,renewing=false")
             .bind(project).bind(deployment).bind(id).bind(requirement_generation).bind(&key).bind(requirement["status"].as_str()).bind(requirement["review"].as_str()).bind(requirement["explanation"]["summary"].as_str()).bind(result["evaluated_at_ms"].as_i64()).bind(due).execute(&mut *tx).await?;
         if let Some(previous) = previous.filter(|previous| previous != &key) {
             relational::discard_assessment_requirement(&mut tx, project, &previous).await?;
@@ -396,14 +447,19 @@ pub(super) async fn read(
     let generation: i64 = row.get("generation");
     let published: i64 = row.get("published_generation");
     let due: Option<i64> = row.get("valid_until_ms");
-    let freshness = if generation != published || published == 0 || row.get::<bool, _>("unbound") {
+    // A renewing Requirement keeps its published assessment until that assessment's own validity ends.
+    let invalidated: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM assessment_requirements WHERE project=$1 AND deployment=$2 AND generation<>published_generation AND NOT renewing)").bind(project).bind(deployment).fetch_one(&mut *tx).await?;
+    let freshness = if (generation != published && invalidated)
+        || published == 0
+        || row.get::<bool, _>("unbound")
+    {
         "pending"
     } else if due.is_some_and(|due| due <= now) {
         "expired"
     } else {
         "ready"
     };
-    let entries=sqlx::query("SELECT requirement,record_key,status,review,summary,evaluated_at_ms,generation<>published_generation AS unpublished,valid_until_ms FROM assessment_requirements WHERE project=$1 AND deployment=$2 ORDER BY requirement").bind(project).bind(deployment).fetch_all(&mut *tx).await?;
+    let entries=sqlx::query("SELECT requirement,record_key,status,review,summary,evaluated_at_ms,generation<>published_generation AND NOT renewing AS unpublished,valid_until_ms FROM assessment_requirements WHERE project=$1 AND deployment=$2 ORDER BY requirement").bind(project).bind(deployment).fetch_all(&mut *tx).await?;
     let mut requirements = Vec::new();
     for entry in entries {
         let mut requirement = if summary {
@@ -585,6 +641,34 @@ mod tests {
                 "deployment_observation":{"verification_target_fingerprint":bundle.verification_target_fingerprint,"observed_at_ms":4,"valid_for_seconds":120,"state":"complete","trusted":true,"components":[{"id":"api","digest":fp('e'),"instances":["instance"]}]},
                 "context_contracts":[],"captures":[],"bundles":[value(&to_json(&bundle))],"reviews":[],"evaluated_at_ms":5})
         }
+    }
+    #[test]
+    fn superseded_probe_results_and_captures_do_not_shorten_validity() {
+        let capture = |finished_at_ms: i64| {
+            json!({"kind":"deployment","finished_at_ms":finished_at_ms,"verification_target_fingerprint":"target","component":"api","instance":"one",
+                "before":{"report":{"contexts":{"context":{"contract_revision":"revision"}}}}})
+        };
+        let result = |fingerprint: &str, observed_at_ms: i64| json!({"fingerprint":fingerprint,"observed_at_ms":observed_at_ms});
+        let request = json!({
+            "evaluated_at_ms":1_000_000,
+            "deployment_observation":{"observed_at_ms":999_000,"valid_for_seconds":120},
+            "publication":{"snapshot":{"bundles":[],"authority":{"checks":[
+                {"id":"probe","deployment":{"monitor":{"freshness_seconds":900},"contexts":["revision"]}}]}}},
+            "captures":[capture(900_000),capture(990_000)],
+            "bundles":[
+                {"finished_at_ms":150_000,"check_executions":[{"check":{"id":"probe"},"results":[result("first",150_000)]}]},
+                {"finished_at_ms":990_000,"check_executions":[{"check":{"id":"probe"},"results":[result("latest",990_000)]}]}]});
+        let assessed = |selected: &str| json!({"bindings":[{"check":"probe"}],"explanation":{"evidence":{"supporting":[{"check_result":selected}],"violations":[],"inconclusive":[],"unassessed":[]}}});
+        assert_eq!(
+            deadline(&request, &assessed("latest")),
+            990_000 + 120_000 + 1,
+            "only the newest capture and the selected result bound validity"
+        );
+        assert_eq!(
+            deadline(&request, &assessed("first")),
+            150_000 + 900_000 + 1,
+            "a result the evaluation selected still bounds validity even when a newer one exists"
+        );
     }
     #[test]
     fn expiry_matches_native_boundary_and_selected_evaluation_keeps_global_validation() {
@@ -1273,6 +1357,50 @@ mod tests {
                 .fetch_one(&pool)
                 .await?;
         assert_eq!(header, 4);
+        Ok(())
+    }
+    #[tokio::test]
+    async fn a_requirement_is_renewed_before_it_expires_without_reading_as_pending(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let postgres = Postgres::default().with_tag("17-alpine").start().await?;
+        let pool = crate::connect(&format!(
+            "postgres://postgres:postgres@127.0.0.1:{}/postgres",
+            postgres.get_host_port_ipv4(5432).await?
+        ))
+        .await?;
+        crate::migrate(&pool).await?;
+        let state = LedgerState {
+            pool: pool.clone(),
+            credentials: Arc::new(BTreeMap::new()),
+        };
+        let now = time(&mut *pool.acquire().await?).await?;
+        sqlx::query("INSERT INTO deployment_assessments(project,deployment,release,authority,model,verification_target,generation,published_generation,valid_until_ms,evaluated_at_ms) VALUES('project','deployment','release','authority','model','verification_target',1,1,$1,$2)").bind(now + 20_000).bind(now - 100_000).execute(&pool).await?;
+        for (requirement, lifetime) in [("renewed", 20_000), ("distant", 3_600_000)] {
+            sqlx::query("INSERT INTO assessment_requirements(project,deployment,requirement,generation,published_generation,status,review,summary,valid_until_ms,evaluated_at_ms) VALUES('project','deployment',$1,1,1,'unresolved','not-required','No evidence',$2,$3)").bind(requirement).bind(now + lifetime).bind(now - 100_000).execute(&pool).await?;
+        }
+        events(&state).await?;
+        let rows: Vec<(String, i64, bool)> = sqlx::query_as(
+            "SELECT requirement,generation,renewing FROM assessment_requirements ORDER BY requirement",
+        )
+        .fetch_all(&pool)
+        .await?;
+        assert_eq!(
+            rows,
+            vec![("distant".into(), 1, false), ("renewed".into(), 2, true)]
+        );
+        let view = read(&state, "project", "deployment", true).await?;
+        assert_eq!(
+            view["assessment"]["state"], "ready",
+            "renewal alone must not hide the published assessment"
+        );
+        assert!(view["requirements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|requirement| requirement["diagnostics"].as_array().unwrap().is_empty()));
+        sqlx::query("UPDATE assessment_requirements SET generation=generation+1,renewing=false WHERE requirement='renewed'").execute(&pool).await?;
+        let invalidated = read(&state, "project", "deployment", true).await?;
+        assert_eq!(invalidated["assessment"]["state"], "pending");
         Ok(())
     }
 }
