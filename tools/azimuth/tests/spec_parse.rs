@@ -520,13 +520,13 @@ fn only_selection_retains_relevant_challenge_plans_atomically() {
         model.join("alpha/verification.md"),
         "# Verification: alpha\n\n## Check: shared-check\nMethod: invoke\nTerminal: works\n\n\
          Atomic.\n\n## Evidence Binding: edge/alpha\nCheck: shared-check\nScenario: alpha-works\n\
-         Method qualification: shared/method\nProposition: direct\nContext: {}\n\
+         Method qualification: shared/method\nProposition: direct\nExecution Context: {}\n\
          Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n\n\
          ## Evidence Binding: edge/beta\nCheck: shared-check\nScenario: beta-works\n\
-         Method qualification: shared/method\nProposition: direct\nContext: {}\n\
+         Method qualification: shared/method\nProposition: direct\nExecution Context: {}\n\
          Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n\n\
          ## Method Qualification: shared/method\nCheck: shared-check\nScope: unit\n\
-         Quantification: example\nOracle: direct\nContext: {}\nChallenge domain: [\"context\"]\n\
+         Quantification: example\nOracle: direct\nExecution Context: {}\nChallenge domain: [\"context\"]\n\
          Policy: credible\nVerdict: qualified\n\
          Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
          Qualified: 2026-08-21\nQualifier: owner\n\nReviewed.\n\n\
@@ -932,7 +932,7 @@ fn verification_binding(owner: &str, check: &str, scenario: &str, binding: &str)
     format!(
         "# Verification: {owner}\n\n## Check: {check}\nMethod: invoke\nTerminal: works\n\n\
          Atomic.\n\n## Evidence Binding: {binding}\nCheck: {check}\nScenario: {scenario}\n\
-         Method qualification: {binding}-method\nProposition: direct\nContext: {{}}\n\
+         Method qualification: {binding}-method\nProposition: direct\nExecution Context: {{}}\n\
          Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n"
     )
 }
@@ -944,7 +944,7 @@ fn verification_with_binding(owner: &str, binding: &str, include_check: bool) ->
     format!(
         "# Verification: {owner}\n\n{check}## Evidence Binding: {binding}\n\
          Check: shared-check\nScenario: alpha-works\nMethod qualification: shared/method\n\
-         Proposition: direct\nContext: {{}}\n\
+         Proposition: direct\nExecution Context: {{}}\n\
          Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n"
     )
 }

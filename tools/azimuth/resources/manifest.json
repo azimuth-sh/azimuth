@@ -1,7 +1,7 @@
 {
   "format": "azimuth-cli-resources",
   "schemaVersion": 1,
-  "releaseVersion": "0.1.0-alpha.6",
+  "releaseVersion": "0.1.0-alpha.7",
   "migrationLine": "alpha-requirement-scenario",
   "skills": [
     "azimuth-explore",
@@ -37,6 +37,7 @@
     "0.1.0-alpha.3-to-0.1.0-alpha.4",
     "0.1.0-alpha.4-to-0.1.0-alpha.5",
     "0.1.0-alpha.5-to-0.1.0-alpha.6",
+    "0.1.0-alpha.6-to-0.1.0-alpha.7",
     "alpha-claim-case-to-alpha-requirement-scenario"
   ],
   "workflows": [

@@ -86,7 +86,7 @@ fn export_preserves_current_shape_without_retired_evidence_keys() {
     let json = azimuth::json::parse(&rendered).unwrap();
     assert_eq!(
         json.get("version").and_then(azimuth::json::Json::as_num),
-        Some(6.0)
+        Some(7.0)
     );
     assert_no_retired_keys(&json);
     fs::remove_dir_all(root).unwrap();

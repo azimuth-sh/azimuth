@@ -429,16 +429,12 @@ pub fn migration_plan(root: &Path) -> Result<Json, String> {
     .is_some();
     let line_supported =
         rewrites_account || installation.migration_line == resources::MIGRATION_LINE;
-    let edits = if release_supported && rewrites_account {
+    let edits = if release_supported && line_supported {
         account_edits(root, &repository)?
     } else {
         Vec::new()
     };
-    let findings = if rewrites_account {
-        Vec::new()
-    } else {
-        retired_syntax_findings(root)?
-    };
+    let findings = residual_retired_syntax(&edits);
     let disposition = if !release_supported || !line_supported {
         "unsupported"
     } else if findings.is_empty() {
@@ -532,14 +528,10 @@ pub fn migration_apply(root: &Path, plan_path: &Path) -> Result<usize, String> {
     if sha256(&installation) != require_string(&plan, "installationSha256", plan_path)? {
         return Err("installation changed after migration planning; replan".into());
     }
-    if loaded.migration_line == resources::MIGRATION_LINE {
-        if !object_array(&plan, "edits", plan_path)?.is_empty() {
-            return Err("a same-line migration plan carries no account edits".into());
-        }
-        return Ok(0);
-    }
-    if resources::migration_line_reference(&loaded.migration_line, resources::MIGRATION_LINE)
-        .is_none()
+    let changes_line = loaded.migration_line != resources::MIGRATION_LINE;
+    if changes_line
+        && resources::migration_line_reference(&loaded.migration_line, resources::MIGRATION_LINE)
+            .is_none()
     {
         return Err("no account migration edge reaches the running migration line".into());
     }
@@ -558,12 +550,16 @@ pub fn migration_apply(root: &Path, plan_path: &Path) -> Result<usize, String> {
         .into_iter()
         .map(|edit| (repository.join(&edit.path), Some(edit.content)))
         .collect::<Vec<_>>();
-    loaded.migration_line = resources::MIGRATION_LINE.into();
-    changes.push((
-        installation_path,
-        Some(installation_json(&loaded).into_bytes()),
-    ));
-    apply_transaction(changes)?;
+    if changes_line {
+        loaded.migration_line = resources::MIGRATION_LINE.into();
+        changes.push((
+            installation_path,
+            Some(installation_json(&loaded).into_bytes()),
+        ));
+    }
+    if !changes.is_empty() {
+        apply_transaction(changes)?;
+    }
     Ok(count)
 }
 
@@ -940,32 +936,21 @@ fn json_declares_component(value: &Json, identity: &str) -> bool {
         == Some(env!("CARGO_PKG_VERSION"))
 }
 
-fn retired_syntax_findings(root: &Path) -> Result<Vec<String>, String> {
+/// Retired syntax the rewrite could not express in the current vocabulary. The rewrite is total
+/// over its whitelisted positions, so a finding here means the plan must not be applied.
+fn residual_retired_syntax(edits: &[AccountEdit]) -> Vec<String> {
     let mut findings = Vec::new();
-    for file in active_account_markdown(root)? {
-        let source = fs::read_to_string(&file)
-            .map_err(|error| format!("cannot read {}: {error}", file.display()))?;
-        for (line, text) in crate::account_syntax_migration::retired_syntax(&source) {
+    for edit in edits.iter().filter(|edit| edit.path.ends_with(".md")) {
+        let rewritten = String::from_utf8_lossy(&edit.content);
+        for (line, text) in crate::account_syntax_migration::retired_syntax(&rewritten) {
             findings.push(format!(
-                "{}:{line}: retired Claim/Case syntax `{}` requires the Requirement/Scenario vocabulary",
-                file.display(),
+                "{}:{line}: retired syntax `{}` has no automatic rewrite",
+                edit.path,
                 text.trim()
             ));
         }
     }
-    let workspace = root.join("workspace.json");
-    if let Ok(source) = fs::read_to_string(&workspace) {
-        if crate::account_syntax_migration::rewrite_workspace(&source)
-            .map_err(|error| format!("{}: {error}", workspace.display()))?
-            .is_some()
-        {
-            findings.push(format!(
-                "{}: workspace version 1 requires version 2 realization obligations",
-                workspace.display()
-            ));
-        }
-    }
-    Ok(findings)
+    findings
 }
 
 /// Active authored Markdown: the model, standards and unarchived changes. Archived changes and

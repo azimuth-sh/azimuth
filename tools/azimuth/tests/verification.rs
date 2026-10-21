@@ -1,13 +1,14 @@
 use azimuth::design::{Design, DesignEntry, Enforcement, Mechanism, Target};
 use azimuth::fingerprint::{
-    binding_fingerprint, canonical_json, canonical_sha256, check_fingerprint, context_fingerprint,
-    method_qualification_fingerprint, policy_fingerprint, schedule_fingerprint,
+    binding_fingerprint, canonical_json, canonical_sha256, check_fingerprint,
+    execution_context_fingerprint, method_qualification_fingerprint, policy_fingerprint,
+    schedule_fingerprint,
 };
 use azimuth::json;
 use azimuth::model::{Artifact, CheckImplementation, Model, Site, SourceIdentity};
 use azimuth::spec::parse_spec;
 use azimuth::verification::{
-    context_json, parse_selector, parse_standards, parse_verification, ChallengeDomain,
+    execution_context_json, parse_selector, parse_standards, parse_verification, ChallengeDomain,
     EvidenceBinding, Selector,
 };
 use std::collections::BTreeMap;
@@ -26,7 +27,7 @@ Check: recovery-under-loss
 Scenario: accepted-write-replayed
 Method qualification: payments/recovery-method
 Proposition: replay exercises the recovery predicate
-Context: {"storage":"postgres-17","platform":"linux-x86_64"}
+Execution Context: {"storage":"postgres-17","platform":"linux-x86_64"}
 Challenge domain: ["oracle","realization","mechanism","context","check-implementation"]
 Policy: credible-executable
 
@@ -37,7 +38,7 @@ Check: recovery-under-loss
 Scope: component
 Quantification: example
 Oracle: relational
-Context: {"storage":"postgres-17","platform":"linux-x86_64"}
+Execution Context: {"storage":"postgres-17","platform":"linux-x86_64"}
 Challenge domain: ["oracle","context","check-implementation"]
 Policy: credible-executable
 Verdict: qualified
@@ -148,7 +149,10 @@ fn parses_the_complete_strict_declaration_graph() {
     assert_eq!(declarations.owner, "payments/recovery");
     assert_eq!(declarations.checks[0].methods.len(), 2);
     assert_eq!(
-        declarations.bindings[0].context.keys().collect::<Vec<_>>(),
+        declarations.bindings[0]
+            .execution_context
+            .keys()
+            .collect::<Vec<_>>(),
         ["platform", "storage"]
     );
     assert_eq!(
@@ -373,13 +377,13 @@ fn realization_selectors_reject_locator_and_pattern_shaped_identities() {
 }
 
 #[test]
-fn context_fingerprint_uses_a_versioned_canonical_envelope() {
+fn execution_context_fingerprint_uses_a_versioned_canonical_envelope() {
     let declarations = parse_verification("verification.md", DECLARATIONS).unwrap();
-    let context = &declarations.bindings[0].context;
-    let digest = context_fingerprint(context);
+    let context = &declarations.bindings[0].execution_context;
+    let digest = execution_context_fingerprint(context);
 
     assert_eq!(
-        canonical_json(&context_json(context)),
+        canonical_json(&execution_context_json(context)),
         concat!(
             "{\n",
             "  \"format\": \"azimuth-execution-context-fingerprint\",\n",
@@ -395,7 +399,7 @@ fn context_fingerprint_uses_a_versioned_canonical_envelope() {
         digest,
         "sha256:4e876db5e0d830400e9771c879b132d9423aa52afd1d3ca70a41e7db03939813"
     );
-    assert_eq!(digest, canonical_sha256(&context_json(context)));
+    assert_eq!(digest, canonical_sha256(&execution_context_json(context)));
     assert_ne!(
         digest,
         canonical_sha256(&json::Json::Obj(
@@ -410,8 +414,8 @@ fn context_fingerprint_uses_a_versioned_canonical_envelope() {
     reverse_inserted.insert("storage".to_string(), "postgres-17".to_string());
     reverse_inserted.insert("platform".to_string(), "linux-x86_64".to_string());
     assert_eq!(
-        canonical_sha256(&context_json(context)),
-        canonical_sha256(&context_json(&reverse_inserted))
+        canonical_sha256(&execution_context_json(context)),
+        canonical_sha256(&execution_context_json(&reverse_inserted))
     );
 
     let version_three = json::Json::obj(vec![
@@ -461,7 +465,7 @@ fn evidence_binding_matches_the_frozen_vector() {
         scenario: "demo/spec#requirement/scenario".into(),
         method_qualification: "demo/method".into(),
         proposition: "the Check directly exercises the scenario".into(),
-        context: BTreeMap::new(),
+        execution_context: BTreeMap::new(),
         challenge_domain: vec![ChallengeDomain::Realization],
         policy: "credible-executable".into(),
         rationale: "Reviewable.".into(),
@@ -475,7 +479,7 @@ fn evidence_binding_matches_the_frozen_vector() {
             "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
         ),
-        "sha256:09524f5916378dbbf339a62917c3fb7bfe7705e2a13ceb7f58734fd19571ca14"
+        "sha256:17266ceea1b8b383ed06e207085bb2be104fb503ebd32ae1b5e03a79855ab650"
     );
 }
 
@@ -566,10 +570,10 @@ fn fingerprints_stale_only_for_their_semantic_inputs() {
             &policy_digest,
         )
     );
-    let context_digest = context_fingerprint(&qualification.context);
+    let context_digest = execution_context_fingerprint(&qualification.execution_context);
     let mut context_changed = binding.clone();
     context_changed
-        .context
+        .execution_context
         .insert("platform".into(), "macos".into());
     assert_ne!(
         binding_digest,
@@ -580,7 +584,10 @@ fn fingerprints_stale_only_for_their_semantic_inputs() {
             &policy_digest,
         )
     );
-    assert_eq!(context_digest, context_fingerprint(&qualification.context));
+    assert_eq!(
+        context_digest,
+        execution_context_fingerprint(&qualification.execution_context)
+    );
     assert_eq!(
         qualification_digest,
         method_qualification_fingerprint(qualification, &check_digest, &policy_digest)
@@ -847,7 +854,7 @@ fn surface_contributions_use_the_authoritative_tuple_order() {
     );
     assert_eq!(
         fingerprint,
-        "sha256:12c0f0c1f654cd899b3131a1b6bab08f8348f3f9122fa0e4f14d387190314815"
+        "sha256:1e61f5f2cfb4791ca838602273023d6b3086f64405e58546ae1122f1bc845d2f"
     );
 }
 
@@ -877,7 +884,7 @@ fn model_enforces_project_cardinality_and_exports_only_current_fields() {
     let exported = model.to_json(&[]);
     assert_eq!(
         exported.get("version").and_then(|value| value.as_num()),
-        Some(6.0)
+        Some(7.0)
     );
     for key in ["covers", "mechanism_covers", "observations"] {
         assert!(exported.get(key).is_none(), "retired export key `{key}`");
@@ -896,6 +903,21 @@ fn model_enforces_project_cardinality_and_exports_only_current_fields() {
     ] {
         assert!(exported.get(key).is_some(), "missing v2 export key `{key}`");
     }
+    let binding = &exported
+        .get("evidence_bindings")
+        .unwrap()
+        .as_array()
+        .unwrap()[0];
+    assert!(binding.get("execution_context").is_some());
+    assert!(binding.get("execution_context_fingerprint").is_some());
+    assert!(binding.get("context").is_none() && binding.get("context_fingerprint").is_none());
+    let qualification = &exported
+        .get("method_qualifications")
+        .unwrap()
+        .as_array()
+        .unwrap()[0];
+    assert!(qualification.get("execution_context").is_some());
+    assert!(qualification.get("context").is_none());
     let serialized = exported.to_string_pretty();
     assert!(!serialized.contains("qualification_policy"));
     assert!(!serialized.contains("Qualification Policy"));

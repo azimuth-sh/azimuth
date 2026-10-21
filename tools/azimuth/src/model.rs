@@ -1890,7 +1890,7 @@ impl Model {
             scope_component(
                 SemanticScopeKind::Context,
                 &qualification.id,
-                crate::fingerprint::context_fingerprint(&qualification.context),
+                crate::fingerprint::execution_context_fingerprint(&qualification.execution_context),
             ),
             scope_component(
                 SemanticScopeKind::Policy,
@@ -1956,7 +1956,7 @@ impl Model {
             scope_component(
                 SemanticScopeKind::Context,
                 &binding.id,
-                crate::fingerprint::context_fingerprint(&binding.context),
+                crate::fingerprint::execution_context_fingerprint(&binding.execution_context),
             ),
             scope_component(
                 SemanticScopeKind::Policy,
@@ -2607,7 +2607,7 @@ impl Model {
             .collect();
 
         Json::obj(vec![
-            ("version", Json::Num(6.0)),
+            ("version", Json::Num(7.0)),
             (
                 "extensions",
                 Json::Arr(
@@ -3090,8 +3090,8 @@ fn binding_json(model: &Model, item: &crate::verification::EvidenceBinding) -> J
         ),
         ("proposition".to_string(), Json::str(&item.proposition)),
         (
-            "context".to_string(),
-            crate::verification::context_json(&item.context),
+            "execution_context".to_string(),
+            crate::verification::execution_context_json(&item.execution_context),
         ),
         (
             "challenge_domain".to_string(),
@@ -3104,8 +3104,10 @@ fn binding_json(model: &Model, item: &crate::verification::EvidenceBinding) -> J
         ),
         ("policy".to_string(), Json::str(&item.policy)),
         (
-            "context_fingerprint".to_string(),
-            Json::str(crate::fingerprint::context_fingerprint(&item.context)),
+            "execution_context_fingerprint".to_string(),
+            Json::str(crate::fingerprint::execution_context_fingerprint(
+                &item.execution_context,
+            )),
         ),
     ];
     if let Some(expected) = model.expected_applicability_fingerprint(item) {
@@ -3124,7 +3126,10 @@ fn method_qualification_json(
         ("scope", Json::str(item.scope.name())),
         ("quantification", Json::str(item.quantification.name())),
         ("oracle", Json::str(item.oracle.name())),
-        ("context", crate::verification::context_json(&item.context)),
+        (
+            "execution_context",
+            crate::verification::execution_context_json(&item.execution_context),
+        ),
         (
             "challenge_domain",
             Json::Arr(

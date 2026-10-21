@@ -38,10 +38,23 @@ The added statement holds.\n\n\
 It is visible.\n\n\
 ## Mechanism Case scope verification: prose heading\n";
 
+const DECLARATIONS: &str = "# Verification: sample\n\n\
+## Evidence Binding: sample/edge\n\
+Check: sample/check\n\
+Context: {\"platform\":\"linux\"}\n\n\
+Bound.\n\n\
+## Method Qualification: sample/method\n\
+Check: sample/check\n\
+Context: {}\n\n\
+Qualified.\n\n\
+## Check: sample/check\n\
+Context: unrelated prose label\n\n\
+```md\n## Evidence Binding: fenced\nContext: {}\n```\n";
+
 const ARCHIVED: &str =
     "# Spec: sample\n\n## Claim: archived\nCriticality: routine\n\nOld.\n\n### Case: old\nOld.\n";
 
-/// An installation recorded on the earlier `alpha-claim-case` line at the running release.
+/// An alpha.6 installation recorded on the earlier `alpha-claim-case` line.
 fn earlier_line_repository() -> (PathBuf, PathBuf) {
     let root = root();
     let azimuth_root = root.join("azimuth");
@@ -62,10 +75,15 @@ fn earlier_line_repository() -> (PathBuf, PathBuf) {
     assert!(recorded.contains("\"migrationLine\": \"alpha-requirement-scenario\""));
     fs::write(
         &installation,
-        recorded.replace(
-            "\"migrationLine\": \"alpha-requirement-scenario\"",
-            "\"migrationLine\": \"alpha-claim-case\"",
-        ),
+        recorded
+            .replace(
+                "\"migrationLine\": \"alpha-requirement-scenario\"",
+                "\"migrationLine\": \"alpha-claim-case\"",
+            )
+            .replace(
+                &format!("\"releaseVersion\": \"{}\"", env!("CARGO_PKG_VERSION")),
+                "\"releaseVersion\": \"0.1.0-alpha.6\"",
+            ),
     )
     .unwrap();
     write(&azimuth_root.join("model/sample/spec.md"), SPEC);
@@ -74,8 +92,16 @@ fn earlier_line_repository() -> (PathBuf, PathBuf) {
         DELTA,
     );
     write(
+        &azimuth_root.join("changes/add-visible/verification.md"),
+        DECLARATIONS,
+    );
+    write(
         &azimuth_root.join("changes/add-visible/history/spec.md"),
         ARCHIVED,
+    );
+    write(
+        &azimuth_root.join("changes/add-visible/history/verification.md"),
+        DECLARATIONS,
     );
     write(
         &azimuth_root.join("changes/archive/old/specs/sample/spec.md"),
@@ -124,6 +150,7 @@ fn plan_and_apply_round_trip_rewrites_only_active_syntax_and_records_the_line() 
     let planned = plan(&azimuth_root, &plan_path);
     assert_eq!(text(&planned, "disposition"), "automatic");
     assert_eq!(text(&planned, "fromMigrationLine"), "alpha-claim-case");
+    assert_eq!(text(&planned, "fromRelease"), "0.1.0-alpha.6");
     assert_eq!(
         text(&planned, "migrationLine"),
         "alpha-requirement-scenario"
@@ -139,6 +166,7 @@ fn plan_and_apply_round_trip_rewrites_only_active_syntax_and_records_the_line() 
         edited,
         [
             "azimuth/changes/add-visible/specs/sample/spec.md",
+            "azimuth/changes/add-visible/verification.md",
             "azimuth/model/sample/spec.md",
             "azimuth/workspace.json",
         ]
@@ -180,7 +208,7 @@ fn plan_and_apply_round_trip_rewrites_only_active_syntax_and_records_the_line() 
         "{}",
         String::from_utf8_lossy(&applied.stderr)
     );
-    assert!(String::from_utf8_lossy(&applied.stdout).contains("rewrote 3 account file(s)"));
+    assert!(String::from_utf8_lossy(&applied.stdout).contains("rewrote 4 account file(s)"));
 
     let spec = fs::read_to_string(azimuth_root.join("model/sample/spec.md")).unwrap();
     assert_eq!(
@@ -193,6 +221,21 @@ fn plan_and_apply_round_trip_rewrites_only_active_syntax_and_records_the_line() 
     assert!(delta.contains("## Add requirement: added\n"));
     assert!(delta.contains("### Add scenario: visible\n"));
     assert!(delta.contains("## Mechanism Case scope verification: prose heading\n"));
+    assert_eq!(
+        fs::read_to_string(azimuth_root.join("changes/add-visible/verification.md")).unwrap(),
+        DECLARATIONS
+            .replacen("Context: {\"platform", "Execution Context: {\"platform", 1)
+            .replacen(
+                "Check: sample/check\nContext: {}",
+                "Check: sample/check\nExecution Context: {}",
+                1
+            )
+    );
+    assert_eq!(
+        fs::read_to_string(azimuth_root.join("changes/add-visible/history/verification.md"))
+            .unwrap(),
+        DECLARATIONS
+    );
     for retained in [
         "changes/add-visible/history/spec.md",
         "changes/archive/old/specs/sample/spec.md",
@@ -270,40 +313,63 @@ fn apply_refuses_account_drift_after_planning() {
 }
 
 #[test]
-fn current_line_rejects_retired_syntax_in_active_artifacts_only() {
+fn current_line_plan_rewrites_retired_syntax_without_changing_the_line() {
     let (root, azimuth_root) = earlier_line_repository();
     let installation = azimuth_root.join("installation.json");
-    let recorded = fs::read_to_string(&installation).unwrap();
-    fs::write(
-        &installation,
-        recorded.replace(
-            "\"migrationLine\": \"alpha-claim-case\"",
-            "\"migrationLine\": \"alpha-requirement-scenario\"",
-        ),
-    )
-    .unwrap();
+    let recorded = fs::read_to_string(&installation).unwrap().replace(
+        "\"migrationLine\": \"alpha-claim-case\"",
+        "\"migrationLine\": \"alpha-requirement-scenario\"",
+    );
+    fs::write(&installation, &recorded).unwrap();
+    let migrated_spec = SPEC
+        .replace("## Claim: claim-holds", "## Requirement: claim-holds")
+        .replace("### Case: retried-case", "### Scenario: retried-case");
+    write(&azimuth_root.join("model/sample/spec.md"), &migrated_spec);
+    fs::remove_file(azimuth_root.join("changes/add-visible/specs/sample/spec.md")).unwrap();
+    write(
+        &azimuth_root.join("workspace.json"),
+        "{\"format\":\"azimuth-workspace\",\"version\":2,\"areas\":[],\"surfaces\":[],\"realization_obligations\":[]}\n",
+    );
 
-    let planned = plan(&azimuth_root, &root.join("plan.json"));
-    assert_eq!(text(&planned, "disposition"), "review-required");
-    let findings = planned
-        .get("findings")
+    let plan_path = root.join("plan.json");
+    let planned = plan(&azimuth_root, &plan_path);
+    assert_eq!(text(&planned, "disposition"), "automatic");
+    assert_eq!(
+        text(&planned, "fromMigrationLine"),
+        "alpha-requirement-scenario"
+    );
+    let edits = planned
+        .get("edits")
         .and_then(azimuth::json::Json::as_array)
-        .unwrap()
-        .iter()
-        .map(|finding| finding.as_str().unwrap().to_string())
-        .collect::<Vec<_>>();
-    assert!(findings
-        .iter()
-        .any(|finding| finding.contains("model/sample/spec.md:3: retired Claim/Case syntax")));
-    assert!(findings.iter().any(|finding| finding.contains("Add claim")));
-    assert!(findings
-        .iter()
-        .any(|finding| finding.contains("workspace version 1")));
-    assert!(!findings
-        .iter()
-        .any(|finding| finding.contains("archive") || finding.contains("history")));
-    assert!(!findings
-        .iter()
-        .any(|finding| finding.contains("fenced-example")));
+        .unwrap();
+    assert_eq!(edits.len(), 1);
+    assert_eq!(
+        text(&edits[0], "path"),
+        "azimuth/changes/add-visible/verification.md"
+    );
+
+    let applied = azimuth(&[
+        "migrate",
+        "apply",
+        "--root",
+        azimuth_root.to_str().unwrap(),
+        "--plan",
+        plan_path.to_str().unwrap(),
+    ]);
+    assert!(
+        applied.status.success(),
+        "{}",
+        String::from_utf8_lossy(&applied.stderr)
+    );
+    let declarations =
+        fs::read_to_string(azimuth_root.join("changes/add-visible/verification.md")).unwrap();
+    assert_eq!(declarations.matches("\nExecution Context: ").count(), 2);
+    assert!(declarations.contains("## Check: sample/check\nContext: unrelated prose label\n"));
+    assert!(declarations.contains("```md\n## Evidence Binding: fenced\nContext: {}\n```\n"));
+    assert_eq!(fs::read_to_string(&installation).unwrap(), recorded);
+    assert_eq!(
+        fs::read_to_string(azimuth_root.join("model/sample/spec.md")).unwrap(),
+        migrated_spec
+    );
     fs::remove_dir_all(root).unwrap();
 }

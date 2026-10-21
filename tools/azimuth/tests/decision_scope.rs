@@ -36,7 +36,7 @@ Check: alpha-check\n\
 Scenario: works\n\
 Method qualification: alpha/method\n\
 Proposition: direct\n\
-Context: {}\n\
+Execution Context: {}\n\
 Challenge domain: [\"realization\",\"mechanism\"]\n\
 Policy: credible\n\n\
 Reviewable.\n\n\
@@ -45,7 +45,7 @@ Check: alpha-check\n\
 Scope: unit\n\
 Quantification: example\n\
 Oracle: direct\n\
-Context: {}\n\
+Execution Context: {}\n\
 Challenge domain: [\"realization\",\"mechanism\"]\n\
 Policy: credible\n\
 Verdict: qualified\n\
@@ -276,8 +276,8 @@ fn export_resolutions_match_validation_order_and_an_independent_golden() {
         "target": {
           "kind": "requirement-judgment",
           "id": "behavior",
-          "expected_fingerprint": "sha256:3cb5f230ec00fc5eed35cbd8bac0d8acc2d34cf795024c53ff771369eb137ee9",
-          "authored_fingerprint": "sha256:3cb5f230ec00fc5eed35cbd8bac0d8acc2d34cf795024c53ff771369eb137ee9"
+          "expected_fingerprint": "sha256:69a2427c8c158862b34cadced95f1fef1043fc7f763b24f345d4d9328297853b",
+          "authored_fingerprint": "sha256:69a2427c8c158862b34cadced95f1fef1043fc7f763b24f345d4d9328297853b"
         },
         "disposition": "selected"
       }
@@ -303,8 +303,8 @@ fn export_resolutions_match_validation_order_and_an_independent_golden() {
         "target": {
           "kind": "requirement-judgment",
           "id": "behavior",
-          "expected_fingerprint": "sha256:3cb5f230ec00fc5eed35cbd8bac0d8acc2d34cf795024c53ff771369eb137ee9",
-          "authored_fingerprint": "sha256:3cb5f230ec00fc5eed35cbd8bac0d8acc2d34cf795024c53ff771369eb137ee9"
+          "expected_fingerprint": "sha256:69a2427c8c158862b34cadced95f1fef1043fc7f763b24f345d4d9328297853b",
+          "authored_fingerprint": "sha256:69a2427c8c158862b34cadced95f1fef1043fc7f763b24f345d4d9328297853b"
         },
         "disposition": "selected"
       }
@@ -555,10 +555,10 @@ fn selected_view_retains_exact_plan_dependencies_and_resolution_bytes() {
          ## Check: alpha-check\nMethod: invoke\nTerminal: alpha works\n\nAtomic.\n\n\
          ## Check: beta-check\nMethod: invoke\nTerminal: beta works\n\nAtomic.\n\n\
          ## Evidence Binding: alpha/edge\nCheck: alpha-check\nScenario: alpha-yes\n\
-         Method qualification: alpha/method\nProposition: direct\nContext: {}\n\
+         Method qualification: alpha/method\nProposition: direct\nExecution Context: {}\n\
          Challenge domain: [\"realization\"]\nPolicy: credible\n\nReviewable.\n\n\
          ## Evidence Binding: beta/edge\nCheck: beta-check\nScenario: beta-yes\n\
-         Method qualification: beta/method\nProposition: direct\nContext: {}\n\
+         Method qualification: beta/method\nProposition: direct\nExecution Context: {}\n\
          Challenge domain: [\"mechanism\"]\nPolicy: credible\n\nReviewable.\n\n\
          ## Verification Challenge: mutation/search\nForm: mutation\nSearches for: an undetected change\n\
          Required scope: [\"binding\"]\n\nSearches edges.\n\n\

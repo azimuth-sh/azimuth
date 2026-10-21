@@ -36,7 +36,7 @@ Check: alpha-works\n\
 Scenario: works\n\
 Method qualification: alpha/method\n\
 Proposition: the result directly exercises the Requirement\n\
-Context: {}\n\
+Execution Context: {}\n\
 Challenge domain: [\"realization\",\"mechanism\"]\n\
 Policy: credible\n\n\
 The edge is independently reviewable.\n\n\
@@ -45,7 +45,7 @@ Check: alpha-works\n\
 Scope: unit\n\
 Quantification: example\n\
 Oracle: direct\n\
-Context: {}\n\
+Execution Context: {}\n\
 Challenge domain: [\"realization\",\"mechanism\"]\n\
 Policy: credible\n\
 Verdict: qualified\n\
@@ -191,7 +191,7 @@ fn reports_qualification_and_judgment_precedence_without_double_reporting() {
 
     value = model("standard");
     value.verifications[0].method_qualifications[0]
-        .context
+        .execution_context
         .insert("platform".into(), "changed".into());
     let found = kinds(&value);
     assert!(found.contains(&FindingKind::StaleMethodQualification));

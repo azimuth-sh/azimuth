@@ -351,7 +351,7 @@ pub fn binding_fingerprint(
     challenge_domain.dedup();
     canonical_sha256(&Json::obj(vec![
         ("format", Json::str("azimuth-evidence-binding-fingerprint")),
-        ("version", Json::Num(2.0)),
+        ("version", Json::Num(3.0)),
         ("id", Json::str(&binding.id)),
         ("check", Json::str(&binding.check)),
         ("scenario_digest", Json::str(scenario_digest)),
@@ -361,8 +361,8 @@ pub fn binding_fingerprint(
         ),
         ("proposition", Json::str(&binding.proposition)),
         (
-            "context",
-            crate::verification::context_json(&binding.context),
+            "execution_context",
+            crate::verification::execution_context_json(&binding.execution_context),
         ),
         (
             "challenge_domain",
@@ -372,8 +372,10 @@ pub fn binding_fingerprint(
     ]))
 }
 
-pub fn context_fingerprint(context: &std::collections::BTreeMap<String, String>) -> String {
-    canonical_sha256(&crate::verification::context_json(context))
+pub fn execution_context_fingerprint(
+    context: &std::collections::BTreeMap<String, String>,
+) -> String {
+    canonical_sha256(&crate::verification::execution_context_json(context))
 }
 
 pub fn method_qualification_fingerprint(
@@ -394,7 +396,7 @@ pub fn method_qualification_fingerprint(
             "format",
             Json::str("azimuth-method-qualification-fingerprint"),
         ),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         ("id", Json::str(&qualification.id)),
         ("check", Json::str(&qualification.check)),
         ("check_fingerprint", Json::str(check_fingerprint)),
@@ -410,8 +412,8 @@ pub fn method_qualification_fingerprint(
             ]),
         ),
         (
-            "context",
-            crate::verification::context_json(&qualification.context),
+            "execution_context",
+            crate::verification::execution_context_json(&qualification.execution_context),
         ),
         (
             "challenge_domain",

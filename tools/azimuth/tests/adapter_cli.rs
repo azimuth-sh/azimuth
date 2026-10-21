@@ -218,7 +218,7 @@ fn model(root: &Path, checks: &[&str]) -> (PathBuf, PathBuf, PathBuf) {
             format!(
                 "## Check: {id}\nMethod: invoke\nTerminal: works\n\nOne result.\n\n\
                  ## Evidence Binding: demo/{suffix}-edge\nCheck: {id}\nScenario: works\n\
-                 Method qualification: demo/{suffix}-method\nProposition: direct\nContext: {{}}\n\
+                 Method qualification: demo/{suffix}-method\nProposition: direct\nExecution Context: {{}}\n\
                  Challenge domain: [\"check-implementation\"]\nPolicy: credible\n\nReviewable.\n"
             )
         })
@@ -286,10 +286,10 @@ fn challenge_model(root: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
              ## Check: check\nMethod: invoke\nTerminal: works\n\nOne result.\n\n\
              ## Evidence Binding: demo/edge\nCheck: check\nScenario: works\n\
              Method qualification: demo/method\nProposition: direct\n\
-             Context: {{\"platform\":\"linux\"}}\nChallenge domain: [\"realization\",\"mechanism\"]\n\
+             Execution Context: {{\"platform\":\"linux\"}}\nChallenge domain: [\"realization\",\"mechanism\"]\n\
              Policy: credible\n\nReviewable.\n\n\
              ## Method Qualification: demo/method\nCheck: check\nScope: unit\n\
-             Quantification: example\nOracle: direct\nContext: {{\"platform\":\"linux\"}}\n\
+             Quantification: example\nOracle: direct\nExecution Context: {{\"platform\":\"linux\"}}\n\
              Challenge domain: [\"check-implementation\"]\nPolicy: credible\n\
              Verdict: {verdict}\nFingerprint: {fingerprint}\n\
              Qualified: 2026-08-22\nQualifier: owner\n\nQualified.\n\n\

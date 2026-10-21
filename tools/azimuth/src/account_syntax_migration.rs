@@ -130,7 +130,13 @@ fn rewrite_targets(value: &str) -> String {
         .join(",")
 }
 
-fn rewrite_line(line: &str) -> String {
+/// Evidence Binding and Method Qualification blocks carry the retired `Context:` label for their
+/// Execution Context; elsewhere `Context:` is ordinary authored text and stays.
+fn declares_execution_context(line: &str) -> Option<bool> {
+    heading(line).map(|(_, label, _)| matches!(label, "Evidence Binding" | "Method Qualification"))
+}
+
+fn rewrite_line(line: &str, execution_context_block: bool) -> String {
     if let Some((marks, label, tail)) = heading(line) {
         if let Some(new) = mapped(HEADINGS, label) {
             return format!("{marks}{new}:{tail}");
@@ -142,6 +148,9 @@ fn rewrite_line(line: &str) -> String {
     };
     if let Some(new) = mapped(LABELS, label) {
         return format!("{prefix}{new}:{tail}");
+    }
+    if execution_context_block && prefix.is_empty() && label == "Context" {
+        return format!("Execution Context:{tail}");
     }
     match label {
         "Select" => rewrite_select(tail)
@@ -157,6 +166,7 @@ fn rewrite_line(line: &str) -> String {
 pub fn rewrite_markdown(source: &str) -> String {
     let mut out = String::with_capacity(source.len());
     let mut fenced = false;
+    let mut execution_context_block = false;
     for line in source.split_inclusive('\n') {
         let (body, ending) = match line.strip_suffix('\n') {
             Some(body) => match body.strip_suffix('\r') {
@@ -173,7 +183,10 @@ pub fn rewrite_markdown(source: &str) -> String {
         if fenced {
             out.push_str(line);
         } else {
-            out.push_str(&rewrite_line(body));
+            if let Some(declares) = declares_execution_context(body) {
+                execution_context_block = declares;
+            }
+            out.push_str(&rewrite_line(body, execution_context_block));
             out.push_str(ending);
         }
     }
@@ -183,13 +196,20 @@ pub fn rewrite_markdown(source: &str) -> String {
 /// Lines of an active artifact that still use retired syntax, as `(line number, line)`.
 pub fn retired_syntax(source: &str) -> Vec<(usize, String)> {
     let mut fenced = false;
+    let mut execution_context_block = false;
     let mut found = Vec::new();
     for (index, line) in source.lines().enumerate() {
         if fence(line) {
             fenced = !fenced;
             continue;
         }
-        if !fenced && rewrite_line(line) != line {
+        if fenced {
+            continue;
+        }
+        if let Some(declares) = declares_execution_context(line) {
+            execution_context_block = declares;
+        }
+        if rewrite_line(line, execution_context_block) != line {
             found.push((index + 1, line.to_string()));
         }
     }
@@ -262,6 +282,21 @@ mod tests {
                         Select: requirement-judgment from requirement claim\nSelect: applicability-decision from scenario case-id\n\
                         Remove scenarios: a, b\n";
         assert_eq!(rewrite_markdown(source), expected);
+    }
+
+    #[test]
+    fn renames_context_only_inside_binding_and_qualification_blocks() {
+        let source = "## Evidence Binding: a/edge\nCheck: c\nContext: {}\n\n\
+                      ## Method Qualification: a/method\nCheck: c\nContext: {\"os\":\"linux\"}\n\n\
+                      ## Check: c\nContext: unrelated\n\n### Scenario: s\n- Context: given state\n\n\
+                      ## Evidence Binding: b/edge\n```md\nContext: {}\n```\n- Context: listed\n";
+        let expected = "## Evidence Binding: a/edge\nCheck: c\nExecution Context: {}\n\n\
+                        ## Method Qualification: a/method\nCheck: c\nExecution Context: {\"os\":\"linux\"}\n\n\
+                        ## Check: c\nContext: unrelated\n\n### Scenario: s\n- Context: given state\n\n\
+                        ## Evidence Binding: b/edge\n```md\nContext: {}\n```\n- Context: listed\n";
+        assert_eq!(rewrite_markdown(source), expected);
+        assert_eq!(retired_syntax(source).len(), 2);
+        assert!(retired_syntax(expected).is_empty());
     }
 
     #[test]

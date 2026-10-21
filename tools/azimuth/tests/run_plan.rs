@@ -117,7 +117,7 @@ fn model(checks: &[&str]) -> Model {
                         id.rsplit('/').next().unwrap()
                     ),
                     proposition: "the Check bears on the Scenario".into(),
-                    context: BTreeMap::new(),
+                    execution_context: BTreeMap::new(),
                     challenge_domain: Vec::new(),
                     policy: "credible".into(),
                     rationale: String::new(),
@@ -207,7 +207,7 @@ fn challenge_model() -> Model {
     .unwrap();
     let verification = parse_verification(
         "alpha/verification.md",
-        "# Verification: alpha\n\n## Check: check\nMethod: invoke\nTerminal: the behavior works\n\nAtomic.\n\n## Evidence Binding: alpha/edge\nCheck: check\nScenario: works\nMethod qualification: alpha/method\nProposition: direct\nContext: {\"platform\":\"linux\"}\nChallenge domain: [\"check-implementation\"]\nPolicy: credible\n\nReviewable.\n\n## Method Qualification: alpha/method\nCheck: check\nScope: unit\nQuantification: example\nOracle: direct\nContext: {\"platform\":\"linux\"}\nChallenge domain: [\"check-implementation\"]\nPolicy: credible\nVerdict: qualified\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nQualified: 2026-08-22\nQualifier: owner\n\nQualified.\n\n## Verification Challenge: mutation/search\nForm: mutation\nSearches for: an undetected change\nRequired scope: [\"check-implementation\"]\n\nSearches exact semantics.\n\n## Challenge Plan: alpha/plan\nVerification Challenge: mutation/search\nSelect: method-qualification from method-qualification alpha/method\n\nTargets the qualification.\n",
+        "# Verification: alpha\n\n## Check: check\nMethod: invoke\nTerminal: the behavior works\n\nAtomic.\n\n## Evidence Binding: alpha/edge\nCheck: check\nScenario: works\nMethod qualification: alpha/method\nProposition: direct\nExecution Context: {\"platform\":\"linux\"}\nChallenge domain: [\"check-implementation\"]\nPolicy: credible\n\nReviewable.\n\n## Method Qualification: alpha/method\nCheck: check\nScope: unit\nQuantification: example\nOracle: direct\nExecution Context: {\"platform\":\"linux\"}\nChallenge domain: [\"check-implementation\"]\nPolicy: credible\nVerdict: qualified\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nQualified: 2026-08-22\nQualifier: owner\n\nQualified.\n\n## Verification Challenge: mutation/search\nForm: mutation\nSearches for: an undetected change\nRequired scope: [\"check-implementation\"]\n\nSearches exact semantics.\n\n## Challenge Plan: alpha/plan\nVerification Challenge: mutation/search\nSelect: method-qualification from method-qualification alpha/method\n\nTargets the qualification.\n",
     )
     .unwrap();
     let standards = parse_standards(
@@ -242,7 +242,7 @@ fn rich_challenge_model() -> Model {
     .unwrap();
     let verification = parse_verification(
         "alpha/verification.md",
-        "# Verification: alpha\n\n## Check: check\nMethod: invoke\nTerminal: the behavior works\n\nAtomic.\n\n## Evidence Binding: alpha/edge\nCheck: check\nScenario: works\nMethod qualification: alpha/method\nProposition: direct\nContext: {\"platform\":\"linux\"}\nChallenge domain: [\"realization\",\"mechanism\"]\nPolicy: credible\n\nReviewable.\n\n## Method Qualification: alpha/method\nCheck: check\nScope: unit\nQuantification: example\nOracle: direct\nContext: {\"platform\":\"linux\"}\nChallenge domain: [\"realization\",\"mechanism\"]\nPolicy: credible\nVerdict: qualified\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nQualified: 2026-08-22\nQualifier: owner\n\nQualified.\n\n## Applicability Decision: alpha/edge\nVerdict: applicable\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nDecided: 2026-08-22\nDecider: owner\n\nApplicable.\n\n## Requirement Judgment: behavior\nVerdict: accepted\nPolicy: credible\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nJudged: 2026-08-22\nJudge: owner\nBasis: the exact composition is accepted\nResidual risk: none identified\n\nAccepted.\n\n## Verification Challenge: mutation/search\nForm: mutation\nSearches for: an undetected change\nRequired scope: [\"requirement\"]\n\nSearches exact semantics.\n\n## Challenge Plan: alpha/plan\nVerification Challenge: mutation/search\nSelect: requirement-judgment from requirement behavior\n\nTargets the total decision.\n",
+        "# Verification: alpha\n\n## Check: check\nMethod: invoke\nTerminal: the behavior works\n\nAtomic.\n\n## Evidence Binding: alpha/edge\nCheck: check\nScenario: works\nMethod qualification: alpha/method\nProposition: direct\nExecution Context: {\"platform\":\"linux\"}\nChallenge domain: [\"realization\",\"mechanism\"]\nPolicy: credible\n\nReviewable.\n\n## Method Qualification: alpha/method\nCheck: check\nScope: unit\nQuantification: example\nOracle: direct\nExecution Context: {\"platform\":\"linux\"}\nChallenge domain: [\"realization\",\"mechanism\"]\nPolicy: credible\nVerdict: qualified\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nQualified: 2026-08-22\nQualifier: owner\n\nQualified.\n\n## Applicability Decision: alpha/edge\nVerdict: applicable\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nDecided: 2026-08-22\nDecider: owner\n\nApplicable.\n\n## Requirement Judgment: behavior\nVerdict: accepted\nPolicy: credible\nFingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nJudged: 2026-08-22\nJudge: owner\nBasis: the exact composition is accepted\nResidual risk: none identified\n\nAccepted.\n\n## Verification Challenge: mutation/search\nForm: mutation\nSearches for: an undetected change\nRequired scope: [\"requirement\"]\n\nSearches exact semantics.\n\n## Challenge Plan: alpha/plan\nVerification Challenge: mutation/search\nSelect: requirement-judgment from requirement behavior\n\nTargets the total decision.\n",
     )
     .unwrap();
     let standards = parse_standards(
@@ -721,7 +721,7 @@ fn several_bindings_still_produce_one_check_and_no_challenges_or_qualification_g
 fn rejected_qualification_and_binding_context_mismatch_do_not_gate_planning() {
     let mut model = model(&["alpha"]);
     let mut binding = binding("binding/one");
-    binding.context.insert("platform".into(), "linux".into());
+    binding.execution_context.insert("platform".into(), "linux".into());
     model.verifications[0].bindings = vec![binding];
     model.verifications[0].method_qualifications = vec![MethodQualification {
         id: "binding/one".into(),
@@ -729,7 +729,7 @@ fn rejected_qualification_and_binding_context_mismatch_do_not_gate_planning() {
         scope: model::Scope::Unit,
         quantification: model::Quantification::Example,
         oracle: model::Oracle::Direct,
-        context: BTreeMap::new(),
+        execution_context: BTreeMap::new(),
         challenge_domain: Vec::new(),
         policy: "credible".into(),
         verdict: MethodQualificationVerdict::Rejected,
@@ -1322,12 +1322,12 @@ fn add_second_binding(model: &mut Model, context: &str, stale: bool) {
     let mut binding = model.verifications[0].bindings[0].clone();
     binding.id = "alpha/edge-two".into();
     binding.method_qualification = "alpha/method-two".into();
-    binding.context.insert("platform".into(), context.into());
+    binding.execution_context.insert("platform".into(), context.into());
     model.verifications[0].bindings.push(binding);
     let mut qualification = model.verifications[0].method_qualifications[0].clone();
     qualification.id = "alpha/method-two".into();
     qualification
-        .context
+        .execution_context
         .insert("platform".into(), context.into());
     model.verifications[0]
         .method_qualifications
@@ -1513,7 +1513,7 @@ fn binding(id: &str) -> EvidenceBinding {
         scenario: "works".into(),
         method_qualification: format!("qualifications/{}", id.rsplit('/').next().unwrap()),
         proposition: "the Check bears on the Requirement".into(),
-        context: BTreeMap::new(),
+        execution_context: BTreeMap::new(),
         challenge_domain: Vec::new(),
         policy: "routine".into(),
         rationale: String::new(),

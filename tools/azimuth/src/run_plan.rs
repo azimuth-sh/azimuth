@@ -676,11 +676,11 @@ fn resolve_requested_challenges(
                         ));
                         continue;
                     };
-                    let mut context = method.context.clone();
-                    let conflict = binding.context.iter().any(|(key, value)| {
+                    let mut context = method.execution_context.clone();
+                    let conflict = binding.execution_context.iter().any(|(key, value)| {
                         context.get(key).is_some_and(|current| current != value)
                     });
-                    context.extend(binding.context.clone());
+                    context.extend(binding.execution_context.clone());
                     if conflict || context != request.required_execution_context {
                         errors.push(format!(
                             "Applicability Decision `{target_id}` context must equal required_execution_context"
@@ -697,7 +697,7 @@ fn resolve_requested_challenges(
                         errors.push(format!("missing Method Qualification `{target_id}`"));
                         continue;
                     };
-                    if qualification.context != request.required_execution_context {
+                    if qualification.execution_context != request.required_execution_context {
                         errors.push(format!(
                             "Method Qualification `{target_id}` context must equal required_execution_context"
                         ));

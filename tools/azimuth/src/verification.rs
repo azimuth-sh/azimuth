@@ -15,7 +15,7 @@ const BINDING_LABELS: &[&str] = &[
     "Scenario",
     "Method qualification",
     "Proposition",
-    "Context",
+    "Execution Context",
     "Challenge domain",
     "Policy",
 ];
@@ -24,7 +24,7 @@ const METHOD_QUALIFICATION_LABELS: &[&str] = &[
     "Scope",
     "Quantification",
     "Oracle",
-    "Context",
+    "Execution Context",
     "Challenge domain",
     "Policy",
     "Verdict",
@@ -96,7 +96,7 @@ pub struct EvidenceBinding {
     pub scenario: String,
     pub method_qualification: String,
     pub proposition: String,
-    pub context: BTreeMap<String, String>,
+    pub execution_context: BTreeMap<String, String>,
     pub challenge_domain: Vec<ChallengeDomain>,
     pub policy: String,
     pub rationale: String,
@@ -247,7 +247,7 @@ pub struct MethodQualification {
     pub scope: Scope,
     pub quantification: Quantification,
     pub oracle: Oracle,
-    pub context: BTreeMap<String, String>,
+    pub execution_context: BTreeMap<String, String>,
     pub challenge_domain: Vec<ChallengeDomain>,
     pub policy: String,
     pub verdict: MethodQualificationVerdict,
@@ -738,7 +738,15 @@ fn parse_binding(
         "Proposition",
         errors,
     )?;
-    let context_text = required(block, path, line, "Evidence Binding", id, "Context", errors)?;
+    let context_text = required(
+        block,
+        path,
+        line,
+        "Evidence Binding",
+        id,
+        "Execution Context",
+        errors,
+    )?;
     let context = parse_context(path, line, &context_text, errors)?;
     let domain_text = required(
         block,
@@ -759,7 +767,7 @@ fn parse_binding(
         scenario,
         method_qualification,
         proposition,
-        context,
+        execution_context: context,
         challenge_domain,
         policy,
         rationale: block.prose.clone(),
@@ -933,7 +941,7 @@ fn parse_method_qualification(
         line,
         "Method Qualification",
         id,
-        "Context",
+        "Execution Context",
         errors,
     )?;
     let context = parse_context(path, line, &context_text, errors)?;
@@ -1025,7 +1033,7 @@ fn parse_method_qualification(
         scope,
         quantification,
         oracle,
-        context,
+        execution_context: context,
         challenge_domain,
         policy,
         verdict,
@@ -1545,7 +1553,7 @@ fn parse_context(
             errors.push(Diag::at(
                 path,
                 line,
-                format!("invalid Context JSON: {reason}"),
+                format!("invalid Execution Context JSON: {reason}"),
             ));
             return None;
         }
@@ -1554,7 +1562,7 @@ fn parse_context(
         errors.push(Diag::expecting(
             path,
             line,
-            "Context is not an object",
+            "Execution Context is not an object",
             "a JSON object from unique string keys to string values",
         ));
         return None;
@@ -1562,14 +1570,18 @@ fn parse_context(
     let mut context = BTreeMap::new();
     for (key, value) in entries {
         if key.is_empty() {
-            errors.push(Diag::at(path, line, "Context keys must not be empty"));
+            errors.push(Diag::at(
+                path,
+                line,
+                "Execution Context keys must not be empty",
+            ));
             continue;
         }
         let Json::Str(value) = value else {
             errors.push(Diag::at(
                 path,
                 line,
-                format!("Context value for `{key}` is not a string"),
+                format!("Execution Context value for `{key}` is not a string"),
             ));
             continue;
         };
@@ -1577,7 +1589,7 @@ fn parse_context(
             errors.push(Diag::at(
                 path,
                 line,
-                format!("Context key `{key}` is declared twice"),
+                format!("Execution Context key `{key}` is declared twice"),
             ));
         }
     }
@@ -2102,7 +2114,7 @@ fn valid_iso_date(value: &str) -> bool {
     (1..=days).contains(&day)
 }
 
-pub fn context_json(context: &BTreeMap<String, String>) -> Json {
+pub fn execution_context_json(context: &BTreeMap<String, String>) -> Json {
     let required_execution_context = Json::Obj(
         context
             .iter()

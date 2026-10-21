@@ -24,7 +24,7 @@ Check: alpha-check\n\
 Scenario: observed\n\
 Method qualification: alpha/method\n\
 Proposition: direct\n\
-Context: {}\n\
+Execution Context: {}\n\
 Challenge domain: [\"realization\"]\n\
 Policy: credible\n\n\
 Reviewable.\n\n\
@@ -33,7 +33,7 @@ Check: alpha-check\n\
 Scope: unit\n\
 Quantification: example\n\
 Oracle: direct\n\
-Context: {}\n\
+Execution Context: {}\n\
 Challenge domain: [\"realization\"]\n\
 Policy: credible\n\
 Verdict: qualified\n\
