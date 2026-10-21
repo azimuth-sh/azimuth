@@ -1,1 +1,1 @@
-"""Bounded machine Challenger scope and tool integration."""
+"""Bounded machine Verification Challenge scope and tool integration."""

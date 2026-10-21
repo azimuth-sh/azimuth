@@ -1,6 +1,6 @@
 {
   "name": "@azimuth-sh/emit-helm",
-  "version": "0.1.0-alpha.6",
+  "version": "0.1.0-alpha.7",
   "private": true,
   "description": "Extracts Azimuth Realizes markers from rendered Helm resources.",
   "license": "Apache-2.0",

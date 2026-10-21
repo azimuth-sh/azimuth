@@ -1,8 +1,8 @@
 {
   "format": "azimuth-workflow-template",
-  "version": 1,
+  "version": 2,
   "id": "change-development",
-  "revision": 9,
+  "revision": 10,
   "actions": [
     {
       "id": "establish-change-scope",
@@ -204,8 +204,8 @@
         }
       ],
       "required_output": {
-        "kind": "claim-design",
-        "description": "Retain the actual claim-design and exact input basis; follow the workflow reference."
+        "kind": "requirement-design",
+        "description": "Retain the actual requirement-design and exact input basis; follow the workflow reference."
       },
       "correction": null,
       "outcomes": [
@@ -484,7 +484,7 @@
       ],
       "required_output": {
         "kind": "candidate-validation",
-        "description": "Capture current source support and exact repository Subjects; validate the complete change account across its repositories. Retain the validation report with findings, manifests and exact dependencies. Failed capture leaves validation incomplete; reuse captures only when their dependencies remain current."
+        "description": "Capture current source support and exact repository Verification Targets; validate the complete change account across its repositories. Retain the validation report with findings, manifests and exact dependencies. Failed capture leaves validation incomplete; reuse captures only when their dependencies remain current."
       },
       "correction": "implement-change",
       "outcomes": [
@@ -534,9 +534,9 @@
       ]
     },
     {
-      "id": "review-claim",
-      "kind": "review-claim",
-      "collection": "claim-definitions",
+      "id": "review-requirement",
+      "kind": "review-requirement",
+      "collection": "requirement-definitions",
       "depends_on": [
         {
           "action": "prepare-candidate-model-revision",
@@ -557,7 +557,7 @@
       "guidance": [
         {
           "kind": "skill",
-          "id": "azimuth-review-claim"
+          "id": "azimuth-review-requirement"
         },
         {
           "kind": "reference",
@@ -569,8 +569,8 @@
         }
       ],
       "required_output": {
-        "kind": "claim-review",
-        "description": "Independently assess the exact Claim, Cases, design and realization. Accept only when the verification approach is adequate and its implementation can fulfil declared obligations, including required observations and controls. Execution may remain pending. Retain findings, rejected reviews and reassessments."
+        "kind": "requirement-review",
+        "description": "Independently assess the exact Requirement, Scenarios, design and realization. Accept only when the verification approach is adequate and its implementation can fulfil declared obligations, including required observations and controls. Execution may remain pending. Retain findings, rejected reviews and reassessments."
       },
       "correction": "implement-change",
       "outcomes": [
@@ -582,13 +582,13 @@
       ]
     },
     {
-      "id": "run-challenger",
-      "kind": "run-challenger",
-      "collection": "challengers",
+      "id": "run-verification-challenge",
+      "kind": "run-verification-challenge",
+      "collection": "verification-challenges",
       "depends_on": [
         {
-          "action": "review-claim",
-          "match": "challenger-claims",
+          "action": "review-requirement",
+          "match": "verification-challenge-requirements",
           "condition": "current-success"
         },
         {
@@ -615,7 +615,7 @@
       ],
       "required_output": {
         "kind": "run-bundle",
-        "description": "Execute this declared machine Challenger against its current accepted Claim Reviews and reviewed resolved source scope. Retain a readable challenger-report and native run-bundle, including findings, gaps and limitations. Execution completion does not imply acceptance. Investigate surviving mutants for relevance, equivalence and coverage. No findings never establishes Claim Health."
+        "description": "Execute this declared machine Verification Challenge against its current accepted Requirement Reviews and reviewed resolved source scope. Retain a readable verification-challenge-report and native run-bundle, including findings, gaps and limitations. Execution completion does not imply acceptance. Investigate surviving mutants for relevance, equivalence and coverage. No findings never establishes Requirement Status."
       },
       "correction": "implement-change",
       "outcomes": [
@@ -632,7 +632,7 @@
       "collection": "checks",
       "depends_on": [
         {
-          "action": "review-claim",
+          "action": "review-requirement",
           "match": "all",
           "condition": "current-success"
         }
@@ -671,7 +671,7 @@
           "condition": "current-success"
         },
         {
-          "action": "review-claim",
+          "action": "review-requirement",
           "match": "all",
           "condition": "current-success"
         },
@@ -681,7 +681,7 @@
           "condition": "current-success"
         },
         {
-          "action": "run-challenger",
+          "action": "run-verification-challenge",
           "match": "all",
           "condition": "current-success"
         }
@@ -698,7 +698,7 @@
       ],
       "required_output": {
         "kind": "publication-inputs",
-        "description": "Prepare compact Git-trackable azimuth-publication-inputs version 1 containing the complete native release request and composition request. Validate the envelope with azimuth release inputs --input <draft> --out <Git-tracked-file>. No ASS connection, registration receipt, accepted-authority selection or local upload is required. CI publishes unchanged native reviews and Runs with recorded transport provenance. Deployment Claim Status is computed after observed rollout; publication does not require an authored positive Claim Health assessment. Deployment-only Checks and Monitors execute in their hosted environment."
+        "description": "Prepare compact Git-trackable azimuth-publication-inputs version 1 containing the complete native release request and composition request. Validate the envelope with azimuth release inputs --input <draft> --out <Git-tracked-file>. No ASS connection, registration receipt, accepted-authority selection or local upload is required. CI publishes unchanged native reviews and Runs with recorded transport provenance. Deployment Requirement Status is computed after observed rollout; publication does not require an authored positive Requirement Status assessment. Deployment-only Checks and Monitors execute in their hosted environment."
       },
       "correction": null,
       "outcomes": [

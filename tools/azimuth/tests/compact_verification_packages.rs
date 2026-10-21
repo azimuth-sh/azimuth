@@ -5,7 +5,7 @@ use azimuth::verification_packages::{validate_accounts, Producer, SURFACE};
 use azimuth::workspace::{Area, Workspace};
 
 const SHA: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const DOCUMENT: &str = "# Verification: catalog\n\n## Shared inputs\n\n### Surface: operations\n- Fields:\n  - `Key`\n  - `Transport`\n- Area: `api`\n\nDiscover actual registrations.\n\n## Claim verification: restricted-access\n\n### Case verification: rejected-access\n\n#### Check: rejects-access\n- Surface: `operations`\n- Select:\n  - Member.Transport: `http`\n- Evidence bindings:\n  - Contribution: Establishes rejection for selected operations.\n\nExercise rejected requests and a successful control.\n";
+const DOCUMENT: &str = "# Verification: catalog\n\n## Shared inputs\n\n### Surface: operations\n- Fields:\n  - `Key`\n  - `Transport`\n- Area: `api`\n\nDiscover actual registrations.\n\n## Requirement verification: restricted-access\n\n### Scenario verification: rejected-access\n\n#### Check: rejects-access\n- Surface: `operations`\n- Select:\n  - Member.Transport: `http`\n- Evidence bindings:\n  - Contribution: Establishes rejection for selected operations.\n\nExercise rejected requests and a successful control.\n";
 
 fn workspace() -> Workspace {
     Workspace {
@@ -29,10 +29,10 @@ fn errors(document: &str, workspace: &Workspace, producers: &[Producer]) -> Stri
         .join("\n")
 }
 #[test]
-fn case_inheritance_retains_check_case_binding_without_an_authored_binding_id() {
+fn scenario_inheritance_retains_check_scenario_binding_without_an_authored_binding_id() {
     let account = parse_account_verification("verification.md", DOCUMENT).unwrap();
     assert_eq!(account.checks[0].definition.id, "rejects-access");
-    assert_eq!(account.checks[0].bindings[0].case, "rejected-access");
+    assert_eq!(account.checks[0].bindings[0].scenario, "rejected-access");
     assert_eq!(account.checks[0].selectors["Member.Transport"], "`http`");
     assert!(errors(DOCUMENT, &workspace(), &[producer()]).is_empty());
 }
@@ -54,9 +54,9 @@ fn package_declarations_require_explicit_enablement() {
     assert!(errors(DOCUMENT, &disabled, &[producer()]).contains("is not enabled"));
 }
 #[test]
-fn inherited_contribution_requires_an_enclosing_case() {
+fn inherited_contribution_requires_an_enclosing_scenario() {
     let outside = DOCUMENT
-        .replace("### Case verification: rejected-access\n\n", "")
+        .replace("### Scenario verification: rejected-access\n\n", "")
         .replace("#### Check:", "### Check:");
     assert!(parse_account_verification("verification.md", &outside).is_err());
 }

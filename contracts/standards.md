@@ -2,7 +2,7 @@
 
 One project file declares the Decision Policies that non-routine decisions cite and the single Challenge Schedule that assigns every required Challenge form to one execution lane. It defines no Checks, no provider commands and no execution results.
 
-The file defaults to `azimuth/standards/verification.md` and is overridden with `--standards`. A project account has exactly one such file; a federated project catalog names it as one `{"repository": …, "path": …}` pair and pins its raw SHA-256 file digest in the repository manifest. The file is optional: a project whose Claims are all routine may omit it. When it is absent and any Claim is standard or critical, loading warns that non-routine decisions cannot be resolved.
+The file defaults to `azimuth/standards/verification.md` and is overridden with `--standards`. A project account has exactly one such file; a federated project catalog names it as one `{"repository": …, "path": …}` pair and pins its raw SHA-256 file digest in the repository manifest. The file is optional: a project whose Requirements are all routine may omit it. When it is absent and any Requirement is standard or critical, loading warns that non-routine decisions cannot be resolved.
 
 ```markdown
 # Decision policies and Challenge schedule
@@ -43,7 +43,7 @@ A Decision Policy id and a Challenge form id are project-global lower kebab path
 
 `Required challenge:` is the only recognized label and is repeatable. A policy needs at least one; repeating the same form is an error, and a `Required challenge:` line with an empty value is an invalid form id. Line order is not semantic — the parser sorts the forms. Two Decision Policy blocks with the same id are an error. Rationale prose is required.
 
-A Method Qualification's, Evidence Binding's or Claim Judgment's `Policy:` must name a declared
+A Method Qualification's, Evidence Binding's or Requirement Judgment's `Policy:` must name a declared
 policy. An unknown reference becomes the corresponding dangling or missing-policy Finding rather
 than a parse error.
 
@@ -65,7 +65,7 @@ Coverage is checked in two places.
 
 At parse time, every form required by any Decision Policy in the file must occur in some lane; a required form with no lane is a parse error reported at the schedule's line.
 
-Over the complete unselected project account, a scheduled form with no Decision Policy and no current Challenger is an error against the schedule, and a current Challenger whose form has no lane is an error against that Challenger. Both are load errors, not Findings. Together with lane exclusivity: every form required by any policy occurs exactly once, every form declared by a current Challenger occurs exactly once, and no additional form is valid.
+Over the complete unselected project account, a scheduled form with no Decision Policy and no current Verification Challenge is an error against the schedule, and a current Verification Challenge whose form has no lane is an error against that Verification Challenge. Both are load errors, not Findings. Together with lane exclusivity: every form required by any policy occurs exactly once, every form declared by a current Verification Challenge occurs exactly once, and no additional form is valid.
 
 ## Digests
 
@@ -98,15 +98,15 @@ The literal `"current"` is written into the schedule preimage; the parsed id doe
 
 The Decision Policy digest participates independently in Method Qualification and Evidence Binding
 fingerprints as `decision_policy_digest`; the binding fingerprint then determines its Applicability
-Decision. It participates in the Claim Judgment preimage as `policy_digest` and appears as a
+Decision. It participates in the Requirement Judgment preimage as `policy_digest` and appears as a
 `policy` scope component in every applicable decision scope. Editing a policy's required forms
 stales only the decisions that cite that policy and their dependants.
 
-The Challenge Schedule digest participates in no Check, binding, context, Method Qualification,
-Applicability Decision, Challenger or Claim Judgment identity. It is published as the `digest`
+The Challenge Schedule digest participates in no Check, binding, Execution Context, Method Qualification,
+Applicability Decision, Verification Challenge or Requirement Judgment identity. It is published as the `digest`
 field of the exported `challenge_schedule` object and therefore participates in the complete-model
 digest that planning and finalization use. The lane itself is projected as `gate | scheduled` into
-every semantic Challenge selection: planning resolves the requested Challenger's form against the
+every semantic Challenge selection: planning resolves the requested Verification Challenge's form against the
 two lanes and fails when the form does not occupy exactly one.
 
 ## Parse errors
@@ -126,4 +126,4 @@ A parse failure names the file, the line and what was expected, and no partial s
 
 ## Out of scope
 
-The lane controls selection expectation, not decision meaning: a clean Challenge Result is only a negative search fact and qualifies nothing by itself. This format defines no cache, cadence, TTL, historical applicability, cross-Subject reuse or time-based deferral, and no schedule construct runs a Challenger or names a provider command.
+The lane controls selection expectation, not decision meaning: a clean Challenge Result is only a negative search fact and qualifies nothing by itself. This format defines no cache, cadence, TTL, historical applicability, cross-target reuse or time-based deferral, and no schedule construct runs a Verification Challenge or names a provider command.

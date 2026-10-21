@@ -6,16 +6,13 @@ license.workspace = true
 
 [dependencies]
 azimuth = { path = "../../../tools/azimuth" }
-azimuth-assurance-domain = { path = "../domain" }
 axum = "0.8"
 serde.workspace = true
 serde_json.workspace = true
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "migrate", "macros", "uuid"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "migrate", "macros"] }
 tokio.workspace = true
-tower-http = { version = "0.6", features = ["trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-uuid = { version = "1", features = ["v4", "serde"] }
 
 [dev-dependencies]
 reqwest = { version = "0.12", features = ["json"] }

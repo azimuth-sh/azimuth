@@ -1,8 +1,8 @@
 # Decision policies and Challenge schedule
 
 Project Decision Policies name the open Challenge forms required before a Method Qualification,
-Applicability Decision or Claim Judgment may be accepted. The separate schedule assigns every
-required form to one execution lane. Neither construct runs Challengers or defines provider
+Applicability Decision or Requirement Judgment may be accepted. The separate schedule assigns every
+required form to one execution lane. Neither construct runs Verification Challenges or defines provider
 commands.
 
 The grammar, coverage rules and digest preimages of this file are the
@@ -13,8 +13,8 @@ declares.
 Required challenge: implementation-perturbation
 Required challenge: oracle-perturbation
 
-Use for method and applicability decisions whose credibility depends on both the subject
-implementation and the discriminating oracle.
+Use for method and applicability decisions whose credibility depends on both the implementation
+under test and the discriminating oracle.
 
 ## Challenge Schedule: current
 Gate challenge: implementation-perturbation
@@ -42,5 +42,5 @@ The canonical preimage of this schedule is:
 The serialized preimage has one terminal LF. Its SHA-256 value is
 `sha256:ce320ac98fed500eff1ef1032817884ca0d7dba4c2160fa22641ed0c8b058ae1`.
 
-All current framework Claims are routine and therefore use no policy. This file establishes the
+All current framework Requirements are routine and therefore use no policy. This file establishes the
 project vocabulary for synthetic format and tool tests without creating current evidence.

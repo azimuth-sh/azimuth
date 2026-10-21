@@ -6,14 +6,14 @@ fn fact() -> Schema {
         ("run", Schema::Text),
         ("bundle_fingerprint", Schema::Text),
         ("fingerprint", Schema::Text),
-        ("observation", Schema::Text),
+        ("check_result", Schema::Text),
         ("check", Schema::Text),
-        ("case", Schema::Text),
+        ("scenario", Schema::Text),
         ("observed_at_ms", Schema::Number),
         ("selected_in_basis", Schema::Boolean),
         ("accepted_basis", Schema::Boolean),
         ("diagnostics", list(Schema::Text)),
-        ("subject_fingerprint", Schema::Text),
+        ("verification_target_fingerprint", Schema::Text),
         ("outcome", Schema::Text),
         ("applicable", Schema::Boolean),
         ("component", Schema::Text),
@@ -31,9 +31,9 @@ fn decision() -> Schema {
 }
 pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
     vec![(
-        "assessment_claim",
+        "assessment_requirement",
         object(vec![
-            ("claim", Schema::Text),
+            ("requirement", Schema::Text),
             ("status", Schema::Text),
             ("review", Schema::Text),
             ("diagnostics", list(Schema::Text)),
@@ -42,7 +42,7 @@ pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
                 "bindings",
                 list(object(vec![
                     ("check", Schema::Text),
-                    ("case", Schema::Text),
+                    ("scenario", Schema::Text),
                     ("status", Schema::Text),
                     (
                         "monitor",
@@ -70,14 +70,14 @@ pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
                         ])),
                     ),
                     ("review", decision()),
-                    ("health", decision()),
+                    ("requirement_status", decision()),
                     (
                         "coverage",
                         list(object(vec![
                             ("check", Schema::Text),
-                            ("case", Schema::Text),
+                            ("scenario", Schema::Text),
                             ("status", Schema::Text),
-                            ("observations", list(fact())),
+                            ("check_results", list(fact())),
                         ])),
                     ),
                     (

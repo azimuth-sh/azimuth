@@ -503,14 +503,14 @@ def validate_completion(account, registry_state):
     return {"outcome": "complete", "targets": plan["preserve"]}
 
 
-def source_entry(claim, site, file, fingerprint):
+def source_entry(requirement, site, file, fingerprint):
     language = {
         ".json": "github-actions-receipt",
         ".py": "python",
         ".yml": "yaml",
     }.get(Path(file).suffix, "release-orchestration")
     return {
-        "claim": claim,
+        "requirement": requirement,
         "site": site,
         "file": file,
         "lang": language,
@@ -541,8 +541,8 @@ def write_linkage(root, output_root, ordinary_receipt=None, release_receipt=None
     ]
     linkage = {
         "realizes": [
-            source_entry(claim, site, file, fingerprint)
-            for claim, site, file, fingerprint in realization_sites
+            source_entry(requirement, site, file, fingerprint)
+            for requirement, site, file, fingerprint in realization_sites
         ],
         "check_implementations": [],
         "mechanism_implementations": [],

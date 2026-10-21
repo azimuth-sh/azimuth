@@ -25,7 +25,7 @@ export default async function RunPage({
       <Link href={`/projects/${encodeURIComponent(projectId)}`}>← Project</Link>
       <h1>Run revision</h1>
       <p>
-        Execution facts do not approve reviews or establish a Claim conclusion.
+        Execution facts do not approve reviews or establish Requirement Status.
       </p>
       <pre>{JSON.stringify(history, null, 2)}</pre>
       {typeof history.next === 'string' && (

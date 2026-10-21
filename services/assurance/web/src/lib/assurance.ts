@@ -12,14 +12,14 @@ export interface RunSummary {
   run_id: string;
   revision: number;
   fingerprint: string;
-  subject_fingerprint: string;
+  verification_target_fingerprint: string;
   model_fingerprint: string;
   status: string;
-  subject: unknown;
+  verification_target: unknown;
 }
-export interface SubjectSummary {
+export interface VerificationTargetSummary {
   fingerprint: string;
-  subject: unknown;
+  verification_target: unknown;
 }
 export interface Review {
   provenance_basis?: string;
@@ -34,41 +34,41 @@ export interface ReviewPage {
   records: Review[];
   next: string | null;
 }
-export interface ClaimReviewState {
+export interface RequirementReviewState {
   assessment?: AssessmentFreshness;
   authority_fingerprint: string;
-  claims: Array<{
-    claim: string;
+  requirements: Array<{
+    requirement: string;
     record: Record<string, unknown> | null;
     assessment: string;
     diagnostics: string[];
   }>;
 }
-export interface StatusObservation {
+export interface CheckResultReference {
   check: string;
-  case: string;
+  scenario: string;
   run: string;
   bundle_fingerprint: string;
-  observation: string;
+  check_result: string;
   outcome: string;
   observed_at_ms: number;
   selected_in_basis: boolean;
   accepted_basis: boolean;
   diagnostics: string[];
   applicable?: boolean;
-  subject_fingerprint?: string;
+  verification_target_fingerprint?: string;
 }
 export interface StatusExplanation {
   summary: string;
   status: string;
-  reasons: Array<{ code: string; category: string; message: string; check?: string; case?: string; diagnostics?: string[] }>;
+  reasons: Array<{ code: string; category: string; message: string; check?: string; scenario?: string; diagnostics?: string[] }>;
   review: { status: string; fingerprint: string | null; reviewer: string | null; reviewed_at_ms: number | null; rationale: string | null };
-  health: { status: string; fingerprint: string | null; reviewer: string | null; reviewed_at_ms: number | null; rationale: string | null };
-  coverage: Array<{ check: string; case: string; status: string; observations: StatusObservation[] }>;
-  evidence: { supporting: StatusObservation[]; violations: StatusObservation[]; inconclusive: StatusObservation[]; unassessed: StatusObservation[] };
+  requirement_status: { status: string; fingerprint: string | null; reviewer: string | null; reviewed_at_ms: number | null; rationale: string | null };
+  coverage: Array<{ check: string; scenario: string; status: string; check_results: CheckResultReference[] }>;
+  evidence: { supporting: CheckResultReference[]; violations: CheckResultReference[]; inconclusive: CheckResultReference[]; unassessed: CheckResultReference[] };
   residual_risks: unknown[];
   dependencies?: StatusDependency[];
-  adverse?: StatusObservation[];
+  adverse?: CheckResultReference[];
 }
 export interface StatusDependency {
   kind: string;
@@ -82,7 +82,7 @@ export interface MonitorPolicy {
   freshness_seconds: number;
 }
 export interface DeploymentCheckPolicy {
-  subject: 'source' | 'artifact' | 'deployment';
+  verification_target: 'source' | 'artifact' | 'deployment';
   components: string[];
   contexts: string[];
   contribution: 'support' | 'counterexample' | 'both';
@@ -91,9 +91,9 @@ export interface DeploymentCheckPolicy {
   controls?: { unit: string; contexts: string[] }[];
   monitor: MonitorPolicy | null;
 }
-export interface ClaimBindingStatus {
+export interface RequirementBindingStatus {
   check: string;
-  case: string;
+  scenario: string;
   status?: string;
   monitor?: MonitorPolicy | null;
   reasons?: string[];
@@ -105,26 +105,26 @@ export interface AssessmentFreshness {
   evaluated_at_ms: number | null;
   valid_until_ms: number | null;
 }
-export type DeploymentStatusSummary = Omit<SubjectState, 'claims'> & {
-  claims: Array<Pick<SubjectState['claims'][number], 'claim' | 'status' | 'review' | 'diagnostics' | 'gaps'> & { explanation: Pick<StatusExplanation, 'summary'> }>;
+export type DeploymentStatusSummary = Omit<VerificationTargetState, 'requirements'> & {
+  requirements: Array<Pick<VerificationTargetState['requirements'][number], 'requirement' | 'status' | 'review' | 'diagnostics' | 'gaps'> & { explanation: Pick<StatusExplanation, 'summary'> }>;
 };
-export interface SubjectState {
+export interface VerificationTargetState {
   assessment?: AssessmentFreshness;
   authority_fingerprint: string;
   model_fingerprint: string;
   format?: string;
   evaluated_at_ms?: number;
   deployment?: string;
-  subject_fingerprint?: string;
-  claims: Array<{
-    claim: string;
+  verification_target_fingerprint?: string;
+  requirements: Array<{
+    requirement: string;
     status: string;
     explanation: StatusExplanation;
     review?: string;
-    health?: string;
+    requirement_status?: string;
     diagnostics: string[];
     gaps: unknown;
-    bindings: ClaimBindingStatus[];
+    bindings: RequirementBindingStatus[];
     dependencies?: StatusDependency[];
     evaluated_at_ms?: number;
     challenges?: unknown;
@@ -162,25 +162,25 @@ export function cursor(value: string | string[] | undefined): string {
 }
 export async function projectView(
   project: string,
-  page: { runs?: string; subjects?: string; reviews?: string },
+  page: { runs?: string; verificationTargets?: string; reviews?: string },
 ) {
-  const [authority, runs, subjects, reviews, claimReviews] = await Promise.all([
+  const [authority, runs, verificationTargets, reviews, requirementReviews] = await Promise.all([
     readProject<Record<string, unknown>>(project, '/authority'),
     readProject<Page<RunSummary>>(
       project,
       `/runs?after=${encodeURIComponent(page.runs ?? '')}`,
     ),
-    readProject<Page<SubjectSummary>>(
+    readProject<Page<VerificationTargetSummary>>(
       project,
-      `/subjects?after=${encodeURIComponent(page.subjects ?? '')}`,
+      `/verification-targets?after=${encodeURIComponent(page.verificationTargets ?? '')}`,
     ),
     readProject<ReviewPage>(
       project,
       `/reviews?after=${encodeURIComponent(page.reviews ?? '')}`,
     ),
-    readProject<ClaimReviewState>(project, '/claim-reviews'),
+    readProject<RequirementReviewState>(project, '/requirement-reviews'),
   ]);
-  return { authority, runs, subjects, reviews, claimReviews };
+  return { authority, runs, verificationTargets, reviews, requirementReviews };
 }
 
 export function routeFingerprint(value: string): string | null {

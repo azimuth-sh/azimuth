@@ -1,7 +1,7 @@
 {
   "name": "@azimuth-sh/challenge",
-  "version": "0.1.0-alpha.6",
-  "description": "Azimuth machine Challenger implementation tags for TypeScript.",
+  "version": "0.1.0-alpha.7",
+  "description": "Azimuth machine Verification Challenge implementation tags for TypeScript.",
   "license": "Apache-2.0",
   "type": "commonjs",
   "main": "dist/index.js",

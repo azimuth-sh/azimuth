@@ -69,7 +69,7 @@ expected = {
 }
 for name, kind in expected.items():
     bundle = json.load(open(root / f"{name}.json", encoding="utf-8"))
-    assert bundle["subject"]["kind"] == kind
+    assert bundle["verification_target"]["kind"] == kind
     provenance = bundle["provenance"]
     adapter = provenance["adapter"]
     assert set(adapter) == {
@@ -95,8 +95,8 @@ for name, kind in expected.items():
     expected_selection = fingerprint(
         {
             "format": "azimuth-challenge-selection-identity",
-            "version": 1,
-            "challenger_fingerprint": challenge["challenger"]["fingerprint"],
+            "version": 2,
+            "verification_challenge_fingerprint": challenge["verification_challenge"]["fingerprint"],
             "target_kind": challenge["target"]["kind"],
             "target_fingerprint": challenge["target"]["fingerprint"],
         }
@@ -107,7 +107,7 @@ for name, kind in expected.items():
     assert scope["fingerprint"] == fingerprint(
         {
             "format": "azimuth-challenge-scope-fingerprint",
-            "version": 1,
+            "version": 2,
             "anchors": scope["anchors"],
             "inputs": scope["inputs"],
         }
@@ -116,7 +116,7 @@ for name, kind in expected.items():
         ("realization", "synthetic|rust-symbol|recovery::execute")
     ]
     assert [(item["kind"], item["id"]) for item in scope["inputs"]] == [
-        ("claim", "recovers"),
+        ("requirement", "recovers"),
         ("binding", "synthetic/recovery-edge"),
         ("method-qualification", "synthetic/recovery-edge"),
         ("check", "recovery-check"),
@@ -165,11 +165,11 @@ for name, kind in expected.items():
     assert adapter["launch_fingerprint"] == fingerprint(
         {
             "format": "azimuth-run-launch-fingerprint",
-            "version": 1,
+            "version": 2,
             "operation": provenance["mode"],
             "planned_at_ms": bundle["planned_at_ms"],
-            "subject": bundle["subject"],
-            "subject_fingerprint": bundle["subject_fingerprint"],
+            "verification_target": bundle["verification_target"],
+            "verification_target_fingerprint": bundle["verification_target_fingerprint"],
             "plan": bundle["plan"],
             "adapter": launch_identity,
             "routes": adapter["routes"],
@@ -178,10 +178,10 @@ for name, kind in expected.items():
     assert bundle["run_id"] == fingerprint(
         {
             "format": "azimuth-run-identity",
-            "version": 1,
+            "version": 2,
             "source_system": provenance["source"]["system"],
             "source_execution": provenance["source"]["execution"],
-            "subject_fingerprint": bundle["subject_fingerprint"],
+            "verification_target_fingerprint": bundle["verification_target_fingerprint"],
             "plan_fingerprint": bundle["plan"]["fingerprint"],
             "launch_fingerprint": adapter["launch_fingerprint"],
         }
@@ -196,7 +196,7 @@ assert artifact["provenance"]["adapter"]["import_inputs"] == [
     }
 ]
 candidate = json.load(open(root / "ci-candidate.json", encoding="utf-8"))
-assert "candidate" not in candidate["subject"]
+assert "candidate" not in candidate["verification_target"]
 assert candidate["provenance"]["attributes"]["candidate-ref"]
 PY
 
@@ -219,12 +219,12 @@ check_activities = {
 }
 challenge_activities = {
     attempt["activity"]
-    for unit in bundle["challenger_executions"][0]["units"]
+    for unit in bundle["verification_challenge_executions"][0]["units"]
     for attempt in unit["attempts"]
 }
 assert check_activities & challenge_activities == {"shared-probe"}
-assert bundle["check_executions"][0]["observations"][0]["outcome"] == "satisfied"
-assert bundle["challenger_executions"][0]["result"]["outcome"] == "clean"
+assert bundle["check_executions"][0]["results"][0]["outcome"] == "satisfied"
+assert bundle["verification_challenge_executions"][0]["result"]["outcome"] == "clean"
 PY
 
 # The partial bundle demonstrates retry recovery inside one selected shard while aggregate
@@ -235,26 +235,26 @@ import sys
 
 partial, correction = [json.load(open(path, encoding="utf-8")) for path in sys.argv[1:]]
 attempts = partial["check_executions"][0]["units"][0]["attempts"]
-case = partial["plan"]["checks"][0]["cases"][0]
+scenario = partial["plan"]["checks"][0]["scenarios"][0]
 assert [attempt["outcomes"] for attempt in attempts] == [
-    {case: "inconclusive"},
-    {case: "satisfied"},
+    {scenario: "inconclusive"},
+    {scenario: "satisfied"},
 ]
-assert partial["check_executions"][0]["observations"][0]["outcome"] == "inconclusive"
+assert partial["check_executions"][0]["results"][0]["outcome"] == "inconclusive"
 omitted = partial["plan"]["challenges"][0]["id"]
 assert partial["actual_selection"]["challenges"] == []
-assert partial["challenger_executions"] == []
+assert partial["verification_challenge_executions"] == []
 assert len(partial["diagnostics"]) == 1
 diagnostic = partial["diagnostics"][0]
 assert diagnostic["class"] == "execution"
 assert diagnostic["scope"] == {"kind": "challenge-selection", "id": omitted}
-assert correction["check_executions"][0]["observations"][0]["outcome"] == "satisfied"
+assert correction["check_executions"][0]["results"][0]["outcome"] == "satisfied"
 assert correction["actual_selection"]["challenges"] == correction["plan"]["challenges"]
-assert len(correction["challenger_executions"]) == 1
+assert len(correction["verification_challenge_executions"]) == 1
 assert correction["bundle_revision"] == 1
 assert correction["corrects"] == partial["bundle_fingerprint"]
 assert correction["run_id"] == partial["run_id"]
-assert correction["subject"] == partial["subject"]
+assert correction["verification_target"] == partial["verification_target"]
 assert correction["plan"] == partial["plan"]
 assert correction["planned_at_ms"] == partial["planned_at_ms"]
 assert correction["started_at_ms"] == partial["started_at_ms"]
@@ -280,7 +280,7 @@ expect_status 0 "$AZIMUTH" run verify \
   --bundle "$BUNDLES/partial-retry-shards.json"
 
 expect_status 1 "$AZIMUTH" run verify --bundle "$BUNDLES/mismatch.json"
-grep -q 'run/subject-fingerprint' "$EXPERIMENT_TMP/stdout"
+grep -q 'run/verification-target-fingerprint' "$EXPERIMENT_TMP/stdout"
 expect_status 1 "$AZIMUTH" run inspect \
   --bundle "$BUNDLES/mismatch.json" --format json
 python3 - "$EXPERIMENT_TMP/stdout" <<'PY'
@@ -289,7 +289,7 @@ import sys
 
 account = json.load(open(sys.argv[1], encoding="utf-8"))
 assert account["protocol_consistent"] is False
-assert any(item["code"] == "run/subject-fingerprint" for item in account["findings"])
+assert any(item["code"] == "run/verification-target-fingerprint" for item in account["findings"])
 PY
 
 expect_status 2 "$AZIMUTH" run verify --bundle "$BUNDLES/schema-error.json"
@@ -308,7 +308,7 @@ import sys
 
 account = json.load(open(sys.argv[1], encoding="utf-8"))
 assert account["format"] == "azimuth-run-inspection"
-assert account["version"] == 1
+assert account["version"] == 2
 assert account["protocol_consistent"] is True
 assert account["model_authority"] == "unresolved"
 assert account["assurance_state"] == "unresolved"

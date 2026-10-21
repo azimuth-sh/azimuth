@@ -1,19 +1,19 @@
 # Run launch-plan format
 
-## Compact machine Challenger planning
+## Compact machine Verification Challenge planning
 
-A requested Challenge may name a compact Challenger directly instead of an older authored Challenge Plan. The new form supplies `assessment` (one strict native Claim Review/Health record), optional `assessment_history` and `run_history` arrays, and required `scope_report` when `assessment` is present. `execution-capability`, finite `units` and `max_candidates` retain their native meanings. Every unit's parameters pin `scope_fingerprint` to the prepared report. No tool or form is discovered implicitly.
+A requested Challenge may name a compact Verification Challenge directly instead of an older authored Challenge Plan. This form supplies `assessment` (one strict native Requirement Review or Requirement Status record), optional `assessment_history` and `run_history` arrays, and required `scope_report` when `assessment` is present. `execution-capability`, finite `units` and `max_candidates` retain their native meanings. Every unit's parameters pin `scope_fingerprint` to the prepared report. No tool or form is discovered implicitly.
 
-The planner validates the native assessment against complete current model authority. A rejected, invalid, stale or superseded assessment is not an eligible target. Claim Review needs Run history only when it explicitly relies on prior Challenge Results; those exact retained bundles must be supplied. Claim Health validation additionally needs its exact current accepted Claim Review and native evidence history. No older accepted record is selected to bypass a newer rejected record. The selected target must match the Challenger's declared target kinds and Claims.
+The planner validates the native assessment against complete current model authority. A rejected, invalid, stale or superseded assessment is not an eligible target. Requirement Review needs Run history only when it explicitly relies on prior Challenge Results; those exact retained bundles must be supplied. Requirement Status validation additionally needs its exact current accepted Requirement Review and native evidence history. No older accepted record is selected to bypass a newer rejected record. The selected target must match the Verification Challenge's declared target kinds and Requirements.
 
-`scope_report` uses format `azimuth-challenge-source-scope`, version 1, complete status, selected Challenger identity and Run-protocol canonical fingerprint (RFC 8785 in the safe-integer domain). Its request matches the declared Claims/Mechanisms/Checks; inherited Claims may be omitted from the implementation selector when Mechanisms narrow production scope. Every selected site must match current model source linkage, file locator and emitted fingerprint. Launch inputs use the matched model source identity (`area|address-kind|address`), never an entity/site concatenation; absent or ambiguous qualified mappings fail. Native planning supplies source-backed launch inputs and exact review/health scope anchor independently of the execution Subject.
+`scope_report` uses format `azimuth-challenge-source-scope`, version 2, complete status, the selected Verification Challenge identity in `verification_challenge` and Run-protocol canonical fingerprint (RFC 8785 in the safe-integer domain). Its request matches the declared Requirements/Mechanisms/Checks; inherited Requirements may be omitted from the implementation selector when Mechanisms narrow production scope. Every selected site must match current model source linkage, file locator and emitted fingerprint. Launch inputs use the matched model source identity (`area|address-kind|address`), never an entity/site concatenation; absent or ambiguous qualified mappings fail. Native planning supplies source-backed launch inputs and exact Requirement Review or Requirement Status scope anchor independently of the execution Verification Target.
 
 The `azimuth.challenge` package prepares scope from compiler/structural emitter manifests, not directory discovery in core. Repository bindings locate files; source identities remain semantic. Current tool adapters report whole-file expansion where emitters do not expose source regions, explicit repository/Area exclusions, broader test filters and analysis limitations. Independently reviewed scope/configuration inputs remain essential; accepted target status alone does not establish source scope completeness.
 
-New plan requests require `source`, `artifact` or `deployment` Subjects. Historical complete launches/Runs keep their original descriptors. This is an explicit alpha contract migration, not a silent normalization alias.
+New plan requests require `source`, `artifact` or `deployment` Verification Targets. Historical complete launches/Runs keep their original descriptors. This is an explicit alpha contract migration, not a silent normalization alias.
 
 
-A Run launch plan binds one provider-neutral Run-bundle semantic Plan to explicit configured adapter capabilities. The file is strict JSON with format `azimuth-run-launch-plan` and version `1`. Unknown fields, duplicate object keys, invalid numbers, non-canonical arrays and duplicate identities fail. There is no alpha 1 reader.
+A Run launch plan binds one provider-neutral Run-bundle semantic Plan to explicit configured adapter capabilities. The file is strict JSON with format `azimuth-run-launch-plan` and version `2`. Unknown fields, duplicate object keys, invalid numbers, non-canonical arrays and duplicate identities fail. There is no alpha 1 reader.
 
 ## Planning request
 
@@ -22,11 +22,11 @@ A Run launch plan binds one provider-neutral Run-bundle semantic Plan to explici
 ```json
 {
   "format": "azimuth-run-plan-request",
-  "version": 1,
+  "version": 2,
   "operation": "execute",
   "planned_at_ms": 1787300000000,
-  "subject": {
-    "kind": "workspace",
+  "verification_target": {
+    "kind": "source",
     "repositories": [
       {
         "id": "root",
@@ -35,14 +35,14 @@ A Run launch plan binds one provider-neutral Run-bundle semantic Plan to explici
       }
     ]
   },
-  "required_context": {
+  "required_execution_context": {
     "platform": "linux-x86_64"
   },
   "checks": [
     {
       "id": "recovery-under-broker-loss",
       "execution-capability": "synthetic/checks",
-      "cases": ["replayed-after-broker-loss"],
+      "scenarios": ["replayed-after-broker-loss"],
       "units": [
         {
           "id": "whole",
@@ -67,9 +67,9 @@ A Run launch plan binds one provider-neutral Run-bundle semantic Plan to explici
 }
 ```
 
-Operation is `execute | import`. `planned_at_ms` is the non-negative integral safe Unix-millisecond time at which core creates the bounded execution plan. Subject has one exact Run-bundle Subject shape. `required_context` and unit parameters are exact objects from unique non-empty strings to strings; `{}` is valid. `checks` and `challenges` are both required arrays; either may be empty, but their combined selection is non-empty.
+Operation is `execute | import`. `planned_at_ms` is the non-negative integral safe Unix-millisecond time at which core creates the bounded execution plan. `verification_target` has one exact Run-bundle Verification Target shape. `required_execution_context` and unit parameters are exact objects from unique non-empty strings to strings; `{}` is valid. `checks` and `challenges` are both required arrays; either may be empty, but their combined selection is non-empty.
 
-Checks sort by unique project-global Check id. A Check request may omit `cases`; core derives all authored Check-to-Case bindings. An explicit nonempty sorted unique subset must resolve to exactly one binding per Case. A Check request may omit `units`; core supplies one `whole` unit with empty parameters. Explicit units remain finite, nonempty, sorted and unique. Neither default means internal Surface coverage is complete. Challenge requests sort by unique authored Challenge Plan id. Both name an exact
+Checks sort by unique project-global Check id. A Check request may omit `scenarios`; core derives all authored Check-to-Scenario bindings. An explicit nonempty sorted unique subset must resolve to exactly one binding per Scenario. A Check request may omit `units`; core supplies one `whole` unit with empty parameters. Explicit units remain finite, nonempty, sorted and unique. Neither default means internal Surface coverage is complete. Challenge requests sort by unique authored Challenge Plan id. Both name an exact
 configured `<adapter-id>/<capability-id>` address and non-empty units sorted by unique lower-kebab
 path id. `max_candidates` is required only for Challenge requests and is an integer from 1 through
 the Run-bundle safe-integer maximum. It counts unique candidate records from that authored Plan
@@ -77,18 +77,18 @@ after duplicate selectors are removed and before selections from different reque
 deduplicate. Every disposition counts. Exceeding the cap fails before a launch is created; it never
 truncates.
 
-The planner loads the complete unselected current model before selection. It derives the Subject fingerprint, complete-model fingerprint, each selected current Check and its complete implementation set, and every candidate, current decision, Challenger, lane and semantic scope reached by the fixed union of requested Challenge Plans. It never accepts caller-supplied fingerprints, implementations, Challenger forms, targets, lanes, scopes or launch inputs.
+The planner loads the complete unselected current model before selection. It derives the Verification Target fingerprint, complete-model fingerprint, each selected current Check and its complete implementation set, and every candidate, current decision, Verification Challenge, lane and semantic scope reached by the fixed union of requested Challenge Plans. It never accepts caller-supplied fingerprints, implementations, Verification Challenge forms, targets, lanes, scopes or launch inputs.
 
 Only a `selected` candidate is runnable. Any other disposition in a requested Plan fails planning.
 For every selected decision, the requested Plan union contains at least one runnable selection for
 every form required by its Decision Policy. Extra forms strengthen the search. The selected
-decision's applicable context equals `required_context` exactly; decisions from different contexts
-fail with guidance to create separate Runs. Claim Judgment repository identity remains independent
-of Run context and uses the one request context for execution. Check execution itself requires the
-explicit Check-to-Case bindings but not current positive repository decisions; it records an
+decision's applicable Execution Context equals `required_execution_context` exactly; decisions from different Execution Contexts
+fail with guidance to create separate Runs. Requirement Judgment repository identity remains independent
+of Run Execution Context and uses the one request Execution Context for execution. Check execution itself requires the
+explicit Check-to-Scenario bindings but not current positive repository decisions; it records an
 execution fact and does not infer evidentiary applicability.
 
-Core verifies that each explicit capability has the operation's Challenge class and the current Challenger's exact form. It never chooses a capability lexically or trusts a form in the request. Every route has an explicit configured adapter prefix; one Run may select several adapters for the same exact Subject. Duplicate selections with different capabilities or units fail. There is no complete-model broadening, partial-model or `--only` path.
+Core verifies that each explicit capability has the operation's Challenge class and the current Verification Challenge's exact form. It never chooses a capability lexically or trusts a form in the request. Every route has an explicit configured adapter prefix; one Run may select several adapters for the same exact Verification Target. Duplicate selections with different capabilities or units fail. There is no complete-model broadening, partial-model or `--only` path.
 
 ## Launch plan
 
@@ -97,11 +97,11 @@ The complete shape is:
 ```json
 {
   "format": "azimuth-run-launch-plan",
-  "version": 1,
+  "version": 2,
   "operation": "execute",
   "planned_at_ms": 1787300000000,
-  "subject": {},
-  "subject_fingerprint": "sha256:<subject-fingerprint>",
+  "verification_target": {},
+  "verification_target_fingerprint": "sha256:<verification-target-fingerprint>",
   "plan": {},
   "adapters": [{
     "id": "synthetic",
@@ -127,7 +127,7 @@ The complete shape is:
 }
 ```
 
-Operation is `execute | import`. `planned_at_ms` equals the planning request and later equals the bundle field. Subject and Subject fingerprint obey the Run-bundle format. `plan` is the complete Plan object, including its supplied and recomputed fingerprint. The Plan is unchanged from the Run-bundle format: it contains no Subject, adapter, capability, launch or import-input field. Core supplies the separately carried Subject fingerprint when recomputing the Plan fingerprint.
+Operation is `execute | import`. `planned_at_ms` equals the planning request and later equals the bundle field. Verification Target and Verification Target fingerprint obey the Run-bundle format. `plan` is the complete Plan object, including its supplied and recomputed fingerprint. The Plan is unchanged from the Run-bundle format: it contains no Verification Target, adapter, capability, launch or import-input field. Core supplies the separately carried Verification Target fingerprint when recomputing the Plan fingerprint.
 
 Each adapter id is one lower-kebab segment. Adapter version is the exact non-empty configured version. Every fingerprint has exact `sha256:<64-lowercase-hex>` shape and equals the selected configuration entry.
 
@@ -141,7 +141,7 @@ A Challenge route is:
 {
   "selection": {
     "kind": "challenge",
-    "id": "challenge/71518eefaf1f73fa6fe99b690d178f71dd7b760d803ca361997dd9b697ec78e1"
+    "id": "challenge/5fb09eceaf657d64c39b90dbd28a3455045be1cd55f15bbebe5bcb0d0881d635"
   },
   "capability": {
     "address": "synthetic/challenges",
@@ -176,7 +176,7 @@ A Challenge route is:
 }
 ```
 
-The example addresses the exact `a`/`b` selection-identity vector in the Run-bundle format and projects both source-backed scope items. The Challenge selection id is its plan-local id. `challenge_form` is the producer-accountable open lower-kebab path form paired with that Challenger fingerprint. It is required on Challenge routes and forbidden on Check routes. `inputs` is required on Challenge routes and forbidden on Check routes. Standalone format validation proves capability coverage for the declared form and the launch-input shape; generated planning proves their current model authority.
+The example addresses the exact `a`/`b` selection-identity vector in the Run-bundle format and projects both source-backed scope items. The Challenge selection id is its plan-local id. `challenge_form` is the producer-accountable open lower-kebab path form paired with that Verification Challenge fingerprint. It is required on Challenge routes and forbidden on Check routes. `inputs` is required on Challenge routes and forbidden on Check routes. Standalone format validation proves capability coverage for the declared form and the launch-input shape; generated planning proves their current model authority.
 
 Every address starts with one selected adapter id followed by `/` and names one configured capability. The adapters array is nonempty, sorted by unique id, and contains exactly the routed configured adapters. For operation `execute`, route class is exactly `check.execute` or `challenge.execute` according to selection kind. For `import`, it is `check.import` or `challenge.import`. The capability declaration must contain that class and, for a Challenge, the exact form. Capability fingerprints equal the configured values. `model.extract` is never a Run route.
 
@@ -249,20 +249,20 @@ Canonical JSON is RFC 8785: UTF-8, no insignificant whitespace, ECMAScript strin
 ```json
 {
   "format": "azimuth-run-launch-fingerprint",
-  "version": 1,
+  "version": 2,
   "operation": <operation>,
   "planned_at_ms": <planned-time>,
-  "subject": <subject>,
-  "subject_fingerprint": <subject-fingerprint>,
+  "verification_target": <verification-target>,
+  "verification_target_fingerprint": <verification-target-fingerprint>,
   "plan": <complete-plan>,
   "adapter": <complete-adapter-identity>,
   "routes": <complete-routes>
 }
 ```
 
-The plan includes its `fingerprint`; the launch object excludes only its own `fingerprint`. A change to operation, planned time, Subject, semantic Plan, configured adapter identity, route, class, Challenge form or capability fingerprint therefore changes launch identity. Relocating unchanged configured adapter content does not; moving an accountable scope source does.
+The plan includes its `fingerprint`; the launch object excludes only its own `fingerprint`. A change to operation, planned time, Verification Target, semantic Plan, configured adapter identity, route, class, Challenge form or capability fingerprint therefore changes launch identity. Relocating unchanged configured adapter content does not; moving an accountable scope source does.
 
-`complete-routes` includes every Challenge route's complete accountable `inputs` array. There is no separate locator or launch-input fingerprint: semantic item fingerprints remain unchanged by a move, while any file, language, site or derived-metadata projection change alters the enclosing launch fingerprint. Check-only launch vectors therefore remain byte-for-byte unchanged.
+`complete-routes` includes every Challenge route's complete accountable `inputs` array. There is no separate locator or launch-input fingerprint: semantic item fingerprints remain unchanged by a move, while any file, language, site or derived-metadata projection change alters the enclosing launch fingerprint. Check routes carry no `inputs`, so a Check-only launch has no launch-input projection.
 
 ## Adapter request and returned bundle
 
@@ -291,12 +291,12 @@ This version replaces the unpublished Check-only request and Challenge-route sha
 
 ## Stable entity identities: 2026-10-02
 
-All current Claim, Case, Mechanism and Check references use stable project-wide IDs and retain explicit entity kind. Module membership and Case parent relationships do not determine identity. Other activities, units, adapters, capabilities and binding identities retain their contracts. Historical artifacts remain immutable; current alpha artifacts are regenerated without aliases or syntax-only version bumps. See `contracts/entity-identity.md`.
+All current Requirement, Scenario, Mechanism and Check references use stable project-wide IDs and retain explicit entity kind. Module membership and Scenario parent relationships do not determine identity. Other activities, units, adapters, capabilities and binding identities retain their contracts. Historical artifacts remain immutable; current alpha artifacts are regenerated without aliases or syntax-only version bumps. See `contracts/entity-identity.md`.
 
 ## Coordinated Runs and scalable selection: 2026-10-06
 
-The public launch declares `adapters`, not a singular adapter alias. Single-adapter launches derive their fingerprint identity from that configured adapter. For multiple adapters, the launch fingerprint preimage's `adapter` is a deterministic coordinator identity: its id is `azimuth-coordinator`, version `1`, and all three fingerprints equal canonical SHA-256 of `{format:"azimuth-coordinator-identity",version:1,adapters:[exact sorted adapter identity objects]}`. The preimage otherwise retains the complete Subject, global Plan and global routes. This derived identity is not a configured provider.
+The public launch declares `adapters`, not a singular adapter alias. Single-adapter launches derive their fingerprint identity from that configured adapter. For multiple adapters, the launch fingerprint preimage's `adapter` is a deterministic coordinator identity: its id is `azimuth-coordinator`, version `1`, and all three fingerprints equal canonical SHA-256 of `{format:"azimuth-coordinator-identity",version:1,adapters:[exact sorted adapter identity objects]}`. The preimage otherwise retains the complete Verification Target, global Plan and global routes. This derived identity is not a configured provider.
 
-Core creates disjoint child launches, verifies their responses and retains exact child Run bundles in the coordinated Run. Every child pins the same Subject, complete-model fingerprint, required context, planning time and operation. Their selections must partition the global Plan exactly. Corrections carry the corresponding child histories. Different Subjects cannot join. See [run-bundle.md](run-bundle.md).
+Core creates disjoint child launches, verifies their responses and retains exact child Run bundles in the coordinated Run. Every child pins the same Verification Target, complete-model fingerprint, required Execution Context, planning time and operation. Their selections must partition the global Plan exactly. Corrections carry the corresponding child histories. Different Verification Targets cannot join. See [run-bundle.md](run-bundle.md).
 
-Request selection fields use `execution-capability`; the former capability spelling is not an alias. Omitted Case lists derive authored bindings, and omitted unit lists default to whole. Explicit debug selections remain available. `azimuth run select --policy <file>` derives selection from declared execution requirements; `azimuth run plan --selection <report>` validates that report against the current model and adapter configuration before planning. Selection findings and missing routes remain visible and cannot silently produce a complete plan. See [run-selection.md](run-selection.md).
+Request selection fields use `execution-capability`; the former capability spelling is not an alias. Omitted Scenario lists derive authored bindings, and omitted unit lists default to whole. Explicit debug selections remain available. `azimuth run select --policy <file>` derives selection from declared execution requirements; `azimuth run plan --selection <report>` validates that report against the current model and adapter configuration before planning. Selection findings and missing routes remain visible and cannot silently produce a complete plan. See [run-selection.md](run-selection.md).

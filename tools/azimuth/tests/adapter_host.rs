@@ -164,17 +164,18 @@ impl Fixture {
             adapter::descriptor_fingerprint(&configured.expected_description());
         configured.configuration_fingerprint = adapter::configuration_fingerprint(&configured);
 
-        let subject = Subject::Artifact {
+        let verification_target = VerificationTarget::Artifact {
             artifacts: vec![ArtifactState {
                 id: "candidate".into(),
                 digest: fp('a'),
             }],
         };
-        let subject_fingerprint = run::subject_fingerprint(&subject);
+        let verification_target_fingerprint =
+            run::verification_target_fingerprint(&verification_target);
         let check = CheckSelection {
             id: "check".into(),
             fingerprint: fp('b'),
-            cases: vec!["works".into()],
+            scenarios: vec!["works".into()],
             implementations: vec![Implementation {
                 identity: "demo|rust-symbol|demo::check".into(),
                 source_fingerprint: fp('c'),
@@ -185,7 +186,7 @@ impl Fixture {
             }],
         };
         let plan = run::construct_plan(
-            &subject_fingerprint,
+            &verification_target_fingerprint,
             fp('d'),
             map(&[("platform", "test")]),
             vec![check],
@@ -213,8 +214,8 @@ impl Fixture {
             adapters: Vec::new(),
             operation,
             planned_at_ms: 10,
-            subject,
-            subject_fingerprint,
+            verification_target,
+            verification_target_fingerprint,
             plan,
             adapter: LaunchAdapter {
                 id: configured.id.clone(),
@@ -363,15 +364,15 @@ impl Fixture {
             corrects: None,
             correction_reason: None,
             bundle_fingerprint: fp('0'),
-            subject: self.launch.subject.clone(),
-            subject_fingerprint: self.launch.subject_fingerprint.clone(),
+            verification_target: self.launch.verification_target.clone(),
+            verification_target_fingerprint: self.launch.verification_target_fingerprint.clone(),
             planned_at_ms: self.launch.planned_at_ms,
             started_at_ms: 11,
             finished_at_ms: 12,
             status: RunStatus::Partial,
             plan: self.launch.plan.clone(),
             actual_selection: ActualSelection {
-                context: self.launch.plan.required_context.clone(),
+                execution_context: self.launch.plan.required_execution_context.clone(),
                 plan_fingerprint: self.launch.plan.fingerprint.clone(),
                 checks: Vec::new(),
                 challenges: Vec::new(),
@@ -407,7 +408,7 @@ impl Fixture {
             diagnostics: Vec::new(),
             activities: Vec::new(),
             check_executions: Vec::new(),
-            challenger_executions: Vec::new(),
+            verification_challenge_executions: Vec::new(),
         };
         refresh(&mut bundle);
         assert!(
@@ -441,14 +442,14 @@ impl Fixture {
                 attempts: vec![CheckAttempt {
                     ordinal: 1,
                     activity: "native-check".into(),
-                    outcomes: [("works".into(), ObservationOutcome::Violated)]
+                    outcomes: [("works".into(), CheckResultOutcome::Violated)]
                         .into_iter()
                         .collect(),
                 }],
             }],
-            observations: vec![Observation {
-                case: "works".into(),
-                outcome: ObservationOutcome::Violated,
+            results: vec![CheckResult {
+                scenario: "works".into(),
+                outcome: CheckResultOutcome::Violated,
                 observed_at_ms: 12,
                 fingerprint: fp('0'),
                 artifacts: Vec::new(),
@@ -518,26 +519,31 @@ fn map(values: &[(&str, &str)]) -> BTreeMap<String, String> {
 }
 
 fn refresh(bundle: &mut RunBundle) {
-    bundle.subject_fingerprint = run::subject_fingerprint(&bundle.subject);
-    bundle.plan.fingerprint = run::plan_fingerprint(&bundle.subject_fingerprint, &bundle.plan);
+    bundle.verification_target_fingerprint =
+        run::verification_target_fingerprint(&bundle.verification_target);
+    bundle.plan.fingerprint =
+        run::plan_fingerprint(&bundle.verification_target_fingerprint, &bundle.plan);
     bundle.actual_selection.plan_fingerprint = bundle.plan.fingerprint.clone();
     bundle.actual_selection.fingerprint = run::selection_fingerprint(&bundle.actual_selection);
     bundle.run_id = run::run_id(bundle);
     for index in 0..bundle.check_executions.len() {
-        for observation_index in 0..bundle.check_executions[index].observations.len() {
-            let fingerprint = run::observation_fingerprint(
+        for check_result_index in 0..bundle.check_executions[index].results.len() {
+            let fingerprint = run::check_result_fingerprint(
                 bundle,
                 &bundle.check_executions[index],
-                &bundle.check_executions[index].observations[observation_index],
+                &bundle.check_executions[index].results[check_result_index],
             );
-            bundle.check_executions[index].observations[observation_index].fingerprint =
-                fingerprint;
+            bundle.check_executions[index].results[check_result_index].fingerprint = fingerprint;
         }
     }
-    for index in 0..bundle.challenger_executions.len() {
-        let fingerprint =
-            run::challenge_result_fingerprint(bundle, &bundle.challenger_executions[index]);
-        bundle.challenger_executions[index].result.fingerprint = fingerprint;
+    for index in 0..bundle.verification_challenge_executions.len() {
+        let fingerprint = run::challenge_result_fingerprint(
+            bundle,
+            &bundle.verification_challenge_executions[index],
+        );
+        bundle.verification_challenge_executions[index]
+            .result
+            .fingerprint = fingerprint;
     }
     bundle.bundle_fingerprint = run::bundle_fingerprint(bundle);
 }
@@ -799,8 +805,8 @@ fn violated_cancelled_and_timed_out_runs_remain_successful_exchanges() {
     let violated = fixture.violated_bundle();
     fixture.set_bundle_response(&violated, &[]);
     assert_eq!(
-        fixture.invoke(&[]).unwrap().bundle.check_executions[0].observations[0].outcome,
-        ObservationOutcome::Violated
+        fixture.invoke(&[]).unwrap().bundle.check_executions[0].results[0].outcome,
+        CheckResultOutcome::Violated
     );
 
     for status in [RunStatus::Cancelled, RunStatus::TimedOut] {
@@ -1330,18 +1336,18 @@ check = launch['plan']['checks'][0]
 activities = [{'id': 'measurement', 'status': 'completed', 'started_at_ms': 11,
                'finished_at_ms': 12, 'artifacts': [], 'diagnostics': [], 'attributes': {}}] if covered else []
 units = {check['id']: [{'id': 'whole', 'attempts': [{'ordinal': 0, 'activity': 'measurement',
-          'outcomes': {case: 'satisfied' for case in check['cases']}}]}]} if covered else {}
+          'outcomes': {scenario: 'satisfied' for scenario in check['scenarios']}}]}]} if covered else {}
 bundle = build_check_bundle(launch, source={'system': 'native-builder', 'execution': 'execution-1'},
     normalizer={'id': 'adapter/' + launch['adapters'][0]['id'], 'version': launch['adapters'][0]['adapter_version'],
                 'build_fingerprint': launch['adapters'][0]['adapter_fingerprint']},
     generated_at_ms=13, started_at_ms=11, finished_at_ms=12,
-    actual_context=launch['plan']['required_context'], activities=activities, units_by_check=units,
+    actual_context=launch['plan']['required_execution_context'], activities=activities, units_by_check=units,
     artifacts=[], diagnostics=[], import_inputs=identities)
 print(json.dumps(bundle))
 "#;
     for (coverage, outcome) in [
-        ("covered", ObservationOutcome::Satisfied),
-        ("missing", ObservationOutcome::Inconclusive),
+        ("covered", CheckResultOutcome::Satisfied),
+        ("missing", CheckResultOutcome::Inconclusive),
     ] {
         let result = std::process::Command::new("python3")
             .env("PYTHONPATH", &package_path)
@@ -1367,11 +1373,11 @@ print(json.dumps(bundle))
             run::verify(&bundle)
         );
         assert_eq!(bundle.check_executions[0].units[0].attempts[0].ordinal, 1);
-        assert_eq!(bundle.check_executions[0].observations[0].outcome, outcome);
+        assert_eq!(bundle.check_executions[0].results[0].outcome, outcome);
         fixture.set_bundle_response(&bundle, &[]);
         let hosted = fixture.invoke(&[]).unwrap();
         assert_eq!(
-            hosted.bundle.check_executions[0].observations[0].outcome,
+            hosted.bundle.check_executions[0].results[0].outcome,
             outcome
         );
     }
@@ -1397,8 +1403,10 @@ fn identify_fixture(fixture: &mut Fixture, id: &str, check: &str) {
     };
     fixture.launch.adapters = vec![fixture.launch.adapter.clone()];
     fixture.launch.plan.checks[0].id = check.into();
-    fixture.launch.plan.fingerprint =
-        run::plan_fingerprint(&fixture.launch.subject_fingerprint, &fixture.launch.plan);
+    fixture.launch.plan.fingerprint = run::plan_fingerprint(
+        &fixture.launch.verification_target_fingerprint,
+        &fixture.launch.plan,
+    );
     fixture.launch.routes[0].selection.id = check.into();
     fixture.launch.routes[0].capability.address = format!("{id}/checks");
     fixture.launch.routes[0].capability.fingerprint =
@@ -1417,7 +1425,8 @@ fn coordinated_fixture_launch(
     launch.adapters.extend(second.launch.adapters.clone());
     launch.adapter = run_plan::coordinator_identity(&launch.adapters);
     launch.plan.checks.extend(second.launch.plan.checks.clone());
-    launch.plan.fingerprint = run::plan_fingerprint(&launch.subject_fingerprint, &launch.plan);
+    launch.plan.fingerprint =
+        run::plan_fingerprint(&launch.verification_target_fingerprint, &launch.plan);
     launch.routes.extend(second.launch.routes.clone());
     launch.fingerprint = run_plan::launch_fingerprint(&launch);
     assert!(run_plan::validate_launch_configuration(&launch, &configuration).is_empty());
@@ -1447,14 +1456,14 @@ fn coordinated_execute_retains_exact_adverse_facts_and_rejects_projection_tamper
         .bundle
         .check_executions
         .iter()
-        .all(|e| e.observations[0].outcome == ObservationOutcome::Violated));
+        .all(|e| e.results[0].outcome == CheckResultOutcome::Violated));
     assert!(run::verify(&result.bundle).is_empty());
     assert_eq!(
         run::parse("coordinated.json", &result.canonical_json).unwrap(),
         result.bundle
     );
     let mut tampered = result.bundle.clone();
-    tampered.check_executions[0].observations[0].outcome = ObservationOutcome::Satisfied;
+    tampered.check_executions[0].results[0].outcome = CheckResultOutcome::Satisfied;
     run::refresh_bundle(&mut tampered);
     assert!(run::verify(&tampered)
         .iter()
@@ -1517,7 +1526,7 @@ fn coordinated_import_preserves_partials_and_corrects_the_complete_run() {
     assert!(run::verify_set(&[prior.bundle, corrected.bundle]).is_empty());
 }
 #[test]
-fn coordinated_exchange_failure_retains_successful_adapter_observations() {
+fn coordinated_exchange_failure_retains_successful_adapter_check_results() {
     let _guard = test_lock();
     let mut first = Fixture::new(RunOperation::Execute, 1000, 128 * 1024, 4096);
     let mut second = Fixture::new(RunOperation::Execute, 1000, 128 * 1024, 4096);
@@ -1530,8 +1539,8 @@ fn coordinated_exchange_failure_retains_successful_adapter_observations() {
     assert_eq!(result.bundle.status, RunStatus::Partial);
     assert_eq!(result.bundle.check_executions.len(), 1);
     assert_eq!(
-        result.bundle.check_executions[0].observations[0].outcome,
-        ObservationOutcome::Violated
+        result.bundle.check_executions[0].results[0].outcome,
+        CheckResultOutcome::Violated
     );
     assert!(result.bundle.contributions[1].check_executions.is_empty());
     assert!(result

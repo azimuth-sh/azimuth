@@ -324,7 +324,7 @@ def scan(path: Path, root: Path, compiler: str, includes: list[Path]) -> dict[st
             "source_fingerprint": fingerprint,
         }
         if kind == "realizes":
-            manifest["realizes"].append({**common, "claim": parts[2]})
+            manifest["realizes"].append({**common, "requirement": parts[2]})
         elif kind == "implements-mechanism":
             mechanism = parts[2]
             if semantic_site in mechanism_sites:

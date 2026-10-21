@@ -159,9 +159,9 @@ def scan(
                         f"{relative}:{call.lineno}: retired alpha 1 marker {name} is not supported"
                     )
                 if name == "realizes":
-                    claim, = strings(call, 1, name, relative)
-                    validate_entity_id(claim, relative, call.lineno)
-                    manifest["realizes"].append(entry(claim, site, relative, fingerprint))
+                    requirement, = strings(call, 1, name, relative)
+                    validate_entity_id(requirement, relative, call.lineno)
+                    manifest["realizes"].append(entry(requirement, site, relative, fingerprint))
                 elif name == "implements_check":
                     check, = strings(call, 1, name, relative)
                     validate_entity_id(check, relative, call.lineno)
@@ -212,9 +212,9 @@ def scan(
     return manifest
 
 
-def entry(claim: str, site: str, file: str, fingerprint: str) -> dict[str, object]:
+def entry(requirement: str, site: str, file: str, fingerprint: str) -> dict[str, object]:
     return {
-        "claim": claim,
+        "requirement": requirement,
         "site": site,
         "file": file,
         "lang": "python",

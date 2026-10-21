@@ -24,7 +24,7 @@ def prepare(current, reviewed):
     for source in current['sources']:
         selected = reviewed['sources'][source['id']]
         if set(selected) - {'id', 'environment', 'definition', 'identity_labels'} or not {'id', 'environment', 'definition'} <= set(selected):
-            raise ValueError('Reviewed source requires explicit stable id, environment and subject-free definition')
+            raise ValueError('Reviewed source requires explicit stable id, environment and Verification-Target-free definition')
         definition = selected['definition']
         original = source.get('definition', source.get('launch'))
         if original is None:

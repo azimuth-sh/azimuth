@@ -59,7 +59,7 @@ DECLARE
     check_ids text[] := '{}';
     context_ids text[] := '{}';
     capture jsonb;
-    captured_subject text;
+    captured_verification_target text;
     environment_name text;
     affected_deployments text[];
     bundle text;
@@ -77,12 +77,12 @@ BEGIN
          WHERE r.project=NEW.project AND r.fingerprint=bundle;
         SELECT run_id INTO logical_run FROM run_bundles WHERE project=NEW.project AND fingerprint=bundle;
         SELECT COALESCE(array_agg(DISTINCT challenge->'target'->>'fingerprint'),'{}') INTO review_fingerprints
-          FROM run_bundles history JOIN assurance_records a ON a.kind='run' AND a.project=history.project AND a.record_key=history.fingerprint CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN EXISTS(SELECT 1 FROM assurance_run_challenger_executions_item target WHERE target._record_id=a.id) THEN assurance_record_field('run',history.project,history.fingerprint,'challenger_executions') ELSE '[]'::jsonb END) challenge
+          FROM run_bundles history JOIN assurance_records a ON a.kind='run' AND a.project=history.project AND a.record_key=history.fingerprint CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN EXISTS(SELECT 1 FROM {verification_challenge_executions} target WHERE target._record_id=a.id) THEN assurance_record_field('run',history.project,history.fingerprint,'verification_challenge_executions') ELSE '[]'::jsonb END) challenge
          WHERE history.project=NEW.project AND history.run_id=logical_run;
     ELSIF NEW.kind='context_capture' THEN
         SELECT assurance_record('context_capture',NEW.project,NEW.record_key)->'capture' INTO capture;
         IF capture->>'kind'='deployment' THEN
-            captured_subject := capture->>'subject_fingerprint';
+            captured_verification_target := capture->>'verification_target_fingerprint';
             SELECT COALESCE(array_agg(value->>'contract_revision'),'{}') INTO context_ids
               FROM jsonb_each(capture->'before'->'report'->'contexts');
         ELSE
@@ -96,7 +96,7 @@ BEGIN
         environment_name := NEW.record_key;
     END IF;
     WITH affected AS (
-        UPDATE assessment_claims c SET generation=c.generation+1
+        UPDATE assessment_requirements c SET generation=c.generation+1
          WHERE c.project=NEW.project AND (
             NEW.kind='review'
             OR EXISTS(SELECT 1 FROM deployment_assessments h
@@ -105,10 +105,10 @@ BEGIN
                            OR NEW.kind='authority' AND h.authority=NEW.record_key
                            OR NEW.kind='deployment' AND h.deployment=NEW.record_key))
             OR EXISTS(SELECT 1 FROM assessment_dependencies d
-                       WHERE d.project=c.project AND d.deployment=c.deployment AND d.claim=c.claim
+                       WHERE d.project=c.project AND d.deployment=c.deployment AND d.requirement=c.requirement
                          AND (d.kind='review' AND d.identity=ANY(review_fingerprints) OR d.kind='review-run' AND d.identity=logical_run OR d.kind='check' AND d.identity=ANY(check_ids)
                            OR d.kind='context' AND d.identity=ANY(context_ids)
-                              AND (captured_subject IS NULL OR EXISTS(SELECT 1 FROM deployment_assessments h WHERE h.project=c.project AND h.deployment=c.deployment AND h.subject=captured_subject))
+                              AND (captured_verification_target IS NULL OR EXISTS(SELECT 1 FROM deployment_assessments h WHERE h.project=c.project AND h.deployment=c.deployment AND h.verification_target=captured_verification_target))
                            OR d.kind='environment' AND d.identity=environment_name
                               AND EXISTS(SELECT 1 FROM deployment_assessments h WHERE h.project=c.project AND h.deployment=c.deployment AND (h.observed_current OR h.deployment=(SELECT o.deployment_id FROM deployment_observations o WHERE o.project=c.project AND o.environment=environment_name ORDER BY o.revision DESC LIMIT 1))))))
          RETURNING deployment

@@ -9,7 +9,7 @@ Text is the default format; `--format json` selects this one. `--out <file>` wri
 ```json
 {
   "format": "azimuth-run-inspection",
-  "version": 1,
+  "version": 2,
   "protocol_consistent": true,
   "model_authority": "unresolved",
   "assurance_state": "unresolved",
@@ -22,7 +22,7 @@ These are the only root keys, in exactly this order, and all are always present.
 
 `protocol_consistent` is `true` when and only when `findings` is empty.
 
-`model_authority` and `assurance_state` are the constant string `unresolved`. Inspection does not load a model, a Decision Standards file or a workspace, so it cannot say which Claims a bundle's observations bear on, whether the Checks it names are still current, or what Assurance State follows. A consumer must not read a consistent inspection as an assurance verdict. The text format carries the same two labels as `Current model: unresolved` and `Assurance State: unresolved`.
+`model_authority` and `assurance_state` are the constant string `unresolved`. Inspection does not load a model, a Decision Standards file or a workspace, so it cannot say which Requirements a bundle's Check Results bear on, whether the Checks it names are still current, or what Assurance State follows. A consumer must not read a consistent inspection as an assurance verdict. The text format carries the same two labels as `Current model: unresolved` and `Assurance State: unresolved`.
 
 ## Bundle set
 
@@ -36,47 +36,47 @@ Input order is irrelevant. Exact duplicates — bundles equal in every field —
   "bundle_revision": 1,
   "bundle_fingerprint": "sha256:<64-lowercase-hex>",
   "corrects": "sha256:<64-lowercase-hex>",
-  "subject_kind": "workspace",
-  "subject_fingerprint": "sha256:<64-lowercase-hex>",
+  "verification_target_kind": "source",
+  "verification_target_fingerprint": "sha256:<64-lowercase-hex>",
   "status": "complete",
-  "observations": [],
+  "check_results": [],
   "challenge_results": []
 }
 ```
 
 These are the only bundle keys, in this order, and all are always present. `corrects` is the immediate predecessor bundle fingerprint on a correction, and `null` on revision zero.
 
-`subject_kind` is `workspace | ci-candidate | artifact | deployment | service | monitoring-window`. Only the kind and the Subject fingerprint are projected; the Subject's own repositories, artifacts, environment and window fields are not. `status` is `complete | partial | cancelled | timed-out`.
+`verification_target_kind` is `source | workspace | ci-candidate | artifact | deployment | service | monitoring-window`. Only the kind and the Verification Target fingerprint are projected; the Verification Target's own repositories, artifacts, environment and window fields are not. `status` is `complete | partial | cancelled | timed-out`.
 
 The record deliberately omits the bundle's plan, actual selection, provenance, artifacts, diagnostics, activities and timestamps. `contracts/run-bundle.md` remains the account of the complete bundle; this format is a reading of it, not a re-serialization.
 
-## Observations
+## Check Results
 
-One entry per Case Observation in the bundle, sorted by Check id, Check fingerprint and Case id.
+One entry per Scenario Check Result in the bundle, sorted by Check id, Check fingerprint and Scenario id.
 
 ```json
 {
   "check": "invoice-total-suite",
   "check_fingerprint": "sha256:<64-lowercase-hex>",
-  "case": "rounds-half-to-even",
+  "scenario": "rounds-half-to-even",
   "outcome": "satisfied",
   "fingerprint": "sha256:<64-lowercase-hex>"
 }
 ```
 
-All five keys are always present. `case` is the exact nested Case selected for this Observation.
+All five keys are always present. `scenario` is the exact nested Scenario selected for this Check Result.
 `outcome` is `satisfied | violated | inconclusive`. `check_fingerprint` is the Check identity the
-execution was launched against; `fingerprint` is the Observation's own fingerprint.
+execution was launched against; `fingerprint` is the Check Result's own fingerprint.
 
 ## Challenge results
 
-One entry per Challenger execution in the bundle, sorted by challenge id.
+One entry per Verification Challenge execution in the bundle, sorted by challenge id.
 
 ```json
 {
   "challenge": "challenge/<plan-local-id>",
-  "challenger": "billing/mutation-search",
-  "challenger_fingerprint": "sha256:<64-lowercase-hex>",
+  "verification_challenge": "billing/mutation-search",
+  "verification_challenge_fingerprint": "sha256:<64-lowercase-hex>",
   "target_kind": "applicability-decision",
   "target": "billing/invoice-total-binding",
   "target_fingerprint": "sha256:<64-lowercase-hex>",
@@ -85,8 +85,8 @@ One entry per Challenger execution in the bundle, sorted by challenge id.
 }
 ```
 
-All eight keys are always present. `target_kind` is `method-qualification |
-applicability-decision | claim-judgment`. `outcome` is `clean | findings | inconclusive`. A `clean`
+All eight keys are always present. `target_kind` is `requirement-review | requirement-status |
+method-qualification | applicability-decision | requirement-judgment`. `outcome` is `clean | findings | inconclusive`. A `clean`
 outcome is only a negative search fact; it is not evidence that the target decision holds, and the
 inspection assigns it no aggregate score.
 
@@ -120,4 +120,4 @@ Inspect exits zero for a protocol-consistent set. A well-typed set with protocol
 
 ## Stable entity identities: 2026-10-02
 
-All current Claim, Case, Mechanism and Check references use stable project-wide IDs and retain explicit entity kind. Module membership and Case parent relationships do not determine identity. Other activities, units, adapters, capabilities and binding identities retain their contracts. Historical artifacts remain immutable; current alpha artifacts are regenerated without aliases or syntax-only version bumps. See `contracts/entity-identity.md`.
+All current Requirement, Scenario, Mechanism and Check references use stable project-wide IDs and retain explicit entity kind. Module membership and Scenario parent relationships do not determine identity. Other activities, units, adapters, capabilities and binding identities retain their contracts. Historical artifacts remain immutable; current alpha artifacts are regenerated without aliases or syntax-only version bumps. See `contracts/entity-identity.md`.

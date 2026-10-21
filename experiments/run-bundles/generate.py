@@ -17,7 +17,7 @@ DESCRIPTOR_FINGERPRINT = "sha256:" + "5" * 64
 CONFIGURATION_FINGERPRINT = "sha256:" + "6" * 64
 CHECK_CAPABILITY_FINGERPRINT = "sha256:" + "7" * 64
 CHALLENGE_CAPABILITY_FINGERPRINT = "sha256:" + "8" * 64
-CHECK_CASE = "recovery-works"
+CHECK_SCENARIO = "recovery-works"
 
 
 def fingerprint(value: object) -> str:
@@ -42,7 +42,7 @@ def check_selection(units: list[dict[str, object]]) -> dict[str, object]:
     return {
         "id": "recovery-check",
         "fingerprint": fixed("b"),
-        "cases": [CHECK_CASE],
+        "scenarios": [CHECK_SCENARIO],
         "implementations": [
             {
                 "identity": "synthetic|rust-symbol|recovery::probe",
@@ -54,7 +54,7 @@ def check_selection(units: list[dict[str, object]]) -> dict[str, object]:
 
 
 def challenge_selection(units: list[dict[str, object]]) -> dict[str, object]:
-    challenger_fingerprint = fixed("d")
+    verification_challenge_fingerprint = fixed("d")
     target_fingerprint = fixed("e")
     anchors = [
         {
@@ -65,7 +65,7 @@ def challenge_selection(units: list[dict[str, object]]) -> dict[str, object]:
     ]
     inputs = [
         {
-            "kind": "claim",
+            "kind": "requirement",
             "id": "recovers",
             "fingerprint": fixed("1"),
         },
@@ -103,7 +103,7 @@ def challenge_selection(units: list[dict[str, object]]) -> dict[str, object]:
     scope_fingerprint = fingerprint(
         {
             "format": "azimuth-challenge-scope-fingerprint",
-            "version": 1,
+            "version": 2,
             "anchors": anchors,
             "inputs": inputs,
         }
@@ -111,17 +111,17 @@ def challenge_selection(units: list[dict[str, object]]) -> dict[str, object]:
     selection_fingerprint = fingerprint(
         {
             "format": "azimuth-challenge-selection-identity",
-            "version": 1,
-            "challenger_fingerprint": challenger_fingerprint,
+            "version": 2,
+            "verification_challenge_fingerprint": verification_challenge_fingerprint,
             "target_kind": "method-qualification",
             "target_fingerprint": target_fingerprint,
         }
     )
     return {
         "id": "challenge/" + selection_fingerprint.removeprefix("sha256:"),
-        "challenger": {
+        "verification_challenge": {
             "id": "mutation/implementation-perturbation",
-            "fingerprint": challenger_fingerprint,
+            "fingerprint": verification_challenge_fingerprint,
         },
         "target": {
             "kind": "method-qualification",
@@ -165,7 +165,7 @@ def challenge_launch_inputs() -> list[dict[str, object]]:
     ]
 
 
-def subject(kind: str) -> dict[str, object]:
+def verification_target(kind: str) -> dict[str, object]:
     repository = {
         "id": "root",
         "revision": "synthetic-revision",
@@ -275,7 +275,7 @@ def adapter_identity() -> dict[str, object]:
 
 def base_bundle(
     label: str,
-    subject_kind: str,
+    target_kind: str,
     provenance_mode: str = "execute",
 ) -> dict[str, object]:
     check_units = [unit("shard-a"), unit("shard-b")]
@@ -284,25 +284,25 @@ def base_bundle(
     challenge = challenge_selection(challenge_units)
     bundle: dict[str, object] = {
         "format": "azimuth-run-bundle",
-        "version": 1,
+        "version": 2,
         "run_id": fixed("0"),
         "bundle_revision": 0,
         "bundle_fingerprint": fixed("0"),
-        "subject": subject(subject_kind),
-        "subject_fingerprint": fixed("0"),
+        "verification_target": verification_target(target_kind),
+        "verification_target_fingerprint": fixed("0"),
         "planned_at_ms": 100,
         "started_at_ms": 110,
         "finished_at_ms": 200,
         "status": "complete",
         "plan": {
             "model_fingerprint": fixed("a"),
-            "required_context": {"platform": "synthetic"},
+            "required_execution_context": {"platform": "synthetic"},
             "checks": [copy.deepcopy(check)],
             "challenges": [copy.deepcopy(challenge)],
             "fingerprint": fixed("0"),
         },
         "actual_selection": {
-            "context": {"platform": "synthetic"},
+            "execution_context": {"platform": "synthetic"},
             "plan_fingerprint": fixed("0"),
             "checks": [copy.deepcopy(check)],
             "challenges": [copy.deepcopy(challenge)],
@@ -353,12 +353,12 @@ def base_bundle(
                             {
                                 "ordinal": 1,
                                 "activity": "retry-timeout",
-                                "outcomes": {CHECK_CASE: "inconclusive"},
+                                "outcomes": {CHECK_SCENARIO: "inconclusive"},
                             },
                             {
                                 "ordinal": 2,
                                 "activity": "shared-probe",
-                                "outcomes": {CHECK_CASE: "satisfied"},
+                                "outcomes": {CHECK_SCENARIO: "satisfied"},
                             },
                         ],
                     },
@@ -368,14 +368,14 @@ def base_bundle(
                             {
                                 "ordinal": 1,
                                 "activity": "shard-b-probe",
-                                "outcomes": {CHECK_CASE: "satisfied"},
+                                "outcomes": {CHECK_SCENARIO: "satisfied"},
                             }
                         ],
                     },
                 ],
-                "observations": [
+                "results": [
                     {
-                        "case": CHECK_CASE,
+                        "scenario": CHECK_SCENARIO,
                         "outcome": "satisfied",
                         "observed_at_ms": 160,
                         "fingerprint": fixed("0"),
@@ -385,10 +385,10 @@ def base_bundle(
                 ],
             }
         ],
-        "challenger_executions": [
+        "verification_challenge_executions": [
             {
                 "challenge": challenge["id"],
-                "challenger": copy.deepcopy(challenge["challenger"]),
+                "verification_challenge": copy.deepcopy(challenge["verification_challenge"]),
                 "target": copy.deepcopy(challenge["target"]),
                 "units": [
                     {
@@ -413,27 +413,27 @@ def base_bundle(
             }
         ],
     }
-    if subject_kind == "ci-candidate":
+    if target_kind == "ci-candidate":
         bundle["provenance"]["attributes"] = {"candidate-ref": "refs/pull/17/head"}
     return refresh(bundle)
 
 
 def refresh(bundle: dict[str, object]) -> dict[str, object]:
-    bundle["subject_fingerprint"] = fingerprint(
+    bundle["verification_target_fingerprint"] = fingerprint(
         {
-            "format": "azimuth-subject-fingerprint",
-            "version": 1,
-            "subject": bundle["subject"],
+            "format": "azimuth-verification-target-fingerprint",
+            "version": 2,
+            "verification_target": bundle["verification_target"],
         }
     )
     plan = bundle["plan"]
     plan["fingerprint"] = fingerprint(
         {
             "format": "azimuth-run-plan-fingerprint",
-            "version": 1,
-            "subject_fingerprint": bundle["subject_fingerprint"],
+            "version": 2,
+            "verification_target_fingerprint": bundle["verification_target_fingerprint"],
             "model_fingerprint": plan["model_fingerprint"],
-            "required_context": plan["required_context"],
+            "required_execution_context": plan["required_execution_context"],
             "checks": plan["checks"],
             "challenges": plan["challenges"],
         }
@@ -443,9 +443,9 @@ def refresh(bundle: dict[str, object]) -> dict[str, object]:
     selection["fingerprint"] = fingerprint(
         {
             "format": "azimuth-run-selection-fingerprint",
-            "version": 1,
+            "version": 2,
             "plan_fingerprint": selection["plan_fingerprint"],
-            "context": selection["context"],
+            "execution_context": selection["execution_context"],
             "checks": selection["checks"],
             "challenges": selection["challenges"],
         }
@@ -455,11 +455,11 @@ def refresh(bundle: dict[str, object]) -> dict[str, object]:
     adapter["launch_fingerprint"] = fingerprint(
         {
             "format": "azimuth-run-launch-fingerprint",
-            "version": 1,
+            "version": 2,
             "operation": provenance["mode"],
             "planned_at_ms": bundle["planned_at_ms"],
-            "subject": bundle["subject"],
-            "subject_fingerprint": bundle["subject_fingerprint"],
+            "verification_target": bundle["verification_target"],
+            "verification_target_fingerprint": bundle["verification_target_fingerprint"],
             "plan": plan,
             "adapter": adapter_identity(),
             "routes": adapter["routes"],
@@ -469,38 +469,38 @@ def refresh(bundle: dict[str, object]) -> dict[str, object]:
     bundle["run_id"] = fingerprint(
         {
             "format": "azimuth-run-identity",
-            "version": 1,
+            "version": 2,
             "source_system": source["system"],
             "source_execution": source["execution"],
-            "subject_fingerprint": bundle["subject_fingerprint"],
+            "verification_target_fingerprint": bundle["verification_target_fingerprint"],
             "plan_fingerprint": plan["fingerprint"],
             "launch_fingerprint": adapter["launch_fingerprint"],
         }
     )
     for execution in bundle["check_executions"]:
-        for observation in execution["observations"]:
-            observation["fingerprint"] = fingerprint(
+        for check_result in execution["results"]:
+            check_result["fingerprint"] = fingerprint(
                 {
-                    "format": "azimuth-observation-fingerprint",
-                    "version": 1,
+                    "format": "azimuth-check-result-fingerprint",
+                    "version": 2,
                     "run_id": bundle["run_id"],
-                    "subject_fingerprint": bundle["subject_fingerprint"],
+                    "verification_target_fingerprint": bundle["verification_target_fingerprint"],
                     "check": execution["check"],
-                    "case": observation["case"],
-                    "context": selection["context"],
-                    "outcome": observation["outcome"],
-                    "observed_at_ms": observation["observed_at_ms"],
+                    "scenario": check_result["scenario"],
+                    "execution_context": selection["execution_context"],
+                    "outcome": check_result["outcome"],
+                    "observed_at_ms": check_result["observed_at_ms"],
                 }
             )
-    for execution in bundle["challenger_executions"]:
+    for execution in bundle["verification_challenge_executions"]:
         result = execution["result"]
         result["fingerprint"] = fingerprint(
             {
                 "format": "azimuth-challenge-result-fingerprint",
-                "version": 1,
+                "version": 2,
                 "run_id": bundle["run_id"],
                 "challenge": execution["challenge"],
-                "challenger": execution["challenger"],
+                "verification_challenge": execution["verification_challenge"],
                 "target": execution["target"],
                 "outcome": result["outcome"],
                 "observed_at_ms": result["observed_at_ms"],
@@ -511,7 +511,7 @@ def refresh(bundle: dict[str, object]) -> dict[str, object]:
     bundle["bundle_fingerprint"] = fingerprint(
         {
             "format": "azimuth-run-bundle-fingerprint",
-            "version": 1,
+            "version": 2,
             "bundle": without_fingerprint,
         }
     )
@@ -529,9 +529,9 @@ def partial_bundle(label: str) -> dict[str, object]:
         if item["id"] in {"retry-timeout", "shared-probe"}
     ]
     bundle["check_executions"][0]["units"] = bundle["check_executions"][0]["units"][:1]
-    bundle["check_executions"][0]["observations"][0]["outcome"] = "inconclusive"
-    bundle["check_executions"][0]["observations"][0]["observed_at_ms"] = 140
-    bundle["challenger_executions"] = []
+    bundle["check_executions"][0]["results"][0]["outcome"] = "inconclusive"
+    bundle["check_executions"][0]["results"][0]["observed_at_ms"] = 140
+    bundle["verification_challenge_executions"] = []
     challenge_id = bundle["plan"]["challenges"][0]["id"]
     bundle["diagnostics"] = [
         {
@@ -577,7 +577,7 @@ def generate(output: pathlib.Path) -> None:
     write(output / "correction.json", correction)
 
     mismatch = copy.deepcopy(base_bundle("mismatch", "service"))
-    mismatch["subject_fingerprint"] = fixed("9")
+    mismatch["verification_target_fingerprint"] = fixed("9")
     write(output / "mismatch.json", mismatch)
 
     schema_error = copy.deepcopy(base_bundle("schema-error", "workspace"))

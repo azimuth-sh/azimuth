@@ -14,26 +14,27 @@ OAuth application, credentials, Tailscale or API process is needed.
 
 | Scenario | Purpose |
 | --- | --- |
-| `mixed` (default) | Two supported Claims, one violated Claim, missing execution, stale review, context mismatch and overdue monitoring; deployed release awaiting acceptance. |
-| `healthy` | All seven Claims supported; accepted deployed release. |
+| `mixed` (default) | Two satisfied Requirements, one not satisfied Requirement, missing execution, stale Requirement Review, Execution Context mismatch and overdue monitoring; deployed release awaiting acceptance. |
+| `healthy` | All seven Requirements satisfied; accepted deployed release. |
 | `incident` | Mixed scenario plus a delivery deadline violation. |
 | `empty` | Project with no model, releases, reviews or Runs. |
 
-These are synthetic **UI read models**, not native authority projections, Run
+UI scenarios are local fixture profiles; they are unrelated to the Scenarios of a
+Requirement. These are synthetic **UI read models**, not native authority projections, Run
 bundles or assessor output. Never ingest them into ASS. They deliberately permit
 exploring proposed experiences before the API supports them. Deployment observation freshness is provided by an explicit synthetic observation.
-The read models mirror computed deployment Status: source evidence is linked through
-release provenance, effective-context mismatches remain unresolved, and Monitor
+The read models mirror computed deployment Requirement Status: source evidence is linked through
+release provenance, Execution Context mismatches remain unresolved, and Monitor
 freshness is independent of deployment-observation freshness. Historical authored
 assessments remain inspectable without overriding computed Status.
 Dates are relative to page reads so scenarios remain
 useful; they are not a real event history. Identities are deterministic synthetic
 link keys, not protocol content fingerprints.
 
-`payments.json` owns the example Claims, Cases, methods, outcomes and explanations.
+`payments.json` owns the example Requirements, Scenarios, methods, outcomes and explanations.
 `src/lib/development-data.ts` adapts them to existing inspection screens. The dashboard opens the exact model and deployment referenced by the release.
-The accepted baseline contains six reminder Claims; the candidate adds retry
-recovery as a seventh Claim. Baseline definitions have no synthetic reviews or
+The accepted baseline contains six reminder Requirements; the candidate adds retry
+recovery as a seventh Requirement. Baseline definitions have no synthetic reviews or
 production assessments; candidate evidence is not transferred to the baseline.
 The model selector defaults to that baseline in the mixed/incident scenario; choose
 the candidate revision and production version to inspect the deployed change.
@@ -69,22 +70,26 @@ cookie remembers the pin preference. Escape, the close button, backdrop clicks
 and module selection close the overlay. The overlay adjusts its position and
 height to the available viewport space. Hide and Unpin both release the inline
 column immediately. On small screens navigation always uses
-the overlay. Module expansion is retained during client navigation; direct Claim
+the overlay. Module expansion is retained during client navigation; direct Requirement
 links reveal its owning module and ancestors. The tree lists modules only, with
-Claim counts; Claim statements remain in the module/detail area. 
+Requirement counts; Requirement statements remain in the module/detail area. 
 
 Model and system-version selectors use published names and descriptor labels.
 Exact fingerprints and raw records live in Technical details; copy buttons use
 the browser clipboard, with manual selection available if clipboard access fails.
-A module view includes Claims from its nested modules. A Claim view separates
-Health, Cases and declared Checks, definition review, and assessment history.
-Recorded observations must match the selected system fingerprint, current Check
-fingerprint and Case before appearing under that Check. Displaying an observation
-is not an applicability decision or a new Health assessment.
+A module view includes Requirements from its nested modules. A Requirement view separates
+Requirement Status, Scenarios and declared Checks, Requirement Review, and assessment history.
+Recorded Check Results must match the selected Verification Target fingerprint, current Check
+fingerprint and Scenario before appearing under that Check. Displaying a Check Result
+is not an applicability decision or a new Requirement Status assessment.
+Check Result outcomes are labeled Passed / Failed / Inconclusive (serialized
+`satisfied | violated | inconclusive`) so that they are never confused with
+Requirement Status, labeled Satisfied / Not satisfied / Unresolved (serialized
+`supported | violated | unresolved`).
 
 The model workspace reads its catalog directly from the selected revision.
-If that revision has no registered catalog, Claims remain browsable under
-Unassigned Claims. The UI does not
+If that revision has no registered catalog, Requirements remain browsable under
+Unassigned Requirements. The UI does not
 infer a module hierarchy from identifier spelling. History and Runs are bounded
 by the existing snapshot API. No acceptance or production-write controls are added.
 
@@ -92,11 +97,11 @@ by the existing snapshot API. No acceptance or production-write controls are add
 
 The synthetic profile now provides a revision catalog endpoint, an explicitly
 selected current production deployment, exact deployment lookup and structured
-Health explanation/coverage fields. The real UI uses the same endpoint shapes.
+Requirement Status explanation/coverage fields. The real UI uses the same endpoint shapes.
 Production selection no longer falls back to the only recorded deployment.
 The fixture's selection is explicitly authored synthetic data, not cluster
 discovery. The real assessor decides accepted versus unassessed evidence; the
-Claim screen renders its coverage directly rather than joining raw Runs itself.
+Requirement screen renders its coverage directly rather than joining raw Runs itself.
 
 ## Release and deployment context
 
@@ -115,18 +120,22 @@ accepted baseline.
 
 The workspace sidebar lists recorded environment names from selections and
 deployments. Selection is explicit in the URL and remembered per project in a
-browser cookie. The overview, Claim lists, release evidence and model contexts
+browser cookie. The overview, Requirement lists, release evidence and model contexts
 read that environment's selection and observations. Switching environment clears
 an explicitly selected deployment so evidence cannot follow the wrong environment.
 The local fixture includes production and staging; staging has seven unresolved
-Claims with no execution evidence. Environment selection never deploys or updates
+Requirements with no execution evidence. Environment selection never deploys or updates
 ASS records.
 
-## Deployment Claim Status
+## Deployment Requirement Status
 
-Claim details show production Monitors first, deployment Checks second, then source
-and artifact verification. Each Check identifies its execution Subject, component
-scope, context requirements and applicability reasons. Overdue monitoring is not
-a product violation. Adverse observations stay visible even when they cannot
-establish a definitive Claim violation. `npm test` verifies the actual React view
+Modules organize Requirements. Scenarios describe expected behavior. Checks
+produce Results. ASS assesses the evidence and shows Requirement Status for a
+deployment.
+
+Requirement details show production Monitors first, deployment Checks second, then source
+and artifact verification. Each Check identifies its Verification Target, component
+scope, Execution Context requirements and applicability reasons. Overdue monitoring is not
+a product violation. Failed Check Results stay visible even when they cannot
+establish that the Requirement is not satisfied. `npm test` verifies the actual React view
 with mixed evidence, including definitions-only navigation.

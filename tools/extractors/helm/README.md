@@ -1,6 +1,6 @@
 # Helm emitter (experimental)
 
-`azimuth-emit-helm` reads `Realizes` markers from Helm-rendered Kubernetes resources and emits an Azimuth linkage manifest. It does not evaluate network policy, ingress safety, cluster state or a Claim's truth.
+`azimuth-emit-helm` reads `Realizes` markers from Helm-rendered Kubernetes resources and emits an Azimuth linkage manifest. It does not evaluate network policy, ingress safety, cluster state or a Requirement's truth.
 
 Write one marker immediately before a resource document in a Helm template:
 

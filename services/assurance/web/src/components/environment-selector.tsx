@@ -21,7 +21,7 @@ export function EnvironmentSelector({ project, initial, environments }: {
     const values = new URLSearchParams(query.toString());
     values.set("environment", environment);
     values.delete("deployment");
-    values.delete("subject");
+    values.delete("verification-target");
     if (values.get("context")?.startsWith("deployment:")) {
       const release = values.get("release");
       if (release) values.set("context", `release:${release}`);

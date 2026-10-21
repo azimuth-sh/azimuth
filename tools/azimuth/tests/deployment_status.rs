@@ -14,7 +14,7 @@ fn valid_bundle() -> RunBundle {
     let check = CheckSelection {
         id: "recovery".into(),
         fingerprint: fp('b'),
-        cases: vec!["works".into()],
+        scenarios: vec!["works".into()],
         implementations: vec![Implementation {
             identity: "payments|rust-symbol|recovery::replay".into(),
             source_fingerprint: fp('c'),
@@ -31,27 +31,27 @@ fn valid_bundle() -> RunBundle {
         corrects: None,
         correction_reason: None,
         bundle_fingerprint: fp('0'),
-        subject: Subject::Workspace {
+        verification_target: VerificationTarget::Workspace {
             repositories: vec![RepositoryState {
                 id: "root".into(),
                 revision: "revision-a".into(),
                 content_fingerprint: fp('a'),
             }],
         },
-        subject_fingerprint: fp('0'),
+        verification_target_fingerprint: fp('0'),
         planned_at_ms: 1,
         started_at_ms: 2,
         finished_at_ms: 4,
         status: RunStatus::Complete,
         plan: Plan {
             model_fingerprint: fp('d'),
-            required_context: context(),
+            required_execution_context: context(),
             checks: vec![check.clone()],
             challenges: vec![],
             fingerprint: fp('0'),
         },
         actual_selection: ActualSelection {
-            context: context(),
+            execution_context: context(),
             plan_fingerprint: fp('0'),
             checks: vec![check],
             challenges: vec![],
@@ -116,35 +116,37 @@ fn valid_bundle() -> RunBundle {
                 attempts: vec![CheckAttempt {
                     ordinal: 1,
                     activity: "check-attempt".into(),
-                    outcomes: [("works".into(), ObservationOutcome::Satisfied)]
+                    outcomes: [("works".into(), CheckResultOutcome::Satisfied)]
                         .into_iter()
                         .collect(),
                 }],
             }],
-            observations: vec![Observation {
-                case: "works".into(),
-                outcome: ObservationOutcome::Satisfied,
+            results: vec![CheckResult {
+                scenario: "works".into(),
+                outcome: CheckResultOutcome::Satisfied,
                 observed_at_ms: 3,
                 fingerprint: fp('0'),
                 artifacts: vec![],
                 diagnostics: vec![],
             }],
         }],
-        challenger_executions: vec![],
+        verification_challenge_executions: vec![],
     };
     refresh(&mut bundle);
     bundle
 }
 fn refresh(bundle: &mut RunBundle) {
-    bundle.subject_fingerprint = subject_fingerprint(&bundle.subject);
-    bundle.plan.fingerprint = plan_fingerprint(&bundle.subject_fingerprint, &bundle.plan);
+    bundle.verification_target_fingerprint =
+        verification_target_fingerprint(&bundle.verification_target);
+    bundle.plan.fingerprint =
+        plan_fingerprint(&bundle.verification_target_fingerprint, &bundle.plan);
     bundle.actual_selection.plan_fingerprint = bundle.plan.fingerprint.clone();
     bundle.actual_selection.fingerprint = selection_fingerprint(&bundle.actual_selection);
     bundle.provenance.adapter.launch_fingerprint = launch_fingerprint(
         bundle.provenance.mode,
         bundle.planned_at_ms,
-        &bundle.subject,
-        &bundle.subject_fingerprint,
+        &bundle.verification_target,
+        &bundle.verification_target_fingerprint,
         &bundle.plan,
         &LaunchAdapterIdentity {
             id: bundle.provenance.adapter.id.clone(),
@@ -157,19 +159,20 @@ fn refresh(bundle: &mut RunBundle) {
     );
     bundle.run_id = run_id(bundle);
     for index in 0..bundle.check_executions.len() {
-        for observation_index in 0..bundle.check_executions[index].observations.len() {
-            let fingerprint = observation_fingerprint(
+        for check_result_index in 0..bundle.check_executions[index].results.len() {
+            let fingerprint = check_result_fingerprint(
                 bundle,
                 &bundle.check_executions[index],
-                &bundle.check_executions[index].observations[observation_index],
+                &bundle.check_executions[index].results[check_result_index],
             );
-            bundle.check_executions[index].observations[observation_index].fingerprint =
-                fingerprint;
+            bundle.check_executions[index].results[check_result_index].fingerprint = fingerprint;
         }
     }
-    for index in 0..bundle.challenger_executions.len() {
-        bundle.challenger_executions[index].result.fingerprint =
-            challenge_result_fingerprint(bundle, &bundle.challenger_executions[index]);
+    for index in 0..bundle.verification_challenge_executions.len() {
+        bundle.verification_challenge_executions[index]
+            .result
+            .fingerprint =
+            challenge_result_fingerprint(bundle, &bundle.verification_challenge_executions[index]);
     }
     bundle.bundle_fingerprint = bundle_fingerprint(bundle);
 }
@@ -183,9 +186,9 @@ fn set(v: &mut Json, key: &str, value: Json) {
         fields.push((key.into(), value));
     }
 }
-fn policy(subject: &str) -> Json {
+fn policy(verification_target: &str) -> Json {
     Json::obj(vec![
-        ("subject", Json::str(subject)),
+        ("verification_target", Json::str(verification_target)),
         ("components", Json::Arr(vec![Json::str("api")])),
         ("contexts", Json::Arr(vec![])),
         ("contribution", Json::str("both")),
@@ -197,11 +200,11 @@ fn request(policy: Json) -> Json {
 }
 fn request_with_criticality(policy: Json, criticality: &str) -> Json {
     let model=azimuth::model::Model{
-  specs:vec![azimuth::spec::parse_spec("spec.md",&"# Spec: sample\n\n## Claim: restricted-access\nCriticality: routine\n\nAccess SHALL be restricted.\n\n### Case: works\nEvent: a request arrives\nRequired: access is restricted\n".replace("Criticality: routine", &format!("Criticality: {criticality}"))).unwrap()],
-  account_verifications:vec![azimuth::account_verification::parse_account_verification("verification.md",&format!("# Verification: sample\n\n## Claim verification: restricted-access\n\n### Check: recovery\n- Deployment: {}\n- Evidence bindings:\n  - Case: `works`\n    - Contribution: Establishes restricted access.\n\nExercise restricted access.\n",policy.to_string_pretty().replace('\n'," "))).unwrap()],
+  specs:vec![azimuth::spec::parse_spec("spec.md",&"# Spec: sample\n\n## Requirement: restricted-access\nCriticality: routine\n\nAccess SHALL be restricted.\n\n### Scenario: works\nEvent: a request arrives\nRequired: access is restricted\n".replace("Criticality: routine", &format!("Criticality: {criticality}"))).unwrap()],
+  account_verifications:vec![azimuth::account_verification::parse_account_verification("verification.md",&format!("# Verification: sample\n\n## Requirement verification: restricted-access\n\n### Check: recovery\n- Deployment: {}\n- Evidence bindings:\n  - Scenario: `works`\n    - Contribution: Establishes restricted access.\n\nExercise restricted access.\n",policy.to_string_pretty().replace('\n'," "))).unwrap()],
   check_implementations:vec![azimuth::model::CheckImplementation {check:"recovery".into(),site:"access::check".into(),file:"tests/access.rs".into(),lang:"rust".into(),source:Some(azimuth::model::SourceIdentity {area:"sample".into(),kind:"rust-symbol".into(),address:"access::check".into(),mount:"root".into()}),source_fingerprint:fp('c')}],
-  realizes:vec![azimuth::model::Site {spec:"sample".into(),claim:"restricted-access".into(),site:"access::enforce".into(),file:"src/access.rs".into(),lang:"rust".into(),source:Some(azimuth::model::SourceIdentity {area:"sample".into(),kind:"rust-symbol".into(),address:"access::enforce".into(),mount:"root".into()}),source_fingerprint:fp('d')}],
-  workspace:azimuth::workspace::Workspace {realization_obligations:vec![azimuth::workspace::RealizationObligation{spec:"sample".into(),claim:"restricted-access".into(),areas:vec!["sample".into()]}],..Default::default()},
+  realizes:vec![azimuth::model::Site {spec:"sample".into(),requirement:"restricted-access".into(),site:"access::enforce".into(),file:"src/access.rs".into(),lang:"rust".into(),source:Some(azimuth::model::SourceIdentity {area:"sample".into(),kind:"rust-symbol".into(),address:"access::enforce".into(),mount:"root".into()}),source_fingerprint:fp('d')}],
+  workspace:azimuth::workspace::Workspace {realization_obligations:vec![azimuth::workspace::RealizationObligation{spec:"sample".into(),requirement:"restricted-access".into(),areas:vec!["sample".into()]}],..Default::default()},
   ..Default::default()
  };
     let authority = azimuth::assurance_review::authority(&model, "sample-project").unwrap();
@@ -219,14 +222,14 @@ fn request_with_criticality(policy: Json, criticality: &str) -> Json {
         ("bundles", Json::Arr(vec![])),
     ]);
     let release=azimuth::release::prepare(&Json::obj(vec![
-  ("format",Json::str("azimuth-release-request")),("version",Json::Num(1.0)),("project",Json::str("sample-project")),("label",Json::str("Synthetic release")),("baseline_model_revision",Json::str(fp('a'))),
+  ("format",Json::str("azimuth-release-request")),("version",Json::Num(2.0)),("project",Json::str("sample-project")),("label",Json::str("Synthetic release")),("baseline_model_revision",Json::str(fp('a'))),
   ("changes",json::parse(&format!(r#"[{{"id":"restricted-access","revision":"{}"}}]"#,fp('a'))).unwrap()),
   ("sources",json::parse(&format!(r#"[{{"repository":"root","commit":"{}","content_fingerprint":"{}"}}]"#,"a".repeat(40),fp('a'))).unwrap()),
   ("builds",json::parse(&format!(r#"[{{"id":"build-api","sources":["root"],"toolchain":{{"compiler":"1"}},"configuration_fingerprint":"{}","artifacts":["{}"]}}]"#,fp('b'),fp('e'))).unwrap()),
   ("artifacts",json::parse(&format!(r#"[{{"digest":"{}","kind":"container"}}]"#,fp('e'))).unwrap()),
   ("deployments",Json::Arr(vec![])),("components",json::parse(&format!(r#"[{{"id":"api","digest":"{}"}}]"#,fp('e'))).unwrap()),("snapshot",snapshot),("evidence",Json::Arr(vec![]))
  ])).unwrap();
-    let subject = Subject::Deployment {
+    let verification_target = VerificationTarget::Deployment {
         environment: "production".into(),
         deployment: "deploy-1".into(),
         deployment_fingerprint: fp('c'),
@@ -235,17 +238,26 @@ fn request_with_criticality(policy: Json, criticality: &str) -> Json {
             digest: fp('e'),
         }],
     };
-    let subject_fp = subject_fingerprint(&subject);
+    let verification_target_fp = verification_target_fingerprint(&verification_target);
     let deployment = Json::obj(vec![
         ("id", Json::str("deploy-1")),
         ("environment", Json::str("production")),
         ("configuration_fingerprint", Json::str(fp('c'))),
         ("artifacts", Json::Arr(vec![Json::str(fp('e'))])),
-        ("subject", subject_to_json(&subject)),
-        ("subject_fingerprint", Json::str(&subject_fp)),
+        (
+            "verification_target",
+            verification_target_to_json(&verification_target),
+        ),
+        (
+            "verification_target_fingerprint",
+            Json::str(&verification_target_fp),
+        ),
     ]);
     let observation = Json::obj(vec![
-        ("subject_fingerprint", Json::str(subject_fp)),
+        (
+            "verification_target_fingerprint",
+            Json::str(verification_target_fp),
+        ),
         ("observed_at_ms", Json::Num(10_000.0)),
         ("valid_for_seconds", Json::Num(300.0)),
         ("state", Json::str("complete")),
@@ -261,7 +273,7 @@ fn request_with_criticality(policy: Json, criticality: &str) -> Json {
     ]);
     Json::obj(vec![
         ("format", Json::str("azimuth-deployment-assessment")),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         ("publication", release),
         ("deployment", deployment),
         ("deployment_observation", observation),
@@ -274,9 +286,9 @@ fn request_with_criticality(policy: Json, criticality: &str) -> Json {
 }
 fn bundle_for(
     request: &Json,
-    subject: Subject,
+    verification_target: VerificationTarget,
     time: u64,
-    outcome: ObservationOutcome,
+    outcome: CheckResultOutcome,
 ) -> RunBundle {
     let authority = request
         .get("publication")
@@ -291,7 +303,7 @@ fn bundle_for(
         .as_str()
         .unwrap();
     let mut bundle = valid_bundle();
-    bundle.subject = subject;
+    bundle.verification_target = verification_target;
     bundle.plan.model_fingerprint = authority
         .get("model_fingerprint")
         .unwrap()
@@ -311,8 +323,8 @@ fn bundle_for(
     bundle.provenance.source.execution = format!("execution-{time}");
     bundle.activities[0].started_at_ms = time - 1;
     bundle.activities[0].finished_at_ms = time;
-    bundle.check_executions[0].observations[0].observed_at_ms = time;
-    bundle.check_executions[0].observations[0].outcome = outcome;
+    bundle.check_executions[0].results[0].observed_at_ms = time;
+    bundle.check_executions[0].results[0].outcome = outcome;
     bundle.check_executions[0].units[0].attempts[0]
         .outcomes
         .insert("works".into(), outcome);
@@ -320,8 +332,8 @@ fn bundle_for(
     assert!(verify(&bundle).is_empty(), "{:?}", verify(&bundle));
     bundle
 }
-fn source() -> Subject {
-    Subject::Source {
+fn source() -> VerificationTarget {
+    VerificationTarget::Source {
         repositories: vec![RepositoryState {
             id: "root".into(),
             revision: "a".repeat(40),
@@ -331,7 +343,7 @@ fn source() -> Subject {
 }
 fn status(request: &Json) -> String {
     let out = deployment_status::assess(request).unwrap();
-    out.get("claims").unwrap().as_array().unwrap()[0]
+    out.get("requirements").unwrap().as_array().unwrap()[0]
         .get("status")
         .unwrap()
         .as_str()
@@ -349,11 +361,11 @@ fn attach(request: &mut Json, bundles: &[RunBundle]) {
 fn source_evidence_supports_exact_deployment_without_source_status() {
     let mut request = request(policy("source"));
     assert_eq!(status(&request), "unresolved");
-    let bundle = bundle_for(&request, source(), 100, ObservationOutcome::Satisfied);
+    let bundle = bundle_for(&request, source(), 100, CheckResultOutcome::Satisfied);
     attach(&mut request, &[bundle]);
     assert_eq!(status(&request), "supported");
     let output = deployment_status::assess(&request).unwrap();
-    let explanation = output.get("claims").unwrap().as_array().unwrap()[0]
+    let explanation = output.get("requirements").unwrap().as_array().unwrap()[0]
         .get("explanation")
         .unwrap();
     assert!(
@@ -379,8 +391,8 @@ fn source_evidence_supports_exact_deployment_without_source_status() {
 fn wrong_source_or_artifact_cannot_support_deployment() {
     for kind in ["source", "artifact"] {
         let mut request = request(policy(kind));
-        let subject = if kind == "source" {
-            Subject::Source {
+        let verification_target = if kind == "source" {
+            VerificationTarget::Source {
                 repositories: vec![RepositoryState {
                     id: "root".into(),
                     revision: "b".repeat(40),
@@ -388,14 +400,19 @@ fn wrong_source_or_artifact_cannot_support_deployment() {
                 }],
             }
         } else {
-            Subject::Artifact {
+            VerificationTarget::Artifact {
                 artifacts: vec![ArtifactState {
                     id: "api".into(),
                     digest: fp('f'),
                 }],
             }
         };
-        let bundle = bundle_for(&request, subject, 100, ObservationOutcome::Satisfied);
+        let bundle = bundle_for(
+            &request,
+            verification_target,
+            100,
+            CheckResultOutcome::Satisfied,
+        );
         attach(&mut request, &[bundle]);
         assert_eq!(status(&request), "unresolved");
     }
@@ -409,19 +426,25 @@ fn monitor_latest_inconclusive_and_equal_time_conflict_never_fall_back() {
         json::parse(r#"{"id":"access","interval_seconds":5,"freshness_seconds":15}"#).unwrap(),
     );
     let mut request = request(p);
-    let subject =
-        subject_from_json(request.get("deployment").unwrap().get("subject").unwrap()).unwrap();
+    let verification_target = verification_target_from_json(
+        request
+            .get("deployment")
+            .unwrap()
+            .get("verification_target")
+            .unwrap(),
+    )
+    .unwrap();
     let passed = bundle_for(
         &request,
-        subject.clone(),
+        verification_target.clone(),
         9_000,
-        ObservationOutcome::Satisfied,
+        CheckResultOutcome::Satisfied,
     );
     let newer = bundle_for(
         &request,
-        subject.clone(),
+        verification_target.clone(),
         9_500,
-        ObservationOutcome::Inconclusive,
+        CheckResultOutcome::Inconclusive,
     );
     attach(&mut request, &[passed.clone()]);
     assert_eq!(status(&request), "supported");
@@ -429,11 +452,16 @@ fn monitor_latest_inconclusive_and_equal_time_conflict_never_fall_back() {
     assert_eq!(status(&request), "unresolved");
     let left = bundle_for(
         &request,
-        subject.clone(),
+        verification_target.clone(),
         9_600,
-        ObservationOutcome::Satisfied,
+        CheckResultOutcome::Satisfied,
     );
-    let mut right = bundle_for(&request, subject, 9_600, ObservationOutcome::Violated);
+    let mut right = bundle_for(
+        &request,
+        verification_target,
+        9_600,
+        CheckResultOutcome::Violated,
+    );
     right.provenance.source.execution = "independent-execution".into();
     refresh(&mut right);
     attach(&mut request, &[left, right]);
@@ -448,9 +476,20 @@ fn expired_monitor_and_fresh_deployment_do_not_confirm() {
         json::parse(r#"{"id":"access","interval_seconds":1,"freshness_seconds":2}"#).unwrap(),
     );
     let mut request = request(p);
-    let subject =
-        subject_from_json(request.get("deployment").unwrap().get("subject").unwrap()).unwrap();
-    let bundle = bundle_for(&request, subject, 100, ObservationOutcome::Satisfied);
+    let verification_target = verification_target_from_json(
+        request
+            .get("deployment")
+            .unwrap()
+            .get("verification_target")
+            .unwrap(),
+    )
+    .unwrap();
+    let bundle = bundle_for(
+        &request,
+        verification_target,
+        100,
+        CheckResultOutcome::Satisfied,
+    );
     attach(&mut request, &[bundle]);
     assert_eq!(status(&request), "unresolved");
 }
@@ -459,12 +498,12 @@ fn counterexample_is_visible_without_review_but_failure_is_not_automatically_vio
     let mut p = policy("source");
     set(&mut p, "contribution", Json::str("support"));
     let mut request = request(p);
-    let bundle = bundle_for(&request, source(), 100, ObservationOutcome::Violated);
+    let bundle = bundle_for(&request, source(), 100, CheckResultOutcome::Violated);
     attach(&mut request, &[bundle]);
     assert_eq!(status(&request), "unresolved");
     let output = deployment_status::assess(&request).unwrap();
     assert_eq!(
-        output.get("claims").unwrap().as_array().unwrap()[0]
+        output.get("requirements").unwrap().as_array().unwrap()[0]
             .get("explanation")
             .unwrap()
             .get("evidence")
@@ -557,7 +596,7 @@ fn source_scope_ignores_unrelated_release_sources_but_requires_all_build_inputs(
         );
         set(release, "sources", Json::Arr(sources));
     });
-    let bundle = bundle_for(&request, source(), 100, ObservationOutcome::Satisfied);
+    let bundle = bundle_for(&request, source(), 100, CheckResultOutcome::Satisfied);
     attach(&mut request, &[bundle]);
     assert_eq!(status(&request), "supported");
     mutate_release(&mut request, |release| {
@@ -592,22 +631,22 @@ fn conflicting_producers_do_not_establish_source_lineage() {
         builds.push(other);
         set(release, "builds", Json::Arr(builds));
     });
-    let bundle = bundle_for(&request, source(), 100, ObservationOutcome::Satisfied);
+    let bundle = bundle_for(&request, source(), 100, CheckResultOutcome::Satisfied);
     attach(&mut request, &[bundle]);
     assert_eq!(status(&request), "unresolved");
 }
 #[test]
 fn corrections_replace_support_and_stale_deployment_observation_does_not_renew_it() {
     let mut request = request(policy("source"));
-    let bundle = bundle_for(&request, source(), 100, ObservationOutcome::Satisfied);
+    let bundle = bundle_for(&request, source(), 100, CheckResultOutcome::Satisfied);
     let mut corrected = bundle.clone();
     corrected.bundle_revision = 1;
     corrected.corrects = Some(bundle.bundle_fingerprint.clone());
     corrected.correction_reason = Some("Correct report classification".into());
     corrected.check_executions[0].units[0].attempts[0]
         .outcomes
-        .insert("works".into(), ObservationOutcome::Inconclusive);
-    corrected.check_executions[0].observations[0].outcome = ObservationOutcome::Inconclusive;
+        .insert("works".into(), CheckResultOutcome::Inconclusive);
+    corrected.check_executions[0].results[0].outcome = CheckResultOutcome::Inconclusive;
     refresh(&mut corrected);
     attach(&mut request, &[bundle, corrected]);
     assert_eq!(status(&request), "unresolved");
@@ -620,15 +659,15 @@ fn corrections_replace_support_and_stale_deployment_observation_does_not_renew_i
 #[test]
 fn missing_review_blocks_support_without_hiding_declared_counterexample() {
     let mut request = request_with_criticality(policy("source"), "critical");
-    let bundle = bundle_for(&request, source(), 100, ObservationOutcome::Satisfied);
+    let bundle = bundle_for(&request, source(), 100, CheckResultOutcome::Satisfied);
     attach(&mut request, &[bundle]);
     assert_eq!(status(&request), "unresolved");
-    let failed = bundle_for(&request, source(), 101, ObservationOutcome::Violated);
+    let failed = bundle_for(&request, source(), 101, CheckResultOutcome::Violated);
     attach(&mut request, &[failed]);
     assert_eq!(status(&request), "unresolved");
     let out = deployment_status::assess(&request).unwrap();
     assert_eq!(
-        out.get("claims").unwrap().as_array().unwrap()[0]
+        out.get("requirements").unwrap().as_array().unwrap()[0]
             .get("explanation")
             .unwrap()
             .get("evidence")
@@ -641,7 +680,7 @@ fn missing_review_blocks_support_without_hiding_declared_counterexample() {
         1
     );
     assert_eq!(
-        out.get("claims").unwrap().as_array().unwrap()[0]
+        out.get("requirements").unwrap().as_array().unwrap()[0]
             .get("review")
             .unwrap()
             .as_str(),
@@ -657,8 +696,8 @@ fn context_contract() -> Json {
 }
 fn context_report(contract: &Json, enabled: bool) -> Json {
     Json::obj(vec![
-        ("format", Json::str("azimuth-verification-context")),
-        ("version", Json::Num(1.0)),
+        ("format", Json::str("azimuth-execution-context")),
+        ("version", Json::Num(2.0)),
         (
             "contexts",
             Json::obj(vec![(
@@ -716,14 +755,14 @@ fn capture(
             },
         ),
         (
-            "subject_fingerprint",
+            "verification_target_fingerprint",
             if execution {
-                Json::str(&bundle.subject_fingerprint)
+                Json::str(&bundle.verification_target_fingerprint)
             } else {
                 request
                     .get("deployment")
                     .unwrap()
-                    .get("subject_fingerprint")
+                    .get("verification_target_fingerprint")
                     .unwrap()
                     .clone()
             },
@@ -752,21 +791,21 @@ fn context_fixture() -> (Json, RunBundle, Json, Vec<Json>) {
         "context_contracts",
         Json::Arr(vec![contract.clone()]),
     );
-    let mut bundle = bundle_for(&request, source(), 100, ObservationOutcome::Satisfied);
+    let mut bundle = bundle_for(&request, source(), 100, CheckResultOutcome::Satisfied);
     let report = context_report(&contract, true);
     let context = report
         .get("contexts")
         .unwrap()
         .get("authentication")
         .unwrap();
-    bundle.plan.required_context.insert(
+    bundle.plan.required_execution_context.insert(
         format!(
             "context/{}",
             contract.get("fingerprint").unwrap().as_str().unwrap()
         ),
         canonical_fingerprint(context).unwrap(),
     );
-    bundle.actual_selection.context = bundle.plan.required_context.clone();
+    bundle.actual_selection.execution_context = bundle.plan.required_execution_context.clone();
     refresh(&mut bundle);
     attach(&mut request, &[bundle.clone()]);
     let captures = vec![
@@ -851,15 +890,15 @@ fn accepted_review(request: &Json) -> Json {
         .unwrap()
         .get("authority")
         .unwrap();
-    let claim = &authority.get("claims").unwrap().as_array().unwrap()[0];
+    let requirement = &authority.get("requirements").unwrap().as_array().unwrap()[0];
     let mut record = Json::obj(vec![
-        ("kind", Json::str("claim-review")),
+        ("kind", Json::str("requirement-review")),
         ("reviewer", Json::str("independent-reviewer")),
         ("reviewed_at_ms", Json::Num(50.0)),
         (
             "rationale",
             Json::str(
-                "The synthetic verification establishes the Case and its component/context scope.",
+                "The synthetic verification establishes the Scenario and its component/context scope.",
             ),
         ),
         (
@@ -870,17 +909,17 @@ fn accepted_review(request: &Json) -> Json {
             ))
             .unwrap(),
         ),
-        ("claim", claim.get("id").unwrap().clone()),
+        ("requirement", requirement.get("id").unwrap().clone()),
         (
-            "claim_fingerprint",
-            claim.get("fingerprint").unwrap().clone(),
+            "requirement_fingerprint",
+            requirement.get("fingerprint").unwrap().clone(),
         ),
         (
             "dependencies",
             Json::obj(vec![
-                ("claims", authority.get("claims").unwrap().clone()),
+                ("requirements", authority.get("requirements").unwrap().clone()),
                 ("checks", authority.get("checks").unwrap().clone()),
-                ("cases", authority.get("cases").unwrap().clone()),
+                ("scenarios", authority.get("scenarios").unwrap().clone()),
                 ("bindings", authority.get("bindings").unwrap().clone()),
             ]),
         ),
@@ -896,19 +935,19 @@ fn current_independent_review_enables_confirmation_and_policy_change_stales_it()
     let mut request = request_with_criticality(policy("source"), "critical");
     let review = accepted_review(&request);
     set(&mut request, "reviews", Json::Arr(vec![review.clone()]));
-    let bundle = bundle_for(&request, source(), 100, ObservationOutcome::Satisfied);
+    let bundle = bundle_for(&request, source(), 100, CheckResultOutcome::Satisfied);
     attach(&mut request, &[bundle]);
     assert_eq!(status(&request), "supported");
     let mut changed_policy = policy("source");
     set(&mut changed_policy, "contribution", Json::str("support"));
     let mut changed = request_with_criticality(changed_policy, "critical");
     set(&mut changed, "reviews", Json::Arr(vec![review]));
-    let bundle = bundle_for(&changed, source(), 100, ObservationOutcome::Satisfied);
+    let bundle = bundle_for(&changed, source(), 100, CheckResultOutcome::Satisfied);
     attach(&mut changed, &[bundle]);
     assert_eq!(status(&changed), "unresolved");
     let out = deployment_status::assess(&changed).unwrap();
     assert_eq!(
-        out.get("claims").unwrap().as_array().unwrap()[0]
+        out.get("requirements").unwrap().as_array().unwrap()[0]
             .get("review")
             .unwrap()
             .as_str(),
@@ -924,15 +963,26 @@ fn incomplete_new_monitor_execution_does_not_leave_previous_green_result_current
         json::parse(r#"{"id":"access","interval_seconds":5,"freshness_seconds":15}"#).unwrap(),
     );
     let mut request = request(p);
-    let subject =
-        subject_from_json(request.get("deployment").unwrap().get("subject").unwrap()).unwrap();
+    let verification_target = verification_target_from_json(
+        request
+            .get("deployment")
+            .unwrap()
+            .get("verification_target")
+            .unwrap(),
+    )
+    .unwrap();
     let previous = bundle_for(
         &request,
-        subject.clone(),
+        verification_target.clone(),
         9_000,
-        ObservationOutcome::Satisfied,
+        CheckResultOutcome::Satisfied,
     );
-    let mut failed = bundle_for(&request, subject, 9_500, ObservationOutcome::Inconclusive);
+    let mut failed = bundle_for(
+        &request,
+        verification_target,
+        9_500,
+        CheckResultOutcome::Inconclusive,
+    );
     failed.status = RunStatus::Partial;
     refresh(&mut failed);
     attach(&mut request, &[previous, failed]);
@@ -956,7 +1006,7 @@ fn startup_fixed_context_and_deployment_observer_need_not_collect_simultaneously
 #[test]
 fn unrelated_model_revision_does_not_invalidate_current_check_evidence() {
     let mut request = request(policy("source"));
-    let mut bundle = bundle_for(&request, source(), 100, ObservationOutcome::Satisfied);
+    let mut bundle = bundle_for(&request, source(), 100, CheckResultOutcome::Satisfied);
     bundle.plan.model_fingerprint = fp('9');
     refresh(&mut bundle);
     attach(&mut request, &[bundle]);
@@ -992,7 +1042,7 @@ fn unrelated_context_sidecars_do_not_invalidate_required_context() {
         "context_contracts",
         Json::Arr(vec![contract, unrelated]),
     );
-    let report = json::parse(&format!(r#"{{"format":"azimuth-verification-context","version":1,"contexts":{{"features":{{"contract_revision":"{}","values":{{"enabled":true}}}}}}}}"#, revision)).unwrap();
+    let report = json::parse(&format!(r#"{{"format":"azimuth-execution-context","version":2,"contexts":{{"features":{{"contract_revision":"{}","values":{{"enabled":true}}}}}}}}"#, revision)).unwrap();
     let mut sidecar = captures[0].clone();
     for phase in ["before", "after"] {
         let mut snapshot = sidecar.get(phase).unwrap().clone();
@@ -1026,17 +1076,17 @@ fn per_activity_captures_cover_distinct_fixture_lifetimes_and_ignore_baselines()
     bundle.actual_selection.checks = bundle.plan.checks.clone();
     bundle.finished_at_ms = 103;
     bundle.provenance.generated_at_ms = 104;
-    bundle.check_executions[0].observations[0].observed_at_ms = 102;
+    bundle.check_executions[0].results[0].observed_at_ms = 102;
     let value = bundle
         .plan
-        .required_context
+        .required_execution_context
         .values()
         .next()
         .unwrap()
         .clone();
-    bundle.plan.required_context.clear();
+    bundle.plan.required_execution_context.clear();
     for activity in &bundle.activities {
-        bundle.plan.required_context.insert(
+        bundle.plan.required_execution_context.insert(
             format!(
                 "context/{}/activity/{}",
                 contract.get("fingerprint").unwrap().as_str().unwrap(),
@@ -1045,7 +1095,7 @@ fn per_activity_captures_cover_distinct_fixture_lifetimes_and_ignore_baselines()
             value.clone(),
         );
     }
-    bundle.actual_selection.context = bundle.plan.required_context.clone();
+    bundle.actual_selection.execution_context = bundle.plan.required_execution_context.clone();
     refresh(&mut bundle);
     assert!(verify(&bundle).is_empty(), "{:?}", verify(&bundle));
     attach(&mut request, &[bundle.clone()]);
@@ -1124,7 +1174,7 @@ fn reviewed_controls_require_complete_units_and_cannot_alone_support() {
         "context_contracts",
         Json::Arr(vec![contract.clone()]),
     );
-    let mut bundle = bundle_for(&request, source(), 100, ObservationOutcome::Satisfied);
+    let mut bundle = bundle_for(&request, source(), 100, CheckResultOutcome::Satisfied);
     let mut control = bundle.check_executions[0].units[0].clone();
     control.id = "control".into();
     control.attempts[0].activity = "control-activity".into();
@@ -1136,7 +1186,7 @@ fn reviewed_controls_require_complete_units_and_cannot_alone_support() {
     let mut activity = bundle.activities[0].clone();
     activity.id = "control-activity".into();
     bundle.activities.push(activity);
-    bundle.plan.required_context.clear();
+    bundle.plan.required_execution_context.clear();
     for (activity, enabled) in [("check-attempt", true), ("control-activity", false)] {
         let report = context_report(&contract, enabled);
         let value = report
@@ -1144,12 +1194,12 @@ fn reviewed_controls_require_complete_units_and_cannot_alone_support() {
             .unwrap()
             .get("authentication")
             .unwrap();
-        bundle.plan.required_context.insert(
+        bundle.plan.required_execution_context.insert(
             format!("context/{fp}/activity/{activity}"),
             canonical_fingerprint(value).unwrap(),
         );
     }
-    bundle.actual_selection.context = bundle.plan.required_context.clone();
+    bundle.actual_selection.execution_context = bundle.plan.required_execution_context.clone();
     refresh(&mut bundle);
     assert!(verify(&bundle).is_empty(), "{:?}", verify(&bundle));
     attach(&mut request, &[bundle.clone()]);
@@ -1197,10 +1247,10 @@ fn configuration_sources_require_exact_released_repository_versions() {
         );
         set(release, "sources", Json::Arr(sources));
     });
-    let bundle = bundle_for(&request, source(), 100, ObservationOutcome::Satisfied);
+    let bundle = bundle_for(&request, source(), 100, CheckResultOutcome::Satisfied);
     attach(&mut request, &[bundle]);
     assert_eq!(status(&request), "unresolved");
-    let Subject::Source { mut repositories } = source() else {
+    let VerificationTarget::Source { mut repositories } = source() else {
         unreachable!()
     };
     repositories.push(RepositoryState {
@@ -1211,13 +1261,13 @@ fn configuration_sources_require_exact_released_repository_versions() {
     repositories.sort_by(|a, b| a.id.cmp(&b.id));
     let mut bundle = bundle_for(
         &request,
-        Subject::Source { repositories },
+        VerificationTarget::Source { repositories },
         101,
-        ObservationOutcome::Satisfied,
+        CheckResultOutcome::Satisfied,
     );
     attach(&mut request, &[bundle.clone()]);
     assert_eq!(status(&request), "supported");
-    let Subject::Source { repositories } = &mut bundle.subject else {
+    let VerificationTarget::Source { repositories } = &mut bundle.verification_target else {
         unreachable!()
     };
     repositories[0].revision = "c".repeat(40);

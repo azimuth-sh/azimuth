@@ -5,7 +5,7 @@ import { readProject, routeFingerprint } from "@/lib/assurance";
 import { requireViewer } from "@/lib/auth";
 import { webConfig } from "@/lib/config";
 import { developmentScenario } from "@/lib/development";
-import { environmentView, claimStatus } from "@/lib/production";
+import { environmentView, requirementStatus } from "@/lib/production";
 import { ReleaseAcceptance } from "@/components/release-acceptance";
 import { CopyValue } from "@/components/copy-value";
 
@@ -58,12 +58,12 @@ export default async function ReleasePage({ params, searchParams }: {
   const environmentState = await environmentView(projectId, null, environment);
   const selectedRelease = environmentState.deployment?.release_fingerprint === fingerprint;
   const confirmedDeployment = selectedRelease && environmentState.observationFresh;
-  const claims = selectedRelease ? environmentState.state?.claims ?? [] : [];
+  const requirements = selectedRelease ? environmentState.state?.requirements ?? [] : [];
   const counts = { supported: 0, violated: 0, unresolved: 0 };
-  for (const claim of claims) counts[claimStatus(claim.status)]++;
+  for (const requirement of requirements) counts[requirementStatus(requirement.status)]++;
   const environments = [...new Set(record.deployments.flatMap(d => typeof d.environment === "string" ? [d.environment] : []))];
   const components = release.components ?? [];
-  const modelUrl = `${root}/model?environment=${encodeURIComponent(environment)}&revision=${encodeURIComponent(release.model_revision)}${selectedRelease && environmentState.subject ? `&subject=${encodeURIComponent(environmentState.subject)}` : ""}`;
+  const modelUrl = `${root}/model?environment=${encodeURIComponent(environment)}&revision=${encodeURIComponent(release.model_revision)}${selectedRelease && environmentState.verificationTarget ? `&verification-target=${encodeURIComponent(environmentState.verificationTarget)}` : ""}`;
   return <div className="dashboard releaseWorkspace">
     <nav className="pageBreadcrumb" aria-label="Breadcrumb"><Link href={`${root}/releases?environment=${encodeURIComponent(environment)}`}>Releases</Link><span>/</span><span>{release.label}</span></nav>
     <header className="dashboardHeading">
@@ -73,7 +73,7 @@ export default async function ReleasePage({ params, searchParams }: {
     <section className="deploymentBar" aria-label="Release summary">
       <div><span className="fieldLabel">{environment.toUpperCase()}</span><strong>{confirmedDeployment ? `Observed in ${environment}` : selectedRelease ? "Current state unconfirmed" : "Not confirmed as current"}</strong><small>{selectedRelease ? environmentState.deployment?.deployment.id : `No matching current ${environment} deployment`}</small></div>
       <div><span className="fieldLabel">COMPOSITION</span><strong>{release.changes.length} {release.changes.length === 1 ? "change" : "changes"} · {release.sources.length} {release.sources.length === 1 ? "repository" : "repositories"}</strong></div>
-      <Link className="outlineButton" href={modelUrl}>Inspect Claims ↗</Link>
+      <Link className="outlineButton" href={modelUrl}>Inspect Requirements ↗</Link>
     </section>
     <div className="releaseColumns">
       <div className="releaseSections">
@@ -95,14 +95,14 @@ export default async function ReleasePage({ params, searchParams }: {
         </section>
         <section className="dashboardPanel">
           <header className="panelHeading"><div><h2>Deployment history</h2><p>Recorded deployments of this release.</p></div></header>
-          {record.deployments.map((deployment, i) => <div className="releaseCompactRow" key={i}><div><strong>{typeof deployment.environment === "string" ? deployment.environment : "Environment unavailable"}</strong><small>{title(deployment, `Deployment ${i + 1}`)}</small></div>{typeof deployment.subject_fingerprint === "string" && <Link className="textLink" href={`${root}/model?environment=${encodeURIComponent(String(deployment.environment))}&revision=${encodeURIComponent(release.model_revision)}&subject=${encodeURIComponent(deployment.subject_fingerprint)}`}>Inspect Claims ↗</Link>}</div>)}
+          {record.deployments.map((deployment, i) => <div className="releaseCompactRow" key={i}><div><strong>{typeof deployment.environment === "string" ? deployment.environment : "Environment unavailable"}</strong><small>{title(deployment, `Deployment ${i + 1}`)}</small></div>{typeof deployment.verification_target_fingerprint === "string" && <Link className="textLink" href={`${root}/model?environment=${encodeURIComponent(String(deployment.environment))}&revision=${encodeURIComponent(release.model_revision)}&verification-target=${encodeURIComponent(deployment.verification_target_fingerprint)}`}>Inspect Requirements ↗</Link>}</div>)}
           {!record.deployments.length && <p className="releaseEmpty">No deployment recorded yet.</p>}
         </section>
       </div>
       <aside className="releaseSections">
         <section className="dashboardPanel releaseAssessment">
-          <p className="overline">{environment.toUpperCase()} EVIDENCE</p><h2>{confirmedDeployment ? "Current Claim status" : "Current state unconfirmed"}</h2>
-          {claims.length ? <><p>{confirmedDeployment ? "Evidence for the observed deployment." : "Recorded evidence; current environment is not confirmed."}</p><dl className="releaseStatusCounts"><div><dt>Confirmed</dt><dd>{counts.supported}</dd></div><div><dt>Violated</dt><dd>{counts.violated}</dd></div><div><dt>Unresolved</dt><dd>{counts.unresolved}</dd></div></dl><Link className="textLink" href={modelUrl}>Inspect evidence ↗</Link></> : <p>No Claim assessment available for a matching selected environment deployment.</p>}
+          <p className="overline">{environment.toUpperCase()} EVIDENCE</p><h2>{confirmedDeployment ? "Current Requirement Status" : "Current state unconfirmed"}</h2>
+          {requirements.length ? <><p>{confirmedDeployment ? "Evidence for the observed deployment." : "Recorded evidence; current environment is not confirmed."}</p><dl className="releaseStatusCounts"><div><dt>Satisfied</dt><dd>{counts.supported}</dd></div><div><dt>Not satisfied</dt><dd>{counts.violated}</dd></div><div><dt>Unresolved</dt><dd>{counts.unresolved}</dd></div></dl><Link className="textLink" href={modelUrl}>Inspect evidence ↗</Link></> : <p>No Requirement Status available for a matching selected environment deployment.</p>}
         </section>
         <section className="dashboardPanel releaseAssessment">
           <p className="overline">OWNER DECISION</p><h2>{record.acceptance ? "Release accepted" : "Awaiting acceptance"}</h2>

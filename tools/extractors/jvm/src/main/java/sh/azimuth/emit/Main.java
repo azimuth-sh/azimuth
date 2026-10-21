@@ -368,8 +368,8 @@ public final class Main {
     record Entry(Map<String, String> fields) {
         static final Comparator<Entry> ORDER = Comparator.comparing(Entry::json);
 
-        static Entry relation(String claim, String site, String file, String lang, String fingerprint) {
-            return entry("claim", claim, "site", site, "file", file,
+        static Entry relation(String requirement, String site, String file, String lang, String fingerprint) {
+            return entry("requirement", requirement, "site", site, "file", file,
                     "lang", lang, "source_fingerprint", fingerprint);
         }
 

@@ -181,7 +181,10 @@ pub fn app(state: LedgerState) -> Router {
             "/v1/projects/{project}/deployments/{deployment}/status",
             get(deployment_status::show),
         )
-        .route("/v1/projects/{project}/claim-reviews", get(claim_reviews))
+        .route(
+            "/v1/projects/{project}/requirement-reviews",
+            get(requirement_reviews),
+        )
         .route(
             "/v1/projects/{project}/reviews",
             post(ingest_review).get(review_history),
@@ -199,16 +202,16 @@ pub fn app(state: LedgerState) -> Router {
             get(model_revision_snapshot),
         )
         .route(
-            "/v1/projects/{project}/model-revisions/{revision}/claim-reviews",
-            get(model_revision_claim_reviews),
+            "/v1/projects/{project}/model-revisions/{revision}/requirement-reviews",
+            get(model_revision_requirement_reviews),
         )
         .route(
             "/v1/projects/{project}/model-revisions/{revision}/reviews",
             post(ingest_model_revision_review),
         )
         .route(
-            "/v1/projects/{project}/model-revisions/{revision}/subjects/{subject}/state",
-            get(model_revision_subject_state),
+            "/v1/projects/{project}/model-revisions/{revision}/verification-targets/{verification_target}/state",
+            get(model_revision_verification_target_state),
         )
         .route(
             "/v1/projects/{project}/model-revisions/{revision}/run-models",
@@ -235,11 +238,14 @@ pub fn app(state: LedgerState) -> Router {
             get(environment::deployment),
         )
         .route("/v1/projects/{project}/runs", post(ingest).get(list_runs))
-        .route("/v1/projects/{project}/subjects", get(list_subjects))
+        .route(
+            "/v1/projects/{project}/verification-targets",
+            get(list_verification_targets),
+        )
         .route("/v1/projects/{project}/runs/{run_id}", get(history))
         .route(
-            "/v1/projects/{project}/subjects/{subject}/state",
-            get(subject_state),
+            "/v1/projects/{project}/verification-targets/{verification_target}/state",
+            get(verification_target_state),
         )
         .route(
             "/v1/projects/{project}/releases",
@@ -334,9 +340,9 @@ async fn ingest(
         &payload,
     )
     .await?;
-    sqlx::query("INSERT INTO run_bundles(project, run_id, revision, fingerprint, subject_fingerprint, model_fingerprint) VALUES ($1,$2,$3,$4,$5,$6)")
+    sqlx::query("INSERT INTO run_bundles(project, run_id, revision, fingerprint, verification_target_fingerprint, model_fingerprint) VALUES ($1,$2,$3,$4,$5,$6)")
         .bind(&project).bind(&bundle.run_id).bind(revision).bind(&bundle.bundle_fingerprint)
-        .bind(&bundle.subject_fingerprint).bind(&bundle.plan.model_fingerprint)
+        .bind(&bundle.verification_target_fingerprint).bind(&bundle.plan.model_fingerprint)
         .execute(&mut *transaction).await?;
     deployment_status::attribute_run(
         &mut transaction,
@@ -403,17 +409,17 @@ async fn history(
     ))
 }
 
-async fn subject_state(
+async fn verification_target_state(
     State(state): State<LedgerState>,
-    Path((project, subject)): Path<(String, String)>,
+    Path((project, verification_target)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
     let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM run_bundles WHERE project=$1 AND subject_fingerprint=$2)",
+        "SELECT EXISTS(SELECT 1 FROM run_bundles WHERE project=$1 AND verification_target_fingerprint=$2)",
     )
     .bind(&project)
-    .bind(&subject)
+    .bind(&verification_target)
     .fetch_one(&state.pool)
     .await?;
     if !exists {
@@ -421,14 +427,19 @@ async fn subject_state(
     }
     let (authority, reviews, bundles) = load_snapshot(&state.pool, &project).await?;
     compute(move || {
-        Ok(Json(to_value(&assurance_review::subject_state(
-            &authority, &reviews, &bundles, &subject,
-        ))?))
+        Ok(Json(to_value(
+            &assurance_review::verification_target_state(
+                &authority,
+                &reviews,
+                &bundles,
+                &verification_target,
+            ),
+        )?))
     })
     .await
 }
 
-async fn claim_reviews(
+async fn requirement_reviews(
     State(state): State<LedgerState>,
     Path(project): Path<String>,
     headers: HeaderMap,
@@ -437,7 +448,7 @@ async fn claim_reviews(
     materialized_reviews::read(&state, &project, None).await
 }
 
-async fn model_revision_claim_reviews(
+async fn model_revision_requirement_reviews(
     State(state): State<LedgerState>,
     Path((project, revision)): Path<(String, String)>,
     headers: HeaderMap,
@@ -452,29 +463,29 @@ fn definition_reviews(
     bundles: &[run::RunBundle],
 ) -> Result<Json<Value>, LedgerError> {
     let projection = to_value(authority)?;
-    let mut claims = Vec::new();
-    for claim in projection["claims"]
+    let mut requirements = Vec::new();
+    for requirement in projection["requirements"]
         .as_array()
-        .ok_or_else(|| LedgerError::invalid("authority Claims missing"))?
+        .ok_or_else(|| LedgerError::invalid("authority Requirements missing"))?
     {
-        let id = claim["id"]
+        let id = requirement["id"]
             .as_str()
-            .ok_or_else(|| LedgerError::invalid("Claim identity missing"))?;
+            .ok_or_else(|| LedgerError::invalid("Requirement identity missing"))?;
         let target = CoreJson::obj(vec![
-            ("kind", CoreJson::str("claim-review")),
-            ("claim", CoreJson::str(id)),
+            ("kind", CoreJson::str("requirement-review")),
+            ("requirement", CoreJson::str(id)),
         ]);
         match assurance_review::latest_review(reviews, &target) {
             Ok(Some(record)) => {
                 let assessment = assurance_review::assess_record(record, authority, reviews, bundles);
-                claims.push(json!({"claim":id,"record":to_value(record)?,"assessment":assessment.status,"diagnostics":assessment.diagnostics}));
+                requirements.push(json!({"requirement":id,"record":to_value(record)?,"assessment":assessment.status,"diagnostics":assessment.diagnostics}));
             }
-            Ok(None) => claims.push(json!({"claim":id,"record":null,"assessment":"missing","diagnostics":["Claim Review is absent"]})),
-            Err(error) => claims.push(json!({"claim":id,"record":null,"assessment":"invalid","diagnostics":[error]})),
+            Ok(None) => requirements.push(json!({"requirement":id,"record":null,"assessment":"missing","diagnostics":["Requirement Review is absent"]})),
+            Err(error) => requirements.push(json!({"requirement":id,"record":null,"assessment":"invalid","diagnostics":[error]})),
         }
     }
     Ok(Json(
-        json!({"authority_fingerprint":projection["fingerprint"],"claims":claims}),
+        json!({"authority_fingerprint":projection["fingerprint"],"requirements":requirements}),
     ))
 }
 
@@ -578,7 +589,7 @@ async fn associate_run_model(
         },
         Json(json!({
             "project":project,"revision":revision,"run_model_fingerprint":bundle.plan.model_fingerprint,
-            "replayed":!inserted,"scope":"Run context association only; review currentness and exact-Subject Claim Health remain independently assessed"
+            "replayed":!inserted,"scope":"Run context association only; review currentness and exact-Verification-Target Requirement Status remain independently assessed"
         })),
     ))
 }
@@ -638,15 +649,15 @@ async fn model_revision_snapshot(
     ))
 }
 
-async fn model_revision_subject_state(
+async fn model_revision_verification_target_state(
     State(state): State<LedgerState>,
-    Path((project, revision, subject)): Path<(String, String, String)>,
+    Path((project, revision, verification_target)): Path<(String, String, String)>,
     headers: HeaderMap,
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
     let registered_deployment: Option<String> = sqlx::query_scalar(
-        "SELECT d.deployment_id FROM release_deployments d JOIN assurance_releases r          ON r.project=d.project AND r.fingerprint=d.release_fingerprint          WHERE d.project=$1 AND r.model_revision=$2          AND assurance_record_field('deployment',d.project,d.deployment_id,'subject_fingerprint')=to_jsonb($3::text)",
-    ).bind(&project).bind(&revision).bind(&subject).fetch_optional(&state.pool).await?;
+        "SELECT d.deployment_id FROM release_deployments d JOIN assurance_releases r          ON r.project=d.project AND r.fingerprint=d.release_fingerprint          WHERE d.project=$1 AND r.model_revision=$2          AND assurance_record_field('deployment',d.project,d.deployment_id,'verification_target_fingerprint')=to_jsonb($3::text)",
+    ).bind(&project).bind(&revision).bind(&verification_target).fetch_optional(&state.pool).await?;
     if let Some(deployment) = registered_deployment {
         return Ok(Json(
             deployment_status::assess_deployment(&state, &project, &deployment).await?,
@@ -655,10 +666,10 @@ async fn model_revision_subject_state(
     let deployment_registered = false;
     if !deployment_registered {
         let observed: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM run_bundles WHERE project=$1 AND subject_fingerprint=$2)",
+            "SELECT EXISTS(SELECT 1 FROM run_bundles WHERE project=$1 AND verification_target_fingerprint=$2)",
         )
         .bind(&project)
-        .bind(&subject)
+        .bind(&verification_target)
         .fetch_one(&state.pool)
         .await?;
         if !observed {
@@ -670,14 +681,19 @@ async fn model_revision_subject_state(
     if !deployment_registered
         && !bundles
             .iter()
-            .any(|bundle| bundle.subject_fingerprint == subject)
+            .any(|bundle| bundle.verification_target_fingerprint == verification_target)
     {
         return Err(LedgerError::not_found());
     }
     compute(move || {
-        Ok(Json(to_value(&assurance_review::subject_state(
-            &authority, &reviews, &bundles, &subject,
-        ))?))
+        Ok(Json(to_value(
+            &assurance_review::verification_target_state(
+                &authority,
+                &reviews,
+                &bundles,
+                &verification_target,
+            ),
+        )?))
     })
     .await
 }
@@ -819,9 +835,9 @@ async fn submit_review(
     let payload = to_value(&record)?;
     if !matches!(
         payload.get("kind").and_then(Value::as_str),
-        Some("claim-review" | "claim-health")
+        Some("requirement-review" | "requirement-status")
     ) {
-        return Err(LedgerError::invalid("new review submissions require claim-review or claim-health; earlier review kinds remain readable history"));
+        return Err(LedgerError::invalid("new review submissions require requirement-review or requirement-status; earlier review kinds remain readable history"));
     }
     if payload.get("reviewer").and_then(Value::as_str) != Some(&reviewer) {
         return Err(LedgerError::forbidden());
@@ -882,7 +898,7 @@ async fn review_history(
         let payload: Value = row.try_get("payload")?;
         let record = core_json(payload.to_string().as_bytes())?;
         let assessment = assurance_review::assess_record(&record, &authority, &reviews, &bundles);
-        records.push(json!({"historical": !matches!(payload.get("kind").and_then(Value::as_str), Some("claim-review" | "claim-health")), "record":payload,"assessment":assessment.status,"diagnostics":assessment.diagnostics,"provenance_basis":row.try_get::<String, _>("provenance_basis")?,"submitted_by":row.try_get::<String, _>("submitted_by")?,"submitted_at":row.try_get::<String, _>("submitted_at")?}));
+        records.push(json!({"historical": !matches!(payload.get("kind").and_then(Value::as_str), Some("requirement-review" | "requirement-status")), "record":payload,"assessment":assessment.status,"diagnostics":assessment.diagnostics,"provenance_basis":row.try_get::<String, _>("provenance_basis")?,"submitted_by":row.try_get::<String, _>("submitted_by")?,"submitted_at":row.try_get::<String, _>("submitted_at")?}));
     }
     Ok(Json(
         json!({"project":project,"records":records,"next":next}),
@@ -928,7 +944,7 @@ async fn list_runs(
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
     let limit = page.limit()?;
-    let rows = sqlx::query("SELECT DISTINCT ON (run_id) run_id,revision,fingerprint,subject_fingerprint,model_fingerprint,assurance_record_field('run',project,fingerprint,'status') AS status,assurance_record_field('run',project,fingerprint,'subject') AS subject FROM (SELECT storage.*,assurance_record('run',storage.project,storage.fingerprint) AS payload FROM run_bundles storage) AS run_bundles WHERE project=$1 AND run_id > $2 ORDER BY run_id,revision DESC LIMIT $3")
+    let rows = sqlx::query("SELECT DISTINCT ON (run_id) run_id,revision,fingerprint,verification_target_fingerprint,model_fingerprint,assurance_record_field('run',project,fingerprint,'status') AS status,assurance_record_field('run',project,fingerprint,'verification_target') AS verification_target FROM (SELECT storage.*,assurance_record('run',storage.project,storage.fingerprint) AS payload FROM run_bundles storage) AS run_bundles WHERE project=$1 AND run_id > $2 ORDER BY run_id,revision DESC LIMIT $3")
         .bind(&project).bind(&page.after).bind(limit + 1).fetch_all(&state.pool).await?;
     let next = rows
         .get(limit as usize - 1)
@@ -937,12 +953,12 @@ async fn list_runs(
         .transpose()?;
     let mut items = Vec::new();
     for row in rows.into_iter().take(limit as usize) {
-        items.push(json!({"run_id":row.try_get::<String,_>("run_id")?,"revision":row.try_get::<i64,_>("revision")?,"fingerprint":row.try_get::<String,_>("fingerprint")?,"subject_fingerprint":row.try_get::<String,_>("subject_fingerprint")?,"model_fingerprint":row.try_get::<String,_>("model_fingerprint")?,"status":row.try_get::<Value,_>("status")?,"subject":row.try_get::<Value,_>("subject")?}));
+        items.push(json!({"run_id":row.try_get::<String,_>("run_id")?,"revision":row.try_get::<i64,_>("revision")?,"fingerprint":row.try_get::<String,_>("fingerprint")?,"verification_target_fingerprint":row.try_get::<String,_>("verification_target_fingerprint")?,"model_fingerprint":row.try_get::<String,_>("model_fingerprint")?,"status":row.try_get::<Value,_>("status")?,"verification_target":row.try_get::<Value,_>("verification_target")?}));
     }
     Ok(Json(json!({"project":project,"items":items,"next":next})))
 }
 
-async fn list_subjects(
+async fn list_verification_targets(
     State(state): State<LedgerState>,
     Path(project): Path<String>,
     Query(page): Query<Page>,
@@ -950,16 +966,16 @@ async fn list_subjects(
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
     let limit = page.limit()?;
-    let rows = sqlx::query("SELECT DISTINCT ON (subject_fingerprint) subject_fingerprint,assurance_record_field('run',project,fingerprint,'subject') AS subject FROM (SELECT storage.*,assurance_record('run',storage.project,storage.fingerprint) AS payload FROM run_bundles storage) AS run_bundles WHERE project=$1 AND subject_fingerprint > $2 ORDER BY subject_fingerprint,run_id,revision DESC LIMIT $3")
+    let rows = sqlx::query("SELECT DISTINCT ON (verification_target_fingerprint) verification_target_fingerprint,assurance_record_field('run',project,fingerprint,'verification_target') AS verification_target FROM (SELECT storage.*,assurance_record('run',storage.project,storage.fingerprint) AS payload FROM run_bundles storage) AS run_bundles WHERE project=$1 AND verification_target_fingerprint > $2 ORDER BY verification_target_fingerprint,run_id,revision DESC LIMIT $3")
         .bind(&project).bind(&page.after).bind(limit + 1).fetch_all(&state.pool).await?;
     let next = rows
         .get(limit as usize - 1)
         .filter(|_| rows.len() > limit as usize)
-        .map(|r| r.try_get::<String, _>("subject_fingerprint"))
+        .map(|r| r.try_get::<String, _>("verification_target_fingerprint"))
         .transpose()?;
     let mut items = Vec::new();
     for row in rows.into_iter().take(limit as usize) {
-        items.push(json!({"fingerprint":row.try_get::<String,_>("subject_fingerprint")?,"subject":row.try_get::<Value,_>("subject")?}));
+        items.push(json!({"fingerprint":row.try_get::<String,_>("verification_target_fingerprint")?,"verification_target":row.try_get::<Value,_>("verification_target")?}));
     }
     Ok(Json(json!({"project":project,"items":items,"next":next})))
 }
@@ -1198,7 +1214,7 @@ mod tests {
     };
 
     #[tokio::test]
-    async fn registered_deployment_without_runs_lists_unresolved_claims(
+    async fn registered_deployment_without_runs_lists_unresolved_requirements(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let postgres = Postgres::default().with_tag("17-alpine").start().await?;
         let port = postgres.get_host_port_ipv4(5432).await?;
@@ -1210,7 +1226,7 @@ mod tests {
         let model = azimuth::model::Model {
             specs: vec![azimuth::spec::parse_spec(
                 "spec.md",
-                "# Spec: module\n\n## Claim: bounded\nCriticality: routine\n\nThe operation SHALL complete.\n\n### Case: completes\nGiven ordinary input, when invoked, then complete.\n",
+                "# Spec: module\n\n## Requirement: bounded\nCriticality: routine\n\nThe operation SHALL complete.\n\n### Scenario: completes\nGiven ordinary input, when invoked, then complete.\n",
             ).unwrap()],
             ..Default::default()
         };
@@ -1218,14 +1234,16 @@ mod tests {
             .map_err(|error| error.detail)?;
         let revision = authority["fingerprint"].as_str().unwrap();
         let digest = format!("sha256:{}", "a".repeat(64));
-        let subject = json!({"kind":"deployment","environment":"production","deployment":"deployment","deployment_fingerprint":digest,"artifacts":[{"id":"service","digest":digest}]});
-        let subject_fingerprint = run::subject_fingerprint(&run::subject_from_json(
-            &core_json(subject.to_string().as_bytes()).map_err(|error| error.detail)?,
-        )?);
-        let deployment = json!({"id":"deployment","environment":"production","configuration_fingerprint":digest,"artifacts":[digest],"subject":subject,"subject_fingerprint":subject_fingerprint});
+        let verification_target = json!({"kind":"deployment","environment":"production","deployment":"deployment","deployment_fingerprint":digest,"artifacts":[{"id":"service","digest":digest}]});
+        let verification_target_fingerprint =
+            run::verification_target_fingerprint(&run::verification_target_from_json(
+                &core_json(verification_target.to_string().as_bytes())
+                    .map_err(|error| error.detail)?,
+            )?);
+        let deployment = json!({"id":"deployment","environment":"production","configuration_fingerprint":digest,"artifacts":[digest],"verification_target":verification_target,"verification_target_fingerprint":verification_target_fingerprint});
         let publication = to_value(&azimuth::release::prepare(
             &core_json(json!({
-                "format":"azimuth-release-request","version":1,"project":"project","label":"Release",
+                "format":"azimuth-release-request","version":2,"project":"project","label":"Release",
                 "baseline_model_revision":revision,"changes":[{"id":"bounded","revision":digest}],
                 "sources":[{"repository":"root","commit":"a".repeat(40),"content_fingerprint":digest}],
                 "builds":[{"id":"service","sources":["root"],"toolchain":{"compiler":"test"},"configuration_fingerprint":digest,"artifacts":[digest]}],
@@ -1271,10 +1289,11 @@ mod tests {
         let address = listener.local_addr()?;
         let server = tokio::spawn(async move { axum::serve(listener, app(state)).await.unwrap() });
         let client = reqwest::Client::new();
-        let url =
-            format!("http://{address}/v1/projects/project/model-revisions/{revision}/subjects");
+        let url = format!(
+            "http://{address}/v1/projects/project/model-revisions/{revision}/verification-targets"
+        );
         let response = client
-            .get(format!("{url}/{subject_fingerprint}/state"))
+            .get(format!("{url}/{verification_target_fingerprint}/state"))
             .bearer_auth(credential)
             .send()
             .await?;
@@ -1286,7 +1305,7 @@ mod tests {
             }
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             result = client
-                .get(format!("{url}/{subject_fingerprint}/state"))
+                .get(format!("{url}/{verification_target_fingerprint}/state"))
                 .bearer_auth(credential)
                 .send()
                 .await?
@@ -1294,9 +1313,9 @@ mod tests {
                 .await?;
         }
         assert_eq!(result["assessment"]["state"], "ready", "{result}");
-        assert_eq!(result["claims"].as_array().unwrap().len(), 1);
-        assert_eq!(result["claims"][0]["claim"], "bounded");
-        assert_eq!(result["claims"][0]["status"], "unresolved");
+        assert_eq!(result["requirements"].as_array().unwrap().len(), 1);
+        assert_eq!(result["requirements"][0]["requirement"], "bounded");
+        assert_eq!(result["requirements"][0]["status"], "unresolved");
         assert_eq!(
             sqlx::query_scalar::<_, i64>("SELECT count(*) FROM run_bundles")
                 .fetch_one(&pool)
@@ -1313,7 +1332,7 @@ mod tests {
                 .status(),
             StatusCode::NOT_FOUND
         );
-        let wrong_model = format!("http://{address}/v1/projects/project/model-revisions/{unknown}/subjects/{subject_fingerprint}/state");
+        let wrong_model = format!("http://{address}/v1/projects/project/model-revisions/{unknown}/verification-targets/{verification_target_fingerprint}/state");
         assert_eq!(
             client
                 .get(wrong_model)

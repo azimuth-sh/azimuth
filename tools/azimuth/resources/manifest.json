@@ -1,13 +1,13 @@
 {
   "format": "azimuth-cli-resources",
   "schemaVersion": 1,
-  "releaseVersion": "0.1.0-alpha.6",
-  "migrationLine": "alpha-claim-case",
+  "releaseVersion": "0.1.0-alpha.7",
+  "migrationLine": "alpha-requirement-scenario",
   "skills": [
     "azimuth-explore",
     "azimuth-propose",
     "azimuth-apply",
-    "azimuth-review-claim",
+    "azimuth-review-requirement",
     "azimuth-archive",
     "azimuth-coordinate",
     "azimuth-maintain"
@@ -23,7 +23,7 @@
     "migration",
     "workflow",
     "release-publication",
-    "deployment-claim-status"
+    "deployment-requirement-status"
   ],
   "templates": [
     "init/README.md",
@@ -36,7 +36,9 @@
   "migrations": [
     "0.1.0-alpha.3-to-0.1.0-alpha.4",
     "0.1.0-alpha.4-to-0.1.0-alpha.5",
-    "0.1.0-alpha.5-to-0.1.0-alpha.6"
+    "0.1.0-alpha.5-to-0.1.0-alpha.6",
+    "0.1.0-alpha.6-to-0.1.0-alpha.7",
+    "alpha-claim-case-to-alpha-requirement-scenario"
   ],
   "workflows": [
     "change-development"

@@ -28,6 +28,8 @@ class EmitterTests(unittest.TestCase):
             manifest = scan(path, self.repository, "clang++", self.include)
 
             self.assertEqual(manifest["realizes"][0]["site"], "identity")
+            self.assertEqual(manifest["realizes"][0]["requirement"], "cpp-identifies")
+            self.assertNotIn("claim", manifest["realizes"][0])
             implementations = manifest["check_implementations"]
             self.assertEqual([item["site"] for item in implementations], ["first_test", "second_test"])
             for item in implementations:

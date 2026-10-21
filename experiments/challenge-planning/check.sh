@@ -87,7 +87,7 @@ for mode in survivor killed zero; do
   expect_status 0 "$AZIMUTH" run inspect --bundle "$bundle" --format json
 done
 
-# Each Challenger derives only its own native outcome vocabulary from its configured form.
+# Each Verification Challenge derives only its own native outcome vocabulary from its configured form.
 for mode in broad-warning broad-clean broad-unsupported; do
   config="$FIXTURE/adapters-$mode.json"
   expect_status 0 plan "$FIXTURE/request-analyzers.json" "$config" \
@@ -105,7 +105,7 @@ for mode in fault-injected fault-activation fault-inconclusive; do
   expect_status 0 "$AZIMUTH" run verify --bundle "$FIXTURE/bundle-$mode.json"
 done
 
-# A reidentified raw launch whose asserted form contradicts the selected Challenger is rejected.
+# A reidentified raw launch whose asserted form contradicts the selected Verification Challenge is rejected.
 expect_status 0 plan "$FIXTURE/request-mutation.json" "$FIXTURE/adapters-killed.json" \
   --out "$FIXTURE/launch-mutation.json"
 python3 experiments/challenge-planning/generate.py cross-form "$FIXTURE"
@@ -153,22 +153,22 @@ exported = load("export.json")
 assert len(launch["plan"]["challenges"]) == 5
 resolutions = {item["plan"]: item for item in exported["challenge_resolutions"]}
 selectors = {
-    "judgment-claim": (
-        ("claim-judgment", "claim", "behavior"),
-        ("claim", "behavior"),
-        ("claim-judgment", "behavior"),
-        ("claim", "behavior"),
+    "judgment-requirement": (
+        ("requirement-judgment", "requirement", "behavior"),
+        ("requirement", "behavior"),
+        ("requirement-judgment", "behavior"),
+        ("requirement", "behavior"),
     ),
     "judgment-mechanism": (
-        ("claim-judgment", "mechanism", "guard"),
-        ("claim", "behavior"),
-        ("claim-judgment", "behavior"),
+        ("requirement-judgment", "mechanism", "guard"),
+        ("requirement", "behavior"),
+        ("requirement-judgment", "behavior"),
         ("mechanism", "guard"),
     ),
     "judgment-realization": (
-        ("claim-judgment", "realization", "core|rust-symbol|synthetic::works"),
-        ("claim", "behavior"),
-        ("claim-judgment", "behavior"),
+        ("requirement-judgment", "realization", "core|rust-symbol|synthetic::works"),
+        ("requirement", "behavior"),
+        ("requirement-judgment", "behavior"),
         ("realization", "core|rust-symbol|synthetic::works"),
     ),
     "qualification-binding": (
@@ -207,7 +207,7 @@ projectable = {
 }
 for plan, (selector, relation, target, anchor) in selectors.items():
     resolution = resolutions[f"synthetic/{plan}"]
-    assert resolution["challenger"] == "mutation/search"
+    assert resolution["verification_challenge"] == "mutation/search"
     assert resolution["issues"] == [] and len(resolution["candidates"]) == 1
     candidate = resolution["candidates"][0]
     assert candidate["selector"] == dict(zip(("target", "from", "id"), selector))
@@ -219,7 +219,7 @@ for plan, (selector, relation, target, anchor) in selectors.items():
     assert valid_fp(candidate["target"]["expected_fingerprint"])
     selection = next(
         item for item in launch["plan"]["challenges"]
-        if item["challenger"]["id"] == "mutation/search"
+        if item["verification_challenge"]["id"] == "mutation/search"
         and (item["target"]["kind"], item["target"]["id"]) == target
     )
     assert any((item["kind"], item["id"]) == anchor for item in selection["scope"]["anchors"])
@@ -256,20 +256,20 @@ for route in routes.values():
 
 broad = next(
     item for item in launch["plan"]["challenges"]
-    if item["challenger"]["id"] == "broad/analyzer"
+    if item["verification_challenge"]["id"] == "broad/analyzer"
 )
 broad_route = routes[broad["id"]]
-assert broad["target"]["kind"] == "claim-judgment"
+assert broad["target"]["kind"] == "requirement-judgment"
 assert {item["kind"] for item in broad["scope"]["inputs"]} == {
-    "applicability-decision", "artifact", "binding", "case", "check",
-    "check-implementation", "claim", "claim-judgment", "context", "mechanism",
-    "method-qualification", "policy", "realization",
+    "applicability-decision", "artifact", "binding", "check",
+    "check-implementation", "context", "mechanism", "method-qualification",
+    "policy", "realization", "requirement", "requirement-judgment", "scenario",
 }
 assert broad_route["capability"]["address"] == "synthetic/challenge"
 assert broad_route["capability"]["challenge_form"] == "broad-analysis"
 fault = next(
     item for item in launch["plan"]["challenges"]
-    if item["challenger"]["id"] == "fault/injector"
+    if item["verification_challenge"]["id"] == "fault/injector"
 )
 assert ("mechanism", "guard") in {
     (item["kind"], item["id"]) for item in fault["scope"]["anchors"]
@@ -284,12 +284,12 @@ mutation_codes = {
 for name, expected in outcomes.items():
     bundle = load(f"bundle-{name}.json")
     assert len(bundle["check_executions"]) == 1
-    assert len(bundle["challenger_executions"]) == 1
+    assert len(bundle["verification_challenge_executions"]) == 1
     check = bundle["check_executions"][0]
-    challenge = bundle["challenger_executions"][0]
+    challenge = bundle["verification_challenge_executions"][0]
     assert check["units"][0]["attempts"][0]["activity"] == "shared-analysis"
     assert challenge["units"][0]["attempts"][0]["activity"] == "shared-analysis"
-    assert check["observations"][0]["fingerprint"] != challenge["result"]["fingerprint"]
+    assert check["results"][0]["fingerprint"] != challenge["result"]["fingerprint"]
     assert challenge["target"]["kind"] == "applicability-decision"
     assert challenge["result"]["outcome"] == expected
     assert [item["code"] for item in bundle["diagnostics"]] == mutation_codes[name]
@@ -302,14 +302,14 @@ broad_outcomes = {
 for name, (expected, codes) in broad_outcomes.items():
     bundle = load(f"bundle-{name}.json")
     execution = next(
-        item for item in bundle["challenger_executions"]
-        if item["challenger"]["id"] == "broad/analyzer"
+        item for item in bundle["verification_challenge_executions"]
+        if item["verification_challenge"]["id"] == "broad/analyzer"
     )
     mutation = next(
-        item for item in bundle["challenger_executions"]
-        if item["challenger"]["id"] == "mutation/search"
+        item for item in bundle["verification_challenge_executions"]
+        if item["verification_challenge"]["id"] == "mutation/search"
     )
-    assert execution["target"]["kind"] == "claim-judgment"
+    assert execution["target"]["kind"] == "requirement-judgment"
     assert execution["result"]["outcome"] == expected
     assert mutation["result"]["outcome"] == "clean"
     assert [item["code"] for item in bundle["diagnostics"]] == codes
@@ -322,8 +322,8 @@ fault_outcomes = {
 for name, (expected, codes) in fault_outcomes.items():
     bundle = load(f"bundle-{name}.json")
     execution = next(
-        item for item in bundle["challenger_executions"]
-        if item["challenger"]["id"] == "fault/injector"
+        item for item in bundle["verification_challenge_executions"]
+        if item["verification_challenge"]["id"] == "fault/injector"
     )
     assert execution["target"]["kind"] == "applicability-decision"
     assert execution["result"]["outcome"] == expected
@@ -332,14 +332,14 @@ for name, (expected, codes) in fault_outcomes.items():
 activation = load("bundle-fault-activation.json")
 check = activation["check_executions"][0]
 fault_result = next(
-    item for item in activation["challenger_executions"]
-    if item["challenger"]["id"] == "fault/injector"
+    item for item in activation["verification_challenge_executions"]
+    if item["verification_challenge"]["id"] == "fault/injector"
 )
 assert check["units"][0]["attempts"][0]["activity"] == "shared-analysis"
 assert fault_result["units"][0]["attempts"][0]["activity"] == "shared-analysis"
-assert check["observations"][0]["outcome"] == "satisfied"
+assert check["results"][0]["outcome"] == "satisfied"
 assert fault_result["result"]["outcome"] == "clean"
-assert check["observations"][0]["fingerprint"] != fault_result["result"]["fingerprint"]
+assert check["results"][0]["fingerprint"] != fault_result["result"]["fingerprint"]
 
 omitted = load("bundle-omitted.json")
 assert omitted["status"] == "partial"
@@ -350,7 +350,7 @@ gate = {
     item["id"] for item in omitted["plan"]["challenges"] if item["lane"] == "gate"
 }
 actual = {item["id"] for item in omitted["actual_selection"]["challenges"]}
-executed = {item["challenge"] for item in omitted["challenger_executions"]}
+executed = {item["challenge"] for item in omitted["verification_challenge_executions"]}
 scoped = {item["scope"]["id"] for item in omitted["diagnostics"]}
 assert scheduled and gate and actual == gate and executed == gate and scoped == scheduled
 

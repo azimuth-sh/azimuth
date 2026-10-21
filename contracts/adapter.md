@@ -74,7 +74,7 @@ For each invocation, core creates one private staging directory. It opens each c
 
 `semantic_settings`, `environment.literals` and all other string maps use unique keys. RFC 8785 orders their keys for fingerprints; source object-key order is immaterial. Values are exact strings and may be empty. Version 1 supports no secret value, secret reference or interpolation syntax. Environment names match `[A-Za-z_][A-Za-z0-9_]*`. Core clears the child environment and supplies only this exact non-secret literal map. Inherited environment names and values are not supported in version 1.
 
-Semantic settings configure provider translation. They cannot replace the Run-bundle required context or change what a selected Check or Challenger means. A behavior constraint needed for evidentiary interpretation belongs in the semantic Plan's exact context.
+Semantic settings configure provider translation. They cannot replace the Run-bundle required Execution Context or change what a selected Check or Verification Challenge means. A behavior constraint needed for evidentiary interpretation belongs in the semantic Plan's exact required Execution Context.
 
 Every limit is a positive safe integer. `timeout_ms` bounds the complete core exchange lifetime. `stdout_bytes` and `stderr_bytes` independently bound bytes read from the two streams, including a final unterminated fragment. One deadline derived from `timeout_ms` bounds request writing, concurrent response and diagnostic reading, and core's own process wait. Core never waits past that deadline for a descendant-held pipe to close.
 
@@ -281,7 +281,7 @@ An adapter that cannot complete the exchange may return:
 }
 ```
 
-For `describe`, `launch_fingerprint` is absent. For execute and import it is required. Failure code is an open lower-kebab path id, message is non-empty and details are an exact string map. A failed response contains no bundle. It is a transport failure rather than an Observation or Challenge Result. No response field requests or authorizes automatic retry.
+For `describe`, `launch_fingerprint` is absent. For execute and import it is required. Failure code is an open lower-kebab path id, message is non-empty and details are an exact string map. A failed response contains no bundle. It is a transport failure rather than a Check Result or Challenge Result. No response field requests or authorizes automatic retry.
 
 ## Canonical fingerprints
 
@@ -440,4 +440,4 @@ No nonzero exit publishes an output bundle. Standard error, exit status and fail
 
 ## Stable entity identities: 2026-10-02
 
-All current Claim, Case, Mechanism and Check references use stable project-wide IDs and retain explicit entity kind. Module membership and Case parent relationships do not determine identity. Other activities, units, adapters, capabilities and binding identities retain their contracts. Historical artifacts remain immutable; current alpha artifacts are regenerated without aliases or syntax-only version bumps. See `contracts/entity-identity.md`.
+All current Requirement, Scenario, Mechanism and Check references use stable project-wide IDs and retain explicit entity kind. Module membership and Scenario parent relationships do not determine identity. Other activities, units, adapters, capabilities and binding identities retain their contracts. Historical artifacts remain immutable; current alpha artifacts are regenerated without aliases or syntax-only version bumps. See `contracts/entity-identity.md`.

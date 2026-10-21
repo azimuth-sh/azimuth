@@ -6,12 +6,12 @@ import {
 } from "./assurance";
 
 interface Deployment {
-  deployment: { id: string; environment: string; subject_fingerprint?: string };
+  deployment: { id: string; environment: string; verification_target_fingerprint?: string };
   release_fingerprint: string;
 }
 interface Catalog {
-  modules: { id: string; title: string; claims: string[] }[];
-  claims: { id: string; title?: string; statement: string }[];
+  modules: { id: string; title: string; requirements: string[] }[];
+  requirements: { id: string; title?: string; statement: string }[];
 }
 interface Release {
   publication: {
@@ -21,7 +21,7 @@ interface Release {
   acceptance: unknown;
 }
 
-export function claimStatus(status: string) {
+export function requirementStatus(status: string) {
   return status === "supported" || status === "violated"
     ? status
     : "unresolved";
@@ -80,7 +80,7 @@ export async function environmentView(
   const candidate = selected ? exact : currentSelection;
   const deployment =
     candidate?.deployment.environment === environment ? candidate : undefined;
-  const subject = deployment?.deployment.subject_fingerprint;
+  const verificationTarget = deployment?.deployment.verification_target_fingerprint;
   const [release, assessment] = await Promise.all([
     deployment
       ? readProject<Release>(
@@ -88,7 +88,7 @@ export async function environmentView(
           `/releases/${encodeURIComponent(deployment.release_fingerprint)}/summary`,
         )
       : Promise.resolve(null),
-    deployment && subject
+    deployment && verificationTarget
       ? readProject<DeploymentStatusSummary>(
           project,
           `/deployments/${encodeURIComponent(deployment.deployment.id)}/status/summary`,
@@ -113,7 +113,7 @@ export async function environmentView(
     deployment,
     release,
     revision,
-    subject,
+    verificationTarget,
     state,
     freshness,
     authority,

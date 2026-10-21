@@ -1,5 +1,5 @@
 fn challenge_bundle() -> RunBundle {
-    let subject = Subject::Workspace {
+    let verification_target = VerificationTarget::Workspace {
         repositories: vec![RepositoryState {
             id: "root".into(),
             revision: "revision-a".into(),
@@ -10,7 +10,7 @@ fn challenge_bundle() -> RunBundle {
     let check = CheckSelection {
         id: "recovery".into(),
         fingerprint: fp('b'),
-        cases: vec!["works".into()],
+        scenarios: vec!["works".into()],
         implementations: vec![Implementation {
             identity: "payments|rust-symbol|recovery::replay".into(),
             source_fingerprint: fp('c'),
@@ -35,7 +35,7 @@ fn challenge_bundle() -> RunBundle {
     .unwrap();
     let mut challenge = ChallengeSelection {
         id: "challenge/placeholder".into(),
-        challenger: ChallengerRef {
+        verification_challenge: VerificationChallengeRef {
             id: "mutation/perturbation".into(),
             fingerprint: fp('d'),
         },
@@ -52,7 +52,7 @@ fn challenge_bundle() -> RunBundle {
         }],
     };
     challenge.id = challenge_selection_id(
-        &challenge.challenger.fingerprint,
+        &challenge.verification_challenge.fingerprint,
         challenge.target.kind,
         &challenge.target.fingerprint,
     );
@@ -63,21 +63,21 @@ fn challenge_bundle() -> RunBundle {
         corrects: None,
         correction_reason: None,
         bundle_fingerprint: fp('0'),
-        subject,
-        subject_fingerprint: fp('0'),
+        verification_target,
+        verification_target_fingerprint: fp('0'),
         planned_at_ms: 1,
         started_at_ms: 2,
         finished_at_ms: 4,
         status: RunStatus::Complete,
         plan: Plan {
             model_fingerprint: fp('f'),
-            required_context: context.clone(),
+            required_execution_context: context.clone(),
             checks: vec![check.clone()],
             challenges: vec![challenge.clone()],
             fingerprint: fp('0'),
         },
         actual_selection: ActualSelection {
-            context,
+            execution_context: context,
             plan_fingerprint: fp('0'),
             checks: vec![check],
             challenges: vec![challenge.clone()],
@@ -174,8 +174,8 @@ fn challenge_bundle() -> RunBundle {
             severity: Severity::Error,
             code: "mutation/survived".into(),
             message: "A mutation survived.".into(),
-            scope: DiagnosticScope::ChallengerExecution {
-                challenger_fingerprint: challenge.challenger.fingerprint.clone(),
+            scope: DiagnosticScope::VerificationChallengeExecution {
+                verification_challenge_fingerprint: challenge.verification_challenge.fingerprint.clone(),
                 target_fingerprint: challenge.target.fingerprint.clone(),
             },
             artifacts: vec!["native-report".into()],
@@ -200,23 +200,23 @@ fn challenge_bundle() -> RunBundle {
                 attempts: vec![CheckAttempt {
                     ordinal: 1,
                     activity: "fault-probe".into(),
-                    outcomes: [("works".into(), ObservationOutcome::Satisfied)]
+                    outcomes: [("works".into(), CheckResultOutcome::Satisfied)]
                         .into_iter()
                         .collect(),
                 }],
             }],
-            observations: vec![Observation {
-                case: "works".into(),
-                outcome: ObservationOutcome::Satisfied,
+            results: vec![CheckResult {
+                scenario: "works".into(),
+                outcome: CheckResultOutcome::Satisfied,
                 observed_at_ms: 3,
                 fingerprint: fp('0'),
                 artifacts: vec!["native-report".into()],
                 diagnostics: vec![],
             }],
         }],
-        challenger_executions: vec![ChallengerExecution {
+        verification_challenge_executions: vec![VerificationChallengeExecution {
             challenge: challenge.id.clone(),
-            challenger: challenge.challenger,
+            verification_challenge: challenge.verification_challenge,
             target: challenge.target,
             units: vec![ChallengeExecutionUnit {
                 id: "whole".into(),

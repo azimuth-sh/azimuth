@@ -1,10 +1,10 @@
 # Design format
 
-The design facet states which current mechanisms make Claims true. It records falsifiable, non-derivable assertions about named artifacts rather than a structural tour of the code.
+The design facet states which current mechanisms make Requirements true. It records falsifiable, non-derivable assertions about named artifacts rather than a structural tour of the code.
 
 `design.md` describes accepted current mechanisms for its sibling spec. Proposed architecture, alternatives and implementation order live in a change's `design.md`. Archiving distils only what was built into the current model. A design may fan out verification obligations; it never fans out evidence. Evidence exists once a Check, constraint or observation supplies it, so a planned mechanism must never read as an achieved one.
 
-All current framework Claims are routine and normally have no design obligation. The format remains available for a later accepted non-routine Claim and for current mechanisms that genuinely need durable explanation.
+All current framework Requirements are routine and normally have no design obligation. The format remains available for a later accepted non-routine Requirement and for current mechanisms that genuinely need durable explanation.
 
 ## File
 
@@ -17,22 +17,22 @@ At most one `design.md` sits beside a package's `spec.md` and declares the same 
 ## Entries
 
 ```markdown
-## Claim: <claim-id>
+## Requirement: <requirement-id>
 Mechanism: <stable-mechanism-id>
 Enforcement: <kind>
-Cases: ["<case-id>", "<case-id>"]  (optional)
+Scenarios: ["<scenario-id>", "<scenario-id>"]  (optional)
 Binding: <optional machine-addressable artifact id>
 Expect: <optional derived properties>
 
 Required prose explaining why this mechanism matters and what fails if it changes.
 ```
 
-Every entry attaches to a Claim. A mechanism with no `Cases:` label bears on the complete Claim. A
-mechanism that bears only on some Cases names their stable project-wide ids in a sorted, non-empty, duplicate-free
+Every entry attaches to a Requirement. A mechanism with no `Scenarios:` label bears on the complete Requirement. A
+mechanism that bears only on some Scenarios names their stable project-wide ids in a sorted, non-empty, duplicate-free
 JSON string array. This precision stays in the repository model; implementation markers still name
 only the Mechanism.
 
-A Claim may have several ordered mechanisms. Each mechanism id is stable and unique across the complete project. Reusable controls belong in concern-oriented specs instead of being copied into every
+A Requirement may have several ordered mechanisms. Each mechanism id is stable and unique across the complete project. Reusable controls belong in concern-oriented specs instead of being copied into every
 consumer package.
 
 ## Enforcement kinds
@@ -46,7 +46,7 @@ consumer package.
 | 3 | `middleware` | prevented wherever the middleware is applied |
 | 4 | `guard` | checked independently at each site |
 
-Strength is derived from the kind and is never authored. Type, schema and constraint artifacts may support structural proof in total Claim composition. They are mechanisms, not executable Checks; inventing an execution result for them would confuse proof with sampled behavior.
+Strength is derived from the kind and is never authored. Type, schema and constraint artifacts may support structural proof in total Requirement composition. They are mechanisms, not executable Checks; inventing an execution result for them would confuse proof with sampled behavior.
 
 ## Identity and binding
 
@@ -65,7 +65,7 @@ Expect: unique=true; columns=quote_id
 
 A symbol binding establishes existence and category, not semantic claims such as “only caller” or “every route.” A purpose-built analyzer or later reviewed composition format must establish those stronger propositions.
 
-Mechanism implementation linkage is structurally separate from Check implementation linkage. Tests of mechanism behavior are ordinary engineering tests unless a future non-routine Claim has a deliberate Check and Evidence Binding. No source marker assigns evidentiary meaning to a mechanism.
+Mechanism implementation linkage is structurally separate from Check implementation linkage. Tests of mechanism behavior are ordinary engineering tests unless a future non-routine Requirement has a deliberate Check and Evidence Binding. No source marker assigns evidentiary meaning to a mechanism.
 
 ## Residue
 
@@ -74,4 +74,4 @@ Mechanism implementation linkage is structurally separate from Check implementat
 Free prose. Never parsed or derived.
 ```
 
-Residue holds durable orientation, danger zones and deliberately accepted absences. It attaches to no Claim and participates in no fingerprint. Anything that is either derivable structure or an unaccepted proposal does not belong here.
+Residue holds durable orientation, danger zones and deliberately accepted absences. It attaches to no Requirement and participates in no fingerprint. Anything that is either derivable structure or an unaccepted proposal does not belong here.

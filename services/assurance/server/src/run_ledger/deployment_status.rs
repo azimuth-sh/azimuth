@@ -223,11 +223,12 @@ async fn verify_execution_capture(
     principal: &str,
 ) -> Result<(), LedgerError> {
     let fp = capture["bundle_fingerprint"].as_str().unwrap();
-    let bundle: Option<Value> = sqlx::query_scalar("SELECT assurance_record('run',project,fingerprint) FROM run_bundles WHERE project=$1 AND fingerprint=$2 AND run_id=$3 AND subject_fingerprint=$4")
-        .bind(project).bind(fp).bind(capture["run"].as_str()).bind(capture["subject_fingerprint"].as_str())
+    let bundle: Option<Value> = sqlx::query_scalar("SELECT assurance_record('run',project,fingerprint) FROM run_bundles WHERE project=$1 AND fingerprint=$2 AND run_id=$3 AND verification_target_fingerprint=$4")
+        .bind(project).bind(fp).bind(capture["run"].as_str()).bind(capture["verification_target_fingerprint"].as_str())
         .fetch_optional(&mut **tx).await?;
-    let bundle = bundle
-        .ok_or_else(|| LedgerError::invalid("capture requires the exact stored Run and Subject"))?;
+    let bundle = bundle.ok_or_else(|| {
+        LedgerError::invalid("capture requires the exact stored Run and Verification Target")
+    })?;
     let attributed: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM assurance_records WHERE kind='run_attribution' AND project=$1 AND record_key=$2) OR EXISTS(SELECT 1 FROM release_run_submissions WHERE project=$1 AND run_fingerprint=$3 AND submitted_by=$4)")
         .bind(project).bind(format!("{fp}:{principal}")).bind(fp).bind(principal).fetch_one(&mut **tx).await?;
     if !attributed {
@@ -257,10 +258,10 @@ async fn verify_execution_capture(
             None => format!("context/{fp}"),
         };
         if capture["after"]["report"]["contexts"].get(name) != Some(context)
-            || bundle["actual_selection"]["context"][context_key] != fingerprint(context)?
+            || bundle["actual_selection"]["execution_context"][context_key] != fingerprint(context)?
         {
             return Err(LedgerError::invalid(
-                "Run does not pin a stable captured verification context",
+                "Run does not pin a stable captured Execution Context",
             ));
         }
     }
@@ -273,10 +274,11 @@ async fn verify_deployment_capture(
     capture: &Value,
     time: i64,
 ) -> Result<(), LedgerError> {
-    let row: Option<(String,Value)> = sqlx::query_as("SELECT deployment_id,assurance_record('deployment',project,deployment_id) FROM release_deployments WHERE project=$1 AND assurance_record_field('deployment',project,deployment_id,'subject_fingerprint') #>> '{}' = $2")
-        .bind(project).bind(capture["subject_fingerprint"].as_str()).fetch_optional(&mut **tx).await?;
-    let (deployment_id, deployment) = row
-        .ok_or_else(|| LedgerError::invalid("capture requires a registered deployment Subject"))?;
+    let row: Option<(String,Value)> = sqlx::query_as("SELECT deployment_id,assurance_record('deployment',project,deployment_id) FROM release_deployments WHERE project=$1 AND assurance_record_field('deployment',project,deployment_id,'verification_target_fingerprint') #>> '{}' = $2")
+        .bind(project).bind(capture["verification_target_fingerprint"].as_str()).fetch_optional(&mut **tx).await?;
+    let (deployment_id, deployment) = row.ok_or_else(|| {
+        LedgerError::invalid("capture requires a registered deployment Verification Target")
+    })?;
     let observed: Option<(Value,Option<String>)> = sqlx::query_as("SELECT assurance_record('deployment_observation',project,fingerprint),deployment_id FROM deployment_observations WHERE project=$1 AND environment=$2 ORDER BY revision DESC LIMIT 1")
         .bind(project).bind(deployment["environment"].as_str()).fetch_optional(&mut **tx).await?;
     let (observed, selected) =
@@ -347,7 +349,7 @@ pub(super) async fn compute_deployment(
     let observed: Option<(Value,Option<String>)> = sqlx::query_as("SELECT assurance_record('deployment_observation',project,fingerprint),deployment_id FROM deployment_observations WHERE project=$1 AND environment=$2 ORDER BY revision DESC LIMIT 1")
         .bind(project).bind(deployment_record["environment"].as_str()).fetch_optional(&mut *tx).await?;
     let time = now(&mut *tx).await?;
-    let mut observation = json!({"subject_fingerprint":deployment_record["subject_fingerprint"],"observed_at_ms":0,"valid_for_seconds":1,"state":"unknown","components":[],"trusted":false});
+    let mut observation = json!({"verification_target_fingerprint":deployment_record["verification_target_fingerprint"],"observed_at_ms":0,"valid_for_seconds":1,"state":"unknown","components":[],"trusted":false});
     if let Some((observed, selected)) = observed {
         let bound = selected.as_deref() == deployment_record["id"].as_str();
         observation["observed_at_ms"] = observed["observed_at_ms"].clone();
@@ -406,25 +408,25 @@ pub(super) async fn compute_deployment(
                 })
         })
         .collect();
-    let bundles: Vec<Value> = sqlx::query_scalar(r#"
+    let bundles: Vec<Value> = sqlx::query_scalar(&relational::with_tables(r#"
         SELECT assurance_record('run',b.project,b.fingerprint)
         FROM run_bundles b
         WHERE b.project=$1 AND b.run_id IN (
             SELECT r.run_id FROM run_bundles r
             JOIN assurance_records a ON a.kind='run' AND a.project=r.project AND a.record_key=r.fingerprint
             JOIN assurance_run execution ON execution._record_id=a.id
-            WHERE r.project=$1 AND (r.run_id=ANY($7::text[]) OR EXISTS(SELECT 1 FROM jsonb_array_elements(CASE WHEN EXISTS(SELECT 1 FROM assurance_run_challenger_executions_item target WHERE target._record_id=a.id) THEN assurance_record_field('run',r.project,r.fingerprint,'challenger_executions') ELSE '[]'::jsonb END) challenge WHERE challenge->'target'->>'fingerprint'=ANY($8::text[])) OR EXISTS (
+            WHERE r.project=$1 AND (r.run_id=ANY($7::text[]) OR EXISTS(SELECT 1 FROM jsonb_array_elements(CASE WHEN EXISTS(SELECT 1 FROM {verification_challenge_executions} target WHERE target._record_id=a.id) THEN assurance_record_field('run',r.project,r.fingerprint,'verification_challenge_executions') ELSE '[]'::jsonb END) challenge WHERE challenge->'target'->>'fingerprint'=ANY($8::text[])) OR EXISTS (
                 SELECT 1 FROM assurance_run_plan_checks_item c
                 JOIN unnest($2::text[],$3::text[]) current_check(id,fingerprint)
                   ON c.f_id=current_check.id AND c.f_fingerprint=current_check.fingerprint
                 WHERE c._record_id=a.id AND (
                     c.f_id=ANY($4::text[]) OR
-                    (r.subject_fingerprint=$5 AND COALESCE(execution.f_finished_at_ms,execution.f_started_at_ms)>= $6)
+                    (r.verification_target_fingerprint=$5 AND COALESCE(execution.f_finished_at_ms,execution.f_started_at_ms)>= $6)
                 )
             ))
         ) ORDER BY b.run_id,b.revision LIMIT 5001
-    "#).bind(project).bind(&check_ids).bind(&check_fingerprints).bind(&persistent_checks)
-        .bind(deployment_record["subject_fingerprint"].as_str()).bind(cutoff).bind(&review_runs).bind(&review_fingerprints).fetch_all(&mut *tx).await?;
+    "#)).bind(project).bind(&check_ids).bind(&check_fingerprints).bind(&persistent_checks)
+        .bind(deployment_record["verification_target_fingerprint"].as_str()).bind(cutoff).bind(&review_runs).bind(&review_fingerprints).fetch_all(&mut *tx).await?;
     let contract_records = records(&mut *tx, project, "context_contract").await?;
     let bundle_fingerprints: Vec<&str> = bundles
         .iter()
@@ -433,15 +435,15 @@ pub(super) async fn compute_deployment(
     let capture_records: Vec<Value> = sqlx::query_scalar(r#"
         WITH candidates AS (
             SELECT a.project,a.record_key,c.f_kind,
-                dense_rank() OVER (PARTITION BY c.f_kind,c.f_subject_fingerprint,
+                dense_rank() OVER (PARTITION BY c.f_kind,c.f_verification_target_fingerprint,
                     c.f_bundle_fingerprint,c.f_component,c.f_instance ORDER BY c.f_finished_at_ms DESC) AS ordinal
             FROM assurance_records a JOIN assurance_context_capture_capture c ON c._record_id=a.id
             WHERE a.project=$1 AND a.kind='context_capture' AND (
-                c.f_kind='deployment' AND c.f_subject_fingerprint=$2
+                c.f_kind='deployment' AND c.f_verification_target_fingerprint=$2
                 OR c.f_kind='execution' AND c.f_bundle_fingerprint=ANY($3)))
         SELECT assurance_record('context_capture',project,record_key) FROM candidates
         WHERE f_kind='execution' OR ordinal=1 ORDER BY record_key LIMIT 5001
-        "#).bind(project).bind(deployment_record["subject_fingerprint"].as_str())
+        "#).bind(project).bind(deployment_record["verification_target_fingerprint"].as_str())
         .bind(&bundle_fingerprints).fetch_all(&mut *tx).await?;
     if capture_records.len() > 5000 {
         return Err(LedgerError::invalid(
@@ -456,7 +458,7 @@ pub(super) async fn compute_deployment(
         .into_iter()
         .map(|record| record["capture"].clone())
         .collect();
-    let request = json!({"format":"azimuth-deployment-assessment","version":1,"publication":publication,
+    let request = json!({"format":"azimuth-deployment-assessment","version":2,"publication":publication,
         "deployment":deployment_record,"deployment_observation":observation,"context_contracts":contracts,"captures":captures,
         "bundles":bundles,"reviews":reviews,"evaluated_at_ms":time});
     if bundles.len() > 5000 || reviews.len() > 5000 || request.to_string().len() > 33_554_432 {

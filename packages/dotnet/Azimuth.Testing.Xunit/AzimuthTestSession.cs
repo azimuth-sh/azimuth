@@ -173,7 +173,7 @@ public sealed class AzimuthTestSession : IAsyncLifetime
                 if (!report.Contexts.ContainsKey(source.Name))
                     throw new JsonException("Required context is absent from the application report.");
                 // A Check depends on its selected context, not unrelated application settings.
-                var selected = VerificationContextReport.Create(new Dictionary<string, ContextDefinition>
+                var selected = ExecutionContextReport.Create(new Dictionary<string, ContextDefinition>
                     { [source.Name] = report.Contexts[source.Name] });
                 result.Add(source.Name, new(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), capture.Instance, selected));
             }

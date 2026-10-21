@@ -48,7 +48,7 @@ The engine resolves declarative reusable templates into explicit finite task gra
 
 ## Select the standard change workflow
 
-Ordinary coordination selects the shipped `change-development` definition. `workflow definition --workflow change-development` returns its exact reusable JSON. `init` embeds that template, its declared revision and canonical fingerprint, its portable parameters, and the resolved concrete tasks. The instance's definition fingerprint pins the entire expansion. Template/version identity and exact task definitions remain available offline; an upgrade of the CLI never silently changes an existing instance. The alpha formats remain version 1; obsolete intent-action spellings are replaced without aliases.
+Ordinary coordination selects the shipped `change-development` definition. `workflow definition --workflow change-development` returns its exact reusable JSON. `init` embeds that template, its declared revision and canonical fingerprint, its portable parameters, and the resolved concrete tasks. The instance's definition fingerprint pins the entire expansion. Template/version identity and exact task definitions remain available offline; an upgrade of the CLI never silently changes an existing instance. The workflow definition, instance, template, handoff and result formats and the internal `azimuth-assurance-target-inventory` are version 2; obsolete intent-action spellings are replaced without aliases. Version 1 instances use the retired Claim, Case, Subject and Challenger names; this CLI rejects them rather than reading them through an alias, so an in-progress version 1 instance is preserved as a historical record and replaced by a fresh instance.
 
 Create the instance directory and its `inputs/request.md`. Supply `inputs.json`:
 
@@ -77,9 +77,9 @@ azimuth workflow update --instance workflow/workflow.json \
 
 Pass the captured handoff with `--handoff` and the executing actor with `--actor`; workers do not transcribe basis or supporting fingerprints. Use the current revision for each actual update; zero applies only to the first update. The request and optional instructions must be retained inside `workflow/` for these example references. Repository paths remain only in the separately supplied local map. No manually authored task DAG is required.
 
-Historical revision 6 stages were: establish scope → author/review proposal → author/review module spec, design and verification → engineering plan → real implementation approval → implementation → structural change-account validation → candidate preparation and automatic target derivation → Claim Review → Check and Challenger execution → exact-Subject Claim Health → candidate registration/publication. Design and verification authoring can proceed independently after spec review. Verification authoring includes machine Challengers; implementation includes their code/configuration. Independent readiness reviews remain distinct from post-implementation Claim Review.
+Historical revision 6 stages were: establish scope → author/review proposal → author/review module spec, design and verification → engineering plan → real implementation approval → implementation → structural change-account validation → candidate preparation and automatic target derivation → Requirement Review → Check and Verification Challenge execution → exact-target Requirement Status → candidate registration/publication. Design and verification authoring can proceed independently after spec review. Verification authoring includes machine Verification Challenges; implementation includes their code/configuration. Independent readiness reviews remain distinct from post-implementation Requirement Review.
 
-Rejected Claim Reviews expose correction and independent reassessment. Historical authored-health workflows also expose adverse/unresolved Claim Health for correction. Check execution records actual violations and measurement failures rather than an invented passing result. Challengers target an exact assessment; adverse findings affect reliance through native assessment rules. The harness selects eligible work, providers and concurrency. No `completed` result substitutes for an accepted review, supported health or human permission.
+Rejected Requirement Reviews expose correction and independent reassessment. Historical authored Requirement Status workflows also expose adverse/unresolved Requirement Status for correction. Check execution records actual violations and measurement failures rather than an invented passing result. Verification Challenges target an exact assessment; adverse findings affect reliance through native assessment rules. The harness selects eligible work, providers and concurrency. No `completed` result substitutes for an accepted review, supported Requirement Status or human permission.
 
 ## Correction handoffs
 
@@ -93,17 +93,17 @@ Correction guidance requires assessing every finding, updating the existing engi
 
 ## Change-account validation
 
-`validate-change-account` is one workflow objective after implementation. Capture current ecosystem and deployment manifests and exact repository Subjects, then validate the complete change account against those captures. Its `candidate-validation` result retains findings and exact dependencies, including source-support manifests and capture completion. Capture failure leaves validation incomplete; a capture may be reused only while its dependencies remain current. Use `azimuth change validate --scope structure` for this task. Its report excludes independent decision and acceptance obligations; assess those later with `--scope acceptance`. Structural success does not establish definition credibility or exact-Subject Claim Health.
+`validate-change-account` is one workflow objective after implementation. Capture current ecosystem and deployment manifests and exact repository Verification Targets, then validate the complete change account against those captures. Its `candidate-validation` result retains findings and exact dependencies, including source-support manifests and capture completion. Capture failure leaves validation incomplete; a capture may be reused only while its dependencies remain current. Use `azimuth change validate --scope structure` for this task. Its report excludes independent decision and acceptance obligations; assess those later with `--scope acceptance`. Structural success does not establish definition credibility or exact-target Requirement Status.
 
 Source capture and validation commands remain independently callable for diagnostics and reuse. The standard workflow does not schedule capture as a separate task. A custom workflow may separate operations when they require different environments or owners. Existing instances pin their definitions; updating the CLI does not migrate them. Before explicitly replacing unexecuted stages in an alpha instance, preserve its original state and retain every completed task definition and history record unchanged. Verify the replacement instance and retain a migration record; do not reinterpret previous capture or validation results as completion of the combined objective.
 
 ## Reusable definition contract
 
-A reusable template contains exactly `format: "azimuth-workflow-template"`, `version: 1`, `id`, positive integer `revision`, and nonempty `actions`. Action `id` is a well-known name such as `author-spec-delta`; it identifies the reusable process action. Each action contains exactly:
+A reusable template contains exactly `format: "azimuth-workflow-template"`, `version: 2`, `id`, positive integer `revision`, and nonempty `actions`. Action `id` is a well-known name such as `author-spec-delta`; it identifies the reusable process action. Each action contains exactly:
 
 - `id`, `kind`: definition action identity and registered semantic profile. Shipped actions use the same name for both. A package-defined action may use `produce-artifact` while preserving its own meaningful declared action ID.
-- `collection`: `change`, `modules`, `claim-definitions`, `checks` or `claims` in the current template. Claim definitions carry no execution Subject; Check and health targets require explicit Subject selection. Historical templates may retain `methods` and `contributions`.
-- `depends_on`: ordered `{action, match, condition}` declarations. `condition` is exactly `current-success`, requiring a current dependency result in the prerequisite's declared positive `satisfies` set. `match` is `all`, `same-module`, `same-check`, `same-subject`, `same-claim` or `claim-contributions`. Same-Check matching also pins Subject when the prerequisite carries one; Claim-contribution matching pins Claim and Subject. A required matcher resolving to no target fails expansion.
+- `collection`: `change`, `modules`, `requirement-definitions`, `verification-challenges`, `checks` or `requirements`. Requirement definitions carry no execution Verification Target; Check and Requirement Status targets require explicit Verification Target selection. Historical templates may retain `methods` and `contributions`.
+- `depends_on`: ordered `{action, match, condition}` declarations. `condition` is exactly `current-success`, requiring a current dependency result in the prerequisite's declared positive `satisfies` set. `match` is `all`, `same-module`, `same-check`, `same-verification-target`, `same-requirement`, `requirement-contributions` or `verification-challenge-requirements`. Same-Check matching also pins Verification Target when the prerequisite carries one; Requirement-contribution matching pins Requirement and Verification Target. A required matcher resolving to no target fails expansion.
 - `inputs`: ordered binding names from `request`, `instructions`, `snapshot`. Assurance profiles require `snapshot`. Missing files make the affected work ineligible; they are not fabricated inputs.
 - `guidance`: registered skill/reference/package locators; the harness resolves installed guidance and must report unavailable resources.
 - `required_output`: `{kind, description}`. Native authoring, approval, execution and assurance profiles enforce their real record kinds.
@@ -112,47 +112,47 @@ A reusable template contains exactly `format: "azimuth-workflow-template"`, `ver
 
 Actions are declared in dependency order. Unknown actions/outcomes/bindings, duplicate fields/dependencies, forward dependencies, cycles, invalid target matchers, unavailable required targets, mismatched native outputs and impossible positive outcome sets fail before initialization or expansion. All finite dependency paths originate at an available root; arbitrary expressions, scripts, plugin code and scheduler behavior are excluded. Inspect the shipped definition for the complete ordinary process, or pass another strict reusable template through `--definition FILE --inputs FILE` to the same engine.
 
-A concrete work reference is exactly `{action, target}`. `action` is the definition action ID; `target` contains the declared typed locators. The target includes explicit project/change and, for assurance, exact model revision; Claim Review tasks carry Claim identity without Subject, while Check execution and Claim Health tasks carry exact Subject. References are compared by canonical JSON, independent of field order, inventory order and local checkout paths. No target hash is an identity. Each handoff's `id`, result `task`, concrete definition `id`/`depends_on`/`correction`, and review or approval `task` use this same structure. Artifact fingerprints, basis fingerprints and definition fingerprints remain hashes because they detect content drift rather than name work. Unknown action/target pairs are rejected.
+A concrete work reference is exactly `{action, target}`. `action` is the definition action ID; `target` contains the declared typed locators. The target includes explicit project/change and, for assurance, exact model revision; Requirement Review tasks carry Requirement identity without Verification Target, while Check execution and Requirement Status tasks carry exact Verification Target. References are compared by canonical JSON, independent of field order, inventory order and local checkout paths. No target hash is an identity. Each handoff's `id`, result `task`, concrete definition `id`/`depends_on`/`correction`, and review or approval `task` use this same structure. Artifact fingerprints, basis fingerprints and definition fingerprints remain hashes because they detect content drift rather than name work. Unknown action/target pairs are rejected.
 
-The previous alpha hashed/string work references are replaced without aliases or automatic migration. Preserve an old instance and its immutable records, then initialize a fresh instance and reassess its obligations. Do not rewrite accepted historical results or their basis fingerprints. The format remains version 1.
+The previous alpha hashed/string work references are replaced without aliases or automatic migration. Preserve an old instance and its immutable records, then initialize a fresh instance and reassess its obligations. Do not rewrite accepted historical results or their basis fingerprints. The workflow definition, instance, handoff and result formats are version 2.
 
 ## Automatic assurance targets
 
-Candidate preparation supplies the complete `candidate-authority` and an `assurance-snapshot` output. The snapshot retains exactly `{project, model_revision, authority, reviews, bundles}` and must match the prepared candidate. The update derives and pins the assurance inventory and expands tasks atomically; there is no `inventory-assurance-targets` agent task or authored inventory. Claim Review targets are declared Claims, independent of execution Subject selection. Fresh authority Claims contain an explicit Challenger array: an empty array establishes no declared Challenger work; a missing historical field establishes no such absence. Derivation creates no review, Observation, human decision or ASS publication.
+Candidate preparation supplies the complete `candidate-authority` and an `assurance-snapshot` output. The snapshot retains exactly `{project, model_revision, authority, reviews, bundles}` and must match the prepared candidate. The update derives and pins the assurance inventory and expands tasks atomically; there is no `inventory-assurance-targets` agent task or authored inventory. Requirement Review targets are declared Requirements, independent of execution Verification Target selection. Fresh authority Requirements contain an explicit Verification Challenge array: an empty array establishes no declared Verification Challenge work; a missing historical field establishes no such absence. Derivation creates no review, Check Result, human decision or ASS publication.
 
-Check execution and Claim Health require explicitly selected exact Subjects. A preparation or subsequent review update may additionally supply an output of kind `assurance-subject-selection`. Its JSON has exactly:
+Revision 10, like revision 9, requires explicit exact Verification Targets for local Check execution; its `requirements` selection may be empty because deployment Requirement Status is computed after rollout. Earlier workflow revisions also selected exact Verification Targets for authored Requirement Status. A preparation or subsequent review update may additionally supply an output of kind `assurance-verification-target-selection`. Its JSON has exactly:
 
 ```json
 {
-  "format": "azimuth-assurance-subject-selection",
-  "version": 1,
+  "format": "azimuth-assurance-verification-target-selection",
+  "version": 2,
   "project": "example-project",
   "model_revision": "sha256:<prepared candidate revision>",
   "checks": [
-    {"check": "example-check", "subject": {"kind": "subject", "ref": "artifacts/application-subject.json"}}
+    {"check": "example-check", "verification_target": {"kind": "verification-target", "ref": "artifacts/application-verification-target.json"}}
   ],
-  "claims": [
-    {"claim": "example-claim", "subject": {"kind": "subject", "ref": "artifacts/application-subject.json"}}
+  "requirements": [
+    {"requirement": "example-requirement", "verification_target": {"kind": "verification-target", "ref": "artifacts/application-verification-target.json"}}
   ]
 }
 ```
 
-References may include `repository`. Each resolves to a real native Run-protocol Subject descriptor. Azimuth validates and computes its identity, validates each selected Check/Claim against the candidate, and derives Check–Case contributions from the authority. Multiple explicitly selected Subjects for one target are allowed. It never assigns all Checks to a captured workspace, infers deployed Subjects from repository paths, or uses a model revision as an execution Subject.
+References may include `repository`. Each resolves to a real native Run-protocol Verification Target descriptor. Azimuth validates and computes its identity, validates each selected Check/Requirement against the candidate, and derives Check–Scenario contributions from the authority. Multiple explicitly selected Verification Targets for one target are allowed. It never assigns all Checks to a captured workspace, infers deployed Verification Targets from repository paths, or uses a model revision as an execution Verification Target.
 
-Selections may be absent or partial. `workflow next` reports missing selections in `required_inputs`, independently of its eligible Claim Review tasks. Each entry names kind `assurance-subject-selection`, typed target `{kind: check | claim, id}` and explanatory reason. Execution tasks exist only for selected Check/Subject pairs. A Claim Health task exists only when the Claim has an explicit selected Subject and every declared Check–Case contribution has a matching execution target on that same Subject. Incomplete selections leave the requirement visible and prevent registration. Empty eligible work is not successful assurance.
+Selections may be absent or partial. `workflow next` reports missing selections in `required_inputs`, independently of its eligible Requirement Review tasks. Each entry names kind `assurance-verification-target-selection`, typed target `{kind: check | requirement, id}` and explanatory reason. Execution tasks exist only for selected Check/Verification Target pairs. A Requirement Status task exists only when the Requirement has an explicit selected Verification Target and every declared Check–Scenario contribution has a matching execution target on that same Verification Target. Incomplete selections leave the missing selection visible and prevent registration. Empty eligible work is not successful assurance.
 
-A source Run and a deployment Run are different Subjects. The current native Claim Health contract does not compose their evidence into an invented common Subject. Matching candidate revision is insufficient. Cross-Subject composition needs a separately agreed contract; expose this limitation rather than silently joining evidence.
+A source Run and a deployment Run are different Verification Targets. Historical authored Requirement Status records do not compose their evidence into a common Verification Target, and matching candidate revision alone is insufficient. Current deployment Requirement Status instead uses the explicit deployment applicability contract: exact release/build lineage, observed deployment composition, effective contexts, required unit coverage and fresh monitoring. These validated relations permit applicability without rewriting a Run's actual Verification Target.
 
-The inventory is internal portable workflow metadata: Claim definitions, selected execution targets, derived contributions, complete Claim Health targets, and pending Subject selections. A corrective candidate preserves prior generations and immutable results. New derivation cannot rewrite any completed task definition. Within a candidate, selections can be completed explicitly while preserving completed work. Snapshots remain actual retained inputs and native currentness rules still apply.
+The inventory is internal portable workflow metadata: Requirement definitions, selected execution targets, derived contributions, complete Requirement Status targets, and pending Verification Target selections. A corrective candidate preserves prior generations and immutable results. New derivation cannot rewrite any completed task definition. Within a candidate, selections can be completed explicitly while preserving completed work. Snapshots remain actual retained inputs and native currentness rules still apply.
 
-`azimuth workflow assurance-targets --instance FILE --project PROJECT --snapshot RELATIVE_REF [--subjects RELATIVE_REF] --out FILE` computes a proposed expanded definition without changing the instance. It supports inspection and explicit migration of already-prepared instances. It does not execute work, synthesize a result or apply a state transition. Snapshot and Subject-selection references resolve beneath the workflow directory. New ordinary instances derive the same definition through their preparation update.
+`azimuth workflow assurance-targets --instance FILE --project PROJECT --snapshot RELATIVE_REF [--verification-targets RELATIVE_REF] --out FILE` computes a proposed expanded definition without changing the instance. It supports inspection and explicit migration of already-prepared instances. It does not execute work, synthesize a result or apply a state transition. Snapshot and Verification Target selection references resolve beneath the workflow directory. New ordinary instances derive the same definition through their preparation update.
 
 ## Definition
 
 ```json
 {
   "format": "azimuth-workflow-definition",
-  "version": 1,
+  "version": 2,
   "id": "change-assurance",
   "tasks": [
     {
@@ -164,7 +164,7 @@ The inventory is internal portable workflow metadata: Claim definitions, selecte
         {"kind": "initial-request", "ref": "request.md"}
       ],
       "guidance": [{"kind": "skill", "id": "azimuth-propose"}],
-      "required_output": {"kind": "intent-delta", "description": "The proposed Claims and Cases."},
+      "required_output": {"kind": "intent-delta", "description": "The proposed Requirements and Scenarios."},
       "correction": null
     },
     {
@@ -183,11 +183,11 @@ The inventory is internal portable workflow metadata: Claim definitions, selecte
 }
 ```
 
-Each concrete task has `id`, `kind`, `target`, `depends_on`, `inputs`, `guidance`, `required_output` and `correction`. Template-expanded tasks additionally retain `action`, `outcomes` and `satisfies`; these fields are validated, not arbitrary metadata. `id` identifies this concrete task within the instance; `kind` names the registered process action. Dependencies carry structured work references and must be known and acyclic. `target` contains typed locators from `project`, `change`, `module`, `claim`, `case`, `check`, `probe`, `subject` and `model_revision`; Subject and revision values are exact fingerprints. Guidance kinds are `skill`, `reference` or `package`; the harness must resolve installed guidance and report unavailable resources rather than invent them.
+Each concrete task has `id`, `kind`, `target`, `depends_on`, `inputs`, `guidance`, `required_output` and `correction`. Template-expanded tasks additionally retain `action`, `outcomes` and `satisfies`; these fields are validated, not arbitrary metadata. `id` identifies this concrete task within the instance; `kind` names the registered process action. Dependencies carry structured work references and must be known and acyclic. `target` contains typed locators from `project`, `change`, `module`, `requirement`, `scenario`, `check`, `probe`, `verification_challenge`, `verification_target` and `model_revision`; Verification Target and revision values are exact fingerprints. Guidance kinds are `skill`, `reference` or `package`; the harness must resolve installed guidance and report unavailable resources rather than invent them.
 
-Current registered task kinds cover scope establishment; intent, design and verification authoring/review; engineering planning; implementation approval; implementation; source capture and validation; candidate revision registration; Claim Review; Check and machine Challenger execution; and Claim Health. Historical pinned instances retain their original Method Qualification, Applicability Decision and Claim Judgment profiles without satisfying current gates. The authoritative semantic profiles are in `workflow_state.rs`. Reusable templates register their own action IDs against these bounded profiles, including `produce-artifact` for package-defined artifact work. Packages supply a template through `--definition`; they cannot register executable code or bypass semantic review/approval contracts.
+Current registered task kinds cover scope establishment; intent, design and verification authoring/review; engineering planning; implementation approval; implementation; source capture and validation; candidate revision registration; Requirement Review; Check and machine Verification Challenge execution; and Requirement Status. Historical pinned instances retain their original Method Qualification, Applicability Decision and Requirement Judgment profiles without satisfying current gates. The authoritative semantic profiles are in `workflow_state.rs`. Reusable templates register their own action IDs against these bounded profiles, including `produce-artifact` for package-defined artifact work. Packages supply a template through `--definition`; they cannot register executable code or bypass semantic review/approval contracts.
 
-`correction` is null or a direct prerequisite work reference. An adverse result reopens that prerequisite and blocks reassessment until a newer correction result is recorded. Authoring reviews with null correction derive the matching direct author task. Configure Claim Review and Claim Health correction to the actual implementation boundary. For unresolved health, choose the relevant prerequisite or leave diagnosis to the harness; the tool does not invent the substantive fix.
+`correction` is null or a direct prerequisite work reference. An adverse result reopens that prerequisite and blocks reassessment until a newer correction result is recorded. Authoring reviews with null correction derive the matching direct author task. Configure Requirement Review and Requirement Status correction to the actual implementation boundary. For unresolved Requirement Status, choose the relevant prerequisite or leave diagnosis to the harness; the tool does not invent the substantive fix.
 
 For a concrete definition, a completed result can include one additional supporting record of kind `workflow-definition`. That file must retain the definition identity and every existing task unchanged in the same prefix, and may append validated tasks for the discovered module scope. The new definition and its fingerprint are recorded atomically with the result. This advanced concrete-graph facility does not infer modules from directory scanning or rewrite previous work. A pinned template rejects such extensions; its assurance stages expand through automatic candidate target derivation only.
 
@@ -224,13 +224,13 @@ azimuth workflow update --instance .azimuth/workflow.json --project azimuth/proj
 
 Azimuth retains an internal result with generated attempt identity, exact basis, captured input references, actor, output fingerprints and the authored result reference. Authoring review and approval decisions are retained with their exact dependencies inside that internal result. Unchanged replay remains idempotent; modifying the same attempt or its supporting content fails. Historical results already committed to an instance retain their original schema, identities and fingerprints; they are not reauthored. The internal representation is not the authoring interface.
 
-The result itself serves as the report for implementation, failed work, independent authoring reviews and human approval when no separate substantive output is supplied. These tasks require nonempty `report`; rejection describes the findings there. `outputs: []` is valid for such tasks. Other tasks require their substantive output, such as the intent artifact, native validation report, candidate snapshot or Run bundle. Candidate preparation may supply `candidate-authority`; core validates the authority and derives the preparation receipt internally. Do not author a duplicate receipt. Reviews and Runs retain their own stricter contracts and exact identities. Completed execution can retain violated or inconclusive Observations without manufacturing positive assurance.
+The result itself serves as the report for implementation, failed work, independent authoring reviews and human approval when no separate substantive output is supplied. These tasks require nonempty `report`; rejection describes the findings there. `outputs: []` is valid for such tasks. Other tasks require their substantive output, such as the intent artifact, native validation report, candidate snapshot or Run bundle. Candidate preparation may supply `candidate-authority`; core validates the authority and derives the preparation receipt internally. Do not author a duplicate receipt. Reviews and Runs retain their own stricter contracts and exact identities. Completed execution can retain violated or inconclusive Check Results without manufacturing positive assurance.
 
 | Task class | Outcomes |
 | --- | --- |
 | Generic authoring/implementation/capture/validation/registration/execution | `completed`, `failed` |
-| Authoring review, Claim Review | `accepted`, `rejected` |
-| Claim Health | `supported`, `violated`, `unresolved` |
+| Authoring review, Requirement Review | `accepted`, `rejected` |
+| Requirement Status | `supported`, `violated`, `unresolved` |
 | Implementation approval | `approved`, `denied`, `deferred` |
 
 Protocol-valid adverse results are recorded normally. Structural mismatch, invalid basis, conflicting revision or malformed record fails without a transition. Currentness rechecks actual supporting content and dependency semantics, not manually authored completion flags.
@@ -238,21 +238,21 @@ Protocol-valid adverse results are recorded normally. Structural mismatch, inval
 ## Independent authoring reviews and human approval
 
 An independent authoring reviewer can submit the compact result with `outcome: accepted | rejected`, nonempty rationale/findings in `report` and `outputs: []`. Core derives the review's work reference, reviewer assertion and exact dependencies from the captured handoff and validates independence against prerequisite authors. A separate substantive `authoring-review` output is optional; its native contract remains `format`, `version`, `task`, `reviewer`, `outcome`, `dependencies`, `findings`, `rationale`. Its task/actor/outcome and dependencies must match. Rejection requires findings. Actor identities remain local harness assertions; neither the file nor core establishes authenticated human independence.
-Review the proposal against the original request, declared scope, exclusions, singular ownership, repository participation, unresolved assumptions and readiness to author module contracts. Proposal review requires a reviewer distinct from the proposal author and accepted current review before spec authoring; rejection reopens proposal authoring followed by independent reassessment. Proposal review does not grant implementation permission. Review intent against the original request and boundaries; review design against every Case and relevant architecture; review verification for coverage, credible observations, independent oracles, controls and limitations. Acceptance is distinct from parsing and from artifact authoring. Rejected reviews expose author correction and independent reassessment. Changing a pinned dependency invalidates current acceptance; the historical review remains.
+Review the proposal against the original request, declared scope, exclusions, singular ownership, repository participation, unresolved assumptions and readiness to author module contracts. Proposal review requires a reviewer distinct from the proposal author and accepted current review before spec authoring; rejection reopens proposal authoring followed by independent reassessment. Proposal review does not grant implementation permission. Review intent against the original request and boundaries; review design against every Scenario and relevant architecture; review verification for coverage, credible Check Results, independent oracles, controls and limitations. Acceptance is distinct from parsing and from artifact authoring. Rejected reviews expose author correction and independent reassessment. Changing a pinned dependency invalidates current acceptance; the historical review remains.
 
 Implementation approval can use the compact result itself, with the actual human decision and its rationale in `report`. Core captures the exact proposal-package dependencies and actor assertion. An optional separate native approval retains `format`, `version`, `task`, `actor`, `outcome`, `dependencies`, `rationale`. Only `approved` satisfies the gate. The harness must obtain the real human decision and enforce authority; a local approval label never grants permission.
 
 ## ASS integration and assurance assessments
 
-Local development prepares the candidate and conducts Claim Reviews without ASS connectivity. Author aggregate Markdown records, prepare exact inputs and compile them against the complete candidate. Claim Review requires definitions/source support; Historical authored Claim Health additionally requires actual exact-Subject Runs and a current accepted Claim Review. Current deployment Claim Status is computed after rollout, as described below. The native schema and compilation commands are in `contracts/assurance-reviews.md`. Workflow assessment hydrates retained prerequisite Runs and reviews into the candidate snapshot; no manually rewritten snapshot per task is required. A successor Claim Review also receives immutable Run references recorded before its prerequisite implementation result. This retains the execution history that motivated corrections without making a later unchanged-definition rerun invalidate the earlier review. Update validates the exact handoff Run references when resolving a review’s Challenge dependencies; absence or modification cannot become acceptance.
+Local development prepares the candidate and conducts Requirement Reviews without ASS connectivity. Author aggregate Markdown records, prepare exact inputs and compile them against the complete candidate. Requirement Review requires definitions/source support; Historical authored Requirement Status additionally requires actual exact-target Runs and a current accepted Requirement Review. Current deployment Requirement Status is computed after rollout, as described below. The native schema and compilation commands are in `contracts/assurance-reviews.md`. Workflow assessment hydrates retained prerequisite Runs and reviews into the candidate snapshot; no manually rewritten snapshot per task is required. A successor Requirement Review also receives immutable Run references recorded before its prerequisite implementation result. This retains the execution history that motivated corrections without making a later unchanged-definition rerun invalidate the earlier review. Update validates the exact handoff Run references when resolving a review’s Challenge dependencies; absence or modification cannot become acceptance.
 
-Each assurance task supplies a snapshot with exactly `{project, model_revision, authority, reviews, bundles}`. Core validates schemas and currentness, matches the exact Claim and (for health) Subject, and assesses the submitted native record against actual evidence. Ambiguous latest records, stale dependencies and relevant Challenger findings prevent unsupported reliance. Historical review kinds retain their original meaning and satisfy no current Review/Health gate.
+Each assurance task supplies a snapshot with exactly `{project, model_revision, authority, reviews, bundles}`. Core validates schemas and currentness, matches the exact Requirement and (for Requirement Status) Verification Target, and assesses the submitted native record against actual evidence. Ambiguous latest records, stale dependencies and relevant Verification Challenge findings prevent unsupported reliance. Historical review kinds retain their original meaning and satisfy no current Review/Status gate.
 
-ASS onboarding and credentials are publication prerequisites. CI transports the relied-on local reviews and relevant Runs; it need not spend model tokens conducting reviews. Preserve original reviewer/model provenance and adverse records. Each review submission still requires a credential authorized for its original reviewer; producer credentials cannot impersonate reviewers. Candidate registration never selects accepted authority. Authorized hosted Runs and subsequent health assessments follow deployment; source/artifact evidence is not implicitly transferred to a deployment.
+ASS onboarding and credentials are publication prerequisites. CI transports the relied-on local reviews and relevant Runs; it need not spend model tokens conducting reviews. Preserve original reviewer/model provenance and adverse records. Each review submission still requires a credential authorized for its original reviewer; producer credentials cannot impersonate reviewers. Candidate registration never selects accepted authority. Authorized hosted Runs and subsequent Requirement Status assessments follow deployment; source/artifact evidence is not implicitly transferred to a deployment.
 
 `azimuth assurance verify-snapshot --input snapshot.json --out validation.json` validates a publication packet without service mutation. A valid packet may contain rejected, stale or unresolved assessments; validation is not acceptance. `scripts/publish-assurance.py` transports the validated packet with separately authorized owner, producer and reviewer credentials and retains partial or complete submission receipts. Do not publish all local debugging history.
 
-At an explicit local acceptance boundary, use `azimuth change validate --scope acceptance --assurance-snapshot snapshot.json`. After authored facets are actually applied and completion obligations satisfied, `change finalize` and `change archive` accept the same explicit scope and snapshot. Each reassesses native Review/Health against the complete current model and actual retained Runs; snapshot presence is not approval. Missing or adverse assessments and unrelated findings remain blocking. These commands do not publish to ASS, select accepted authority or extend the standard workflow with automatic archive/deployment work.
+At an explicit local acceptance boundary, use `azimuth change validate --scope acceptance --assurance-snapshot snapshot.json`. After authored facets are actually applied and completion obligations satisfied, `change finalize` and `change archive` accept the same explicit scope and snapshot. Each reassesses native Review/Status against the complete current model and actual retained Runs; snapshot presence is not approval. Missing or adverse assessments and unrelated findings remain blocking. These commands do not publish to ASS, select accepted authority or extend the standard workflow with automatic archive/deployment work.
 
 ## Retention and limits
 
@@ -262,26 +262,26 @@ No automatic source-directory inference, `.azimuth` exclusion, source capture, d
 
 ## Local review artifacts
 
-Keep Claim Reviews in `reviews/claim-reviews.md` and exact-Subject assessments in `reviews/claim-health.md`. Generated inputs, compiled bundles and scope reports live under ignored `.azimuth/`. Select a compiled record with `record` in the compact result. Preserve exact dependencies and explicit reassessment relationships; appending an unrelated review does not invalidate an existing selected entry.
+Keep Requirement Reviews in `reviews/requirement-reviews.md` and exact-target assessments in `reviews/requirement-status.md`. Generated inputs, compiled bundles and scope reports live under ignored `.azimuth/`. Select a compiled record with `record` in the compact result. Preserve exact dependencies and explicit reassessment relationships; appending an unrelated review does not invalidate an existing selected entry.
 
-Existing instances retain their pinned definitions and immutable histories. Adopting revision 6 requires an explicit migration or a fresh instance; upgrading or querying never replays work. Change-wide work awaits the validated candidate inventory. Missing Subject selections remain visible and defer publication. An explicitly empty current collection can satisfy its `all` gate; missing inventory is not an empty collection.
+Existing instances retain their pinned definitions and immutable histories. Adopting revision 6 requires an explicit migration or a fresh instance; upgrading or querying never replays work. Change-wide work awaits the validated candidate inventory. Missing Verification Target selections remain visible and defer publication. An explicitly empty current collection can satisfy its `all` gate; missing inventory is not an empty collection.
 ## Local working storage
 
 Keep authored task results under `.azimuth/results/`, useful generated artifacts under `.azimuth/artifacts/`, and exact assurance review inputs under `.azimuth/review-inputs/`. Normative change artifacts and authored assurance review bundles remain outside this ignored working directory. One result per attempt is enough: a separate work report, workflow-result wrapper and update receipt are not required. Query handoffs are temporary in-flight inputs, not a permanent transcript. The instance already retains the exact coordination history.
 
 Clean only unreferenced scratch exports, command transcripts, duplicate response captures and superseded diagnostics. Preserve every supporting file referenced by immutable history, current declared input, retained review dependency or Run, and preserve the complete candidate needed for assessment. Historical supporting artifacts cannot be silently discarded merely because they no longer satisfy current work. Back up the workspace before cleanup; historical dependency closure takes precedence over a target file count.
 
-### Completing concurrent Claim Reviews
+### Completing concurrent Requirement Reviews
 
-An already captured eligible Claim Review may be recorded after a sibling rejection reopens their shared implementation work, provided its definition, exact input fingerprints and prerequisite result basis remain unchanged and no newer result for that review has been recorded. Native review validation, independent reviewer identity, outcome and revision checks still apply. This permits retaining concurrent adverse reviews; it does not authorize starting blocked work or treating a changed-input assessment as current.
+An already captured eligible Requirement Review may be recorded after a sibling rejection reopens their shared implementation work, provided its definition, exact input fingerprints and prerequisite result basis remain unchanged and no newer result for that review has been recorded. Native review validation, independent reviewer identity, outcome and revision checks still apply. This permits retaining concurrent adverse reviews; it does not authorize starting blocked work or treating a changed-input assessment as current.
 
-## Per-Challenger execution (change-development revision 7)
+## Per-Verification Challenge execution (change-development revision 7)
 
-The standard template expands `run-challenger` over the complete candidate Challenger inventory.
-Each work target identifies one `challenger` and model revision; the coordinator may schedule these
-independently or in parallel. The `challenger-claims` matcher selects current accepted definition
-reviews only for the Claims named by that declaration. Candidate derivation retains a validated
-`challenger_claims` identity mapping alongside the inventory. Missing mappings are not empty scope.
+The standard template expands `run-verification-challenge` over the complete candidate `verification-challenges` inventory.
+Each work target identifies one `verification_challenge` and model revision; the coordinator may schedule these
+independently or in parallel. The `verification-challenge-requirements` matcher selects current accepted definition
+reviews only for the Requirements named by that declaration. Candidate derivation retains a validated
+`verification_challenge_requirements` identity mapping alongside the inventory. Revision 7 introduced this stage as `run-challenger` with the `challenger-claims` matcher and `challenger_claims` mapping; those names appear only in historical version 1 definitions. Missing mappings are not empty scope.
 
 The handoff includes the exact declaration, implementation/configuration source locators, readable
 review sections, reviewed revision/currentness, any explicitly supplied scope/capture/configuration
@@ -290,12 +290,12 @@ source scope before execution; absent scope is not permission for broad fallback
 retain selected sites, exclusions, gaps and whole-file/tool expansions.
 
 The compact result keeps `outcome: completed | failed` for execution. A completed work item requires
-both a `run-bundle` and readable `challenger-report`, plus a prose `report`. Core derives the separate
+both a `run-bundle` and readable `verification-challenge-report`, plus a prose `report`. Core derives the separate
 `challenge_assessment`: `no-findings | findings | inconclusive` and `execution_gaps` from the Run.
 Native `clean` maps to `no-findings`; native protocol records are not renamed. Findings and gaps may
 coexist. Completed no-findings without execution gaps satisfies downstream gates. Findings may also be
-closed by a current independently accepted successor Claim Review retaining exact `challenge_basis`
-proofs for every finding result, while the candidate revision, Challenger definition and retained
+closed by a current independently accepted successor Requirement Review retaining exact `challenge_basis`
+proofs for every finding result, while the candidate revision, Verification Challenge definition and retained
 source/scope inputs remain unchanged. That is an accepted disposition, not a clean Run. Changed
 source/configuration/scope requires a fresh candidate and rerun; execution gaps cannot be waived by
 this disposition path. A failed
@@ -303,16 +303,16 @@ execution is retained with its failure report; include any usable partial Run/re
 
 Findings reopen the configured implementation prerequisite for bounded diagnosis and correction.
 A surviving mutant requires relevance/equivalence/coverage disposition, not an automatic product
-bug label. Corrected definitions/source require affected independent reassessment and Challenger
+bug label. Corrected definitions/source require affected independent reassessment and Verification Challenge
 reruns. Failed or inconclusive execution retries the same task after repairing environment,
 configuration or scope, without automatically reopening product implementation. Clean bounded
-search never establishes Claim Health. Historical Runs and readable reports remain immutable.
+search never establishes Requirement Status. Historical Runs and readable reports remain immutable.
 
 Pinned older instances do not change on query. Use explicit supported migration or a fresh instance;
 retain historical aggregate tasks and results unchanged. No automatic consumer-instance migration
 is performed by a tooling upgrade.
 
-An already captured per-Challenger task may retain its result after a sibling finding reopens
+An already captured per-Verification Challenge task may retain its result after a sibling finding reopens
 implementation, provided its exact input/prerequisite basis is unchanged and no newer result for
 that task exists. Native Run validation still applies. This retains independently scheduled work;
 it never starts blocked work or accepts results against revised source/review dependencies.
@@ -320,19 +320,19 @@ Retry handoffs include the previous attempt's readable report and assessment for
 
 For a selected compiled review entry, workflow assessment retains its exact reassessment ancestor chain from the validated bundle as historical context. Unselected sibling reviews are not imported as current prerequisites. Missing predecessors remain missing dependencies; retained ancestors never confer current acceptance.
 
-## Claim Review guidance (change-development revision 8)
+## Requirement Review guidance (change-development revision 8)
 
-`review-claim` handoffs reference the shipped `azimuth-review-claim` skill. Acceptance requires
-both adequate verification design and faithful implemented verification, including the observations
+`review-requirement` handoffs (revision 8 named them `review-claim`) reference the shipped `azimuth-review-requirement` skill. Acceptance requires
+both adequate verification design and faithful implemented verification, including the measurements
 and controls promised by each contribution. Execution may remain pending. Documented unfinished
 implementation does not satisfy the gate. Existing workflow instances retain their pinned guidance
 and definitions until an explicit migration; installing this skill does not rewrite review history.
 
 
-## Deployment Claim Status workflow (revision 9)
+## Deployment Requirement Status workflow (revisions 9 and 10)
 
-The shipped change-development revision 9 prepares local publication inputs after current Claim Reviews, source/artifact Check executions, candidate preparation and declared Challengers. It does not schedule an authored Claim Health assessment. Historical pinned workflows and their authored assessment records retain their original requirements; earlier revision descriptions above describe those contracts.
+Revision 10 is revision 9 with the Requirement, Scenario, Verification Target and Verification Challenge vocabulary; its stages, dependencies and outcomes are unchanged. The shipped change-development revision 10 prepares local publication inputs after current Requirement Reviews, source/artifact Check executions, candidate preparation and declared Verification Challenges. It does not schedule an authored Requirement Status assessment. Historical pinned workflows and their authored assessment records retain their original requirements; earlier revision descriptions above describe those contracts.
 
-The candidate authority's Check deployment policy determines execution scope. Checks whose execution subject is `deployment` (including Monitors) execute after rollout and are excluded from the local execution inventory. Source and artifact Checks still require explicit exact Subject selection and actual Run facts before publication. A missing local Check Subject blocks publication preparation. A hosted-only inventory does not require an invented local execution or positive assessment.
+The candidate authority's Check deployment policy determines execution scope. Checks whose execution Verification Target is `deployment` (including Monitors) execute after rollout and are excluded from the local execution inventory. Source and artifact Checks still require explicit exact Verification Target selection and actual Run facts before publication. A missing local Check Verification Target blocks publication preparation. A hosted-only inventory does not require an invented local execution or positive assessment.
 
-CI publishes unchanged accepted Claim Reviews, native Runs and their effective-context captures with the composed release. After deployment reconciliation establishes the observed composition and current process instances, ASS computes Claim Status from applicable evidence, provenance and effective-context compatibility. Missing applicability or evidence remains unresolved; passing CI is not automatic deployment confirmation. No local workflow action accepts a composed release or authorizes deployment. Owner acceptance and archival remain separate explicit decisions.
+CI publishes unchanged accepted Requirement Reviews, native Runs and their effective-context captures with the composed release. After deployment reconciliation establishes the observed composition and current process instances, ASS computes Requirement Status from applicable evidence, provenance and effective-context compatibility. Missing applicability or evidence remains unresolved; passing CI is not automatic deployment confirmation. No local workflow action accepts a composed release or authorizes deployment. Owner acceptance and archival remain separate explicit decisions.

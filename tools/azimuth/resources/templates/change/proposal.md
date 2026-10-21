@@ -8,6 +8,6 @@ Status: proposed
 
 ## Scope
 
-## Affected claims
+## Affected requirements
 
 ## Completion conditions

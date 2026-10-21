@@ -1,17 +1,17 @@
 export type ContextValue = string | boolean | number;
-export interface VerificationContext {
+export interface ExecutionContext {
   contract_revision: string;
   values: Record<string, ContextValue>;
 }
-export interface VerificationContextReport {
-  format: 'azimuth-verification-context';
-  version: 1;
-  contexts: Record<string, VerificationContext>;
+export interface ExecutionContextReport {
+  format: 'azimuth-execution-context';
+  version: 2;
+  contexts: Record<string, ExecutionContext>;
 }
 export interface ContextSnapshot {
   captured_at_ms: number;
   instance: string;
-  report: VerificationContextReport;
+  report: ExecutionContextReport;
 }
 export interface ContextCapture {
   name: string;
@@ -44,26 +44,26 @@ function object(value: unknown): value is Record<string, unknown> {
 function keys(value: Record<string, unknown>, expected: string[]): boolean {
   return Object.keys(value).sort().join(',') === expected.sort().join(',');
 }
-export function validateContextReport(value: unknown): asserts value is VerificationContextReport {
+export function validateContextReport(value: unknown): asserts value is ExecutionContextReport {
   if (!object(value) || !keys(value, ['format', 'version', 'contexts']) ||
-      value.format !== 'azimuth-verification-context' || value.version !== 1 || !object(value.contexts)) {
-    throw new Error('Unsupported verification context envelope');
+      value.format !== 'azimuth-execution-context' || value.version !== 2 || !object(value.contexts)) {
+    throw new Error('Unsupported Execution Context envelope');
   }
   for (const [name, context] of Object.entries(value.contexts)) {
     if (!name || !object(context) || !keys(context, ['contract_revision', 'values']) ||
         typeof context.contract_revision !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(context.contract_revision) ||
         !object(context.values)) {
-      throw new Error('Invalid verification context declaration');
+      throw new Error('Invalid Execution Context declaration');
     }
     for (const field of Object.values(context.values)) {
       if (typeof field !== 'string' && typeof field !== 'boolean' &&
           !(typeof field === 'number' && Number.isSafeInteger(field) && field >= 0)) {
-        throw new Error('Unsupported verification context value');
+        throw new Error('Unsupported Execution Context value');
       }
     }
   }
 }
-export function contextIdentity(context: VerificationContext): string {
+export function contextIdentity(context: ExecutionContext): string {
   return JSON.stringify([context.contract_revision,
     Object.entries(context.values).sort(([a], [b]) => a.localeCompare(b))]);
 }

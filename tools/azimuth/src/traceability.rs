@@ -1,4 +1,4 @@
-//! Pure derived Claim, realization, and verification traceability projection.
+//! Pure derived Requirement, realization, and verification traceability projection.
 
 use crate::json::Json;
 use crate::model::{Criticality, Model, Site};
@@ -7,18 +7,18 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraceabilityReport {
-    pub cases: Vec<TraceabilityCase>,
+    pub scenarios: Vec<TraceabilityScenario>,
     pub challenge_resolutions: Vec<ChallengeResolution>,
     pub decision_impacts: DecisionImpactProjection,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TraceabilityCase {
+pub struct TraceabilityScenario {
     pub id: String,
-    pub parent_claim: String,
+    pub parent_requirement: String,
     pub criticality: Option<Criticality>,
     pub statement: String,
-    pub case_statement: String,
+    pub scenario_statement: String,
     pub realizations: Vec<String>,
     pub verification: Vec<TraceabilityVerification>,
     pub judgment: TraceabilityJudgment,
@@ -49,9 +49,9 @@ pub struct TraceabilityJudgment {
 pub enum ImpactNodeKind {
     ApplicabilityDecision,
     Binding,
-    Case,
-    Claim,
-    ClaimJudgment,
+    Scenario,
+    Requirement,
+    RequirementJudgment,
     MethodQualification,
 }
 
@@ -60,9 +60,9 @@ impl ImpactNodeKind {
         match self {
             Self::ApplicabilityDecision => "applicability-decision",
             Self::Binding => "binding",
-            Self::Case => "case",
-            Self::Claim => "claim",
-            Self::ClaimJudgment => "claim-judgment",
+            Self::Scenario => "scenario",
+            Self::Requirement => "requirement",
+            Self::RequirementJudgment => "requirement-judgment",
             Self::MethodQualification => "method-qualification",
         }
     }
@@ -98,21 +98,21 @@ pub fn project(model: &Model) -> TraceabilityReport {
     let mut realizations = BTreeMap::<String, BTreeSet<String>>::new();
     for site in &model.realizes {
         realizations
-            .entry(site.claim.clone())
+            .entry(site.requirement.clone())
             .or_default()
             .extend(realization_identity(site));
     }
 
-    let mut cases = BTreeMap::<String, TraceabilityCase>::new();
-    for claim in model.cases() {
-        let id = claim.id();
-        let relation_key = claim.claim.id.clone();
+    let mut scenarios = BTreeMap::<String, TraceabilityScenario>::new();
+    for requirement in model.scenarios() {
+        let id = requirement.id();
+        let relation_key = requirement.requirement.id.clone();
         let mut verification = model
             .evidence_bindings()
-            .filter(|binding| binding.case == id)
+            .filter(|binding| binding.scenario == id)
             .map(|binding| {
                 let applicable = matches!(
-                    claim.claim.criticality,
+                    requirement.requirement.criticality,
                     Some(Criticality::Standard | Criticality::Critical)
                 );
                 let qualification = model
@@ -173,14 +173,14 @@ pub fn project(model: &Model) -> TraceabilityReport {
                 ))
         });
         verification.dedup();
-        cases.insert(
+        scenarios.insert(
             id.clone(),
-            TraceabilityCase {
+            TraceabilityScenario {
                 id: id.clone(),
-                parent_claim: claim.claim.id.clone(),
-                criticality: claim.claim.criticality,
-                statement: claim.claim.statement.clone(),
-                case_statement: claim.case.statement.clone(),
+                parent_requirement: requirement.requirement.id.clone(),
+                criticality: requirement.requirement.criticality,
+                statement: requirement.requirement.statement.clone(),
+                scenario_statement: requirement.scenario.statement.clone(),
                 realizations: realizations
                     .get(&relation_key)
                     .cloned()
@@ -190,8 +190,8 @@ pub fn project(model: &Model) -> TraceabilityReport {
                 verification,
                 judgment: traceability_judgment(
                     model,
-                    &claim.claim.id.clone(),
-                    claim.claim.criticality,
+                    &requirement.requirement.id.clone(),
+                    requirement.requirement.criticality,
                 ),
             },
         );
@@ -201,10 +201,11 @@ pub fn project(model: &Model) -> TraceabilityReport {
         .map(|plan| resolve_challenge_plan(model, plan))
         .collect::<Vec<_>>();
     challenge_resolutions.sort_by(|left, right| {
-        (&left.plan, &left.challenger).cmp(&(&right.plan, &right.challenger))
+        (&left.plan, &left.verification_challenge)
+            .cmp(&(&right.plan, &right.verification_challenge))
     });
     TraceabilityReport {
-        cases: cases.into_values().collect(),
+        scenarios: scenarios.into_values().collect(),
         challenge_resolutions,
         decision_impacts: project_current_decision_impacts(model),
     }
@@ -212,7 +213,7 @@ pub fn project(model: &Model) -> TraceabilityReport {
 
 fn traceability_judgment(
     model: &Model,
-    claim_id: &str,
+    requirement_id: &str,
     criticality: Option<Criticality>,
 ) -> TraceabilityJudgment {
     let applicable = matches!(
@@ -220,12 +221,12 @@ fn traceability_judgment(
         Some(Criticality::Standard | Criticality::Critical)
     );
     let judgment = model
-        .claim_judgments()
-        .find(|judgment| judgment.id == claim_id);
+        .requirement_judgments()
+        .find(|judgment| judgment.id == requirement_id);
     let current_judgment = judgment.filter(|judgment| {
         applicable
             && model
-                .expected_claim_judgment_fingerprint(judgment)
+                .expected_requirement_judgment_fingerprint(judgment)
                 .is_some_and(|expected| expected == judgment.fingerprint)
     });
     TraceabilityJudgment {
@@ -268,17 +269,23 @@ pub fn project_decision_impacts(
                 }
                 let source = decision_node(target);
                 let binding_node = impact_node(ImpactNodeKind::Binding, &binding.id, None);
-                let case_node = impact_node(ImpactNodeKind::Case, &binding.case, None);
-                let Some(case) = model.find_case(&binding.case) else {
+                let scenario_node = impact_node(ImpactNodeKind::Scenario, &binding.scenario, None);
+                let Some(scenario) = model.find_scenario(&binding.scenario) else {
                     continue;
                 };
-                let claim_id = case.claim.id.as_str();
-                let claim_node = impact_node(ImpactNodeKind::Claim, claim_id, None);
+                let requirement_id = scenario.requirement.id.as_str();
+                let requirement_node =
+                    impact_node(ImpactNodeKind::Requirement, requirement_id, None);
                 insert_edge(&mut nodes, &mut edges, source, binding_node.clone());
-                insert_edge(&mut nodes, &mut edges, binding_node, case_node.clone());
-                insert_edge(&mut nodes, &mut edges, case_node, claim_node.clone());
-                if let Some(judgment_node) = current_judgment_node(model, claim_id) {
-                    insert_edge(&mut nodes, &mut edges, claim_node, judgment_node);
+                insert_edge(&mut nodes, &mut edges, binding_node, scenario_node.clone());
+                insert_edge(
+                    &mut nodes,
+                    &mut edges,
+                    scenario_node,
+                    requirement_node.clone(),
+                );
+                if let Some(judgment_node) = current_judgment_node(model, requirement_id) {
+                    insert_edge(&mut nodes, &mut edges, requirement_node, judgment_node);
                 }
             }
             DecisionKind::MethodQualification => {
@@ -302,12 +309,14 @@ pub fn project_decision_impacts(
                     .filter(|binding| binding.method_qualification == target.id)
                 {
                     let binding_node = impact_node(ImpactNodeKind::Binding, &binding.id, None);
-                    let case_node = impact_node(ImpactNodeKind::Case, &binding.case, None);
-                    let Some(case) = model.find_case(&binding.case) else {
+                    let scenario_node =
+                        impact_node(ImpactNodeKind::Scenario, &binding.scenario, None);
+                    let Some(scenario) = model.find_scenario(&binding.scenario) else {
                         continue;
                     };
-                    let claim_id = case.claim.id.as_str();
-                    let claim_node = impact_node(ImpactNodeKind::Claim, claim_id, None);
+                    let requirement_id = scenario.requirement.id.as_str();
+                    let requirement_node =
+                        impact_node(ImpactNodeKind::Requirement, requirement_id, None);
                     let current_applicability = model
                         .applicability_decisions()
                         .find(|decision| decision.id == binding.id)
@@ -339,21 +348,27 @@ pub fn project_decision_impacts(
                     } else {
                         insert_edge(&mut nodes, &mut edges, source.clone(), binding_node.clone());
                     }
-                    insert_edge(&mut nodes, &mut edges, binding_node, case_node.clone());
-                    insert_edge(&mut nodes, &mut edges, case_node, claim_node.clone());
-                    if let Some(judgment_node) = current_judgment_node(model, claim_id) {
-                        insert_edge(&mut nodes, &mut edges, claim_node, judgment_node);
+                    insert_edge(&mut nodes, &mut edges, binding_node, scenario_node.clone());
+                    insert_edge(
+                        &mut nodes,
+                        &mut edges,
+                        scenario_node,
+                        requirement_node.clone(),
+                    );
+                    if let Some(judgment_node) = current_judgment_node(model, requirement_id) {
+                        insert_edge(&mut nodes, &mut edges, requirement_node, judgment_node);
                     }
                 }
             }
-            DecisionKind::ClaimJudgment => {
+            DecisionKind::RequirementJudgment => {
                 let Some(judgment) = model
-                    .claim_judgments()
+                    .requirement_judgments()
                     .find(|judgment| judgment.id == target.id)
                 else {
                     continue;
                 };
-                let Some(expected) = model.expected_claim_judgment_fingerprint(judgment) else {
+                let Some(expected) = model.expected_requirement_judgment_fingerprint(judgment)
+                else {
                     continue;
                 };
                 if expected != target.fingerprint || judgment.fingerprint != target.fingerprint {
@@ -363,7 +378,7 @@ pub fn project_decision_impacts(
                     &mut nodes,
                     &mut edges,
                     decision_node(target),
-                    impact_node(ImpactNodeKind::Claim, &target.id, None),
+                    impact_node(ImpactNodeKind::Requirement, &target.id, None),
                 );
             }
         }
@@ -406,13 +421,13 @@ pub fn project_current_decision_impacts(model: &Model) -> DecisionImpactProjecti
             });
         }
     }
-    for judgment in model.claim_judgments() {
+    for judgment in model.requirement_judgments() {
         if model
-            .expected_claim_judgment_fingerprint(judgment)
+            .expected_requirement_judgment_fingerprint(judgment)
             .is_some_and(|expected| expected == judgment.fingerprint)
         {
             targets.push(DecisionReference {
-                kind: DecisionKind::ClaimJudgment,
+                kind: DecisionKind::RequirementJudgment,
                 id: judgment.id.clone(),
                 fingerprint: judgment.fingerprint.clone(),
             });
@@ -423,14 +438,14 @@ pub fn project_current_decision_impacts(model: &Model) -> DecisionImpactProjecti
     project_decision_impacts(model, &targets)
 }
 
-fn current_judgment_node(model: &Model, claim_id: &str) -> Option<DecisionImpactNode> {
+fn current_judgment_node(model: &Model, requirement_id: &str) -> Option<DecisionImpactNode> {
     let judgment = model
-        .claim_judgments()
-        .find(|judgment| judgment.id == claim_id)?;
-    let expected = model.expected_claim_judgment_fingerprint(judgment)?;
+        .requirement_judgments()
+        .find(|judgment| judgment.id == requirement_id)?;
+    let expected = model.expected_requirement_judgment_fingerprint(judgment)?;
     (expected == judgment.fingerprint).then(|| {
         impact_node(
-            ImpactNodeKind::ClaimJudgment,
+            ImpactNodeKind::RequirementJudgment,
             &judgment.id,
             Some(judgment.fingerprint.clone()),
         )
@@ -441,7 +456,7 @@ fn decision_node(target: &DecisionReference) -> DecisionImpactNode {
     impact_node(
         match target.kind {
             DecisionKind::ApplicabilityDecision => ImpactNodeKind::ApplicabilityDecision,
-            DecisionKind::ClaimJudgment => ImpactNodeKind::ClaimJudgment,
+            DecisionKind::RequirementJudgment => ImpactNodeKind::RequirementJudgment,
             DecisionKind::MethodQualification => ImpactNodeKind::MethodQualification,
         },
         &target.id,
@@ -471,10 +486,15 @@ fn insert_edge(
 impl TraceabilityReport {
     pub fn to_json(&self) -> Json {
         Json::obj(vec![
-            ("version", Json::Num(4.0)),
+            ("version", Json::Num(5.0)),
             (
-                "cases",
-                Json::Arr(self.cases.iter().map(TraceabilityCase::to_json).collect()),
+                "scenarios",
+                Json::Arr(
+                    self.scenarios
+                        .iter()
+                        .map(TraceabilityScenario::to_json)
+                        .collect(),
+                ),
             ),
             (
                 "challenge_resolutions",
@@ -490,11 +510,11 @@ impl TraceabilityReport {
     }
 }
 
-impl TraceabilityCase {
+impl TraceabilityScenario {
     fn to_json(&self) -> Json {
         Json::obj(vec![
             ("id", Json::str(&self.id)),
-            ("parent_claim", Json::str(&self.parent_claim)),
+            ("parent_requirement", Json::str(&self.parent_requirement)),
             (
                 "criticality",
                 self.criticality
@@ -502,7 +522,7 @@ impl TraceabilityCase {
                     .unwrap_or(Json::Null),
             ),
             ("statement", Json::str(&self.statement)),
-            ("case_statement", Json::str(&self.case_statement)),
+            ("scenario_statement", Json::str(&self.scenario_statement)),
             (
                 "realizations",
                 Json::Arr(self.realizations.iter().map(Json::str).collect()),
@@ -549,7 +569,7 @@ impl DecisionImpactProjection {
     pub fn to_json(&self) -> Json {
         Json::obj(vec![
             ("format", Json::str("azimuth-decision-impact-projection")),
-            ("version", Json::Num(1.0)),
+            ("version", Json::Num(2.0)),
             (
                 "nodes",
                 Json::Arr(self.nodes.iter().map(DecisionImpactNode::to_json).collect()),

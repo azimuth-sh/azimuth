@@ -1,71 +1,71 @@
 # Spec: framework/release-orchestration
 
-## Claim: qualification-lanes-converge
+## Requirement: qualification-lanes-converge
 Title: Qualification lanes converge
 Criticality: routine
 
 The release workflow SHALL qualify independent artifact lanes before publication can begin.
 
-### Case: continuous-integration-reuses-retained-results
+### Scenario: continuous-integration-reuses-retained-results
 - Event: the canonical pull request, main or tag build runs
 - Required outcome: source, Assurance and release artifact production execute in isolated parallel jobs
 - Additional condition or outcome: downstream qualification consumes exact same-run package and image artifacts without rebuilding them
 
-### Case: selected-lanes-are-independent
+### Scenario: selected-lanes-are-independent
 - Event: release artifacts are qualified
 - Required outcome: packages, native binaries and assurance images execute in separate failure boundaries
 - Additional condition or outcome: a successful lane retains its immutable outputs when another lane fails
 - Additional condition or outcome: one final verification job observes every required source, artifact, deployment and qualification outcome
 
-### Case: complete-release-needs-every-lane
+### Scenario: complete-release-needs-every-lane
 - Event: tag-triggered release qualification converges
 - Required outcome: the selected population is derived from the release catalog
 - Additional condition or outcome: no missing, duplicate or unexpected release artifact is accepted
 
-## Claim: tagged-candidates-are-verifiable
+## Requirement: tagged-candidates-are-verifiable
 Title: Tagged candidates are verifiable
 Criticality: routine
 
 Every published release artifact SHALL remain attributable to the source revision named by its
 release tag until public verification completes.
 
-### Case: tag-catalog-and-revision-agree
+### Scenario: tag-catalog-and-revision-agree
 - Event: a tag-triggered release begins
 - Required outcome: the tag and version match the release catalog
 - Additional condition or outcome: the full source revision is the commit named by that annotated tag and belongs to main history
 
-### Case: retained-downloads-have-checksums
+### Scenario: retained-downloads-have-checksums
 - Event: a downloadable release artifact is selected
 - Required outcome: its filename, byte size and SHA-256 checksum are derived from the catalog and built bytes
 - Additional condition or outcome: later use rejects any byte change
 
-### Case: executable-subjects-have-provenance
+### Scenario: executable-subjects-have-provenance
 - Event: a downloadable release artifact or container image is published
 - Required outcome: GitHub build provenance identifies its exact checksum or image digest
 - Additional condition or outcome: direct provenance or an archive-to-published-image provenance chain names the tagged source revision
 
-## Claim: qualified-candidates-compose
+## Requirement: qualified-candidates-compose
 Title: Qualified candidates compose
 Criticality: routine
 
 Every selected first-alpha candidate SHALL expose its declared public entry point from the retained
 distribution shape.
 
-### Case: packed-packages-install
+### Scenario: packed-packages-install
 - Event: the five retained package candidates are given to disposable ecosystem consumers
 - Required outcome: each consumer installs its candidate without a source-tree dependency
 - Additional condition or outcome: exercises the package's declared public entry point
 
-### Case: native-binaries-run
+### Scenario: native-binaries-run
 - Event: a retained native archive is exercised on its selected operating-system runner
 - Required outcome: its Azimuth CLI starts and reports the selected release version
 
-### Case: selected-image-platforms-start
+### Scenario: selected-image-platforms-start
 - Event: each retained assurance image is exercised for a selected platform
 - Required outcome: the image starts through its declared private-deployment entry point
 - Additional condition or outcome: every catalog-selected image and platform is represented
 
-## Claim: partial-publication-resumes-safely
+## Requirement: partial-publication-resumes-safely
 Title: Partial publication resumes safely
 Criticality: routine
 
@@ -75,22 +75,22 @@ that are absent from retrieved registry state.
 *(revised)* Public image retrieval is anonymous; organization or workflow credentials cannot
 contribute to completion.
 
-### Case: exact-existing-target-is-preserved
+### Scenario: exact-existing-target-is-preserved
 - Context: a registry target whose retrieved identity and digest match the retained candidate
 - Event: publication is resumed
 - Required outcome: that target is not overwritten or republished
 
-### Case: absent-target-is-selected
+### Scenario: absent-target-is-selected
 - Context: a selected registry target that does not exist
 - Event: publication is resumed
 - Required outcome: only that absent target is selected for publication
 
-### Case: conflicting-target-fails
+### Scenario: conflicting-target-fails
 - Context: a registry target whose immutable identity exists with different retained content
 - Event: publication is resumed
 - Required outcome: orchestration fails before any remaining target is published
 
-### Case: completion-needs-public-retrieval
+### Scenario: completion-needs-public-retrieval
 - Event: first-alpha publication is evaluated for completion
 - Required outcome: every selected package, native archive and image index is retrieved publicly
 - Additional condition or outcome: each image index is retrieved without registry credentials

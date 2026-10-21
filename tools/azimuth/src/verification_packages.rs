@@ -9,7 +9,7 @@ pub const CHALLENGE: &str = "azimuth.challenge";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Binding {
-    pub case: String,
+    pub scenario: String,
     pub contribution: String,
     pub line: usize,
 }
@@ -206,8 +206,8 @@ pub fn read_check(
     path: &str,
     line: usize,
     id: &str,
-    claim: &str,
-    enclosing_case: Option<&str>,
+    requirement: &str,
+    enclosing_scenario: Option<&str>,
     block: &[&str],
     errors: &mut Vec<Diag>,
 ) -> AuthoredCheck {
@@ -287,47 +287,48 @@ pub fn read_check(
                 while cursor < block.len() && block[cursor].starts_with("  - ") {
                     let at = line + cursor + 1;
                     let text = &block[cursor][4..];
-                    let (case, contribution) = if let Some(value) = text.strip_prefix("Case: ") {
-                        let case = unquote(value).to_string();
-                        cursor += 1;
-                        match block
-                            .get(cursor)
-                            .and_then(|value| value.strip_prefix("    - Contribution: "))
-                        {
-                            Some(value) => {
-                                cursor += 1;
-                                (case, value.into())
+                    let (scenario, contribution) =
+                        if let Some(value) = text.strip_prefix("Scenario: ") {
+                            let scenario = unquote(value).to_string();
+                            cursor += 1;
+                            match block
+                                .get(cursor)
+                                .and_then(|value| value.strip_prefix("    - Contribution: "))
+                            {
+                                Some(value) => {
+                                    cursor += 1;
+                                    (scenario, value.into())
+                                }
+                                None => {
+                                    errors.push(Diag::at(
+                                        path,
+                                        at,
+                                        "Scenario requires indented Contribution",
+                                    ));
+                                    (scenario, String::new())
+                                }
                             }
-                            None => {
-                                errors.push(Diag::at(
-                                    path,
-                                    at,
-                                    "Case requires indented Contribution",
-                                ));
-                                (case, String::new())
-                            }
-                        }
-                    } else if let Some(value) = text.strip_prefix("Contribution: ") {
-                        cursor += 1;
-                        (enclosing_case.unwrap_or_default().into(), value.into())
-                    } else {
-                        errors.push(Diag::at(
-                            path,
-                            at,
-                            "expected Case or inherited Contribution",
-                        ));
-                        cursor += 1;
-                        continue;
-                    };
-                    identity(path, at, &case, errors);
+                        } else if let Some(value) = text.strip_prefix("Contribution: ") {
+                            cursor += 1;
+                            (enclosing_scenario.unwrap_or_default().into(), value.into())
+                        } else {
+                            errors.push(Diag::at(
+                                path,
+                                at,
+                                "expected Scenario or inherited Contribution",
+                            ));
+                            cursor += 1;
+                            continue;
+                        };
+                    identity(path, at, &scenario, errors);
                     if contribution.trim().is_empty() {
                         errors.push(Diag::at(path, at, "Contribution must be nonempty"));
                     }
-                    if bindings.iter().any(|binding| binding.case == case) {
-                        errors.push(Diag::at(path, at, "duplicate Check–Case binding"));
+                    if bindings.iter().any(|binding| binding.scenario == scenario) {
+                        errors.push(Diag::at(path, at, "duplicate Check–Scenario binding"));
                     }
                     bindings.push(Binding {
-                        case,
+                        scenario,
                         contribution,
                         line: at,
                     });
@@ -351,8 +352,10 @@ pub fn read_check(
             "Check requires substantive method prose",
         ));
     }
-    if enclosing_case.is_some_and(|case| !bindings.iter().any(|binding| binding.case == case)) {
-        errors.push(Diag::at(path, line, "bindings omit enclosing Case"));
+    if enclosing_scenario
+        .is_some_and(|scenario| !bindings.iter().any(|binding| binding.scenario == scenario))
+    {
+        errors.push(Diag::at(path, line, "bindings omit enclosing Scenario"));
     }
     AuthoredCheck {
         definition: crate::verification::Check {
@@ -363,10 +366,10 @@ pub fn read_check(
             path: path.into(),
             line,
         },
-        claim: claim.into(),
-        cases: bindings
+        requirement: requirement.into(),
+        scenarios: bindings
             .iter()
-            .map(|binding| binding.case.clone())
+            .map(|binding| binding.scenario.clone())
             .collect(),
         mechanisms,
         proposition: None,
@@ -439,7 +442,7 @@ pub fn parse_producers(path: &str, root: &Json, errors: &mut Vec<Diag>) -> Vec<P
             (package.as_str(), contract.as_str()),
             (SURFACE, "surface-enumerator" | "surface-expectations")
                 | (NETWORK, "probe-implementation")
-                | (CHALLENGE, "challenger-implementation")
+                | (CHALLENGE, "verification-challenge-implementation")
         ) {
             errors.push(Diag::file(path, "unsupported package producer contract"));
         }
@@ -472,7 +475,7 @@ pub fn parse_producers(path: &str, root: &Json, errors: &mut Vec<Diag>) -> Vec<P
         } else if schema.is_some() {
             errors.push(Diag::file(
                 path,
-                "probe or Challenger implementation has no member schema",
+                "probe or Verification Challenge implementation has no member schema",
             ));
         }
         let mut inputs = Vec::new();
@@ -914,15 +917,15 @@ pub fn validate_accounts(
                 "producer package is not enabled",
             ));
         }
-        let declared_challenger = producer.package == CHALLENGE
-            && producer.contract == "challenger-implementation"
+        let declared_verification_challenge = producer.package == CHALLENGE
+            && producer.contract == "verification-challenge-implementation"
             && accounts.iter().any(|account| {
                 account
-                    .challengers
+                    .verification_challenges
                     .iter()
-                    .any(|challenger| challenger.id == producer.entity)
+                    .any(|verification_challenge| verification_challenge.id == producer.entity)
             });
-        if !declared_challenger
+        if !declared_verification_challenge
             && !declarations.iter().any(|(_, entity)| {
                 entity.package() == producer.package
                     && entity.id == producer.entity
@@ -1023,10 +1026,12 @@ pub fn verify_surface_reports(
         producers,
         &mut errors,
     );
-    if enumeration.get("subject").map(canonical) != expectations.get("subject").map(canonical) {
+    if enumeration.get("verification_target").map(canonical)
+        != expectations.get("verification_target").map(canonical)
+    {
         errors.push(Diag::file(
             path,
-            "enumeration and expectations have different exact Subjects",
+            "enumeration and expectations have different exact Verification Targets",
         ));
     }
     if enumeration.get("surface") != expectations.get("surface") {
@@ -1068,7 +1073,7 @@ fn verify_report(
         "package",
         "contract",
         "surface",
-        "subject",
+        "verification_target",
         "producer",
         "status",
         "membership_fingerprint",
@@ -1093,19 +1098,29 @@ fn verify_report(
         .and_then(Json::as_str)
         .unwrap_or_default();
     identity(path, 0, entity, errors);
-    match report.get("subject") {
-        Some(subject) => match crate::run::subject_from_json(subject) {
-            Err(error) => errors.push(Diag::file(path, format!("invalid exact Subject: {error}"))),
-            Ok(subject) => {
-                for error in crate::run::validate_subject_component(&subject) {
-                    errors.push(Diag::file(
-                        path,
-                        format!("invalid exact Subject: {}", error.detail),
-                    ));
+    match report.get("verification_target") {
+        Some(verification_target) => {
+            match crate::run::verification_target_from_json(verification_target) {
+                Err(error) => errors.push(Diag::file(
+                    path,
+                    format!("invalid exact Verification Target: {error}"),
+                )),
+                Ok(verification_target) => {
+                    for error in
+                        crate::run::validate_verification_target_component(&verification_target)
+                    {
+                        errors.push(Diag::file(
+                            path,
+                            format!("invalid exact Verification Target: {}", error.detail),
+                        ));
+                    }
                 }
             }
-        },
-        None => errors.push(Diag::file(path, "report requires exact Subject")),
+        }
+        None => errors.push(Diag::file(
+            path,
+            "report requires exact Verification Target",
+        )),
     }
     match report.get("status").and_then(Json::as_str) {
         Some("complete") => {}
@@ -1263,7 +1278,7 @@ pub fn bindings_json(bindings: &[Binding]) -> Json {
             .iter()
             .map(|binding| {
                 Json::obj(vec![
-                    ("case", Json::str(&binding.case)),
+                    ("scenario", Json::str(&binding.scenario)),
                     ("contribution", Json::str(&binding.contribution)),
                 ])
             })

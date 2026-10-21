@@ -2,7 +2,10 @@
 
 use crate::json::Json;
 
-pub const MIGRATION_LINE: &str = "alpha-claim-case";
+pub const MIGRATION_LINE: &str = "alpha-requirement-scenario";
+
+/// The only earlier line with a supported account rewrite into [`MIGRATION_LINE`].
+pub const PREVIOUS_MIGRATION_LINE: &str = "alpha-claim-case";
 
 pub struct WorkflowDescriptor {
     pub id: &'static str,
@@ -47,9 +50,9 @@ pub const SKILLS: &[SkillResource] = &[
         openai: include_str!("../resources/skills/azimuth-apply/agents/openai.yaml"),
     },
     SkillResource {
-        id: "azimuth-review-claim",
-        source: include_str!("../resources/skills/azimuth-review-claim/SKILL.md"),
-        openai: include_str!("../resources/skills/azimuth-review-claim/agents/openai.yaml"),
+        id: "azimuth-review-requirement",
+        source: include_str!("../resources/skills/azimuth-review-requirement/SKILL.md"),
+        openai: include_str!("../resources/skills/azimuth-review-requirement/agents/openai.yaml"),
     },
     SkillResource {
         id: "azimuth-archive",
@@ -78,8 +81,8 @@ pub struct ReferenceDescriptor {
 
 pub const REFERENCES: &[ReferenceDescriptor] = &[
     ReferenceDescriptor {
-        id: "deployment-claim-status",
-        format_version: 1,
+        id: "deployment-requirement-status",
+        format_version: 2,
         accepted: &[
             "exact release lineage",
             "activity-bound effective contexts",
@@ -92,11 +95,11 @@ pub const REFERENCES: &[ReferenceDescriptor] = &[
             "unreviewed failure mapping",
             "replay renews freshness",
         ],
-        prose: include_str!("../resources/references/deployment-claim-status.md"),
+        prose: include_str!("../resources/references/deployment-requirement-status.md"),
     },
     ReferenceDescriptor {
         id: "release-publication",
-        format_version: 1,
+        format_version: 2,
         accepted: &[
             "explicit composed release",
             "immutable source/build/deployment provenance",
@@ -114,7 +117,7 @@ pub const REFERENCES: &[ReferenceDescriptor] = &[
     },
     ReferenceDescriptor {
         id: "assurance-reviews",
-        format_version: 1,
+        format_version: 2,
         accepted: &[
             "Markdown review bundles",
             "exact review-input packets",
@@ -131,7 +134,7 @@ pub const REFERENCES: &[ReferenceDescriptor] = &[
     },
     ReferenceDescriptor {
         id: "workflow",
-        format_version: 1,
+        format_version: 2,
         accepted: &[
             "pinned declarative definitions",
             "standard change-development workflow",
@@ -165,7 +168,7 @@ pub const REFERENCES: &[ReferenceDescriptor] = &[
         accepted: &[
             "Status: proposed",
             "Intent delta: none with Because",
-            "exact affected Claim ids",
+            "exact affected Requirement ids",
         ],
         rejected: &[
             "implicit implementation approval",
@@ -175,25 +178,25 @@ pub const REFERENCES: &[ReferenceDescriptor] = &[
     },
     ReferenceDescriptor {
         id: "intent-delta",
-        format_version: 4,
+        format_version: 5,
         accepted: &[
             "# Intent delta: <spec-id>",
-            "## Add claim: <id>",
-            "### Add case: <id>",
-            "## Replace claim: <id>",
-            "## Remove claim: <id>",
-            "## Remove case: <claim-id>/<case-id>",
+            "## Add requirement: <id>",
+            "### Add scenario: <id>",
+            "## Replace requirement: <id>",
+            "## Remove requirement: <id>",
+            "## Remove scenario: <requirement-id>/<scenario-id>",
             "From: sha256:<digest>",
             "Criticality: routine",
         ],
-        rejected: &["Requirement", "Scenario", "rename", "silent Case removal"],
+        rejected: &["Claim", "Case", "rename", "silent Scenario removal"],
         prose: include_str!("../resources/references/intent-delta.md"),
     },
     ReferenceDescriptor {
         id: "design",
-        format_version: 3,
+        format_version: 4,
         accepted: &[
-            "## Claim: <id>",
+            "## Requirement: <id>",
             "Mechanism: <id>",
             "Enforcement: type | schema | constraint | choke-point | middleware | guard",
             "Binding: <identity>",
@@ -203,14 +206,14 @@ pub const REFERENCES: &[ReferenceDescriptor] = &[
     },
     ReferenceDescriptor {
         id: "verification",
-        format_version: 3,
+        format_version: 4,
         accepted: &[
-            "non-routine Claim verification only",
+            "non-routine Requirement verification only",
             "Decision Policy",
             "Challenge Schedule: current",
         ],
         rejected: &[
-            "verification declarations for routine Claims",
+            "verification declarations for routine Requirements",
             "clean result as positive evidence",
         ],
         prose: include_str!("../resources/references/verification.md"),
@@ -292,6 +295,18 @@ pub fn migration_reference(from: &str, to: &str) -> Option<&'static str> {
         )),
         ("0.1.0-alpha.5", "0.1.0-alpha.6") => Some(include_str!(
             "../resources/migrations/0.1.0-alpha.5-to-0.1.0-alpha.6.md"
+        )),
+        ("0.1.0-alpha.6", "0.1.0-alpha.7") => Some(include_str!(
+            "../resources/migrations/0.1.0-alpha.6-to-0.1.0-alpha.7.md"
+        )),
+        _ => None,
+    }
+}
+
+pub fn migration_line_reference(from: &str, to: &str) -> Option<&'static str> {
+    match (from, to) {
+        ("alpha-claim-case", "alpha-requirement-scenario") => Some(include_str!(
+            "../resources/migrations/alpha-claim-case-to-alpha-requirement-scenario.md"
         )),
         _ => None,
     }

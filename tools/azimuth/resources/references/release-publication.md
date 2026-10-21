@@ -2,7 +2,7 @@
 
 Release composition, publication, deployment and acceptance are separate operations. None invokes
 an agent. A release publication cannot accept a model, authorize a deployment, archive a Change,
-or manufacture a Run or Claim Health. Acceptance is for a complete composed release.
+or manufacture a Run or Requirement Status. Acceptance is for a complete composed release.
 
 ## Commands
 
@@ -72,26 +72,26 @@ proof furnished by local composition alone.
 
 ## Publication request
 
-`azimuth-release-request` version 1 requires these fields:
+`azimuth-release-request` version 2 requires these fields:
 
 - `project`, `label`, `baseline_model_revision`;
 - `changes`: `{id, revision, metadata?}`;
 - `sources`: `{repository, commit, content_fingerprint}`; full 40/64-character Git IDs only;
 - `builds`: `{id, sources: [repository-id], toolchain: {name: version-string}, configuration_fingerprint, artifacts: [digest]}`;
 - `artifacts`: `{digest, kind}`;
-- `deployments`: `{id, environment, configuration_fingerprint, artifacts: [digest], subject?, subject_fingerprint?}`;
+- `deployments`: `{id, environment, configuration_fingerprint, artifacts: [digest], verification_target?, verification_target_fingerprint?}`;
 - `snapshot`: the complete existing native snapshot (`project`, `model_revision`, `authority`, `reviews`, `bundles`);
 - `evidence`: `{digest, media_type, availability: "unavailable"}`.
 
 Optional `composition` contains the exact complete composition result. Optional `catalog` contains
-`modules`, `claims`, `cases`, `checks` as below. Optional `required_reviews` is an explicit array of
-native Claim Review fingerprints. When present it covers every non-routine Claim; each selected
+`modules`, `requirements`, `scenarios`, `checks` as below. Optional `required_reviews` is an explicit array of
+native Requirement Review fingerprints. When present it covers every non-routine Requirement; each selected
 record must be accepted, current against the composed authority and latest without ambiguity.
 Missing/stale/rejected records produce actionable errors for local correction. Historical adverse
 predecessors remain in the snapshot; they are not mistaken for the selected current review.
 Omitting this optional gate permits publication of unresolved candidate facts, not release readiness.
 
-Prepare returns `azimuth-release-publication` version 1 with `project`, `release`, `snapshot`,
+Prepare returns `azimuth-release-publication` version 2 with `project`, `release`, `snapshot`,
 `evidence`, optional `catalog`. Release contains the request's identity/provenance fields plus
 `model_revision` copied from the native snapshot and a canonical `fingerprint` excluding itself.
 Display labels are not identity. Native review and Run identities and observations are preserved.
@@ -100,8 +100,8 @@ The output is portable structured data and contains no generated candidate-direc
 Every artifact must have an explicit build producer; every build references declared source inputs.
 Deployment artifacts must be a nonempty subset of those outputs. Empty build/artifact/deployment
 arrays allow source-stage candidate publication without pretending a build or rollout occurred.
-A native deployment Subject, if supplied, is validated and fingerprinted by the Run contract and
-must match the recorded environment, deployment ID and exact deployed artifact digests. Subject
+A native deployment Verification Target, if supplied, is validated and fingerprinted by the Run contract and
+must match the recorded environment, deployment ID and exact deployed artifact digests. Verification Target
 and fingerprint must occur together. Configuration is recorded explicitly, never inferred from the
 model revision. Before actual observation, omit deployment records rather than fabricate them.
 
@@ -117,7 +117,7 @@ submitter, not proof of the asserted author's identity or independent reviewer e
 ## Evidence boundaries
 
 Packages are bounded to 8 MiB; individual native review/Run records to 512 KiB. Full stdout/stderr
-is rejected. Measurements needed to substantiate an Observation must remain in the structured
+is rejected. Measurements needed to substantiate a Check Result must remain in the structured
 record or accessible evidence; reducing a package must not erase required controls or retain an
 unsupported success. An oversized immutable record must not be silently edited and rehashed.
 Produce compact records at the producer boundary or keep the assessment unresolved.
@@ -127,18 +127,18 @@ fake URL. New native artifacts may use Run locator `{kind: "unavailable", value:
 Historical native Run artifacts can retain immutable local locators only when the envelope names
 that exact digest as unavailable. Those locators are opaque historical data, never paths CI needs
 or links ASS should offer. Other local generated packet/file references in native records fail.
-Native Challenger reports and stdout remain local; the producer emits only digest/size metadata,
+Native Verification Challenge reports and stdout remain local; the producer emits only digest/size metadata,
 execution details and normalized findings into its Run. Existing Run fingerprints never change.
 
 ## Catalog and UI
 
-Catalog shape is `{modules, claims, cases, checks}`:
+Catalog shape is `{modules, requirements, scenarios, checks}`:
 
-- Module: `{id, title, claims: [claim-id], parent?: module-id}`;
-- Claim: `{id, statement}`;
-- Case and Check: `{id, description}`.
+- Module: `{id, title, requirements: [requirement-id], parent?: module-id}`;
+- Requirement: `{id, statement}`;
+- Scenario and Check: `{id, description}`.
 
-Catalog identities must exactly cover native authority identities; each Claim belongs to one
+Catalog identities must exactly cover native authority identities; each Requirement belongs to one
 Module. Explicit parent links must exist and be acyclic. `assurance catalog` derives membership and
 statements from the loaded model. The current Spec format has no declared parent/title fields, so
 its export uses module ID as display title and omits parents rather than infer hierarchy from paths.
@@ -155,8 +155,8 @@ After actual deployment, publish
 `POST /v1/projects/{project}/deployments` with `{release_fingerprint, deployment}`. A deployment
 belongs to the project/environment and is linked to included Changes through immutable release
 provenance. It is not owned by one Change. Append a new deployment for changed configuration or
-artifacts. Runs and Claim Health still name their exact native Subject; matching model revisions do
-not authorize cross-Subject reuse.
+artifacts. Runs and Requirement Status still name their exact native Verification Target; matching model revisions do
+not authorize cross-target reuse.
 
 Owner-only acceptance uses `POST /v1/projects/{project}/releases/{fingerprint}/acceptance` with
 `{expected_accepted_model_revision, reason}`. This is an explicit whole-release decision with a

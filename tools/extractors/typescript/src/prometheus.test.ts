@@ -49,6 +49,8 @@ test('emits operational realization and Check implementation from validated rule
   const linkage = prometheusLinkage(rules, tests, root);
 
   assert.equal(linkage.realizes[0].site, 'Backlog');
+  assert.equal(linkage.realizes[0].requirement, 'backlog-alert');
+  assert.equal('claim' in linkage.realizes[0], false);
   assert.match(linkage.realizes[0].source_fingerprint, /^sha256:[0-9a-f]{64}$/);
   assert.deepEqual(linkage.check_implementations[0], {
     check: 'backlog-alert', site: 'Backlog',

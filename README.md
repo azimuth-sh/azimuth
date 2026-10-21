@@ -20,28 +20,32 @@ Its second position is that **evidence needs an argument, not a link**. That a t
 
 ## How it works
 
+Modules organize Requirements. Scenarios describe expected behavior. Checks produce Results. ASS assesses the evidence and shows Requirement Status for a deployment.
+
 Concepts arrive in the order you use them. Each step depends on the one before it, so nothing can be asserted before the thing it rests on exists.
 
-### 1. Declare the Claim and its Cases
+### 1. Declare the Requirement and its Scenarios
 
-A Claim is one independently governed proposition. Under it sit normative Cases with free-form
-Markdown bodies, independently addressable for evidence and execution. Prose, tables, diagrams and
+A Requirement is behavior or a constraint the system must satisfy, governed independently. Under it
+sit Scenarios — concrete situations and their expected outcomes — with free-form Markdown bodies,
+independently addressable for evidence and execution. Requirements live in the specification of a
+Module, a named hierarchical area that can contain nested Modules. Prose, tables, diagrams and
 domain notations are all permitted; Azimuth preserves and fingerprints them without pretending to
 understand their meaning. Ids are declared rather than derived from file paths, so reorganising
 files changes nothing.
 
-Every Claim declares its criticality: `critical`, `standard` or `routine`. Cases inherit it and do
+Every Requirement declares its criticality: `critical`, `standard` or `routine`. Scenarios inherit it and do
 not become separate governance centres.
 
-> **Routine Claims stop here.** No linkage, no evidence, no ceremony — one markdown entry, validated for internal consistency. This is the cost dial, and it is why adoption can start at effectively zero. Everything below applies only where you decided it should.
+> **Routine Requirements stop here.** No linkage, no evidence, no ceremony — one markdown entry, validated for internal consistency. This is the cost dial, and it is why adoption can start at effectively zero. Everything below applies only where you decided it should.
 
 ### 2. Mark the code that establishes it
 
-Production code carries `Realizes(spec, claim)`. A site earns the marker when it establishes part
-of the parent Claim predicate—not merely because the request passes through it. Case identity stays
-out of source markers.
+Production code carries `Realizes(requirement-id)`. A site earns the marker when it establishes part
+of the parent Requirement predicate—not merely because the request passes through it. Scenario
+identity stays out of source markers.
 
-Where a mechanism is what makes the Claim true — a type, a schema constraint, a choke point — the design facet names it and `ImplementsMechanism(spec, mechanism)` binds the implementation. Extractors resolve both to semantic identities, so a rename or a file move is a locator change, not a semantic one.
+Where a mechanism is what makes the Requirement true — a type, a schema constraint, a choke point — the design facet names it and `ImplementsMechanism(mechanism-id)` binds the implementation. Extractors resolve both to semantic identities, so a rename or a file move is a locator change, not a semantic one.
 
 ### 3. Enroll a method as a Check
 
@@ -49,10 +53,10 @@ A Check is a deliberately enrolled verification method with one atomic outcome. 
 
 Unmarked tests stay ordinary tests and assert nothing. Your existing suite does not become an accidental assurance claim.
 
-### 4. Bind the Check to a Case
+### 4. Bind the Check to a Scenario
 
-An Evidence Binding is the edge argument: why this atomic Check outcome bears on exactly one Case,
-under exactly what Case-specific context. One Check may bind to several Cases only when its outcome
+An Evidence Binding is the edge argument: why this atomic Check outcome bears on exactly one Scenario,
+under exactly what Scenario-specific Execution Context. One Check may bind to several Scenarios only when its outcome
 honestly bears on each, and each edge is a separate binding.
 
 This is the step a traceability matrix skips.
@@ -61,16 +65,16 @@ This is the step a traceability matrix skips.
 
 A Method Qualification reviews the shared Check implementation, oracle, form and common context.
 An Applicability Decision separately reviews whether that qualified method establishes one exact
-Check-to-Case binding. Both are attributed and fingerprinted. Neither says that the Claim is
+Check-to-Scenario binding. Both are attributed and fingerprinted. Neither says that the Requirement is
 satisfied or that anything was executed.
 
-### 6. Judge the Claim
+### 6. Judge the Requirement
 
-A Claim Judgment is the decision over the parent Claim's total composition—every Case,
+A Requirement Judgment is the decision over the parent Requirement's total composition—every Scenario,
 realization, mechanism, Evidence Binding, Method Qualification and Applicability Decision—with an
 ordered basis and explicit residual risk.
 
-All three decision kinds are fingerprinted, so a relevant change to the code, Case, Claim, context
+All three decision kinds are fingerprinted, so a relevant change to the code, Scenario, Requirement, Execution Context
 or policy marks the precise dependent decision stale and asks for it again. Paths, line numbers and
 prose do not.
 
@@ -78,9 +82,9 @@ prose do not.
 
 These are a separate plane, not later steps.
 
-**Running enrolled work** produces execution facts about an exact subject — a workspace, an artifact, a deployment. Facts never author a decision, and a decision never records an execution.
+**Running enrolled work** produces execution facts (Check Results and Challenge Results) about an exact Verification Target — a source snapshot, an artifact, a deployment. Facts never author a decision, and a decision never records an execution.
 
-**Challengers** search for a reason to distrust a decision that already exists: mutation testing, broad static analysis, fault injection, an exploratory session. They can withdraw belief; they can never create it. A clean result records only that a configured search found nothing.
+**Verification Challenges** search for a reason to distrust a decision that already exists: mutation testing, broad static analysis, fault injection, an exploratory session. They can withdraw belief; they can never create it. A clean result records only that a configured search found nothing.
 
 ### Throughout: derived output
 
@@ -90,9 +94,9 @@ These are a separate plane, not later steps.
 
 | You write | The tool derives |
 |---|---|
-| Claims, Cases and Claim criticality | which obligations apply |
+| Requirements, Scenarios and Requirement criticality | which obligations apply |
 | Three markers in source | semantic site identity and source fingerprints |
-| Why a method bears on a Case | the traceability graph |
+| Why a method bears on a Scenario | the traceability graph |
 | Reviewed decisions with your name on them | which decisions have gone stale |
 | Which objections must be searched for | what is missing, as typed Findings |
 
@@ -101,7 +105,7 @@ These are a separate plane, not later steps.
 ```sh
 azimuth init --agents codex      # scaffold the account and install Codex workflows
 azimuth validate                  # deterministic Findings over the derived model
-azimuth report traceability       # derived view of Claims, linkage and decisions
+azimuth report traceability       # derived view of Requirements, linkage and decisions
 azimuth export --out model.json   # the complete derived model for your own tooling
 ```
 
@@ -113,13 +117,13 @@ For running enrolled work through a provider, `azimuth run plan | execute | impo
 
 Start with everything `routine`. That costs one spec file per area and gives you a declared, reviewable statement of what the system is supposed to do, validated for internal consistency.
 
-Then raise criticality where the answer matters — a payment invariant, an authorization rule, a data-retention guarantee — and pay the evidence cost only there. Ten critical Claims with real evidence are worth more than a thousand nominal ones, and the levels only carry information if raising one is a deliberate act.
+Then raise criticality where the answer matters — a payment invariant, an authorization rule, a data-retention guarantee — and pay the evidence cost only there. Ten critical Requirements with real evidence are worth more than a thousand nominal ones, and the levels only carry information if raising one is a deliberate act.
 
 There is no hosted service to buy, no daemon to run, and no data leaves your repository.
 
 ## What Azimuth deliberately does not do
 
-- It does not prove your prose. A Claim predicate has no machine-evaluable semantics.
+- It does not prove your prose. A Requirement predicate has no machine-evaluable semantics.
 - It does not infer that code is correct because it is linked.
 - It does not turn a clean scan, a passing suite or an absence of alerts into positive evidence.
 - It does not enroll your existing tests automatically.
@@ -131,13 +135,13 @@ These are design positions, not gaps. A tool that overclaims here is worse than 
 
 Stated plainly, because discovering it later is worse.
 
-- **No runtime assurance state.** You cannot yet ask "what is assured in production right now." Durable Run ingestion, retention and per-Subject Assurance State are deferred.
+- **No runtime assurance state.** You cannot yet ask "what is assured in production right now." Durable Run ingestion, retention and per-Verification-Target Assurance State are deferred.
 - **Decisions decay with content, not with time.** Staleness is fingerprint equality. There is no cadence, expiry or recurrence, so nothing re-opens a decision because the world moved.
 - **Required evidence does not follow criticality.** Decision Policy is selected explicitly by
-  each Method Qualification, Evidence Binding and Claim Judgment; criticality does not yet select
+  each Method Qualification, Evidence Binding and Requirement Judgment; criticality does not yet select
   one automatically.
 - **Nothing caps criticality.** No mechanism prevents everything drifting to the top level.
-- **Azimuth does not yet apply its own evidence graph to itself.** Every Claim in this repository is routine, so the graph is exercised by fixtures and conformance suites rather than by the framework's own assurance.
+- **Azimuth does not yet apply its own evidence graph to itself.** Every Requirement in this repository is routine, so the graph is exercised by fixtures and conformance suites rather than by the framework's own assurance.
 
 Open design questions are recorded under `azimuth/explorations/`, including these.
 
@@ -160,7 +164,7 @@ Canonical development and release. Framework changes, pull requests and version 
 | `tools/azimuth/` | dependency-free Rust CLI and core, including federation |
 | `tools/extractors/` | language and structural extractors |
 | `packages/` | annotation packages; .NET and TypeScript are supported |
-| `azimuth/model/` | this project's own Claims — Azimuth described in Azimuth |
+| `azimuth/model/` | this project's own Requirements — Azimuth described in Azimuth |
 | `azimuth/standards/` | this project's Decision Policies and Challenge Schedule |
 | `azimuth/changes/` | active and archived changes; the decision record |
 | `azimuth/explorations/` | non-normative research and open questions |

@@ -8,21 +8,22 @@
  */
 
 /**
- * Marks a production-code site as being on a claim's path, keyed by its stable project-wide Claim ID.
+ * Marks a production-code site as being on a Requirement's path, keyed by its stable project-wide
+ * Requirement ID.
  *
- * The ID identifies the independently governed Claim. Cases remain repository-owned evidence
+ * The ID identifies the independently governed Requirement. Scenarios remain repository-owned evidence
  * addresses and never enter source markers.
  *
  * Carries no form — form is how a *test* checks, not a property of code.
  */
-export function realizes(claim: string): void {
-  void claim;
+export function realizes(requirement: string): void {
+  void requirement;
 }
 
 /**
  * Marks a source site as an implementation of one stable project-wide Check identity.
  *
- * Claim linkage, evidence form and Qualification meaning remain repository declarations. The
+ * Requirement linkage, evidence form and Qualification meaning remain repository declarations. The
  * marker supplies implementation identity only.
  */
 export function implementsCheck(check: string): void {

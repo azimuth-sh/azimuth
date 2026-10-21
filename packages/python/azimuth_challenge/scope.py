@@ -32,14 +32,14 @@ def located(root, relative):
 
 
 def resolve(request, manifests, roots):
-    allowed = {'format', 'version', 'challenger', 'claims', 'mechanisms', 'checks', 'repository', 'project', 'test_project', 'test_filter', 'tool', 'rules', 'areas'}
-    if set(request) - allowed or request.get('format') != 'azimuth-challenge-scope-request' or request.get('version') != 1:
-        raise ValueError('expected strict azimuth-challenge-scope-request version 1')
-    for field in ('claims', 'mechanisms', 'checks', 'rules', 'areas'):
+    allowed = {'format', 'version', 'verification_challenge', 'requirements', 'mechanisms', 'checks', 'repository', 'project', 'test_project', 'test_filter', 'tool', 'rules', 'areas'}
+    if set(request) - allowed or request.get('format') != 'azimuth-challenge-scope-request' or request.get('version') != 2:
+        raise ValueError('expected strict azimuth-challenge-scope-request version 2')
+    for field in ('requirements', 'mechanisms', 'checks', 'rules', 'areas'):
         values = request.get(field, [])
         if not isinstance(values, list) or any(not isinstance(value, str) or not value for value in values) or len(values) != len(set(values)):
             raise ValueError(f'{field} requires unique nonempty string values')
-    for field in ('challenger', 'repository'):
+    for field in ('verification_challenge', 'repository'):
         if not isinstance(request.get(field), str) or not request[field]:
             raise ValueError(f'{field} requires a nonempty identity')
     if request.get('tool') not in ('stryker-net', 'semgrep'):
@@ -52,7 +52,7 @@ def resolve(request, manifests, roots):
     exclusions = []
     unresolved = []
     seen = {}
-    for relation, key, ids in [('realizes', 'claim', [] if request.get('mechanisms') else request.get('claims', [])), ('mechanism_implementations', 'mechanism', request.get('mechanisms', [])), ('check_implementations', 'check', request.get('checks', []))]:
+    for relation, key, ids in [('realizes', 'requirement', [] if request.get('mechanisms') else request.get('requirements', [])), ('mechanism_implementations', 'mechanism', request.get('mechanisms', [])), ('check_implementations', 'check', request.get('checks', []))]:
         for identity in ids:
             matches = [item for manifest in manifests for item in manifest.get(relation, []) if item.get(key) == identity]
             if not matches:
@@ -124,12 +124,12 @@ def resolve(request, manifests, roots):
         if not rules:
             raise ValueError('source analysis requires explicit local custom rules')
         config = {'targets': targets, 'rules': rules, 'arguments': ['scan', '--json', '--metrics=off', '--disable-version-check']}
-    report = {'format': 'azimuth-challenge-source-scope', 'version': 1, 'challenger': request['challenger'],
+    report = {'format': 'azimuth-challenge-source-scope', 'version': 2, 'verification_challenge': request['verification_challenge'],
               'repository': repository, 'request': request, 'status': 'incomplete' if unresolved else 'complete',
               'sites': sorted(selected, key=lambda item: (item['role'], item['file'], item['site'], item['entity'])),
               'target_scope': targets, 'build_scope': build, 'analysis_scope': targets if request['tool'] == 'semgrep' else [],
               'check_scope': checks, 'check_filter': check_filter, 'check_filter_limitations': check_filter_limitations, 'exclusions': exclusions, 'unresolved': unresolved, 'expansions': expansion,
-              'target_selection': 'mechanisms' if request.get('mechanisms') else 'claims',
+              'target_selection': 'mechanisms' if request.get('mechanisms') else 'requirements',
               'limitations': ['Target file completeness requires independent review of relevant call paths.',
                               'File targeting may include unrelated sites within selected files.',
                               'Build tool project references may expand compilation dependencies; these are not mutation targets.'] + (['Semgrep local rules provide intrafile analysis only; no cross-language or interfile assurance is inferred.'] if request['tool'] == 'semgrep' else ['Exact method filters require a test runner supporting the dotnet test FullyQualifiedName filter; unsupported runner filtering cannot establish selected Check execution.']),

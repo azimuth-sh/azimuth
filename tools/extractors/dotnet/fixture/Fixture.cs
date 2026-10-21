@@ -13,7 +13,7 @@ namespace Azimuth.Fixture
         {
         }
 
-        /// A site may realize several claims — branches of one method.
+        /// A site may realize several requirements — branches of one method.
         [Realizes("first-branch")]
         [Realizes("second-branch")]
         [ImplementsMechanism("branch-selection")]
@@ -121,6 +121,31 @@ namespace Azimuth.Fixture.Ordinary
     {
         [Fact]
         public void BareButOutsideAnyTracedRoot()
+        {
+        }
+    }
+}
+
+namespace Azimuth.Fixture.Account
+{
+    public sealed class Verification
+    {
+        [SupportsVerificationElement("supported-requirement", "fixture/element")]
+        [DefinesVerificationCheck("fixture-account-check", "the fixture behaves", "fixture/method")]
+        [ContributesCheckToScenario(
+            "fixture-account-check",
+            "fixture-scenario",
+            "fixture/method",
+            "the fixture Check decides the Scenario directly")]
+        public void Verify()
+        {
+        }
+    }
+
+    public sealed class Search
+    {
+        [Azimuth.Challenge.Annotations.ImplementsVerificationChallenge("fixture-mutation")]
+        public void Run()
         {
         }
     }

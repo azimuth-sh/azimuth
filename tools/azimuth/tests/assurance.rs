@@ -1,16 +1,16 @@
 use azimuth::assurance::{
-    ClaimContract, ContractArea, ContractContribution, ContractMount, ContractSurface,
-    ContractVerification, ProjectSnapshot, FORMAT, VERSION,
+    ContractArea, ContractContribution, ContractMount, ContractSurface, ContractVerification,
+    ProjectSnapshot, RequirementContract, FORMAT, VERSION,
 };
 
-fn contract(spec: &str, claim: &str) -> ClaimContract {
-    ClaimContract {
+fn contract(spec: &str, requirement: &str) -> RequirementContract {
+    RequirementContract {
         spec: spec.into(),
-        claim: claim.into(),
-        requirement: "behavior".into(),
+        requirement: requirement.into(),
+        requirement_kind: "behavior".into(),
         criticality: "standard".into(),
         statement: "The system SHALL work.".into(),
-        case_statement: "The system works under the addressed condition.".into(),
+        scenario_statement: "The system works under the addressed condition.".into(),
         domain: "behaviour".into(),
         verification: ContractVerification {
             strength: Some("demonstration".into()),
@@ -90,21 +90,21 @@ fn snapshot_wire_shape_and_fingerprint_remain_service_compatible() {
 
     assert_eq!(left, right);
     assert_eq!(left.id, left.fingerprint());
-    assert_eq!(left.claims[0].identity(), "alpha-works");
+    assert_eq!(left.requirements[0].identity(), "alpha-works");
     assert_eq!(FORMAT, "azimuth-assurance-project-snapshot");
-    assert_eq!(VERSION, 2);
+    assert_eq!(VERSION, 3);
 
     let json = left.to_json();
     assert_eq!(
         json.get("version").and_then(|value| value.as_num()),
-        Some(2.0)
+        Some(3.0)
     );
     assert!(json.get("modelFingerprint").is_some());
-    assert!(json.get("claims").is_some());
+    assert!(json.get("requirements").is_some());
     assert!(json.get("bindings").is_none());
     let rendered = json.to_string_pretty();
     assert!(rendered.contains("contractFingerprint"));
-    assert!(rendered.contains("caseStatement"));
+    assert!(rendered.contains("scenarioStatement"));
     assert!(!rendered.contains("\"steps\""));
     assert!(!rendered.contains("method_qualification_fingerprint"));
 }

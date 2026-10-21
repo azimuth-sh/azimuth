@@ -4,7 +4,7 @@ use azimuth::design::{parse_design, Enforcement, Target};
 use azimuth::model::{MechanismImplementation, Model};
 
 const DESIGN: &str = "# Design: alpha\n\n\
-## Claim: matters\n\
+## Requirement: matters\n\
 Mechanism: concurrent-insert-constraint\n\
 Enforcement: constraint\n\
 Binding: schema:index:ux_alpha\n\
@@ -26,7 +26,7 @@ fn error(source: &str) -> String {
 fn parses_implementation_binding_and_enforcement_expectations() {
     let design = parse_design("design.md", DESIGN).unwrap();
     let entry = &design.entries[0];
-    assert_eq!(entry.target, Target::Claim("matters".into()));
+    assert_eq!(entry.target, Target::Requirement("matters".into()));
     let mechanism = &entry.mechanisms[0];
     assert_eq!(mechanism.id, "concurrent-insert-constraint");
     assert_eq!(mechanism.kind, Enforcement::Constraint);
@@ -54,16 +54,16 @@ fn rejects_unknown_enforcement_and_duplicate_mechanism_ids() {
     assert!(error(&unknown).contains("unknown enforcement `vibes`"));
 
     let duplicate = format!(
-        "{DESIGN}\n## Claim: other\nMechanism: concurrent-insert-constraint\n\
+        "{DESIGN}\n## Requirement: other\nMechanism: concurrent-insert-constraint\n\
          Enforcement: guard\nBinding: rust:alpha::guard\n\nA reason.\n"
     );
     assert!(error(&duplicate).contains("declared twice"));
 }
 
 #[test]
-fn a_claim_may_carry_several_mechanisms() {
+fn a_requirement_may_carry_several_mechanisms() {
     let source = "# Design: alpha\n\n\
-## Claim: matters\n\
+## Requirement: matters\n\
 Mechanism: transition-writer\n\
 Enforcement: choke-point\n\
 Binding: rust:alpha::transition\n\

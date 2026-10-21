@@ -8,7 +8,6 @@ import socket
 import platform
 import tempfile
 import threading
-import time
 import unittest
 from urllib.parse import urlsplit
 
@@ -18,7 +17,6 @@ from services.reconciler.reconciler import KubernetesArgo, fingerprint as templa
 
 DIGEST = "sha256:" + "a" * 64
 IMAGE = "example/component@" + DIGEST
-SUBJECT = "sha256:" + "b" * 64
 
 
 class Cluster:
@@ -30,6 +28,7 @@ class Cluster:
                             "operationState": {"finishedAt": "2026-01-01T00:00:00Z", "phase": "Succeeded",
                                                "syncResult": {"revision": "a" * 40}, "operation": {"sync": {"revision": "a" * 40}}}}
         self.context_reads = {}
+        self.report_version = 2
         self.uploads = []
         self.fail_upload = False
         self.contract = {"name": "settings", "fields": {"enabled": "boolean"}}
@@ -56,23 +55,16 @@ class Cluster:
             def do_GET(self):
                 state.requests.append((self.path, self.headers.get("Authorization")))
                 path = urlsplit(self.path).path
-                if path == "/internal/verification-context":
+                if path == "/internal/execution-context":
                     host = self.headers["Host"].split(":")[0]
                     number = state.context_reads.get(host, 0) + 1; state.context_reads[host] = number
                     if state.mode == "unavailable": self.send_response(503); self.end_headers(); return
-                    report = {"format": "azimuth-verification-context", "version": 1,
+                    report = {"format": "azimuth-execution-context", "version": state.report_version,
                               "contexts": {"settings": {"contract_revision": state.contract["fingerprint"], "values": {"enabled": not (state.mode == "context-change" and number > 1)}}}}
                     self.send_response(200)
                     if state.mode != "missing-boot": self.send_header("X-Azimuth-Instance", "boot-" + host + ("-replacement" if state.mode == "boot-change" and number > 1 else ""))
                     self.end_headers(); self.wfile.write(json.dumps(report).encode()); return
-                if path.endswith("/deployment"):
-                    value = {"deployment": {"id": "observed-example", "environment": "production", "subject_fingerprint": SUBJECT,
-                                            "subject": {"kind": "deployment", "artifacts": [{"id": "component", "digest": DIGEST}]}}}
-                elif path.endswith("/observations"):
-                    value = {"fresh": state.mode != "stale", "deployment_id": "observed-example",
-                             "observation": {"state": "complete", "observed_at_ms": int(time.time() * 1000), "valid_for_seconds": 90, "components": [{"name": "component", "ready": True, "instances": ["containerd://process-1", "containerd://process-2"]}]}}
-                elif path.endswith("/context-contracts"): value = {"records": [{"contract": state.contract}]}
-                elif "/deployments/" in path: value = state.deploy
+                if "/deployments/" in path: value = state.deploy
                 elif path.endswith("/replicasets"):
                     value = {"items": [{"metadata": {"uid": "replicaset-uid", "ownerReferences": [{"kind": "Deployment", "uid": "deployment-uid", "controller": True}]}}]}
                 elif path.endswith("/pods"):
@@ -115,7 +107,7 @@ class ContextCollectionTests(unittest.TestCase):
         self.kube = KubernetesContexts(self.cluster.origin, self.token, ca=None)
         self.source = {"id": "contexts", "project": "example", "environment": "production", "namespace": "application",
                        "component": "component", "deployment": "application", "container": "application", "port": self.cluster.server.server_port,
-                       "path": "/internal/verification-context", "contracts": [self.cluster.contract], "token_file": str(self.publisher)}
+                       "path": "/internal/execution-context", "contracts": [self.cluster.contract], "token_file": str(self.publisher)}
 
     def tearDown(self):
         self.cluster.close(); self.directory.cleanup()
@@ -124,7 +116,10 @@ class ContextCollectionTests(unittest.TestCase):
         captures = collect(self.cluster.origin, self.source, self.kube, "publisher-only")
         self.assertEqual([item["capture"]["instance"] for item in captures], ["containerd://process-1", "containerd://process-2"])
         for observation in captures:
-            self.assertNotIn("subject_fingerprint", observation)
+            self.assertEqual((observation["format"], observation["version"], observation["kind"]), ("azimuth-target-observation", 2, "context"))
+            self.assertNotIn("verification_target_fingerprint", observation)
+            self.assertEqual(observation["capture"]["before"]["report"]["format"], "azimuth-execution-context")
+            self.assertEqual(observation["capture"]["before"]["report"]["version"], 2)
             self.assertEqual(observation["targets"][0]["image"], IMAGE)
             capture = observation["capture"]
             self.assertNotIn("trusted", capture)
@@ -141,6 +136,11 @@ class ContextCollectionTests(unittest.TestCase):
                 self.cluster.mode = mode; self.cluster.pod_reads = 0; self.cluster.context_reads = {}
                 with self.assertRaises((ValueError, __import__("urllib.error").error.HTTPError)):
                     collect(self.cluster.origin, self.source, self.kube, "publisher-only")
+
+    def test_previous_execution_context_report_version_is_rejected(self):
+        self.cluster.report_version = 1
+        with self.assertRaisesRegex(ValueError, "azimuth-execution-context version 2 required"):
+            collect(self.cluster.origin, self.source, self.kube, "publisher-only")
 
     def test_durable_context_retry_preserves_exact_bytes(self):
         captures = collect(self.cluster.origin, self.source, self.kube, "publisher-only")
@@ -161,8 +161,8 @@ class ContextCollectionTests(unittest.TestCase):
         source = dict(self.source, port=9001, token_file="/credentials/context-publisher")
         config = {"context_sources": [source], "namespaces": ["application"], "projects": {"example": {}}}
         self.assertEqual(validate_sources(config), [source])
-        for field, value in (("namespace", "unapproved"), ("port", 80), ("path", "/metrics?url=external"), ("token_file", "/credentials/../token")):
-            with self.subTest(field=field):
+        for field, value in (("namespace", "unapproved"), ("port", 80), ("path", "/metrics?url=external"), ("path", "/internal/verification-context"), ("token_file", "/credentials/../token")):
+            with self.subTest(field=field, value=value):
                 invalid = deepcopy(config); invalid["context_sources"][0][field] = value
                 with self.assertRaises(ValueError): validate_sources(invalid)
 

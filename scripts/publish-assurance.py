@@ -72,7 +72,7 @@ def main():
     requests.extend((base + '/model-revisions/' + quote(revision) + '/reviews',
                      review, reviewers[review['reviewer']], review['kind'])
                     for review in sorted(snapshot['reviews'], key=lambda review:
-                        (review['kind'] != 'claim-review', review['reviewed_at_ms'])))
+                        (review['kind'] != 'requirement-review', review['reviewed_at_ms'])))
     receipts = []
     opener = urllib.request.build_opener(RejectRedirects())
     args.receipt.parent.mkdir(parents=True, exist_ok=True)

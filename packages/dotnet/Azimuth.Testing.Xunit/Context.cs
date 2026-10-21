@@ -5,22 +5,22 @@ namespace Azimuth.Testing.Xunit;
 
 public sealed record ContextDefinition(string ContractRevision, IReadOnlyDictionary<string, JsonElement> Values);
 
-public sealed record VerificationContextReport(
+public sealed record ExecutionContextReport(
     string Format,
     int Version,
     IReadOnlyDictionary<string, ContextDefinition> Contexts)
 {
-    public static VerificationContextReport Create(IReadOnlyDictionary<string, ContextDefinition> contexts)
-        => new("azimuth-verification-context", 1, contexts);
+    public static ExecutionContextReport Create(IReadOnlyDictionary<string, ContextDefinition> contexts)
+        => new("azimuth-execution-context", 2, contexts);
 }
 
-public sealed record ContextCapture(string Instance, VerificationContextReport Report);
+public sealed record ContextCapture(string Instance, ExecutionContextReport Report);
 
 public sealed record ContextSource(
     string Name,
     Func<CancellationToken, Task<ContextCapture>> Capture);
 
-public sealed record ContextSnapshot(long CapturedAtMs, string Instance, VerificationContextReport Report);
+public sealed record ContextSnapshot(long CapturedAtMs, string Instance, ExecutionContextReport Report);
 
 public sealed record TestContext(string Name, ContextSnapshot Before, ContextSnapshot After);
 
@@ -51,18 +51,18 @@ public static class ContextProtocol
         WriteIndented = true
     };
 
-    public static VerificationContextReport Parse(string json)
+    public static ExecutionContextReport Parse(string json)
     {
-        var report = JsonSerializer.Deserialize<VerificationContextReport>(json, JsonOptions)
-            ?? throw new JsonException("Verification context report is absent.");
+        var report = JsonSerializer.Deserialize<ExecutionContextReport>(json, JsonOptions)
+            ?? throw new JsonException("Execution Context report is absent.");
         Validate(report);
         return report;
     }
 
-    public static void Validate(VerificationContextReport report)
+    public static void Validate(ExecutionContextReport report)
     {
-        if (report.Format != "azimuth-verification-context" || report.Version != 1 || report.Contexts is null)
-            throw new JsonException("Unsupported verification context report.");
+        if (report.Format != "azimuth-execution-context" || report.Version != 2 || report.Contexts is null)
+            throw new JsonException("Unsupported Execution Context report.");
         foreach (var (name, context) in report.Contexts)
         {
             if (string.IsNullOrWhiteSpace(name) || context is null || context.Values is null ||
@@ -85,7 +85,7 @@ public static class ContextProtocol
         _ => false
     };
 
-    internal static VerificationContextReport Freeze(VerificationContextReport report)
+    internal static ExecutionContextReport Freeze(ExecutionContextReport report)
         => Parse(JsonSerializer.Serialize(report, JsonOptions));
 
     internal static bool Equal(ContextSnapshot before, ContextSnapshot after)

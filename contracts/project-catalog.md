@@ -101,7 +101,7 @@ A model source whose `repository` is undeclared, or whose `path` is not normaliz
 | `id` | non-empty string | yes | receipt id, unique across the catalog |
 | `subjects` | array of strings | yes | the exact repository ids the receipt must cover |
 
-`subjects` must be present and an array; a non-string element is a violation. Subject ids are unique within one requirement and must each be a declared repository. The requirement is exact: a supplied receipt whose subject set differs from `subjects` in either direction fails assembly.
+`subjects` must be present and an array; a non-string element is a violation. The key names the repositories a receipt covers; it is not an assurance Verification Target. Repository ids are unique within one required receipt and must each be a declared repository. The required receipt is exact: a supplied receipt whose repository set differs from `subjects` in either direction fails assembly.
 
 ## Digest
 

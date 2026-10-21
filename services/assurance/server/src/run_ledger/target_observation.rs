@@ -65,11 +65,11 @@ fn validate(raw: &Value, time: i64) -> Result<(), LedgerError> {
         "observation",
     )?;
     if raw["format"] != "azimuth-target-observation"
-        || raw["version"] != 1
+        || raw["version"] != 2
         || raw.to_string().len() > 262144
     {
         return Err(LedgerError::invalid(
-            "expected bounded azimuth-target-observation version 1",
+            "expected bounded azimuth-target-observation version 2",
         ));
     }
     for field in ["source", "execution_id", "environment"] {
@@ -142,10 +142,10 @@ fn validate(raw: &Value, time: i64) -> Result<(), LedgerError> {
             )?;
             if definition["plan"].get("fingerprint").is_some() {
                 return Err(LedgerError::invalid(
-                    "subject-free plan must omit fingerprint",
+                    "plan independent of a Verification Target must omit fingerprint",
                 ));
             }
-            let subject = run::Subject::Deployment {
+            let verification_target = run::VerificationTarget::Deployment {
                 environment: "validation".into(),
                 deployment: "validation".into(),
                 deployment_fingerprint: format!("sha256:{}", "0".repeat(64)),
@@ -154,7 +154,7 @@ fn validate(raw: &Value, time: i64) -> Result<(), LedgerError> {
                     digest: format!("sha256:{}", "0".repeat(64)),
                 }],
             };
-            materialize_run(raw, &subject, "validation", "validation")?;
+            materialize_run(raw, &verification_target, "validation", "validation")?;
         }
         Some("context") if raw["check"].is_null() => {
             let c = &raw["capture"];
@@ -279,7 +279,7 @@ pub(super) async fn list(
     if after < 0 {
         return Err(LedgerError::invalid("expected nonnegative sequence cursor"));
     }
-    let rows: Vec<(i64,Value)> = sqlx::query_as("SELECT t.sequence,jsonb_build_object('fingerprint',t.fingerprint,'observation',assurance_record('target_observation',t.project,t.fingerprint),'submitted_by',t.submitted_by,'received_at_ms',t.received_at_ms,'resolution',CASE WHEN r.deployment_id IS NULL THEN NULL ELSE jsonb_build_object('deployment',r.deployment_id,'subject_fingerprint',r.subject_fingerprint,'before_fingerprint',r.before_fingerprint,'after_fingerprint',r.after_fingerprint,'run_fingerprint',r.run_fingerprint,'capture_fingerprint',r.capture_fingerprint,'resolved_at_ms',r.resolved_at_ms,'normalizer_fingerprint',r.normalizer_fingerprint) END,'diagnostics',CASE WHEN r.deployment_id IS NULL THEN jsonb_build_array(t.resolution_diagnostic) ELSE '[]'::jsonb END) FROM target_observations t LEFT JOIN target_observation_resolutions r ON r.project=t.project AND r.observation_fingerprint=t.fingerprint WHERE t.project=$1 AND t.sequence>$2 ORDER BY t.sequence LIMIT $3")
+    let rows: Vec<(i64,Value)> = sqlx::query_as("SELECT t.sequence,jsonb_build_object('fingerprint',t.fingerprint,'observation',assurance_record('target_observation',t.project,t.fingerprint),'submitted_by',t.submitted_by,'received_at_ms',t.received_at_ms,'resolution',CASE WHEN r.deployment_id IS NULL THEN NULL ELSE jsonb_build_object('deployment',r.deployment_id,'verification_target_fingerprint',r.verification_target_fingerprint,'before_fingerprint',r.before_fingerprint,'after_fingerprint',r.after_fingerprint,'run_fingerprint',r.run_fingerprint,'capture_fingerprint',r.capture_fingerprint,'resolved_at_ms',r.resolved_at_ms,'normalizer_fingerprint',r.normalizer_fingerprint) END,'diagnostics',CASE WHEN r.deployment_id IS NULL THEN jsonb_build_array(t.resolution_diagnostic) ELSE '[]'::jsonb END) FROM target_observations t LEFT JOIN target_observation_resolutions r ON r.project=t.project AND r.observation_fingerprint=t.fingerprint WHERE t.project=$1 AND t.sequence>$2 ORDER BY t.sequence LIMIT $3")
         .bind(&project).bind(after).bind(limit+1).fetch_all(&state.pool).await?;
     if rows.iter().map(|(_, v)| v.to_string().len()).sum::<usize>() > 33_554_432 {
         return Err(LedgerError::invalid(
@@ -447,14 +447,18 @@ async fn resolve_one(
     };
     let deployment = before.deployment.as_ref().unwrap();
     let (record,release): (Value,String) = sqlx::query_as("SELECT assurance_record('deployment',project,deployment_id),release_fingerprint FROM release_deployments WHERE project=$1 AND deployment_id=$2").bind(project).bind(deployment).fetch_one(&mut **tx).await?;
-    let subject_fp = record["subject_fingerprint"].as_str().ok_or_else(|| {
-        LedgerError::invalid("historical deployment Subject fingerprint is missing")
-    })?;
-    let subject = run::subject_from_json(&core_json(record["subject"].to_string().as_bytes())?)
-        .map_err(LedgerError::invalid)?;
-    if run::subject_fingerprint(&subject) != subject_fp {
+    let verification_target_fp = record["verification_target_fingerprint"]
+        .as_str()
+        .ok_or_else(|| {
+            LedgerError::invalid("historical deployment Verification Target fingerprint is missing")
+        })?;
+    let verification_target = run::verification_target_from_json(&core_json(
+        record["verification_target"].to_string().as_bytes(),
+    )?)
+    .map_err(LedgerError::invalid)?;
+    if run::verification_target_fingerprint(&verification_target) != verification_target_fp {
         return Err(LedgerError::invalid(
-            "historical deployment Subject fingerprint differs",
+            "historical deployment Verification Target fingerprint differs",
         ));
     }
     let normalizer = target_normalizer::adapter()?;
@@ -469,10 +473,15 @@ async fn resolve_one(
     let mut run_fp: Option<String> = None;
     let mut capture_fp: Option<String> = None;
     if raw["kind"] == "check" {
-        let bundle = materialize_run(&raw, &subject, &before.fingerprint, &after.fingerprint)?;
+        let bundle = materialize_run(
+            &raw,
+            &verification_target,
+            &before.fingerprint,
+            &after.fingerprint,
+        )?;
         let authority: Value = sqlx::query_scalar("SELECT assurance_record_field('release',project,fingerprint,'snapshot')->'authority' FROM assurance_releases WHERE project=$1 AND fingerprint=$2").bind(project).bind(&release).fetch_one(&mut **tx).await?;
         let selected = &bundle.plan.checks[0];
-        let expected_cases: BTreeSet<&str> = authority["bindings"]
+        let expected_scenarios: BTreeSet<&str> = authority["bindings"]
             .as_array()
             .into_iter()
             .flatten()
@@ -480,9 +489,9 @@ async fn resolve_one(
                 binding["check"] == selected.id
                     && binding["check_fingerprint"] == selected.fingerprint
             })
-            .filter_map(|binding| binding["case"].as_str())
+            .filter_map(|binding| binding["scenario"].as_str())
             .collect();
-        if expected_cases != selected.cases.iter().map(String::as_str).collect() {
+        if expected_scenarios != selected.scenarios.iter().map(String::as_str).collect() {
             return Ok(false);
         }
         let policy = authority["checks"]
@@ -494,7 +503,7 @@ async fn resolve_one(
             })
             .map(|check| &check["deployment"]);
         if !policy.is_some_and(|policy| {
-            policy["subject"] == "deployment"
+            policy["verification_target"] == "deployment"
                 && policy["contribution"] != "support"
                 && raw["targets"].as_array().unwrap().iter().all(|target| {
                     policy["components"]
@@ -532,8 +541,8 @@ async fn resolve_one(
             &payload,
         )
         .await?;
-        sqlx::query("INSERT INTO run_bundles(project,run_id,revision,fingerprint,subject_fingerprint,model_fingerprint) VALUES($1,$2,0,$3,$4,$5) ON CONFLICT(project,run_id,revision) DO NOTHING")
-                .bind(project).bind(&bundle.run_id).bind(&bundle.bundle_fingerprint).bind(subject_fp).bind(&bundle.plan.model_fingerprint).execute(&mut **tx).await?;
+        sqlx::query("INSERT INTO run_bundles(project,run_id,revision,fingerprint,verification_target_fingerprint,model_fingerprint) VALUES($1,$2,0,$3,$4,$5) ON CONFLICT(project,run_id,revision) DO NOTHING")
+                .bind(project).bind(&bundle.run_id).bind(&bundle.bundle_fingerprint).bind(verification_target_fp).bind(&bundle.plan.model_fingerprint).execute(&mut **tx).await?;
         deployment_status::attribute_run(
             tx,
             project,
@@ -544,7 +553,7 @@ async fn resolve_one(
         .await?;
         run_fp = Some(bundle.bundle_fingerprint);
     } else {
-        let capture = validate_context(tx, project, &raw, subject_fp).await?;
+        let capture = validate_context(tx, project, &raw, verification_target_fp).await?;
         let mut identity = capture.clone();
         identity.as_object_mut().unwrap().remove("trusted");
         let key = fingerprint(&identity)?;
@@ -568,8 +577,8 @@ async fn resolve_one(
         }
         capture_fp = Some(key);
     }
-    sqlx::query("INSERT INTO target_observation_resolutions(project,observation_fingerprint,deployment_id,subject_fingerprint,before_fingerprint,after_fingerprint,run_fingerprint,capture_fingerprint,normalizer_fingerprint,resolved_at_ms) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,(extract(epoch FROM clock_timestamp())*1000)::bigint)")
-            .bind(project).bind(fp).bind(deployment).bind(subject_fp).bind(&before.fingerprint).bind(&after.fingerprint).bind(run_fp).bind(capture_fp).bind(&normalizer.adapter_fingerprint).execute(&mut **tx).await?;
+    sqlx::query("INSERT INTO target_observation_resolutions(project,observation_fingerprint,deployment_id,verification_target_fingerprint,before_fingerprint,after_fingerprint,run_fingerprint,capture_fingerprint,normalizer_fingerprint,resolved_at_ms) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,(extract(epoch FROM clock_timestamp())*1000)::bigint)")
+            .bind(project).bind(fp).bind(deployment).bind(verification_target_fp).bind(&before.fingerprint).bind(&after.fingerprint).bind(run_fp).bind(capture_fp).bind(&normalizer.adapter_fingerprint).execute(&mut **tx).await?;
     Ok(true)
 }
 
@@ -577,14 +586,14 @@ async fn validate_context(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     project: &str,
     raw: &Value,
-    subject: &str,
+    verification_target: &str,
 ) -> Result<Value, LedgerError> {
     let mut capture = raw["capture"].clone();
     capture["kind"] = json!("deployment");
     for field in ["run", "activity", "bundle_fingerprint"] {
         capture[field] = Value::Null;
     }
-    capture["subject_fingerprint"] = json!(subject);
+    capture["verification_target_fingerprint"] = json!(verification_target);
     capture["trusted"] = json!(true);
     let contracts: Vec<Value> = sqlx::query_scalar("SELECT assurance_record('context_contract',project,record_key)->'contract' FROM assurance_records WHERE kind='context_contract' AND project=$1 ORDER BY record_key LIMIT 5001").bind(project).fetch_all(&mut **tx).await?;
     if contracts.len() > 5000 {
@@ -606,7 +615,7 @@ async fn validate_context(
 
 fn materialize_run(
     raw: &Value,
-    subject: &run::Subject,
+    verification_target: &run::VerificationTarget,
     before: &str,
     after: &str,
 ) -> Result<run::RunBundle, LedgerError> {
@@ -615,8 +624,8 @@ fn materialize_run(
     plan_value["fingerprint"] = json!(format!("sha256:{}", "0".repeat(64)));
     let mut plan = run::plan_from_json(&core_json(plan_value.to_string().as_bytes())?)
         .map_err(LedgerError::invalid)?;
-    let subject_fp = run::subject_fingerprint(subject);
-    plan.fingerprint = run::plan_fingerprint(&subject_fp, &plan);
+    let verification_target_fp = run::verification_target_fingerprint(verification_target);
+    plan.fingerprint = run::plan_fingerprint(&verification_target_fp, &plan);
     if plan.checks.len() != 1
         || plan.checks[0].units.len() != 1
         || !plan.challenges.is_empty()
@@ -685,17 +694,17 @@ fn materialize_run(
     adapter.launch_fingerprint = run::launch_fingerprint(
         run::ProvenanceMode::Import,
         start,
-        subject,
-        &subject_fp,
+        verification_target,
+        &verification_target_fp,
         &plan,
         &identity,
         &adapter.routes,
     );
     let check = &plan.checks[0];
     let outcome = if raw["check"]["outcome"] == "violated" {
-        run::ObservationOutcome::Violated
+        run::CheckResultOutcome::Violated
     } else {
-        run::ObservationOutcome::Inconclusive
+        run::CheckResultOutcome::Inconclusive
     };
     let execution = run::CheckExecution {
         check: run::CheckRef {
@@ -707,14 +716,18 @@ fn materialize_run(
             attempts: vec![run::CheckAttempt {
                 ordinal: 1,
                 activity: "measurement".into(),
-                outcomes: check.cases.iter().map(|c| (c.clone(), outcome)).collect(),
+                outcomes: check
+                    .scenarios
+                    .iter()
+                    .map(|c| (c.clone(), outcome))
+                    .collect(),
             }],
         }],
-        observations: check
-            .cases
+        results: check
+            .scenarios
             .iter()
-            .map(|c| run::Observation {
-                case: c.clone(),
+            .map(|c| run::CheckResult {
+                scenario: c.clone(),
                 outcome,
                 observed_at_ms: finish,
                 fingerprint: String::new(),
@@ -729,14 +742,14 @@ fn materialize_run(
         corrects: None,
         correction_reason: None,
         bundle_fingerprint: String::new(),
-        subject: subject.clone(),
-        subject_fingerprint: subject_fp,
+        verification_target: verification_target.clone(),
+        verification_target_fingerprint: verification_target_fp,
         planned_at_ms: start,
         started_at_ms: start,
         finished_at_ms: finish,
         status: run::RunStatus::Complete,
         actual_selection: run::ActualSelection {
-            context: plan.required_context.clone(),
+            execution_context: plan.required_execution_context.clone(),
             plan_fingerprint: plan.fingerprint.clone(),
             checks: plan.checks.clone(),
             challenges: vec![],
@@ -792,7 +805,7 @@ fn materialize_run(
         check_executions: vec![execution],
         artifacts: vec![],
         diagnostics: vec![],
-        challenger_executions: vec![],
+        verification_challenge_executions: vec![],
         contributions: vec![],
     };
     run::refresh_bundle(&mut bundle);

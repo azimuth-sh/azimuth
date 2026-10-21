@@ -566,8 +566,8 @@ fn validate_bundle_launch_identity(
         RunOperation::Execute => ProvenanceMode::Execute,
         RunOperation::Import => ProvenanceMode::Import,
     };
-    if bundle.subject != launch.subject
-        || bundle.subject_fingerprint != launch.subject_fingerprint
+    if bundle.verification_target != launch.verification_target
+        || bundle.verification_target_fingerprint != launch.verification_target_fingerprint
         || bundle.planned_at_ms != launch.planned_at_ms
         || bundle.plan != launch.plan
         || bundle.provenance.mode != expected_mode
@@ -583,7 +583,7 @@ fn validate_bundle_launch_identity(
         || bundle.provenance.normalizer.build_fingerprint != launch.adapter.adapter_fingerprint
     {
         return Err(HostError::semantic(format!(
-            "{label} differs from the launch Subject, time, Plan or adapter route"
+            "{label} differs from the launch Verification Target, time, Plan or adapter route"
         )));
     }
     Ok(())
@@ -1369,15 +1369,15 @@ fn failed_contribution(
         corrects: previous.last().map(|b| b.bundle_fingerprint.clone()),
         correction_reason: previous.last().map(|_| "adapter exchange failure".into()),
         bundle_fingerprint: String::new(),
-        subject: launch.subject.clone(),
-        subject_fingerprint: launch.subject_fingerprint.clone(),
+        verification_target: launch.verification_target.clone(),
+        verification_target_fingerprint: launch.verification_target_fingerprint.clone(),
         planned_at_ms: launch.planned_at_ms,
         started_at_ms: started,
         finished_at_ms: finished,
         status: run::RunStatus::Partial,
         plan: launch.plan.clone(),
         actual_selection: run::ActualSelection {
-            context: launch.plan.required_context.clone(),
+            execution_context: launch.plan.required_execution_context.clone(),
             plan_fingerprint: launch.plan.fingerprint.clone(),
             checks: Vec::new(),
             challenges: Vec::new(),
@@ -1415,7 +1415,7 @@ fn failed_contribution(
         diagnostics,
         activities: Vec::new(),
         check_executions: Vec::new(),
-        challenger_executions: Vec::new(),
+        verification_challenge_executions: Vec::new(),
         contributions: Vec::new(),
     };
     run::refresh_bundle(&mut bundle);

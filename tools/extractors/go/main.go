@@ -29,7 +29,7 @@ const annotationPackage = "github.com/azimuth-sh/azimuth-go/azimuth"
 var entityIDPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`)
 
 type relation struct {
-	Claim             string `json:"claim"`
+	Requirement       string `json:"requirement"`
 	Site              string `json:"site"`
 	File              string `json:"file"`
 	Lang              string `json:"lang"`
@@ -779,7 +779,7 @@ func appendMarker(
 	}
 	switch name {
 	case "Realizes":
-		result.Realizes = append(result.Realizes, relation{Claim: values[0], Site: site, File: file, Lang: "go", SourceFingerprint: fingerprint})
+		result.Realizes = append(result.Realizes, relation{Requirement: values[0], Site: site, File: file, Lang: "go", SourceFingerprint: fingerprint})
 	case "ImplementsCheck":
 		result.CheckImplementations = append(result.CheckImplementations, checkImplementation{Check: values[0], Site: site, File: file, Lang: "go", SourceFingerprint: fingerprint})
 	case "ImplementsMechanism":

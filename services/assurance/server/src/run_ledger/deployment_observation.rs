@@ -209,10 +209,14 @@ pub(super) async fn record(
         let identity=core_json(json!({"environment":environment,"release":release,"configuration":config,"rollout_id":o["rollout_id"],"applied_revision":o["applied_revision"]}).to_string().as_bytes())?;
         let deployment_fp = run::canonical_fingerprint(&identity).map_err(LedgerError::invalid)?;
         let deployment_id = format!("observed-{}", &deployment_fp[7..]);
-        let (subject, native) =
-            observed_subject(&environment, &deployment_id, config, expected_components)?;
+        let (verification_target, native) = observed_verification_target(
+            &environment,
+            &deployment_id,
+            config,
+            expected_components,
+        )?;
         observed_deployment = Some(deployment_id.clone());
-        let deployment = json!({"id":deployment_id,"environment":environment,"configuration_fingerprint":config,"artifacts":seen,"subject":subject,"subject_fingerprint":run::subject_fingerprint(&native)});
+        let deployment = json!({"id":deployment_id,"environment":environment,"configuration_fingerprint":config,"artifacts":seen,"verification_target":verification_target,"verification_target_fingerprint":run::verification_target_fingerprint(&native)});
         release::insert_deployment(&mut tx, &project, release, &deployment, &publisher).await?;
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
             .bind(format!("{project}|current-deployment|{environment}"))
@@ -330,60 +334,63 @@ mod tests {
     }
 }
 
-fn observed_subject(
+fn observed_verification_target(
     environment: &str,
     deployment: &str,
     configuration: &str,
     components: &[Value],
-) -> Result<(Value, run::Subject), LedgerError> {
+) -> Result<(Value, run::VerificationTarget), LedgerError> {
     let mut artifacts: Vec<Value> = components
         .iter()
         .map(|component| json!({"id":component["id"],"digest":component["digest"]}))
         .collect();
     artifacts.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
-    let subject = json!({"kind":"deployment","environment":environment,"deployment":deployment,"deployment_fingerprint":configuration,"artifacts":artifacts});
-    let native = run::subject_from_json(&core_json(subject.to_string().as_bytes())?)
-        .map_err(LedgerError::invalid)?;
-    Ok((subject, native))
+    let verification_target = json!({"kind":"deployment","environment":environment,"deployment":deployment,"deployment_fingerprint":configuration,"artifacts":artifacts});
+    let native =
+        run::verification_target_from_json(&core_json(verification_target.to_string().as_bytes())?)
+            .map_err(LedgerError::invalid)?;
+    Ok((verification_target, native))
 }
 
 #[cfg(test)]
-mod subject_tests {
+mod verification_target_tests {
     use super::*;
 
     #[test]
-    fn release_component_order_does_not_change_the_valid_deployment_subject() {
+    fn release_component_order_does_not_change_the_valid_deployment_verification_target() {
         let digest = format!("sha256:{}", "a".repeat(64));
         let components = [
             json!({"id":"web","digest":digest}),
             json!({"id":"api","digest":digest}),
             json!({"id":"gateway","digest":digest}),
         ];
-        let (subject, native) = observed_subject("production", "rollout", &digest, &components)
-            .unwrap_or_else(|error| panic!("{}", error.detail));
+        let (verification_target, native) =
+            observed_verification_target("production", "rollout", &digest, &components)
+                .unwrap_or_else(|error| panic!("{}", error.detail));
         let reordered = [
             components[2].clone(),
             components[0].clone(),
             components[1].clone(),
         ];
-        let (other, other_native) = observed_subject("production", "rollout", &digest, &reordered)
-            .unwrap_or_else(|error| panic!("{}", error.detail));
-        assert_eq!(subject, other);
+        let (other, other_native) =
+            observed_verification_target("production", "rollout", &digest, &reordered)
+                .unwrap_or_else(|error| panic!("{}", error.detail));
+        assert_eq!(verification_target, other);
         assert_eq!(
-            run::subject_fingerprint(&native),
-            run::subject_fingerprint(&other_native)
+            run::verification_target_fingerprint(&native),
+            run::verification_target_fingerprint(&other_native)
         );
-        let parsed = run::subject_from_json(
-            &core_json(subject.to_string().as_bytes())
+        let parsed = run::verification_target_from_json(
+            &core_json(verification_target.to_string().as_bytes())
                 .unwrap_or_else(|error| panic!("{}", error.detail)),
         )
         .unwrap();
         assert_eq!(
-            run::subject_fingerprint(&native),
-            run::subject_fingerprint(&parsed)
+            run::verification_target_fingerprint(&native),
+            run::verification_target_fingerprint(&parsed)
         );
-        assert_eq!(subject["artifacts"][0]["id"], "api");
-        assert_eq!(subject["artifacts"][1]["id"], "gateway");
-        assert_eq!(subject["artifacts"][2]["id"], "web");
+        assert_eq!(verification_target["artifacts"][0]["id"], "api");
+        assert_eq!(verification_target["artifacts"][1]["id"], "gateway");
+        assert_eq!(verification_target["artifacts"][2]["id"], "web");
     }
 }

@@ -1,6 +1,6 @@
 use crate::json::Json;
 use crate::model::Model;
-use crate::run::{ObservationOutcome, RunBundle};
+use crate::run::{CheckResultOutcome, RunBundle};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
@@ -31,15 +31,19 @@ pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
             Json::Obj(fields)
         })
         .collect::<Vec<_>>();
-    let cases = model
-        .cases()
-        .map(|case| {
+    let scenarios = model
+        .scenarios()
+        .map(|scenario| {
             Json::obj(vec![
-                ("id", Json::str(&case.case.id)),
-                ("claim", Json::str(&case.claim.id)),
+                ("id", Json::str(&scenario.scenario.id)),
+                ("requirement", Json::str(&scenario.requirement.id)),
                 (
                     "fingerprint",
-                    Json::str(model.case_digest(&case.case.id).unwrap_or_default()),
+                    Json::str(
+                        model
+                            .scenario_digest(&scenario.scenario.id)
+                            .unwrap_or_default(),
+                    ),
                 ),
             ])
         })
@@ -50,14 +54,14 @@ pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
             for binding in &check.bindings {
                 let definition = Json::obj(vec![
                     ("check", Json::str(&check.definition.id)),
-                    ("case", Json::str(&binding.case)),
+                    ("scenario", Json::str(&binding.scenario)),
                     (
                         "check_fingerprint",
                         Json::str(model.check_execution_fingerprint(&check.definition)),
                     ),
                     (
-                        "case_fingerprint",
-                        Json::str(model.case_digest(&binding.case).unwrap_or_default()),
+                        "scenario_fingerprint",
+                        Json::str(model.scenario_digest(&binding.scenario).unwrap_or_default()),
                     ),
                     ("contribution", Json::str(&binding.contribution)),
                 ]);
@@ -77,14 +81,14 @@ pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
         };
         let definition = Json::obj(vec![
             ("check", Json::str(&binding.check)),
-            ("case", Json::str(&binding.case)),
+            ("scenario", Json::str(&binding.scenario)),
             (
                 "check_fingerprint",
                 Json::str(model.check_execution_fingerprint(check)),
             ),
             (
-                "case_fingerprint",
-                Json::str(model.case_digest(&binding.case).unwrap_or_default()),
+                "scenario_fingerprint",
+                Json::str(model.scenario_digest(&binding.scenario).unwrap_or_default()),
             ),
             ("contribution", Json::str(&binding.proposition)),
         ]);
@@ -100,12 +104,12 @@ pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
         ));
         bindings.push(Json::Obj(fields));
     }
-    let mut claims = Vec::new();
-    for view in model.claims() {
-        let id = &view.claim.id;
+    let mut requirements = Vec::new();
+    for view in model.requirements() {
+        let id = &view.requirement.id;
         let mut gaps = Vec::new();
         let mut mechanisms = Vec::new();
-        if let Some((_, declaration)) = model.account_design_for_claim(&view.spec.id, id) {
+        if let Some((_, declaration)) = model.account_design_for_requirement(&view.spec.id, id) {
             collect_mechanisms(model, declaration, &mut mechanisms, &mut gaps);
         } else if let Some(design) = model.design_for(&view.spec.id) {
             for entry in &design.entries {
@@ -131,34 +135,34 @@ pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
                 }
             }
         }
-        let case_ids = view
-            .claim
-            .cases
+        let scenario_ids = view
+            .requirement
+            .scenarios
             .iter()
-            .map(|case| case.id.clone())
+            .map(|scenario| scenario.id.clone())
             .collect::<BTreeSet<_>>();
         let relevant = bindings
             .iter()
             .filter(|binding| {
                 binding
-                    .get("case")
+                    .get("scenario")
                     .and_then(Json::as_str)
-                    .is_some_and(|case| case_ids.contains(case))
+                    .is_some_and(|scenario| scenario_ids.contains(scenario))
             })
             .cloned()
             .collect::<Vec<_>>();
         let criticality = view
-            .claim
+            .requirement
             .criticality
             .map(|value| value.name())
             .unwrap_or("unspecified");
         if criticality != "routine" {
-            for case in &case_ids {
+            for scenario in &scenario_ids {
                 if !relevant
                     .iter()
-                    .any(|binding| binding.get("case").and_then(Json::as_str) == Some(case))
+                    .any(|binding| binding.get("scenario").and_then(Json::as_str) == Some(scenario))
                 {
-                    gaps.push(format!("Case {case} has no Evidence Binding"));
+                    gaps.push(format!("Scenario {scenario} has no Evidence Binding"));
                 }
             }
             for binding in &relevant {
@@ -174,18 +178,20 @@ pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
             if let Some(obligation) = model.realization_obligation(&view.spec.id, id) {
                 for area in obligation.areas {
                     if !model.realizes.iter().any(|site| {
-                        site.claim == *id
+                        site.requirement == *id
                             && site
                                 .source
                                 .as_ref()
                                 .is_some_and(|source| source.area == area)
                             && !site.source_fingerprint.is_empty()
                     }) {
-                        gaps.push(format!("Claim has no stable realization in Area {area}"));
+                        gaps.push(format!(
+                            "Requirement has no stable realization in Area {area}"
+                        ));
                     }
                 }
             } else {
-                gaps.push("Claim has no design-owned realization obligation".into());
+                gaps.push("Requirement has no design-owned realization obligation".into());
             }
         }
         gaps.sort();
@@ -194,7 +200,7 @@ pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
         let dependencies = Json::obj(vec![
             (
                 "intent",
-                Json::str(model.claim_digest(id).unwrap_or_default()),
+                Json::str(model.requirement_digest(id).unwrap_or_default()),
             ),
             (
                 "design",
@@ -210,14 +216,17 @@ pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
             ),
             ("mechanisms", Json::Arr(mechanisms.clone())),
             ("bindings", Json::Arr(relevant.clone())),
-            ("challengers", claim_challengers(model, id)),
+            (
+                "verification_challenges",
+                requirement_verification_challenges(model, id),
+            ),
             (
                 "realizations",
                 Json::Arr({
                     let mut sites = model
                         .realizes
                         .iter()
-                        .filter(|site| site.claim == *id)
+                        .filter(|site| site.requirement == *id)
                         .collect::<Vec<_>>();
                     sites.sort_by_key(|site| {
                         (
@@ -243,14 +252,17 @@ pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
             ),
             ("gaps", Json::Arr(gaps.iter().map(Json::str).collect())),
         ]);
-        claims.push(Json::obj(vec![
+        requirements.push(Json::obj(vec![
             ("id", Json::str(id)),
             ("criticality", Json::str(criticality)),
             (
                 "fingerprint",
                 Json::str(crate::fingerprint::canonical_sha256(&dependencies)),
             ),
-            ("cases", Json::Arr(case_ids.iter().map(Json::str).collect())),
+            (
+                "scenarios",
+                Json::Arr(scenario_ids.iter().map(Json::str).collect()),
+            ),
             ("mechanisms", Json::Arr(mechanisms)),
             (
                 "bindings",
@@ -260,14 +272,20 @@ pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
                         .map(|binding| {
                             Json::obj(vec![
                                 ("check", binding.get("check").cloned().unwrap_or(Json::Null)),
-                                ("case", binding.get("case").cloned().unwrap_or(Json::Null)),
+                                (
+                                    "scenario",
+                                    binding.get("scenario").cloned().unwrap_or(Json::Null),
+                                ),
                             ])
                         })
                         .collect(),
                 ),
             ),
             ("gaps", Json::Arr(gaps.iter().map(Json::str).collect())),
-            ("challengers", claim_challengers(model, id)),
+            (
+                "verification_challenges",
+                requirement_verification_challenges(model, id),
+            ),
         ]));
     }
     let result = Json::obj(vec![
@@ -280,9 +298,9 @@ pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
             )),
         ),
         ("checks", sorted(checks, "id")),
-        ("cases", sorted(cases, "id")),
+        ("scenarios", sorted(scenarios, "id")),
         ("bindings", sorted_pairs(bindings)),
-        ("claims", sorted(claims, "id")),
+        ("requirements", sorted(requirements, "id")),
     ]);
     let mut result = result;
     let digest = record_fingerprint(&result)?;
@@ -300,7 +318,7 @@ fn sorted_pairs(mut values: Vec<Json>) -> Json {
     values.sort_by_key(|value| {
         (
             text(value, "check").unwrap_or_default().to_string(),
-            text(value, "case").unwrap_or_default().to_string(),
+            text(value, "scenario").unwrap_or_default().to_string(),
         )
     });
     Json::Arr(values)
@@ -348,8 +366,8 @@ fn collect_mechanisms(
             ("id", Json::str(&declaration.id)),
             ("body", Json::str(&declaration.body)),
             (
-                "cases",
-                Json::Arr(declaration.cases.iter().map(Json::str).collect()),
+                "scenarios",
+                Json::Arr(declaration.scenarios.iter().map(Json::str).collect()),
             ),
             ("implementations", Json::Arr(implementations)),
         ]);
@@ -434,9 +452,9 @@ pub fn validate_authority(value: &Json) -> Result<(), String> {
             "model_fingerprint",
             "fingerprint",
             "checks",
-            "cases",
+            "scenarios",
             "bindings",
-            "claims",
+            "requirements",
         ],
     )?;
     id(value, "project")?;
@@ -460,32 +478,32 @@ pub fn validate_authority(value: &Json) -> Result<(), String> {
             return Err("duplicate authority Check".into());
         }
     }
-    let mut claims = BTreeSet::new();
-    for claim in array(value, "claims")? {
-        let mut claim_fields = vec![
+    let mut requirements = BTreeSet::new();
+    for requirement in array(value, "requirements")? {
+        let mut requirement_fields = vec![
             "id",
             "criticality",
             "fingerprint",
-            "cases",
+            "scenarios",
             "mechanisms",
             "bindings",
             "gaps",
         ];
-        if claim.get("challengers").is_some() {
-            claim_fields.push("challengers");
+        if requirement.get("verification_challenges").is_some() {
+            requirement_fields.push("verification_challenges");
         }
-        object(claim, &claim_fields)?;
-        if claim.get("challengers").is_some() {
+        object(requirement, &requirement_fields)?;
+        if requirement.get("verification_challenges").is_some() {
             let mut seen = BTreeSet::new();
-            for challenger in array(claim, "challengers")? {
+            for verification_challenge in array(requirement, "verification_challenges")? {
                 object(
-                    challenger,
+                    verification_challenge,
                     &[
                         "id",
                         "fingerprint",
                         "form",
                         "targets",
-                        "claims",
+                        "requirements",
                         "mechanisms",
                         "checks",
                         "searches_for",
@@ -494,48 +512,48 @@ pub fn validate_authority(value: &Json) -> Result<(), String> {
                         "required_scope",
                     ],
                 )?;
-                id(challenger, "id")?;
-                fingerprint(challenger, "fingerprint")?;
-                if !seen.insert(text(challenger, "id")?) {
-                    return Err("duplicate authority Challenger".into());
+                id(verification_challenge, "id")?;
+                fingerprint(verification_challenge, "fingerprint")?;
+                if !seen.insert(text(verification_challenge, "id")?) {
+                    return Err("duplicate authority Verification Challenge".into());
                 }
                 for field in ["form", "searches_for"] {
-                    text(challenger, field)?;
+                    text(verification_challenge, field)?;
                 }
                 for field in [
                     "targets",
-                    "claims",
+                    "requirements",
                     "mechanisms",
                     "checks",
                     "required_scope",
                 ] {
-                    string_array(challenger, field)?;
+                    string_array(verification_challenge, field)?;
                 }
-                array(challenger, "implementations")?;
+                array(verification_challenge, "implementations")?;
             }
         }
-        id(claim, "id")?;
-        fingerprint(claim, "fingerprint")?;
+        id(requirement, "id")?;
+        fingerprint(requirement, "fingerprint")?;
         if !matches!(
-            text(claim, "criticality")?,
+            text(requirement, "criticality")?,
             "routine" | "standard" | "critical" | "unspecified"
         ) {
-            return Err("invalid Claim criticality".into());
+            return Err("invalid Requirement criticality".into());
         }
-        if !claims.insert(text(claim, "id")?) {
-            return Err("duplicate authority Claim".into());
+        if !requirements.insert(text(requirement, "id")?) {
+            return Err("duplicate authority Requirement".into());
         }
-        string_array(claim, "gaps")?;
-        let mut cases = BTreeSet::new();
-        for case in array(claim, "cases")? {
-            let case = case.as_str().ok_or("Case dependency requires ID")?;
-            crate::diag::validate_id(case, false)?;
-            if !cases.insert(case) {
-                return Err("duplicate Claim Case dependency".into());
+        string_array(requirement, "gaps")?;
+        let mut scenarios = BTreeSet::new();
+        for scenario in array(requirement, "scenarios")? {
+            let scenario = scenario.as_str().ok_or("Scenario dependency requires ID")?;
+            crate::diag::validate_id(scenario, false)?;
+            if !scenarios.insert(scenario) {
+                return Err("duplicate Requirement Scenario dependency".into());
             }
         }
         let mut mechanisms = BTreeSet::new();
-        for mechanism in array(claim, "mechanisms")? {
+        for mechanism in array(requirement, "mechanisms")? {
             object(mechanism, &["id", "fingerprint"])?;
             id(mechanism, "id")?;
             fingerprint(mechanism, "fingerprint")?;
@@ -544,27 +562,27 @@ pub fn validate_authority(value: &Json) -> Result<(), String> {
             }
         }
         let mut bindings = BTreeSet::new();
-        for binding in array(claim, "bindings")? {
-            object(binding, &["check", "case"])?;
+        for binding in array(requirement, "bindings")? {
+            object(binding, &["check", "scenario"])?;
             id(binding, "check")?;
-            id(binding, "case")?;
-            if !bindings.insert((text(binding, "check")?, text(binding, "case")?)) {
-                return Err("duplicate Claim binding dependency".into());
+            id(binding, "scenario")?;
+            if !bindings.insert((text(binding, "check")?, text(binding, "scenario")?)) {
+                return Err("duplicate Requirement binding dependency".into());
             }
         }
     }
-    let mut cases = BTreeMap::new();
-    for case in array(value, "cases")? {
-        object(case, &["id", "claim", "fingerprint"])?;
-        id(case, "id")?;
-        id(case, "claim")?;
-        fingerprint(case, "fingerprint")?;
-        if !claims.contains(text(case, "claim")?)
-            || cases
-                .insert(text(case, "id")?, text(case, "claim")?)
+    let mut scenarios = BTreeMap::new();
+    for scenario in array(value, "scenarios")? {
+        object(scenario, &["id", "requirement", "fingerprint"])?;
+        id(scenario, "id")?;
+        id(scenario, "requirement")?;
+        fingerprint(scenario, "fingerprint")?;
+        if !requirements.contains(text(scenario, "requirement")?)
+            || scenarios
+                .insert(text(scenario, "id")?, text(scenario, "requirement")?)
                 .is_some()
         {
-            return Err("unknown Claim or duplicate Case authority".into());
+            return Err("unknown Requirement or duplicate Scenario authority".into());
         }
     }
     let mut pairs = BTreeSet::new();
@@ -573,33 +591,33 @@ pub fn validate_authority(value: &Json) -> Result<(), String> {
             binding,
             &[
                 "check",
-                "case",
+                "scenario",
                 "check_fingerprint",
-                "case_fingerprint",
+                "scenario_fingerprint",
                 "contribution",
                 "fingerprint",
             ],
         )?;
         id(binding, "check")?;
-        id(binding, "case")?;
-        for name in ["check_fingerprint", "case_fingerprint", "fingerprint"] {
+        id(binding, "scenario")?;
+        for name in ["check_fingerprint", "scenario_fingerprint", "fingerprint"] {
             fingerprint(binding, name)?;
         }
         text(binding, "contribution")?;
-        let pair = (text(binding, "check")?, text(binding, "case")?);
-        if !checks.contains(pair.0) || !cases.contains_key(pair.1) || !pairs.insert(pair) {
+        let pair = (text(binding, "check")?, text(binding, "scenario")?);
+        if !checks.contains(pair.0) || !scenarios.contains_key(pair.1) || !pairs.insert(pair) {
             return Err("unknown binding target or duplicate pair".into());
         }
         let check = array(value, "checks")?
             .iter()
             .find(|check| text(check, "id").ok() == Some(pair.0))
             .unwrap();
-        let case = array(value, "cases")?
+        let scenario = array(value, "scenarios")?
             .iter()
-            .find(|case| text(case, "id").ok() == Some(pair.1))
+            .find(|scenario| text(scenario, "id").ok() == Some(pair.1))
             .unwrap();
         if text(binding, "check_fingerprint")? != text(check, "fingerprint")?
-            || text(binding, "case_fingerprint")? != text(case, "fingerprint")?
+            || text(binding, "scenario_fingerprint")? != text(scenario, "fingerprint")?
         {
             return Err("binding target fingerprint mismatch".into());
         }
@@ -617,36 +635,36 @@ pub fn validate_authority(value: &Json) -> Result<(), String> {
             return Err("binding fingerprint mismatch".into());
         }
     }
-    for claim in array(value, "claims")? {
-        let id = text(claim, "id")?;
-        let owned = cases
+    for requirement in array(value, "requirements")? {
+        let id = text(requirement, "id")?;
+        let owned = scenarios
             .iter()
             .filter(|(_, owner)| **owner == id)
-            .map(|(case, _)| *case)
+            .map(|(scenario, _)| *scenario)
             .collect::<BTreeSet<_>>();
-        let declared = array(claim, "cases")?
+        let declared = array(requirement, "scenarios")?
             .iter()
             .filter_map(Json::as_str)
             .collect::<BTreeSet<_>>();
         if owned != declared {
-            return Err("Claim Case dependency inventory mismatch".into());
+            return Err("Requirement Scenario dependency inventory mismatch".into());
         }
         let expected = pairs
             .iter()
-            .filter(|(_, case)| cases.get(case) == Some(&id))
+            .filter(|(_, scenario)| scenarios.get(scenario) == Some(&id))
             .copied()
             .collect::<BTreeSet<_>>();
-        let declared = array(claim, "bindings")?
+        let declared = array(requirement, "bindings")?
             .iter()
             .map(|binding| {
                 (
                     text(binding, "check").unwrap(),
-                    text(binding, "case").unwrap(),
+                    text(binding, "scenario").unwrap(),
                 )
             })
             .collect::<BTreeSet<_>>();
         if expected != declared {
-            return Err("Claim binding dependency inventory mismatch".into());
+            return Err("Requirement binding dependency inventory mismatch".into());
         }
     }
     Ok(())
@@ -678,17 +696,24 @@ pub fn validate_record(value: &Json) -> Result<(), String> {
     if value.get("provenance").is_some() {
         fields.push("provenance");
     }
-    if ["claim-review", "claim-health"].contains(&kind) && value.get("challenge_basis").is_some() {
+    if ["requirement-review", "requirement-status"].contains(&kind)
+        && value.get("challenge_basis").is_some()
+    {
         fields.push("challenge_basis");
     }
     fields.extend(match kind {
-        "claim-review" => vec!["claim", "claim_fingerprint", "dependencies", "decision"],
-        "claim-health" => vec![
-            "claim",
-            "claim_fingerprint",
+        "requirement-review" => vec![
+            "requirement",
+            "requirement_fingerprint",
             "dependencies",
-            "subject_fingerprint",
-            "claim_review_fingerprint",
+            "decision",
+        ],
+        "requirement-status" => vec![
+            "requirement",
+            "requirement_fingerprint",
+            "dependencies",
+            "verification_target_fingerprint",
+            "requirement_review_fingerprint",
             "basis",
             "conclusion",
             "residual_risks",
@@ -696,21 +721,21 @@ pub fn validate_record(value: &Json) -> Result<(), String> {
         "method-qualification" => vec!["check", "check_fingerprint", "decision"],
         "applicability-decision" => vec![
             "check",
-            "case",
+            "scenario",
             "check_fingerprint",
-            "case_fingerprint",
+            "scenario_fingerprint",
             "binding_fingerprint",
-            "subject_fingerprint",
+            "verification_target_fingerprint",
             "method_qualification_fingerprint",
             "basis",
             "decision",
             "limitations",
         ],
-        "claim-judgment" => vec![
-            "claim",
-            "claim_fingerprint",
-            "subject_fingerprint",
-            "cases",
+        "requirement-judgment" => vec![
+            "requirement",
+            "requirement_fingerprint",
+            "verification_target_fingerprint",
+            "scenarios",
             "mechanisms",
             "bindings",
             "conclusion",
@@ -774,7 +799,7 @@ pub fn validate_record(value: &Json) -> Result<(), String> {
         }
     }
     match kind {
-        "claim-review" | "claim-health" => validate_claim_assessment(value)?,
+        "requirement-review" | "requirement-status" => validate_requirement_assessment(value)?,
         "method-qualification" => {
             id(value, "check")?;
             fingerprint(value, "check_fingerprint")?;
@@ -782,12 +807,12 @@ pub fn validate_record(value: &Json) -> Result<(), String> {
         }
         "applicability-decision" => {
             id(value, "check")?;
-            id(value, "case")?;
+            id(value, "scenario")?;
             for name in [
                 "check_fingerprint",
-                "case_fingerprint",
+                "scenario_fingerprint",
                 "binding_fingerprint",
-                "subject_fingerprint",
+                "verification_target_fingerprint",
                 "method_qualification_fingerprint",
             ] {
                 fingerprint(value, name)?;
@@ -796,36 +821,36 @@ pub fn validate_record(value: &Json) -> Result<(), String> {
             string_array(value, "limitations")?;
             let basis = array(value, "basis")?;
             if basis.is_empty() {
-                return Err("Applicability Decision requires Observation basis".into());
+                return Err("Applicability Decision requires Check Result basis".into());
             }
             let mut seen = BTreeSet::new();
             for item in basis {
-                object(item, &["run", "bundle_fingerprint", "observation"])?;
-                for field in ["run", "bundle_fingerprint", "observation"] {
+                object(item, &["run", "bundle_fingerprint", "check_result"])?;
+                for field in ["run", "bundle_fingerprint", "check_result"] {
                     fingerprint(item, field)?;
                 }
                 let key = (
                     text(item, "run")?,
                     text(item, "bundle_fingerprint")?,
-                    text(item, "observation")?,
+                    text(item, "check_result")?,
                 );
                 if !seen.insert(key) {
-                    return Err("duplicate Observation basis".into());
+                    return Err("duplicate Check Result basis".into());
                 }
             }
         }
-        "claim-judgment" => {
-            id(value, "claim")?;
-            fingerprint(value, "claim_fingerprint")?;
-            fingerprint(value, "subject_fingerprint")?;
+        "requirement-judgment" => {
+            id(value, "requirement")?;
+            fingerprint(value, "requirement_fingerprint")?;
+            fingerprint(value, "verification_target_fingerprint")?;
             if !matches!(
                 text(value, "conclusion")?,
                 "supported" | "violated" | "unresolved"
             ) {
-                return Err("unknown Claim conclusion".into());
+                return Err("unknown Requirement conclusion".into());
             }
             string_array(value, "residual_risks")?;
-            for field in ["cases", "mechanisms"] {
+            for field in ["scenarios", "mechanisms"] {
                 let mut seen = BTreeSet::new();
                 for item in array(value, field)? {
                     object(item, &["id", "fingerprint"])?;
@@ -840,12 +865,17 @@ pub fn validate_record(value: &Json) -> Result<(), String> {
             for item in array(value, "bindings")? {
                 object(
                     item,
-                    &["check", "case", "fingerprint", "applicability_fingerprint"],
+                    &[
+                        "check",
+                        "scenario",
+                        "fingerprint",
+                        "applicability_fingerprint",
+                    ],
                 )?;
                 id(item, "check")?;
-                id(item, "case")?;
+                id(item, "scenario")?;
                 fingerprint(item, "fingerprint")?;
-                if !pairs.insert((text(item, "check")?, text(item, "case")?)) {
+                if !pairs.insert((text(item, "check")?, text(item, "scenario")?)) {
                     return Err("duplicate judgment binding".into());
                 }
                 match item.get("applicability_fingerprint") {
@@ -881,25 +911,27 @@ pub fn review_target(value: &Json) -> Result<Json, String> {
         "method-qualification" => result.push(("check", Json::str(text(value, "check")?))),
         "applicability-decision" => {
             result.push(("check", Json::str(text(value, "check")?)));
-            result.push(("case", Json::str(text(value, "case")?)));
+            result.push(("scenario", Json::str(text(value, "scenario")?)));
             result.push((
-                "subject_fingerprint",
-                Json::str(text(value, "subject_fingerprint")?),
+                "verification_target_fingerprint",
+                Json::str(text(value, "verification_target_fingerprint")?),
             ));
         }
-        "claim-review" => result.push(("claim", Json::str(text(value, "claim")?))),
-        "claim-health" => {
-            result.push(("claim", Json::str(text(value, "claim")?)));
+        "requirement-review" => {
+            result.push(("requirement", Json::str(text(value, "requirement")?)))
+        }
+        "requirement-status" => {
+            result.push(("requirement", Json::str(text(value, "requirement")?)));
             result.push((
-                "subject_fingerprint",
-                Json::str(text(value, "subject_fingerprint")?),
+                "verification_target_fingerprint",
+                Json::str(text(value, "verification_target_fingerprint")?),
             ));
         }
-        "claim-judgment" => {
-            result.push(("claim", Json::str(text(value, "claim")?)));
+        "requirement-judgment" => {
+            result.push(("requirement", Json::str(text(value, "requirement")?)));
             result.push((
-                "subject_fingerprint",
-                Json::str(text(value, "subject_fingerprint")?),
+                "verification_target_fingerprint",
+                Json::str(text(value, "verification_target_fingerprint")?),
             ));
         }
         _ => return Err("unknown review target".into()),
@@ -959,10 +991,10 @@ fn authority_item<'a>(
         .iter()
         .find(|value| value.get(field).and_then(Json::as_str) == Some(id))
 }
-fn authority_binding<'a>(authority: &'a Json, check: &str, case: &str) -> Option<&'a Json> {
+fn authority_binding<'a>(authority: &'a Json, check: &str, scenario: &str) -> Option<&'a Json> {
     authority.get("bindings")?.as_array()?.iter().find(|value| {
         value.get("check").and_then(Json::as_str) == Some(check)
-            && value.get("case").and_then(Json::as_str) == Some(case)
+            && value.get("scenario").and_then(Json::as_str) == Some(scenario)
     })
 }
 fn active_heads(bundles: &[RunBundle]) -> Result<Vec<&RunBundle>, String> {
@@ -1006,8 +1038,8 @@ pub fn assess_record(
         return assessed("invalid", error);
     }
     let kind = text(record, "kind").unwrap();
-    if ["claim-review", "claim-health"].contains(&kind) {
-        return assess_claim_assessment(record, authority, reviews, bundles);
+    if ["requirement-review", "requirement-status"].contains(&kind) {
+        return assess_requirement_assessment(record, authority, reviews, bundles);
     }
     if kind == "method-qualification" {
         let Some(check) = authority_item(authority, "checks", "id", text(record, "check").unwrap())
@@ -1028,16 +1060,16 @@ pub fn assess_record(
     }
     if kind == "applicability-decision" {
         let check = text(record, "check").unwrap();
-        let case = text(record, "case").unwrap();
-        let Some(binding) = authority_binding(authority, check, case) else {
+        let scenario = text(record, "scenario").unwrap();
+        let Some(binding) = authority_binding(authority, check, scenario) else {
             return assessed(
                 "stale",
-                "Check–Case binding is absent from current authority",
+                "Check–Scenario binding is absent from current authority",
             );
         };
         for (field, target) in [
             ("check_fingerprint", "check_fingerprint"),
-            ("case_fingerprint", "case_fingerprint"),
+            ("scenario_fingerprint", "scenario_fingerprint"),
             ("binding_fingerprint", "fingerprint"),
         ] {
             if record.get(field) != binding.get(target) {
@@ -1067,23 +1099,23 @@ pub fn assess_record(
             Ok(heads) => heads,
             Err(error) => return assessed("invalid", error),
         };
-        let subject = text(record, "subject_fingerprint").unwrap();
+        let verification_target = text(record, "verification_target_fingerprint").unwrap();
         let check_fp = text(record, "check_fingerprint").unwrap();
         let basis = array(record, "basis").unwrap();
         let mut observed = BTreeSet::new();
         let mut latest = 0;
         for bundle in &heads {
-            if bundle.subject_fingerprint == subject {
+            if bundle.verification_target_fingerprint == verification_target {
                 for execution in &bundle.check_executions {
                     if execution.check.id == check && execution.check.fingerprint == check_fp {
-                        for observation in &execution.observations {
-                            if observation.case == case {
-                                latest = latest.max(observation.observed_at_ms);
+                        for check_result in &execution.results {
+                            if check_result.scenario == scenario {
+                                latest = latest.max(check_result.observed_at_ms);
                                 observed.insert((
                                     bundle.run_id.as_str(),
                                     bundle.bundle_fingerprint.as_str(),
-                                    observation.fingerprint.as_str(),
-                                    observation.observed_at_ms,
+                                    check_result.fingerprint.as_str(),
+                                    check_result.observed_at_ms,
                                 ));
                             }
                         }
@@ -1092,33 +1124,33 @@ pub fn assess_record(
             }
         }
         if observed.is_empty() {
-            return assessed("missing", "No current exact-Subject Observation exists");
+            return assessed("missing", "No current exact-target Check Result exists");
         }
         for item in basis {
             let run = text(item, "run").unwrap();
             let bundle = text(item, "bundle_fingerprint").unwrap();
-            let observation = text(item, "observation").unwrap();
+            let check_result = text(item, "check_result").unwrap();
             if !observed
                 .iter()
-                .any(|value| value.0 == run && value.1 == bundle && value.2 == observation)
+                .any(|value| value.0 == run && value.1 == bundle && value.2 == check_result)
             {
                 return assessed(
                     "stale",
-                    "Observation basis is missing, corrected or from another Check/Case/Subject",
+                    "Check Result basis is missing, corrected or from another Check/Scenario/Verification Target",
                 );
             }
         }
-        for (run, bundle, observation, time) in observed {
+        for (run, bundle, check_result, time) in observed {
             if time == latest
                 && !basis.iter().any(|value| {
                     text(value, "run").ok() == Some(run)
                         && text(value, "bundle_fingerprint").ok() == Some(bundle)
-                        && text(value, "observation").ok() == Some(observation)
+                        && text(value, "check_result").ok() == Some(check_result)
                 })
             {
                 return assessed(
                     "stale",
-                    "Applicability basis omits a latest active Observation",
+                    "Applicability basis omits a latest active Check Result",
                 );
             }
         }
@@ -1131,39 +1163,45 @@ pub fn assess_record(
             "",
         );
     }
-    let claim_id = text(record, "claim").unwrap();
-    let Some(claim) = authority_item(authority, "claims", "id", claim_id) else {
-        return assessed("stale", "Claim is absent from current authority");
+    let requirement_id = text(record, "requirement").unwrap();
+    let Some(requirement) = authority_item(authority, "requirements", "id", requirement_id) else {
+        return assessed("stale", "Requirement is absent from current authority");
     };
-    if text(claim, "criticality").ok() == Some("routine") {
-        return assessed("invalid", "Routine Claims do not enroll Claim Judgments");
-    }
-    if record.get("claim_fingerprint") != claim.get("fingerprint") {
+    if text(requirement, "criticality").ok() == Some("routine") {
         return assessed(
-            "stale",
-            "Claim account or supporting implementation changed",
+            "invalid",
+            "Routine Requirements do not enroll Requirement Judgments",
         );
     }
-    let case_ids = array(claim, "cases")
+    if record.get("requirement_fingerprint") != requirement.get("fingerprint") {
+        return assessed(
+            "stale",
+            "Requirement account or supporting implementation changed",
+        );
+    }
+    let scenario_ids = array(requirement, "scenarios")
         .unwrap()
         .iter()
         .filter_map(Json::as_str)
         .collect::<BTreeSet<_>>();
     let mut reviewed = BTreeSet::new();
-    for case in array(record, "cases").unwrap() {
-        let id = text(case, "id").unwrap();
-        let Some(current) = authority_item(authority, "cases", "id", id) else {
-            return assessed("stale", "Judgment includes absent Case");
+    for scenario in array(record, "scenarios").unwrap() {
+        let id = text(scenario, "id").unwrap();
+        let Some(current) = authority_item(authority, "scenarios", "id", id) else {
+            return assessed("stale", "Judgment includes absent Scenario");
         };
-        if case.get("fingerprint") != current.get("fingerprint") {
-            return assessed("stale", "Case contract changed");
+        if scenario.get("fingerprint") != current.get("fingerprint") {
+            return assessed("stale", "Scenario contract changed");
         }
         reviewed.insert(id);
     }
-    if reviewed != case_ids {
-        return assessed("stale", "Judgment Case inventory is incomplete or obsolete");
+    if reviewed != scenario_ids {
+        return assessed(
+            "stale",
+            "Judgment Scenario inventory is incomplete or obsolete",
+        );
     }
-    let mechanisms = array(claim, "mechanisms").unwrap();
+    let mechanisms = array(requirement, "mechanisms").unwrap();
     let declared = array(record, "mechanisms").unwrap();
     if mechanisms.len() != declared.len()
         || mechanisms.iter().any(|current| {
@@ -1175,13 +1213,13 @@ pub fn assess_record(
     {
         return assessed("stale", "Judgment mechanism dependencies changed");
     }
-    let expected = array(claim, "bindings").unwrap();
+    let expected = array(requirement, "bindings").unwrap();
     let declared = array(record, "bindings").unwrap();
     if expected.len() != declared.len()
         || expected.iter().any(|binding| {
             !declared.iter().any(|value| {
                 value.get("check") == binding.get("check")
-                    && value.get("case") == binding.get("case")
+                    && value.get("scenario") == binding.get("scenario")
             })
         })
     {
@@ -1191,14 +1229,14 @@ pub fn assess_record(
         );
     }
     let conclusion = text(record, "conclusion").unwrap();
-    let subject = text(record, "subject_fingerprint").unwrap();
+    let verification_target = text(record, "verification_target_fingerprint").unwrap();
     let mut satisfied = false;
     let mut violated = false;
     let mut unresolved = false;
     for binding in declared {
         let check = text(binding, "check").unwrap();
-        let case = text(binding, "case").unwrap();
-        let Some(current) = authority_binding(authority, check, case) else {
+        let scenario = text(binding, "scenario").unwrap();
+        let Some(current) = authority_binding(authority, check, scenario) else {
             return assessed("stale", "Judgment binding is absent");
         };
         if binding.get("fingerprint") != current.get("fingerprint") {
@@ -1207,8 +1245,11 @@ pub fn assess_record(
         let target = Json::obj(vec![
             ("kind", Json::str("applicability-decision")),
             ("check", Json::str(check)),
-            ("case", Json::str(case)),
-            ("subject_fingerprint", Json::str(subject)),
+            ("scenario", Json::str(scenario)),
+            (
+                "verification_target_fingerprint",
+                Json::str(verification_target),
+            ),
         ]);
         let application = match latest_review(reviews, &target) {
             Ok(Some(value)) => value,
@@ -1247,14 +1288,14 @@ pub fn assess_record(
         }
         for outcome in outcomes {
             match outcome {
-                ObservationOutcome::Satisfied => satisfied = true,
-                ObservationOutcome::Violated => violated = true,
-                ObservationOutcome::Inconclusive => unresolved = true,
+                CheckResultOutcome::Satisfied => satisfied = true,
+                CheckResultOutcome::Violated => violated = true,
+                CheckResultOutcome::Inconclusive => unresolved = true,
             }
         }
     }
-    let gaps = !array(claim, "gaps").unwrap().is_empty()
-        || text(claim, "criticality").ok() == Some("unspecified");
+    let gaps = !array(requirement, "gaps").unwrap().is_empty()
+        || text(requirement, "criticality").ok() == Some("unspecified");
     match conclusion {
         "supported" if gaps || unresolved || violated || !satisfied => assessed(
             "invalid",
@@ -1262,12 +1303,12 @@ pub fn assess_record(
         ),
         "violated" if !violated => assessed(
             "invalid",
-            "Violated judgment lacks applicable violated Observation",
+            "Violated judgment lacks applicable violated Check Result",
         ),
         _ => assessed("accepted", ""),
     }
 }
-fn bound_outcomes(record: &Json, bundles: &[RunBundle]) -> Vec<ObservationOutcome> {
+fn bound_outcomes(record: &Json, bundles: &[RunBundle]) -> Vec<CheckResultOutcome> {
     let mut result = Vec::new();
     for basis in array(record, "basis").unwrap_or_default() {
         for bundle in bundles {
@@ -1277,11 +1318,11 @@ fn bound_outcomes(record: &Json, bundles: &[RunBundle]) -> Vec<ObservationOutcom
             {
                 for execution in &bundle.check_executions {
                     if text(record, "check").ok() == Some(execution.check.id.as_str()) {
-                        for observation in &execution.observations {
-                            if text(basis, "observation").ok()
-                                == Some(observation.fingerprint.as_str())
+                        for check_result in &execution.results {
+                            if text(basis, "check_result").ok()
+                                == Some(check_result.fingerprint.as_str())
                             {
-                                result.push(observation.outcome);
+                                result.push(check_result.outcome);
                             }
                         }
                     }
@@ -1292,11 +1333,11 @@ fn bound_outcomes(record: &Json, bundles: &[RunBundle]) -> Vec<ObservationOutcom
     result
 }
 
-pub fn historical_subject_state(
+pub fn historical_verification_target_state(
     authority: &Json,
     reviews: &[Json],
     bundles: &[RunBundle],
-    subject_fingerprint: &str,
+    verification_target_fingerprint: &str,
 ) -> Json {
     if let Err(error) = validate_authority(authority) {
         return Json::obj(vec![
@@ -1328,16 +1369,19 @@ pub fn historical_subject_state(
             ),
         ]));
     }
-    let mut claims = Vec::new();
-    for claim in array(authority, "claims").unwrap() {
-        let id = text(claim, "id").unwrap();
+    let mut requirements = Vec::new();
+    for requirement in array(authority, "requirements").unwrap() {
+        let id = text(requirement, "id").unwrap();
         let mut binding_states = Vec::new();
-        for binding in array(claim, "bindings").unwrap() {
+        for binding in array(requirement, "bindings").unwrap() {
             let target = Json::obj(vec![
                 ("kind", Json::str("applicability-decision")),
                 ("check", binding.get("check").cloned().unwrap()),
-                ("case", binding.get("case").cloned().unwrap()),
-                ("subject_fingerprint", Json::str(subject_fingerprint)),
+                ("scenario", binding.get("scenario").cloned().unwrap()),
+                (
+                    "verification_target_fingerprint",
+                    Json::str(verification_target_fingerprint),
+                ),
             ]);
             let assessment = match latest_review(reviews, &target) {
                 Ok(Some(record)) => assess_record(record, authority, reviews, bundles),
@@ -1346,7 +1390,7 @@ pub fn historical_subject_state(
             };
             binding_states.push(Json::obj(vec![
                 ("check", binding.get("check").cloned().unwrap()),
-                ("case", binding.get("case").cloned().unwrap()),
+                ("scenario", binding.get("scenario").cloned().unwrap()),
                 ("status", Json::str(assessment.status)),
                 (
                     "diagnostics",
@@ -1355,11 +1399,14 @@ pub fn historical_subject_state(
             ]));
         }
         let target = Json::obj(vec![
-            ("kind", Json::str("claim-judgment")),
-            ("claim", Json::str(id)),
-            ("subject_fingerprint", Json::str(subject_fingerprint)),
+            ("kind", Json::str("requirement-judgment")),
+            ("requirement", Json::str(id)),
+            (
+                "verification_target_fingerprint",
+                Json::str(verification_target_fingerprint),
+            ),
         ]);
-        let (state, assessment) = if text(claim, "criticality").ok() == Some("routine") {
+        let (state, assessment) = if text(requirement, "criticality").ok() == Some("routine") {
             ("review-not-required".into(), assessed("not-required", ""))
         } else {
             match latest_review(reviews, &target) {
@@ -1376,20 +1423,20 @@ pub fn historical_subject_state(
                 }
                 Ok(None) => (
                     "unresolved".into(),
-                    assessed("missing", "Claim Judgment is absent"),
+                    assessed("missing", "Requirement Judgment is absent"),
                 ),
                 Err(error) => ("unresolved".into(), assessed("invalid", error)),
             }
         };
-        claims.push(Json::obj(vec![
-            ("claim", Json::str(id)),
+        requirements.push(Json::obj(vec![
+            ("requirement", Json::str(id)),
             ("status", Json::str(state)),
             ("judgment", Json::str(assessment.status)),
             (
                 "diagnostics",
                 Json::Arr(assessment.diagnostics.iter().map(Json::str).collect()),
             ),
-            ("gaps", claim.get("gaps").cloned().unwrap()),
+            ("gaps", requirement.get("gaps").cloned().unwrap()),
             ("bindings", Json::Arr(binding_states)),
         ]));
     }
@@ -1404,8 +1451,11 @@ pub fn historical_subject_state(
             "model_fingerprint",
             authority.get("model_fingerprint").cloned().unwrap(),
         ),
-        ("subject_fingerprint", Json::str(subject_fingerprint)),
-        ("claims", Json::Arr(claims)),
+        (
+            "verification_target_fingerprint",
+            Json::str(verification_target_fingerprint),
+        ),
+        ("requirements", Json::Arr(requirements)),
     ])
 }
 
@@ -1421,33 +1471,46 @@ pub fn review_input(
     if [
         "method-qualification",
         "applicability-decision",
-        "claim-judgment",
+        "requirement-judgment",
     ]
     .contains(&kind)
     {
-        return Err("new review input requires claim-review or claim-health; historical native records remain inspectable".into());
+        return Err("new review input requires requirement-review or requirement-status; historical native records remain inspectable".into());
     }
-    if ["claim-review", "claim-health"].contains(&kind) {
-        return claim_assessment_input(model, project, request, reviews, bundles);
+    if ["requirement-review", "requirement-status"].contains(&kind) {
+        return requirement_assessment_input(model, project, request, reviews, bundles);
     }
     match kind {
         "method-qualification" => object(request, &["kind", "check"]),
-        "applicability-decision" => {
-            object(request, &["kind", "check", "case", "subject_fingerprint"])
+        "applicability-decision" => object(
+            request,
+            &[
+                "kind",
+                "check",
+                "scenario",
+                "verification_target_fingerprint",
+            ],
+        ),
+        "requirement-judgment" => object(
+            request,
+            &["kind", "requirement", "verification_target_fingerprint"],
+        ),
+        _ => {
+            return Err(
+                "review input kind requires requirement-review or requirement-status".into(),
+            )
         }
-        "claim-judgment" => object(request, &["kind", "claim", "subject_fingerprint"]),
-        _ => return Err("review input kind requires claim-review or claim-health".into()),
     }?;
-    for name in ["check", "case", "claim"] {
+    for name in ["check", "scenario", "requirement"] {
         if request.get(name).is_some() {
             crate::diag::validate_id(text(request, name)?, false)?;
         }
     }
-    let subject = if kind == "method-qualification" {
+    let verification_target = if kind == "method-qualification" {
         None
     } else {
-        fingerprint(request, "subject_fingerprint")?;
-        Some(text(request, "subject_fingerprint")?)
+        fingerprint(request, "verification_target_fingerprint")?;
+        Some(text(request, "verification_target_fingerprint")?)
     };
     for review in reviews {
         validate_record(review)?;
@@ -1461,25 +1524,31 @@ pub fn review_input(
     }
     let heads = active_heads(bundles)?;
     let mut check_ids = BTreeSet::new();
-    let mut case_ids = BTreeSet::new();
-    let mut claim_ids = BTreeSet::new();
+    let mut scenario_ids = BTreeSet::new();
+    let mut requirement_ids = BTreeSet::new();
     let mut bindings = Vec::new();
-    if kind == "claim-judgment" {
-        let id = text(request, "claim")?;
-        let claim = authority_item(&authority, "claims", "id", id)
-            .ok_or_else(|| format!("unknown Claim {id}"))?;
-        if text(claim, "criticality")? == "routine" {
-            return Err("routine Claims do not require independent Claim Judgment".into());
+    if kind == "requirement-judgment" {
+        let id = text(request, "requirement")?;
+        let requirement = authority_item(&authority, "requirements", "id", id)
+            .ok_or_else(|| format!("unknown Requirement {id}"))?;
+        if text(requirement, "criticality")? == "routine" {
+            return Err(
+                "routine Requirements do not require independent Requirement Judgment".into(),
+            );
         }
-        claim_ids.insert(id.to_string());
-        for case in array(claim, "cases")? {
-            case_ids.insert(case.as_str().unwrap().to_string());
+        requirement_ids.insert(id.to_string());
+        for scenario in array(requirement, "scenarios")? {
+            scenario_ids.insert(scenario.as_str().unwrap().to_string());
         }
-        for pair in array(claim, "bindings")? {
+        for pair in array(requirement, "bindings")? {
             let check = text(pair, "check")?;
-            let case = text(pair, "case")?;
+            let scenario = text(pair, "scenario")?;
             check_ids.insert(check.to_string());
-            bindings.push(authority_binding(&authority, check, case).unwrap().clone());
+            bindings.push(
+                authority_binding(&authority, check, scenario)
+                    .unwrap()
+                    .clone(),
+            );
         }
     } else {
         let check = text(request, "check")?;
@@ -1487,10 +1556,10 @@ pub fn review_input(
             .ok_or_else(|| format!("unknown Check {check}"))?;
         check_ids.insert(check.to_string());
         if kind == "applicability-decision" {
-            let case = text(request, "case")?;
-            let binding = authority_binding(&authority, check, case)
-                .ok_or_else(|| format!("unknown Check–Case binding {check}/{case}"))?;
-            case_ids.insert(case.to_string());
+            let scenario = text(request, "scenario")?;
+            let binding = authority_binding(&authority, check, scenario)
+                .ok_or_else(|| format!("unknown Check–Scenario binding {check}/{scenario}"))?;
+            scenario_ids.insert(scenario.to_string());
             bindings.push(binding.clone());
         }
     }
@@ -1516,16 +1585,19 @@ pub fn review_input(
             ])
         })
         .collect::<Vec<_>>();
-    if let Some(subject) = subject {
+    if let Some(verification_target) = verification_target {
         for binding in &bindings {
             targets.push(Json::obj(vec![
                 ("kind", Json::str("applicability-decision")),
                 ("check", binding.get("check").unwrap().clone()),
-                ("case", binding.get("case").unwrap().clone()),
-                ("subject_fingerprint", Json::str(subject)),
+                ("scenario", binding.get("scenario").unwrap().clone()),
+                (
+                    "verification_target_fingerprint",
+                    Json::str(verification_target),
+                ),
             ]));
         }
-        if kind == "claim-judgment" {
+        if kind == "requirement-judgment" {
             targets.push(request.clone());
         }
     }
@@ -1567,12 +1639,12 @@ pub fn review_input(
             ),
         ]));
     }
-    let mut observations = Vec::new();
+    let mut check_results = Vec::new();
     let evidence_bundles = bundles.iter().map(crate::run::to_json).collect::<Vec<_>>();
-    let mut subjects = Vec::new();
-    if let Some(subject) = subject {
+    let mut verification_targets = Vec::new();
+    if let Some(verification_target) = verification_target {
         for bundle in heads {
-            if bundle.subject_fingerprint != subject {
+            if bundle.verification_target_fingerprint != verification_target {
                 continue;
             }
             let mut relevant = false;
@@ -1585,63 +1657,65 @@ pub fn review_input(
                 if text(check, "fingerprint")? != execution.check.fingerprint {
                     continue;
                 }
-                for observation in &execution.observations {
-                    if !case_ids.contains(&observation.case)
+                for check_result in &execution.results {
+                    if !scenario_ids.contains(&check_result.scenario)
                         || !bindings.iter().any(|binding| {
                             text(binding, "check").ok() == Some(execution.check.id.as_str())
-                                && text(binding, "case").ok() == Some(observation.case.as_str())
+                                && text(binding, "scenario").ok()
+                                    == Some(check_result.scenario.as_str())
                         })
                     {
                         continue;
                     }
                     relevant = true;
-                    observations.push(Json::obj(vec![
+                    check_results.push(Json::obj(vec![
                         ("check", Json::str(&execution.check.id)),
-                        ("case", Json::str(&observation.case)),
+                        ("scenario", Json::str(&check_result.scenario)),
                         ("run", Json::str(&bundle.run_id)),
                         ("bundle_fingerprint", Json::str(&bundle.bundle_fingerprint)),
-                        ("observation", Json::str(&observation.fingerprint)),
-                        ("outcome", Json::str(observation.outcome.name())),
+                        ("check_result", Json::str(&check_result.fingerprint)),
+                        ("outcome", Json::str(check_result.outcome.name())),
                         (
                             "observed_at_ms",
-                            Json::Num(observation.observed_at_ms as f64),
+                            Json::Num(check_result.observed_at_ms as f64),
                         ),
                     ]));
                 }
             }
             if relevant {
-                let descriptor = crate::run::subject_to_json(&bundle.subject);
-                if !subjects.contains(&descriptor) {
-                    subjects.push(descriptor);
+                let descriptor =
+                    crate::run::verification_target_to_json(&bundle.verification_target);
+                if !verification_targets.contains(&descriptor) {
+                    verification_targets.push(descriptor);
                 }
             }
         }
         for binding in &bindings {
-            if !observations.iter().any(|observation| {
-                observation.get("check") == binding.get("check")
-                    && observation.get("case") == binding.get("case")
+            if !check_results.iter().any(|check_result| {
+                check_result.get("check") == binding.get("check")
+                    && check_result.get("scenario") == binding.get("scenario")
             }) {
                 gaps.push(Json::obj(vec![
                     ("check", binding.get("check").unwrap().clone()),
-                    ("case", binding.get("case").unwrap().clone()),
+                    ("scenario", binding.get("scenario").unwrap().clone()),
                     ("status", Json::str("missing")),
                     (
                         "diagnostics",
                         Json::Arr(vec![Json::str(
-                            "No current exact-Subject Observation exists",
+                            "No current exact-target Check Result exists",
                         )]),
                     ),
                 ]));
             }
         }
     }
-    for claim in array(&authority, "claims")?
+    for requirement in array(&authority, "requirements")?
         .iter()
-        .filter(|claim| claim_ids.contains(text(claim, "id").unwrap()))
+        .filter(|requirement| requirement_ids.contains(text(requirement, "id").unwrap()))
     {
-        for gap in array(claim, "gaps")? {
+        for gap in array(requirement, "gaps")? {
             gaps.push(Json::obj(vec![
-                ("claim", claim.get("id").unwrap().clone()),
+                ("requirement", requirement.get("id").unwrap().clone()),
                 ("status", Json::str("structural-gap")),
                 ("diagnostics", Json::Arr(vec![gap.clone()])),
             ]));
@@ -1661,10 +1735,10 @@ pub fn review_input(
             ]));
         }
     }
-    let definitions = review_definitions(model, &check_ids, &case_ids, &claim_ids);
+    let definitions = review_definitions(model, &check_ids, &scenario_ids, &requirement_ids);
     let mut output = Json::obj(vec![
         ("format", Json::str("azimuth-review-input")),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         ("project", Json::str(project)),
         ("target", request.clone()),
         (
@@ -1679,14 +1753,14 @@ pub fn review_input(
             "dependencies",
             Json::obj(vec![
                 ("checks", selected("checks", &check_ids)),
-                ("cases", selected("cases", &case_ids)),
-                ("claims", selected("claims", &claim_ids)),
+                ("scenarios", selected("scenarios", &scenario_ids)),
+                ("requirements", selected("requirements", &requirement_ids)),
                 ("bindings", Json::Arr(bindings)),
             ]),
         ),
         ("definitions", definitions),
-        ("subjects", Json::Arr(subjects)),
-        ("observations", Json::Arr(observations)),
+        ("verification_targets", Json::Arr(verification_targets)),
+        ("check_results", Json::Arr(check_results)),
         ("evidence_bundles", Json::Arr(evidence_bundles)),
         ("review_states", Json::Arr(review_states)),
         ("existing_reviews", Json::Arr(existing_reviews)),
@@ -1702,8 +1776,8 @@ pub fn review_input(
 fn review_definitions(
     model: &Model,
     check_ids: &BTreeSet<String>,
-    case_ids: &BTreeSet<String>,
-    claim_ids: &BTreeSet<String>,
+    scenario_ids: &BTreeSet<String>,
+    requirement_ids: &BTreeSet<String>,
 ) -> Json {
     let checks = model
         .checks()
@@ -1742,10 +1816,10 @@ fn review_definitions(
                                             file.sections
                                                 .iter()
                                                 .filter(|section| {
-                                                    section.claim.is_none()
+                                                    section.requirement.is_none()
                                                         || authored.is_some_and(|check| {
-                                                            section.claim.as_deref()
-                                                                == Some(&check.claim)
+                                                            section.requirement.as_deref()
+                                                                == Some(&check.requirement)
                                                         })
                                                 })
                                                 .map(|section| Json::str(&section.prose))
@@ -1794,19 +1868,22 @@ fn review_definitions(
             ])
         })
         .collect();
-    let cases = model
-        .cases()
-        .filter(|view| case_ids.contains(&view.case.id))
+    let scenarios = model
+        .scenarios()
+        .filter(|view| scenario_ids.contains(&view.scenario.id))
         .map(|view| {
             Json::obj(vec![
-                ("id", Json::str(&view.case.id)),
-                ("claim", Json::str(&view.claim.id)),
-                ("statement", Json::str(&view.case.statement)),
-                ("claim_statement", Json::str(&view.claim.statement)),
-                ("domain", Json::str(view.claim.domain.name())),
+                ("id", Json::str(&view.scenario.id)),
+                ("requirement", Json::str(&view.requirement.id)),
+                ("statement", Json::str(&view.scenario.statement)),
+                (
+                    "requirement_statement",
+                    Json::str(&view.requirement.statement),
+                ),
+                ("domain", Json::str(view.requirement.domain.name())),
                 (
                     "over",
-                    view.claim.over.as_ref().map_or(Json::Null, Json::str),
+                    view.requirement.over.as_ref().map_or(Json::Null, Json::str),
                 ),
                 (
                     "terms",
@@ -1826,21 +1903,24 @@ fn review_definitions(
             ])
         })
         .collect();
-    let claims = model
-        .claims()
-        .filter(|view| claim_ids.contains(&view.claim.id))
+    let requirements = model
+        .requirements()
+        .filter(|view| requirement_ids.contains(&view.requirement.id))
         .map(|view| {
             Json::obj(vec![
-                ("id", Json::str(&view.claim.id)),
-                ("statement", Json::str(&view.claim.statement)),
-                ("challengers", claim_challengers(model, &view.claim.id)),
+                ("id", Json::str(&view.requirement.id)),
+                ("statement", Json::str(&view.requirement.statement)),
+                (
+                    "verification_challenges",
+                    requirement_verification_challenges(model, &view.requirement.id),
+                ),
                 (
                     "realizations",
                     Json::Arr(
                         model
                             .realizes
                             .iter()
-                            .filter(|site| site.claim == view.claim.id)
+                            .filter(|site| site.requirement == view.requirement.id)
                             .map(|site| {
                                 Json::obj(vec![
                                     ("site", Json::str(&site.site)),
@@ -1859,7 +1939,7 @@ fn review_definitions(
                 (
                     "design",
                     model
-                        .account_design_for_claim(&view.spec.id, &view.claim.id)
+                        .account_design_for_requirement(&view.spec.id, &view.requirement.id)
                         .map_or(Json::Null, |(file, declaration)| {
                             Json::obj(vec![
                                 ("context", Json::str(&file.introduction)),
@@ -1878,12 +1958,14 @@ fn review_definitions(
                                 Json::obj(vec![
                                     ("context", Json::str(&file.introduction)),
                                     (
-                                        "claim_prose",
+                                        "requirement_prose",
                                         Json::Arr(
-                                            file.claims
+                                            file.requirements
                                                 .iter()
-                                                .filter(|claim| claim.claim == view.claim.id)
-                                                .map(|claim| Json::str(&claim.prose))
+                                                .filter(|requirement| {
+                                                    requirement.requirement == view.requirement.id
+                                                })
+                                                .map(|requirement| Json::str(&requirement.prose))
                                                 .collect(),
                                         ),
                                     ),
@@ -1934,8 +2016,8 @@ fn review_definitions(
         .collect();
     Json::obj(vec![
         ("checks", Json::Arr(checks)),
-        ("cases", Json::Arr(cases)),
-        ("claims", Json::Arr(claims)),
+        ("scenarios", Json::Arr(scenarios)),
+        ("requirements", Json::Arr(requirements)),
         (
             "package_entities",
             crate::verification_packages::declarations_json(&entities),
@@ -1990,32 +2072,41 @@ fn explanation_record(record: Option<&Json>, assessment: &Assessment) -> Json {
     ])
 }
 
-fn health_explanation(
+fn requirement_status_explanation(
     authority: &Json,
-    claim: &Json,
+    requirement: &Json,
     reviews: &[Json],
     heads: &[&RunBundle],
-    subject: &str,
+    verification_target: &str,
     review: &Assessment,
-    health: &Assessment,
+    requirement_status: &Assessment,
     status: &str,
 ) -> Json {
-    let id = text(claim, "id").unwrap();
+    let id = text(requirement, "id").unwrap();
     let review_target = Json::obj(vec![
-        ("kind", Json::str("claim-review")),
-        ("claim", Json::str(id)),
+        ("kind", Json::str("requirement-review")),
+        ("requirement", Json::str(id)),
     ]);
-    let health_target = Json::obj(vec![
-        ("kind", Json::str("claim-health")),
-        ("claim", Json::str(id)),
-        ("subject_fingerprint", Json::str(subject)),
+    let requirement_status_target = Json::obj(vec![
+        ("kind", Json::str("requirement-status")),
+        ("requirement", Json::str(id)),
+        (
+            "verification_target_fingerprint",
+            Json::str(verification_target),
+        ),
     ]);
     let review_record = latest_review(reviews, &review_target).ok().flatten();
-    let health_record = latest_review(reviews, &health_target).ok().flatten();
+    let requirement_status_record = latest_review(reviews, &requirement_status_target)
+        .ok()
+        .flatten();
     let mut reasons = Vec::new();
     for (kind, label, assessment) in [
-        ("claim-review", "Claim Review", review),
-        ("claim-health", "Claim Health", health),
+        ("requirement-review", "Requirement Review", review),
+        (
+            "requirement-status",
+            "Requirement Status",
+            requirement_status,
+        ),
     ] {
         if assessment.status != "accepted" {
             reasons.push(Json::obj(vec![
@@ -2036,15 +2127,15 @@ fn health_explanation(
             ]));
         }
     }
-    if !array(claim, "gaps").unwrap().is_empty() {
+    if !array(requirement, "gaps").unwrap().is_empty() {
         reasons.push(Json::obj(vec![
             ("code", Json::str("structural-gaps")),
             ("category", Json::str("definition")),
             (
                 "message",
-                Json::str("The Claim has unresolved structural gaps."),
+                Json::str("The Requirement has unresolved structural gaps."),
             ),
-            ("details", claim.get("gaps").unwrap().clone()),
+            ("details", requirement.get("gaps").unwrap().clone()),
         ]));
     }
     let mut supporting = Vec::new();
@@ -2052,20 +2143,27 @@ fn health_explanation(
     let mut inconclusive = Vec::new();
     let mut related = Vec::new();
     let mut coverage = Vec::new();
-    for binding in array(claim, "bindings").unwrap() {
+    for binding in array(requirement, "bindings").unwrap() {
         let check_id = text(binding, "check").unwrap();
-        let case_id = text(binding, "case").unwrap();
+        let scenario_id = text(binding, "scenario").unwrap();
         let check_fp = authority_item(authority, "checks", "id", check_id)
             .and_then(|c| c.get("fingerprint"))
             .and_then(Json::as_str);
         let mut observed = Vec::new();
         let mut accepted_outcomes = Vec::new();
-        for bundle in heads.iter().filter(|b| b.subject_fingerprint == subject) {
+        for bundle in heads
+            .iter()
+            .filter(|b| b.verification_target_fingerprint == verification_target)
+        {
             for execution in bundle.check_executions.iter().filter(|e| {
                 e.check.id == check_id && Some(e.check.fingerprint.as_str()) == check_fp
             }) {
-                for observation in execution.observations.iter().filter(|o| o.case == case_id) {
-                    let selected = health_record
+                for check_result in execution
+                    .results
+                    .iter()
+                    .filter(|o| o.scenario == scenario_id)
+                {
+                    let selected = requirement_status_record
                         .and_then(|r| r.get("basis"))
                         .and_then(Json::as_array)
                         .unwrap_or(&[])
@@ -2074,35 +2172,35 @@ fn health_explanation(
                             b.get("run").and_then(Json::as_str) == Some(bundle.run_id.as_str())
                                 && b.get("bundle_fingerprint").and_then(Json::as_str)
                                     == Some(bundle.bundle_fingerprint.as_str())
-                                && b.get("observation").and_then(Json::as_str)
-                                    == Some(observation.fingerprint.as_str())
+                                && b.get("check_result").and_then(Json::as_str)
+                                    == Some(check_result.fingerprint.as_str())
                         });
-                    let accepted = selected && health.status == "accepted";
+                    let accepted = selected && requirement_status.status == "accepted";
                     let value = Json::obj(vec![
                         ("check", Json::str(check_id)),
-                        ("case", Json::str(case_id)),
+                        ("scenario", Json::str(scenario_id)),
                         ("run", Json::str(&bundle.run_id)),
                         ("bundle_fingerprint", Json::str(&bundle.bundle_fingerprint)),
-                        ("observation", Json::str(&observation.fingerprint)),
-                        ("outcome", Json::str(observation.outcome.name())),
+                        ("check_result", Json::str(&check_result.fingerprint)),
+                        ("outcome", Json::str(check_result.outcome.name())),
                         (
                             "observed_at_ms",
-                            Json::Num(observation.observed_at_ms as f64),
+                            Json::Num(check_result.observed_at_ms as f64),
                         ),
                         ("selected_in_basis", Json::Bool(selected)),
                         ("accepted_basis", Json::Bool(accepted)),
                         (
                             "diagnostics",
-                            Json::Arr(observation.diagnostics.iter().map(Json::str).collect()),
+                            Json::Arr(check_result.diagnostics.iter().map(Json::str).collect()),
                         ),
                     ]);
                     observed.push(value.clone());
                     if accepted {
-                        accepted_outcomes.push(observation.outcome);
-                        match observation.outcome {
-                            ObservationOutcome::Satisfied => supporting.push(value),
-                            ObservationOutcome::Violated => violations.push(value),
-                            ObservationOutcome::Inconclusive => inconclusive.push(value),
+                        accepted_outcomes.push(check_result.outcome);
+                        match check_result.outcome {
+                            CheckResultOutcome::Satisfied => supporting.push(value),
+                            CheckResultOutcome::Violated => violations.push(value),
+                            CheckResultOutcome::Inconclusive => inconclusive.push(value),
                         }
                     } else {
                         related.push(value);
@@ -2112,49 +2210,52 @@ fn health_explanation(
         }
         let coverage_status = if observed.is_empty() {
             reasons.push(Json::obj(vec![
-                ("code", Json::str("current-observation-missing")),
+                ("code", Json::str("current-check-result-missing")),
                 ("category", Json::str("evidence")),
-                ("check", Json::str(check_id)), ("case", Json::str(case_id)),
-                ("message", Json::str(format!("No current matching Observation is recorded for Check {check_id} and Case {case_id}."))),
+                ("check", Json::str(check_id)), ("scenario", Json::str(scenario_id)),
+                ("message", Json::str(format!("No current matching Check Result is recorded for Check {check_id} and Scenario {scenario_id}."))),
             ]));
             "missing"
         } else if accepted_outcomes.is_empty() {
             "unassessed"
-        } else if accepted_outcomes.contains(&ObservationOutcome::Violated) {
+        } else if accepted_outcomes.contains(&CheckResultOutcome::Violated) {
             "violated"
-        } else if accepted_outcomes.contains(&ObservationOutcome::Inconclusive) {
+        } else if accepted_outcomes.contains(&CheckResultOutcome::Inconclusive) {
             "inconclusive"
         } else {
             "satisfied"
         };
         coverage.push(Json::obj(vec![
             ("check", Json::str(check_id)),
-            ("case", Json::str(case_id)),
+            ("scenario", Json::str(scenario_id)),
             ("status", Json::str(coverage_status)),
-            ("observations", Json::Arr(observed)),
+            ("check_results", Json::Arr(observed)),
         ]));
     }
-    if health.status == "accepted" && status != "supported" {
+    if requirement_status.status == "accepted" && status != "supported" {
         reasons.push(Json::obj(vec![
-            ("code", Json::str(format!("health-assessed-{status}"))),
-            ("category", Json::str("claim-health")),
+            (
+                "code",
+                Json::str(format!("requirement-status-assessed-{status}")),
+            ),
+            ("category", Json::str("requirement-status")),
             (
                 "message",
-                health_record
+                requirement_status_record
                     .and_then(|r| r.get("rationale"))
                     .cloned()
-                    .unwrap_or(Json::str("Claim Health remains unresolved.")),
+                    .unwrap_or(Json::str("Requirement Status remains unresolved.")),
             ),
         ]));
     }
-    let summary = if health.status == "accepted" {
-        health_record
+    let summary = if requirement_status.status == "accepted" {
+        requirement_status_record
             .and_then(|r| r.get("rationale"))
             .and_then(Json::as_str)
             .unwrap_or("Assessment rationale is unavailable.")
             .to_string()
     } else if reasons.is_empty() {
-        "No current Claim Health assessment is available.".into()
+        "No current Requirement Status assessment is available.".into()
     } else {
         reasons
             .iter()
@@ -2167,7 +2268,10 @@ fn health_explanation(
         ("status", Json::str(status)),
         ("reasons", Json::Arr(reasons)),
         ("review", explanation_record(review_record, review)),
-        ("health", explanation_record(health_record, health)),
+        (
+            "requirement_status",
+            explanation_record(requirement_status_record, requirement_status),
+        ),
         ("coverage", Json::Arr(coverage)),
         (
             "evidence",
@@ -2180,7 +2284,7 @@ fn health_explanation(
         ),
         (
             "residual_risks",
-            health_record
+            requirement_status_record
                 .and_then(|r| r.get("residual_risks"))
                 .cloned()
                 .unwrap_or(Json::Arr(vec![])),
@@ -2188,11 +2292,11 @@ fn health_explanation(
     ])
 }
 
-pub fn subject_state(
+pub fn verification_target_state(
     authority: &Json,
     reviews: &[Json],
     bundles: &[RunBundle],
-    subject_fingerprint: &str,
+    verification_target_fingerprint: &str,
 ) -> Json {
     if let Err(error) = validate_authority(authority) {
         return Json::obj(vec![
@@ -2209,26 +2313,29 @@ pub fn subject_state(
             ])
         }
     };
-    let claims = array(authority, "claims")
+    let requirements = array(authority, "requirements")
         .unwrap()
         .iter()
-        .map(|claim| {
-            let id = text(claim, "id").unwrap();
+        .map(|requirement| {
+            let id = text(requirement, "id").unwrap();
             let review_target = Json::obj(vec![
-                ("kind", Json::str("claim-review")),
-                ("claim", Json::str(id)),
+                ("kind", Json::str("requirement-review")),
+                ("requirement", Json::str(id)),
             ]);
             let review = match latest_review(reviews, &review_target) {
                 Ok(Some(record)) => assess_record(record, authority, reviews, bundles),
-                Ok(None) => assessed("missing", "Claim Review absent"),
+                Ok(None) => assessed("missing", "Requirement Review absent"),
                 Err(error) => assessed("invalid", error),
             };
             let target = Json::obj(vec![
-                ("kind", Json::str("claim-health")),
-                ("claim", Json::str(id)),
-                ("subject_fingerprint", Json::str(subject_fingerprint)),
+                ("kind", Json::str("requirement-status")),
+                ("requirement", Json::str(id)),
+                (
+                    "verification_target_fingerprint",
+                    Json::str(verification_target_fingerprint),
+                ),
             ]);
-            let (health, status) = match latest_review(reviews, &target) {
+            let (requirement_status, status) = match latest_review(reviews, &target) {
                 Ok(Some(record)) => {
                     let assessment = assess_record(record, authority, reviews, bundles);
                     let status = if assessment.status == "accepted" {
@@ -2239,7 +2346,7 @@ pub fn subject_state(
                     (assessment, status)
                 }
                 Ok(None) => (
-                    assessed("missing", "Claim Health absent"),
+                    assessed("missing", "Requirement Status absent"),
                     "unresolved".into(),
                 ),
                 Err(error) => (assessed("invalid", error), "unresolved".into()),
@@ -2254,17 +2361,20 @@ pub fn subject_state(
                 .iter()
                 .flat_map(|bundle| {
                     bundle
-                        .challenger_executions
+                        .verification_challenge_executions
                         .iter()
                         .filter(|execution| {
                             execution.target.id == id
-                                && ["claim-review", "claim-health"]
+                                && ["requirement-review", "requirement-status"]
                                     .contains(&execution.target.kind.name())
                                 && fingerprints.contains(execution.target.fingerprint.as_str())
                         })
                         .map(|execution| {
                             Json::obj(vec![
-                                ("challenger", Json::str(&execution.challenger.id)),
+                                (
+                                    "verification_challenge",
+                                    Json::str(&execution.verification_challenge.id),
+                                ),
                                 ("target_kind", Json::str(execution.target.kind.name())),
                                 (
                                     "target_fingerprint",
@@ -2277,41 +2387,41 @@ pub fn subject_state(
                                 ),
                                 ("run", Json::str(&bundle.run_id)),
                                 (
-                                    "execution_subject_fingerprint",
-                                    Json::str(&bundle.subject_fingerprint),
+                                    "execution_verification_target_fingerprint",
+                                    Json::str(&bundle.verification_target_fingerprint),
                                 ),
                             ])
                         })
                 })
                 .collect();
-            let explanation = health_explanation(
+            let explanation = requirement_status_explanation(
                 authority,
-                claim,
+                requirement,
                 reviews,
                 &heads,
-                subject_fingerprint,
+                verification_target_fingerprint,
                 &review,
-                &health,
+                &requirement_status,
                 &status,
             );
             Json::obj(vec![
                 ("explanation", explanation),
-                ("claim", Json::str(id)),
+                ("requirement", Json::str(id)),
                 ("status", Json::str(status)),
                 ("review", Json::str(&review.status)),
-                ("health", Json::str(&health.status)),
+                ("requirement_status", Json::str(&requirement_status.status)),
                 (
                     "diagnostics",
                     Json::Arr(
                         review
                             .diagnostics
                             .iter()
-                            .chain(health.diagnostics.iter())
+                            .chain(requirement_status.diagnostics.iter())
                             .map(Json::str)
                             .collect(),
                     ),
                 ),
-                ("gaps", claim.get("gaps").unwrap().clone()),
+                ("gaps", requirement.get("gaps").unwrap().clone()),
                 ("bindings", Json::Arr(vec![])),
                 ("challenges", Json::Arr(challenges)),
             ])
@@ -2327,55 +2437,92 @@ pub fn subject_state(
             "model_fingerprint",
             authority.get("model_fingerprint").unwrap().clone(),
         ),
-        ("subject_fingerprint", Json::str(subject_fingerprint)),
-        ("claims", Json::Arr(claims)),
+        (
+            "verification_target_fingerprint",
+            Json::str(verification_target_fingerprint),
+        ),
+        ("requirements", Json::Arr(requirements)),
     ])
 }
 
-fn claim_challengers(model: &Model, claim: &str) -> Json {
+fn requirement_verification_challenges(model: &Model, requirement: &str) -> Json {
     let mut entries = model
-        .challengers()
-        .filter(|challenger| challenger.claims.iter().any(|id| id == claim))
-        .map(|challenger| {
+        .verification_challenges()
+        .filter(|verification_challenge| {
+            verification_challenge
+                .requirements
+                .iter()
+                .any(|id| id == requirement)
+        })
+        .map(|verification_challenge| {
             let implementations = model
                 .package_producers
                 .iter()
                 .filter(|producer| {
                     producer.package == "azimuth.challenge"
-                        && producer.contract == "challenger-implementation"
-                        && producer.entity == challenger.id
+                        && producer.contract == "verification-challenge-implementation"
+                        && producer.entity == verification_challenge.id
                 })
                 .map(|producer| producer.to_json())
                 .collect();
             Json::obj(vec![
-                ("id", Json::str(&challenger.id)),
+                ("id", Json::str(&verification_challenge.id)),
                 (
                     "fingerprint",
-                    Json::str(crate::fingerprint::challenger_fingerprint(challenger)),
+                    Json::str(crate::fingerprint::verification_challenge_fingerprint(
+                        verification_challenge,
+                    )),
                 ),
-                ("form", Json::str(&challenger.form)),
+                ("form", Json::str(&verification_challenge.form)),
                 (
                     "targets",
-                    Json::Arr(challenger.targets.iter().map(Json::str).collect()),
+                    Json::Arr(
+                        verification_challenge
+                            .targets
+                            .iter()
+                            .map(Json::str)
+                            .collect(),
+                    ),
                 ),
                 (
-                    "claims",
-                    Json::Arr(challenger.claims.iter().map(Json::str).collect()),
+                    "requirements",
+                    Json::Arr(
+                        verification_challenge
+                            .requirements
+                            .iter()
+                            .map(Json::str)
+                            .collect(),
+                    ),
                 ),
                 (
                     "mechanisms",
-                    Json::Arr(challenger.mechanisms.iter().map(Json::str).collect()),
+                    Json::Arr(
+                        verification_challenge
+                            .mechanisms
+                            .iter()
+                            .map(Json::str)
+                            .collect(),
+                    ),
                 ),
                 (
                     "checks",
-                    Json::Arr(challenger.checks.iter().map(Json::str).collect()),
+                    Json::Arr(
+                        verification_challenge
+                            .checks
+                            .iter()
+                            .map(Json::str)
+                            .collect(),
+                    ),
                 ),
-                ("searches_for", Json::str(&challenger.searches_for)),
-                ("rationale", Json::str(&challenger.rationale)),
+                (
+                    "searches_for",
+                    Json::str(&verification_challenge.searches_for),
+                ),
+                ("rationale", Json::str(&verification_challenge.rationale)),
                 (
                     "required_scope",
                     Json::Arr(
-                        challenger
+                        verification_challenge
                             .required_scope
                             .iter()
                             .map(|kind| Json::str(kind.name()))
@@ -2390,18 +2537,19 @@ fn claim_challengers(model: &Model, claim: &str) -> Json {
     Json::Arr(entries)
 }
 
-fn claim_dependencies(authority: &Json, claim_id: &str) -> Result<Json, String> {
-    let claim = authority_item(authority, "claims", "id", claim_id).ok_or("unknown Claim")?;
-    let cases = array(claim, "cases")?;
-    let pairs = array(claim, "bindings")?;
+fn requirement_dependencies(authority: &Json, requirement_id: &str) -> Result<Json, String> {
+    let requirement = authority_item(authority, "requirements", "id", requirement_id)
+        .ok_or("unknown Requirement")?;
+    let scenarios = array(requirement, "scenarios")?;
+    let pairs = array(requirement, "bindings")?;
     let checks = array(authority, "checks")?
         .iter()
         .filter(|v| pairs.iter().any(|b| b.get("check") == v.get("id")))
         .cloned()
         .collect();
-    let selected_cases = array(authority, "cases")?
+    let selected_scenarios = array(authority, "scenarios")?
         .iter()
-        .filter(|v| cases.contains(v.get("id").unwrap()))
+        .filter(|v| scenarios.contains(v.get("id").unwrap()))
         .cloned()
         .collect();
     let bindings = pairs
@@ -2410,7 +2558,7 @@ fn claim_dependencies(authority: &Json, claim_id: &str) -> Result<Json, String> 
             authority_binding(
                 authority,
                 text(b, "check").unwrap(),
-                text(b, "case").unwrap(),
+                text(b, "scenario").unwrap(),
             )
             .unwrap()
             .clone()
@@ -2418,22 +2566,22 @@ fn claim_dependencies(authority: &Json, claim_id: &str) -> Result<Json, String> 
         .collect();
     Ok(Json::obj(vec![
         ("checks", Json::Arr(checks)),
-        ("cases", Json::Arr(selected_cases)),
-        ("claims", Json::Arr(vec![claim.clone()])),
+        ("scenarios", Json::Arr(selected_scenarios)),
+        ("requirements", Json::Arr(vec![requirement.clone()])),
         ("bindings", Json::Arr(bindings)),
     ]))
 }
-fn validate_claim_assessment(value: &Json) -> Result<(), String> {
-    id(value, "claim")?;
-    fingerprint(value, "claim_fingerprint")?;
+fn validate_requirement_assessment(value: &Json) -> Result<(), String> {
+    id(value, "requirement")?;
+    fingerprint(value, "requirement_fingerprint")?;
     let deps = value.get("dependencies").ok_or("missing dependencies")?;
-    object(deps, &["checks", "cases", "claims", "bindings"])?;
-    for group in ["checks", "cases", "claims", "bindings"] {
+    object(deps, &["checks", "scenarios", "requirements", "bindings"])?;
+    for group in ["checks", "scenarios", "requirements", "bindings"] {
         let mut seen = BTreeSet::new();
         for d in array(deps, group)? {
             fingerprint(d, "fingerprint")?;
             let key = if group == "bindings" {
-                format!("{}/{}", text(d, "check")?, text(d, "case")?)
+                format!("{}/{}", text(d, "check")?, text(d, "scenario")?)
             } else {
                 text(d, "id")?.into()
             };
@@ -2442,37 +2590,37 @@ fn validate_claim_assessment(value: &Json) -> Result<(), String> {
             }
         }
     }
-    if text(value, "kind")? == "claim-review" {
+    if text(value, "kind")? == "requirement-review" {
         return decision(value);
     }
-    fingerprint(value, "subject_fingerprint")?;
-    fingerprint(value, "claim_review_fingerprint")?;
+    fingerprint(value, "verification_target_fingerprint")?;
+    fingerprint(value, "requirement_review_fingerprint")?;
     if !["supported", "violated", "unresolved"].contains(&text(value, "conclusion")?) {
-        return Err("unknown Claim Health conclusion".into());
+        return Err("unknown Requirement Status conclusion".into());
     }
     string_array(value, "residual_risks")?;
     let mut seen = BTreeSet::new();
     for b in array(value, "basis")? {
-        object(b, &["run", "bundle_fingerprint", "observation"])?;
-        for key in ["run", "bundle_fingerprint", "observation"] {
+        object(b, &["run", "bundle_fingerprint", "check_result"])?;
+        for key in ["run", "bundle_fingerprint", "check_result"] {
             fingerprint(b, key)?;
         }
         if !seen.insert(b.to_string_pretty()) {
-            return Err("duplicate Observation basis".into());
+            return Err("duplicate Check Result basis".into());
         }
     }
     if text(value, "conclusion")? != "unresolved" && array(value, "basis")?.is_empty() {
-        return Err("conclusive Claim Health requires Observation basis".into());
+        return Err("conclusive Requirement Status requires Check Result basis".into());
     }
     Ok(())
 }
-fn assess_claim_assessment(
+fn assess_requirement_assessment(
     record: &Json,
     authority: &Json,
     reviews: &[Json],
     bundles: &[RunBundle],
 ) -> Assessment {
-    let claim = text(record, "claim").unwrap();
+    let requirement = text(record, "requirement").unwrap();
     if let Some(previous) = record
         .get("provenance")
         .and_then(|provenance| provenance.get("reassesses"))
@@ -2495,7 +2643,7 @@ fn assess_claim_assessment(
             return assessed("missing", "Reassessed review absent from retained history");
         }
     }
-    let deps = match claim_dependencies(authority, claim) {
+    let deps = match requirement_dependencies(authority, requirement) {
         Ok(v) => v,
         Err(e) => return assessed("stale", e),
     };
@@ -2503,12 +2651,13 @@ fn assess_claim_assessment(
         .get("dependencies")
         .map(crate::fingerprint::canonical_sha256)
         != Some(crate::fingerprint::canonical_sha256(&deps))
-        || record.get("claim_fingerprint")
-            != authority_item(authority, "claims", "id", claim).and_then(|v| v.get("fingerprint"))
+        || record.get("requirement_fingerprint")
+            != authority_item(authority, "requirements", "id", requirement)
+                .and_then(|v| v.get("fingerprint"))
     {
         return assessed(
             "stale",
-            "Claim, implementation or verification dependencies changed",
+            "Requirement, implementation or verification dependencies changed",
         );
     }
     let challenge_heads = match active_heads(bundles) {
@@ -2524,14 +2673,18 @@ fn assess_claim_assessment(
             item.get("run").and_then(Json::as_str) == Some(bundle.run_id.as_str())
                 && item.get("bundle_fingerprint").and_then(Json::as_str)
                     == Some(bundle.bundle_fingerprint.as_str())
-                && bundle.challenger_executions.iter().any(|execution| {
-                    item.get("result_fingerprint").and_then(Json::as_str)
-                        == Some(execution.result.fingerprint.as_str())
-                        && item.get("target_fingerprint").and_then(Json::as_str)
-                            == Some(execution.target.fingerprint.as_str())
-                        && execution.target.id == claim
-                        && ["claim-review", "claim-health"].contains(&execution.target.kind.name())
-                })
+                && bundle
+                    .verification_challenge_executions
+                    .iter()
+                    .any(|execution| {
+                        item.get("result_fingerprint").and_then(Json::as_str)
+                            == Some(execution.result.fingerprint.as_str())
+                            && item.get("target_fingerprint").and_then(Json::as_str)
+                                == Some(execution.target.fingerprint.as_str())
+                            && execution.target.id == requirement
+                            && ["requirement-review", "requirement-status"]
+                                .contains(&execution.target.kind.name())
+                    })
         });
         if !found {
             return assessed(
@@ -2542,10 +2695,10 @@ fn assess_claim_assessment(
     }
     for execution in challenge_heads
         .iter()
-        .flat_map(|bundle| &bundle.challenger_executions)
+        .flat_map(|bundle| &bundle.verification_challenge_executions)
     {
         if execution.target.kind.name() == text(record, "kind").unwrap()
-            && execution.target.id == claim
+            && execution.target.id == requirement
             && Some(execution.target.fingerprint.as_str())
                 == record.get("fingerprint").and_then(Json::as_str)
             && execution.result.outcome.name() != "clean"
@@ -2559,23 +2712,23 @@ fn assess_claim_assessment(
             );
         }
     }
-    if text(record, "kind").unwrap() == "claim-review" {
+    if text(record, "kind").unwrap() == "requirement-review" {
         return assessed(text(record, "decision").unwrap(), "");
     }
     let target = Json::obj(vec![
-        ("kind", Json::str("claim-review")),
-        ("claim", Json::str(claim)),
+        ("kind", Json::str("requirement-review")),
+        ("requirement", Json::str(requirement)),
     ]);
     let review = match latest_review(reviews, &target) {
         Ok(Some(v)) => v,
-        Ok(None) => return assessed("missing", "Claim Review absent"),
+        Ok(None) => return assessed("missing", "Requirement Review absent"),
         Err(e) => return assessed("invalid", e),
     };
-    if record.get("claim_review_fingerprint") != review.get("fingerprint") {
-        return assessed("stale", "Claim Review superseded");
+    if record.get("requirement_review_fingerprint") != review.get("fingerprint") {
+        return assessed("stale", "Requirement Review superseded");
     }
     if assess_record(review, authority, reviews, bundles).status != "accepted" {
-        return assessed("rejected", "Claim Review not current and accepted");
+        return assessed("rejected", "Requirement Review not current and accepted");
     }
     let heads = match active_heads(bundles) {
         Ok(v) => v,
@@ -2586,8 +2739,10 @@ fn assess_claim_assessment(
     let mut violated = false;
     let mut inconclusive = false;
     for bundle in &heads {
-        if Some(bundle.subject_fingerprint.as_str())
-            != record.get("subject_fingerprint").and_then(Json::as_str)
+        if Some(bundle.verification_target_fingerprint.as_str())
+            != record
+                .get("verification_target_fingerprint")
+                .and_then(Json::as_str)
         {
             continue;
         }
@@ -2599,11 +2754,11 @@ fn assess_claim_assessment(
             }) {
                 continue;
             }
-            for observation in &execution.observations {
+            for check_result in &execution.results {
                 if !array(&deps, "bindings").unwrap().iter().any(|binding| {
                     binding.get("check").and_then(Json::as_str) == Some(execution.check.id.as_str())
-                        && binding.get("case").and_then(Json::as_str)
-                            == Some(observation.case.as_str())
+                        && binding.get("scenario").and_then(Json::as_str)
+                            == Some(check_result.scenario.as_str())
                 }) {
                     continue;
                 }
@@ -2611,10 +2766,13 @@ fn assess_claim_assessment(
                     item.get("run").and_then(Json::as_str) == Some(bundle.run_id.as_str())
                         && item.get("bundle_fingerprint").and_then(Json::as_str)
                             == Some(bundle.bundle_fingerprint.as_str())
-                        && item.get("observation").and_then(Json::as_str)
-                            == Some(observation.fingerprint.as_str())
+                        && item.get("check_result").and_then(Json::as_str)
+                            == Some(check_result.fingerprint.as_str())
                 }) {
-                    return assessed("stale", "Claim Health omits a current relevant Observation");
+                    return assessed(
+                        "stale",
+                        "Requirement Status omits a current relevant Check Result",
+                    );
                 }
             }
         }
@@ -2625,23 +2783,29 @@ fn assess_claim_assessment(
                 && Some(b.bundle_fingerprint.as_str())
                     == item.get("bundle_fingerprint").and_then(Json::as_str)
         }) else {
-            return assessed("stale", "Observation Run missing or corrected");
+            return assessed("stale", "Check Result Run missing or corrected");
         };
-        if Some(bundle.subject_fingerprint.as_str())
-            != record.get("subject_fingerprint").and_then(Json::as_str)
+        if Some(bundle.verification_target_fingerprint.as_str())
+            != record
+                .get("verification_target_fingerprint")
+                .and_then(Json::as_str)
         {
-            return assessed("invalid", "Observation belongs to another Subject");
+            return assessed(
+                "invalid",
+                "Check Result belongs to another Verification Target",
+            );
         }
         let mut found = false;
         for execution in &bundle.check_executions {
-            for observation in &execution.observations {
-                if Some(observation.fingerprint.as_str())
-                    != item.get("observation").and_then(Json::as_str)
+            for check_result in &execution.results {
+                if Some(check_result.fingerprint.as_str())
+                    != item.get("check_result").and_then(Json::as_str)
                 {
                     continue;
                 }
                 found = true;
-                let binding = authority_binding(authority, &execution.check.id, &observation.case);
+                let binding =
+                    authority_binding(authority, &execution.check.id, &check_result.scenario);
                 if !array(&deps, "bindings")
                     .unwrap()
                     .iter()
@@ -2653,16 +2817,17 @@ fn assess_claim_assessment(
                 {
                     return assessed(
                         "stale",
-                        "Observation no longer matches selected Claim verification",
+                        "Check Result no longer matches selected Requirement verification",
                     );
                 }
-                let outcome = observation.outcome.name();
+                let outcome = check_result.outcome.name();
                 if outcome == "violated" {
                     violated = true;
                 }
                 if outcome == "satisfied" {
-                    covered.insert(observation.case.clone());
-                    covered_bindings.insert((execution.check.id.clone(), observation.case.clone()));
+                    covered.insert(check_result.scenario.clone());
+                    covered_bindings
+                        .insert((execution.check.id.clone(), check_result.scenario.clone()));
                 }
                 if outcome == "inconclusive" {
                     inconclusive = true;
@@ -2670,31 +2835,34 @@ fn assess_claim_assessment(
             }
         }
         if !found {
-            return assessed("invalid", "Observation basis not found");
+            return assessed("invalid", "Check Result basis not found");
         }
     }
     let conclusion = text(record, "conclusion").unwrap();
     if conclusion == "supported" {
-        let claim = authority_item(authority, "claims", "id", claim).unwrap();
+        let requirement = authority_item(authority, "requirements", "id", requirement).unwrap();
         if violated
             || inconclusive
-            || !array(claim, "gaps").unwrap().is_empty()
+            || !array(requirement, "gaps").unwrap().is_empty()
             || array(&deps, "bindings").unwrap().iter().any(|binding| {
                 !covered_bindings.contains(&(
                     text(binding, "check").unwrap().to_string(),
-                    text(binding, "case").unwrap().to_string(),
+                    text(binding, "scenario").unwrap().to_string(),
                 ))
             })
-            || array(claim, "cases")
+            || array(requirement, "scenarios")
                 .unwrap()
                 .iter()
                 .any(|c| !covered.contains(c.as_str().unwrap()))
         {
-            return assessed("unresolved","Supported Health lacks complete satisfied Cases or contains violations/structural gaps");
+            return assessed("unresolved","Supported Requirement Status lacks complete satisfied Scenarios or contains violations/structural gaps");
         }
     }
     if conclusion == "violated" && !violated {
-        return assessed("unresolved", "Violated Health has no violated Observation");
+        return assessed(
+            "unresolved",
+            "Violated Requirement Status has no violated Check Result",
+        );
     }
     assessed("accepted", "")
 }
@@ -2723,7 +2891,7 @@ fn reassessment_history(selected: Vec<Json>, reviews: &[Json]) -> Vec<Json> {
     retained.into_values().collect()
 }
 
-fn claim_assessment_input(
+fn requirement_assessment_input(
     model: &Model,
     project: &str,
     request: &Json,
@@ -2731,23 +2899,26 @@ fn claim_assessment_input(
     bundles: &[RunBundle],
 ) -> Result<Json, String> {
     let kind = text(request, "kind")?;
-    if kind == "claim-review" {
-        object(request, &["kind", "claim"])?;
+    if kind == "requirement-review" {
+        object(request, &["kind", "requirement"])?;
     } else {
-        object(request, &["kind", "claim", "subject_fingerprint"])?;
+        object(
+            request,
+            &["kind", "requirement", "verification_target_fingerprint"],
+        )?;
     }
-    let claim = text(request, "claim")?;
+    let requirement = text(request, "requirement")?;
     let authority = authority(model, project)?;
-    let deps = claim_dependencies(&authority, claim)?;
+    let deps = requirement_dependencies(&authority, requirement)?;
     let check_ids = array(&deps, "checks")?
         .iter()
         .map(|v| text(v, "id").unwrap().to_string())
         .collect();
-    let case_ids = array(&deps, "cases")?
+    let scenario_ids = array(&deps, "scenarios")?
         .iter()
         .map(|v| text(v, "id").unwrap().to_string())
         .collect();
-    let claim_ids = [claim.to_string()].into_iter().collect();
+    let requirement_ids = [requirement.to_string()].into_iter().collect();
     for review in reviews {
         validate_record(review)?;
     }
@@ -2758,13 +2929,13 @@ fn claim_assessment_input(
         let serialized = crate::run::to_json(bundle);
         let mut relevant = false;
         for execution in serialized
-            .get("challenger_executions")
+            .get("verification_challenge_executions")
             .and_then(Json::as_array)
             .unwrap_or(&[])
         {
             let target = execution.get("target").unwrap();
-            if target.get("id").and_then(Json::as_str) != Some(claim)
-                || !["claim-review", "claim-health"]
+            if target.get("id").and_then(Json::as_str) != Some(requirement)
+                || !["requirement-review", "requirement-status"]
                     .contains(&target.get("kind").and_then(Json::as_str).unwrap_or(""))
             {
                 continue;
@@ -2774,8 +2945,8 @@ fn claim_assessment_input(
                 ("run", Json::str(&bundle.run_id)),
                 ("bundle_fingerprint", Json::str(&bundle.bundle_fingerprint)),
                 (
-                    "execution_subject_fingerprint",
-                    Json::str(&bundle.subject_fingerprint),
+                    "execution_verification_target_fingerprint",
+                    Json::str(&bundle.verification_target_fingerprint),
                 ),
                 ("execution", execution.clone()),
                 ("plan", serialized.get("plan").unwrap().clone()),
@@ -2786,21 +2957,24 @@ fn claim_assessment_input(
             challenge_bundles.push(serialized);
         }
     }
-    let mut observations = Vec::new();
-    let mut subjects = Vec::new();
+    let mut check_results = Vec::new();
+    let mut verification_targets = Vec::new();
     let mut evidence = Vec::new();
-    if kind == "claim-health" {
-        fingerprint(request, "subject_fingerprint")?;
+    if kind == "requirement-status" {
+        fingerprint(request, "verification_target_fingerprint")?;
         for bundle in heads {
-            if Some(bundle.subject_fingerprint.as_str())
-                != request.get("subject_fingerprint").and_then(Json::as_str)
+            if Some(bundle.verification_target_fingerprint.as_str())
+                != request
+                    .get("verification_target_fingerprint")
+                    .and_then(Json::as_str)
             {
                 continue;
             }
             evidence.push(crate::run::to_json(bundle));
-            let subject = crate::run::subject_to_json(&bundle.subject);
-            if !subjects.contains(&subject) {
-                subjects.push(subject);
+            let verification_target =
+                crate::run::verification_target_to_json(&bundle.verification_target);
+            if !verification_targets.contains(&verification_target) {
+                verification_targets.push(verification_target);
             }
             for execution in &bundle.check_executions {
                 if !array(&deps, "checks")?.iter().any(|c| {
@@ -2810,19 +2984,19 @@ fn claim_assessment_input(
                 }) {
                     continue;
                 }
-                for o in &execution.observations {
+                for o in &execution.results {
                     if !array(&deps, "bindings")?.iter().any(|b| {
                         b.get("check").and_then(Json::as_str) == Some(execution.check.id.as_str())
-                            && b.get("case").and_then(Json::as_str) == Some(o.case.as_str())
+                            && b.get("scenario").and_then(Json::as_str) == Some(o.scenario.as_str())
                     }) {
                         continue;
                     }
-                    observations.push(Json::obj(vec![
+                    check_results.push(Json::obj(vec![
                         ("check", Json::str(&execution.check.id)),
-                        ("case", Json::str(&o.case)),
+                        ("scenario", Json::str(&o.scenario)),
                         ("run", Json::str(&bundle.run_id)),
                         ("bundle_fingerprint", Json::str(&bundle.bundle_fingerprint)),
-                        ("observation", Json::str(&o.fingerprint)),
+                        ("check_result", Json::str(&o.fingerprint)),
                         ("outcome", Json::str(o.outcome.name())),
                         ("observed_at_ms", Json::Num(o.observed_at_ms as f64)),
                     ]));
@@ -2831,10 +3005,10 @@ fn claim_assessment_input(
         }
     }
     let mut targets = vec![request.clone()];
-    if kind == "claim-health" {
+    if kind == "requirement-status" {
         targets.push(Json::obj(vec![
-            ("kind", Json::str("claim-review")),
-            ("claim", Json::str(claim)),
+            ("kind", Json::str("requirement-review")),
+            ("requirement", Json::str(requirement)),
         ]));
     }
     let mut states = Vec::new();
@@ -2868,14 +3042,14 @@ fn claim_assessment_input(
         }
         states.push(status);
     }
-    let mut definitions = review_definitions(model, &check_ids, &case_ids, &claim_ids);
+    let mut definitions = review_definitions(model, &check_ids, &scenario_ids, &requirement_ids);
     if let Json::Obj(fields) = &mut definitions {
         fields.push(("challenge_results".into(), Json::Arr(challenge_results)));
     }
     challenge_bundles.retain(|bundle| !evidence.contains(bundle));
     let mut output = Json::obj(vec![
         ("format", Json::str("azimuth-review-input")),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         ("project", Json::str(project)),
         ("target", request.clone()),
         (
@@ -2888,8 +3062,8 @@ fn claim_assessment_input(
         ),
         ("dependencies", deps),
         ("definitions", definitions),
-        ("subjects", Json::Arr(subjects)),
-        ("observations", Json::Arr(observations)),
+        ("verification_targets", Json::Arr(verification_targets)),
+        ("check_results", Json::Arr(check_results)),
         ("evidence_bundles", Json::Arr(evidence)),
         ("challenge_bundles", Json::Arr(challenge_bundles)),
         ("review_states", Json::Arr(states)),

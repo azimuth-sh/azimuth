@@ -58,11 +58,11 @@ fn rejects_unknown_and_missing_check_implementation_fields() {
           "file":"src/recovery.rs",
           "lang":"rust",
           "source_fingerprint":"{SHA}",
-          "claim":"payments/recovery#accepted-write-replayed"
+          "requirement":"payments/recovery#accepted-write-replayed"
         }}]}}"#
     ))
     .unwrap_err();
-    assert!(error.contains("unknown field `claim`"), "{error}");
+    assert!(error.contains("unknown field `requirement`"), "{error}");
 
     let missing = parse(
         r#"{"check_implementations":[{
@@ -110,7 +110,7 @@ fn rejects_invalid_fingerprints_partial_identity_and_duplicates() {
 fn accepts_all_six_current_collections_and_rejects_unknown_top_level_keys() {
     let source = format!(
         r#"{{
-          "realizes":[{{"claim":"works","site":"A","file":"a.rs","lang":"rust"}}],
+          "realizes":[{{"requirement":"works","site":"A","file":"a.rs","lang":"rust"}}],
           "check_implementations":[{{"check":"works","site":"T","file":"t.rs",
             "lang":"rust","source_fingerprint":"{SHA}"}}],
           "mechanism_implementations":[{{"mechanism":"guard",

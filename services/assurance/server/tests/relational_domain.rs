@@ -24,14 +24,18 @@ async fn fresh_storage_contains_no_document_columns_and_initializes_idempotently
         document_columns.is_empty(),
         "document columns: {document_columns:?}"
     );
-    let metadata_tables: i64 = sqlx::query_scalar(
+    let versions: Vec<i32> =
+        sqlx::query_scalar("SELECT version FROM assurance_storage_schema ORDER BY version")
+            .fetch_all(&pool)
+            .await?;
+    assert_eq!(versions, vec![6]);
+    let renamed_tables: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' \
-         AND table_name IN ('projects', 'project_model_snapshots', 'evidence_definitions', \
-         'qualifications', 'observations', 'challenges', 'gate_decisions')",
+         AND table_name IN ('assessment_requirements', 'assessment_scenarios', 'definition_requirements')",
     )
     .fetch_one(&pool)
     .await?;
-    assert_eq!(metadata_tables, 7);
+    assert_eq!(renamed_tables, 3);
     Ok(())
 }
 

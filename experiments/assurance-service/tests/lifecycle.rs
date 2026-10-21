@@ -1,9 +1,8 @@
 use azimuth_assurance_lifecycle::{
-    AssuranceAccount, Challenge, ChallengeOutcome, ClaimContract,
-    ContractVerification, EvidenceDefinition, ExecutionSubject, GateReason, GateRequest,
-    GateStatus, LifecycleStage, Observation, ObservationOutcome, ProjectModelSnapshot,
-    Qualification, QualificationVerdict, WorkKind, PROJECT_SNAPSHOT_FORMAT,
-    PROJECT_SNAPSHOT_VERSION,
+    AssuranceAccount, Challenge, ChallengeOutcome, CheckResult, CheckResultOutcome,
+    ContractVerification, EvidenceDefinition, ExecutionVerificationTarget, GateReason, GateRequest,
+    GateStatus, LifecycleStage, ProjectModelSnapshot, Qualification, QualificationVerdict,
+    RequirementContract, WorkKind, PROJECT_SNAPSHOT_FORMAT, PROJECT_SNAPSHOT_VERSION,
 };
 use std::collections::BTreeMap;
 
@@ -13,18 +12,24 @@ const SECOND_RUN: u64 = FIRST_RUN + 300;
 #[test]
 fn successful_ci_executions_reuse_one_qualification() {
     let (definition, qualification) = qualified_definition(LifecycleStage::Merge);
-    let first_subject = ci_subject("revision-a");
-    let second_subject = ci_subject("revision-b");
+    let first_verification_target = ci_verification_target("revision-a");
+    let second_verification_target = ci_verification_target("revision-b");
     let account = AssuranceAccount {
         project_snapshots: snapshots(&definition),
         definitions: vec![definition.clone()],
         qualifications: vec![qualification.clone()],
-        observations: vec![
-            satisfied(&definition, "ci-a", first_subject.clone(), FIRST_RUN, None),
+        check_results: vec![
+            satisfied(
+                &definition,
+                "ci-a",
+                first_verification_target.clone(),
+                FIRST_RUN,
+                None,
+            ),
             satisfied(
                 &definition,
                 "ci-b",
-                second_subject.clone(),
+                second_verification_target.clone(),
                 SECOND_RUN,
                 None,
             ),
@@ -34,13 +39,13 @@ fn successful_ci_executions_reuse_one_qualification() {
 
     let first = account.evaluate(&request(
         &definition,
-        first_subject,
+        first_verification_target,
         FIRST_RUN,
         LifecycleStage::Merge,
     ));
     let second = account.evaluate(&request(
         &definition,
-        second_subject,
+        second_verification_target,
         SECOND_RUN,
         LifecycleStage::Merge,
     ));
@@ -59,16 +64,16 @@ fn successful_ci_executions_reuse_one_qualification() {
 }
 
 #[test]
-fn observation_is_confined_to_its_exact_subject() {
+fn check_result_is_confined_to_its_exact_verification_target() {
     let (definition, qualification) = qualified_definition(LifecycleStage::Merge);
     let account = AssuranceAccount {
         project_snapshots: snapshots(&definition),
         definitions: vec![definition.clone()],
         qualifications: vec![qualification],
-        observations: vec![satisfied(
+        check_results: vec![satisfied(
             &definition,
             "ci-a",
-            ci_subject("revision-a"),
+            ci_verification_target("revision-a"),
             FIRST_RUN,
             None,
         )],
@@ -77,29 +82,32 @@ fn observation_is_confined_to_its_exact_subject() {
 
     let decision = account.evaluate(&request(
         &definition,
-        ci_subject("revision-b"),
+        ci_verification_target("revision-b"),
         FIRST_RUN,
         LifecycleStage::Merge,
     ));
 
     assert_eq!(decision.status, GateStatus::Closed);
-    assert_eq!(decision.reasons, vec![GateReason::SubjectMismatch]);
-    assert_eq!(decision.work, vec![WorkKind::RerunForSubject]);
+    assert_eq!(
+        decision.reasons,
+        vec![GateReason::VerificationTargetMismatch]
+    );
+    assert_eq!(decision.work, vec![WorkKind::RerunForVerificationTarget]);
 }
 
 #[test]
-fn injected_time_expires_a_production_observation() {
+fn injected_time_expires_a_production_check_result() {
     let (definition, qualification) = qualified_definition(LifecycleStage::Canary);
-    let subject = production_subject("sha256:artifact-a", "deployment-a");
+    let verification_target = production_verification_target("sha256:artifact-a", "deployment-a");
     let expires_at = FIRST_RUN + 3_600;
     let account = AssuranceAccount {
         project_snapshots: snapshots(&definition),
         definitions: vec![definition.clone()],
         qualifications: vec![qualification],
-        observations: vec![satisfied(
+        check_results: vec![satisfied(
             &definition,
             "canary-a",
-            subject.clone(),
+            verification_target.clone(),
             FIRST_RUN,
             Some(expires_at),
         )],
@@ -108,40 +116,46 @@ fn injected_time_expires_a_production_observation() {
 
     let current = account.evaluate(&request(
         &definition,
-        subject.clone(),
+        verification_target.clone(),
         expires_at - 1,
         LifecycleStage::Canary,
     ));
     let expired = account.evaluate(&request(
         &definition,
-        subject,
+        verification_target,
         expires_at,
         LifecycleStage::Canary,
     ));
 
     assert_eq!(current.status, GateStatus::Open);
     assert_eq!(expired.status, GateStatus::Closed);
-    assert_eq!(expired.reasons, vec![GateReason::ObservationExpired]);
-    assert_eq!(expired.work, vec![WorkKind::RenewObservation]);
+    assert_eq!(expired.reasons, vec![GateReason::CheckResultExpired]);
+    assert_eq!(expired.work, vec![WorkKind::RenewCheckResult]);
 }
 
 #[test]
 fn violation_closes_only_the_observed_gate() {
     let (definition, qualification) = qualified_definition(LifecycleStage::Merge);
-    let subject = ci_subject("revision-a");
-    let mut observation = satisfied(&definition, "ci-a", subject.clone(), FIRST_RUN, None);
-    observation.outcome = ObservationOutcome::Violated;
+    let verification_target = ci_verification_target("revision-a");
+    let mut check_result = satisfied(
+        &definition,
+        "ci-a",
+        verification_target.clone(),
+        FIRST_RUN,
+        None,
+    );
+    check_result.outcome = CheckResultOutcome::Violated;
     let account = AssuranceAccount {
         project_snapshots: snapshots(&definition),
         definitions: vec![definition.clone()],
         qualifications: vec![qualification],
-        observations: vec![observation],
+        check_results: vec![check_result],
         challenges: vec![],
     };
 
     let decision = account.evaluate(&request(
         &definition,
-        subject,
+        verification_target,
         FIRST_RUN,
         LifecycleStage::Merge,
     ));
@@ -159,13 +173,13 @@ fn changed_definition_invalidates_qualification_before_execution() {
         project_snapshots: snapshots(&definition),
         definitions: vec![definition.clone()],
         qualifications: vec![qualification],
-        observations: vec![],
+        check_results: vec![],
         challenges: vec![],
     };
 
     let decision = account.evaluate(&request(
         &definition,
-        ci_subject("revision-a"),
+        ci_verification_target("revision-a"),
         FIRST_RUN,
         LifecycleStage::Merge,
     ));
@@ -179,15 +193,15 @@ fn changed_definition_invalidates_qualification_before_execution() {
 fn future_qualification_cannot_open_an_earlier_gate() {
     let (definition, mut qualification) = qualified_definition(LifecycleStage::Merge);
     qualification.qualified_at = FIRST_RUN + 1;
-    let subject = ci_subject("revision-a");
+    let verification_target = ci_verification_target("revision-a");
     let account = AssuranceAccount {
         project_snapshots: snapshots(&definition),
         definitions: vec![definition.clone()],
         qualifications: vec![qualification],
-        observations: vec![satisfied(
+        check_results: vec![satisfied(
             &definition,
             "ci-a",
-            subject.clone(),
+            verification_target.clone(),
             FIRST_RUN,
             None,
         )],
@@ -196,7 +210,7 @@ fn future_qualification_cannot_open_an_earlier_gate() {
 
     let decision = account.evaluate(&request(
         &definition,
-        subject,
+        verification_target,
         FIRST_RUN,
         LifecycleStage::Merge,
     ));
@@ -207,45 +221,51 @@ fn future_qualification_cannot_open_an_earlier_gate() {
 }
 
 #[test]
-fn incompatible_context_requires_a_matching_rerun() {
+fn incompatible_execution_context_requires_a_matching_rerun() {
     let (definition, qualification) = qualified_definition(LifecycleStage::Merge);
-    let subject = ci_subject("revision-a");
-    let mut observation = satisfied(&definition, "ci-a", subject.clone(), FIRST_RUN, None);
-    observation
-        .context
+    let verification_target = ci_verification_target("revision-a");
+    let mut check_result = satisfied(
+        &definition,
+        "ci-a",
+        verification_target.clone(),
+        FIRST_RUN,
+        None,
+    );
+    check_result
+        .execution_context
         .insert("capacity-profile".into(), "small".into());
     let account = AssuranceAccount {
         project_snapshots: snapshots(&definition),
         definitions: vec![definition.clone()],
         qualifications: vec![qualification],
-        observations: vec![observation],
+        check_results: vec![check_result],
         challenges: vec![],
     };
 
     let decision = account.evaluate(&request(
         &definition,
-        subject,
+        verification_target,
         FIRST_RUN,
         LifecycleStage::Merge,
     ));
 
     assert_eq!(decision.status, GateStatus::Closed);
-    assert_eq!(decision.reasons, vec![GateReason::ContextMismatch]);
-    assert_eq!(decision.work, vec![WorkKind::RerunWithContext]);
+    assert_eq!(decision.reasons, vec![GateReason::ExecutionContextMismatch]);
+    assert_eq!(decision.work, vec![WorkKind::RerunWithExecutionContext]);
 }
 
 #[test]
 fn challenge_findings_require_judgment_despite_successful_execution() {
     let (definition, qualification) = qualified_definition(LifecycleStage::Merge);
-    let subject = ci_subject("revision-a");
+    let verification_target = ci_verification_target("revision-a");
     let account = AssuranceAccount {
         project_snapshots: snapshots(&definition),
         definitions: vec![definition.clone()],
         qualifications: vec![qualification],
-        observations: vec![satisfied(
+        check_results: vec![satisfied(
             &definition,
             "ci-a",
-            subject.clone(),
+            verification_target.clone(),
             FIRST_RUN,
             None,
         )],
@@ -262,7 +282,7 @@ fn challenge_findings_require_judgment_despite_successful_execution() {
 
     let decision = account.evaluate(&request(
         &definition,
-        subject,
+        verification_target,
         FIRST_RUN,
         LifecycleStage::Merge,
     ));
@@ -273,15 +293,15 @@ fn challenge_findings_require_judgment_despite_successful_execution() {
 }
 
 #[test]
-fn production_observation_does_not_cross_artifacts_or_deployments() {
+fn production_check_result_does_not_cross_artifacts_or_deployments() {
     let (definition, qualification) = qualified_definition(LifecycleStage::Canary);
-    let observed = production_subject("sha256:artifact-a", "deployment-a");
-    let requested = production_subject("sha256:artifact-b", "deployment-b");
+    let observed = production_verification_target("sha256:artifact-a", "deployment-a");
+    let requested = production_verification_target("sha256:artifact-b", "deployment-b");
     let account = AssuranceAccount {
         project_snapshots: snapshots(&definition),
         definitions: vec![definition.clone()],
         qualifications: vec![qualification],
-        observations: vec![satisfied(
+        check_results: vec![satisfied(
             &definition,
             "canary-a",
             observed,
@@ -299,7 +319,10 @@ fn production_observation_does_not_cross_artifacts_or_deployments() {
     ));
 
     assert_eq!(decision.status, GateStatus::Closed);
-    assert_eq!(decision.reasons, vec![GateReason::SubjectMismatch]);
+    assert_eq!(
+        decision.reasons,
+        vec![GateReason::VerificationTargetMismatch]
+    );
 }
 
 #[test]
@@ -309,13 +332,13 @@ fn unknown_snapshot_creates_registration_work() {
         project_snapshots: vec![],
         definitions: vec![definition.clone()],
         qualifications: vec![qualification],
-        observations: vec![],
+        check_results: vec![],
         challenges: vec![],
     };
 
     let decision = account.evaluate(&request(
         &definition,
-        ci_subject("revision-a"),
+        ci_verification_target("revision-a"),
         FIRST_RUN,
         LifecycleStage::Merge,
     ));
@@ -325,9 +348,9 @@ fn unknown_snapshot_creates_registration_work() {
 }
 
 #[test]
-fn changed_claim_contract_requires_a_new_definition_and_qualification() {
+fn changed_requirement_contract_requires_a_new_definition_and_qualification() {
     let (definition, qualification) = qualified_definition(LifecycleStage::Merge);
-    let mut changed_contract = claim_contract();
+    let mut changed_contract = requirement_contract();
     changed_contract.statement = "Checkout latency has a different accepted bound.".into();
     changed_contract.contract_fingerprint = changed_contract.fingerprint();
     let account = AssuranceAccount {
@@ -337,24 +360,24 @@ fn changed_claim_contract_requires_a_new_definition_and_qualification() {
             id: "snapshot-ci".into(),
             project: "checkout".into(),
             model_fingerprint: "model-changed".into(),
-            claims: vec![changed_contract],
+            requirements: vec![changed_contract],
         }],
         definitions: vec![definition.clone()],
         qualifications: vec![qualification],
-        observations: vec![],
+        check_results: vec![],
         challenges: vec![],
     };
 
     let decision = account.evaluate(&request(
         &definition,
-        ci_subject("revision-a"),
+        ci_verification_target("revision-a"),
         FIRST_RUN,
         LifecycleStage::Merge,
     ));
 
     assert_eq!(
         decision.reasons,
-        vec![GateReason::ClaimContractInapplicable]
+        vec![GateReason::RequirementContractInapplicable]
     );
     assert_eq!(
         decision.work,
@@ -365,14 +388,17 @@ fn changed_claim_contract_requires_a_new_definition_and_qualification() {
 fn qualified_definition(stage: LifecycleStage) -> (EvidenceDefinition, Qualification) {
     let definition = EvidenceDefinition {
         id: "expected-load".into(),
-        claim: claim_contract().reference(),
+        requirement: requirement_contract().reference(),
         assertion: "p95 latency is below 300 milliseconds".into(),
         scope: "e2e".into(),
         quantification: "example".into(),
         oracle: "direct".into(),
         stage,
         inputs: vec!["tests/load.js@sha256:definition".into()],
-        required_context: BTreeMap::from([("capacity-profile".into(), "production-like".into())]),
+        required_execution_context: BTreeMap::from([(
+            "capacity-profile".into(),
+            "production-like".into(),
+        )]),
         declared_at: FIRST_RUN - 2,
     };
     let qualification = Qualification {
@@ -381,7 +407,9 @@ fn qualified_definition(stage: LifecycleStage) -> (EvidenceDefinition, Qualifica
         definition_fingerprint: definition.fingerprint(),
         verdict: QualificationVerdict::Qualified,
         qualified_at: FIRST_RUN - 1,
-        rationale: "The direct threshold and production-like context test the claim.".into(),
+        rationale:
+            "The direct threshold and production-like Execution Context test the requirement."
+                .into(),
     };
     (definition, qualification)
 }
@@ -389,40 +417,40 @@ fn qualified_definition(stage: LifecycleStage) -> (EvidenceDefinition, Qualifica
 fn satisfied(
     definition: &EvidenceDefinition,
     id: &str,
-    subject: ExecutionSubject,
+    verification_target: ExecutionVerificationTarget,
     observed_at: u64,
     expires_at: Option<u64>,
-) -> Observation {
-    Observation {
+) -> CheckResult {
+    CheckResult {
         id: id.into(),
         definition_id: definition.id.clone(),
         definition_fingerprint: definition.fingerprint(),
         stage: definition.stage,
-        subject,
-        context: definition.required_context.clone(),
+        verification_target,
+        execution_context: definition.required_execution_context.clone(),
         observed_at,
         expires_at,
-        outcome: ObservationOutcome::Satisfied,
+        outcome: CheckResultOutcome::Satisfied,
         report: None,
     }
 }
 
 fn request(
     definition: &EvidenceDefinition,
-    subject: ExecutionSubject,
+    verification_target: ExecutionVerificationTarget,
     at: u64,
     stage: LifecycleStage,
 ) -> GateRequest {
     GateRequest {
         definition_id: definition.id.clone(),
         stage,
-        subject,
+        verification_target,
         at,
     }
 }
 
-fn ci_subject(revision: &str) -> ExecutionSubject {
-    ExecutionSubject {
+fn ci_verification_target(revision: &str) -> ExecutionVerificationTarget {
+    ExecutionVerificationTarget {
         project_snapshot: "snapshot-ci".into(),
         revision: revision.into(),
         artifact_digest: None,
@@ -433,8 +461,8 @@ fn ci_subject(revision: &str) -> ExecutionSubject {
 }
 
 fn snapshots(definition: &EvidenceDefinition) -> Vec<ProjectModelSnapshot> {
-    let contract = claim_contract();
-    assert_eq!(definition.claim, contract.reference());
+    let contract = requirement_contract();
+    assert_eq!(definition.requirement, contract.reference());
     ["snapshot-ci", "snapshot-release"]
         .into_iter()
         .map(|id| ProjectModelSnapshot {
@@ -443,20 +471,20 @@ fn snapshots(definition: &EvidenceDefinition) -> Vec<ProjectModelSnapshot> {
             id: id.into(),
             project: "checkout".into(),
             model_fingerprint: format!("model-{id}"),
-            claims: vec![contract.clone()],
+            requirements: vec![contract.clone()],
         })
         .collect()
 }
 
-fn claim_contract() -> ClaimContract {
-    let mut contract = ClaimContract {
+fn requirement_contract() -> RequirementContract {
+    let mut contract = RequirementContract {
         contract_fingerprint: String::new(),
         spec: "checkout/performance".into(),
-        claim: "latency-objective".into(),
-        requirement: "performance".into(),
+        requirement: "latency-objective".into(),
+        requirement_kind: "performance".into(),
         criticality: "standard".into(),
         statement: "Checkout latency remains bounded.".into(),
-        case_statement: "P95 latency is below the qualified threshold.".into(),
+        scenario_statement: "P95 latency is below the qualified threshold.".into(),
         domain: "behaviour".into(),
         verification: ContractVerification {
             strength: Some("demonstration".into()),
@@ -474,8 +502,11 @@ fn claim_contract() -> ClaimContract {
     contract
 }
 
-fn production_subject(artifact_digest: &str, deployment_id: &str) -> ExecutionSubject {
-    ExecutionSubject {
+fn production_verification_target(
+    artifact_digest: &str,
+    deployment_id: &str,
+) -> ExecutionVerificationTarget {
+    ExecutionVerificationTarget {
         project_snapshot: "snapshot-release".into(),
         revision: "revision-release".into(),
         artifact_digest: Some(artifact_digest.into()),

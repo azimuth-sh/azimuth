@@ -27,31 +27,31 @@ The implementation challenge runs in the gate lane.
 
 const SYSTEM_SPEC: &str = "# Spec: payments/receipt
 
-## Claim: capture-identifier-is-returned
+## Requirement: capture-identifier-is-returned
 Criticality: routine
 
 The receipt SHALL carry the capture identifier.
 
-### Case: identifier-returned
+### Scenario: identifier-returned
 Event: a captured payment is requested
 Required: its capture identifier is returned
 ";
 
 const EXPERIENCE_SPEC: &str = "# Spec: experience/receipt
 
-## Claim: capture-identifier-is-shown
+## Requirement: capture-identifier-is-shown
 Criticality: routine
 
 The rider receipt SHALL show the capture identifier.
 
-### Case: identifier-shown
+### Scenario: identifier-shown
 Event: a rider opens a captured trip receipt
 Required: its capture identifier is shown
 ";
 
 const SYSTEM_DESIGN: &str = "# Design: payments/receipt
 
-## Claim: capture-identifier-is-returned
+## Requirement: capture-identifier-is-returned
 Mechanism: capture-identifier-projection
 Enforcement: guard
 Binding: capture-identifier-projection
@@ -62,34 +62,34 @@ identifier at either public surface.
 
 const ROUTINE_SPEC: &str = "# Spec: experience/display-density
 
-## Claim: density-is-remembered
+## Requirement: density-is-remembered
 Criticality: routine
 
 The rider application SHALL remember the selected display density in the browser.
 
-### Case: density-survives-reload
+### Scenario: density-survives-reload
 Event: the rider selects a display density and reloads the page
 Required: the selected density remains active
 ";
 
 const OPERATIONS_SPEC: &str = "# Spec: operations/dashboard
 
-## Claim: title-is-readable
+## Requirement: title-is-readable
 Criticality: routine
 
 The dashboard SHALL have a readable title.
 
-### Case: title-is-present
+### Scenario: title-is-present
 Event: an operator opens the dashboard
 Required: its title identifies the ride system
 
-## Claim: delivery-backlog-is-alerted
+## Requirement: delivery-backlog-is-alerted
 Criticality: routine
 
 The monitoring system SHALL alert on a persistent delivery backlog.
 
-### Case: backlog-alert-fires
-Context: delivery remains backlogged beyond its threshold
+### Scenario: backlog-alert-fires
+Execution Context: delivery remains backlogged beyond its threshold
 Event: the monitoring rules are evaluated
 Required: the backlog alert is active
 ";
@@ -496,7 +496,7 @@ fn project_acceptance_binds_the_archive_to_pre_and_post_evidence() {
         &lab.backend
             .root
             .join(format!("{active_path}/specs/payments-receipt.md")),
-        "# Intent delta: payments/receipt\n\n## Add claim: caption-is-stable\nCriticality: routine\n\nThe receipt caption SHALL be stable.\n\n### Add case: caption-remains\nEvent: a receipt is rendered\nRequired: its caption remains stable\n",
+        "# Intent delta: payments/receipt\n\n## Add requirement: caption-is-stable\nCriticality: routine\n\nThe receipt caption SHALL be stable.\n\n### Add scenario: caption-remains\nEvent: a receipt is rendered\nRequired: its caption remains stable\n",
     );
     write(
         &lab.backend.root.join(format!("{active_path}/outcome.md")),
@@ -507,7 +507,7 @@ fn project_acceptance_binds_the_archive_to_pre_and_post_evidence() {
             .root
             .join("azimuth/model/payments/receipt/spec.md"),
         format!(
-            "{SYSTEM_SPEC}\n## Claim: caption-is-stable\nCriticality: routine\n\nThe receipt caption SHALL be stable.\n\n### Case: caption-remains\nEvent: a receipt is rendered\nRequired: its caption remains stable\n"
+            "{SYSTEM_SPEC}\n## Requirement: caption-is-stable\nCriticality: routine\n\nThe receipt caption SHALL be stable.\n\n### Scenario: caption-remains\nEvent: a receipt is rendered\nRequired: its caption remains stable\n"
         ),
     )
     .unwrap();
@@ -722,7 +722,7 @@ fn split_and_monorepo_controls_derive_the_same_assurance_relations() {
     );
     write(
         &control.join("azimuth/workspace.json"),
-        "{\"format\":\"azimuth-workspace\",\"version\":1,\"areas\":[\
+        "{\"format\":\"azimuth-workspace\",\"version\":2,\"areas\":[\
          {\"id\":\"payments\",\"mounts\":[{\"id\":\"code\",\"path\":\"app/services/Payments\"},{\"id\":\"tests\",\"path\":\"app/services/Payments.Tests\"}]},\
          {\"id\":\"rider-experience\",\"mounts\":[{\"id\":\"code\",\"path\":\"app/web/rider/src\"}]},\
          {\"id\":\"monitoring\",\"mounts\":[{\"id\":\"rules\",\"path\":\"monitoring\"}]},\
@@ -750,8 +750,8 @@ fn split_and_monorepo_controls_derive_the_same_assurance_relations() {
     .unwrap();
 
     assert_eq!(
-        claim_projection(&split.model),
-        claim_projection(&monorepo.model)
+        requirement_projection(&split.model),
+        requirement_projection(&monorepo.model)
     );
     assert_eq!(
         relation_projection(&split.model),
@@ -809,7 +809,7 @@ fn repository_envelope_preserves_check_linkage_in_stable_identity_export() {
     assert_eq!(source.mount, "tests");
 
     let export = loaded.model.to_json(&[]).to_string_pretty();
-    assert!(export.contains("\"version\": 5"));
+    assert!(export.contains("\"version\": 8"));
     assert!(export.contains("\"check_implementations\""));
     assert!(!export.contains("\"covers\""));
     assert!(!export.contains("\"mechanism_covers\""));
@@ -862,9 +862,9 @@ fn operational_realization_may_originate_in_the_operations_repository() {
         .realizes
         .iter()
         .find(|site| {
-            site.spec == "operations/dashboard" && site.claim == "delivery-backlog-is-alerted"
+            site.spec == "operations/dashboard" && site.requirement == "delivery-backlog-is-alerted"
         })
-        .expect("operations rule realizes the alert claim");
+        .expect("operations rule realizes the alert requirement");
     assert_eq!(realization.source.as_ref().unwrap().area, "monitoring");
     assert!(validation::validate(&loaded.model).is_empty());
 }
@@ -899,7 +899,7 @@ fn local_routine_work_is_clean_but_explicitly_incomplete() {
     let loaded = azimuth::load_assembly(&assembly, &["experience/display-density".into()])
         .expect("routine model loads without global standards");
     assert!(loaded.warnings.is_empty());
-    assert_eq!(loaded.model.case_count(), 1);
+    assert_eq!(loaded.model.scenario_count(), 1);
     assert!(loaded.model.realizes.is_empty());
     assert!(loaded.model.check_implementations.is_empty());
     assert!(validation::validate(&loaded.model).is_empty());
@@ -1690,7 +1690,7 @@ fn assembly_scales_to_fifty_real_repositories_and_five_thousand_sources() {
         let model_source = format!("intent-{index}");
         let repo_root = root.join(&id);
         let spec = format!(
-            "# Spec: scale/repo-{index}\n\n## Claim: repo-{index}-remains-routine\nCriticality: routine\n\nThe fixture SHALL remain routine.\n\n### Case: repo-{index}-remains\nEvent: it is checked\nRequired: it remains routine\n"
+            "# Spec: scale/repo-{index}\n\n## Requirement: repo-{index}-remains-routine\nCriticality: routine\n\nThe fixture SHALL remain routine.\n\n### Scenario: repo-{index}-remains\nEvent: it is checked\nRequired: it remains routine\n"
         );
         write(
             &repo_root.join(format!("azimuth/model/scale/repo-{index}/spec.md")),
@@ -1802,23 +1802,23 @@ const PROJECT: &str = r#"{
 }"#;
 
 const BACKEND_LINKAGE: &str = r#"{
-  "realizes":[{"claim":"capture-identifier-is-returned","site":"Handle","file":"app/services/Payments/Capture.cs","lang":"csharp","source_fingerprint":"sha256:1111111111111111111111111111111111111111111111111111111111111111","area":"payments","address_kind":"dotnet-symbol","address":"Handle","mount":"code"}],
+  "realizes":[{"requirement":"capture-identifier-is-returned","site":"Handle","file":"app/services/Payments/Capture.cs","lang":"csharp","source_fingerprint":"sha256:1111111111111111111111111111111111111111111111111111111111111111","area":"payments","address_kind":"dotnet-symbol","address":"Handle","mount":"code"}],
   "artifacts":[{"id":"capture-identifier-projection","kind":"dotnet-method","file":"app/services/Payments/Capture.cs","area":"payments","address_kind":"dotnet-method","address":"capture-identifier-projection","mount":"code"}]
 }"#;
 
 const FLAT_BACKEND_LINKAGE: &str = r#"{
-  "realizes":[{"claim":"capture-identifier-is-returned","site":"Payments.Capture.Handle","file":"app/services/Payments/Capture.cs","lang":"csharp","source_fingerprint":"sha256:1111111111111111111111111111111111111111111111111111111111111111"}],
+  "realizes":[{"requirement":"capture-identifier-is-returned","site":"Payments.Capture.Handle","file":"app/services/Payments/Capture.cs","lang":"csharp","source_fingerprint":"sha256:1111111111111111111111111111111111111111111111111111111111111111"}],
   "check_implementations":[{"check":"capture-identifier","site":"Payments.Tests.CaptureTests.ReturnsIdentifier","file":"app/services/Payments.Tests/CaptureTests.cs","lang":"csharp","source_fingerprint":"sha256:2222222222222222222222222222222222222222222222222222222222222222"}],
   "artifacts":[{"id":"capture-identifier-projection","kind":"dotnet-method","file":"app/services/Payments/Capture.cs"}]
 }"#;
 
 const EXPERIENCE_LINKAGE: &str = r#"{
-  "realizes":[{"claim":"capture-identifier-is-shown","site":"Receipt","file":"app/web/rider/src/receipt.tsx","lang":"typescript","source_fingerprint":"sha256:3333333333333333333333333333333333333333333333333333333333333333","area":"rider-experience","address_kind":"typescript-symbol","address":"Receipt","mount":"code"},{"claim":"capture-identifier-is-returned","site":"Receipt","file":"app/web/rider/src/receipt.tsx","lang":"typescript","source_fingerprint":"sha256:3333333333333333333333333333333333333333333333333333333333333333","area":"rider-experience","address_kind":"typescript-symbol","address":"Receipt","mount":"code"}],
+  "realizes":[{"requirement":"capture-identifier-is-shown","site":"Receipt","file":"app/web/rider/src/receipt.tsx","lang":"typescript","source_fingerprint":"sha256:3333333333333333333333333333333333333333333333333333333333333333","area":"rider-experience","address_kind":"typescript-symbol","address":"Receipt","mount":"code"},{"requirement":"capture-identifier-is-returned","site":"Receipt","file":"app/web/rider/src/receipt.tsx","lang":"typescript","source_fingerprint":"sha256:3333333333333333333333333333333333333333333333333333333333333333","area":"rider-experience","address_kind":"typescript-symbol","address":"Receipt","mount":"code"}],
   "artifacts":[{"id":"display-density-control","kind":"typescript-export","file":"app/web/rider/src/display-density.tsx","area":"rider-experience","address_kind":"typescript-export","address":"display-density-control","mount":"code"}]
 }"#;
 
 const OPERATIONS_LINKAGE: &str = r#"{
-  "realizes":[{"claim":"delivery-backlog-is-alerted","site":"DeliveryBacklog","file":"monitoring/delivery.rules.yml","lang":"prometheus","source_fingerprint":"sha256:4444444444444444444444444444444444444444444444444444444444444444","area":"monitoring","address_kind":"prometheus-alert","address":"DeliveryBacklog","mount":"rules"}],
+  "realizes":[{"requirement":"delivery-backlog-is-alerted","site":"DeliveryBacklog","file":"monitoring/delivery.rules.yml","lang":"prometheus","source_fingerprint":"sha256:4444444444444444444444444444444444444444444444444444444444444444","area":"monitoring","address_kind":"prometheus-alert","address":"DeliveryBacklog","mount":"rules"}],
   "artifacts":[{"id":"ride-dashboard","kind":"dashboard","file":"monitoring/dashboard.json","area":"monitoring","address_kind":"dashboard","address":"ride-dashboard","mount":"rules"}]
 }"#;
 
@@ -1974,13 +1974,13 @@ fn execution_receipt(subjects: &[(&str, &str)]) -> String {
     )
 }
 
-fn claim_projection(model: &azimuth::model::Model) -> Vec<String> {
-    let mut claims = model
+fn requirement_projection(model: &azimuth::model::Model) -> Vec<String> {
+    let mut requirements = model
         .specs
         .iter()
         .flat_map(|spec| {
-            spec.claims.iter().flat_map(move |requirement| {
-                requirement.cases.iter().map(move |scenario| {
+            spec.requirements.iter().flat_map(move |requirement| {
+                requirement.scenarios.iter().map(move |scenario| {
                     format!(
                         "{}#{}:{}:{:?}",
                         spec.id, scenario.id, requirement.id, requirement.criticality
@@ -1989,8 +1989,8 @@ fn claim_projection(model: &azimuth::model::Model) -> Vec<String> {
             })
         })
         .collect::<Vec<_>>();
-    claims.sort();
-    claims
+    requirements.sort();
+    requirements
 }
 
 fn relation_projection(model: &azimuth::model::Model) -> Vec<String> {
@@ -2001,7 +2001,7 @@ fn relation_projection(model: &azimuth::model::Model) -> Vec<String> {
             format!(
                 "realizes:{}#{}:{}",
                 relation.spec,
-                relation.claim,
+                relation.requirement,
                 relation
                     .source
                     .as_ref()

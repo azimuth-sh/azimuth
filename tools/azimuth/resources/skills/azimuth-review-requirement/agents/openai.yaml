@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review an Azimuth Requirement"
+  short_description: "Assess Requirement and verification readiness independently"
+  default_prompt: "Use $azimuth-review-requirement to independently review the selected Requirement against its exact candidate and retain the decision and findings."

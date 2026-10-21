@@ -55,9 +55,9 @@ GitHub token owns GitHub Release and GHCR writes.
 Create and push one annotated tag at the intended `main` revision:
 
 ```sh
-git tag --annotate v0.1.0-alpha.6 --message "Azimuth 0.1.0-alpha.6"
-git push origin v0.1.0-alpha.6
-gh run list --workflow release --branch v0.1.0-alpha.6 --limit 1
+git tag --annotate v0.1.0-alpha.7 --message "Azimuth 0.1.0-alpha.7"
+git push origin v0.1.0-alpha.7
+gh run list --workflow release --branch v0.1.0-alpha.7 --limit 1
 gh run watch RUN_ID --exit-status
 ```
 
@@ -83,9 +83,10 @@ it installs the actual npm tarball and runs a real synthetic Playwright test wit
 fixture/reporter. These smokes do not contact ASS or require a browser download. Canonical source
 checks separately cover failures, retries, contexts and missing captures through real runners.
 
-`verification-context`, `test-report`, `test-mapping`, `native-test-results`, `deployment-assessment`
-and `deployment-status` have independent protocol version 1 catalog entries. They are not inferred
-from package version `0.1.0-alpha.6`. Public source adapters under `packages/python` remain
+`execution-context`, `test-report`, `test-mapping`, `native-test-results`, `deployment-assessment`
+and `deployment-status` have independent catalog protocol versions (`test-report` and
+`native-test-results` 1, the others 2). They are not inferred from package version
+`0.1.0-alpha.7`. Public source adapters under `packages/python` remain
 commit-pinned source inputs rather than a newly invented PyPI artifact identity.
 
 Registry publication is not required for consumer CI adoption: build CLI/harness artifacts once

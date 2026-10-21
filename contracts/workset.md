@@ -53,7 +53,7 @@ Parse violations are reported together and abort before any checkout is inspecte
 | `revision` | non-empty string | yes | the exact revision the checkout must be at |
 | `manifest` | non-empty string | yes | path to that repository's manifest |
 | `manifest_digest` | non-empty string | yes | SHA-256 of the manifest file, lowercase hex |
-| `account_support` | object with `path` and `digest` | no | exact emitted Claim-first support artifact, when this repository adopts it |
+| `account_support` | object with `path` and `digest` | no | exact emitted account-support artifact, when this repository adopts it |
 
 Repository ids are unique within a workset; a repeated id is a violation.
 
@@ -89,7 +89,7 @@ For each selected repository:
 - the manifest file's SHA-256 must equal `manifest_digest`;
 - the manifest's `project` must equal the catalog project, its `repository` must equal the entry's `id`, and its `revision` must equal the entry's `revision`.
 
-When either the workset or repository manifest names `account_support`, both must do so. The workset object supplies the filesystem `path` and the SHA-256 `digest` of the exact JSON bytes. The repository manifest supplies a normalized repository-relative `path`, the same `digest`, its `producer`, and its `revision`. Assembly requires the two paths to resolve to the same file within the selected checkout, the two digests to agree and match its bytes, the support producer to equal the manifest producer, and the support revision to equal the selected checkout and manifest revision. It then parses the support JSON and retains its repository, revision, producer and digest provenance alongside the support records. One-sided, missing, malformed or mismatched observations fail assembly. Repositories that have not adopted Claim-first support omit the object from both files; this omission never supplies verification support for an adopted Claim.
+When either the workset or repository manifest names `account_support`, both must do so. The workset object supplies the filesystem `path` and the SHA-256 `digest` of the exact JSON bytes. The repository manifest supplies a normalized repository-relative `path`, the same `digest`, its `producer`, and its `revision`. Assembly requires the two paths to resolve to the same file within the selected checkout, the two digests to agree and match its bytes, the support producer to equal the manifest producer, and the support revision to equal the selected checkout and manifest revision. It then parses the support JSON and retains its repository, revision, producer and digest provenance alongside the support records. One-sided, missing, malformed or mismatched observations fail assembly. Repositories that have not adopted account support omit the object from both files; this omission never supplies verification support for an adopted Requirement.
 
 ### Model sources and standards
 

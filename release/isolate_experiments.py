@@ -19,7 +19,7 @@ else:
 
 
 SPEC = "framework/release-artifacts"
-CLAIMS = ("experimental-source-isolation",)
+REQUIREMENTS = ("experimental-source-isolation",)
 ROOT_GATE = PurePosixPath("scripts/check.sh")
 POLYGLOT_GATE = PurePosixPath("experiments/polyglot/check.sh")
 WORKFLOW = PurePosixPath(".github/workflows/ci.yml")
@@ -458,13 +458,13 @@ def write_linkage(root, output_root):
     linkage = {
         "realizes": [
             {
-                "claim": claim,
+                "requirement": requirement,
                 "site": "qualify_experimental_isolation",
                 "file": "release/isolate_experiments.py",
                 "lang": "python",
                 "source_fingerprint": qualifier_fingerprint,
             }
-            for claim in CLAIMS
+            for requirement in REQUIREMENTS
         ],
         "check_implementations": [],
         "mechanism_implementations": [],

@@ -6,10 +6,14 @@ const RELEVANT_EVENT: &str = r#"
         OR e.kind='review' AND EXISTS(SELECT 1 FROM model_revision_reviews linked WHERE linked.project=d.project AND linked.revision_fingerprint=d.revision AND linked.review_fingerprint=e.record_key)
         OR e.kind='run' AND (
             EXISTS(SELECT 1 FROM definition_run_dependencies dependency JOIN run_bundles b ON b.project=dependency.project AND b.run_id=dependency.run WHERE dependency.project=d.project AND dependency.revision=d.revision AND b.fingerprint=e.record_key)
-            OR EXISTS(SELECT 1 FROM definition_claims c CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN EXISTS(SELECT 1 FROM assurance_records a JOIN assurance_run_challenger_executions_item target ON target._record_id=a.id WHERE a.kind='run' AND a.project=e.project AND a.record_key=e.record_key) THEN assurance_record_field('run',e.project,e.record_key,'challenger_executions') ELSE '[]'::jsonb END) execution WHERE c.project=d.project AND c.revision=d.revision AND execution->'target'->>'fingerprint'=c.record_fingerprint)
+            OR EXISTS(SELECT 1 FROM definition_requirements c CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN EXISTS(SELECT 1 FROM assurance_records a JOIN {verification_challenge_executions} target ON target._record_id=a.id WHERE a.kind='run' AND a.project=e.project AND a.record_key=e.record_key) THEN assurance_record_field('run',e.project,e.record_key,'verification_challenge_executions') ELSE '[]'::jsonb END) execution WHERE c.project=d.project AND c.revision=d.revision AND execution->'target'->>'fingerprint'=c.record_fingerprint)
         )
     ))
 "#;
+
+fn relevant_event() -> String {
+    relational::with_tables(RELEVANT_EVENT)
+}
 
 pub(super) async fn process(state: &LedgerState) -> Result<(), LedgerError> {
     let mut tx = state.pool.begin().await?;
@@ -19,7 +23,8 @@ pub(super) async fn process(state: &LedgerState) -> Result<(), LedgerError> {
     )
     .fetch_all(&mut *tx)
     .await?;
-    sqlx::query(&format!("UPDATE definition_assessments d SET generation=generation+1,retry_at=now() WHERE EXISTS(SELECT 1 FROM definition_events e WHERE e.sequence=ANY($1) AND {RELEVANT_EVENT})")).bind(&sequences).execute(&mut *tx).await?;
+    let relevant = relevant_event();
+    sqlx::query(&format!("UPDATE definition_assessments d SET generation=generation+1,retry_at=now() WHERE EXISTS(SELECT 1 FROM definition_events e WHERE e.sequence=ANY($1) AND {relevant})")).bind(&sequences).execute(&mut *tx).await?;
     sqlx::query("DELETE FROM definition_events WHERE sequence=ANY($1)")
         .bind(&sequences)
         .execute(&mut *tx)
@@ -45,7 +50,7 @@ async fn refresh(
         load_revision_snapshot(&state.pool, project, Some(revision)).await?;
     let challenge_runs: Vec<String> = bundles
         .iter()
-        .filter(|bundle| !bundle.challenger_executions.is_empty())
+        .filter(|bundle| !bundle.verification_challenge_executions.is_empty())
         .map(|bundle| bundle.run_id.clone())
         .collect();
     let result = compute(move || definition_reviews(&authority, &reviews, &bundles))
@@ -53,7 +58,8 @@ async fn refresh(
         .0;
     let mut tx = state.pool.begin().await?;
     let current:(i64,i64)=sqlx::query_as("SELECT generation,published_generation FROM definition_assessments WHERE project=$1 AND revision=$2 FOR UPDATE").bind(project).bind(revision).fetch_one(&mut *tx).await?;
-    let pending:bool=sqlx::query_scalar(&format!("SELECT EXISTS(SELECT 1 FROM definition_assessments d JOIN definition_events e ON {RELEVANT_EVENT} WHERE d.project=$1 AND d.revision=$2)")).bind(project).bind(revision).fetch_one(&mut *tx).await?;
+    let relevant = relevant_event();
+    let pending:bool=sqlx::query_scalar(&format!("SELECT EXISTS(SELECT 1 FROM definition_assessments d JOIN definition_events e ON {relevant} WHERE d.project=$1 AND d.revision=$2)")).bind(project).bind(revision).fetch_one(&mut *tx).await?;
     if current.0 != generation || current.1 == generation || pending {
         return Ok(());
     }
@@ -65,16 +71,16 @@ async fn refresh(
     for run in challenge_runs {
         sqlx::query("INSERT INTO definition_run_dependencies(project,revision,run) VALUES($1,$2,$3) ON CONFLICT DO NOTHING").bind(project).bind(revision).bind(run).execute(&mut *tx).await?;
     }
-    for claim in result["claims"].as_array().unwrap() {
-        let diagnostics: Vec<&str> = claim["diagnostics"]
+    for requirement in result["requirements"].as_array().unwrap() {
+        let diagnostics: Vec<&str> = requirement["diagnostics"]
             .as_array()
             .unwrap()
             .iter()
             .map(|value| value.as_str().unwrap())
             .collect();
-        sqlx::query("INSERT INTO definition_claims(project,revision,claim,record_fingerprint,status,diagnostics) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(project,revision,claim) DO UPDATE SET record_fingerprint=excluded.record_fingerprint,status=excluded.status,diagnostics=excluded.diagnostics").bind(project).bind(revision).bind(claim["claim"].as_str()).bind(claim["record"]["fingerprint"].as_str()).bind(claim["assessment"].as_str()).bind(diagnostics).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO definition_requirements(project,revision,requirement,record_fingerprint,status,diagnostics) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(project,revision,requirement) DO UPDATE SET record_fingerprint=excluded.record_fingerprint,status=excluded.status,diagnostics=excluded.diagnostics").bind(project).bind(revision).bind(requirement["requirement"].as_str()).bind(requirement["record"]["fingerprint"].as_str()).bind(requirement["assessment"].as_str()).bind(diagnostics).execute(&mut *tx).await?;
         for field in ["basis", "challenge_basis"] {
-            if let Some(basis) = claim["record"][field].as_array() {
+            if let Some(basis) = requirement["record"][field].as_array() {
                 for item in basis {
                     if let Some(run) = item["run"].as_str() {
                         sqlx::query("INSERT INTO definition_run_dependencies(project,revision,run) VALUES($1,$2,$3) ON CONFLICT DO NOTHING").bind(project).bind(revision).bind(run).execute(&mut *tx).await?;
@@ -99,17 +105,18 @@ pub(super) async fn read(
         .await?;
     let selected:Option<String>=sqlx::query_scalar("SELECT fingerprint FROM model_revisions WHERE project=$1 AND fingerprint=$2 UNION ALL SELECT fingerprint FROM current_authorities WHERE project=$1 AND $2::text IS NULL").bind(project).bind(revision).fetch_optional(&mut *tx).await?;
     let revision = selected.ok_or_else(LedgerError::not_found)?;
-    let row=sqlx::query(&format!("SELECT d.*,EXISTS(SELECT 1 FROM definition_events e WHERE {RELEVANT_EVENT}) AS pending FROM definition_assessments d WHERE d.project=$1 AND d.revision=$2")).bind(project).bind(&revision).fetch_optional(&mut *tx).await?;
+    let relevant = relevant_event();
+    let row=sqlx::query(&format!("SELECT d.*,EXISTS(SELECT 1 FROM definition_events e WHERE {relevant}) AS pending FROM definition_assessments d WHERE d.project=$1 AND d.revision=$2")).bind(project).bind(&revision).fetch_optional(&mut *tx).await?;
     let Some(row) = row else {
         return Ok(Json(
-            json!({"authority_fingerprint":revision,"claims":[],"assessment":{"state":"pending","generation":0,"published_generation":0,"evaluated_at_ms":null,"valid_until_ms":null}}),
+            json!({"authority_fingerprint":revision,"requirements":[],"assessment":{"state":"pending","generation":0,"published_generation":0,"evaluated_at_ms":null,"valid_until_ms":null}}),
         ));
     };
     let generation: i64 = row.get("generation");
     let published: i64 = row.get("published_generation");
     let ready = generation == published && published > 0 && !row.get::<bool, _>("pending");
-    let entries=sqlx::query("SELECT claim,status,diagnostics,record_fingerprint FROM definition_claims WHERE project=$1 AND revision=$2 ORDER BY claim").bind(project).bind(&revision).fetch_all(&mut *tx).await?;
-    let mut claims = Vec::new();
+    let entries=sqlx::query("SELECT requirement,status,diagnostics,record_fingerprint FROM definition_requirements WHERE project=$1 AND revision=$2 ORDER BY requirement").bind(project).bind(&revision).fetch_all(&mut *tx).await?;
+    let mut requirements = Vec::new();
     for entry in entries {
         let record: Option<Value> = if ready {
             match entry.get::<Option<String>, _>("record_fingerprint") {
@@ -125,9 +132,9 @@ pub(super) async fn read(
         } else {
             None
         };
-        claims.push(json!({"claim":entry.get::<String,_>("claim"),"record":record,"assessment":if ready {entry.get::<String,_>("status")} else {"pending".into()},"diagnostics":if ready {entry.get::<Vec<String>,_>("diagnostics")} else {vec!["Claim Review assessment is updating".into()]}}));
+        requirements.push(json!({"requirement":entry.get::<String,_>("requirement"),"record":record,"assessment":if ready {entry.get::<String,_>("status")} else {"pending".into()},"diagnostics":if ready {entry.get::<Vec<String>,_>("diagnostics")} else {vec!["Requirement Review assessment is updating".into()]}}));
     }
     Ok(Json(
-        json!({"authority_fingerprint":revision,"claims":claims,"assessment":{"state":if ready {"ready"} else {"pending"},"generation":generation,"published_generation":published,"evaluated_at_ms":row.get::<Option<i64>,_>("evaluated_at_ms"),"valid_until_ms":null}}),
+        json!({"authority_fingerprint":revision,"requirements":requirements,"assessment":{"state":if ready {"ready"} else {"pending"},"generation":generation,"published_generation":published,"evaluated_at_ms":row.get::<Option<i64>,_>("evaluated_at_ms"),"valid_until_ms":null}}),
     ))
 }

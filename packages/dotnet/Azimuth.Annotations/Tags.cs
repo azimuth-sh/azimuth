@@ -3,11 +3,12 @@ using System;
 namespace Azimuth.Annotations
 {
     /// <summary>
-    /// Declares that a production-code site is on a claim's path, by its stable project-wide Claim ID.
+    /// Declares that a production-code site is on a Requirement's path, by its stable project-wide
+    /// Requirement ID.
     /// </summary>
     /// <remarks>
-    /// Cases remain repository-owned evidence addresses. They do not enter source markers, so
-    /// refining a Claim's Cases does not duplicate or churn production linkage.
+    /// Scenarios remain repository-owned evidence addresses. They do not enter source markers, so
+    /// refining a Requirement's Scenarios does not duplicate or churn production linkage.
     /// <para>
     /// Carries no form. Form is how a <em>test</em> checks a behaviour, not a property of code.
     /// </para>
@@ -26,14 +27,14 @@ namespace Azimuth.Annotations
         AllowMultiple = true)]
     public sealed class RealizesAttribute : Attribute
     {
-        /// <summary>Tags a site as being on the path of <paramref name="claim"/>.</summary>
-        public RealizesAttribute(string claim)
+        /// <summary>Tags a site as being on the path of <paramref name="requirement"/>.</summary>
+        public RealizesAttribute(string requirement)
         {
-            Claim = claim;
+            Requirement = requirement;
         }
 
-        /// <summary>Stable project-wide Claim ID.</summary>
-        public string Claim { get; }
+        /// <summary>Stable project-wide Requirement ID.</summary>
+        public string Requirement { get; }
     }
 
     /// <summary>Declares that a production artifact implements a named design mechanism.</summary>
@@ -65,7 +66,7 @@ namespace Azimuth.Annotations
     /// <summary>Identifies a source site that implements a stable project-wide Check.</summary>
     /// <remarks>
     /// The marker declares implementation identity only. The repository-owned verification file
-    /// declares the Check's Claim bindings, evidence form, context and Qualification.
+    /// declares the Check's Requirement bindings, evidence form, Execution Context and Qualification.
     /// </remarks>
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct | AttributeTargets.Method, AllowMultiple = true)]
     public sealed class ImplementsCheckAttribute : Attribute
@@ -90,15 +91,15 @@ namespace Azimuth.Annotations
         AllowMultiple = true)]
     public sealed class SupportsVerificationElementAttribute : Attribute
     {
-        /// <summary>Links a source site to a Claim's verification Element.</summary>
-        public SupportsVerificationElementAttribute(string claim, string element)
+        /// <summary>Links a source site to a Requirement's verification Element.</summary>
+        public SupportsVerificationElementAttribute(string requirement, string element)
         {
-            Claim = claim;
+            Requirement = requirement;
             Element = element;
         }
 
-        /// <summary>Stable project-wide Claim identity.</summary>
-        public string Claim { get; }
+        /// <summary>Stable project-wide Requirement identity.</summary>
+        public string Requirement { get; }
         /// <summary>Qualified verification Element identity.</summary>
         public string Element { get; }
         /// <summary>Optional workspace-relative configuration artifact used by this Element.</summary>
@@ -125,30 +126,30 @@ namespace Azimuth.Annotations
         public string Element { get; }
     }
 
-    /// <summary>States how a source-authored Check bears on an existing Case.</summary>
+    /// <summary>States how a source-authored Check bears on an existing Scenario.</summary>
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
-    public sealed class ContributesCheckToCaseAttribute : Attribute
+    public sealed class ContributesCheckToScenarioAttribute : Attribute
     {
-        /// <summary>Connects a method's Check to an existing Case.</summary>
-        public ContributesCheckToCaseAttribute(
+        /// <summary>Connects a method's Check to an existing Scenario.</summary>
+        public ContributesCheckToScenarioAttribute(
             string check,
-            string caseId,
+            string scenario,
             string element,
             string proposition)
         {
             Check = check;
-            Case = caseId;
+            Scenario = scenario;
             Element = element;
             Proposition = proposition;
         }
 
         /// <summary>Stable project-wide Check identity.</summary>
         public string Check { get; }
-        /// <summary>Stable project-wide Case identity.</summary>
-        public string Case { get; }
+        /// <summary>Stable project-wide Scenario identity.</summary>
+        public string Scenario { get; }
         /// <summary>Qualified method Element identity.</summary>
         public string Element { get; }
-        /// <summary>How this Check bears on the Case.</summary>
+        /// <summary>How this Check bears on the Scenario.</summary>
         public string Proposition { get; }
     }
 }

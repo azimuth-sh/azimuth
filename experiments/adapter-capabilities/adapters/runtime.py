@@ -122,9 +122,9 @@ def selection_fingerprint(selection):
     return fingerprint(
         {
             "format": "azimuth-run-selection-fingerprint",
-            "version": 1,
+            "version": 2,
             "plan_fingerprint": selection["plan_fingerprint"],
-            "context": selection["context"],
+            "execution_context": selection["execution_context"],
             "checks": selection["checks"],
             "challenges": selection["challenges"],
         }
@@ -135,28 +135,28 @@ def run_id(bundle):
     return fingerprint(
         {
             "format": "azimuth-run-identity",
-            "version": 1,
+            "version": 2,
             "source_system": bundle["provenance"]["source"]["system"],
             "source_execution": bundle["provenance"]["source"]["execution"],
-            "subject_fingerprint": bundle["subject_fingerprint"],
+            "verification_target_fingerprint": bundle["verification_target_fingerprint"],
             "plan_fingerprint": bundle["plan"]["fingerprint"],
             "launch_fingerprint": bundle["provenance"]["adapter"]["launch_fingerprint"],
         }
     )
 
 
-def observation_fingerprint(bundle, execution, observation):
+def check_result_fingerprint(bundle, execution, check_result):
     return fingerprint(
         {
-            "format": "azimuth-observation-fingerprint",
-            "version": 1,
+            "format": "azimuth-check-result-fingerprint",
+            "version": 2,
             "run_id": bundle["run_id"],
-            "subject_fingerprint": bundle["subject_fingerprint"],
+            "verification_target_fingerprint": bundle["verification_target_fingerprint"],
             "check": execution["check"],
-            "case": observation["case"],
-            "context": bundle["actual_selection"]["context"],
-            "outcome": observation["outcome"],
-            "observed_at_ms": observation["observed_at_ms"],
+            "scenario": check_result["scenario"],
+            "execution_context": bundle["actual_selection"]["execution_context"],
+            "outcome": check_result["outcome"],
+            "observed_at_ms": check_result["observed_at_ms"],
         }
     )
 
@@ -166,10 +166,10 @@ def challenge_fingerprint(bundle, execution):
     return fingerprint(
         {
             "format": "azimuth-challenge-result-fingerprint",
-            "version": 1,
+            "version": 2,
             "run_id": bundle["run_id"],
             "challenge": execution["challenge"],
-            "challenger": execution["challenger"],
+            "verification_challenge": execution["verification_challenge"],
             "target": execution["target"],
             "outcome": result["outcome"],
             "observed_at_ms": result["observed_at_ms"],
@@ -183,7 +183,7 @@ def bundle_fingerprint(bundle):
     return fingerprint(
         {
             "format": "azimuth-run-bundle-fingerprint",
-            "version": 1,
+            "version": 2,
             "bundle": payload,
         }
     )
@@ -295,7 +295,7 @@ def make_bundle(role, request, adapter_description):
     empty = mode in {"partial", "cancelled"}
     timed_out = mode == "timed-out-fact"
     actual = {
-        "context": copy.deepcopy(launch["plan"]["required_context"]),
+        "execution_context": copy.deepcopy(launch["plan"]["required_execution_context"]),
         "plan_fingerprint": launch["plan"]["fingerprint"],
         "checks": [] if empty else copy.deepcopy(launch["plan"]["checks"]),
         "challenges": [] if empty else copy.deepcopy(launch["plan"]["challenges"]),
@@ -318,12 +318,12 @@ def make_bundle(role, request, adapter_description):
     ]
     bundle = {
         "format": "azimuth-run-bundle",
-        "version": 1,
+        "version": 2,
         "run_id": "sha256:" + "0" * 64,
         "bundle_revision": 0,
         "bundle_fingerprint": "sha256:" + "0" * 64,
-        "subject": copy.deepcopy(launch["subject"]),
-        "subject_fingerprint": launch["subject_fingerprint"],
+        "verification_target": copy.deepcopy(launch["verification_target"]),
+        "verification_target_fingerprint": launch["verification_target_fingerprint"],
         "planned_at_ms": planned,
         "started_at_ms": started,
         "finished_at_ms": finished,
@@ -353,7 +353,7 @@ def make_bundle(role, request, adapter_description):
         "diagnostics": [],
         "activities": activities,
         "check_executions": [],
-        "challenger_executions": [],
+        "verification_challenge_executions": [],
     }
     bundle["run_id"] = run_id(bundle)
     check_outcome = "inconclusive" if timed_out else "satisfied"
@@ -373,28 +373,28 @@ def make_bundle(role, request, adapter_description):
                                 "ordinal": 1,
                                 "activity": "shared-work",
                                 "outcomes": {
-                                    case: check_outcome for case in check["cases"]
+                                    scenario: check_outcome for scenario in check["scenarios"]
                                 },
                             }
                         ],
                     }
                     for unit in check["units"]
                 ],
-                "observations": [
+                "results": [
                     {
-                        "case": case,
+                        "scenario": scenario,
                         "outcome": check_outcome,
                         "observed_at_ms": finished,
                         "fingerprint": "sha256:" + "0" * 64,
                         "artifacts": [],
                         "diagnostics": [],
                     }
-                    for case in check["cases"]
+                    for scenario in check["scenarios"]
                 ],
             }
-            for observation in execution["observations"]:
-                observation["fingerprint"] = observation_fingerprint(
-                    bundle, execution, observation
+            for check_result in execution["results"]:
+                check_result["fingerprint"] = check_result_fingerprint(
+                    bundle, execution, check_result
                 )
             bundle["check_executions"].append(execution)
         for challenge in actual["challenges"]:
@@ -411,8 +411,8 @@ def make_bundle(role, request, adapter_description):
                         "code": "fault-injection/detected",
                         "message": "The synthetic challenge found a controlled objection.",
                         "scope": {
-                            "kind": "challenger-execution",
-                            "challenger_fingerprint": challenge["challenger"]["fingerprint"],
+                            "kind": "verification-challenge-execution",
+                            "verification_challenge_fingerprint": challenge["verification_challenge"]["fingerprint"],
                             "target_fingerprint": challenge["target"]["fingerprint"],
                         },
                         "artifacts": [],
@@ -421,7 +421,7 @@ def make_bundle(role, request, adapter_description):
                 )
             execution = {
                 "challenge": challenge["id"],
-                "challenger": copy.deepcopy(challenge["challenger"]),
+                "verification_challenge": copy.deepcopy(challenge["verification_challenge"]),
                 "target": copy.deepcopy(challenge["target"]),
                 "units": [
                     {
@@ -446,7 +446,7 @@ def make_bundle(role, request, adapter_description):
                 },
             }
             execution["result"]["fingerprint"] = challenge_fingerprint(bundle, execution)
-            bundle["challenger_executions"].append(execution)
+            bundle["verification_challenge_executions"].append(execution)
     bundle["bundle_fingerprint"] = bundle_fingerprint(bundle)
     return bundle
 

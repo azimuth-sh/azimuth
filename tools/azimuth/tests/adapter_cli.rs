@@ -207,8 +207,8 @@ fn model(root: &Path, checks: &[&str]) -> (PathBuf, PathBuf, PathBuf) {
     fs::create_dir(&package).unwrap();
     fs::write(
         package.join("spec.md"),
-        "# Spec: demo\n\n## Claim: works\nCriticality: routine\n\n\
-         The demo SHALL work.\n\n### Case: works\nEvent: invoked\nRequired: it works\n",
+        "# Spec: demo\n\n## Requirement: works\nCriticality: routine\n\n\
+         The demo SHALL work.\n\n### Scenario: works\nEvent: invoked\nRequired: it works\n",
     )
     .unwrap();
     let declarations = checks
@@ -217,8 +217,8 @@ fn model(root: &Path, checks: &[&str]) -> (PathBuf, PathBuf, PathBuf) {
             let suffix = id.rsplit('/').next().unwrap();
             format!(
                 "## Check: {id}\nMethod: invoke\nTerminal: works\n\nOne result.\n\n\
-                 ## Evidence Binding: demo/{suffix}-edge\nCheck: {id}\nCase: works\n\
-                 Method qualification: demo/{suffix}-method\nProposition: direct\nContext: {{}}\n\
+                 ## Evidence Binding: demo/{suffix}-edge\nCheck: {id}\nScenario: works\n\
+                 Method qualification: demo/{suffix}-method\nProposition: direct\nExecution Context: {{}}\n\
                  Challenge domain: [\"check-implementation\"]\nPolicy: credible\n\nReviewable.\n"
             )
         })
@@ -232,7 +232,7 @@ fn model(root: &Path, checks: &[&str]) -> (PathBuf, PathBuf, PathBuf) {
     let workspace = root.join("workspace.json");
     fs::write(
         &workspace,
-        "{\"format\":\"azimuth-workspace\",\"version\":1,\
+        "{\"format\":\"azimuth-workspace\",\"version\":2,\
          \"areas\":[{\"id\":\"core\",\"mounts\":[{\"id\":\"code\",\"path\":\"src\"}]}],\
          \"surfaces\":[],\"realization_obligations\":[]}",
     )
@@ -266,8 +266,8 @@ fn challenge_model(root: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     let (model, workspace, manifest) = model(root, &["check"]);
     fs::write(
         model.join("demo/spec.md"),
-        "# Spec: demo\n\n## Claim: works\nCriticality: standard\n\n\
-         The demo SHALL work.\n\n### Case: works\nEvent: invoked\nRequired: it works\n",
+        "# Spec: demo\n\n## Requirement: works\nCriticality: standard\n\n\
+         The demo SHALL work.\n\n### Scenario: works\nEvent: invoked\nRequired: it works\n",
     )
     .unwrap();
     let standards = root.join("standards.md");
@@ -284,18 +284,18 @@ fn challenge_model(root: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
         format!(
             "# Verification: demo\n\n\
              ## Check: check\nMethod: invoke\nTerminal: works\n\nOne result.\n\n\
-             ## Evidence Binding: demo/edge\nCheck: check\nCase: works\n\
+             ## Evidence Binding: demo/edge\nCheck: check\nScenario: works\n\
              Method qualification: demo/method\nProposition: direct\n\
-             Context: {{\"platform\":\"linux\"}}\nChallenge domain: [\"realization\",\"mechanism\"]\n\
+             Execution Context: {{\"platform\":\"linux\"}}\nChallenge domain: [\"realization\",\"mechanism\"]\n\
              Policy: credible\n\nReviewable.\n\n\
              ## Method Qualification: demo/method\nCheck: check\nScope: unit\n\
-             Quantification: example\nOracle: direct\nContext: {{\"platform\":\"linux\"}}\n\
+             Quantification: example\nOracle: direct\nExecution Context: {{\"platform\":\"linux\"}}\n\
              Challenge domain: [\"check-implementation\"]\nPolicy: credible\n\
              Verdict: {verdict}\nFingerprint: {fingerprint}\n\
              Qualified: 2026-08-22\nQualifier: owner\n\nQualified.\n\n\
-             ## Challenger: mutation/search\nForm: {form}\nSearches for: an undetected change\n\
+             ## Verification Challenge: mutation/search\nForm: {form}\nSearches for: an undetected change\n\
              Required scope: [\"check-implementation\"]\n\nSearches exact semantics.\n\n\
-             ## Challenge Plan: demo/plan\nChallenger: mutation/search\nSelect: {selector}\n\n\
+             ## Challenge Plan: demo/plan\nVerification Challenge: mutation/search\nSelect: {selector}\n\n\
              Targets the current decision.\n"
         )
     };
@@ -340,17 +340,17 @@ fn request(path: &Path, operation: RunOperation, check: &str) {
     let request = PlanRequest {
         operation,
         planned_at_ms: 1_787_300_000_000,
-        subject: Subject::Artifact {
+        verification_target: VerificationTarget::Artifact {
             artifacts: vec![ArtifactState {
                 id: "candidate".into(),
                 digest: fp('8'),
             }],
         },
-        required_context: BTreeMap::new(),
+        required_execution_context: BTreeMap::new(),
         checks: vec![RequestedCheck {
             id: check.into(),
             capability: "synthetic/checks".into(),
-            cases: vec!["works".into()],
+            scenarios: vec!["works".into()],
             units: vec![WorkUnit {
                 id: "whole".into(),
                 parameters: BTreeMap::new(),
@@ -376,18 +376,18 @@ fn challenge_request(
     let request = PlanRequest {
         operation,
         planned_at_ms: 1_787_300_000_000,
-        subject: Subject::Artifact {
+        verification_target: VerificationTarget::Artifact {
             artifacts: vec![ArtifactState {
                 id: "candidate".into(),
                 digest: fp('8'),
             }],
         },
-        required_context: BTreeMap::from([("platform".into(), context.into())]),
+        required_execution_context: BTreeMap::from([("platform".into(), context.into())]),
         checks: if checks {
             vec![RequestedCheck {
                 id: "check".into(),
                 capability: "synthetic/checks".into(),
-                cases: vec!["works".into()],
+                scenarios: vec!["works".into()],
                 units: vec![WorkUnit {
                     id: "whole".into(),
                     parameters: BTreeMap::new(),
@@ -465,7 +465,7 @@ fn add_second_challenge_candidate(
         manifest_source.replacen(
             '{',
             &format!(
-                "{{\"realizes\":[{{\"claim\":\"works\",\
+                "{{\"realizes\":[{{\"requirement\":\"works\",\
                  \"site\":\"demo::works\",\"file\":\"src/demo.rs\",\
                  \"lang\":\"rust-symbol\",\"source_fingerprint\":\"{}\"}}],",
                 fp('2')
@@ -478,14 +478,14 @@ fn add_second_challenge_candidate(
     let source = fs::read_to_string(&verification).unwrap();
     let source = source
         .replace(
-            "## Challenger: mutation/search",
+            "## Verification Challenge: mutation/search",
             &format!(
                 "## Applicability Decision: demo/edge\nVerdict: applicable\nFingerprint: {}\n\
                  Decided: 2026-08-22\nDecider: owner\n\nApplicable.\n\n\
-                 ## Claim Judgment: works\nVerdict: accepted\nPolicy: credible\nFingerprint: {}\n\
+                 ## Requirement Judgment: works\nVerdict: accepted\nPolicy: credible\nFingerprint: {}\n\
                  Judged: 2026-08-22\nJudge: owner\nBasis: the exact composition is accepted\n\
                  Residual risk: none identified\n\nAccepted.\n\n\
-                 ## Challenger: mutation/search",
+                 ## Verification Challenge: mutation/search",
                 fp('3'),
                 fp('1')
             ),
@@ -493,7 +493,7 @@ fn add_second_challenge_candidate(
         .replace(
             "Select: method-qualification from method-qualification demo/method",
             "Select: method-qualification from method-qualification demo/method\n\
-             Select: claim-judgment from claim works",
+             Select: requirement-judgment from requirement works",
         );
     fs::write(&verification, source).unwrap();
     let loaded = azimuth::load(
@@ -522,7 +522,9 @@ fn add_second_challenge_candidate(
     .unwrap();
     let fingerprint = loaded
         .model
-        .expected_claim_judgment_fingerprint(&loaded.model.verifications[0].claim_judgments[0])
+        .expected_requirement_judgment_fingerprint(
+            &loaded.model.verifications[0].requirement_judgments[0],
+        )
         .unwrap();
     let source = fs::read_to_string(&verification)
         .unwrap()
@@ -617,25 +619,28 @@ fn response_template(
 }
 
 fn refresh_bundle(bundle: &mut RunBundle) {
-    bundle.subject_fingerprint = subject_fingerprint(&bundle.subject);
-    bundle.plan.fingerprint = plan_fingerprint(&bundle.subject_fingerprint, &bundle.plan);
+    bundle.verification_target_fingerprint =
+        verification_target_fingerprint(&bundle.verification_target);
+    bundle.plan.fingerprint =
+        plan_fingerprint(&bundle.verification_target_fingerprint, &bundle.plan);
     bundle.actual_selection.plan_fingerprint = bundle.plan.fingerprint.clone();
     bundle.actual_selection.fingerprint = selection_fingerprint(&bundle.actual_selection);
     bundle.run_id = run_id(bundle);
     for index in 0..bundle.check_executions.len() {
-        for observation_index in 0..bundle.check_executions[index].observations.len() {
-            let fingerprint = observation_fingerprint(
+        for check_result_index in 0..bundle.check_executions[index].results.len() {
+            let fingerprint = check_result_fingerprint(
                 bundle,
                 &bundle.check_executions[index],
-                &bundle.check_executions[index].observations[observation_index],
+                &bundle.check_executions[index].results[check_result_index],
             );
-            bundle.check_executions[index].observations[observation_index].fingerprint =
-                fingerprint;
+            bundle.check_executions[index].results[check_result_index].fingerprint = fingerprint;
         }
     }
-    for index in 0..bundle.challenger_executions.len() {
-        bundle.challenger_executions[index].result.fingerprint =
-            challenge_result_fingerprint(bundle, &bundle.challenger_executions[index]);
+    for index in 0..bundle.verification_challenge_executions.len() {
+        bundle.verification_challenge_executions[index]
+            .result
+            .fingerprint =
+            challenge_result_fingerprint(bundle, &bundle.verification_challenge_executions[index]);
     }
     bundle.bundle_fingerprint = bundle_fingerprint(bundle);
 }
@@ -657,8 +662,8 @@ fn adapter_bundle(
         corrects: None,
         correction_reason: None,
         bundle_fingerprint: fp('0'),
-        subject: launch.subject.clone(),
-        subject_fingerprint: launch.subject_fingerprint.clone(),
+        verification_target: launch.verification_target.clone(),
+        verification_target_fingerprint: launch.verification_target_fingerprint.clone(),
         planned_at_ms: launch.planned_at_ms,
         started_at_ms: launch.planned_at_ms + 1,
         finished_at_ms: launch.planned_at_ms + 2,
@@ -669,7 +674,7 @@ fn adapter_bundle(
         },
         plan: launch.plan.clone(),
         actual_selection: ActualSelection {
-            context: launch.plan.required_context.clone(),
+            execution_context: launch.plan.required_execution_context.clone(),
             plan_fingerprint: launch.plan.fingerprint.clone(),
             checks: if adverse {
                 launch.plan.checks.clone()
@@ -709,7 +714,7 @@ fn adapter_bundle(
         diagnostics: Vec::new(),
         activities: Vec::new(),
         check_executions: Vec::new(),
-        challenger_executions: Vec::new(),
+        verification_challenge_executions: Vec::new(),
     };
     if adverse {
         bundle.activities.push(Activity {
@@ -732,20 +737,20 @@ fn adapter_bundle(
                     ordinal: 1,
                     activity: "native-check".into(),
                     outcomes: launch.plan.checks[0]
-                        .cases
+                        .scenarios
                         .iter()
                         .cloned()
-                        .map(|case| (case, ObservationOutcome::Violated))
+                        .map(|scenario| (scenario, CheckResultOutcome::Violated))
                         .collect(),
                 }],
             }],
-            observations: launch.plan.checks[0]
-                .cases
+            results: launch.plan.checks[0]
+                .scenarios
                 .iter()
                 .cloned()
-                .map(|case| Observation {
-                    case,
-                    outcome: ObservationOutcome::Violated,
+                .map(|scenario| CheckResult {
+                    scenario,
+                    outcome: CheckResultOutcome::Violated,
                     observed_at_ms: launch.planned_at_ms + 2,
                     fingerprint: fp('0'),
                     artifacts: Vec::new(),
@@ -777,8 +782,11 @@ fn challenge_adapter_bundle(
                 severity: Severity::Error,
                 code: "mutation/survived".into(),
                 message: "A mutation survived.".into(),
-                scope: DiagnosticScope::ChallengerExecution {
-                    challenger_fingerprint: selection.challenger.fingerprint.clone(),
+                scope: DiagnosticScope::VerificationChallengeExecution {
+                    verification_challenge_fingerprint: selection
+                        .verification_challenge
+                        .fingerprint
+                        .clone(),
                     target_fingerprint: selection.target.fingerprint.clone(),
                 },
                 artifacts: Vec::new(),
@@ -801,9 +809,9 @@ fn challenge_adapter_bundle(
             diagnostics: objections.clone(),
             attributes: BTreeMap::new(),
         });
-        executions.push(ChallengerExecution {
+        executions.push(VerificationChallengeExecution {
             challenge: selection.id.clone(),
-            challenger: selection.challenger.clone(),
+            verification_challenge: selection.verification_challenge.clone(),
             target: selection.target.clone(),
             units: vec![ChallengeExecutionUnit {
                 id: "whole".into(),
@@ -847,8 +855,8 @@ fn challenge_adapter_bundle(
         corrects: None,
         correction_reason: None,
         bundle_fingerprint: fp('0'),
-        subject: launch.subject.clone(),
-        subject_fingerprint: launch.subject_fingerprint.clone(),
+        verification_target: launch.verification_target.clone(),
+        verification_target_fingerprint: launch.verification_target_fingerprint.clone(),
         planned_at_ms: launch.planned_at_ms,
         started_at_ms: launch.planned_at_ms + 1,
         finished_at_ms: launch.planned_at_ms + 2,
@@ -859,7 +867,7 @@ fn challenge_adapter_bundle(
         },
         plan: launch.plan.clone(),
         actual_selection: ActualSelection {
-            context: launch.plan.required_context.clone(),
+            execution_context: launch.plan.required_execution_context.clone(),
             plan_fingerprint: launch.plan.fingerprint.clone(),
             checks: Vec::new(),
             challenges: actual_challenges,
@@ -895,7 +903,7 @@ fn challenge_adapter_bundle(
         diagnostics,
         activities,
         check_executions: Vec::new(),
-        challenger_executions: executions,
+        verification_challenge_executions: executions,
     };
     refresh_bundle(&mut bundle);
     assert!(verify(&bundle).is_empty(), "{:?}", verify(&bundle));
@@ -1355,7 +1363,7 @@ fn invoke_exit_classes_preserve_sentinel_and_leave_no_temporary_output() {
     };
 
     let mut substituted = adapter_bundle(&launch, &fixture.adapter, Vec::new(), false);
-    substituted.subject_fingerprint = fp('9');
+    substituted.verification_target_fingerprint = fp('9');
     fixture.respond(response_template(
         "execute",
         &fixture.adapter,

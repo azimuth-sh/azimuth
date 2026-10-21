@@ -1,5 +1,5 @@
 //! Repository-owned Check, Evidence Binding, Method Qualification, Applicability Decision,
-//! Claim Judgment, and Challenge declarations.
+//! Requirement Judgment, and Challenge declarations.
 
 use crate::diag::{validate_id, Diag};
 use crate::json::{self, Json};
@@ -12,10 +12,10 @@ use std::path::Path;
 const CHECK_LABELS: &[&str] = &["Method", "Terminal"];
 const BINDING_LABELS: &[&str] = &[
     "Check",
-    "Case",
+    "Scenario",
     "Method qualification",
     "Proposition",
-    "Context",
+    "Execution Context",
     "Challenge domain",
     "Policy",
 ];
@@ -24,7 +24,7 @@ const METHOD_QUALIFICATION_LABELS: &[&str] = &[
     "Scope",
     "Quantification",
     "Oracle",
-    "Context",
+    "Execution Context",
     "Challenge domain",
     "Policy",
     "Verdict",
@@ -33,7 +33,7 @@ const METHOD_QUALIFICATION_LABELS: &[&str] = &[
     "Qualifier",
 ];
 const APPLICABILITY_DECISION_LABELS: &[&str] = &["Verdict", "Fingerprint", "Decided", "Decider"];
-const CLAIM_JUDGMENT_LABELS: &[&str] = &[
+const REQUIREMENT_JUDGMENT_LABELS: &[&str] = &[
     "Verdict",
     "Policy",
     "Fingerprint",
@@ -42,8 +42,8 @@ const CLAIM_JUDGMENT_LABELS: &[&str] = &[
     "Basis",
     "Residual risk",
 ];
-const CHALLENGER_LABELS: &[&str] = &["Form", "Searches for", "Required scope"];
-const PLAN_LABELS: &[&str] = &["Challenger", "Select"];
+const VERIFICATION_CHALLENGE_LABELS: &[&str] = &["Form", "Searches for", "Required scope"];
+const PLAN_LABELS: &[&str] = &["Verification Challenge", "Select"];
 const POLICY_LABELS: &[&str] = &["Required challenge"];
 const SCHEDULE_LABELS: &[&str] = &["Gate challenge", "Scheduled challenge"];
 
@@ -93,10 +93,10 @@ impl ChallengeDomain {
 pub struct EvidenceBinding {
     pub id: String,
     pub check: String,
-    pub case: String,
+    pub scenario: String,
     pub method_qualification: String,
     pub proposition: String,
-    pub context: BTreeMap<String, String>,
+    pub execution_context: BTreeMap<String, String>,
     pub challenge_domain: Vec<ChallengeDomain>,
     pub policy: String,
     pub rationale: String,
@@ -105,12 +105,12 @@ pub struct EvidenceBinding {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClaimJudgmentVerdict {
+pub enum RequirementJudgmentVerdict {
     Accepted,
     Rejected,
 }
 
-impl ClaimJudgmentVerdict {
+impl RequirementJudgmentVerdict {
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "accepted" => Some(Self::Accepted),
@@ -128,9 +128,9 @@ impl ClaimJudgmentVerdict {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClaimJudgment {
+pub struct RequirementJudgment {
     pub id: String,
-    pub verdict: ClaimJudgmentVerdict,
+    pub verdict: RequirementJudgmentVerdict,
     pub policy: String,
     pub fingerprint: String,
     pub judged: String,
@@ -145,11 +145,11 @@ pub struct ClaimJudgment {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SemanticScopeKind {
     ApplicabilityDecision,
-    Case,
-    Claim,
+    Scenario,
+    Requirement,
     Binding,
     MethodQualification,
-    ClaimJudgment,
+    RequirementJudgment,
     Check,
     CheckImplementation,
     Realization,
@@ -168,11 +168,11 @@ pub enum SemanticScopeKind {
 impl SemanticScopeKind {
     pub const ALL: [Self; 19] = [
         Self::ApplicabilityDecision,
-        Self::Case,
-        Self::Claim,
+        Self::Scenario,
+        Self::Requirement,
         Self::Binding,
         Self::MethodQualification,
-        Self::ClaimJudgment,
+        Self::RequirementJudgment,
         Self::Check,
         Self::CheckImplementation,
         Self::Realization,
@@ -195,11 +195,11 @@ impl SemanticScopeKind {
     pub fn name(self) -> &'static str {
         match self {
             Self::ApplicabilityDecision => "applicability-decision",
-            Self::Case => "case",
-            Self::Claim => "claim",
+            Self::Scenario => "scenario",
+            Self::Requirement => "requirement",
             Self::Binding => "binding",
             Self::MethodQualification => "method-qualification",
-            Self::ClaimJudgment => "claim-judgment",
+            Self::RequirementJudgment => "requirement-judgment",
             Self::Check => "check",
             Self::CheckImplementation => "check-implementation",
             Self::Realization => "realization",
@@ -247,7 +247,7 @@ pub struct MethodQualification {
     pub scope: Scope,
     pub quantification: Quantification,
     pub oracle: Oracle,
-    pub context: BTreeMap<String, String>,
+    pub execution_context: BTreeMap<String, String>,
     pub challenge_domain: Vec<ChallengeDomain>,
     pub policy: String,
     pub verdict: MethodQualificationVerdict,
@@ -295,9 +295,9 @@ pub struct ApplicabilityDecision {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Challenger {
+pub struct VerificationChallenge {
     pub targets: Vec<String>,
-    pub claims: Vec<String>,
+    pub requirements: Vec<String>,
     pub mechanisms: Vec<String>,
     pub checks: Vec<String>,
     pub id: String,
@@ -316,13 +316,13 @@ pub enum Selector {
     MethodQualificationFromRealization(String),
     MethodQualificationFromMechanism(String),
     ApplicabilityDecisionFromBinding(String),
-    ApplicabilityDecisionFromCase(String),
+    ApplicabilityDecisionFromScenario(String),
     ApplicabilityDecisionFromCheck(String),
     ApplicabilityDecisionFromRealization(String),
     ApplicabilityDecisionFromMechanism(String),
-    ClaimJudgmentFromClaim(String),
-    ClaimJudgmentFromRealization(String),
-    ClaimJudgmentFromMechanism(String),
+    RequirementJudgmentFromRequirement(String),
+    RequirementJudgmentFromRealization(String),
+    RequirementJudgmentFromMechanism(String),
 }
 
 impl Selector {
@@ -343,8 +343,8 @@ impl Selector {
             Self::ApplicabilityDecisionFromBinding(id) => {
                 format!("applicability-decision from binding {id}")
             }
-            Self::ApplicabilityDecisionFromCase(id) => {
-                format!("applicability-decision from case {id}")
+            Self::ApplicabilityDecisionFromScenario(id) => {
+                format!("applicability-decision from scenario {id}")
             }
             Self::ApplicabilityDecisionFromCheck(id) => {
                 format!("applicability-decision from check {id}")
@@ -355,12 +355,14 @@ impl Selector {
             Self::ApplicabilityDecisionFromMechanism(id) => {
                 format!("applicability-decision from mechanism {id}")
             }
-            Self::ClaimJudgmentFromClaim(id) => format!("claim-judgment from claim {id}"),
-            Self::ClaimJudgmentFromRealization(id) => {
-                format!("claim-judgment from realization {id}")
+            Self::RequirementJudgmentFromRequirement(id) => {
+                format!("requirement-judgment from requirement {id}")
             }
-            Self::ClaimJudgmentFromMechanism(id) => {
-                format!("claim-judgment from mechanism {id}")
+            Self::RequirementJudgmentFromRealization(id) => {
+                format!("requirement-judgment from realization {id}")
+            }
+            Self::RequirementJudgmentFromMechanism(id) => {
+                format!("requirement-judgment from mechanism {id}")
             }
         }
     }
@@ -369,7 +371,7 @@ impl Selector {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChallengePlan {
     pub id: String,
-    pub challenger: String,
+    pub verification_challenge: String,
     pub selectors: Vec<Selector>,
     pub rationale: String,
     pub path: String,
@@ -384,8 +386,8 @@ pub struct Verification {
     pub bindings: Vec<EvidenceBinding>,
     pub method_qualifications: Vec<MethodQualification>,
     pub applicability_decisions: Vec<ApplicabilityDecision>,
-    pub claim_judgments: Vec<ClaimJudgment>,
-    pub challengers: Vec<Challenger>,
+    pub requirement_judgments: Vec<RequirementJudgment>,
+    pub verification_challenges: Vec<VerificationChallenge>,
     pub challenge_plans: Vec<ChallengePlan>,
 }
 
@@ -429,8 +431,8 @@ pub fn parse_verification(path: &str, source: &str) -> Result<Verification, Vec<
     let mut bindings: Vec<EvidenceBinding> = Vec::new();
     let mut method_qualifications: Vec<MethodQualification> = Vec::new();
     let mut applicability_decisions: Vec<ApplicabilityDecision> = Vec::new();
-    let mut claim_judgments: Vec<ClaimJudgment> = Vec::new();
-    let mut challengers: Vec<Challenger> = Vec::new();
+    let mut requirement_judgments: Vec<RequirementJudgment> = Vec::new();
+    let mut verification_challenges: Vec<VerificationChallenge> = Vec::new();
     let mut challenge_plans: Vec<ChallengePlan> = Vec::new();
     let mut i = 0;
     let mut fenced = false;
@@ -475,7 +477,7 @@ pub fn parse_verification(path: &str, source: &str) -> Result<Verification, Vec<
                     line,
                     format!("unrecognized heading `{text}`"),
                     "a Check, Evidence Binding, Method Qualification, Applicability Decision, \
-                     Claim Judgment, Challenger, or Challenge Plan",
+                     Requirement Judgment, Verification Challenge, or Challenge Plan",
                 ));
             }
             i += 1;
@@ -494,8 +496,8 @@ pub fn parse_verification(path: &str, source: &str) -> Result<Verification, Vec<
             id.to_string()
         };
         let id = resolved_id.as_str();
-        if kind == "Claim Judgment" {
-            validate_claim_reference(path, line, id, &mut errors);
+        if kind == "Requirement Judgment" {
+            validate_requirement_reference(path, line, id, &mut errors);
         } else if kind == "Check" {
             validate_reference(path, line, "Check", id, false, &mut errors);
         } else if let Err(reason) = validate_id(id, true) {
@@ -506,8 +508,8 @@ pub fn parse_verification(path: &str, source: &str) -> Result<Verification, Vec<
             "Evidence Binding" => BINDING_LABELS,
             "Method Qualification" => METHOD_QUALIFICATION_LABELS,
             "Applicability Decision" => APPLICABILITY_DECISION_LABELS,
-            "Claim Judgment" => CLAIM_JUDGMENT_LABELS,
-            "Challenger" => CHALLENGER_LABELS,
+            "Requirement Judgment" => REQUIREMENT_JUDGMENT_LABELS,
+            "Verification Challenge" => VERIFICATION_CHALLENGE_LABELS,
             "Challenge Plan" => PLAN_LABELS,
             _ => unreachable!(),
         };
@@ -573,32 +575,34 @@ pub fn parse_verification(path: &str, source: &str) -> Result<Verification, Vec<
                     applicability_decisions.push(value);
                 })
             }
-            "Claim Judgment" => {
-                parse_claim_judgment(path, line, id, &block, &mut errors).map(|value| {
+            "Requirement Judgment" => {
+                parse_requirement_judgment(path, line, id, &block, &mut errors).map(|value| {
                     reject_duplicate_id(
                         path,
                         line,
                         kind,
                         id,
-                        &claim_judgments,
+                        &requirement_judgments,
                         |item| &item.id,
                         &mut errors,
                     );
-                    claim_judgments.push(value);
+                    requirement_judgments.push(value);
                 })
             }
-            "Challenger" => parse_challenger(path, line, id, &block, &mut errors).map(|value| {
-                reject_duplicate_id(
-                    path,
-                    line,
-                    kind,
-                    id,
-                    &challengers,
-                    |item| &item.id,
-                    &mut errors,
-                );
-                challengers.push(value);
-            }),
+            "Verification Challenge" => {
+                parse_verification_challenge(path, line, id, &block, &mut errors).map(|value| {
+                    reject_duplicate_id(
+                        path,
+                        line,
+                        kind,
+                        id,
+                        &verification_challenges,
+                        |item| &item.id,
+                        &mut errors,
+                    );
+                    verification_challenges.push(value);
+                })
+            }
             "Challenge Plan" => {
                 parse_challenge_plan(path, line, id, &block, &mut errors).map(|value| {
                     reject_duplicate_id(
@@ -634,8 +638,8 @@ pub fn parse_verification(path: &str, source: &str) -> Result<Verification, Vec<
             bindings,
             method_qualifications,
             applicability_decisions,
-            claim_judgments,
-            challengers,
+            requirement_judgments,
+            verification_challenges,
             challenge_plans,
         })
     } else {
@@ -649,8 +653,8 @@ fn declaration_heading(text: &str) -> Option<(&'static str, &str)> {
         "Evidence Binding",
         "Method Qualification",
         "Applicability Decision",
-        "Claim Judgment",
-        "Challenger",
+        "Requirement Judgment",
+        "Verification Challenge",
         "Challenge Plan",
     ] {
         if let Some(id) = text.strip_prefix(&format!("## {kind}:")) {
@@ -698,8 +702,16 @@ fn parse_binding(
 ) -> Option<EvidenceBinding> {
     let check = required(block, path, line, "Evidence Binding", id, "Check", errors)?;
     validate_reference(path, line, "Check", &check, true, errors);
-    let case = required(block, path, line, "Evidence Binding", id, "Case", errors)?;
-    validate_case_reference(path, line, &case, errors);
+    let scenario = required(
+        block,
+        path,
+        line,
+        "Evidence Binding",
+        id,
+        "Scenario",
+        errors,
+    )?;
+    validate_scenario_reference(path, line, &scenario, errors);
     let method_qualification = required(
         block,
         path,
@@ -726,7 +738,15 @@ fn parse_binding(
         "Proposition",
         errors,
     )?;
-    let context_text = required(block, path, line, "Evidence Binding", id, "Context", errors)?;
+    let context_text = required(
+        block,
+        path,
+        line,
+        "Evidence Binding",
+        id,
+        "Execution Context",
+        errors,
+    )?;
     let context = parse_context(path, line, &context_text, errors)?;
     let domain_text = required(
         block,
@@ -744,10 +764,10 @@ fn parse_binding(
     Some(EvidenceBinding {
         id: id.to_string(),
         check,
-        case,
+        scenario,
         method_qualification,
         proposition,
-        context,
+        execution_context: context,
         challenge_domain,
         policy,
         rationale: block.prose.clone(),
@@ -756,30 +776,46 @@ fn parse_binding(
     })
 }
 
-fn parse_claim_judgment(
+fn parse_requirement_judgment(
     path: &str,
     line: usize,
     id: &str,
     block: &Block,
     errors: &mut Vec<Diag>,
-) -> Option<ClaimJudgment> {
-    let verdict_text = required(block, path, line, "Claim Judgment", id, "Verdict", errors)?;
-    let verdict = ClaimJudgmentVerdict::parse(&verdict_text).or_else(|| {
+) -> Option<RequirementJudgment> {
+    let verdict_text = required(
+        block,
+        path,
+        line,
+        "Requirement Judgment",
+        id,
+        "Verdict",
+        errors,
+    )?;
+    let verdict = RequirementJudgmentVerdict::parse(&verdict_text).or_else(|| {
         errors.push(Diag::expecting(
             path,
             line,
-            format!("unknown Claim Judgment verdict `{verdict_text}`"),
+            format!("unknown Requirement Judgment verdict `{verdict_text}`"),
             "accepted or rejected",
         ));
         None
     })?;
-    let policy = required(block, path, line, "Claim Judgment", id, "Policy", errors)?;
+    let policy = required(
+        block,
+        path,
+        line,
+        "Requirement Judgment",
+        id,
+        "Policy",
+        errors,
+    )?;
     validate_reference(path, line, "Decision Policy", &policy, true, errors);
     let fingerprint = required(
         block,
         path,
         line,
-        "Claim Judgment",
+        "Requirement Judgment",
         id,
         "Fingerprint",
         errors,
@@ -788,32 +824,56 @@ fn parse_claim_judgment(
         errors.push(Diag::expecting(
             path,
             line,
-            format!("invalid Claim Judgment fingerprint `{fingerprint}`"),
+            format!("invalid Requirement Judgment fingerprint `{fingerprint}`"),
             "sha256: followed by 64 lowercase hexadecimal digits",
         ));
     }
-    let judged = required(block, path, line, "Claim Judgment", id, "Judged", errors)?;
+    let judged = required(
+        block,
+        path,
+        line,
+        "Requirement Judgment",
+        id,
+        "Judged",
+        errors,
+    )?;
     if !valid_iso_date(&judged) {
         errors.push(Diag::expecting(
             path,
             line,
-            format!("invalid Claim Judgment date `{judged}`"),
+            format!("invalid Requirement Judgment date `{judged}`"),
             "an ISO date in YYYY-MM-DD form",
         ));
     }
-    let judge = required(block, path, line, "Claim Judgment", id, "Judge", errors)?;
-    let basis = repeated_non_empty(block, path, line, "Claim Judgment", id, "Basis", errors);
+    let judge = required(
+        block,
+        path,
+        line,
+        "Requirement Judgment",
+        id,
+        "Judge",
+        errors,
+    )?;
+    let basis = repeated_non_empty(
+        block,
+        path,
+        line,
+        "Requirement Judgment",
+        id,
+        "Basis",
+        errors,
+    );
     let residual_risks = repeated_non_empty(
         block,
         path,
         line,
-        "Claim Judgment",
+        "Requirement Judgment",
         id,
         "Residual risk",
         errors,
     );
-    require_rationale(path, line, "Claim Judgment", id, block, errors);
-    Some(ClaimJudgment {
+    require_rationale(path, line, "Requirement Judgment", id, block, errors);
+    Some(RequirementJudgment {
         id: id.to_string(),
         verdict,
         policy,
@@ -881,7 +941,7 @@ fn parse_method_qualification(
         line,
         "Method Qualification",
         id,
-        "Context",
+        "Execution Context",
         errors,
     )?;
     let context = parse_context(path, line, &context_text, errors)?;
@@ -973,7 +1033,7 @@ fn parse_method_qualification(
         scope,
         quantification,
         oracle,
-        context,
+        execution_context: context,
         challenge_domain,
         policy,
         verdict,
@@ -1067,30 +1127,53 @@ fn parse_applicability_decision(
     })
 }
 
-fn parse_challenger(
+fn parse_verification_challenge(
     path: &str,
     line: usize,
     id: &str,
     block: &Block,
     errors: &mut Vec<Diag>,
-) -> Option<Challenger> {
-    let form = required(block, path, line, "Challenger", id, "Form", errors)?;
-    validate_reference(path, line, "Challenger form", &form, true, errors);
-    let searches_for = required(block, path, line, "Challenger", id, "Searches for", errors)?;
+) -> Option<VerificationChallenge> {
+    let form = required(
+        block,
+        path,
+        line,
+        "Verification Challenge",
+        id,
+        "Form",
+        errors,
+    )?;
+    validate_reference(
+        path,
+        line,
+        "Verification Challenge form",
+        &form,
+        true,
+        errors,
+    );
+    let searches_for = required(
+        block,
+        path,
+        line,
+        "Verification Challenge",
+        id,
+        "Searches for",
+        errors,
+    )?;
     let required_scope_text = required(
         block,
         path,
         line,
-        "Challenger",
+        "Verification Challenge",
         id,
         "Required scope",
         errors,
     )?;
     let required_scope = parse_required_scope(path, line, &required_scope_text, errors)?;
-    require_rationale(path, line, "Challenger", id, block, errors);
-    Some(Challenger {
+    require_rationale(path, line, "Verification Challenge", id, block, errors);
+    Some(VerificationChallenge {
         targets: Vec::new(),
-        claims: Vec::new(),
+        requirements: Vec::new(),
         mechanisms: Vec::new(),
         checks: Vec::new(),
         id: id.to_string(),
@@ -1110,16 +1193,23 @@ fn parse_challenge_plan(
     block: &Block,
     errors: &mut Vec<Diag>,
 ) -> Option<ChallengePlan> {
-    let challenger = required(
+    let verification_challenge = required(
         block,
         path,
         line,
         "Challenge Plan",
         id,
-        "Challenger",
+        "Verification Challenge",
         errors,
     )?;
-    validate_reference(path, line, "Challenger", &challenger, true, errors);
+    validate_reference(
+        path,
+        line,
+        "Verification Challenge",
+        &verification_challenge,
+        true,
+        errors,
+    );
     let mut selectors = Vec::new();
     for label in block.labels.iter().filter(|label| label.key == "Select") {
         if let Some(selector) = parse_selector(path, label.line, &label.value, errors) {
@@ -1132,7 +1222,7 @@ fn parse_challenge_plan(
     require_rationale(path, line, "Challenge Plan", id, block, errors);
     Some(ChallengePlan {
         id: id.to_string(),
-        challenger,
+        verification_challenge,
         selectors,
         rationale: block.prose.clone(),
         path: path.to_string(),
@@ -1415,9 +1505,9 @@ pub fn parse_selector(
             validate_reference(path, line, "binding", id, true, errors);
             Selector::ApplicabilityDecisionFromBinding(id.to_string())
         }
-        ("applicability-decision", "case") => {
-            validate_case_reference(path, line, id, errors);
-            Selector::ApplicabilityDecisionFromCase(id.to_string())
+        ("applicability-decision", "scenario") => {
+            validate_scenario_reference(path, line, id, errors);
+            Selector::ApplicabilityDecisionFromScenario(id.to_string())
         }
         ("applicability-decision", "check") => {
             validate_reference(path, line, "Check", id, true, errors);
@@ -1431,17 +1521,17 @@ pub fn parse_selector(
             validate_composite(path, line, "mechanism", id, errors);
             Selector::ApplicabilityDecisionFromMechanism(id.to_string())
         }
-        ("claim-judgment", "claim") => {
-            validate_claim_reference(path, line, id, errors);
-            Selector::ClaimJudgmentFromClaim(id.to_string())
+        ("requirement-judgment", "requirement") => {
+            validate_requirement_reference(path, line, id, errors);
+            Selector::RequirementJudgmentFromRequirement(id.to_string())
         }
-        ("claim-judgment", "realization") => {
+        ("requirement-judgment", "realization") => {
             validate_source_identity(path, line, id, errors);
-            Selector::ClaimJudgmentFromRealization(id.to_string())
+            Selector::RequirementJudgmentFromRealization(id.to_string())
         }
-        ("claim-judgment", "mechanism") => {
+        ("requirement-judgment", "mechanism") => {
             validate_composite(path, line, "mechanism", id, errors);
-            Selector::ClaimJudgmentFromMechanism(id.to_string())
+            Selector::RequirementJudgmentFromMechanism(id.to_string())
         }
         _ => {
             errors.push(invalid_selector(path, line, value));
@@ -1463,7 +1553,7 @@ fn parse_context(
             errors.push(Diag::at(
                 path,
                 line,
-                format!("invalid Context JSON: {reason}"),
+                format!("invalid Execution Context JSON: {reason}"),
             ));
             return None;
         }
@@ -1472,7 +1562,7 @@ fn parse_context(
         errors.push(Diag::expecting(
             path,
             line,
-            "Context is not an object",
+            "Execution Context is not an object",
             "a JSON object from unique string keys to string values",
         ));
         return None;
@@ -1480,14 +1570,18 @@ fn parse_context(
     let mut context = BTreeMap::new();
     for (key, value) in entries {
         if key.is_empty() {
-            errors.push(Diag::at(path, line, "Context keys must not be empty"));
+            errors.push(Diag::at(
+                path,
+                line,
+                "Execution Context keys must not be empty",
+            ));
             continue;
         }
         let Json::Str(value) = value else {
             errors.push(Diag::at(
                 path,
                 line,
-                format!("Context value for `{key}` is not a string"),
+                format!("Execution Context value for `{key}` is not a string"),
             ));
             continue;
         };
@@ -1495,7 +1589,7 @@ fn parse_context(
             errors.push(Diag::at(
                 path,
                 line,
-                format!("Context key `{key}` is declared twice"),
+                format!("Execution Context key `{key}` is declared twice"),
             ));
         }
     }
@@ -1691,7 +1785,7 @@ fn reject_stray_and_duplicates(
     }
     let repeatable = match kind {
         "Check" => Some("Method"),
-        "Claim Judgment" => None,
+        "Requirement Judgment" => None,
         "Challenge Plan" => Some("Select"),
         "Decision Policy" => Some("Required challenge"),
         "Challenge Schedule" => None,
@@ -1699,7 +1793,7 @@ fn reject_stray_and_duplicates(
     };
     for duplicate in block.duplicates() {
         let allowed = match kind {
-            "Claim Judgment" => matches!(duplicate.key.as_str(), "Basis" | "Residual risk"),
+            "Requirement Judgment" => matches!(duplicate.key.as_str(), "Basis" | "Residual risk"),
             "Challenge Schedule" => {
                 matches!(
                     duplicate.key.as_str(),
@@ -1848,12 +1942,12 @@ fn validate_reference(
     }
 }
 
-fn validate_claim_reference(path: &str, line: usize, id: &str, errors: &mut Vec<Diag>) {
-    validate_composite(path, line, "Claim", id, errors);
+fn validate_requirement_reference(path: &str, line: usize, id: &str, errors: &mut Vec<Diag>) {
+    validate_composite(path, line, "Requirement", id, errors);
 }
 
-fn validate_case_reference(path: &str, line: usize, id: &str, errors: &mut Vec<Diag>) {
-    validate_composite(path, line, "Case", id, errors);
+fn validate_scenario_reference(path: &str, line: usize, id: &str, errors: &mut Vec<Diag>) {
+    validate_composite(path, line, "Scenario", id, errors);
 }
 fn validate_composite(path: &str, line: usize, kind: &str, id: &str, errors: &mut Vec<Diag>) {
     if let Err(reason) = crate::diag::validate_entity_id(id) {
@@ -1975,7 +2069,7 @@ fn invalid_selector(path: &str, line: usize, value: &str) -> Diag {
         path,
         line,
         format!("invalid semantic selector `{value}`"),
-        "one of the seven qualification or claim-judgment selector forms",
+        "one of the seven qualification or requirement-judgment selector forms",
     )
 }
 
@@ -2020,17 +2114,17 @@ fn valid_iso_date(value: &str) -> bool {
     (1..=days).contains(&day)
 }
 
-pub fn context_json(context: &BTreeMap<String, String>) -> Json {
-    let required_context = Json::Obj(
+pub fn execution_context_json(context: &BTreeMap<String, String>) -> Json {
+    let required_execution_context = Json::Obj(
         context
             .iter()
             .map(|(key, value)| (key.clone(), Json::str(value)))
             .collect(),
     );
     Json::obj(vec![
-        ("format", Json::str("azimuth-context-fingerprint")),
-        ("version", Json::Num(1.0)),
-        ("required_context", required_context),
+        ("format", Json::str("azimuth-execution-context-fingerprint")),
+        ("version", Json::Num(2.0)),
+        ("required_execution_context", required_execution_context),
     ])
 }
 

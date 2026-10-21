@@ -8,8 +8,8 @@ use azimuth::spec::parse_spec;
 const SHA: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 fn model() -> Model {
     Model {
-        specs: vec![parse_spec("spec.md", "# Spec: catalog\n\n## Claim: restricted-access\nCriticality: critical\n\nAccess SHALL be restricted.\n\n### Case: rejected-access\nEvent: rejected caller requests data\nRequired: no data is returned\n").unwrap()],
-        account_verifications: vec![parse_account_verification("verification.md", "# Verification: catalog\n\n## Claim verification: restricted-access\n\n### Check: rejects-access\n- Evidence bindings:\n  - Case: `rejected-access`\n    - Contribution: Establishes rejection.\n\nExercise rejection and a successful control.\n").unwrap()],
+        specs: vec![parse_spec("spec.md", "# Spec: catalog\n\n## Requirement: restricted-access\nCriticality: critical\n\nAccess SHALL be restricted.\n\n### Scenario: rejected-access\nEvent: rejected caller requests data\nRequired: no data is returned\n").unwrap()],
+        account_verifications: vec![parse_account_verification("verification.md", "# Verification: catalog\n\n## Requirement verification: restricted-access\n\n### Check: rejects-access\n- Evidence bindings:\n  - Scenario: `rejected-access`\n    - Contribution: Establishes rejection.\n\nExercise rejection and a successful control.\n").unwrap()],
         ..Model::default()
     }
 }
@@ -105,8 +105,8 @@ fn reverse_object_fields(value: &mut Json) {
 }
 
 fn unresolved_judgment(authority: &Json) -> Json {
-    let claim = &authority.get("claims").unwrap().as_array().unwrap()[0];
-    let cases = authority.get("cases").unwrap().as_array().unwrap();
+    let requirement = &authority.get("requirements").unwrap().as_array().unwrap()[0];
+    let scenarios = authority.get("scenarios").unwrap().as_array().unwrap();
     let bindings = authority.get("bindings").unwrap().as_array().unwrap();
     let mut record = qualification(authority, 100);
     if let Json::Obj(fields) = &mut record {
@@ -120,23 +120,23 @@ fn unresolved_judgment(authority: &Json) -> Json {
             .iter_mut()
             .find(|(name, _)| name == "kind")
             .unwrap()
-            .1 = Json::str("claim-judgment");
+            .1 = Json::str("requirement-judgment");
         fields.extend([
-            ("claim".into(), claim.get("id").unwrap().clone()),
+            ("requirement".into(), requirement.get("id").unwrap().clone()),
             (
-                "claim_fingerprint".into(),
-                claim.get("fingerprint").unwrap().clone(),
+                "requirement_fingerprint".into(),
+                requirement.get("fingerprint").unwrap().clone(),
             ),
-            ("subject_fingerprint".into(), Json::str(SHA)),
+            ("verification_target_fingerprint".into(), Json::str(SHA)),
             (
-                "cases".into(),
+                "scenarios".into(),
                 Json::Arr(
-                    cases
+                    scenarios
                         .iter()
-                        .map(|case| {
+                        .map(|scenario| {
                             Json::obj(vec![
-                                ("id", case.get("id").unwrap().clone()),
-                                ("fingerprint", case.get("fingerprint").unwrap().clone()),
+                                ("id", scenario.get("id").unwrap().clone()),
+                                ("fingerprint", scenario.get("fingerprint").unwrap().clone()),
                             ])
                         })
                         .collect(),
@@ -144,7 +144,7 @@ fn unresolved_judgment(authority: &Json) -> Json {
             ),
             (
                 "mechanisms".into(),
-                claim.get("mechanisms").unwrap().clone(),
+                requirement.get("mechanisms").unwrap().clone(),
             ),
             (
                 "bindings".into(),
@@ -154,7 +154,7 @@ fn unresolved_judgment(authority: &Json) -> Json {
                         .map(|binding| {
                             Json::obj(vec![
                                 ("check", binding.get("check").unwrap().clone()),
-                                ("case", binding.get("case").unwrap().clone()),
+                                ("scenario", binding.get("scenario").unwrap().clone()),
                                 ("fingerprint", binding.get("fingerprint").unwrap().clone()),
                                 ("applicability_fingerprint", Json::Null),
                             ])
@@ -181,7 +181,7 @@ fn judgment_dependencies_survive_json_object_reordering_but_not_fingerprint_chan
     let mut model = model();
     model.account_designs.push(azimuth::account_design::parse_account_design(
         "design.md",
-        "# Design: catalog\n\n## Claim design: restricted-access\n- Areas:\n  - `api`\n\n### Mechanism: admission-guard\n- Cases: `rejected-access`\n\nThe guard precedes protected data delivery.\n",
+        "# Design: catalog\n\n## Requirement design: restricted-access\n- Areas:\n  - `api`\n\n### Mechanism: admission-guard\n- Scenarios: `rejected-access`\n\nThe guard precedes protected data delivery.\n",
     ).unwrap());
     let mut authority = assurance_review::authority(&model, "sample-project").unwrap();
     let mut record = unresolved_judgment(&authority);
@@ -242,11 +242,11 @@ fn latest_review_target_is_independent_of_json_object_key_order() {
 }
 
 #[test]
-fn claim_review_input_pins_definition_without_manufacturing_a_review() {
+fn requirement_review_input_pins_definition_without_manufacturing_a_review() {
     let input = assurance_review::review_input(
         &model(),
         "sample-project",
-        &json::parse(r#"{"kind":"claim-review","claim":"restricted-access"}"#).unwrap(),
+        &json::parse(r#"{"kind":"requirement-review","requirement":"restricted-access"}"#).unwrap(),
         &[],
         &[],
     )
@@ -257,7 +257,7 @@ fn claim_review_input_pins_definition_without_manufacturing_a_review() {
     );
     let target = input.get("target").unwrap();
     assert_eq!(
-        target.get("claim").and_then(Json::as_str),
+        target.get("requirement").and_then(Json::as_str),
         Some("restricted-access")
     );
     for field in ["decision", "reviewer", "conclusion", "reviewed_at_ms"] {
@@ -287,12 +287,12 @@ fn claim_review_input_pins_definition_without_manufacturing_a_review() {
 }
 
 #[test]
-fn claim_health_input_exposes_missing_exact_subject_evidence() {
+fn requirement_status_input_exposes_missing_exact_verification_target_evidence() {
     let input = assurance_review::review_input(
         &model(),
         "sample-project",
         &json::parse(&format!(
-            r#"{{"kind":"claim-health","claim":"restricted-access","subject_fingerprint":"{SHA}"}}"#
+            r#"{{"kind":"requirement-status","requirement":"restricted-access","verification_target_fingerprint":"{SHA}"}}"#
         ))
         .unwrap(),
         &[],
@@ -300,7 +300,7 @@ fn claim_health_input_exposes_missing_exact_subject_evidence() {
     )
     .unwrap();
     assert!(input
-        .get("observations")
+        .get("check_results")
         .unwrap()
         .as_array()
         .unwrap()
@@ -318,7 +318,7 @@ fn claim_health_input_exposes_missing_exact_subject_evidence() {
                     .unwrap()
                     .get("kind")
                     .and_then(Json::as_str)
-                    == Some("claim-health")
+                    == Some("requirement-status")
         ));
     let binding = &input
         .get("dependencies")
@@ -327,7 +327,7 @@ fn claim_health_input_exposes_missing_exact_subject_evidence() {
         .unwrap()
         .as_array()
         .unwrap()[0];
-    for field in ["check_fingerprint", "case_fingerprint", "fingerprint"] {
+    for field in ["check_fingerprint", "scenario_fingerprint", "fingerprint"] {
         assert!(binding.get(field).is_some());
     }
 }
@@ -335,14 +335,14 @@ fn claim_health_input_exposes_missing_exact_subject_evidence() {
 #[test]
 fn review_input_rejects_unknown_targets_and_authored_decisions() {
     for request in [
-        r#"{"kind":"claim-review","claim":"unknown-claim"}"#,
-        r#"{"kind":"claim-review","claim":"restricted-access","decision":"accepted"}"#,
-        r#"{"kind":"claim-health","claim":"unknown-claim","subject_fingerprint":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
-        r#"{"kind":"claim-health","claim":"restricted-access"}"#,
+        r#"{"kind":"requirement-review","requirement":"unknown-requirement"}"#,
+        r#"{"kind":"requirement-review","requirement":"restricted-access","decision":"accepted"}"#,
+        r#"{"kind":"requirement-status","requirement":"unknown-requirement","verification_target_fingerprint":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
+        r#"{"kind":"requirement-status","requirement":"restricted-access"}"#,
         r#"{"kind":"method-qualification","check":"unknown-check"}"#,
         r#"{"kind":"method-qualification","check":"rejects-access","decision":"accepted"}"#,
-        r#"{"kind":"applicability-decision","check":"rejects-access","case":"unknown-case","subject_fingerprint":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
-        r#"{"kind":"claim-judgment","claim":"restricted-access"}"#,
+        r#"{"kind":"applicability-decision","check":"rejects-access","scenario":"unknown-scenario","verification_target_fingerprint":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
+        r#"{"kind":"requirement-judgment","requirement":"restricted-access"}"#,
     ] {
         assert!(assurance_review::review_input(
             &model(),
@@ -356,17 +356,17 @@ fn review_input_rejects_unknown_targets_and_authored_decisions() {
 }
 
 #[test]
-fn claim_review_input_includes_all_current_dependencies_and_visible_gaps() {
+fn requirement_review_input_includes_all_current_dependencies_and_visible_gaps() {
     let input = assurance_review::review_input(
         &model(),
         "sample-project",
-        &json::parse(r#"{"kind":"claim-review","claim":"restricted-access"}"#).unwrap(),
+        &json::parse(r#"{"kind":"requirement-review","requirement":"restricted-access"}"#).unwrap(),
         &[],
         &[],
     )
     .unwrap();
     let dependencies = input.get("dependencies").unwrap();
-    for field in ["claims", "cases", "checks", "bindings"] {
+    for field in ["requirements", "scenarios", "checks", "bindings"] {
         assert_eq!(
             dependencies.get(field).unwrap().as_array().unwrap().len(),
             1
@@ -379,7 +379,11 @@ fn claim_review_input_includes_all_current_dependencies_and_visible_gaps() {
         .unwrap()
         .iter()
         .any(|gap| gap.get("record_status").and_then(Json::as_str) == Some("missing")));
-    assert!(!dependencies.get("claims").unwrap().as_array().unwrap()[0]
+    assert!(!dependencies
+        .get("requirements")
+        .unwrap()
+        .as_array()
+        .unwrap()[0]
         .get("gaps")
         .unwrap()
         .as_array()
@@ -392,7 +396,7 @@ fn unrelated_authority_changes_do_not_require_method_requalification() {
     let mut model = model();
     let initial = assurance_review::authority(&model, "sample-project").unwrap();
     let review = qualification(&initial, 100);
-    model.specs.push(parse_spec("other/spec.md", "# Spec: other\n\n## Claim: other-restriction\nCriticality: routine\n\nOther access is restricted.\n\n### Case: other-rejected\nOther rejection occurs.\n").unwrap());
+    model.specs.push(parse_spec("other/spec.md", "# Spec: other\n\n## Requirement: other-restriction\nCriticality: routine\n\nOther access is restricted.\n\n### Scenario: other-rejected\nOther rejection occurs.\n").unwrap());
     let changed = assurance_review::authority(&model, "sample-project").unwrap();
     assert_ne!(initial.get("fingerprint"), changed.get("fingerprint"));
     assert_eq!(
@@ -420,7 +424,7 @@ fn evidence_binding_edits_do_not_requalify_an_unchanged_method() {
 fn observed_bundle(
     authority: &Json,
     check_id: &str,
-    case_id: &str,
+    scenario_id: &str,
     time: u64,
 ) -> azimuth::run::RunBundle {
     use azimuth::run::*;
@@ -441,7 +445,7 @@ fn observed_bundle(
     let selection = CheckSelection {
         id: check_id.into(),
         fingerprint: check_fp.clone(),
-        cases: vec![case_id.into()],
+        scenarios: vec![scenario_id.into()],
         implementations: vec![Implementation {
             identity: "catalog|rust-symbol|test::check".into(),
             source_fingerprint: SHA.into(),
@@ -457,27 +461,27 @@ fn observed_bundle(
         corrects: None,
         correction_reason: None,
         bundle_fingerprint: SHA.into(),
-        subject: Subject::Workspace {
+        verification_target: VerificationTarget::Workspace {
             repositories: vec![RepositoryState {
                 id: "root".into(),
                 revision: "review-fixture".into(),
                 content_fingerprint: SHA.into(),
             }],
         },
-        subject_fingerprint: SHA.into(),
+        verification_target_fingerprint: SHA.into(),
         planned_at_ms: time - 2,
         started_at_ms: time - 1,
         finished_at_ms: time + 1,
         status: RunStatus::Complete,
         plan: Plan {
             model_fingerprint: SHA.into(),
-            required_context: BTreeMap::new(),
+            required_execution_context: BTreeMap::new(),
             checks: vec![selection.clone()],
             challenges: vec![],
             fingerprint: SHA.into(),
         },
         actual_selection: ActualSelection {
-            context: BTreeMap::new(),
+            execution_context: BTreeMap::new(),
             plan_fingerprint: SHA.into(),
             checks: vec![selection],
             challenges: vec![],
@@ -552,21 +556,21 @@ fn observed_bundle(
                 attempts: vec![CheckAttempt {
                     ordinal: 1,
                     activity: "exercise".into(),
-                    outcomes: [(case_id.into(), ObservationOutcome::Satisfied)]
+                    outcomes: [(scenario_id.into(), CheckResultOutcome::Satisfied)]
                         .into_iter()
                         .collect(),
                 }],
             }],
-            observations: vec![Observation {
-                case: case_id.into(),
-                outcome: ObservationOutcome::Satisfied,
+            results: vec![CheckResult {
+                scenario: scenario_id.into(),
+                outcome: CheckResultOutcome::Satisfied,
                 observed_at_ms: time,
                 fingerprint: SHA.into(),
                 artifacts: vec!["native-report".into()],
                 diagnostics: vec![],
             }],
         }],
-        challenger_executions: vec![],
+        verification_challenge_executions: vec![],
         contributions: vec![],
     };
     refresh_observed_bundle(&mut bundle);
@@ -575,16 +579,18 @@ fn observed_bundle(
 }
 fn refresh_observed_bundle(bundle: &mut azimuth::run::RunBundle) {
     use azimuth::run::*;
-    bundle.subject_fingerprint = subject_fingerprint(&bundle.subject);
-    bundle.plan.fingerprint = plan_fingerprint(&bundle.subject_fingerprint, &bundle.plan);
+    bundle.verification_target_fingerprint =
+        verification_target_fingerprint(&bundle.verification_target);
+    bundle.plan.fingerprint =
+        plan_fingerprint(&bundle.verification_target_fingerprint, &bundle.plan);
     bundle.actual_selection.plan_fingerprint = bundle.plan.fingerprint.clone();
     bundle.actual_selection.fingerprint = selection_fingerprint(&bundle.actual_selection);
     let adapter = &bundle.provenance.adapter;
     bundle.provenance.adapter.launch_fingerprint = launch_fingerprint(
         bundle.provenance.mode,
         bundle.planned_at_ms,
-        &bundle.subject,
-        &bundle.subject_fingerprint,
+        &bundle.verification_target,
+        &bundle.verification_target_fingerprint,
         &bundle.plan,
         &LaunchAdapterIdentity {
             id: adapter.id.clone(),
@@ -596,10 +602,10 @@ fn refresh_observed_bundle(bundle: &mut azimuth::run::RunBundle) {
         &adapter.routes,
     );
     bundle.run_id = run_id(bundle);
-    bundle.check_executions[0].observations[0].fingerprint = observation_fingerprint(
+    bundle.check_executions[0].results[0].fingerprint = check_result_fingerprint(
         bundle,
         &bundle.check_executions[0],
-        &bundle.check_executions[0].observations[0],
+        &bundle.check_executions[0].results[0],
     );
     bundle.bundle_fingerprint = bundle_fingerprint(bundle);
 }
@@ -614,18 +620,18 @@ fn applicability(authority: &Json, qualification: &Json, bundle: &azimuth::run::
             .unwrap()
             .1 = Json::str("applicability-decision");
         fields.extend([
-            ("case".into(), binding.get("case").unwrap().clone()),
+            ("scenario".into(), binding.get("scenario").unwrap().clone()),
             (
-                "case_fingerprint".into(),
-                binding.get("case_fingerprint").unwrap().clone(),
+                "scenario_fingerprint".into(),
+                binding.get("scenario_fingerprint").unwrap().clone(),
             ),
             (
                 "binding_fingerprint".into(),
                 binding.get("fingerprint").unwrap().clone(),
             ),
             (
-                "subject_fingerprint".into(),
-                Json::str(&bundle.subject_fingerprint),
+                "verification_target_fingerprint".into(),
+                Json::str(&bundle.verification_target_fingerprint),
             ),
             (
                 "method_qualification_fingerprint".into(),
@@ -637,8 +643,8 @@ fn applicability(authority: &Json, qualification: &Json, bundle: &azimuth::run::
                     ("run", Json::str(&bundle.run_id)),
                     ("bundle_fingerprint", Json::str(&bundle.bundle_fingerprint)),
                     (
-                        "observation",
-                        Json::str(&bundle.check_executions[0].observations[0].fingerprint),
+                        "check_result",
+                        Json::str(&bundle.check_executions[0].results[0].fingerprint),
                     ),
                 ])]),
             ),
@@ -652,10 +658,10 @@ fn applicability(authority: &Json, qualification: &Json, bundle: &azimuth::run::
     record
 }
 #[test]
-fn fresh_observations_stale_only_relevant_applicability_not_qualified_methods() {
+fn fresh_check_results_stale_only_relevant_applicability_not_qualified_methods() {
     let mut model = model();
-    model.specs.push(parse_spec("other/spec.md", "# Spec: other\n\n## Claim: other-restriction\nCriticality: routine\n\nOther access is restricted.\n\n### Case: other-rejected\nOther rejection occurs.\n").unwrap());
-    model.account_verifications.push(parse_account_verification("other/verification.md", "# Verification: other\n\n## Claim verification: other-restriction\n\n### Check: rejects-other\n- Evidence bindings:\n  - Case: `other-rejected`\n    - Contribution: Establishes other rejection.\n\nExercise other rejection.\n").unwrap());
+    model.specs.push(parse_spec("other/spec.md", "# Spec: other\n\n## Requirement: other-restriction\nCriticality: routine\n\nOther access is restricted.\n\n### Scenario: other-rejected\nOther rejection occurs.\n").unwrap());
+    model.account_verifications.push(parse_account_verification("other/verification.md", "# Verification: other\n\n## Requirement verification: other-restriction\n\n### Check: rejects-other\n- Evidence bindings:\n  - Scenario: `other-rejected`\n    - Contribution: Establishes other rejection.\n\nExercise other rejection.\n").unwrap());
     let authority = assurance_review::authority(&model, "sample-project").unwrap();
     let qualification = qualification(&authority, 100);
     let old = observed_bundle(&authority, "rejects-access", "rejected-access", 10);
@@ -689,13 +695,13 @@ fn fresh_observations_stale_only_relevant_applicability_not_qualified_methods() 
     );
 }
 #[test]
-fn review_packet_keeps_exact_observations_and_native_bundle_artifacts() {
+fn review_packet_keeps_exact_check_results_and_native_bundle_artifacts() {
     let model = model();
     let authority = assurance_review::authority(&model, "sample-project").unwrap();
     let bundle = observed_bundle(&authority, "rejects-access", "rejected-access", 10);
     let request = json::parse(&format!(
-        r#"{{"kind":"claim-health","claim":"restricted-access","subject_fingerprint":"{}"}}"#,
-        bundle.subject_fingerprint
+        r#"{{"kind":"requirement-status","requirement":"restricted-access","verification_target_fingerprint":"{}"}}"#,
+        bundle.verification_target_fingerprint
     ))
     .unwrap();
     let packet =
@@ -706,14 +712,10 @@ fn review_packet_keeps_exact_observations_and_native_bundle_artifacts() {
         azimuth::run::to_json(&bundle)
     );
     assert_eq!(
-        packet.get("observations").unwrap().as_array().unwrap()[0]
-            .get("observation")
+        packet.get("check_results").unwrap().as_array().unwrap()[0]
+            .get("check_result")
             .and_then(Json::as_str),
-        Some(
-            bundle.check_executions[0].observations[0]
-                .fingerprint
-                .as_str()
-        )
+        Some(bundle.check_executions[0].results[0].fingerprint.as_str())
     );
 }
 
@@ -729,9 +731,9 @@ fn unresolved_judgment_becomes_stale_when_its_applicability_basis_is_superseded(
         fields.retain(|(name, _)| name != "fingerprint");
         fields
             .iter_mut()
-            .find(|(name, _)| name == "subject_fingerprint")
+            .find(|(name, _)| name == "verification_target_fingerprint")
             .unwrap()
-            .1 = Json::str(&old.subject_fingerprint);
+            .1 = Json::str(&old.verification_target_fingerprint);
         if let Json::Arr(bindings) = &mut fields
             .iter_mut()
             .find(|(name, _)| name == "bindings")
@@ -767,10 +769,11 @@ fn unresolved_judgment_becomes_stale_when_its_applicability_basis_is_superseded(
 fn review_input_retains_existing_review_without_rewriting_its_decision() {
     let model = model();
     let authority = assurance_review::authority(&model, "sample-project").unwrap();
-    let request = json::parse(r#"{"kind":"claim-review","claim":"restricted-access"}"#).unwrap();
+    let request =
+        json::parse(r#"{"kind":"requirement-review","requirement":"restricted-access"}"#).unwrap();
     let input =
         assurance_review::review_input(&model, "sample-project", &request, &[], &[]).unwrap();
-    let claim = &authority.get("claims").unwrap().as_array().unwrap()[0];
+    let requirement = &authority.get("requirements").unwrap().as_array().unwrap()[0];
     let mut review = qualification(&authority, 100);
     if let Json::Obj(fields) = &mut review {
         fields.retain(|(name, _)| {
@@ -780,12 +783,12 @@ fn review_input_retains_existing_review_without_rewriting_its_decision() {
             .iter_mut()
             .find(|(name, _)| name == "kind")
             .unwrap()
-            .1 = Json::str("claim-review");
+            .1 = Json::str("requirement-review");
         fields.extend([
-            ("claim".into(), claim.get("id").unwrap().clone()),
+            ("requirement".into(), requirement.get("id").unwrap().clone()),
             (
-                "claim_fingerprint".into(),
-                claim.get("fingerprint").unwrap().clone(),
+                "requirement_fingerprint".into(),
+                requirement.get("fingerprint").unwrap().clone(),
             ),
             (
                 "dependencies".into(),

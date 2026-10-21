@@ -3,8 +3,8 @@ using System;
 namespace Azimuth.Challenge.Annotations;
 
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, AllowMultiple = true)]
-public sealed class ImplementsChallengerAttribute(string challenger) : Attribute
+public sealed class ImplementsVerificationChallengeAttribute(string verificationChallenge) : Attribute
 {
-    public string Challenger { get; } = challenger;
+    public string VerificationChallenge { get; } = verificationChallenge;
     public string? ConfigurationFile { get; set; }
 }

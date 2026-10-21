@@ -1,4 +1,4 @@
-//! Claim-first verification explanation. Source-authored Checks and their evidence relationships
+//! Requirement-first verification explanation. Source-authored Checks and their evidence relationships
 //! remain separate; this parser reads the repository account's scope and method vocabulary.
 
 use crate::diag::{resolve_check_id, validate_id, Diag};
@@ -11,27 +11,27 @@ pub struct AccountVerification {
     pub owner: String,
     pub path: String,
     pub introduction: String,
-    pub claims: Vec<ClaimVerification>,
+    pub requirements: Vec<RequirementVerification>,
     pub sections: Vec<VerificationSection>,
-    pub cases: Vec<CaseVerification>,
+    pub scenarios: Vec<ScenarioVerification>,
     pub elements: Vec<VerificationElement>,
     pub checks: Vec<AuthoredCheck>,
-    pub challengers: Vec<crate::verification::Challenger>,
+    pub verification_challenges: Vec<crate::verification::VerificationChallenge>,
     pub package_entities: Vec<crate::verification_packages::Declaration>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClaimVerification {
-    pub claim: String,
+pub struct RequirementVerification {
+    pub requirement: String,
     pub required_elements: Vec<String>,
     pub prose: String,
     pub line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CaseVerification {
-    pub case: String,
-    pub claim: String,
+pub struct ScenarioVerification {
+    pub scenario: String,
+    pub requirement: String,
     pub prose: String,
     pub line: usize,
 }
@@ -39,8 +39,8 @@ pub struct CaseVerification {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthoredCheck {
     pub definition: crate::verification::Check,
-    pub claim: String,
-    pub cases: Vec<String>,
+    pub requirement: String,
+    pub scenarios: Vec<String>,
     pub mechanisms: Vec<String>,
     pub proposition: Option<String>,
     pub bindings: Vec<crate::verification_packages::Binding>,
@@ -51,8 +51,8 @@ pub struct AuthoredCheck {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerificationSection {
     pub id: String,
-    /// A section outside a Claim is shared. A nested section belongs to one Claim.
-    pub claim: Option<String>,
+    /// A section outside a Requirement is shared. A nested section belongs to one Requirement.
+    pub requirement: Option<String>,
     pub prose: String,
     pub line: usize,
 }
@@ -61,10 +61,10 @@ pub struct VerificationSection {
 pub struct VerificationElement {
     pub id: String,
     pub kind: String,
-    /// A shared element has no Claim owner; Claim-specific elements inherit the enclosing Claim.
-    pub claim: Option<String>,
+    /// A shared element has no Requirement owner; Requirement-specific elements inherit the enclosing Requirement.
+    pub requirement: Option<String>,
     pub section: Option<String>,
-    pub case: Option<String>,
+    pub scenario: Option<String>,
     pub prose: String,
     pub line: usize,
 }
@@ -93,12 +93,12 @@ pub fn parse_account_verification(
     let headings = collect_headings(path, &lines, &mut errors);
     let mut owner = None;
     let mut introduction = String::new();
-    let mut claims = Vec::new();
+    let mut requirements = Vec::new();
     let mut sections = Vec::new();
-    let mut cases = Vec::new();
+    let mut scenarios = Vec::new();
     let mut elements = Vec::new();
     let mut checks = Vec::new();
-    let mut challengers = Vec::new();
+    let mut verification_challenges = Vec::new();
     let mut package_entities = Vec::new();
     let mut ancestors: Vec<usize> = Vec::new();
 
@@ -113,13 +113,13 @@ pub fn parse_account_verification(
             let parent = &headings[*index];
             (!parent.label.is_empty()).then_some(parent.label)
         });
-        let active_claim = ancestors.iter().rev().find_map(|index| {
+        let active_requirement = ancestors.iter().rev().find_map(|index| {
             let parent = &headings[*index];
-            (parent.label == "Claim verification").then(|| parent.id.to_string())
+            (parent.label == "Requirement verification").then(|| parent.id.to_string())
         });
-        let active_case = ancestors.iter().rev().find_map(|index| {
+        let active_scenario = ancestors.iter().rev().find_map(|index| {
             let parent = &headings[*index];
-            (parent.label == "Case verification").then(|| parent.id.to_string())
+            (parent.label == "Scenario verification").then(|| parent.id.to_string())
         });
         let active_section = ancestors.iter().rev().find_map(|index| {
             let parent = &headings[*index];
@@ -180,15 +180,15 @@ pub fn parse_account_verification(
                 Some("Element") => elements
                     .last_mut()
                     .map(|element: &mut VerificationElement| &mut element.prose),
-                Some("Case verification") => cases
+                Some("Scenario verification") => scenarios
                     .last_mut()
-                    .map(|case: &mut CaseVerification| &mut case.prose),
+                    .map(|scenario: &mut ScenarioVerification| &mut scenario.prose),
                 Some("Section") => sections
                     .last_mut()
                     .map(|section: &mut VerificationSection| &mut section.prose),
-                Some("Claim verification") => claims
+                Some("Requirement verification") => requirements
                     .last_mut()
-                    .map(|claim: &mut ClaimVerification| &mut claim.prose),
+                    .map(|requirement: &mut RequirementVerification| &mut requirement.prose),
                 _ => Some(&mut introduction),
             };
             if let Some(target) = target {
@@ -201,8 +201,8 @@ pub fn parse_account_verification(
         }
         match (heading.level, heading.label) {
             (3, "Surface" | "Expectation set" | "Probe") => {
-                if active_claim.is_some() {
-                    errors.push(Diag::at(path, heading.line, "package declarations must be shared outside a Claim"));
+                if active_requirement.is_some() {
+                    errors.push(Diag::at(path, heading.line, "package declarations must be shared outside a Requirement"));
                 }
                 let declaration = crate::verification_packages::read_declaration(path, heading.line, heading.label, heading.id, block, &mut errors);
                 if package_entities.iter().any(|item: &crate::verification_packages::Declaration| item.kind == declaration.kind && item.id == declaration.id) {
@@ -210,13 +210,13 @@ pub fn parse_account_verification(
                 }
                 package_entities.push(declaration);
             }
-            (2, "Claim verification") => {
+            (2, "Requirement verification") => {
                 if let Err(reason) = validate_id(heading.id, false) {
                     errors.push(Diag::expecting(
                         path,
                         heading.line,
-                        format!("invalid local Claim id: {reason}"),
-                        "## Claim verification: <claim-id> within the declared module",
+                        format!("invalid local Requirement id: {reason}"),
+                        "## Requirement verification: <requirement-id> within the declared module",
                     ));
                 }
                 let identity = heading.id.to_string();
@@ -227,55 +227,55 @@ pub fn parse_account_verification(
                     &["Required elements"],
                     &mut errors,
                 );
-                let scope = ClaimVerification {
-                    claim: identity.clone(),
+                let scope = RequirementVerification {
+                    requirement: identity.clone(),
                     required_elements: fields[0].clone(),
                     prose: body,
                     line: heading.line,
                 };
-                if claims
+                if requirements
                     .iter()
-                    .any(|existing: &ClaimVerification| existing.claim == scope.claim)
+                    .any(|existing: &RequirementVerification| existing.requirement == scope.requirement)
                 {
                     errors.push(Diag::at(
                         path,
                         heading.line,
-                        format!("Claim verification `{}` is declared twice", scope.claim),
+                        format!("Requirement verification `{}` is declared twice", scope.requirement),
                     ));
                 }
-                claims.push(scope);
+                requirements.push(scope);
 
 
 
 
             }
-            (3, "Case verification") => {
-                validate_local(path, heading.line, "Case", heading.id, &mut errors);
-                let Some(identity) = active_claim.clone() else {
+            (3, "Scenario verification") => {
+                validate_local(path, heading.line, "Scenario", heading.id, &mut errors);
+                let Some(identity) = active_requirement.clone() else {
                     errors.push(Diag::expecting(path, heading.line,
-                        "Case verification has no enclosing Claim",
-                        "a `## Claim verification:` heading"));
+                        "Scenario verification has no enclosing Requirement",
+                        "a `## Requirement verification:` heading"));
                     continue;
                 };
-                let case = heading.id.to_string();
-                if cases.iter().any(|item: &CaseVerification| item.case == case) {
+                let scenario = heading.id.to_string();
+                if scenarios.iter().any(|item: &ScenarioVerification| item.scenario == scenario) {
                     errors.push(Diag::at(path, heading.line,
-                        format!("Case verification `{case}` is declared twice")));
+                        format!("Scenario verification `{scenario}` is declared twice")));
                 }
-                cases.push(CaseVerification {
-                    case: case.clone(), claim: identity, prose: prose(block), line: heading.line,
+                scenarios.push(ScenarioVerification {
+                    scenario: scenario.clone(), requirement: identity, prose: prose(block), line: heading.line,
                 });
 
 
 
             }
             (2, "Section") | (3, "Section") => {
-                if heading.level == 3 && active_claim.is_none() {
+                if heading.level == 3 && active_requirement.is_none() {
                     errors.push(Diag::expecting(
                         path,
                         heading.line,
-                        "nested Section has no Claim",
-                        "a `## Claim verification:` heading",
+                        "nested Section has no Requirement",
+                        "a `## Requirement verification:` heading",
                     ));
                 }
                 if heading.level == 2 {
@@ -284,8 +284,8 @@ pub fn parse_account_verification(
                     errors.push(Diag::expecting(
                         path,
                         heading.line,
-                        "Section has no enclosing Claim",
-                        "a `## Claim verification:` heading",
+                        "Section has no enclosing Requirement",
+                        "a `## Requirement verification:` heading",
                     ));
                 }
                 validate_local(path, heading.line, "Section", heading.id, &mut errors);
@@ -301,7 +301,7 @@ pub fn parse_account_verification(
                 }
                 sections.push(VerificationSection {
                     id: heading.id.to_string(),
-                    claim: active_claim.clone(),
+                    requirement: active_requirement.clone(),
                     prose: prose(block),
                     line: heading.line,
                 });
@@ -309,48 +309,48 @@ pub fn parse_account_verification(
 
 
             }
-            (3..=6, "Challenger") => {
-                validate_local(path, heading.line, "Challenger", heading.id, &mut errors);
-                if active_case.is_some() || matches!(structural_parent, Some("Check" | "Challenger" | "Element")) {
-                    errors.push(Diag::at(path, heading.line, "Challenger must be shared or Claim-owned, never Case-owned or inside another implementation declaration"));
+            (3..=6, "Verification Challenge") => {
+                validate_local(path, heading.line, "Verification Challenge", heading.id, &mut errors);
+                if active_scenario.is_some() || matches!(structural_parent, Some("Check" | "Verification Challenge" | "Element")) {
+                    errors.push(Diag::at(path, heading.line, "Verification Challenge must be shared or Requirement-owned, never Scenario-owned or inside another implementation declaration"));
                 }
                 let (fields, body) = read_fields(path, heading.line, block,
-                    &["Form", "Targets", "Claims", "Mechanisms", "Checks"], &mut errors);
+                    &["Form", "Targets", "Requirements", "Mechanisms", "Checks"], &mut errors);
                 let form = fields[0].first().cloned().unwrap_or_default();
                 if fields[0].len() != 1 || !matches!(form.as_str(), "mutation" | "source-analysis") {
-                    errors.push(Diag::at(path, heading.line, "machine Challenger Form must be mutation or source-analysis"));
+                    errors.push(Diag::at(path, heading.line, "machine Verification Challenge Form must be mutation or source-analysis"));
                 }
                 let targets = fields[1].clone();
-                if targets.is_empty() || targets.iter().any(|target| !matches!(target.as_str(), "claim-review" | "claim-health")) {
-                    errors.push(Diag::at(path, heading.line, "Targets must select claim-review or claim-health"));
+                if targets.is_empty() || targets.iter().any(|target| !matches!(target.as_str(), "requirement-review" | "requirement-status")) {
+                    errors.push(Diag::at(path, heading.line, "Targets must select requirement-review or requirement-status"));
                 }
-                let mut selected_claims = fields[2].clone();
-                if selected_claims.is_empty() {
-                    if let Some(claim) = &active_claim { selected_claims.push(claim.clone()); }
+                let mut selected_requirements = fields[2].clone();
+                if selected_requirements.is_empty() {
+                    if let Some(requirement) = &active_requirement { selected_requirements.push(requirement.clone()); }
                 }
-                if selected_claims.is_empty() || body.trim().is_empty() {
-                    errors.push(Diag::at(path, heading.line, "Challenger requires selected Claims and objection-search prose"));
+                if selected_requirements.is_empty() || body.trim().is_empty() {
+                    errors.push(Diag::at(path, heading.line, "Verification Challenge requires selected Requirements and objection-search prose"));
                 }
-                for id in selected_claims.iter().chain(fields[3].iter()).chain(fields[4].iter()) {
+                for id in selected_requirements.iter().chain(fields[3].iter()).chain(fields[4].iter()) {
                     validate_local(path, heading.line, "selected entity", id, &mut errors);
                 }
-                if challengers.iter().any(|item: &crate::verification::Challenger| item.id == heading.id) {
-                    errors.push(Diag::at(path, heading.line, "duplicate Challenger identity"));
+                if verification_challenges.iter().any(|item: &crate::verification::VerificationChallenge| item.id == heading.id) {
+                    errors.push(Diag::at(path, heading.line, "duplicate Verification Challenge identity"));
                 }
-                challengers.push(crate::verification::Challenger {
-                    id: heading.id.into(), form, targets, claims: selected_claims,
+                verification_challenges.push(crate::verification::VerificationChallenge {
+                    id: heading.id.into(), form, targets, requirements: selected_requirements,
                     mechanisms: fields[3].clone(), checks: fields[4].clone(),
                     searches_for: body.clone(), rationale: body, required_scope: Vec::new(),
                     path: path.into(), line: heading.line,
                 });
             }
             (3..=6, "Check") => {
-                let valid_parent = active_claim.is_some()
-                    && matches!(structural_parent, Some("Claim verification" | "Case verification" | "Section"))
+                let valid_parent = active_requirement.is_some()
+                    && matches!(structural_parent, Some("Requirement verification" | "Scenario verification" | "Section"))
                     && heading.level == parent_level + 1;
                 if !valid_parent {
                     errors.push(Diag::expecting(path, heading.line, "Check has invalid nesting",
-                        "a Check one heading level below a Claim, its Case verification, Section or ordinary caption, never inside a Check or Element"));
+                        "a Check one heading level below a Requirement, its Scenario verification, Section or ordinary caption, never inside a Check or Element"));
                     continue;
                 }
                 let check_id = match resolve_check_id(heading.id) {
@@ -360,8 +360,8 @@ pub fn parse_account_verification(
                         continue;
                     }
                 };
-                let identity = active_claim.as_ref().unwrap();
-                let parsed = read_check(path, heading.line, &check_id, identity, active_case.as_deref(), block, &mut errors);
+                let identity = active_requirement.as_ref().unwrap();
+                let parsed = read_check(path, heading.line, &check_id, identity, active_scenario.as_deref(), block, &mut errors);
                 if checks.iter().any(|item: &AuthoredCheck| item.definition.id == check_id) {
                     errors.push(Diag::at(path, heading.line, format!("Check `{check_id}` is declared twice")));
                 }
@@ -370,18 +370,18 @@ pub fn parse_account_verification(
 
             }
             (3, "Element") | (4, "Element") => {
-                let valid_parent = (heading.level == 3 && active_case.is_none()
-                    && ((active_claim.is_none() && active_section.is_some() && matches!(parent_level, 2 | 3))
-                        || (active_claim.is_some() && active_section.is_none() && matches!(parent_level, 2 | 3))))
-                    || (heading.level == 4 && active_claim.is_some()
-                        && (active_section.is_some() || active_case.is_some())
+                let valid_parent = (heading.level == 3 && active_scenario.is_none()
+                    && ((active_requirement.is_none() && active_section.is_some() && matches!(parent_level, 2 | 3))
+                        || (active_requirement.is_some() && active_section.is_none() && matches!(parent_level, 2 | 3))))
+                    || (heading.level == 4 && active_requirement.is_some()
+                        && (active_section.is_some() || active_scenario.is_some())
                         && matches!(parent_level, 3 | 4));
                 if !valid_parent {
                     errors.push(Diag::expecting(
                         path,
                         heading.line,
                         "Element has invalid nesting",
-                        "`### Element:` under a Claim or shared Section, or `#### Element:` under a Claim Section or Case verification",
+                        "`### Element:` under a Requirement or shared Section, or `#### Element:` under a Requirement Section or Scenario verification",
                     ));
                 }
                 validate_local(path, heading.line, "Element", heading.id, &mut errors);
@@ -401,9 +401,9 @@ pub fn parse_account_verification(
                 elements.push(VerificationElement {
                     id: heading.id.to_string(),
                     kind,
-                    claim: active_claim.clone(),
+                    requirement: active_requirement.clone(),
                     section: active_section.clone(),
-                    case: active_case.clone(),
+                    scenario: active_scenario.clone(),
                     prose: body,
                     line: heading.line,
                 });
@@ -417,7 +417,7 @@ pub fn parse_account_verification(
                     "#".repeat(heading.level),
                     format!(" {}: {}", heading.label, heading.id)
                 ),
-                "a Claim verification, Case verification, Section, Check or Element at its permitted nesting level",
+                "a Requirement verification, Scenario verification, Section, Check or Element at its permitted nesting level",
             )),
         }
     }
@@ -430,53 +430,58 @@ pub fn parse_account_verification(
         ));
         return Err(errors);
     };
-    if claims.is_empty() && sections.is_empty() {
+    if requirements.is_empty() && sections.is_empty() {
         errors.push(Diag::expecting(
             path,
             1,
-            "verification has no Claim scope or shared Section",
-            "at least one `## Claim verification:` or `## Section:` declaration",
+            "verification has no Requirement scope or shared Section",
+            "at least one `## Requirement verification:` or `## Section:` declaration",
         ));
     }
-    for claim in &claims {
-        for id in &claim.required_elements {
+    for requirement in &requirements {
+        for id in &requirement.required_elements {
             if let Some(element) = elements.iter().find(|element| &element.id == id) {
-                if element.claim.is_some() {
+                if element.requirement.is_some() {
                     errors.push(Diag::at(
                         path,
-                        claim.line,
-                        format!("explicit Required elements must reference a shared Element; `{id}` belongs to a Claim"),
+                        requirement.line,
+                        format!("explicit Required elements must reference a shared Element; `{id}` belongs to a Requirement"),
                     ));
                 }
             } else {
                 errors.push(Diag::at(
                     path,
-                    claim.line,
-                    format!("Claim `{}` requires undeclared Element `{id}`", claim.claim),
+                    requirement.line,
+                    format!(
+                        "Requirement `{}` requires undeclared Element `{id}`",
+                        requirement.requirement
+                    ),
                 ));
             }
         }
     }
-    for claim in &mut claims {
-        claim.required_elements.extend(
+    for requirement in &mut requirements {
+        requirement.required_elements.extend(
             elements
                 .iter()
-                .filter(|element| element.claim.as_deref() == Some(claim.claim.as_str()))
+                .filter(|element| {
+                    element.requirement.as_deref() == Some(requirement.requirement.as_str())
+                })
                 .map(|element| element.id.clone()),
         );
-        claim.required_elements.sort();
+        requirement.required_elements.sort();
     }
     if errors.is_empty() {
         Ok(AccountVerification {
             owner,
             path: path.to_string(),
             introduction,
-            claims,
+            requirements,
             sections,
-            cases,
+            scenarios,
             elements,
             checks,
-            challengers,
+            verification_challenges,
             package_entities,
         })
     } else {
@@ -522,11 +527,11 @@ fn collect_headings<'a>(path: &str, lines: &'a [&str], errors: &mut Vec<Diag>) -
         let rest = &line[level + 1..];
         let declarations = [
             "Verification",
-            "Claim verification",
-            "Case verification",
+            "Requirement verification",
+            "Scenario verification",
             "Section",
             "Check",
-            "Challenger",
+            "Verification Challenge",
             "Element",
             "Surface",
             "Expectation set",
@@ -606,7 +611,7 @@ fn read_fields(
         if label == "Kind"
             || (matches!(
                 label,
-                "Form" | "Targets" | "Claims" | "Mechanisms" | "Checks"
+                "Form" | "Targets" | "Requirements" | "Mechanisms" | "Checks"
             ) && !suffix.trim().is_empty())
         {
             let Some(value) = suffix
@@ -697,8 +702,8 @@ fn read_check_base(
     path: &str,
     line: usize,
     id: &str,
-    claim: &str,
-    enclosing_case: Option<&str>,
+    requirement: &str,
+    enclosing_scenario: Option<&str>,
     block: &[&str],
     errors: &mut Vec<Diag>,
 ) -> AuthoredCheck {
@@ -710,8 +715,8 @@ fn read_check_base(
             path,
             line,
             id,
-            claim,
-            enclosing_case,
+            requirement,
+            enclosing_scenario,
             block,
             errors,
         );
@@ -719,7 +724,7 @@ fn read_check_base(
     let mut methods = Vec::new();
     let mut terminal = None;
     let mut proposition = None;
-    let mut cases = None;
+    let mut scenarios = None;
     let mut mechanisms = Vec::new();
     let mut seen = BTreeSet::new();
     let mut cursor = 0;
@@ -733,7 +738,7 @@ fn read_check_base(
                 path,
                 number,
                 "invalid Check metadata",
-                "- Method:, Terminal:, Cases:, Mechanisms: or Proposition:",
+                "- Method:, Terminal:, Scenarios:, Mechanisms: or Proposition:",
             ));
             cursor += 1;
             continue;
@@ -763,7 +768,7 @@ fn read_check_base(
                 }
                 cursor += 1;
             }
-            "Cases" | "Mechanisms" => {
+            "Scenarios" | "Mechanisms" => {
                 if !suffix.trim().is_empty() {
                     errors.push(Diag::expecting(
                         path,
@@ -815,8 +820,8 @@ fn read_check_base(
                         format!("Check `{id}` has empty `{label}`"),
                     ));
                 }
-                if label == "Cases" {
-                    cases = Some(items);
+                if label == "Scenarios" {
+                    scenarios = Some(items);
                 } else {
                     mechanisms = items;
                 }
@@ -826,7 +831,7 @@ fn read_check_base(
                     path,
                     number,
                     format!("unknown Check metadata `{label}`"),
-                    "Method, Terminal, Cases, Mechanisms or Proposition",
+                    "Method, Terminal, Scenarios, Mechanisms or Proposition",
                 ));
                 cursor += 1;
             }
@@ -848,24 +853,24 @@ fn read_check_base(
             "exactly one - Terminal: proposition",
         ));
     }
-    let cases = cases.unwrap_or_else(|| {
-        enclosing_case
+    let scenarios = scenarios.unwrap_or_else(|| {
+        enclosing_scenario
             .map(|v| vec![v.to_string()])
             .unwrap_or_default()
     });
-    if cases.is_empty() {
+    if scenarios.is_empty() {
         errors.push(Diag::expecting(
             path,
             line,
-            format!("Check `{id}` has no Case relationship"),
-            "Case nesting or an explicit nonempty Cases list",
+            format!("Check `{id}` has no Scenario relationship"),
+            "Scenario nesting or an explicit nonempty Scenarios list",
         ));
     }
-    if enclosing_case.is_some_and(|owner| !cases.iter().any(|case| case == owner)) {
+    if enclosing_scenario.is_some_and(|owner| !scenarios.iter().any(|scenario| scenario == owner)) {
         errors.push(Diag::at(
             path,
             line,
-            format!("Check `{id}` Cases omit its enclosing Case"),
+            format!("Check `{id}` Scenarios omit its enclosing Scenario"),
         ));
     }
     AuthoredCheck {
@@ -877,8 +882,8 @@ fn read_check_base(
             path: path.to_string(),
             line,
         },
-        claim: claim.to_string(),
-        cases,
+        requirement: requirement.to_string(),
+        scenarios,
         mechanisms,
         proposition,
         bindings: Vec::new(),
@@ -891,8 +896,8 @@ fn read_check(
     path: &str,
     line: usize,
     id: &str,
-    claim: &str,
-    enclosing_case: Option<&str>,
+    requirement: &str,
+    enclosing_scenario: Option<&str>,
     block: &[&str],
     errors: &mut Vec<Diag>,
 ) -> AuthoredCheck {
@@ -935,7 +940,15 @@ fn read_check(
             .map_or(number, |(original, _)| line + original + 1)
     };
     let before = errors.len();
-    let mut check = read_check_base(path, line, id, claim, enclosing_case, &refs, errors);
+    let mut check = read_check_base(
+        path,
+        line,
+        id,
+        requirement,
+        enclosing_scenario,
+        &refs,
+        errors,
+    );
     for error in &mut errors[before..] {
         error.line = remap(error.line);
     }

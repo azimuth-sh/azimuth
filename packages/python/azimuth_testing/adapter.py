@@ -126,13 +126,13 @@ def main():
                 if previous["bundle_revision"] != revision:
                     raise ValueError("correction history is not contiguous")
             terminal_payload = {key: value for key, value in terminal.items() if key != "bundle_fingerprint"}
-            if helper.fingerprint(dict(format="azimuth-run-bundle-fingerprint", version=1, bundle=terminal_payload)) != terminal["bundle_fingerprint"]:
+            if helper.fingerprint(dict(format="azimuth-run-bundle-fingerprint", version=2, bundle=terminal_payload)) != terminal["bundle_fingerprint"]:
                 raise ValueError("correction predecessor content mismatch")
-            for key in ("run_id", "subject", "subject_fingerprint", "plan", "planned_at_ms", "started_at_ms"):
+            for key in ("run_id", "verification_target", "verification_target_fingerprint", "plan", "planned_at_ms", "started_at_ms"):
                 if terminal[key] != bundle[key]:
                     raise ValueError("correction changes an execution anchor")
-            if terminal["actual_selection"]["context"] != bundle["actual_selection"]["context"] or terminal["provenance"]["normalizer"] != bundle["provenance"]["normalizer"]:
-                raise ValueError("correction changes context or normalizer")
+            if terminal["actual_selection"]["execution_context"] != bundle["actual_selection"]["execution_context"] or terminal["provenance"]["normalizer"] != bundle["provenance"]["normalizer"]:
+                raise ValueError("correction changes Execution Context or normalizer")
             if terminal["provenance"]["source"] != bundle["provenance"]["source"]:
                 raise ValueError("correction changes native execution identity")
             for key, value in terminal["provenance"]["adapter"].items():
@@ -141,7 +141,7 @@ def main():
             bundle.update(bundle_revision=len(predecessors), corrects=terminal["bundle_fingerprint"],
                           correction_reason=reason)
             del bundle["bundle_fingerprint"]
-            bundle["bundle_fingerprint"] = helper.fingerprint(dict(format="azimuth-run-bundle-fingerprint", version=1, bundle=bundle))
+            bundle["bundle_fingerprint"] = helper.fingerprint(dict(format="azimuth-run-bundle-fingerprint", version=2, bundle=bundle))
         elif terminal is not None or "correction" in documents:
             raise ValueError("initial import cannot supply correction predecessor or reason")
         expected_request = helper.fingerprint(dict(format="azimuth-adapter-request-fingerprint", version=1, operation="import",

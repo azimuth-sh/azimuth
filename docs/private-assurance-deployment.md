@@ -18,9 +18,9 @@ Supply GitHub OAuth credentials registered for the configured web origin and /ap
 
 ## Verification and rollout
 
-Terraform configuration is preparation, not a deployment result. Before operator apply, inspect the plan, image selection, database ownership, private routes and tailnet grants. After deployment, verify sign-in allowed/denied paths, project confinement, rejected viewer writes, authorized machine submissions and current exact-Subject state inspection. Separately verify public unreachability, private resolution, certificate hostname and renewal, CI federation and database persistence/recovery. Preserve unresolved or failed checks as such; an inspection UI must not imply that missing evidence establishes a Claim.
+Terraform configuration is preparation, not a deployment result. Before operator apply, inspect the plan, image selection, database ownership, private routes and tailnet grants. After deployment, verify sign-in allowed/denied paths, project confinement, rejected viewer writes, authorized machine submissions and current exact-Verification-Target state inspection. Separately verify public unreachability, private resolution, certificate hostname and renewal, CI federation and database persistence/recovery. Preserve unresolved or failed checks as such; an inspection UI must not imply that missing evidence establishes a Requirement.
 
-The earlier isolated service API is not a source for current Assurance State. The current service owns immutable Run and review histories, explicit selected model authority and exact-Subject evaluation. This deployment does not automatically accept model authority, author reviews, schedule challenges or finalize a change.
+The earlier isolated service API is not a source for current Assurance State. The current service owns immutable Run and review histories, explicit selected model authority and exact-Verification-Target evaluation. This deployment does not automatically accept model authority, author reviews, schedule challenges or finalize a change.
 
 ## Image-only publication
 

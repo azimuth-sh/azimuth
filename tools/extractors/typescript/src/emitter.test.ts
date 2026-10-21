@@ -19,10 +19,10 @@ test('resolves a site to its enclosing function', () => {
   assert.equal(result.realizes.length, 1);
   assert.deepEqual(
     {
-      claim: result.realizes[0].claim,
+      requirement: result.realizes[0].requirement,
       site: result.realizes[0].site,
     },
-    { claim: 'route-thing', site: 'handler' },
+    { requirement: 'route-thing', site: 'handler' },
   );
   assert.equal(result.realizes[0].lang, 'typescript');
 });
@@ -43,13 +43,13 @@ test('resolves a site to a class method', () => {
   assert.equal(result.realizes[0].site, 'complete');
 });
 
-test('a site may realize several claims', () => {
+test('a site may realize several requirements', () => {
   const result = scanText(
     `function f() { realizes('first'); realizes('second'); }`,
     'a.ts',
   );
   assert.deepEqual(
-    result.realizes.map((r) => r.claim),
+    result.realizes.map((r) => r.requirement),
     ['first', 'second'],
   );
   assert.deepEqual(new Set(result.realizes.map((r) => r.site)), new Set(['f']));
@@ -139,7 +139,7 @@ test('a mechanism implementation emits the exact raw record and companion', () =
 test('a complete manifest uses the exact fingerprint lexical contract', () => {
   const dir = sourcePackage('@fixture/account', {
     'fixture.ts':
-    `declare function realizes(claim: string): void;
+    `declare function realizes(requirement: string): void;
      declare function implementsCheck(check: string): void;
      export function behavior() { realizes('behavior'); }
      export function mechanism() { implementsMechanism('guard'); }
@@ -913,10 +913,10 @@ test('an unmarked test is outside the Check model', () => {
     'a.test.ts',
   );
   assert.deepEqual(Object.keys(result).sort(), [
-    'challengerImplementations',
     'checkImplementations',
     'mechanismImplementations',
     'realizes',
+    'verificationChallengeImplementations',
     'warnings',
   ]);
   assert.equal(result.checkImplementations.length, 1);

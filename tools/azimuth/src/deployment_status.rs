@@ -1,6 +1,6 @@
-//! Deployment evidence applicability and deterministic Claim Status.
+//! Deployment evidence applicability and deterministic Requirement Status.
 use crate::json::Json;
-use crate::run::{ObservationOutcome, RunBundle, RunStatus, Subject};
+use crate::run::{CheckResultOutcome, RunBundle, RunStatus, VerificationTarget};
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_INTEGER: u64 = 9_007_199_254_740_991;
@@ -84,7 +84,7 @@ fn trusted(v: &Json) -> Result<bool, String> {
 
 pub fn validate_policy(v: &Json) -> Result<(), String> {
     let mut fields = vec![
-        "subject",
+        "verification_target",
         "components",
         "contexts",
         "contribution",
@@ -97,7 +97,7 @@ pub fn validate_policy(v: &Json) -> Result<(), String> {
     }
     shape(v, &fields)?;
     if v.get("configuration_sources").is_some() {
-        if text(v, "subject")? != "source" {
+        if text(v, "verification_target")? != "source" {
             return Err("configuration sources require source execution".into());
         }
         for repository in strings(v, "configuration_sources")? {
@@ -127,8 +127,11 @@ pub fn validate_policy(v: &Json) -> Result<(), String> {
             }
         }
     }
-    if !matches!(text(v, "subject")?, "source" | "artifact" | "deployment") {
-        return Err("unsupported deployment Check subject".into());
+    if !matches!(
+        text(v, "verification_target")?,
+        "source" | "artifact" | "deployment"
+    ) {
+        return Err("unsupported deployment Check verification target".into());
     }
     let components = strings(v, "components")?;
     if components.is_empty() {
@@ -155,8 +158,8 @@ pub fn validate_policy(v: &Json) -> Result<(), String> {
         if interval == 0 || freshness < interval || freshness > MAX_INTEGER / 1000 {
             return Err("Monitor freshness must cover its positive interval".into());
         }
-        if text(v, "subject")? != "deployment" {
-            return Err("Monitor requires deployment execution Subject".into());
+        if text(v, "verification_target")? != "deployment" {
+            return Err("Monitor requires deployment execution Verification Target".into());
         }
     }
     Ok(())
@@ -207,9 +210,8 @@ pub fn validate_context_contract(v: &Json) -> Result<(), String> {
 
 pub fn validate_context_report(report: &Json, contracts: &[Json]) -> Result<(), String> {
     shape(report, &["format", "version", "contexts"])?;
-    if text(report, "format")? != "azimuth-verification-context" || number(report, "version")? != 1
-    {
-        return Err("unsupported verification context report".into());
+    if text(report, "format")? != "azimuth-execution-context" || number(report, "version")? != 2 {
+        return Err("unsupported Execution Context report".into());
     }
     let Json::Obj(contexts) = field(report, "contexts")? else {
         return Err("contexts requires object".into());
@@ -269,7 +271,7 @@ pub fn validate_capture(v: &Json, contracts: &[Json]) -> Result<(), String> {
             "run",
             "activity",
             "bundle_fingerprint",
-            "subject_fingerprint",
+            "verification_target_fingerprint",
             "component",
             "instance",
             "started_at_ms",
@@ -297,7 +299,7 @@ pub fn validate_capture(v: &Json, contracts: &[Json]) -> Result<(), String> {
         }
         text(v, "activity")?;
     }
-    digest(text(v, "subject_fingerprint")?)?;
+    digest(text(v, "verification_target_fingerprint")?)?;
     crate::diag::validate_id(text(v, "component")?, false)?;
     text(v, "instance")?;
     trusted(v)?;
@@ -325,7 +327,7 @@ struct Inputs<'a> {
     contracts: &'a [Json],
     captures: &'a [Json],
     now: u64,
-    subject: String,
+    verification_target: String,
     components: BTreeMap<String, String>,
     deployment_reasons: Vec<String>,
 }
@@ -334,7 +336,7 @@ fn validate_observation(v: &Json) -> Result<(), String> {
     shape(
         v,
         &[
-            "subject_fingerprint",
+            "verification_target_fingerprint",
             "observed_at_ms",
             "valid_for_seconds",
             "state",
@@ -342,7 +344,7 @@ fn validate_observation(v: &Json) -> Result<(), String> {
             "trusted",
         ],
     )?;
-    digest(text(v, "subject_fingerprint")?)?;
+    digest(text(v, "verification_target_fingerprint")?)?;
     number(v, "observed_at_ms")?;
     let seconds = number(v, "valid_for_seconds")?;
     if seconds == 0 || seconds > MAX_INTEGER / 1000 {
@@ -388,7 +390,7 @@ impl<'a> Inputs<'a> {
             ],
         )?;
         if text(request, "format")? != "azimuth-deployment-assessment"
-            || number(request, "version")? != 1
+            || number(request, "version")? != 2
         {
             return Err("unsupported deployment assessment request".into());
         }
@@ -400,14 +402,15 @@ impl<'a> Inputs<'a> {
             .map(|a| text(a, "digest").map(str::to_string))
             .collect::<Result<BTreeSet<_>, _>>()?;
         crate::release::verify_deployment(deployment, &artifacts)?;
-        let subject = text(deployment, "subject_fingerprint")?.to_string();
-        let native = crate::run::subject_from_json(field(deployment, "subject")?)?;
-        let Subject::Deployment {
+        let verification_target = text(deployment, "verification_target_fingerprint")?.to_string();
+        let native =
+            crate::run::verification_target_from_json(field(deployment, "verification_target")?)?;
+        let VerificationTarget::Deployment {
             artifacts: deployed,
             ..
         } = native
         else {
-            return Err("assessment requires deployment Subject".into());
+            return Err("assessment requires deployment Verification Target".into());
         };
         let components = deployed
             .into_iter()
@@ -432,8 +435,8 @@ impl<'a> Inputs<'a> {
         if !trusted(observation)? {
             reasons.push("deployment observation is not trusted".into());
         }
-        if text(observation, "subject_fingerprint")? != subject {
-            reasons.push("deployment observation belongs to another Subject".into());
+        if text(observation, "verification_target_fingerprint")? != verification_target {
+            reasons.push("deployment observation belongs to another Verification Target".into());
         }
         if text(observation, "state")? != "complete" {
             reasons.push("deployment composition is not completely observed".into());
@@ -450,7 +453,7 @@ impl<'a> Inputs<'a> {
             .map(|c| Ok((text(c, "id")?.to_string(), text(c, "digest")?.to_string())))
             .collect::<Result<BTreeMap<_, _>, String>>()?;
         if observed != components {
-            reasons.push("observed components differ from deployment Subject".into());
+            reasons.push("observed components differ from deployment Verification Target".into());
         }
         if let Some(release_components) = release.get("components").and_then(Json::as_array) {
             for (id, digest) in &components {
@@ -473,7 +476,7 @@ impl<'a> Inputs<'a> {
             contracts,
             captures,
             now,
-            subject,
+            verification_target,
             components,
             deployment_reasons: reasons,
         })
@@ -489,13 +492,16 @@ impl<'a> Inputs<'a> {
                 .ok_or_else(|| format!("component `{id}` is not deployed"))?;
             digests.insert(id, digest.clone());
         }
-        match (text(policy, "subject")?, &bundle.subject) {
-            ("deployment", Subject::Deployment { .. })
-                if bundle.subject_fingerprint == self.subject =>
+        match (
+            text(policy, "verification_target")?,
+            &bundle.verification_target,
+        ) {
+            ("deployment", VerificationTarget::Deployment { .. })
+                if bundle.verification_target_fingerprint == self.verification_target =>
             {
                 Ok(())
             }
-            ("artifact", Subject::Artifact { artifacts }) => {
+            ("artifact", VerificationTarget::Artifact { artifacts }) => {
                 let actual = artifacts
                     .iter()
                     .map(|a| (a.id.clone(), a.digest.clone()))
@@ -506,8 +512,8 @@ impl<'a> Inputs<'a> {
                     Err("Run artifacts differ from scoped deployed components".into())
                 }
             }
-            ("source", Subject::Source { repositories })
-            | ("source", Subject::CiCandidate { repositories }) => {
+            ("source", VerificationTarget::Source { repositories })
+            | ("source", VerificationTarget::CiCandidate { repositories }) => {
                 let mut required = BTreeSet::new();
                 for digest in digests.values() {
                     let producers = array(self.release, "builds")?
@@ -560,7 +566,10 @@ impl<'a> Inputs<'a> {
                     Err("Run source inputs differ from complete component build inputs".into())
                 }
             }
-            _ => Err("Run Subject kind or deployment identity differs from Check policy".into()),
+            _ => Err(
+                "Run Verification Target kind or deployment identity differs from Check policy"
+                    .into(),
+            ),
         }
     }
 
@@ -569,7 +578,7 @@ impl<'a> Inputs<'a> {
         policy: &Json,
         bundle: &RunBundle,
         execution: &crate::run::CheckExecution,
-        case: &str,
+        scenario: &str,
     ) -> Result<Vec<Json>, String> {
         if policy.get("units").is_some() {
             let required = strings(policy, "units")?;
@@ -615,7 +624,7 @@ impl<'a> Inputs<'a> {
                 let mut positive = false;
                 for unit in &execution.units {
                     for attempt in &unit.attempts {
-                        if !attempt.outcomes.contains_key(case) {
+                        if !attempt.outcomes.contains_key(scenario) {
                             continue;
                         }
                         let activity = bundle
@@ -657,8 +666,8 @@ impl<'a> Inputs<'a> {
                             if !trusted(capture)?
                                 || number(capture, "finished_at_ms")?
                                     > self.now.saturating_add(CLOCK_SKEW_MS)
-                                || text(capture, "subject_fingerprint")?
-                                    != bundle.subject_fingerprint
+                                || text(capture, "verification_target_fingerprint")?
+                                    != bundle.verification_target_fingerprint
                                 || number(capture, "started_at_ms")? > start
                                 || number(capture, "finished_at_ms")? < finish
                             {
@@ -670,7 +679,7 @@ impl<'a> Inputs<'a> {
                             } else {
                                 format!("context/{fp}/activity/{}", activity.id)
                             };
-                            if bundle.actual_selection.context.get(&key)
+                            if bundle.actual_selection.execution_context.get(&key)
                                 != Some(&canonical(&value)?)
                             {
                                 return Err(
@@ -688,8 +697,8 @@ impl<'a> Inputs<'a> {
                             dependencies.push(capture_reference(capture)?);
                         }
                         if !controlled.contains(&unit.id) {
-                            positive |=
-                                attempt.outcomes.get(case) == Some(&ObservationOutcome::Satisfied);
+                            positive |= attempt.outcomes.get(scenario)
+                                == Some(&CheckResultOutcome::Satisfied);
                             tested.push(captured.unwrap());
                         }
                     }
@@ -697,13 +706,14 @@ impl<'a> Inputs<'a> {
                 if tested.is_empty()
                     || (!controlled.is_empty()
                         && !positive
-                        && execution.observations.iter().any(|observation| {
-                            observation.case == case
-                                && observation.outcome == ObservationOutcome::Satisfied
+                        && execution.results.iter().any(|check_result| {
+                            check_result.scenario == scenario
+                                && check_result.outcome == CheckResultOutcome::Satisfied
                         }))
                 {
                     return Err(
-                        "control activities cannot alone establish positive Case support".into(),
+                        "control activities cannot alone establish positive Scenario support"
+                            .into(),
                     );
                 }
                 let observed = array(self.observation, "components")?
@@ -720,8 +730,9 @@ impl<'a> Inputs<'a> {
                         .iter()
                         .filter(|c| {
                             c.get("kind").and_then(Json::as_str) == Some("deployment")
-                                && c.get("subject_fingerprint").and_then(Json::as_str)
-                                    == Some(self.subject.as_str())
+                                && c.get("verification_target_fingerprint")
+                                    .and_then(Json::as_str)
+                                    == Some(self.verification_target.as_str())
                                 && c.get("component").and_then(Json::as_str)
                                     == Some(component.as_str())
                                 && c.get("instance").and_then(Json::as_str)
@@ -799,7 +810,7 @@ fn capture_reference(capture: &Json) -> Result<Json, String> {
 
 struct Candidate<'a> {
     bundle: &'a RunBundle,
-    observation: &'a crate::run::Observation,
+    check_result: &'a crate::run::CheckResult,
     dependencies: Vec<Json>,
     inapplicable: Option<String>,
 }
@@ -851,26 +862,26 @@ pub fn assess_selected(
         }
     }
     if let Some(selected) = selected {
-        let declared = array(authority, "claims")?
+        let declared = array(authority, "requirements")?
             .iter()
-            .map(|claim| text(claim, "id"))
+            .map(|requirement| text(requirement, "id"))
             .collect::<Result<BTreeSet<_>, _>>()?;
         if selected.iter().any(|id| !declared.contains(id.as_str())) {
-            return Err("selected Claim is absent from the complete authority".into());
+            return Err("selected Requirement is absent from the complete authority".into());
         }
     }
-    let mut claims = Vec::new();
-    for claim in array(authority, "claims")? {
-        let id = text(claim, "id")?;
+    let mut requirements = Vec::new();
+    for requirement in array(authority, "requirements")? {
+        let id = text(requirement, "id")?;
         if selected.is_some_and(|ids| !ids.contains(id)) {
             continue;
         }
         let target = Json::obj(vec![
-            ("kind", Json::str("claim-review")),
-            ("claim", Json::str(id)),
+            ("kind", Json::str("requirement-review")),
+            ("requirement", Json::str(id)),
         ]);
         let latest = crate::assurance_review::latest_review(&reviews, &target);
-        let (review_status, review_record) = if text(claim, "criticality")? == "routine" {
+        let (review_status, review_record) = if text(requirement, "criticality")? == "routine" {
             ("not-required".to_string(), None)
         } else {
             match latest {
@@ -885,7 +896,7 @@ pub fn assess_selected(
         let review_ok = review_status == "accepted" || review_status == "not-required";
         let mut reasons = input.deployment_reasons.clone();
         if !review_ok {
-            reasons.push(format!("Claim Review is {review_status}"));
+            reasons.push(format!("Requirement Review is {review_status}"));
         }
         let mut dependencies = vec![Json::obj(vec![
             ("kind", Json::str("release")),
@@ -893,12 +904,12 @@ pub fn assess_selected(
         ])];
         if let Some(r) = review_record {
             dependencies.push(Json::obj(vec![
-                ("kind", Json::str("claim-review")),
+                ("kind", Json::str("requirement-review")),
                 ("fingerprint", field(r, "fingerprint")?.clone()),
             ]));
         }
-        let cases = strings(claim, "cases")?;
-        let mut supported_cases = BTreeSet::new();
+        let scenarios = strings(requirement, "scenarios")?;
+        let mut supported_scenarios = BTreeSet::new();
         let mut bindings_out = Vec::new();
         let mut coverage = Vec::new();
         let mut supporting_evidence = Vec::new();
@@ -908,21 +919,21 @@ pub fn assess_selected(
         let mut adverse = Vec::new();
         let mut definitive = false;
         let mut all_bindings = true;
-        let claim_bindings = array(authority, "bindings")?
+        let requirement_bindings = array(authority, "bindings")?
             .iter()
             .filter(|b| {
-                b.get("case")
+                b.get("scenario")
                     .and_then(Json::as_str)
-                    .is_some_and(|c| cases.contains(c))
+                    .is_some_and(|c| scenarios.contains(c))
             })
             .collect::<Vec<_>>();
-        if claim_bindings.is_empty() {
+        if requirement_bindings.is_empty() {
             all_bindings = false;
-            reasons.push("Claim has no required Check/Case bindings".into());
+            reasons.push("Requirement has no required Check/Scenario bindings".into());
         }
-        for binding in claim_bindings {
+        for binding in requirement_bindings {
             let check_id = text(binding, "check")?;
-            let case = text(binding, "case")?;
+            let scenario = text(binding, "scenario")?;
             let check = array(authority, "checks")?
                 .iter()
                 .find(|c| c.get("id").and_then(Json::as_str) == Some(check_id))
@@ -952,12 +963,12 @@ pub fn assess_selected(
                         {
                             continue;
                         }
-                        let observations = execution
-                            .observations
+                        let check_results = execution
+                            .results
                             .iter()
-                            .filter(|o| o.case == case)
+                            .filter(|o| o.scenario == scenario)
                             .collect::<Vec<_>>();
-                        if observations.is_empty() {
+                        if check_results.is_empty() {
                             continue;
                         }
                         if let Err(reason) = input.scope(policy, bundle) {
@@ -965,7 +976,7 @@ pub fn assess_selected(
                             continue;
                         }
                         let (context_dependencies, inapplicable) =
-                            match input.contexts(policy, bundle, execution, case) {
+                            match input.contexts(policy, bundle, execution, scenario) {
                                 Ok(v) => (v, None),
                                 Err(reason) if monitored => (Vec::new(), Some(reason)),
                                 Err(reason) => {
@@ -973,10 +984,10 @@ pub fn assess_selected(
                                     continue;
                                 }
                             };
-                        for observation in observations {
+                        for check_result in check_results {
                             candidates.push(Candidate {
                                 bundle,
-                                observation,
+                                check_result,
                                 dependencies: context_dependencies.clone(),
                                 inapplicable: inapplicable.clone(),
                             });
@@ -988,24 +999,24 @@ pub fn assess_selected(
             }
             let mut selected = candidates.iter().collect::<Vec<_>>();
             if monitored {
-                if let Some(latest) = selected.iter().map(|c| c.observation.observed_at_ms).max() {
-                    selected.retain(|c| c.observation.observed_at_ms == latest);
+                if let Some(latest) = selected.iter().map(|c| c.check_result.observed_at_ms).max() {
+                    selected.retain(|c| c.check_result.observed_at_ms == latest);
                 }
-                let latest_observation = selected
+                let latest_check_result = selected
                     .iter()
-                    .map(|c| c.observation.observed_at_ms)
+                    .map(|c| c.check_result.observed_at_ms)
                     .max()
                     .unwrap_or(0);
                 if incomplete_monitors
                     .iter()
-                    .any(|time| *time >= latest_observation)
+                    .any(|time| *time >= latest_check_result)
                 {
                     selected.clear();
                     missing.push("latest Monitor execution is incomplete".into());
                 }
             }
             let mut outcomes = BTreeSet::new();
-            let mut binding_observations = Vec::new();
+            let mut binding_check_results = Vec::new();
             let mut binding_ok = !selected.is_empty();
             for candidate in &selected {
                 let mut usable = input.deployment_reasons.is_empty();
@@ -1013,68 +1024,68 @@ pub fn assess_selected(
                     usable = false;
                     missing.push(reason.clone());
                 }
-                let observation = candidate.observation;
+                let check_result = candidate.check_result;
                 if candidate.bundle.status != RunStatus::Complete {
                     usable = false;
                     missing.push("Run is incomplete".into());
                 }
-                if observation.observed_at_ms > input.now.saturating_add(CLOCK_SKEW_MS) {
+                if check_result.observed_at_ms > input.now.saturating_add(CLOCK_SKEW_MS) {
                     usable = false;
-                    missing.push("Check observation is future-dated".into());
+                    missing.push("Check Result is future-dated".into());
                 }
                 if monitored {
                     let freshness =
                         number(field(policy.unwrap(), "monitor")?, "freshness_seconds")?
                             .saturating_mul(1000);
-                    if input.now.saturating_sub(observation.observed_at_ms) > freshness {
+                    if input.now.saturating_sub(check_result.observed_at_ms) > freshness {
                         usable = false;
-                        missing.push("Monitor observation is overdue".into());
+                        missing.push("Monitor Check Result is overdue".into());
                     }
                 }
                 let reference = Json::obj(vec![
-                    ("kind", Json::str("observation")),
+                    ("kind", Json::str("check-result")),
                     ("run", Json::str(&candidate.bundle.run_id)),
                     (
                         "bundle_fingerprint",
                         Json::str(&candidate.bundle.bundle_fingerprint),
                     ),
-                    ("fingerprint", Json::str(&observation.fingerprint)),
-                    ("observation", Json::str(&observation.fingerprint)),
+                    ("fingerprint", Json::str(&check_result.fingerprint)),
+                    ("check_result", Json::str(&check_result.fingerprint)),
                     ("check", Json::str(check_id)),
-                    ("case", Json::str(case)),
+                    ("scenario", Json::str(scenario)),
                     (
                         "observed_at_ms",
-                        Json::Num(observation.observed_at_ms as f64),
+                        Json::Num(check_result.observed_at_ms as f64),
                     ),
                     ("selected_in_basis", Json::Bool(usable)),
                     ("accepted_basis", Json::Bool(usable)),
                     (
                         "diagnostics",
-                        Json::Arr(observation.diagnostics.iter().map(Json::str).collect()),
+                        Json::Arr(check_result.diagnostics.iter().map(Json::str).collect()),
                     ),
                     (
-                        "subject_fingerprint",
-                        Json::str(&candidate.bundle.subject_fingerprint),
+                        "verification_target_fingerprint",
+                        Json::str(&candidate.bundle.verification_target_fingerprint),
                     ),
-                    ("outcome", Json::str(observation.outcome.name())),
+                    ("outcome", Json::str(check_result.outcome.name())),
                     ("applicable", Json::Bool(usable)),
                 ]);
-                binding_observations.push(reference.clone());
+                binding_check_results.push(reference.clone());
                 if !usable {
                     unassessed_evidence.push(reference.clone());
                 }
                 if usable {
-                    match observation.outcome {
-                        ObservationOutcome::Satisfied => {
+                    match check_result.outcome {
+                        CheckResultOutcome::Satisfied => {
                             supporting_evidence.push(reference.clone())
                         }
-                        ObservationOutcome::Violated => violated_evidence.push(reference.clone()),
-                        ObservationOutcome::Inconclusive => {
+                        CheckResultOutcome::Violated => violated_evidence.push(reference.clone()),
+                        CheckResultOutcome::Inconclusive => {
                             inconclusive_evidence.push(reference.clone())
                         }
                     }
-                    outcomes.insert(observation.outcome.name());
-                    if observation.outcome == ObservationOutcome::Violated {
+                    outcomes.insert(check_result.outcome.name());
+                    if check_result.outcome == CheckResultOutcome::Violated {
                         adverse.push(reference.clone());
                     }
                     dependencies.push(reference);
@@ -1085,11 +1096,11 @@ pub fn assess_selected(
             }
             if outcomes.len() > 1 {
                 binding_ok = false;
-                missing.push("current Check observations disagree".into());
+                missing.push("current Check Results disagree".into());
             }
             if outcomes.contains("inconclusive") {
                 binding_ok = false;
-                missing.push("current Check result is inconclusive".into());
+                missing.push("current Check Result is inconclusive".into());
             }
             if outcomes.contains("violated") {
                 binding_ok = false;
@@ -1100,12 +1111,12 @@ pub fn assess_selected(
                     definitive = true;
                 } else {
                     missing.push(
-                        "adverse Check result has no declared counterexample contribution".into(),
+                        "adverse Check Result has no declared counterexample contribution".into(),
                     );
                 }
             }
             if selected.is_empty() {
-                missing.push("no applicable current Check observation".into());
+                missing.push("no applicable current Check Result".into());
                 binding_ok = false;
             }
             if outcomes.contains("satisfied")
@@ -1114,7 +1125,7 @@ pub fn assess_selected(
                     p.get("contribution").and_then(Json::as_str) != Some("counterexample")
                 })
             {
-                supported_cases.insert(case.to_string());
+                supported_scenarios.insert(scenario.to_string());
             }
             if !binding_ok {
                 all_bindings = false;
@@ -1122,11 +1133,15 @@ pub fn assess_selected(
             missing.sort();
             missing.dedup();
             if !binding_ok {
-                reasons.extend(missing.iter().map(|m| format!("{check_id}/{case}: {m}")));
+                reasons.extend(
+                    missing
+                        .iter()
+                        .map(|m| format!("{check_id}/{scenario}: {m}")),
+                );
             }
             coverage.push(Json::obj(vec![
                 ("check", Json::str(check_id)),
-                ("case", Json::str(case)),
+                ("scenario", Json::str(scenario)),
                 (
                     "status",
                     Json::str(if binding_ok {
@@ -1135,11 +1150,11 @@ pub fn assess_selected(
                         "unresolved"
                     }),
                 ),
-                ("observations", Json::Arr(binding_observations)),
+                ("check_results", Json::Arr(binding_check_results)),
             ]));
             bindings_out.push(Json::obj(vec![
                 ("check", Json::str(check_id)),
-                ("case", Json::str(case)),
+                ("scenario", Json::str(scenario)),
                 (
                     "status",
                     Json::str(if binding_ok {
@@ -1161,12 +1176,12 @@ pub fn assess_selected(
                 ),
             ]));
         }
-        for case in cases.difference(&supported_cases) {
+        for scenario in scenarios.difference(&supported_scenarios) {
             reasons.push(format!(
-                "Case `{case}` lacks applicable supporting evidence"
+                "Scenario `{scenario}` lacks applicable supporting evidence"
             ));
         }
-        for gap in array(claim, "gaps")? {
+        for gap in array(requirement, "gaps")? {
             if let Some(gap) = gap.as_str() {
                 reasons.push(gap.into());
             }
@@ -1177,8 +1192,8 @@ pub fn assess_selected(
             "violated"
         } else if review_ok
             && all_bindings
-            && cases == supported_cases
-            && !cases.is_empty()
+            && scenarios == supported_scenarios
+            && !scenarios.is_empty()
             && reasons.is_empty()
         {
             "supported"
@@ -1186,9 +1201,9 @@ pub fn assess_selected(
             "unresolved"
         };
         let summary = if status == "supported" {
-            "All required deployment evidence supports the Claim".into()
+            "All required deployment evidence supports the Requirement".into()
         } else if status == "violated" {
-            "Applicable evidence provides a declared counterexample to the Claim".into()
+            "Applicable evidence provides a declared counterexample to the Requirement".into()
         } else {
             reasons
                 .first()
@@ -1248,7 +1263,7 @@ pub fn assess_selected(
             ("reasons", Json::Arr(reason_records)),
             ("review", review_details),
             (
-                "health",
+                "requirement_status",
                 Json::obj(vec![
                     ("status", Json::str("computed")),
                     ("fingerprint", Json::Null),
@@ -1271,15 +1286,15 @@ pub fn assess_selected(
             ("dependencies", Json::Arr(dependencies.clone())),
             ("adverse", Json::Arr(adverse)),
         ]);
-        claims.push(Json::obj(vec![
-            ("claim", Json::str(id)),
+        requirements.push(Json::obj(vec![
+            ("requirement", Json::str(id)),
             ("status", Json::str(status)),
             ("review", Json::str(review_status)),
             (
                 "diagnostics",
                 Json::Arr(reasons.iter().map(Json::str).collect()),
             ),
-            ("gaps", field(claim, "gaps")?.clone()),
+            ("gaps", field(requirement, "gaps")?.clone()),
             ("bindings", Json::Arr(bindings_out)),
             ("challenges", Json::Arr(vec![])),
             ("explanation", explanation),
@@ -1289,7 +1304,7 @@ pub fn assess_selected(
     }
     Ok(Json::obj(vec![
         ("format", Json::str("azimuth-deployment-status")),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         ("project", field(authority, "project")?.clone()),
         (
             "authority_fingerprint",
@@ -1299,10 +1314,13 @@ pub fn assess_selected(
             "model_fingerprint",
             field(authority, "model_fingerprint")?.clone(),
         ),
-        ("subject_fingerprint", Json::str(&input.subject)),
+        (
+            "verification_target_fingerprint",
+            Json::str(&input.verification_target),
+        ),
         ("deployment", field(input.deployment, "id")?.clone()),
         ("evaluated_at_ms", Json::Num(input.now as f64)),
-        ("claims", Json::Arr(claims)),
+        ("requirements", Json::Arr(requirements)),
     ]))
 }
 

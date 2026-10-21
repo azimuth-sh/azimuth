@@ -1,95 +1,16 @@
-CREATE TABLE projects (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    created_at BIGINT NOT NULL,
-    content_fingerprint TEXT NOT NULL
-);
-
-CREATE TABLE project_model_snapshots (
-    sequence BIGSERIAL NOT NULL UNIQUE,
-    project_id TEXT NOT NULL REFERENCES projects(id),
-    id TEXT NOT NULL,
-    model_fingerprint TEXT NOT NULL,
-    content_fingerprint TEXT NOT NULL,
-    PRIMARY KEY (project_id, id)
-);
-
-CREATE INDEX ix_project_model_snapshots_history
-    ON project_model_snapshots(project_id, sequence DESC);
-
-CREATE TABLE evidence_definitions (
-    project_id TEXT NOT NULL REFERENCES projects(id),
-    logical_id TEXT NOT NULL,
-    definition_fingerprint TEXT NOT NULL,
-    declared_at BIGINT NOT NULL,
-    content_fingerprint TEXT NOT NULL,
-    PRIMARY KEY (project_id, logical_id, definition_fingerprint)
-);
-
-CREATE INDEX ix_evidence_definitions_current
-    ON evidence_definitions(project_id, logical_id, declared_at DESC);
-
-CREATE TABLE qualifications (
-    project_id TEXT NOT NULL REFERENCES projects(id),
-    id TEXT NOT NULL,
-    definition_id TEXT NOT NULL,
-    definition_fingerprint TEXT NOT NULL,
-    qualified_at BIGINT NOT NULL,
-    content_fingerprint TEXT NOT NULL,
-    PRIMARY KEY (project_id, id)
-);
-
-CREATE TABLE observations (
-    project_id TEXT NOT NULL REFERENCES projects(id),
-    id TEXT NOT NULL,
-    definition_id TEXT NOT NULL,
-    definition_fingerprint TEXT NOT NULL,
-    observed_at BIGINT NOT NULL,
-    content_fingerprint TEXT NOT NULL,
-    PRIMARY KEY (project_id, id)
-);
-
-CREATE TABLE challenges (
-    project_id TEXT NOT NULL REFERENCES projects(id),
-    id TEXT NOT NULL,
-    source TEXT NOT NULL,
-    definition_id TEXT NOT NULL,
-    definition_fingerprint TEXT NOT NULL,
-    observed_at BIGINT NOT NULL,
-    content_fingerprint TEXT NOT NULL,
-    PRIMARY KEY (project_id, id)
-);
-
-CREATE TABLE gate_decisions (
-    sequence BIGSERIAL NOT NULL UNIQUE,
-    project_id TEXT NOT NULL REFERENCES projects(id),
-    id UUID NOT NULL,
-    definition_id TEXT NOT NULL,
-    stage TEXT NOT NULL,
-    target_fingerprint TEXT NOT NULL,
-    evaluated_at BIGINT NOT NULL,
-    PRIMARY KEY (project_id, id)
-);
-
-CREATE INDEX ix_gate_decisions_history
-    ON gate_decisions(project_id, sequence DESC);
-
-CREATE INDEX ix_gate_decisions_current_target
-    ON gate_decisions(project_id, target_fingerprint, sequence DESC);
-
 CREATE TABLE run_bundles (
     project TEXT NOT NULL,
     run_id TEXT NOT NULL,
     revision BIGINT NOT NULL CHECK (revision >= 0),
     fingerprint TEXT NOT NULL,
-    subject_fingerprint TEXT NOT NULL,
+    verification_target_fingerprint TEXT NOT NULL,
     model_fingerprint TEXT NOT NULL,
     ingested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (project, run_id, revision),
     UNIQUE (project, fingerprint)
 );
 
-CREATE INDEX ix_run_bundles_subject ON run_bundles(project, subject_fingerprint, run_id, revision DESC);
+CREATE INDEX ix_run_bundles_verification_target ON run_bundles(project, verification_target_fingerprint, run_id, revision DESC);
 
 CREATE TABLE assurance_authorities (
     project text NOT NULL,

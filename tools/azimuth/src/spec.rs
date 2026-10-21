@@ -7,14 +7,14 @@
 //! Two failure modes are kept apart on purpose:
 //!
 //! - an unrecognized **construct** fails the parse (fail loudly);
-//! - a missing **declaration** becomes a Finding (a claim without `Criticality:` parses
+//! - a missing **declaration** becomes a Finding (a requirement without `Criticality:` parses
 //!   and is reported as `unclassified`).
 //!
 //! Conflating them would either let syntax errors through as findings, or turn a semantic gap
 //! into something a reviewer never sees in the matrix.
 
 use crate::diag::{validate_id, Diag};
-use crate::model::{Case, Claim, Criticality, Domain, Spec, Term};
+use crate::model::{Criticality, Domain, Requirement, Scenario, Spec, Term};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -77,16 +77,19 @@ pub fn load_specs(root: &Path) -> Result<Loaded, Vec<Diag>> {
         }
     }
 
-    let mut claim_ids = std::collections::BTreeMap::new();
-    let mut case_ids = std::collections::BTreeMap::new();
+    let mut requirement_ids = std::collections::BTreeMap::new();
+    let mut scenario_ids = std::collections::BTreeMap::new();
     for spec in &specs {
-        for claim in &spec.claims {
-            if let Some(previous) = claim_ids.insert(claim.id.clone(), spec.path.clone()) {
-                errors.push(Diag::at(&spec.path, claim.line, format!("Claim ID `{}` is already declared by {previous}; IDs are project-wide within their kind", claim.id)));
+        for requirement in &spec.requirements {
+            if let Some(previous) =
+                requirement_ids.insert(requirement.id.clone(), spec.path.clone())
+            {
+                errors.push(Diag::at(&spec.path, requirement.line, format!("Requirement ID `{}` is already declared by {previous}; IDs are project-wide within their kind", requirement.id)));
             }
-            for case in &claim.cases {
-                if let Some(previous) = case_ids.insert(case.id.clone(), spec.path.clone()) {
-                    errors.push(Diag::at(&spec.path, case.line, format!("Case ID `{}` is already declared by {previous}; parent Claim does not disambiguate identity", case.id)));
+            for scenario in &requirement.scenarios {
+                if let Some(previous) = scenario_ids.insert(scenario.id.clone(), spec.path.clone())
+                {
+                    errors.push(Diag::at(&spec.path, scenario.line, format!("Scenario ID `{}` is already declared by {previous}; parent Requirement does not disambiguate identity", scenario.id)));
                 }
             }
         }
@@ -122,7 +125,7 @@ pub fn parse_spec(path: &str, source: &str) -> Result<Spec, Vec<Diag>> {
         path,
         errors: Vec::new(),
         id: None,
-        claims: Vec::new(),
+        requirements: Vec::new(),
         terms: Vec::new(),
         fenced: false,
     };
@@ -134,7 +137,7 @@ struct SpecParser<'a> {
     path: &'a str,
     errors: Vec<Diag>,
     id: Option<String>,
-    claims: Vec<Claim>,
+    requirements: Vec<Requirement>,
     terms: Vec<Term>,
     fenced: bool,
 }
@@ -149,7 +152,7 @@ impl<'a> SpecParser<'a> {
             let trimmed = raw.trim();
 
             // Fenced blocks are non-normative and never parsed. A diagram either illustrates and
-            // claims nothing, or it is the source of claims and nothing restates it.
+            // claims nothing, or it is the source of requirements and nothing restates it.
             if trimmed.starts_with("```") {
                 self.fenced = !self.fenced;
                 i += 1;
@@ -168,13 +171,13 @@ impl<'a> SpecParser<'a> {
             } else if let Some(rest) = trimmed.strip_prefix("## Invariant:") {
                 i = self.invariant(rest, line_no, &lines, i);
             } else if let Some(rest) = trimmed.strip_prefix("## ") {
-                i = self.claim(rest, line_no, &lines, i);
+                i = self.requirement(rest, line_no, &lines, i);
             } else if trimmed.starts_with("### ") {
                 self.errors.push(Diag::expecting(
                     self.path,
                     line_no,
-                    "case outside a claim",
-                    "`### Case:` to follow a `## Claim:` heading",
+                    "scenario outside a requirement",
+                    "`### Scenario:` to follow a `## Requirement:` heading",
                 ));
                 i += 1;
             } else if trimmed.starts_with('#') {
@@ -182,11 +185,11 @@ impl<'a> SpecParser<'a> {
                     self.path,
                     line_no,
                     format!("unrecognized heading `{trimmed}`"),
-                    "`# Spec:`, `## Term:`, `## Claim:` or `### Case:`",
+                    "`# Spec:`, `## Term:`, `## Requirement:` or `### Scenario:`",
                 ));
                 i += 1;
             } else {
-                // Prose. Non-normative outside a claim statement.
+                // Prose. Non-normative outside a requirement statement.
                 i += 1;
             }
         }
@@ -257,11 +260,11 @@ impl<'a> SpecParser<'a> {
         next
     }
 
-    /// A claim whose domain is a set of sites (contracts/spec.md, site-domain invariants).
+    /// A requirement whose domain is a set of sites (contracts/spec.md, site-domain invariants).
     ///
-    /// It carries no authored cases because the claim does not range over executions.
-    /// One implicit case is synthesized so every derived relation keys it exactly as it does a
-    /// behavioural Claim — one Claim type, parameterized by domain, means one identity downstream.
+    /// It carries no authored scenarios because the requirement does not range over executions.
+    /// One implicit scenario is synthesized so every derived relation keys it exactly as it does a
+    /// behavioural Requirement — one Requirement type, parameterized by domain, means one identity downstream.
     fn invariant(&mut self, rest: &str, line_no: usize, lines: &[&str], start: usize) -> usize {
         let id = rest.trim().to_string();
         if let Err(why) = validate_id(&id, false) {
@@ -271,7 +274,7 @@ impl<'a> SpecParser<'a> {
                 format!("invalid invariant id: {why}"),
             ));
         }
-        if self.claims.iter().any(|r| r.id == id) {
+        if self.requirements.iter().any(|r| r.id == id) {
             self.errors.push(Diag::at(
                 self.path,
                 line_no,
@@ -300,7 +303,7 @@ impl<'a> SpecParser<'a> {
                     self.errors.push(Diag::expecting(
                         self.path,
                         ln,
-                        "invalid Claim title",
+                        "invalid Requirement title",
                         "1 to 120 characters on one line",
                     ));
                 }
@@ -355,12 +358,12 @@ impl<'a> SpecParser<'a> {
             ));
         }
 
-        self.claims.push(Claim {
+        self.requirements.push(Requirement {
             id: id.clone(),
             title,
             criticality,
             statement,
-            cases: vec![Case {
+            scenarios: vec![Scenario {
                 id,
                 statement: String::new(),
                 line: line_no,
@@ -372,14 +375,14 @@ impl<'a> SpecParser<'a> {
         i
     }
 
-    /// Consumes a claim and every case under it. Returns the next unconsumed index.
-    fn claim(&mut self, rest: &str, line_no: usize, lines: &[&str], start: usize) -> usize {
-        let Some(id) = rest.strip_prefix("Claim:") else {
+    /// Consumes a requirement and every scenario under it. Returns the next unconsumed index.
+    fn requirement(&mut self, rest: &str, line_no: usize, lines: &[&str], start: usize) -> usize {
+        let Some(id) = rest.strip_prefix("Requirement:") else {
             self.errors.push(Diag::expecting(
                 self.path,
                 line_no,
                 format!("unrecognized heading `## {rest}`"),
-                "`## Claim: <claim-id>`",
+                "`## Requirement: <requirement-id>`",
             ));
             return start + 1;
         };
@@ -388,15 +391,15 @@ impl<'a> SpecParser<'a> {
             self.errors.push(Diag::expecting(
                 self.path,
                 line_no,
-                format!("invalid claim id: {why}"),
+                format!("invalid requirement id: {why}"),
                 "lowercase kebab-case",
             ));
         }
-        if self.claims.iter().any(|r| r.id == id) {
+        if self.requirements.iter().any(|r| r.id == id) {
             self.errors.push(Diag::at(
                 self.path,
                 line_no,
-                format!("claim id `{id}` is declared twice in this spec"),
+                format!("requirement id `{id}` is declared twice in this spec"),
             ));
         }
 
@@ -423,7 +426,7 @@ impl<'a> SpecParser<'a> {
                     self.errors.push(Diag::expecting(
                         self.path,
                         ln,
-                        "invalid Claim title",
+                        "invalid Requirement title",
                         "1 to 120 characters on one line",
                     ));
                 }
@@ -450,7 +453,7 @@ impl<'a> SpecParser<'a> {
                 self.errors.push(Diag::expecting(
                     self.path,
                     ln,
-                    format!("unknown label `{label}:` on a claim"),
+                    format!("unknown label `{label}:` on a requirement"),
                     "Title: or Criticality:",
                 ));
                 i += 1;
@@ -458,65 +461,65 @@ impl<'a> SpecParser<'a> {
                 self.errors.push(Diag::expecting(
                     self.path,
                     ln,
-                    "prose directly under a claim heading",
+                    "prose directly under a requirement heading",
                     "labelled lines first, then a blank line, then the normative Markdown body",
                 ));
                 i += 1;
             }
         }
 
-        // Normative free-form Markdown, until the first Case or the next Claim.
+        // Normative free-form Markdown, until the first Scenario or the next Requirement.
         let (statement, next) = markdown_body(lines, i);
         i = next;
         if statement.is_empty() {
             self.errors.push(Diag::expecting(
                 self.path,
                 line_no,
-                format!("claim `{id}` has no statement"),
+                format!("requirement `{id}` has no statement"),
                 "non-empty free-form normative Markdown",
             ));
         }
 
-        // Cases.
-        let mut cases: Vec<Case> = Vec::new();
+        // Scenarios.
+        let mut scenarios: Vec<Scenario> = Vec::new();
         while i < lines.len() {
             let trimmed = lines[i].trim();
             if trimmed.starts_with("## ") || trimmed.starts_with("# ") {
                 break;
             }
             if let Some(rest) = trimmed.strip_prefix("### ") {
-                let (case, next) = self.case(rest, i + 1, lines, i);
+                let (scenario, next) = self.scenario(rest, i + 1, lines, i);
                 i = next;
-                if let Some(case) = case {
-                    if cases.iter().any(|s| s.id == case.id) {
+                if let Some(scenario) = scenario {
+                    if scenarios.iter().any(|s| s.id == scenario.id) {
                         self.errors.push(Diag::at(
                             self.path,
-                            case.line,
-                            format!("case id `{}` is declared twice", case.id),
+                            scenario.line,
+                            format!("scenario id `{}` is declared twice", scenario.id),
                         ));
                     }
-                    cases.push(case);
+                    scenarios.push(scenario);
                 }
             } else {
                 i += 1;
             }
         }
 
-        if cases.is_empty() {
+        if scenarios.is_empty() {
             self.errors.push(Diag::expecting(
                 self.path,
                 line_no,
-                format!("claim `{id}` has no cases"),
-                "at least one normative `### Case:`",
+                format!("requirement `{id}` has no scenarios"),
+                "at least one normative `### Scenario:`",
             ));
         }
 
-        self.claims.push(Claim {
+        self.requirements.push(Requirement {
             id,
             title,
             criticality,
             statement,
-            cases,
+            scenarios,
             line: line_no,
             domain: Domain::Behaviour,
             over: None,
@@ -524,19 +527,19 @@ impl<'a> SpecParser<'a> {
         i
     }
 
-    fn case(
+    fn scenario(
         &mut self,
         rest: &str,
         line_no: usize,
         lines: &[&str],
         start: usize,
-    ) -> (Option<Case>, usize) {
-        let Some(id) = rest.strip_prefix("Case:") else {
+    ) -> (Option<Scenario>, usize) {
+        let Some(id) = rest.strip_prefix("Scenario:") else {
             self.errors.push(Diag::expecting(
                 self.path,
                 line_no,
                 format!("unrecognized heading `### {rest}`"),
-                "`### Case: <case-id>`",
+                "`### Scenario: <scenario-id>`",
             ));
             return (None, start + 1);
         };
@@ -545,7 +548,7 @@ impl<'a> SpecParser<'a> {
             self.errors.push(Diag::expecting(
                 self.path,
                 line_no,
-                format!("invalid case id: {why}"),
+                format!("invalid scenario id: {why}"),
                 "lowercase kebab-case",
             ));
         }
@@ -555,13 +558,13 @@ impl<'a> SpecParser<'a> {
             self.errors.push(Diag::expecting(
                 self.path,
                 line_no,
-                format!("case `{id}` has no statement"),
+                format!("scenario `{id}` has no statement"),
                 "non-empty free-form normative Markdown",
             ));
         }
 
         (
-            Some(Case {
+            Some(Scenario {
                 id,
                 statement,
                 line: line_no,
@@ -573,7 +576,7 @@ impl<'a> SpecParser<'a> {
     fn finish(self) -> Result<Spec, Vec<Diag>> {
         let mut errors = self.errors;
 
-        // Case ids are local to their Claim. The complete address includes both ids, making
+        // Scenario ids are local to their Requirement. The complete address includes both ids, making
         // authorship boundaries explicit and making promotion or movement an intentional
         // identity transition.
 
@@ -591,7 +594,7 @@ impl<'a> SpecParser<'a> {
             Ok(Spec {
                 id,
                 path: self.path.to_string(),
-                claims: self.claims,
+                requirements: self.requirements,
                 terms: self.terms,
             })
         } else {
@@ -634,7 +637,7 @@ fn term_body(lines: &[&str], start: usize) -> (String, usize) {
 }
 
 /// Collects one authoritative Markdown body while reserving the top three heading levels for the
-/// Spec, Claim and Case structure. Fenced headings remain content. Outer blank lines are removed;
+/// Spec, Requirement and Scenario structure. Fenced headings remain content. Outer blank lines are removed;
 /// every other byte after newline normalization is preserved because Markdown whitespace can be
 /// meaningful and participates in semantic fingerprints.
 fn markdown_body(lines: &[&str], start: usize) -> (String, usize) {

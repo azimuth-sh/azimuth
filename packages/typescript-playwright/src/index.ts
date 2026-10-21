@@ -41,7 +41,7 @@ export const test = base.extend<AzimuthOptions & { azimuthCapture: void }>({
     const contexts: ContextCapture[] = [];
     const names = new Set<string>();
     for (const endpoint of azimuthContexts) {
-      if (names.has(endpoint.name)) throw new Error('Duplicate verification context name');
+      if (names.has(endpoint.name)) throw new Error('Duplicate Execution Context name');
       names.add(endpoint.name);
       try { before.set(endpoint.name, await capture(endpoint)); }
       catch { diagnostics.push(`Context ${endpoint.name}: before capture unavailable`); }

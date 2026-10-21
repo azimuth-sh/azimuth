@@ -150,7 +150,7 @@ def smoke_dotnet(catalog, annotations, emitter):
             "using System;\n"
             "using Azimuth.Annotations;\n"
             "var tag = new RealizesAttribute(\"starts\");\n"
-            "Console.WriteLine($\"{tag.Claim}\");\n"
+            "Console.WriteLine($\"{tag.Requirement}\");\n"
         )
         config = consumer / "NuGet.Config"
         config.write_text(
@@ -261,7 +261,7 @@ def smoke_typescript(annotations, emitter):
         )
         emitted = json.loads(manifest.read_text())
         require(
-            any(item["claim"] == "starts" for item in emitted["realizes"]),
+            any(item["requirement"] == "starts" for item in emitted["realizes"]),
             "npm emitter entry point failed",
         )
 

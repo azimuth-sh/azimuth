@@ -29,8 +29,8 @@ fn write_routine_spec(path: &Path, id: &str, scenario: &str) {
     fs::write(
         path,
         format!(
-            "# Spec: {id}\n\n## Claim: {entity_prefix}-works\nCriticality: routine\n\n\
-             The system must work.\n\n### Case: {entity_prefix}-{scenario}\nThe system works when invoked.\n"
+            "# Spec: {id}\n\n## Requirement: {entity_prefix}-works\nCriticality: routine\n\n\
+             The system must work.\n\n### Scenario: {entity_prefix}-{scenario}\nThe system works when invoked.\n"
         ),
     )
     .unwrap();
@@ -62,12 +62,12 @@ const MINIMAL: &str = "\
 
 Prose that claims nothing.
 
-## Claim: thing-holds
+## Requirement: thing-holds
 Criticality: standard
 
 The system holds the thing.
 
-### Case: thing-held
+### Scenario: thing-held
 When a thing is examined, it remains held and nothing else changes.
 
 | Input | Required result |
@@ -79,15 +79,15 @@ When a thing is examined, it remains held and nothing else changes.
 fn parses_a_minimal_spec() {
     let spec = parse_spec("t.md", MINIMAL).expect("parses");
     assert_eq!(spec.id, "alpha/beta");
-    assert_eq!(spec.claims.len(), 1);
+    assert_eq!(spec.requirements.len(), 1);
 
-    let r = &spec.claims[0];
+    let r = &spec.requirements[0];
     assert_eq!(r.id, "thing-holds");
     assert_eq!(r.criticality, Some(Criticality::Standard));
     assert_eq!(r.statement, "The system holds the thing.");
-    assert_eq!(r.cases.len(), 1);
+    assert_eq!(r.scenarios.len(), 1);
 
-    let s = &r.cases[0];
+    let s = &r.scenarios[0];
     assert_eq!(s.id, "thing-held");
     assert_eq!(
         s.statement,
@@ -97,9 +97,9 @@ fn parses_a_minimal_spec() {
 }
 
 #[test]
-fn prose_before_the_first_claim_is_not_a_statement() {
+fn prose_before_the_first_requirement_is_not_a_statement() {
     let spec = parse_spec("t.md", MINIMAL).unwrap();
-    assert!(!spec.claims[0].statement.contains("claims nothing"));
+    assert!(!spec.requirements[0].statement.contains("claims nothing"));
 }
 
 /// A missing declaration is a Finding; an unknown construct is a parse error.
@@ -108,7 +108,7 @@ fn prose_before_the_first_claim_is_not_a_statement() {
 fn missing_criticality_parses_and_becomes_a_finding_not_an_error() {
     let source = MINIMAL.replace("Criticality: standard\n", "");
     let spec = parse_spec("t.md", &source).expect("missing criticality still parses");
-    assert_eq!(spec.claims[0].criticality, None);
+    assert_eq!(spec.requirements[0].criticality, None);
 }
 
 #[test]
@@ -130,19 +130,19 @@ fn diagnostics_carry_file_and_line() {
 }
 
 #[test]
-fn ids_are_lowercase_kebab_case() {
+fn ids_are_lowercase_kebab_scenario() {
     let message = err(&MINIMAL.replace("thing-held", "Thing_Held"));
-    assert!(message.contains("invalid case id"), "{message}");
+    assert!(message.contains("invalid scenario id"), "{message}");
 }
 
 #[test]
 fn slash_is_only_allowed_in_spec_ids() {
-    let message = err(&MINIMAL.replace("## Claim: thing-holds", "## Claim: a/b"));
+    let message = err(&MINIMAL.replace("## Requirement: thing-holds", "## Requirement: a/b"));
     assert!(message.contains("only allowed in spec ids"), "{message}");
 }
 
 #[test]
-fn a_case_needs_non_empty_free_form_text() {
+fn a_scenario_needs_non_empty_free_form_text() {
     let source = MINIMAL.replace(
         "When a thing is examined, it remains held and nothing else changes.\n\n\
          | Input | Required result |\n|---|---|\n| held thing | remains held |\n",
@@ -150,13 +150,13 @@ fn a_case_needs_non_empty_free_form_text() {
     );
     let message = err(&source);
     assert!(
-        message.contains("case `thing-held` has no statement"),
+        message.contains("scenario `thing-held` has no statement"),
         "{message}"
     );
 }
 
 #[test]
-fn case_text_has_no_required_natural_language_shape() {
+fn scenario_text_has_no_required_natural_language_shape() {
     let source = MINIMAL.replace(
         "When a thing is examined, it remains held and nothing else changes.",
         "Вещь остаётся удержанной при проверке.",
@@ -165,41 +165,41 @@ fn case_text_has_no_required_natural_language_shape() {
 }
 
 #[test]
-fn fenced_markdown_inside_a_case_is_preserved() {
+fn fenced_markdown_inside_a_scenario_is_preserved() {
     let source = MINIMAL.replace(
         "| held thing | remains held |",
         "| held thing | remains held |\n\n```text\n### this is content\n```",
     );
     let spec = parse_spec("t.md", &source).unwrap();
-    assert!(spec.claims[0].cases[0]
+    assert!(spec.requirements[0].scenarios[0]
         .statement
         .contains("### this is content"));
 }
 
 #[test]
-fn a_claim_needs_at_least_one_case() {
+fn a_requirement_needs_at_least_one_scenario() {
     let source = "\
 # Spec: alpha
 
-## Claim: lonely
+## Requirement: lonely
 Criticality: standard
 
 The system SHALL do something unfalsifiable.
 ";
     let message = err(source);
-    assert!(message.contains("has no cases"), "{message}");
-    assert!(message.contains("normative `### Case:`"), "{message}");
+    assert!(message.contains("has no scenarios"), "{message}");
+    assert!(message.contains("normative `### Scenario:`"), "{message}");
 }
 
 #[test]
-fn a_claim_needs_a_statement() {
+fn a_requirement_needs_a_statement() {
     let source = "\
 # Spec: alpha
 
-## Claim: silent
+## Requirement: silent
 Criticality: standard
 
-### Case: something
+### Scenario: something
 Something happens.
 ";
     let message = err(source);
@@ -215,15 +215,15 @@ fn a_file_declares_exactly_one_spec() {
 
 #[test]
 fn a_file_without_a_spec_heading_is_an_error() {
-    let message = err("## Claim: orphan\nCriticality: standard\n\nA SHALL.\n");
+    let message = err("## Requirement: orphan\nCriticality: standard\n\nA SHALL.\n");
     assert!(message.contains("no spec declared"), "{message}");
 }
 
 #[test]
 fn unknown_headings_fail_loudly() {
-    let message = err(&MINIMAL.replace("## Claim: thing-holds", "## Rule: thing-holds"));
+    let message = err(&MINIMAL.replace("## Requirement: thing-holds", "## Rule: thing-holds"));
     assert!(message.contains("unrecognized heading"), "{message}");
-    assert!(message.contains("`## Claim:"), "{message}");
+    assert!(message.contains("`## Requirement:"), "{message}");
 }
 
 #[test]
@@ -247,43 +247,43 @@ fn a_spec_cannot_carry_a_required_form() {
     assert!(err(&source).contains("unknown label `Quantification:`"));
 }
 
-/// Case ids are local to their parent Claim, so two Claims can use the same readable Case id.
+/// Scenario ids are local to their parent Requirement, so two Requirements can use the same readable Scenario id.
 #[test]
-fn case_ids_are_local_to_their_parent_claim() {
+fn scenario_ids_are_local_to_their_parent_requirement() {
     let source = "\
 # Spec: alpha
 
-## Claim: first
+## Requirement: first
 Criticality: standard
 
 A SHALL.
 
-### Case: shared
+### Scenario: shared
 The first behavior occurs.
 
-## Claim: second
+## Requirement: second
 Criticality: standard
 
 Another SHALL.
 
-### Case: shared
+### Scenario: shared
 The second behavior occurs.
 ";
     let spec = parse_spec("t.md", source).unwrap();
-    assert_eq!(spec.claims[0].cases[0].id, "shared");
-    assert_eq!(spec.claims[1].cases[0].id, "shared");
+    assert_eq!(spec.requirements[0].scenarios[0].id, "shared");
+    assert_eq!(spec.requirements[1].scenarios[0].id, "shared");
 }
 
 #[test]
-fn claim_ids_are_unique() {
+fn requirement_ids_are_unique() {
     let source = format!(
-        "{MINIMAL}\n## Claim: thing-holds\nCriticality: standard\n\nA SHALL.\n\n\
-         ### Case: other\nAnother behavior occurs.\n"
+        "{MINIMAL}\n## Requirement: thing-holds\nCriticality: standard\n\nA SHALL.\n\n\
+         ### Scenario: other\nAnother behavior occurs.\n"
     );
     assert!(err(&source).contains("declared twice"));
 }
 
-/// Fenced blocks outside a Claim remain non-normative orientation and are never parsed.
+/// Fenced blocks outside a Requirement remain non-normative orientation and are never parsed.
 #[test]
 fn fenced_blocks_are_not_parsed() {
     let source = "\
@@ -291,21 +291,21 @@ fn fenced_blocks_are_not_parsed() {
 
 ```
 # Spec: not-a-spec
-## Claim: not-a-requirement
+## Requirement: not-a-requirement
 ```
 
-## Claim: real
+## Requirement: real
 Criticality: routine
 
 A SHALL.
 
-### Case: real-scenario
+### Scenario: real-scenario
 The real behavior occurs.
 ";
     let spec = parse_spec("t.md", source).expect("parses");
     assert_eq!(spec.id, "alpha");
-    assert_eq!(spec.claims.len(), 1);
-    assert_eq!(spec.claims[0].criticality, Some(Criticality::Routine));
+    assert_eq!(spec.requirements.len(), 1);
+    assert_eq!(spec.requirements[0].criticality, Some(Criticality::Routine));
 }
 
 #[test]
@@ -322,16 +322,16 @@ fn multiple_errors_are_reported_together() {
     let source = "\
 # Spec: alpha
 
-## Claim: Bad_Id
+## Requirement: Bad_Id
 Criticality: enormous
 
 A SHALL.
 
-### Case: also-bad
+### Scenario: also-bad
 An outcome exists.
 ";
     let message = err(source);
-    assert!(message.contains("invalid claim id"), "{message}");
+    assert!(message.contains("invalid requirement id"), "{message}");
     assert!(message.contains("unknown criticality"), "{message}");
 }
 
@@ -381,8 +381,8 @@ fn bare_nonroutine_packages_load_with_missing_judgments_observable() {
             &[],
         )
         .unwrap();
-        assert_eq!(loaded.model.claims().count(), 1);
-        assert_eq!(loaded.model.claim_judgments().count(), 0);
+        assert_eq!(loaded.model.requirements().count(), 1);
+        assert_eq!(loaded.model.requirement_judgments().count(), 0);
         assert!(loaded.warnings.is_empty());
         fs::remove_dir_all(root).unwrap();
     }
@@ -482,7 +482,7 @@ fn complete_verification_authority_is_checked_before_only_selection() {
 }
 
 #[test]
-fn cross_file_duplicate_check_claim_pairs_are_derivation_errors() {
+fn cross_file_duplicate_check_requirement_pairs_are_derivation_errors() {
     let root = package_root();
     let model = root.join("model");
     write_routine_spec(&model.join("alpha/spec.md"), "alpha", "works");
@@ -506,7 +506,7 @@ fn cross_file_duplicate_check_claim_pairs_are_derivation_errors() {
     let errors = load_packages(&model).unwrap_err();
     assert!(errors.iter().any(|error| error
         .message
-        .contains("Check `shared-check` is already bound to Case `alpha-works`")));
+        .contains("Check `shared-check` is already bound to Scenario `alpha-works`")));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -519,20 +519,20 @@ fn only_selection_retains_relevant_challenge_plans_atomically() {
     fs::write(
         model.join("alpha/verification.md"),
         "# Verification: alpha\n\n## Check: shared-check\nMethod: invoke\nTerminal: works\n\n\
-         Atomic.\n\n## Evidence Binding: edge/alpha\nCheck: shared-check\nCase: alpha-works\n\
-         Method qualification: shared/method\nProposition: direct\nContext: {}\n\
+         Atomic.\n\n## Evidence Binding: edge/alpha\nCheck: shared-check\nScenario: alpha-works\n\
+         Method qualification: shared/method\nProposition: direct\nExecution Context: {}\n\
          Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n\n\
-         ## Evidence Binding: edge/beta\nCheck: shared-check\nCase: beta-works\n\
-         Method qualification: shared/method\nProposition: direct\nContext: {}\n\
+         ## Evidence Binding: edge/beta\nCheck: shared-check\nScenario: beta-works\n\
+         Method qualification: shared/method\nProposition: direct\nExecution Context: {}\n\
          Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n\n\
          ## Method Qualification: shared/method\nCheck: shared-check\nScope: unit\n\
-         Quantification: example\nOracle: direct\nContext: {}\nChallenge domain: [\"context\"]\n\
+         Quantification: example\nOracle: direct\nExecution Context: {}\nChallenge domain: [\"context\"]\n\
          Policy: credible\nVerdict: qualified\n\
          Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
          Qualified: 2026-08-21\nQualifier: owner\n\nReviewed.\n\n\
-         ## Challenger: mutation/perturb\nForm: implementation-perturbation\n\
+         ## Verification Challenge: mutation/perturb\nForm: implementation-perturbation\n\
          Searches for: an undetected change\nRequired scope: [\"context\"]\n\nOpen objection.\n\n\
-         ## Challenge Plan: shared/plan\nChallenger: mutation/perturb\n\
+         ## Challenge Plan: shared/plan\nVerification Challenge: mutation/perturb\n\
          Select: method-qualification from check shared-check\n\
          Select: applicability-decision from binding edge/beta\n\nTargets relevant decisions.\n",
     )
@@ -563,7 +563,7 @@ fn only_selection_retains_relevant_challenge_plans_atomically() {
     assert_eq!(loaded.model.checks().count(), 1);
     assert_eq!(loaded.model.evidence_bindings().count(), 2);
     assert_eq!(loaded.model.method_qualifications().count(), 1);
-    assert_eq!(loaded.model.challengers().count(), 1);
+    assert_eq!(loaded.model.verification_challenges().count(), 1);
     assert_eq!(loaded.model.verifications.len(), 1);
     let plan = loaded.model.challenge_plans().next().unwrap();
     assert_eq!(plan.selectors.len(), 2);
@@ -609,7 +609,7 @@ fn local_check_identity_is_normalized_before_fingerprinting() {
         fs::write(
             path,
             format!(
-                "{{\"format\":\"azimuth-workspace\",\"version\":1,\
+                "{{\"format\":\"azimuth-workspace\",\"version\":2,\
                  \"areas\":[{{\"id\":\"{area}\",\"mounts\":[{{\"id\":\"code\",\
                  \"path\":\"src\"}}]}}],\"surfaces\":[],\"realization_obligations\":[]}}"
             ),
@@ -683,7 +683,7 @@ fn merged_manifest_conflicts_are_rejected_before_only_selection() {
     let workspace = root.join("workspace.json");
     fs::write(
         &workspace,
-        "{\"format\":\"azimuth-workspace\",\"version\":1,\
+        "{\"format\":\"azimuth-workspace\",\"version\":2,\
          \"areas\":[{\"id\":\"core\",\"mounts\":[{\"id\":\"code\",\"path\":\"src\"}]}],\
          \"surfaces\":[{\"id\":\"beta\",\"contributions\":[{\"area\":\"core\",\
          \"mount\":\"code\",\"enumerator\":\"routes\"}]}],\
@@ -694,7 +694,7 @@ fn merged_manifest_conflicts_are_rejected_before_only_selection() {
     let second = root.join("second.json");
     let linkage = |fingerprint: char, suffix: &str| {
         format!(
-            "{{\"realizes\":[{{\"claim\":\"beta-works\",\
+            "{{\"realizes\":[{{\"requirement\":\"beta-works\",\
              \"site\":\"beta::works\",\"file\":\"src/beta.rs\",\"lang\":\"rust\",\
              \"source_fingerprint\":\"sha256:{}\"}}],\
              \"check_implementations\":[{{\"check\":\"beta-check\",\
@@ -762,12 +762,12 @@ fn marker_sites_are_distinct_across_areas_and_conflict_within_one_area_before_on
     write_routine_spec(&model.join("beta/spec.md"), "beta", "works");
     fs::write(
         model.join("alpha/design.md"),
-        "# Design: alpha\n\n## Claim: alpha-works\nMechanism: alpha-guard\nEnforcement: guard\n\nExact.\n",
+        "# Design: alpha\n\n## Requirement: alpha-works\nMechanism: alpha-guard\nEnforcement: guard\n\nExact.\n",
     )
     .unwrap();
     fs::write(
         model.join("beta/design.md"),
-        "# Design: beta\n\n## Claim: beta-works\nMechanism: beta-guard\nEnforcement: guard\n\nExact.\n",
+        "# Design: beta\n\n## Requirement: beta-works\nMechanism: beta-guard\nEnforcement: guard\n\nExact.\n",
     )
     .unwrap();
     let manifest = root.join("markers.json");
@@ -792,7 +792,7 @@ fn marker_sites_are_distinct_across_areas_and_conflict_within_one_area_before_on
     let workspace = root.join("workspace.json");
     fs::write(
         &workspace,
-        "{\"format\":\"azimuth-workspace\",\"version\":1,\"areas\":[\
+        "{\"format\":\"azimuth-workspace\",\"version\":2,\"areas\":[\
          {\"id\":\"one\",\"mounts\":[{\"id\":\"code\",\"path\":\"src/a\"}]},\
          {\"id\":\"two\",\"mounts\":[{\"id\":\"code\",\"path\":\"src/b\"}]}],\
          \"surfaces\":[],\"realization_obligations\":[]}",
@@ -840,7 +840,7 @@ fn marker_sites_are_distinct_across_areas_and_conflict_within_one_area_before_on
 
     fs::write(
         &workspace,
-        "{\"format\":\"azimuth-workspace\",\"version\":1,\"areas\":[\
+        "{\"format\":\"azimuth-workspace\",\"version\":2,\"areas\":[\
          {\"id\":\"shared\",\"mounts\":[{\"id\":\"a\",\"path\":\"src/a\"},\
          {\"id\":\"b\",\"path\":\"src/b\"}]}],\"surfaces\":[],\
          \"realization_obligations\":[]}",
@@ -880,7 +880,7 @@ fn verification_authority_requires_a_current_owning_spec() {
 }
 
 #[test]
-fn missing_standards_warn_for_any_nonroutine_claim() {
+fn missing_standards_warn_for_any_nonroutine_requirement() {
     let root = package_root();
     let model = root.join("model");
     write_routine_spec(&model.join("routine/spec.md"), "routine", "works");
@@ -907,7 +907,7 @@ fn missing_standards_warn_for_any_nonroutine_claim() {
     fs::write(
         model.join("standard/verification.md"),
         format!(
-            "{}\n## Claim Judgment: standard-works\nVerdict: accepted\nPolicy: credible\n\
+            "{}\n## Requirement Judgment: standard-works\nVerdict: accepted\nPolicy: credible\n\
              Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
              Judged: 2026-08-21\nJudge: owner\nBasis: the composition is sufficient\n\
              Residual risk: none identified\n\nReviewed.\n",
@@ -928,11 +928,11 @@ fn missing_standards_warn_for_any_nonroutine_claim() {
     fs::remove_dir_all(root).unwrap();
 }
 
-fn verification_binding(owner: &str, check: &str, case: &str, binding: &str) -> String {
+fn verification_binding(owner: &str, check: &str, scenario: &str, binding: &str) -> String {
     format!(
         "# Verification: {owner}\n\n## Check: {check}\nMethod: invoke\nTerminal: works\n\n\
-         Atomic.\n\n## Evidence Binding: {binding}\nCheck: {check}\nCase: {case}\n\
-         Method qualification: {binding}-method\nProposition: direct\nContext: {{}}\n\
+         Atomic.\n\n## Evidence Binding: {binding}\nCheck: {check}\nScenario: {scenario}\n\
+         Method qualification: {binding}-method\nProposition: direct\nExecution Context: {{}}\n\
          Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n"
     )
 }
@@ -943,16 +943,16 @@ fn verification_with_binding(owner: &str, binding: &str, include_check: bool) ->
         .unwrap_or_default();
     format!(
         "# Verification: {owner}\n\n{check}## Evidence Binding: {binding}\n\
-         Check: shared-check\nCase: alpha-works\nMethod qualification: shared/method\n\
-         Proposition: direct\nContext: {{}}\n\
+         Check: shared-check\nScenario: alpha-works\nMethod qualification: shared/method\n\
+         Proposition: direct\nExecution Context: {{}}\n\
          Challenge domain: [\"context\"]\nPolicy: credible\n\nReviewable.\n"
     )
 }
 
 #[test]
-fn claim_titles_are_display_metadata_with_distinct_model_revisions() {
+fn requirement_titles_are_display_metadata_with_distinct_model_revisions() {
     use azimuth::model::Model;
-    let source = "# Spec: example\n\n## Claim: stays-safe\nCriticality: routine\n\nThe value stays safe.\n\n### Case: update\nAn update preserves the value.\n";
+    let source = "# Spec: example\n\n## Requirement: stays-safe\nCriticality: routine\n\nThe value stays safe.\n\n### Scenario: update\nAn update preserves the value.\n";
     let titled = source.replace(
         "Criticality:",
         "Title: Updates preserve safety\nCriticality:",
@@ -966,21 +966,24 @@ fn claim_titles_are_display_metadata_with_distinct_model_revisions() {
         ..Model::default()
     };
     assert_eq!(
-        after.specs[0].claims[0].title.as_deref(),
+        after.specs[0].requirements[0].title.as_deref(),
         Some("Updates preserve safety")
     );
     assert_eq!(
-        before.claim_digest("stays-safe"),
-        after.claim_digest("stays-safe")
+        before.requirement_digest("stays-safe"),
+        after.requirement_digest("stays-safe")
     );
-    assert_eq!(before.case_digest("update"), after.case_digest("update"));
+    assert_eq!(
+        before.scenario_digest("update"),
+        after.scenario_digest("update")
+    );
     assert_ne!(
         azimuth::fingerprint::authority_model_digest(&before),
         azimuth::fingerprint::authority_model_digest(&after)
     );
     let catalog = azimuth::release::catalog(&after);
     assert_eq!(
-        catalog.get("claims").unwrap().as_array().unwrap()[0]
+        catalog.get("requirements").unwrap().as_array().unwrap()[0]
             .get("title")
             .unwrap()
             .as_str(),

@@ -52,7 +52,7 @@ else:
 
 ROOT = Path(__file__).resolve().parent.parent
 REPOSITORY = "azimuth-sh/azimuth"
-USER_AGENT = "azimuth-release/0.1.0-alpha.6 (https://github.com/azimuth-sh/azimuth)"
+USER_AGENT = "azimuth-release/0.1.0-alpha.7 (https://github.com/azimuth-sh/azimuth)"
 SUPPORT_ASSETS = ("SHA256SUMS",)
 PUBLICATION_WORKFLOW = ROOT / ".github/workflows/publish.yml"
 UNSET = object()
@@ -1095,8 +1095,8 @@ def qualify(arguments):
         output / "publication-linkage.json",
         {
             "realizes": [
-                source_entry(claim, site, file, fingerprint)
-                for claim, site, file, fingerprint in realization_sites
+                source_entry(requirement, site, file, fingerprint)
+                for requirement, site, file, fingerprint in realization_sites
             ],
             "check_implementations": [],
             "mechanism_implementations": [],

@@ -28,7 +28,7 @@ def execute(scope, root, executable, capture, environment, timeout, git_executab
         raise ValueError('environment must be an explicit string map')
     if not 1 <= timeout <= 3600:
         raise ValueError('timeout must be between 1 and 3600 seconds')
-    if capture.get('format') != 'azimuth-source-capture' or capture.get('version') != 1:
+    if capture.get('format') != 'azimuth-source-capture' or capture.get('version') != 2:
         raise ValueError('execution requires an accountable source capture')
     if fingerprint({key:value for key,value in capture.items() if key != 'fingerprint'}) != capture.get('fingerprint'):
         raise ValueError('source capture fingerprint mismatch')
@@ -127,14 +127,15 @@ def execute(scope, root, executable, capture, environment, timeout, git_executab
             except ValueError:
                 native = {}
         outcome, findings, gaps, counts = normalize(tool,native,execution_failed=timed_out or process.returncode != 0)
-        report = {'format':'azimuth-challenge-native-report','version':1,'challenger':scope['challenger'],
-                  'scope_fingerprint':supplied,'capture_fingerprint':capture['fingerprint'],'subject':capture['subject'],'tool':tool,
+        report = {'format':'azimuth-challenge-native-report','version':2,'verification_challenge':scope['verification_challenge'],
+                  'scope_fingerprint':supplied,'capture_fingerprint':capture['fingerprint'],
+                  'verification_target':capture['verification_target'],'tool':tool,
                   'tool_executable_digest':'sha256:' + hashlib.sha256(Path(executable).read_bytes()).hexdigest(),
                   'tool_arguments':arguments,'environment_fingerprint':fingerprint(environment),
                   'started_at_ms':started,'finished_at_ms':finished,'outcome':outcome,
                   'execution_status':'failed' if timed_out or process.returncode != 0 else 'completed',
                   'assessment':'no-findings' if outcome == 'clean' else outcome,
-                  'objections':findings,'inconclusive_reasons':gaps,'native_counts':counts,'native_report_json':json.dumps(native,sort_keys=True,allow_nan=False), 'limitations':scope['limitations'] + (['Stryker mutates compiled code internally; this report records the captured Challenger input Subject, not exact materialized source Subjects for each mutant. No mutant-specific product Observations are inferred.'] if tool == 'stryker-net' else []),
+                  'objections':findings,'inconclusive_reasons':gaps,'native_counts':counts,'native_report_json':json.dumps(native,sort_keys=True,allow_nan=False), 'limitations':scope['limitations'] + (['Stryker mutates compiled code internally; this report records the captured Verification Challenge input Verification Target, not exact materialized source Verification Targets for each mutant. No mutant-specific Check Results are inferred.'] if tool == 'stryker-net' else []),
                   'tool_exit':process.returncode if process.returncode >= 0 else 'signal',
                   'timed_out':timed_out,'stdout':output.decode(errors='replace'),'stderr':errors.decode(errors='replace')}
         report['fingerprint'] = fingerprint(report)

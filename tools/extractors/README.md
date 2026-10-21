@@ -10,7 +10,7 @@ The manifest has exactly six collections:
 {
   "realizes": [
     {
-      "claim": "duplicate-completion-is-idempotent",
+      "requirement": "duplicate-completion-is-idempotent",
       "site": "capture::complete",
       "file": "src/capture.rs",
       "lang": "rust",
@@ -50,8 +50,8 @@ The manifest has exactly six collections:
 
 Every `source_fingerprint` is SHA-256 in the exact lexical form shown. Extractors fingerprint the smallest trustworthy enclosing semantic site. Ecosystems without a stable source span may use a complete-file boundary, but they may not invent a short or provider-specific fingerprint.
 
-`realizes` links production implementation to a parent Claim and carries no Case or verification
-form. `check_implementations` links source to one stable project-wide Check ID and carries no Case,
+`realizes` links production implementation to a parent Requirement and carries no Scenario or verification
+form. `check_implementations` links source to one stable project-wide Check ID and carries no Scenario,
 form, context or decision. Workspace or project assembly attaches area, mount and semantic source
 address. Several implementation records may compose one Check.
 
@@ -78,20 +78,20 @@ The accountable emitter derives compiler qualification and fails when its compil
 
 Every emitter resolves `--root` once. Raw `file` is a non-empty normalized path beneath it, uses `/` and contains no empty, `.`, `..` or backslash segment. Inputs outside that root fail. Input arguments select files only; they never become semantic roots or path-based disambiguators.
 
-A locator-only move within one area that preserves the ecosystem-qualified site and content preserves SourceIdentity, Claim Judgment and semantic Challenge scope. The new file changes complete-model and accountable launch locator fingerprints. Moving across areas or changing a semantic module, language, site or source content changes semantic identity or content identity.
+A locator-only move within one area that preserves the ecosystem-qualified site and content preserves SourceIdentity, Requirement Judgment and semantic Challenge scope. The new file changes complete-model and accountable launch locator fingerprints. Moving across areas or changing a semantic module, language, site or source content changes semantic identity or content identity.
 
 Unknown collections and removed alpha-era fields fail closed. There are no result-import binaries in the extractor packages. Run normalization and provider adapters belong to dependent execution plane changes, not to language extraction.
 
 ## Source opt-in
 
-Production source uses `Realizes(<claim>)`. A deliberately enrolled Check implementation
+Production source uses `Realizes(<requirement>)`. A deliberately enrolled Check implementation
 uses `ImplementsCheck(<check>)`; language packages expose the idiomatic spelling
-for that ecosystem. Source markers require one stable project-wide lowercase kebab entity ID. Former module-qualified locators and two-argument Claim or Mechanism markers are rejected without inference or aliases. The source marker says only which Check the site implements. Evidence Bindings
-in `verification.md` own every Check-to-Case relationship.
+for that ecosystem. Source markers require one stable project-wide lowercase kebab entity ID. Former module-qualified locators and two-argument Requirement or Mechanism markers are rejected without inference or aliases. The source marker says only which Check the site implements. Evidence Bindings
+in `verification.md` own every Check-to-Scenario relationship.
 
 A mechanism implementation continues to use `ImplementsMechanism(<mechanism>)` in the ecosystem spelling. The extractor, not source authors, owns qualified `site`, typed `binding`, companion Artifact and source fingerprint derivation.
 
-An unmarked native test emits nothing. This is the normal state for ordinary engineering tests and for every test of a routine Claim. All current framework Claims are routine, so canonical synthetic fixtures emit Realizes linkage only.
+An unmarked native test emits nothing. This is the normal state for ordinary engineering tests and for every test of a routine Requirement. All current framework Requirements are routine, so canonical synthetic fixtures emit Realizes linkage only.
 
 ## Ecosystems
 
@@ -154,6 +154,6 @@ Every ecosystem's mechanism tests also prove:
 - one ordinary non-companion Artifact may still serve several explicit Design bindings;
 - repeated tags on one site and same-area cross-manifest qualified-site conflicts fail, while several distinct sites may support one mechanism and the same kind/site in two areas produces distinct assembled ids;
 - local and federated assembly produce the same atomic binding and companion-id rewrite; and
-- relocation inside one area preserves SourceIdentity, Claim Judgment and semantic scope while the complete-model and launch locator fingerprints change.
+- relocation inside one area preserves SourceIdentity, Requirement Judgment and semantic scope while the complete-model and launch locator fingerprints change.
 
 An ecosystem without overloads still tests declaring-type or receiver qualification. A compiler or runtime metadata reader that cannot prove a unique qualified declaration must reject that marker; it may not fall back to a simple name or path.

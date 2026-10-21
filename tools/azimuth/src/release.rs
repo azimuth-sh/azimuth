@@ -95,9 +95,9 @@ pub fn prepare(request: &Json) -> Result<Json, String> {
         &["catalog", "composition", "required_reviews", "components"],
     )?;
     if text(request, "format")? != "azimuth-release-request"
-        || field(request, "version")?.as_num() != Some(1.0)
+        || field(request, "version")?.as_num() != Some(2.0)
     {
-        return Err("expected azimuth-release-request version 1".into());
+        return Err("expected azimuth-release-request version 2".into());
     }
     let mut release = vec![
         ("label", field(request, "label")?.clone()),
@@ -126,7 +126,7 @@ pub fn prepare(request: &Json) -> Result<Json, String> {
     release.push(("fingerprint", Json::str(hash)));
     let mut package = vec![
         ("format", Json::str("azimuth-release-publication")),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         ("project", field(request, "project")?.clone()),
         ("release", Json::obj(release)),
         ("snapshot", field(request, "snapshot")?.clone()),
@@ -149,9 +149,9 @@ pub fn verify(value: &Json) -> Result<Json, String> {
         &["catalog"],
     )?;
     if text(value, "format")? != "azimuth-release-publication"
-        || field(value, "version")?.as_num() != Some(1.0)
+        || field(value, "version")?.as_num() != Some(2.0)
     {
-        return Err("expected azimuth-release-publication version 1".into());
+        return Err("expected azimuth-release-publication version 2".into());
     }
     if value.to_string_pretty().len() > PACKAGE_LIMIT {
         return Err("release package exceeds 8 MiB; move full reports/logs out of native records at their producer, preserving required observations".into());
@@ -360,12 +360,13 @@ pub fn verify(value: &Json) -> Result<Json, String> {
         for fingerprint in selected {
             digest(&fingerprint)?;
             let record = reviews.iter().find(|record| record.get("fingerprint").and_then(Json::as_str) == Some(fingerprint.as_str())).ok_or_else(|| format!("required review `{fingerprint}` missing; publish its native record and meaningful dependencies"))?;
-            if text(record, "kind")? != "claim-review" {
+            if text(record, "kind")? != "requirement-review" {
                 return Err(
-                    "required_reviews selects Claim Review records, not Claim Health".into(),
+                    "required_reviews selects Requirement Review records, not Requirement Status"
+                        .into(),
                 );
             }
-            covered.insert(text(record, "claim")?.to_string());
+            covered.insert(text(record, "requirement")?.to_string());
             let latest = crate::assurance_review::latest_review(reviews, record)?
                 .ok_or("required review has no current target")?;
             let assessment = crate::assurance_review::assess_record(
@@ -381,9 +382,11 @@ pub fn verify(value: &Json) -> Result<Json, String> {
                 return Err(format!("required review `{fingerprint}` is not current and accepted: {:?}; resolve locally, CI never invokes an agent", assessment.diagnostics));
             }
         }
-        for claim in array(field(snapshot, "authority")?, "claims")? {
-            if text(claim, "criticality")? != "routine" && !covered.contains(text(claim, "id")?) {
-                return Err(format!("required_reviews omits non-routine Claim `{}`; include its latest accepted current review", text(claim, "id")?));
+        for requirement in array(field(snapshot, "authority")?, "requirements")? {
+            if text(requirement, "criticality")? != "routine"
+                && !covered.contains(text(requirement, "id")?)
+            {
+                return Err(format!("required_reviews omits non-routine Requirement `{}`; include its latest accepted current review", text(requirement, "id")?));
             }
         }
     }
@@ -397,7 +400,7 @@ pub fn verify(value: &Json) -> Result<Json, String> {
     }
     Ok(Json::obj(vec![
         ("format", Json::str("azimuth-release-validation")),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         ("project", Json::str(project)),
         (
             "release_fingerprint",
@@ -418,7 +421,7 @@ pub fn verify_deployment(value: &Json, artifacts: &BTreeSet<String>) -> Result<(
             "configuration_fingerprint",
             "artifacts",
         ],
-        &["subject", "subject_fingerprint"],
+        &["verification_target", "verification_target_fingerprint"],
     )?;
     id(value, "id")?;
     id(value, "environment")?;
@@ -427,24 +430,24 @@ pub fn verify_deployment(value: &Json, artifacts: &BTreeSet<String>) -> Result<(
     if deployed.is_empty() || !deployed.is_subset(artifacts) {
         return Err("deployment must identify registered artifact digests".into());
     }
-    match (value.get("subject"), value.get("subject_fingerprint")) {
+    match (value.get("verification_target"), value.get("verification_target_fingerprint")) {
         (None, None) => {}
-        (Some(subject), Some(fingerprint)) => {
-            let native = crate::run::subject_from_json(subject)?;
-            if !crate::run::validate_subject_component(&native).is_empty() {
-                return Err("deployment Subject is invalid".into());
+        (Some(verification_target), Some(fingerprint)) => {
+            let native = crate::run::verification_target_from_json(verification_target)?;
+            if !crate::run::validate_verification_target_component(&native).is_empty() {
+                return Err("deployment Verification Target is invalid".into());
             }
-            if fingerprint.as_str() != Some(crate::run::subject_fingerprint(&native).as_str()) {
-                return Err("deployment Subject fingerprint mismatch".into());
+            if fingerprint.as_str() != Some(crate::run::verification_target_fingerprint(&native).as_str()) {
+                return Err("deployment Verification Target fingerprint mismatch".into());
             }
-            let crate::run::Subject::Deployment {
+            let crate::run::VerificationTarget::Deployment {
                 environment,
                 deployment,
                 artifacts,
                 ..
             } = native
             else {
-                return Err("deployment requires a native deployment Subject".into());
+                return Err("deployment requires a native deployment Verification Target".into());
             };
             let digests = artifacts
                 .iter()
@@ -454,12 +457,12 @@ pub fn verify_deployment(value: &Json, artifacts: &BTreeSet<String>) -> Result<(
                 || deployment != text(value, "id")?
                 || digests != deployed
             {
-                return Err("deployment Subject must describe the recorded environment, deployment and exact artifact digests".into());
+                return Err("deployment Verification Target must describe the recorded environment, deployment and exact artifact digests".into());
             }
         }
         _ => {
             return Err(
-                "deployment subject and subject_fingerprint must be supplied together".into(),
+                "deployment verification target and verification_target_fingerprint must be supplied together".into(),
             )
         }
     }
@@ -486,17 +489,21 @@ fn portable(value: &Json, at: &str) -> Result<(), String> {
 }
 
 pub fn verify_catalog(catalog: &Json, authority: &Json) -> Result<(), String> {
-    shape(catalog, &["modules", "claims", "cases", "checks"], &[])?;
+    shape(
+        catalog,
+        &["modules", "requirements", "scenarios", "checks"],
+        &[],
+    )?;
     let mut members = BTreeSet::new();
     let mut modules = BTreeMap::new();
     for module in array(catalog, "modules")? {
-        shape(module, &["id", "title", "claims"], &["parent"])?;
+        shape(module, &["id", "title", "requirements"], &["parent"])?;
         let module_id = id(module, "id")?;
         id(module, "title")?;
-        let claims = strings(module, "claims")?;
-        for claim in claims {
-            if !members.insert(claim) {
-                return Err("Claim belongs to multiple catalog Modules".into());
+        let requirements = strings(module, "requirements")?;
+        for requirement in requirements {
+            if !members.insert(requirement) {
+                return Err("Requirement belongs to multiple catalog Modules".into());
             }
         }
         if modules
@@ -522,33 +529,39 @@ pub fn verify_catalog(catalog: &Json, authority: &Json) -> Result<(), String> {
             cursor = parent;
         }
     }
-    for key in ["claims", "cases", "checks"] {
+    for key in ["requirements", "scenarios", "checks"] {
         let mut actual = BTreeSet::new();
         for item in array(catalog, key)? {
             shape(
                 item,
                 &[
                     "id",
-                    if key == "claims" {
+                    if key == "requirements" {
                         "statement"
                     } else {
                         "description"
                     },
                 ],
-                if key == "claims" { &["title"] } else { &[] },
+                if key == "requirements" {
+                    &["title"]
+                } else {
+                    &[]
+                },
             )?;
             if let Some(title) = item.get("title") {
-                let value = title.as_str().ok_or("catalog Claim title must be text")?;
+                let value = title
+                    .as_str()
+                    .ok_or("catalog Requirement title must be text")?;
                 if value.trim().is_empty()
                     || value.chars().count() > 120
                     || value.contains(['\n', '\r'])
                 {
-                    return Err("catalog Claim title must contain 1 to 120 characters".into());
+                    return Err("catalog Requirement title must contain 1 to 120 characters".into());
                 }
             }
             text(
                 item,
-                if key == "claims" {
+                if key == "requirements" {
                     "statement"
                 } else {
                     "description"
@@ -562,7 +575,7 @@ pub fn verify_catalog(catalog: &Json, authority: &Json) -> Result<(), String> {
             .iter()
             .map(|item| id(item, "id"))
             .collect::<Result<BTreeSet<_>, _>>()?;
-        if actual != expected || (key == "claims" && members != expected) {
+        if actual != expected || (key == "requirements" && members != expected) {
             return Err(format!(
                 "catalog {key} must exactly cover authority identities"
             ));
@@ -584,11 +597,11 @@ pub fn catalog(model: &crate::model::Model) -> Json {
                             ("id", Json::str(&spec.id)),
                             ("title", Json::str(&spec.id)),
                             (
-                                "claims",
+                                "requirements",
                                 Json::Arr(
-                                    spec.claims
+                                    spec.requirements
                                         .iter()
-                                        .map(|claim| Json::str(&claim.id))
+                                        .map(|requirement| Json::str(&requirement.id))
                                         .collect(),
                                 ),
                             ),
@@ -598,16 +611,16 @@ pub fn catalog(model: &crate::model::Model) -> Json {
             ),
         ),
         (
-            "claims",
+            "requirements",
             Json::Arr(
                 model
-                    .claims()
+                    .requirements()
                     .map(|view| {
                         let mut fields = vec![
-                            ("id", Json::str(&view.claim.id)),
-                            ("statement", Json::str(&view.claim.statement)),
+                            ("id", Json::str(&view.requirement.id)),
+                            ("statement", Json::str(&view.requirement.statement)),
                         ];
-                        if let Some(title) = &view.claim.title {
+                        if let Some(title) = &view.requirement.title {
                             fields.push(("title", Json::str(title)));
                         }
                         Json::obj(fields)
@@ -616,14 +629,14 @@ pub fn catalog(model: &crate::model::Model) -> Json {
             ),
         ),
         (
-            "cases",
+            "scenarios",
             Json::Arr(
                 model
-                    .cases()
+                    .scenarios()
                     .map(|view| {
                         Json::obj(vec![
-                            ("id", Json::str(&view.case.id)),
-                            ("description", Json::str(&view.case.statement)),
+                            ("id", Json::str(&view.scenario.id)),
+                            ("description", Json::str(&view.scenario.statement)),
                         ])
                     })
                     .collect(),

@@ -6,17 +6,17 @@ use azimuth::validation::{
     DecisionKind, FindingKind, RelationKind,
 };
 use azimuth::verification::{
-    parse_standards, parse_verification, ChallengeDomain, ClaimJudgmentVerdict,
-    MethodQualificationVerdict, Selector,
+    parse_standards, parse_verification, ChallengeDomain, MethodQualificationVerdict,
+    RequirementJudgmentVerdict, Selector,
 };
 use std::collections::BTreeSet;
 
 const SHA: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const SPEC: &str = "# Spec: alpha\n\n\
-## Claim: behavior\n\
+## Requirement: behavior\n\
 Criticality: standard\n\n\
 The system SHALL work.\n\n\
-### Case: works\n\
+### Scenario: works\n\
 Event: invoked\n\
 Required: it works\n";
 const STANDARDS: &str = "# Decision policies and Challenge schedule\n\n\
@@ -33,10 +33,10 @@ Terminal: the behavior works\n\n\
 This is one atomic terminal result.\n\n\
 ## Evidence Binding: alpha/works-edge\n\
 Check: alpha-works\n\
-Case: works\n\
+Scenario: works\n\
 Method qualification: alpha/method\n\
-Proposition: the result directly exercises the Claim\n\
-Context: {}\n\
+Proposition: the result directly exercises the Requirement\n\
+Execution Context: {}\n\
 Challenge domain: [\"realization\",\"mechanism\"]\n\
 Policy: credible\n\n\
 The edge is independently reviewable.\n\n\
@@ -45,7 +45,7 @@ Check: alpha-works\n\
 Scope: unit\n\
 Quantification: example\n\
 Oracle: direct\n\
-Context: {}\n\
+Execution Context: {}\n\
 Challenge domain: [\"realization\",\"mechanism\"]\n\
 Policy: credible\n\
 Verdict: qualified\n\
@@ -59,25 +59,25 @@ Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 Decided: 2026-08-21\n\
 Decider: owner@example\n\n\
 The qualified method applies to this edge.\n\n\
-## Claim Judgment: behavior\n\
+## Requirement Judgment: behavior\n\
 Verdict: accepted\n\
 Policy: credible\n\
 Fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
 Judged: 2026-08-21\n\
 Judge: owner@example\n\
-Basis: the qualified Check directly exercises the case\n\
+Basis: the qualified Check directly exercises the scenario\n\
 Residual risk: none identified\n\n\
 The total composition is acceptable.\n\n\
-## Challenger: mutation/perturb\n\
+## Verification Challenge: mutation/perturb\n\
 Form: mutation\n\
 Searches for: a change the Check cannot detect\n\
 Required scope: [\"context\"]\n\n\
 Survivors are objections.\n\n\
 ## Challenge Plan: alpha/credibility\n\
-Challenger: mutation/perturb\n\
+Verification Challenge: mutation/perturb\n\
 Select: applicability-decision from binding alpha/works-edge\n\
 Select: method-qualification from method-qualification alpha/method\n\
-Select: claim-judgment from claim behavior\n\n\
+Select: requirement-judgment from requirement behavior\n\n\
 The plan targets both reviewed decisions.\n";
 
 fn source(address: &str) -> SourceIdentity {
@@ -95,7 +95,7 @@ fn model(criticality: &str) -> Model {
         specs: vec![spec],
         realizes: vec![Site {
             spec: "alpha".into(),
-            claim: "behavior".into(),
+            requirement: "behavior".into(),
             site: "alpha::works".into(),
             file: "src/alpha.rs".into(),
             lang: "rust".into(),
@@ -134,11 +134,11 @@ fn refresh_decisions(model: &mut Model) {
             model.verifications[0].applicability_decisions[index].fingerprint = expected;
         }
     }
-    for index in 0..model.verifications[0].claim_judgments.len() {
-        if let Some(expected) = model
-            .expected_claim_judgment_fingerprint(&model.verifications[0].claim_judgments[index])
-        {
-            model.verifications[0].claim_judgments[index].fingerprint = expected;
+    for index in 0..model.verifications[0].requirement_judgments.len() {
+        if let Some(expected) = model.expected_requirement_judgment_fingerprint(
+            &model.verifications[0].requirement_judgments[index],
+        ) {
+            model.verifications[0].requirement_judgments[index].fingerprint = expected;
         }
     }
 }
@@ -176,7 +176,7 @@ fn reports_qualification_and_judgment_precedence_without_double_reporting() {
     value.verifications[0].method_qualifications.clear();
     let found = kinds(&value);
     assert!(found.contains(&FindingKind::MissingMethodQualification));
-    assert!(found.contains(&FindingKind::InvalidClaimJudgment));
+    assert!(found.contains(&FindingKind::InvalidRequirementJudgment));
     assert_eq!(
         disposition(&value, DecisionKind::MethodQualification),
         CandidateDisposition::UnresolvedRelation
@@ -191,7 +191,7 @@ fn reports_qualification_and_judgment_precedence_without_double_reporting() {
 
     value = model("standard");
     value.verifications[0].method_qualifications[0]
-        .context
+        .execution_context
         .insert("platform".into(), "changed".into());
     let found = kinds(&value);
     assert!(found.contains(&FindingKind::StaleMethodQualification));
@@ -211,11 +211,11 @@ fn reports_qualification_and_judgment_precedence_without_double_reporting() {
     );
 
     value = model("standard");
-    value.verifications[0].claim_judgments[0].verdict = ClaimJudgmentVerdict::Rejected;
+    value.verifications[0].requirement_judgments[0].verdict = RequirementJudgmentVerdict::Rejected;
     refresh_decisions(&mut value);
-    assert!(kinds(&value).contains(&FindingKind::RejectedClaimJudgment));
+    assert!(kinds(&value).contains(&FindingKind::RejectedRequirementJudgment));
     assert_eq!(
-        disposition(&value, DecisionKind::ClaimJudgment),
+        disposition(&value, DecisionKind::RequirementJudgment),
         CandidateDisposition::RejectedDecision
     );
 }
@@ -223,16 +223,16 @@ fn reports_qualification_and_judgment_precedence_without_double_reporting() {
 #[test]
 fn missing_stale_and_invalid_judgments_are_findings() {
     let mut value = model("standard");
-    value.verifications[0].claim_judgments.clear();
-    assert!(kinds(&value).contains(&FindingKind::MissingClaimJudgment));
+    value.verifications[0].requirement_judgments.clear();
+    assert!(kinds(&value).contains(&FindingKind::MissingRequirementJudgment));
 
     value = model("standard");
-    value.verifications[0].claim_judgments[0].basis[0].push_str(" changed");
-    assert!(kinds(&value).contains(&FindingKind::StaleClaimJudgment));
+    value.verifications[0].requirement_judgments[0].basis[0].push_str(" changed");
+    assert!(kinds(&value).contains(&FindingKind::StaleRequirementJudgment));
 
     value = model("standard");
-    value.verifications[0].claim_judgments[0].policy = "missing".into();
-    assert!(kinds(&value).contains(&FindingKind::InvalidClaimJudgment));
+    value.verifications[0].requirement_judgments[0].policy = "missing".into();
+    assert!(kinds(&value).contains(&FindingKind::InvalidRequirementJudgment));
 }
 
 #[test]
@@ -241,7 +241,7 @@ fn all_seven_selectors_preserve_exact_relations_and_deduplicate_only_identical_r
     value.designs.push(
         parse_design(
             "design.md",
-            "# Design: alpha\n\n## Claim: behavior\nMechanism: guard\n\
+            "# Design: alpha\n\n## Requirement: behavior\nMechanism: guard\n\
              Enforcement: guard\nBinding: artifact:guard\n\nA reason.\n",
         )
         .unwrap(),
@@ -261,9 +261,9 @@ fn all_seven_selectors_preserve_exact_relations_and_deduplicate_only_identical_r
         Selector::MethodQualificationFromCheck("alpha-works".into()),
         Selector::MethodQualificationFromRealization("core|rust-item|alpha::works".into()),
         Selector::MethodQualificationFromMechanism("guard".into()),
-        Selector::ClaimJudgmentFromClaim("behavior".into()),
-        Selector::ClaimJudgmentFromRealization("core|rust-item|alpha::works".into()),
-        Selector::ClaimJudgmentFromMechanism("guard".into()),
+        Selector::RequirementJudgmentFromRequirement("behavior".into()),
+        Selector::RequirementJudgmentFromRealization("core|rust-item|alpha::works".into()),
+        Selector::RequirementJudgmentFromMechanism("guard".into()),
         Selector::ApplicabilityDecisionFromBinding("alpha/works-edge".into()),
     ];
 
@@ -288,7 +288,7 @@ fn all_seven_selectors_preserve_exact_relations_and_deduplicate_only_identical_r
     );
     let json = resolution.to_json().to_string_pretty();
     assert!(json.contains("\"format\": \"azimuth-challenge-resolution\""));
-    assert!(json.contains("\"version\": 1"));
+    assert!(json.contains("\"version\": 2"));
     assert!(json.contains("\"candidates\""));
 }
 
@@ -333,7 +333,7 @@ fn unresolved_relations_retain_the_exact_direct_or_traversal_anchor() {
         Selector::MethodQualificationFromCheck("missing/check".into()),
         Selector::MethodQualificationFromRealization("core|rust-item|missing".into()),
         Selector::MethodQualificationFromMechanism("missing".into()),
-        Selector::ClaimJudgmentFromClaim("missing".into()),
+        Selector::RequirementJudgmentFromRequirement("missing".into()),
     ];
     let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
     assert_eq!(resolution.candidates.len(), 5);
@@ -345,11 +345,11 @@ fn unresolved_relations_retain_the_exact_direct_or_traversal_anchor() {
 }
 
 #[test]
-fn dangling_realization_does_not_invent_a_claim_relation() {
+fn dangling_realization_does_not_invent_a_requirement_relation() {
     let mut value = model("standard");
     value.realizes.push(Site {
         spec: "alpha".into(),
-        claim: "missing".into(),
+        requirement: "missing".into(),
         site: "alpha::dangling".into(),
         file: "src/dangling.rs".into(),
         lang: "rust".into(),
@@ -358,7 +358,7 @@ fn dangling_realization_does_not_invent_a_claim_relation() {
     });
     value.verifications[0].challenge_plans[0].selectors = vec![
         Selector::MethodQualificationFromRealization("core|rust-item|alpha::dangling".into()),
-        Selector::ClaimJudgmentFromRealization("core|rust-item|alpha::dangling".into()),
+        Selector::RequirementJudgmentFromRealization("core|rust-item|alpha::dangling".into()),
     ];
     let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
     assert!(resolution.candidates.iter().all(|candidate| {
@@ -369,13 +369,14 @@ fn dangling_realization_does_not_invent_a_claim_relation() {
 }
 
 #[test]
-fn qualification_unbound_claim_is_unresolved_but_judgment_traversal_reaches_the_claim() {
+fn qualification_unbound_requirement_is_unresolved_but_judgment_traversal_reaches_the_requirement()
+{
     let mut value = model("standard");
     value.verifications[0].bindings.clear();
     value.verifications[0].method_qualifications.clear();
     value.verifications[0].challenge_plans[0].selectors = vec![
         Selector::MethodQualificationFromRealization("core|rust-item|alpha::works".into()),
-        Selector::ClaimJudgmentFromRealization("core|rust-item|alpha::works".into()),
+        Selector::RequirementJudgmentFromRealization("core|rust-item|alpha::works".into()),
     ];
     let resolution = resolve_challenge_plan(&value, &value.verifications[0].challenge_plans[0]);
     let qualification = resolution
@@ -391,7 +392,7 @@ fn qualification_unbound_claim_is_unresolved_but_judgment_traversal_reaches_the_
     let judgment = resolution
         .candidates
         .iter()
-        .find(|candidate| candidate.selector.target == DecisionKind::ClaimJudgment)
+        .find(|candidate| candidate.selector.target == DecisionKind::RequirementJudgment)
         .unwrap();
     assert!(judgment.target.is_some());
     assert_eq!(judgment.disposition, CandidateDisposition::InvalidDecision);
@@ -411,14 +412,14 @@ fn routine_precedes_missing_and_invalid_decisions() {
 #[test]
 fn required_form_coverage_checks_declared_scope_per_plan_and_target() {
     let mut value = model("standard");
-    value.verifications[0].challengers[0].required_scope =
+    value.verifications[0].verification_challenges[0].required_scope =
         vec![azimuth::verification::SemanticScopeKind::Realization];
     assert!(kinds(&value).contains(&FindingKind::InsufficientChallengeScope));
 
     value.verifications[0].challenge_plans[0].selectors.extend([
         Selector::MethodQualificationFromRealization("core|rust-item|alpha::works".into()),
         Selector::ApplicabilityDecisionFromRealization("core|rust-item|alpha::works".into()),
-        Selector::ClaimJudgmentFromRealization("core|rust-item|alpha::works".into()),
+        Selector::RequirementJudgmentFromRealization("core|rust-item|alpha::works".into()),
     ]);
     assert!(!kinds(&value).contains(&FindingKind::InsufficientChallengeScope));
 
@@ -450,7 +451,7 @@ fn adverse_sibling_makes_a_plan_unrunnable_for_policy_coverage() {
 #[test]
 fn unstable_inputs_and_unprojectable_mechanisms_cannot_fake_scope_coverage() {
     let mut value = model("standard");
-    value.verifications[0].challengers[0].required_scope =
+    value.verifications[0].verification_challenges[0].required_scope =
         vec![azimuth::verification::SemanticScopeKind::CheckImplementation];
     value.check_implementations[0].source = None;
     refresh_decisions(&mut value);
@@ -460,12 +461,12 @@ fn unstable_inputs_and_unprojectable_mechanisms_cannot_fake_scope_coverage() {
     value.designs.push(
         parse_design(
             "design.md",
-            "# Design: alpha\n\n## Claim: behavior\nMechanism: guard\n\
+            "# Design: alpha\n\n## Requirement: behavior\nMechanism: guard\n\
              Enforcement: guard\nBinding: artifact:missing\n\nA reason.\n",
         )
         .unwrap(),
     );
-    value.verifications[0].challengers[0].required_scope =
+    value.verifications[0].verification_challenges[0].required_scope =
         vec![azimuth::verification::SemanticScopeKind::Mechanism];
     value.verifications[0].challenge_plans[0].selectors =
         vec![Selector::MethodQualificationFromMechanism("guard".into())];
@@ -495,13 +496,13 @@ fn relevant_plans_are_retained_atomically_without_success_filtering() {
     value.verifications[0].challenge_plans[0].selectors.push(
         Selector::ApplicabilityDecisionFromBinding("missing/binding".into()),
     );
-    let claims = BTreeSet::from(["behavior".to_string()]);
+    let requirements = BTreeSet::from(["behavior".to_string()]);
     let bindings = BTreeSet::from(["alpha/works-edge".to_string()]);
     let checks = BTreeSet::from(["alpha-works".to_string()]);
     assert!(challenge_plan_relevant_to_selection(
         &value,
         &value.verifications[0].challenge_plans[0],
-        &claims,
+        &requirements,
         &bindings,
         &checks,
     ));
@@ -523,11 +524,32 @@ fn finding_registry_is_exhaustive_and_has_guidance() {
         assert!(!kind.help().is_empty());
     }
     assert_eq!(
-        FindingKind::MissingClaimJudgment.category().name(),
+        FindingKind::MissingRequirementJudgment.category().name(),
         "judgment"
     );
     assert_eq!(
         FindingKind::UnresolvedChallengeRelation.category().name(),
         "verification"
     );
+}
+
+#[test]
+fn finding_records_name_the_model_entity_kind() {
+    let finding = azimuth::validation::Finding {
+        kind: FindingKind::UnboundScenario,
+        severity: azimuth::validation::Severity::Error,
+        requirement: Some("visible".into()),
+        entity_kind: Some(azimuth::diag::EntityKind::Scenario),
+        criticality: None,
+        path: "spec.md".into(),
+        line: 1,
+        detail: "unbound".into(),
+    };
+    let json = finding.to_json();
+    assert_eq!(
+        json.get("entity_kind").and_then(|value| value.as_str()),
+        Some("scenario")
+    );
+    assert!(json.get("verification_target_kind").is_none());
+    assert!(json.get("subject_kind").is_none());
 }

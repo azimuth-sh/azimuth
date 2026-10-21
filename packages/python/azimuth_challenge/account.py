@@ -15,22 +15,24 @@ def account(launch, reports):
     activities,artifacts,diagnostics,units,raw_reports=[],[],[],{},{}
     starts,finishes=[],[]
     for challenge in launch['plan']['challenges']:
-        challenger=challenge['challenger']['id']
+        verification_challenge=challenge['verification_challenge']['id']
         units[challenge['id']]=[]
         raw_reports[challenge['id']]={}
         for unit in challenge['units']:
-            key=(challenger,unit['id'])
+            key=(verification_challenge,unit['id'])
             if key not in reports:
                 raise ValueError('every planned Challenge unit needs an explicit native report')
             path=reports.pop(key)
             raw=path.read_bytes()
             report=read(path)
-            if report.get('format')!='azimuth-challenge-native-report' or report.get('version')!=1:
+            if report.get('format')!='azimuth-challenge-native-report' or report.get('version')!=2:
                 raise ValueError('invalid native report')
             if fingerprint({key:value for key,value in report.items() if key!='fingerprint'})!=report.get('fingerprint'):
                 raise ValueError('native report fingerprint mismatch')
-            if report['subject']!=launch['subject'] or report['challenger']!=challenger or report['scope_fingerprint']!=unit['parameters']['scope_fingerprint']:
-                raise ValueError('native report differs from planned Subject, Challenger or scope')
+            if (report['verification_target']!=launch['verification_target']
+                    or report['verification_challenge']!=verification_challenge
+                    or report['scope_fingerprint']!=unit['parameters']['scope_fingerprint']):
+                raise ValueError('native report differs from planned Verification Target, Verification Challenge or scope')
             outcome,objections,gaps,_=normalize(report['tool'],json.loads(report['native_report_json']),execution_failed=report['timed_out'] or report['tool_exit']!=0)
             if (outcome,objections,gaps)!=(report['outcome'],report['objections'],report['inconclusive_reasons']):
                 raise ValueError('native report interpretation mismatch')
@@ -44,7 +46,7 @@ def account(launch, reports):
             for ordinal,reason in enumerate(gaps):
                 diagnostic_id='gap-'+suffix+'-'+str(ordinal)
                 diagnostics.append({'id':diagnostic_id,'class':'normalization','severity':'warning','code':'challenge-search-incomplete',
-                    'message':reason,'scope':{'kind':'challenger-execution','challenger_fingerprint':challenge['challenger']['fingerprint'],'target_fingerprint':challenge['target']['fingerprint']},
+                    'message':reason,'scope':{'kind':'verification-challenge-execution','verification_challenge_fingerprint':challenge['verification_challenge']['fingerprint'],'target_fingerprint':challenge['target']['fingerprint']},
                     'artifacts':[artifact_id],'details':{}})
                 refs.append(diagnostic_id)
             activities.append({'id':activity_id,'status':'completed','started_at_ms':report['started_at_ms'],
@@ -57,9 +59,9 @@ def account(launch, reports):
     if reports or not starts:
         raise ValueError('native report selection differs from finite planned units')
     execution=fingerprint(raw_reports)
-    return {'format':'azimuth-challenge-native-account','version':1,'subject':launch['subject'],
+    return {'format':'azimuth-challenge-native-account','version':2,'verification_target':launch['verification_target'],
             'source':{'system':'azimuth-challenge','execution':execution},'started_at_ms':min(starts),'finished_at_ms':max(finishes),
-            'generated_at_ms':max(int(time.time()*1000),max(finishes)),'actual_context':launch['plan']['required_context'],
+            'generated_at_ms':max(int(time.time()*1000),max(finishes)),'actual_execution_context':launch['plan']['required_execution_context'],
             'activities':activities,'units_by_challenge':units,'reports':raw_reports,'artifacts':artifacts,'diagnostics':diagnostics}
 
 
@@ -73,10 +75,10 @@ def main():
         reports={}
         for argument in a.report:
             selector,path=argument.split('=',1)
-            challenger,unit=selector.split(':',1)
-            if (challenger,unit) in reports:
+            verification_challenge,unit=selector.split(':',1)
+            if (verification_challenge,unit) in reports:
                 raise ValueError('duplicate native report selector')
-            reports[challenger,unit]=Path(path)
+            reports[verification_challenge,unit]=Path(path)
         result=account(read(a.launch),reports)
         Path(a.out).write_text(json.dumps(result,indent=2)+'\n')
     except (ValueError,KeyError,OSError) as error:

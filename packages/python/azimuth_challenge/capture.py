@@ -38,8 +38,8 @@ def capture(root, repository, git):
         data=located(root,relative).read_bytes()
         files.append({'file':relative,'fingerprint':'sha256:'+hashlib.sha256(data).hexdigest()})
     content_fingerprint=fingerprint({'revision':revision,'files':files,'deleted':deleted,'links':links})
-    subject={'kind':'source','repositories':[{'id':repository,'revision':revision,'content_fingerprint':content_fingerprint}]}
-    report={'format':'azimuth-source-capture','version':1,'repository':repository,'subject':subject,
+    verification_target={'kind':'source','repositories':[{'id':repository,'revision':revision,'content_fingerprint':content_fingerprint}]}
+    report={'format':'azimuth-source-capture','version':2,'repository':repository,'verification_target':verification_target,
             'files':files,'deleted':deleted,'links':links,'capture_policy':'tracked-and-untracked-not-ignored',
             'limitations':['Ignored build inputs and external dependencies are outside this capture; dependency completeness requires review.']}
     report['fingerprint']=fingerprint(report)

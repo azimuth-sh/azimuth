@@ -1128,7 +1128,7 @@ fn array_body(values: &str) -> String {
 
 fn relation_json(marker: &Marker) -> String {
     let fields = vec![
-        ("claim", marker.values[0].as_str()),
+        ("requirement", marker.values[0].as_str()),
         ("site", marker.site.as_str()),
         ("file", marker.file.as_str()),
         ("lang", "rust"),
@@ -1225,6 +1225,8 @@ mod tests {
         let manifest = manifest_json(&markers);
         assert!(manifest.contains("\"check_implementations\""));
         assert!(manifest.contains("\"check\":\"identity-check\""));
+        assert!(manifest.contains("\"requirement\":\"rust-identifies\""));
+        assert!(!manifest.contains("\"claim\""));
         assert!(markers[1].fingerprint.starts_with("sha256:"));
         assert_eq!(markers[1].fingerprint.len(), 71);
         assert!(!manifest.contains("\"covers\""));

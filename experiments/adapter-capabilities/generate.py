@@ -229,10 +229,10 @@ def initialize(root: pathlib.Path) -> None:
     package.mkdir(parents=True)
     (package / "spec.md").write_text(
         "# Spec: synthetic/behavior\n\n"
-        "## Claim: behavior-is-observable\n"
+        "## Requirement: behavior-is-observable\n"
         "Criticality: standard\n\n"
         "The synthetic component SHALL expose one observable behavior.\n\n"
-        "### Case: works\n"
+        "### Scenario: works\n"
         "The synthetic behavior is observable when checked.\n",
         encoding="utf-8",
     )
@@ -244,19 +244,19 @@ def initialize(root: pathlib.Path) -> None:
         "The adapter runs one finite synthetic work unit.\n\n"
         "## Evidence Binding: synthetic/behavior-edge\n"
         "Check: behavior-check\n"
-        "Case: works\n"
+        "Scenario: works\n"
         "Method qualification: synthetic/behavior-method\n"
         "Proposition: the bounded result directly establishes observable behavior\n"
-        "Context: {}\n"
+        "Execution Context: {}\n"
         "Challenge domain: [\"check-implementation\"]\n"
         "Policy: synthetic-evidence\n\n"
-        "The experiment binds its one Check to its one Case.\n\n"
+        "The experiment binds its one Check to its one Scenario.\n\n"
         "## Method Qualification: synthetic/behavior-method\n"
         "Check: behavior-check\n"
         "Scope: component\n"
         "Quantification: example\n"
         "Oracle: relational\n"
-        "Context: {\"platform\":\"synthetic\"}\n"
+        "Execution Context: {\"platform\":\"synthetic\"}\n"
         "Challenge domain: [\"check-implementation\"]\n"
         "Policy: synthetic-evidence\n"
         "Verdict: qualified\n"
@@ -269,26 +269,26 @@ def initialize(root: pathlib.Path) -> None:
         "Fingerprint: sha256:15e4326e47b435bbcbbb73f80df45a6f4414c6c706ab16309cb1440cef530ea6\n"
         "Decided: 2026-08-30\n"
         "Decider: adapter-experiment\n\n"
-        "The bounded Check applies directly to the fixture Case.\n\n"
-        "## Claim Judgment: behavior-is-observable\n"
+        "The bounded Check applies directly to the fixture Scenario.\n\n"
+        "## Requirement Judgment: behavior-is-observable\n"
         "Verdict: accepted\n"
         "Policy: synthetic-evidence\n"
         "Fingerprint: sha256:c1a199c852170cd84bf5699d0b696f98d4c6db95819f2bd380588e0701ac897d\n"
         "Judged: 2026-08-30\n"
         "Judge: adapter-experiment\n"
-        "Basis: the current method and binding cover the only Case\n"
+        "Basis: the current method and binding cover the only Scenario\n"
         "Residual risk: synthetic execution cannot establish production behavior\n\n"
         "The fixture accepts only its deliberately bounded synthetic composition.\n\n"
-        "## Challenger: synthetic/implementation-perturbation\n"
+        "## Verification Challenge: synthetic/implementation-perturbation\n"
         "Form: implementation-perturbation\n"
         "Searches for: a synthetic implementation change that escapes the bounded result\n"
         "Required scope: [\"policy\"]\n\n"
-        "The Challenger attacks the policy basis shared by the synthetic decisions.\n\n"
+        "The Verification Challenge attacks the policy basis shared by the synthetic decisions.\n\n"
         "## Challenge Plan: synthetic/decision-coverage\n"
-        "Challenger: synthetic/implementation-perturbation\n"
+        "Verification Challenge: synthetic/implementation-perturbation\n"
         "Select: method-qualification from check behavior-check\n"
         "Select: applicability-decision from binding synthetic/behavior-edge\n"
-        "Select: claim-judgment from claim behavior-is-observable\n\n"
+        "Select: requirement-judgment from requirement behavior-is-observable\n\n"
         "The plan covers each positive decision made by the fixture.\n",
         encoding="utf-8",
     )
@@ -306,7 +306,7 @@ def initialize(root: pathlib.Path) -> None:
         root / "workspace.json",
         {
             "format": "azimuth-workspace",
-            "version": 1,
+            "version": 2,
             "areas": [
                 {
                     "id": "synthetic",
@@ -322,7 +322,7 @@ def initialize(root: pathlib.Path) -> None:
         {
             "realizes": [
                 {
-                    "claim": "behavior-is-observable",
+                    "requirement": "behavior-is-observable",
                     "site": "behavior::execute",
                     "file": "src/behavior.rs",
                     "lang": "rust-symbol",
@@ -343,21 +343,21 @@ def initialize(root: pathlib.Path) -> None:
             "enumerations": [],
         },
     )
-    subject = {
+    verification_target = {
         "kind": "artifact",
         "artifacts": [{"id": "candidate", "digest": fixed("b")}],
     }
     base = {
         "format": "azimuth-run-plan-request",
-        "version": 1,
+        "version": 2,
         "planned_at_ms": 1_787_300_000_000,
-        "subject": subject,
-        "required_context": {"platform": "synthetic"},
+        "verification_target": verification_target,
+        "required_execution_context": {"platform": "synthetic"},
         "checks": [
             {
                 "id": "behavior-check",
                 "execution-capability": "executor/checks",
-                "cases": ["works"],
+                "scenarios": ["works"],
                 "units": [{"id": "whole", "parameters": {}}],
             }
         ],
@@ -386,11 +386,11 @@ def launch_fingerprint(launch: dict[str, object]) -> str:
     return fingerprint(
         {
             "format": "azimuth-run-launch-fingerprint",
-            "version": 1,
+            "version": 2,
             "operation": launch["operation"],
             "planned_at_ms": launch["planned_at_ms"],
-            "subject": launch["subject"],
-            "subject_fingerprint": launch["subject_fingerprint"],
+            "verification_target": launch["verification_target"],
+            "verification_target_fingerprint": launch["verification_target_fingerprint"],
             "plan": launch["plan"],
             "adapter": launch["adapters"][0],
             "routes": launch["routes"],
@@ -416,23 +416,23 @@ def derive_launches(source: pathlib.Path, config_path: pathlib.Path, target: pat
     write_json(target / "substitution-reidentified.json", substituted)
 
     dual = copy.deepcopy(substituted)
-    challenger_fingerprint = fixed("c")
+    verification_challenge_fingerprint = fixed("c")
     target_fingerprint = fixed("d")
     anchors = [
         {
-            "kind": "claim",
+            "kind": "requirement",
             "id": "behavior-is-observable",
             "fingerprint": fixed("e"),
         }
     ]
     inputs = [
         {
-            "kind": "claim",
+            "kind": "requirement",
             "id": "behavior-is-observable",
             "fingerprint": fixed("e"),
         },
         {
-            "kind": "claim-judgment",
+            "kind": "requirement-judgment",
             "id": "behavior-is-observable",
             "fingerprint": target_fingerprint,
         },
@@ -443,14 +443,14 @@ def derive_launches(source: pathlib.Path, config_path: pathlib.Path, target: pat
         },
         {
             "kind": "policy",
-            "id": "synthetic/claim-judgment-policy",
+            "id": "synthetic/requirement-judgment-policy",
             "fingerprint": fixed("9"),
         },
     ]
     scope_fingerprint = fingerprint(
         {
             "format": "azimuth-challenge-scope-fingerprint",
-            "version": 1,
+            "version": 2,
             "anchors": anchors,
             "inputs": inputs,
         }
@@ -458,21 +458,21 @@ def derive_launches(source: pathlib.Path, config_path: pathlib.Path, target: pat
     selection_fingerprint = fingerprint(
         {
             "format": "azimuth-challenge-selection-identity",
-            "version": 1,
-            "challenger_fingerprint": challenger_fingerprint,
-            "target_kind": "claim-judgment",
+            "version": 2,
+            "verification_challenge_fingerprint": verification_challenge_fingerprint,
+            "target_kind": "requirement-judgment",
             "target_fingerprint": target_fingerprint,
         }
     )
     challenge_id = "challenge/" + selection_fingerprint.removeprefix("sha256:")
     challenge = {
         "id": challenge_id,
-        "challenger": {
+        "verification_challenge": {
             "id": "fault-injection/synthetic",
-            "fingerprint": challenger_fingerprint,
+            "fingerprint": verification_challenge_fingerprint,
         },
         "target": {
-            "kind": "claim-judgment",
+            "kind": "requirement-judgment",
             "id": "behavior-is-observable",
             "fingerprint": target_fingerprint,
         },
@@ -488,10 +488,10 @@ def derive_launches(source: pathlib.Path, config_path: pathlib.Path, target: pat
     dual["plan"]["fingerprint"] = fingerprint(
         {
             "format": "azimuth-run-plan-fingerprint",
-            "version": 1,
-            "subject_fingerprint": dual["subject_fingerprint"],
+            "version": 2,
+            "verification_target_fingerprint": dual["verification_target_fingerprint"],
             "model_fingerprint": dual["plan"]["model_fingerprint"],
-            "required_context": dual["plan"]["required_context"],
+            "required_execution_context": dual["plan"]["required_execution_context"],
             "checks": dual["plan"]["checks"],
             "challenges": dual["plan"]["challenges"],
         }

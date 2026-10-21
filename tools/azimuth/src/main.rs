@@ -22,7 +22,7 @@ USAGE
     azimuth workflow definition --workflow change-development [--out <file>]\n\
     azimuth workflow init (--workflow change-development --inputs <file> | --definition <file>) --instance <file> --repositories <file>
     azimuth workflow next|verify --instance <file> --repositories <file> [--out <file>]
-    azimuth workflow assurance-targets --instance <file> --repositories <file> --snapshot <relative-ref> [--subjects <relative-ref>] [--out <file>]
+    azimuth workflow assurance-targets --instance <file> --repositories <file> --snapshot <relative-ref> [--verification-targets <relative-ref>] [--out <file>]
     azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--out <file>]
     azimuth release project --baseline-revision <sha256> --change <dir>... [model options]
     azimuth release compose|prepare|verify|inputs --input <file> [--model-out <absent directory>] [--out <file>]
@@ -92,7 +92,7 @@ USAGE
 OPTIONS
     --project <file>      project catalog; requires --workset
     --workset <file>      exact federated assessment inputs
-    --assurance-snapshot <file>  native Claim Review/Health records for acceptance validation
+    --assurance-snapshot <file>  native Requirement Review/Status records for acceptance validation
     --scope <scope>       structure (default) or acceptance; validation and finalization boundaries
     --model <dir>          current model packages (default: azimuth/model)
     --standards <file>     decision policies and Challenge schedule
@@ -504,8 +504,12 @@ fn command_migrate(args: &[String]) -> Result<ExitCode, String> {
                 return Err("migrate apply does not accept `--out`".into());
             }
             let plan = plan.ok_or("migrate apply needs `--plan <file>`")?;
-            azimuth::installation::migration_apply(&root, &plan)?;
-            println!("migration plan is applicable; no semantic account edits are required");
+            let rewritten = azimuth::installation::migration_apply(&root, &plan)?;
+            if rewritten == 0 {
+                println!("migration plan is applicable; no semantic account edits are required");
+            } else {
+                println!("rewrote {rewritten} account file(s); run `azimuth update` to reconcile managed resources");
+            }
         }
         other => return Err(format!("unknown migrate operation `{other}`")),
     }
@@ -947,7 +951,7 @@ fn command_project_observe(args: &[String]) -> Result<ExitCode, String> {
     let root = root.ok_or("project observe needs `--root <dir>`")?;
     let producer = producer.ok_or("project observe needs `--producer <name/version>`")?;
     let out = out.ok_or("project observe needs `--out <repository.json>`")?;
-    let observation = match azimuth::federation::observe_repository_with_support(
+    let check_result = match azimuth::federation::observe_repository_with_support(
         &project,
         &repository,
         &root,
@@ -955,13 +959,13 @@ fn command_project_observe(args: &[String]) -> Result<ExitCode, String> {
         &manifests,
         support.as_deref(),
     ) {
-        Ok(observation) => observation,
+        Ok(check_result) => check_result,
         Err(diags) => {
             report(&diags, "error");
             return Ok(ExitCode::from(2));
         }
     };
-    std::fs::write(&out, observation)
+    std::fs::write(&out, check_result)
         .map_err(|error| format!("cannot write {}: {error}", out.display()))?;
     println!("observed repository `{repository}` as {}", out.display());
     Ok(ExitCode::SUCCESS)
@@ -1328,11 +1332,11 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
                     "planned"
                 };
                 println!(
-                    "  add {}#{} · {} · {} Case(s) · {state} · {}",
+                    "  add {}#{} · {} · {} Scenario(s) · {state} · {}",
                     addition.spec,
-                    addition.claim,
+                    addition.requirement,
                     addition.criticality.name(),
-                    addition.cases.len(),
+                    addition.scenarios.len(),
                     change_obligations(addition.criticality)
                 );
             }
@@ -1341,7 +1345,7 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
                 println!(
                     "  criticality {}#{} · {} → {} · {state} · {}",
                     change.spec,
-                    change.claim,
+                    change.requirement,
                     change.from.name(),
                     change.to.name(),
                     change_obligations(change.to)
@@ -1359,8 +1363,8 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
                 println!("  intent unchanged · {reason}");
             }
             println!(
-                "current {} claim(s) → target {} claim(s)",
-                report.current_claims, projection.target_claims
+                "current {} requirement(s) → target {} requirement(s)",
+                report.current_requirements, projection.target_requirements
             );
             println!("{} incomplete plan item(s)", report.incomplete_plan_items);
             let summary = validation::summarize(&loaded.model, &findings);
@@ -2559,15 +2563,17 @@ fn unique_run_bundles(bundles: &[azimuth::run::RunBundle]) -> Vec<&azimuth::run:
     unique
 }
 
-fn subject_kind(subject: &azimuth::run::Subject) -> &'static str {
-    match subject {
-        azimuth::run::Subject::Source { .. } => "source",
-        azimuth::run::Subject::Workspace { .. } => "workspace",
-        azimuth::run::Subject::CiCandidate { .. } => "ci-candidate",
-        azimuth::run::Subject::Artifact { .. } => "artifact",
-        azimuth::run::Subject::Deployment { .. } => "deployment",
-        azimuth::run::Subject::Service { .. } => "service",
-        azimuth::run::Subject::MonitoringWindow { .. } => "monitoring-window",
+fn verification_target_kind(
+    verification_target: &azimuth::run::VerificationTarget,
+) -> &'static str {
+    match verification_target {
+        azimuth::run::VerificationTarget::Source { .. } => "source",
+        azimuth::run::VerificationTarget::Workspace { .. } => "workspace",
+        azimuth::run::VerificationTarget::CiCandidate { .. } => "ci-candidate",
+        azimuth::run::VerificationTarget::Artifact { .. } => "artifact",
+        azimuth::run::VerificationTarget::Deployment { .. } => "deployment",
+        azimuth::run::VerificationTarget::Service { .. } => "service",
+        azimuth::run::VerificationTarget::MonitoringWindow { .. } => "monitoring-window",
     }
 }
 
@@ -2599,31 +2605,34 @@ fn run_inspection_text(
         );
         let _ = writeln!(
             rendered,
-            "  Subject: {} {}",
-            subject_kind(&bundle.subject),
-            bundle.subject_fingerprint
+            "  Verification Target: {} {}",
+            verification_target_kind(&bundle.verification_target),
+            bundle.verification_target_fingerprint
         );
         let _ = writeln!(rendered, "  Status: {}", bundle.status.name());
-        let mut observations = bundle.check_executions.iter().collect::<Vec<_>>();
-        observations.sort_by(|left, right| {
+        let mut check_results = bundle.check_executions.iter().collect::<Vec<_>>();
+        check_results.sort_by(|left, right| {
             left.check
                 .id
                 .cmp(&right.check.id)
                 .then_with(|| left.check.fingerprint.cmp(&right.check.fingerprint))
         });
-        for execution in observations {
-            for observation in &execution.observations {
+        for execution in check_results {
+            for check_result in &execution.results {
                 let _ = writeln!(
                     rendered,
-                    "  Observation: {} {} {} {}",
+                    "  Check Result: {} {} {} {}",
                     execution.check.id,
-                    observation.case,
-                    observation.outcome.name(),
-                    observation.fingerprint
+                    check_result.scenario,
+                    check_result.outcome.name(),
+                    check_result.fingerprint
                 );
             }
         }
-        let mut challenges = bundle.challenger_executions.iter().collect::<Vec<_>>();
+        let mut challenges = bundle
+            .verification_challenge_executions
+            .iter()
+            .collect::<Vec<_>>();
         challenges.sort_by(|left, right| left.challenge.cmp(&right.challenge));
         for execution in challenges {
             let _ = writeln!(
@@ -2655,38 +2664,44 @@ fn run_inspection_json(
     let bundles = unique_run_bundles(bundles)
         .into_iter()
         .map(|bundle| {
-            let mut observations = bundle.check_executions.iter().collect::<Vec<_>>();
-            observations.sort_by(|left, right| {
+            let mut check_results = bundle.check_executions.iter().collect::<Vec<_>>();
+            check_results.sort_by(|left, right| {
                 left.check
                     .id
                     .cmp(&right.check.id)
                     .then_with(|| left.check.fingerprint.cmp(&right.check.fingerprint))
             });
-            let observations = observations
+            let check_results = check_results
                 .into_iter()
                 .flat_map(|execution| {
-                    execution.observations.iter().map(|observation| {
+                    execution.results.iter().map(|check_result| {
                         Json::obj(vec![
                             ("check", Json::str(&execution.check.id)),
                             ("check_fingerprint", Json::str(&execution.check.fingerprint)),
-                            ("case", Json::str(&observation.case)),
-                            ("outcome", Json::str(observation.outcome.name())),
-                            ("fingerprint", Json::str(&observation.fingerprint)),
+                            ("scenario", Json::str(&check_result.scenario)),
+                            ("outcome", Json::str(check_result.outcome.name())),
+                            ("fingerprint", Json::str(&check_result.fingerprint)),
                         ])
                     })
                 })
                 .collect();
-            let mut challenges = bundle.challenger_executions.iter().collect::<Vec<_>>();
+            let mut challenges = bundle
+                .verification_challenge_executions
+                .iter()
+                .collect::<Vec<_>>();
             challenges.sort_by(|left, right| left.challenge.cmp(&right.challenge));
             let challenges = challenges
                 .into_iter()
                 .map(|execution| {
                     Json::obj(vec![
                         ("challenge", Json::str(&execution.challenge)),
-                        ("challenger", Json::str(&execution.challenger.id)),
                         (
-                            "challenger_fingerprint",
-                            Json::str(&execution.challenger.fingerprint),
+                            "verification_challenge",
+                            Json::str(&execution.verification_challenge.id),
+                        ),
+                        (
+                            "verification_challenge_fingerprint",
+                            Json::str(&execution.verification_challenge.fingerprint),
                         ),
                         ("target_kind", Json::str(execution.target.kind.name())),
                         ("target", Json::str(&execution.target.id)),
@@ -2711,13 +2726,16 @@ fn run_inspection_json(
                         .map(Json::str)
                         .unwrap_or(Json::Null),
                 ),
-                ("subject_kind", Json::str(subject_kind(&bundle.subject))),
                 (
-                    "subject_fingerprint",
-                    Json::str(&bundle.subject_fingerprint),
+                    "verification_target_kind",
+                    Json::str(verification_target_kind(&bundle.verification_target)),
+                ),
+                (
+                    "verification_target_fingerprint",
+                    Json::str(&bundle.verification_target_fingerprint),
                 ),
                 ("status", Json::str(bundle.status.name())),
-                ("observations", Json::Arr(observations)),
+                ("check_results", Json::Arr(check_results)),
                 ("challenge_results", Json::Arr(challenges)),
             ])
         })
@@ -2734,7 +2752,7 @@ fn run_inspection_json(
         .collect();
     Json::obj(vec![
         ("format", Json::str("azimuth-run-inspection")),
-        ("version", Json::Num(1.0)),
+        ("version", Json::Num(2.0)),
         ("protocol_consistent", Json::Bool(findings.is_empty())),
         ("model_authority", Json::str("unresolved")),
         ("assurance_state", Json::str("unresolved")),
@@ -2877,13 +2895,13 @@ fn report_findings(model: &azimuth::model::Model, findings: &[validation::Findin
         } else {
             finding.path.clone()
         };
-        let claim = finding.claim.clone().unwrap_or_else(|| "-".into());
+        let requirement = finding.requirement.clone().unwrap_or_else(|| "-".into());
         let level = finding
             .criticality
             .map(|criticality| format!(" ({})", criticality.name()))
             .unwrap_or_default();
         println!(
-            "{where_}: {} {} {} {claim}{level}\n    {}\n    help: {}",
+            "{where_}: {} {} {} {requirement}{level}\n    {}\n    help: {}",
             finding.severity.name(),
             finding.kind.category().name(),
             finding.kind.name(),
@@ -2897,7 +2915,11 @@ fn report_findings(model: &azimuth::model::Model, findings: &[validation::Findin
         .map(|(kind, count)| format!("{count} {kind}"))
         .collect::<Vec<_>>();
     println!();
-    println!("{} claims in {} spec(s)", summary.claims, model.specs.len());
+    println!(
+        "{} requirements in {} spec(s)",
+        summary.requirements,
+        model.specs.len()
+    );
     if by_kind.is_empty() {
         println!("no findings");
     } else {
@@ -2938,13 +2960,13 @@ fn apply_native_assurance(
     let content =
         fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
     let snapshot = azimuth::json::parse(&content).map_err(|error| error.to_string())?;
-    let supported = azimuth::assurance_publication::supported_claims(model, &snapshot)?;
+    let supported = azimuth::assurance_publication::supported_requirements(model, &snapshot)?;
     findings.retain(|finding| {
-        finding.kind != validation::FindingKind::MissingClaimAssurance
+        finding.kind != validation::FindingKind::MissingRequirementAssurance
             || !finding
-                .claim
+                .requirement
                 .as_ref()
-                .is_some_and(|claim| supported.contains(claim))
+                .is_some_and(|requirement| supported.contains(requirement))
     });
     Ok(())
 }
@@ -3140,10 +3162,10 @@ fn command_change_validate(root: &std::path::Path, options: &Options) -> Result<
         Vec::new()
     };
     println!(
-        "change `{}`: current {} Claim(s) → prospective {} Claim(s)",
+        "change `{}`: current {} Requirement(s) → prospective {} Requirement(s)",
         change.id,
-        accepted.model.claim_count(),
-        prospective.model.claim_count()
+        accepted.model.requirement_count(),
+        prospective.model.requirement_count()
     );
     render_validation(
         &prospective.model,
@@ -3236,7 +3258,7 @@ fn render_validation(
         let mut fields = vec![
             ("format", Json::str("azimuth-validation")),
             ("scope", Json::str(scope.name())),
-            ("version", Json::Num(1.0)),
+            ("version", Json::Num(3.0)),
             (
                 "structural_validity",
                 Json::str(if errors == 0 { "valid" } else { "invalid" }),
