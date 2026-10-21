@@ -137,7 +137,9 @@ The API binds host `127.0.0.1:8081` and Web binds `127.0.0.1:3000` by default; `
 
 Product compilation and source inspection are permitted for this change. Build the API explicitly with `cargo build --locked --manifest-path services/assurance/Cargo.toml -p azimuth-assurance-server --bin run-ledger`; build the Web with `npm ci --ignore-scripts`, `npm run typecheck` and `npm run build` in `services/assurance/web`.
 
-OAuth callbacks, authorization denial paths, PostgreSQL-backed reads and writes, image startup, TLS renewal and private network reachability still need separately authorized behavioral/live verification. No runtime result is implied by compilation. The existing `deployment/qualify.py` exercises the earlier unauthenticated profile and is not qualification evidence for this implementation.
+OAuth callbacks, authorization denial paths, PostgreSQL-backed reads and writes, image startup, TLS renewal and private network reachability still need separately authorized behavioral/live verification. No runtime result is implied by compilation. `deployment/qualify.py --lifecycle` rehearses the current authenticated API through Compose with ephemeral credentials from `deployment/runtime.py`; it does not exercise GitHub OAuth, TLS or private network reachability.
+
+The `domain` crate is not part of the API image or the run ledger. It is retained only for `experiments/assurance-service`.
 
 ## Production workspace APIs
 

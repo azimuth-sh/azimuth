@@ -20,7 +20,7 @@ pub struct EvidenceDefinition {
     pub oracle: String,
     pub stage: LifecycleStage,
     pub inputs: Vec<String>,
-    pub required_context: BTreeMap<String, String>,
+    pub required_execution_context: BTreeMap<String, String>,
     pub declared_at: u64,
 }
 
@@ -34,7 +34,7 @@ impl EvidenceDefinition {
             &self.oracle,
             self.stage,
             &self.inputs,
-            &self.required_context,
+            &self.required_execution_context,
         ))
         .expect("evidence definition semantics are serializable")
     }
@@ -250,7 +250,7 @@ pub enum QualificationVerdict {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ExecutionSubject {
+pub struct ExecutionVerificationTarget {
     pub project_snapshot: String,
     pub revision: String,
     pub artifact_digest: Option<String>,
@@ -261,22 +261,22 @@ pub struct ExecutionSubject {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Observation {
+pub struct CheckResult {
     pub id: String,
     pub definition_id: String,
     pub definition_fingerprint: String,
     pub stage: LifecycleStage,
-    pub subject: ExecutionSubject,
-    pub context: BTreeMap<String, String>,
+    pub verification_target: ExecutionVerificationTarget,
+    pub execution_context: BTreeMap<String, String>,
     pub observed_at: u64,
     pub expires_at: Option<u64>,
-    pub outcome: ObservationOutcome,
+    pub outcome: CheckResultOutcome,
     pub report: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum ObservationOutcome {
+pub enum CheckResultOutcome {
     Satisfied,
     Violated,
     Inconclusive,
@@ -307,7 +307,7 @@ pub enum ChallengeOutcome {
 pub struct GateRequest {
     pub definition_id: String,
     pub stage: LifecycleStage,
-    pub subject: ExecutionSubject,
+    pub verification_target: ExecutionVerificationTarget,
     pub at: u64,
 }
 
@@ -317,7 +317,7 @@ pub struct GateDecision {
     pub status: GateStatus,
     pub definition_fingerprint: Option<String>,
     pub qualification_id: Option<String>,
-    pub observation_id: Option<String>,
+    pub check_result_id: Option<String>,
     pub reasons: Vec<GateReason>,
     pub work: Vec<WorkKind>,
 }
@@ -338,12 +338,12 @@ pub enum GateReason {
     QualificationMissing,
     QualificationRejected,
     QualificationStale,
-    ObservationMissing,
-    SubjectMismatch,
-    ContextMismatch,
-    ObservationExpired,
+    CheckResultMissing,
+    VerificationTargetMismatch,
+    ExecutionContextMismatch,
+    CheckResultExpired,
     AssertionViolated,
-    ObservationInconclusive,
+    CheckResultInconclusive,
     ChallengeFindings,
     ChallengeInconclusive,
 }
@@ -355,11 +355,11 @@ pub enum WorkKind {
     ReviseDefinition,
     QualifyDefinition,
     ExecuteDefinition,
-    RerunForSubject,
-    RerunWithContext,
-    RenewObservation,
+    RerunForVerificationTarget,
+    RerunWithExecutionContext,
+    RenewCheckResult,
     DiagnoseViolation,
-    ResolveInconclusiveObservation,
+    ResolveInconclusiveCheckResult,
     JudgeChallenge,
 }
 
@@ -369,7 +369,7 @@ pub struct AssuranceAccount {
     pub project_snapshots: Vec<ProjectModelSnapshot>,
     pub definitions: Vec<EvidenceDefinition>,
     pub qualifications: Vec<Qualification>,
-    pub observations: Vec<Observation>,
+    pub check_results: Vec<CheckResult>,
     pub challenges: Vec<Challenge>,
 }
 
@@ -394,7 +394,7 @@ impl AssuranceAccount {
         let Some(snapshot) = self
             .project_snapshots
             .iter()
-            .find(|item| item.id == request.subject.project_snapshot)
+            .find(|item| item.id == request.verification_target.project_snapshot)
         else {
             return closed(
                 Some(fingerprint),
@@ -480,7 +480,7 @@ impl AssuranceAccount {
         }
 
         let candidates = self
-            .observations
+            .check_results
             .iter()
             .filter(|item| {
                 item.definition_id == definition.id
@@ -491,7 +491,7 @@ impl AssuranceAccount {
             .collect::<Vec<_>>();
 
         if candidates.is_empty() {
-            push_unique(&mut reasons, GateReason::ObservationMissing);
+            push_unique(&mut reasons, GateReason::CheckResultMissing);
             push_unique(&mut work, WorkKind::ExecuteDefinition);
             return closed(
                 Some(fingerprint),
@@ -502,14 +502,14 @@ impl AssuranceAccount {
             );
         }
 
-        let matching_subject = candidates
+        let matching_verification_target = candidates
             .iter()
             .copied()
-            .filter(|item| item.subject == request.subject)
+            .filter(|item| item.verification_target == request.verification_target)
             .collect::<Vec<_>>();
-        if matching_subject.is_empty() {
-            push_unique(&mut reasons, GateReason::SubjectMismatch);
-            push_unique(&mut work, WorkKind::RerunForSubject);
+        if matching_verification_target.is_empty() {
+            push_unique(&mut reasons, GateReason::VerificationTargetMismatch);
+            push_unique(&mut work, WorkKind::RerunForVerificationTarget);
             return closed(
                 Some(fingerprint),
                 Some(qualification.id.clone()),
@@ -519,14 +519,19 @@ impl AssuranceAccount {
             );
         }
 
-        let matching_context = matching_subject
+        let matching_execution_context = matching_verification_target
             .iter()
             .copied()
-            .filter(|item| context_matches(&definition.required_context, &item.context))
+            .filter(|item| {
+                execution_context_matches(
+                    &definition.required_execution_context,
+                    &item.execution_context,
+                )
+            })
             .max_by_key(|item| (item.observed_at, item.id.as_str()));
-        let Some(observation) = matching_context else {
-            push_unique(&mut reasons, GateReason::ContextMismatch);
-            push_unique(&mut work, WorkKind::RerunWithContext);
+        let Some(check_result) = matching_execution_context else {
+            push_unique(&mut reasons, GateReason::ExecutionContextMismatch);
+            push_unique(&mut work, WorkKind::RerunWithExecutionContext);
             return closed(
                 Some(fingerprint),
                 Some(qualification.id.clone()),
@@ -536,22 +541,22 @@ impl AssuranceAccount {
             );
         };
 
-        if observation
+        if check_result
             .expires_at
             .is_some_and(|expires_at| request.at >= expires_at)
         {
-            push_unique(&mut reasons, GateReason::ObservationExpired);
-            push_unique(&mut work, WorkKind::RenewObservation);
+            push_unique(&mut reasons, GateReason::CheckResultExpired);
+            push_unique(&mut work, WorkKind::RenewCheckResult);
         }
-        match observation.outcome {
-            ObservationOutcome::Satisfied => {}
-            ObservationOutcome::Violated => {
+        match check_result.outcome {
+            CheckResultOutcome::Satisfied => {}
+            CheckResultOutcome::Violated => {
                 push_unique(&mut reasons, GateReason::AssertionViolated);
                 push_unique(&mut work, WorkKind::DiagnoseViolation);
             }
-            ObservationOutcome::Inconclusive => {
-                push_unique(&mut reasons, GateReason::ObservationInconclusive);
-                push_unique(&mut work, WorkKind::ResolveInconclusiveObservation);
+            CheckResultOutcome::Inconclusive => {
+                push_unique(&mut reasons, GateReason::CheckResultInconclusive);
+                push_unique(&mut work, WorkKind::ResolveInconclusiveCheckResult);
             }
         }
 
@@ -560,7 +565,7 @@ impl AssuranceAccount {
                 status: GateStatus::Open,
                 definition_fingerprint: Some(fingerprint),
                 qualification_id: Some(qualification.id.clone()),
-                observation_id: Some(observation.id.clone()),
+                check_result_id: Some(check_result.id.clone()),
                 reasons,
                 work,
             }
@@ -568,7 +573,7 @@ impl AssuranceAccount {
             closed(
                 Some(fingerprint),
                 Some(qualification.id.clone()),
-                Some(observation.id.clone()),
+                Some(check_result.id.clone()),
                 reasons,
                 work,
             )
@@ -576,7 +581,10 @@ impl AssuranceAccount {
     }
 }
 
-fn context_matches(required: &BTreeMap<String, String>, actual: &BTreeMap<String, String>) -> bool {
+fn execution_context_matches(
+    required: &BTreeMap<String, String>,
+    actual: &BTreeMap<String, String>,
+) -> bool {
     required
         .iter()
         .all(|(key, value)| actual.get(key) == Some(value))
@@ -591,7 +599,7 @@ fn push_unique<T: Eq + Copy>(items: &mut Vec<T>, item: T) {
 fn closed(
     definition_fingerprint: Option<String>,
     qualification_id: Option<String>,
-    observation_id: Option<String>,
+    check_result_id: Option<String>,
     reasons: Vec<GateReason>,
     work: Vec<WorkKind>,
 ) -> GateDecision {
@@ -599,7 +607,7 @@ fn closed(
         status: GateStatus::Closed,
         definition_fingerprint,
         qualification_id,
-        observation_id,
+        check_result_id,
         reasons,
         work,
     }
