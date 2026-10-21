@@ -8,7 +8,7 @@ Output goes to stdout, or to `--out <file>` when given. The rendering is determi
 
 ```json
 {
-  "version": 7,
+  "version": 8,
   "extensions": [],
   "specs": [],
   "realizes": [],
@@ -37,7 +37,7 @@ Output goes to stdout, or to `--out <file>` when given. The rendering is determi
 These are the only root keys, in exactly this order. Every one is always present. `version` has
 exactly the value `7`.
 
-The export root carries no `format` identifier. A consumer distinguishes version 7 export from
+The export root carries no `format` identifier. A consumer distinguishes version 8 export from
 traceability by root keys: the export has `specs`, the projection has `scenarios` and
 `decision_impacts`.
 
@@ -468,7 +468,7 @@ verification contract. `target` is `null` when no decision target was reached;
   "kind": "unbound-scenario",
   "category": "verification",
   "severity": "error",
-  "verification_target_kind": "scenario",
+  "entity_kind": "scenario",
   "requirement": "rounds-half-to-even",
   "criticality": "critical",
   "file": "azimuth/model/billing/invoices/spec.md",
@@ -478,7 +478,7 @@ verification contract. `target` is `null` when no decision target was reached;
 }
 ```
 
-All ten keys are always present in this order. `verification_target_kind`, `requirement` and `criticality` are nullable. `verification_target_kind` names the typed model entity the Finding concerns (`requirement | scenario | mechanism | check`), not an execution Verification Target, and `requirement` holds that entity's stable ID. Typed kind accompanies the stable entity ID; it is never inferred from ID spelling. `help` is a fixed remediation sentence owned by the kind, not authored per finding. See `contracts/findings.md` for the closed category set, the exhaustive kind registry and the severity rule.
+All ten keys are always present in this order. `entity_kind`, `requirement` and `criticality` are nullable. `entity_kind` names the typed model entity the Finding concerns (`requirement | scenario | mechanism | check`), not an execution Verification Target, and `requirement` holds that entity's stable ID. Typed kind accompanies the stable entity ID; it is never inferred from ID spelling. `help` is a fixed remediation sentence owned by the kind, not authored per finding. See `contracts/findings.md` for the closed category set, the exhaustive kind registry and the severity rule.
 
 Findings are part of the exported account and therefore part of the model digest.
 

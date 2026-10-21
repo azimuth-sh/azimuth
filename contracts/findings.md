@@ -11,7 +11,7 @@ A Finding is never authored. Its kind, category, severity and remediation senten
   "kind": "unbound-scenario",
   "category": "verification",
   "severity": "error",
-  "verification_target_kind": "scenario",
+  "entity_kind": "scenario",
   "requirement": "rounds-half-to-even",
   "criticality": "critical",
   "file": "azimuth/model/billing/invoices/spec.md",
@@ -26,8 +26,8 @@ These are the only keys, in exactly this order, and all ten are always present.
 - `kind` is one stable string from the registry below.
 - `category` is derived from `kind` and is never independent of it.
 - `severity` is `error | warning`.
-- `verification_target_kind` is `requirement | scenario | mechanism | check | null`, assigned from the finding’s typed emission context rather than inferred from ID text. It distinguishes equal stable ID names in different namespaces. Despite its key name it names the kind of model entity the Finding is attributed to, not an execution Verification Target.
-- `requirement` carries the stable ID named by `verification_target_kind`, which is not necessarily a Requirement, or `null` when no entity is attributable. Module and parent paths do not form this reference.
+- `entity_kind` is `requirement | scenario | mechanism | check | null`, assigned from the finding’s typed emission context rather than inferred from ID text. It distinguishes equal stable ID names in different namespaces. It names the kind of model entity the Finding is attributed to; it is not an execution Verification Target.
+- `requirement` carries the stable ID named by `entity_kind`, which is not necessarily a Requirement, or `null` when no entity is attributable. Module and parent paths do not form this reference.
 - `criticality` is `critical | standard | routine`, or `null`. It is `null` on every Finding raised through the shared error path, including ones whose attributed entity does have a declared criticality.
 - `file` is the path of the artifact carrying the defect — a spec, design, verification authority, workspace or source file, depending on the kind.
 - `line` is the one-based source line, or `0` when the defect has no line — a manifest-derived relation or a workspace declaration.

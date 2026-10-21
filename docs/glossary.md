@@ -188,7 +188,7 @@ or evidence form.
 **Traceability report** — a pure derived view of selected Scenarios, inherited parent
 realizations, Check relationships, Challenge resolutions and decision-impact edges.
 
-**Export** — the complete derived repository model serialized as format version 7 by `azimuth
+**Export** — the complete derived repository model serialized as format version 8 by `azimuth
 export`. It includes Requirements, Scenarios, decisions, Challenge resolutions and Findings, but no
 runtime ledger data.
 

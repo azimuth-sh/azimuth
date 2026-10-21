@@ -138,7 +138,7 @@ report traceability` is a pure projection over selected Scenarios with inherited
 derived Check relationships, Challenge resolution accounts and decision-impact edges. It creates
 no authored authority or execution fact.
 
-`azimuth export` writes the complete derived model as format version 7. The export includes Requirements,
+`azimuth export` writes the complete derived model as format version 8. The export includes Requirements,
 Scenarios, workspace data, realization and implementation linkage, mechanisms, Checks, Evidence
 Bindings, Verification Challenges, Challenge resolutions and Findings. Historical declaration collections remain separately represented where that lane is present; runtime review histories are not repository export content.
 
