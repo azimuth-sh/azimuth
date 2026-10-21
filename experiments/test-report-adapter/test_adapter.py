@@ -25,32 +25,32 @@ DIGEST = "sha256:" + "a" * 64
 
 
 def fixture(context=False):
-    subject = {"kind": "artifact", "artifacts": [{"id": "image", "digest": DIGEST}]}
-    subject_fp = fingerprint({"format": "azimuth-subject-fingerprint", "version": 1, "subject": subject})
+    target = {"kind": "artifact", "artifacts": [{"id": "image", "digest": DIGEST}]}
+    target_fp = fingerprint({"format": "azimuth-verification-target-fingerprint", "version": 2, "verification_target": target})
     value = {"contract_revision": DIGEST, "values": {"enabled": True}}
     contexts = {"context/" + DIGEST + "/activity/" + activity_identity("behavior", "first", 0): fingerprint(value)} if context else {}
-    check = {"id": "behavior", "fingerprint": DIGEST, "cases": ["works"],
+    check = {"id": "behavior", "fingerprint": DIGEST, "scenarios": ["works"],
              "implementations": [{"identity": "component|python-symbol|tests:behavior", "source_fingerprint": DIGEST}],
              "units": [{"id": "first", "parameters": {}}]}
-    plan = {"model_fingerprint": DIGEST, "required_context": contexts, "checks": [check], "challenges": []}
-    plan["fingerprint"] = fingerprint(dict(format="azimuth-run-plan-fingerprint", version=1, subject_fingerprint=subject_fp, **plan))
+    plan = {"model_fingerprint": DIGEST, "required_execution_context": contexts, "checks": [check], "challenges": []}
+    plan["fingerprint"] = fingerprint(dict(format="azimuth-run-plan-fingerprint", version=2, verification_target_fingerprint=target_fp, **plan))
     adapter = {"id": "native", "adapter_version": "1", "adapter_fingerprint": DIGEST, "configuration_fingerprint": DIGEST, "descriptor_fingerprint": DIGEST}
-    launch = {"operation": "import", "planned_at_ms": 10, "subject": subject, "subject_fingerprint": subject_fp,
+    launch = {"operation": "import", "planned_at_ms": 10, "verification_target": target, "verification_target_fingerprint": target_fp,
               "plan": plan, "adapter": adapter, "routes": [{"selection": {"kind": "check", "id": "behavior"},
                   "capability": {"address": "native/reports", "class": "check.import", "fingerprint": DIGEST}}]}
-    launch["fingerprint"] = fingerprint(dict(format="azimuth-run-launch-fingerprint", version=1, **launch))
+    launch["fingerprint"] = fingerprint(dict(format="azimuth-run-launch-fingerprint", version=2, **launch))
     launch["adapters"] = [launch.pop("adapter")]
     snapshots = []
     if context:
-        report = {"format": "azimuth-verification-context", "version": 1, "contexts": {"settings": value}}
+        report = {"format": "azimuth-execution-context", "version": 2, "contexts": {"settings": value}}
         snapshots = [{"name": "settings", "before": {"captured_at_ms": 21, "instance": "process-1", "report": report},
                       "after": {"captured_at_ms": 29, "instance": "process-1", "report": deepcopy(report)}}]
     report = {"format": "azimuth-test-report", "version": 1, "framework": "xunit-v2", "execution": "execution-1",
               "started_at_ms": 20, "finished_at_ms": 30, "tests": [{"id": "explicit", "attempt": 0, "outcome": "passed",
                   "started_at_ms": 20, "finished_at_ms": 30, "contexts": snapshots, "diagnostics": []}]}
-    mapping = {"format": "azimuth-test-mapping", "version": 1, "framework": "xunit-v2", "source_system": "synthetic",
+    mapping = {"format": "azimuth-test-mapping", "version": 2, "framework": "xunit-v2", "source_system": "synthetic",
                "tests": [{"id": "explicit", "native_id": "Tests.Behavior|Behavior", "check": "behavior", "unit": "first",
-                          "cases": ["works"], "components": ["component"], "contexts": [DIGEST] if context else [], "failed_outcome": "inconclusive"}]}
+                          "scenarios": ["works"], "components": ["component"], "contexts": [DIGEST] if context else [], "failed_outcome": "inconclusive"}]}
     native = [{"native_id": "Tests.Behavior|Behavior", "attempt": 0, "outcome": "passed", "started_at_ms": 20, "finished_at_ms": 30}]
     arguments = {"native_results": native, "import_inputs": [{"id": "report", "digest": DIGEST, "size_bytes": 1}], "generated_at_ms": 40}
     return launch, report, mapping, arguments
@@ -58,11 +58,11 @@ def fixture(context=False):
 
 def refresh_launch(launch):
     plan = {key: value for key, value in launch["plan"].items() if key != "fingerprint"}
-    launch["plan"]["fingerprint"] = fingerprint(dict(format="azimuth-run-plan-fingerprint", version=1,
-        subject_fingerprint=launch["subject_fingerprint"], **plan))
-    payload = {key: launch[key] for key in ("operation", "planned_at_ms", "subject", "subject_fingerprint", "plan", "routes")}
+    launch["plan"]["fingerprint"] = fingerprint(dict(format="azimuth-run-plan-fingerprint", version=2,
+        verification_target_fingerprint=launch["verification_target_fingerprint"], **plan))
+    payload = {key: launch[key] for key in ("operation", "planned_at_ms", "verification_target", "verification_target_fingerprint", "plan", "routes")}
     payload["adapter"] = launch["adapters"][0]
-    launch["fingerprint"] = fingerprint(dict(format="azimuth-run-launch-fingerprint", version=1, **payload))
+    launch["fingerprint"] = fingerprint(dict(format="azimuth-run-launch-fingerprint", version=2, **payload))
 
 
 class Normalization(unittest.TestCase):
@@ -100,19 +100,19 @@ class Normalization(unittest.TestCase):
             self.assertEqual(len(native), 4)
             launch, _, mapping, args = fixture()
             launch["planned_at_ms"] = report["started_at_ms"] - 1
-            payload = {key: launch[key] for key in ("operation", "planned_at_ms", "subject", "subject_fingerprint", "plan", "routes")}
+            payload = {key: launch[key] for key in ("operation", "planned_at_ms", "verification_target", "verification_target_fingerprint", "plan", "routes")}
             payload["adapter"] = launch["adapters"][0]
-            launch["fingerprint"] = fingerprint(dict(format="azimuth-run-launch-fingerprint", version=1, **payload))
+            launch["fingerprint"] = fingerprint(dict(format="azimuth-run-launch-fingerprint", version=2, **payload))
             mapping["framework"] = "playwright"
             mapping["tests"] = []
             for identity in sorted({fact["id"] for fact in report["tests"]}):
                 native_ids = {item["native_id"] for item in native if item["native_id"].split("|")[0] == identity}
                 self.assertEqual(len(native_ids), 1)
                 mapping["tests"].append({"id": identity, "native_id": native_ids.pop(), "check": "behavior", "unit": "first",
-                                        "cases": ["works"], "components": ["component"], "contexts": [], "failed_outcome": "inconclusive"})
+                                        "scenarios": ["works"], "components": ["component"], "contexts": [], "failed_outcome": "inconclusive"})
             args.update(native_results=native, generated_at_ms=max(report["finished_at_ms"], max(item["finished_at_ms"] for item in native)))
             bundle = normalize_report(launch, report, mapping, **args)["bundle"]
-            self.assertEqual(bundle["check_executions"][0]["observations"][0]["outcome"], "inconclusive")
+            self.assertEqual(bundle["check_executions"][0]["results"][0]["outcome"], "inconclusive")
             self.assertEqual(len(bundle["check_executions"][0]["units"][0]["attempts"]), 2)
 
     def test_real_xunit_harness_report_reconciles_with_actual_trx(self):
@@ -132,17 +132,17 @@ class Normalization(unittest.TestCase):
             self.assertEqual(len(native), 3)
             launch, _, mapping, args = fixture()
             launch["planned_at_ms"] = report["started_at_ms"] - 1
-            payload = {key: launch[key] for key in ("operation", "planned_at_ms", "subject", "subject_fingerprint", "plan", "routes")}
+            payload = {key: launch[key] for key in ("operation", "planned_at_ms", "verification_target", "verification_target_fingerprint", "plan", "routes")}
             payload["adapter"] = launch["adapters"][0]
-            launch["fingerprint"] = fingerprint(dict(format="azimuth-run-launch-fingerprint", version=1, **payload))
+            launch["fingerprint"] = fingerprint(dict(format="azimuth-run-launch-fingerprint", version=2, **payload))
             stem = "Azimuth.Testing.Xunit.SyntheticRunner.RunnerTests."
             mapping["tests"] = []
             for identity, method in (("synthetic.failing", "FailingTest"), ("synthetic.passing", "PassingTest"), ("synthetic.skipped", "SkippedTest")):
                 mapping["tests"].append({"id": identity, "native_id": stem + method + "|" + stem + method,
-                    "check": "behavior", "unit": "first", "cases": ["works"], "components": ["component"], "contexts": [], "failed_outcome": "inconclusive"})
+                    "check": "behavior", "unit": "first", "scenarios": ["works"], "components": ["component"], "contexts": [], "failed_outcome": "inconclusive"})
             args.update(native_results=native, generated_at_ms=max(report["finished_at_ms"], max(item["finished_at_ms"] for item in native)))
             bundle = normalize_report(launch, report, mapping, **args)["bundle"]
-            self.assertEqual(bundle["check_executions"][0]["observations"][0]["outcome"], "inconclusive")
+            self.assertEqual(bundle["check_executions"][0]["results"][0]["outcome"], "inconclusive")
             self.assertIn("native-test-not-captured", [item["message"] for item in bundle["diagnostics"]])
 
     def test_real_cli_description_plan_and_import(self):
@@ -175,9 +175,9 @@ class Normalization(unittest.TestCase):
             report = {"format": "azimuth-test-report", "version": 1, "framework": "xunit-v2", "execution": "real-import",
                       "started_at_ms": start, "finished_at_ms": finish, "tests": [{"id": "explicit", "attempt": 0,
                           "outcome": "passed", "started_at_ms": start, "finished_at_ms": finish, "contexts": [], "diagnostics": []}]}
-            mapping = {"format": "azimuth-test-mapping", "version": 1, "framework": "xunit-v2", "source_system": "synthetic",
+            mapping = {"format": "azimuth-test-mapping", "version": 2, "framework": "xunit-v2", "source_system": "synthetic",
                        "tests": [{"id": "explicit", "native_id": "Tests.Behavior|Behavior", "check": "behavior-check", "unit": "whole",
-                                  "cases": ["works"], "components": ["component"], "contexts": [], "failed_outcome": "inconclusive"}]}
+                                  "scenarios": ["works"], "components": ["component"], "contexts": [], "failed_outcome": "inconclusive"}]}
             iso = lambda value: datetime.fromtimestamp(value / 1000, timezone.utc).isoformat()
             trx = '<TestRun><TestDefinitions><UnitTest id="id"><TestMethod className="Tests" name="Behavior"/></UnitTest></TestDefinitions><Results><UnitTestResult executionId="execution" testId="id" testName="Behavior" outcome="Passed" startTime="' + iso(start) + '" endTime="' + iso(finish) + '"/></Results></TestRun>'
             native = {"format": "azimuth-native-test-results", "version": 1, "framework": "xunit-v2", "documents": [{"format": "trx", "content": trx}]}
@@ -189,16 +189,16 @@ class Normalization(unittest.TestCase):
             execute(arguments + ["--out", str(bundle_path)])
             execute(["run", "verify", "--bundle", str(bundle_path)])
             bundle = load_json(bundle_path.read_bytes())
-            self.assertEqual(bundle["check_executions"][0]["observations"][0]["outcome"], "satisfied")
+            self.assertEqual(bundle["check_executions"][0]["results"][0]["outcome"], "satisfied")
 
     def test_failure_is_inconclusive_unless_explicitly_reviewed(self):
         launch, report, mapping, args = fixture()
         report["tests"][0]["outcome"] = args["native_results"][0]["outcome"] = "failed"
         bundle = normalize_report(launch, report, mapping, **args)["bundle"]
-        self.assertEqual(bundle["check_executions"][0]["observations"][0]["outcome"], "inconclusive")
+        self.assertEqual(bundle["check_executions"][0]["results"][0]["outcome"], "inconclusive")
         mapping["tests"][0]["failed_outcome"] = "violated"
         bundle = normalize_report(launch, report, mapping, **args)["bundle"]
-        self.assertEqual(bundle["check_executions"][0]["observations"][0]["outcome"], "violated")
+        self.assertEqual(bundle["check_executions"][0]["results"][0]["outcome"], "violated")
 
     def test_missing_typed_facts_and_static_native_skips_are_not_success(self):
         launch, report, mapping, args = fixture()
@@ -206,7 +206,7 @@ class Normalization(unittest.TestCase):
         for outcome in ("skipped", "passed", "failed"):
             args["native_results"][0]["outcome"] = outcome
             bundle = normalize_report(launch, report, mapping, **args)["bundle"]
-            self.assertEqual(bundle["check_executions"][0]["observations"][0]["outcome"], "inconclusive")
+            self.assertEqual(bundle["check_executions"][0]["results"][0]["outcome"], "inconclusive")
             self.assertIn("native-test-not-captured", [item["message"] for item in bundle["diagnostics"]])
 
     def test_mapped_missing_native_unit_produces_diagnostic(self):
@@ -226,7 +226,7 @@ class Normalization(unittest.TestCase):
         args["native_results"].append(native)
         execution = normalize_report(launch, report, mapping, **args)["bundle"]["check_executions"][0]
         self.assertEqual(len(execution["units"][0]["attempts"]), 2)
-        self.assertEqual(execution["observations"][0]["outcome"], "violated")
+        self.assertEqual(execution["results"][0]["outcome"], "violated")
 
     def test_context_sidecar_pins_exact_run_without_asserting_trust(self):
         launch, report, mapping, args = fixture(context=True)
@@ -236,19 +236,19 @@ class Normalization(unittest.TestCase):
         self.assertEqual(capture["run"], result["bundle"]["run_id"])
         self.assertEqual(capture["bundle_fingerprint"], result["bundle"]["bundle_fingerprint"])
         self.assertEqual((result["bundle"]["started_at_ms"], result["bundle"]["finished_at_ms"]), (20, 30))
-        self.assertEqual(partition_report(report, mapping, native_results=args["native_results"])[0]["context"], launch["plan"]["required_context"])
+        self.assertEqual(partition_report(report, mapping, native_results=args["native_results"])[0]["context"], launch["plan"]["required_execution_context"])
 
     def test_multiple_context_attempts_pin_independent_activity_contexts(self):
         launch, report, mapping, args = fixture(context=True)
         report["tests"].append(dict(deepcopy(report["tests"][0]), attempt=1))
         args["native_results"].append(dict(deepcopy(args["native_results"][0]), attempt=1))
         key = "context/" + DIGEST + "/activity/" + activity_identity("behavior", "first", 1)
-        launch["plan"]["required_context"][key] = next(iter(launch["plan"]["required_context"].values()))
+        launch["plan"]["required_execution_context"][key] = next(iter(launch["plan"]["required_execution_context"].values()))
         refresh_launch(launch)
         result = normalize_report(launch, report, mapping, **args)
         self.assertEqual(len(result["context_captures"]), 2)
         self.assertEqual(len({capture["activity"] for capture in result["context_captures"]}), 2)
-        del launch["plan"]["required_context"][key]
+        del launch["plan"]["required_execution_context"][key]
         refresh_launch(launch)
         result = normalize_report(launch, report, mapping, **args, selection=[{"id": "explicit", "attempt": 1}])
         self.assertIn("/partition/", result["bundle"]["provenance"]["source"]["execution"])
@@ -270,12 +270,12 @@ class Normalization(unittest.TestCase):
         launch["plan"]["checks"][0]["units"].append({"id": "second", "parameters": {}})
         activity = activity_identity("behavior", "second", 0)
         value = second["contexts"][0]["before"]["report"]["contexts"]["settings"]
-        launch["plan"]["required_context"]["context/" + DIGEST + "/activity/" + activity] = fingerprint(value)
+        launch["plan"]["required_execution_context"]["context/" + DIGEST + "/activity/" + activity] = fingerprint(value)
         refresh_launch(launch)
         result = normalize_report(launch, report, mapping, **args)
         self.assertEqual(len(result["context_captures"]), 2)
         self.assertEqual({(capture["started_at_ms"], capture["finished_at_ms"]) for capture in result["context_captures"]}, {(21, 29), (32, 38)})
-        self.assertEqual(result["bundle"]["check_executions"][0]["observations"][0]["outcome"], "satisfied")
+        self.assertEqual(result["bundle"]["check_executions"][0]["results"][0]["outcome"], "satisfied")
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "bundle.json"
             path.write_text(json.dumps(result["bundle"]))
@@ -287,7 +287,7 @@ class Normalization(unittest.TestCase):
         launch, report, mapping, args = fixture(context=True)
         report["tests"][0]["contexts"][0]["after"]["instance"] = "replacement"
         result = normalize_report(launch, report, mapping, **args)
-        self.assertEqual(result["bundle"]["check_executions"][0]["observations"][0]["outcome"], "inconclusive")
+        self.assertEqual(result["bundle"]["check_executions"][0]["results"][0]["outcome"], "inconclusive")
         self.assertEqual(result["context_captures"], [])
 
     def test_unknown_fields_duplicate_keys_and_native_disagreement_fail_closed(self):

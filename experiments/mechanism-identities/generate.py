@@ -229,7 +229,7 @@ public final class Guard {
         annotations / "index.d.ts",
         "export declare function implementsMechanism(mechanism: string): void;\n"
         "export declare function implementsCheck(check: string): void;\n"
-        "export declare function realizes(claim: string): void;\n",
+        "export declare function realizes(requirement: string): void;\n",
     )
     write(
         base / "typescript/index.ts",
@@ -654,19 +654,19 @@ def model(root: pathlib.Path, phase: str) -> None:
         package.mkdir()
         write(
             package / "spec.md",
-            f"# Spec: {spec}\n\n## Claim: {spec}-stable\nCriticality: standard\n\n"
+            f"# Spec: {spec}\n\n## Requirement: {spec}-stable\nCriticality: standard\n\n"
             f"The {family} implementation SHALL retain its semantic mechanism identity.\n\n"
-            f"### Case: {spec}-relocation\nMoving the declared project root preserves semantic identity.\n\n"
-            f"## Claim: {spec}-profiles\nCriticality: routine\n\n"
+            f"### Scenario: {spec}-relocation\nMoving the declared project root preserves semantic identity.\n\n"
+            f"## Requirement: {spec}-profiles\nCriticality: routine\n\n"
             "The language fixture SHALL expose its additional semantic identity profiles.\n\n"
-            f"### Case: {spec}-language-profiles\nExtraction preserves exact overload, nesting, receiver, trait, generic, or module identity.\n",
+            f"### Scenario: {spec}-language-profiles\nExtraction preserves exact overload, nesting, receiver, trait, generic, or module identity.\n",
         )
         primary = PRIMARY_MECHANISMS[family]
         design = (
-            f"# Design: {spec}\n\n## Claim: {spec}-stable\n"
+            f"# Design: {spec}\n\n## Requirement: {spec}-stable\n"
             f"Mechanism: {primary}\nEnforcement: guard\n\n"
-            "The selected marker anchors the relocation Claim's complete composition.\n\n"
-            f"## Claim: {spec}-profiles\n"
+            "The selected marker anchors the relocation Requirement's complete composition.\n\n"
+            f"## Requirement: {spec}-profiles\n"
         )
         for mechanism in mechanisms:
             if mechanism == primary:
@@ -685,13 +685,13 @@ def model(root: pathlib.Path, phase: str) -> None:
             "qualification": qualification_placeholder,
             "applicability": applicability_placeholder,
         }
-        challenger = ""
+        verification_challenge = ""
         if index == 0:
-            challenger = (
-                "## Challenger: identity/mutation\nForm: mutation\n"
+            verification_challenge = (
+                "## Verification Challenge: identity/mutation\nForm: mutation\n"
                 "Searches for: semantic identity changes hidden as locator movement\n"
                 "Required scope: [\"policy\"]\n\n"
-                "The bounded challenger inspects the complete mechanism composition.\n\n"
+                "The bounded Verification Challenge inspects the complete mechanism composition.\n\n"
             )
         write(
             package / "verification.md",
@@ -701,14 +701,14 @@ def model(root: pathlib.Path, phase: str) -> None:
             "Terminal: every semantic field remains equal while its locator moves\n\n"
             "The synthetic Check has one exact implementation in the language fixture.\n\n"
             f"## Evidence Binding: {spec}/relocation\nCheck: {spec}-relocation\n"
-            f"Case: {spec}-relocation\n"
+            f"Scenario: {spec}-relocation\n"
             f"Method qualification: {spec}/relocation-method\n"
-            "Proposition: semantic identity is relocation-stable\nContext: {}\n"
+            "Proposition: semantic identity is relocation-stable\nExecution Context: {}\n"
             "Challenge domain: [\"mechanism\"]\nPolicy: relocation\n\n"
             "The binding connects only this synthetic conformance Check.\n\n"
             f"## Method Qualification: {spec}/relocation-method\n"
             f"Check: {spec}-relocation\nScope: component\nQuantification: example\n"
-            "Oracle: direct\nContext: {}\nChallenge domain: [\"mechanism\"]\n"
+            "Oracle: direct\nExecution Context: {}\nChallenge domain: [\"mechanism\"]\n"
             "Policy: relocation\nVerdict: qualified\n"
             f"Fingerprint: {qualification_placeholder}\nQualified: 2026-08-22\n"
             "Qualifier: conformance-owner\n\n"
@@ -716,18 +716,18 @@ def model(root: pathlib.Path, phase: str) -> None:
             f"## Applicability Decision: {spec}/relocation\nVerdict: applicable\n"
             f"Fingerprint: {applicability_placeholder}\nDecided: 2026-08-22\n"
             "Decider: conformance-owner\n\n"
-            "The qualified comparison applies to the relocation Case.\n\n"
-            f"## Claim Judgment: {spec}-stable\nVerdict: accepted\nPolicy: relocation\n"
+            "The qualified comparison applies to the relocation Scenario.\n\n"
+            f"## Requirement Judgment: {spec}-stable\nVerdict: accepted\nPolicy: relocation\n"
             f"Fingerprint: {judgment_placeholder}\nJudged: 2026-08-22\n"
             "Judge: conformance-owner\n"
             "Basis: all semantic mechanism accounts are exact\n"
             "Residual risk: unsupported compiler profiles remain fail-closed\n\n"
             "The synthetic judgment exists only to compare canonical identities.\n\n"
-            + challenger
-            + f"## Challenge Plan: {spec}/relocation\nChallenger: identity/mutation\n"
-            f"Select: claim-judgment from claim {spec}-stable\n\n"
+            + verification_challenge
+            + f"## Challenge Plan: {spec}/relocation\nVerification Challenge: identity/mutation\n"
+            f"Select: requirement-judgment from requirement {spec}-stable\n\n"
             "The selector addresses one exact synthetic Judgment.\n\n"
-            f"## Challenge Plan: {spec}/qualification\nChallenger: identity/mutation\n"
+            f"## Challenge Plan: {spec}/qualification\nVerification Challenge: identity/mutation\n"
             f"Select: method-qualification from check {spec}-relocation\n"
             f"Select: applicability-decision from binding {spec}/relocation\n\n"
             "The selectors address the shared method and exact applicability decision.\n",
@@ -750,16 +750,16 @@ def model(root: pathlib.Path, phase: str) -> None:
             "max_candidates": 2, "units": [{"id": "whole", "parameters": {}}],
         })
     write_json(destination / "workspace.json", {
-        "format": "azimuth-workspace", "version": 1,
+        "format": "azimuth-workspace", "version": 2,
         "areas": areas, "surfaces": [], "realization_obligations": [],
     })
     decision_policy(destination)
     write_json(destination / "adapters.json", configured_adapter(root))
     write_json(destination / "request.json", {
-        "format": "azimuth-run-plan-request", "version": 1, "operation": "execute",
+        "format": "azimuth-run-plan-request", "version": 2, "operation": "execute",
         "planned_at_ms": 1787300000000,
-        "subject": {"kind": "artifact", "artifacts": [{"id": "candidate", "digest": SHA}]},
-        "required_context": {}, "checks": [],
+        "verification_target": {"kind": "artifact", "artifacts": [{"id": "candidate", "digest": SHA}]},
+        "required_execution_context": {}, "checks": [],
         "challenges": sorted(challenge_requests, key=lambda item: item["id"]),
     })
     write_json(destination / "placeholders.json", placeholder_by_spec)
@@ -773,7 +773,7 @@ def seal(root: pathlib.Path, phase: str) -> None:
         for collection in (
             "method_qualifications",
             "applicability_decisions",
-            "claim_judgments",
+            "requirement_judgments",
         )
         for item in exported[collection]
     }
@@ -781,14 +781,14 @@ def seal(root: pathlib.Path, phase: str) -> None:
     for spec, placeholders_for_spec in placeholders.items():
         path = destination / f"model/{spec}/verification.md"
         source = path.read_text(encoding="utf-8")
-        claim = f"{spec}-stable"
-        if claim not in expected:
+        requirement = f"{spec}-stable"
+        if requirement not in expected:
             related = [
                 item for item in exported["challenge_resolutions"]
                 if item["plan"] == f"{spec}/relocation"
             ]
             raise AssertionError(
-                f"initial export omitted expected Judgment {claim}: {related}"
+                f"initial export omitted expected Judgment {requirement}: {related}"
             )
         qualification = f"{spec}/relocation-method"
         if qualification not in expected:
@@ -801,7 +801,7 @@ def seal(root: pathlib.Path, phase: str) -> None:
         source = source.replace(
             placeholders_for_spec["applicability"], expected[f"{spec}/relocation"]
         )
-        write(path, source.replace(placeholders_for_spec["judgment"], expected[claim]))
+        write(path, source.replace(placeholders_for_spec["judgment"], expected[requirement]))
 
 
 def collision_model(root: pathlib.Path) -> None:
@@ -814,17 +814,17 @@ def collision_model(root: pathlib.Path) -> None:
         package.mkdir(exist_ok=True)
         write(
             package / "spec.md",
-            f"# Spec: {spec}\n\n## Claim: {spec}-stable\nCriticality: routine\n\n"
+            f"# Spec: {spec}\n\n## Requirement: {spec}-stable\nCriticality: routine\n\n"
             "The synthetic collision site SHALL remain distinguishable by area.\n\n"
-            f"### Case: {spec}-assembled-identity\nEqual raw sites retain distinct area-qualified SourceIdentity keys after assembly.\n",
+            f"### Scenario: {spec}-assembled-identity\nEqual raw sites retain distinct area-qualified SourceIdentity keys after assembly.\n",
         )
         write(
             package / "design.md",
-            f"# Design: {spec}\n\n## Claim: {spec}-stable\nMechanism: {spec}-guard\n"
+            f"# Design: {spec}\n\n## Requirement: {spec}-stable\nMechanism: {spec}-guard\n"
             "Enforcement: guard\n\nThe marker is deliberately shared across repositories.\n",
         )
     write_json(destination / "cross-area.json", {
-        "format": "azimuth-workspace", "version": 1,
+        "format": "azimuth-workspace", "version": 2,
         "areas": [
             {"id": "first", "mounts": [{"id": "code", "path": "collision/first/src"}]},
             {"id": "second", "mounts": [{"id": "code", "path": "collision/second/src"}]},
@@ -832,7 +832,7 @@ def collision_model(root: pathlib.Path) -> None:
         "surfaces": [], "realization_obligations": [],
     })
     write_json(destination / "same-area.json", {
-        "format": "azimuth-workspace", "version": 1,
+        "format": "azimuth-workspace", "version": 2,
         "areas": [{
             "id": "shared",
             "mounts": [
@@ -852,7 +852,7 @@ def scope_item(item: dict[str, object]) -> tuple[str, str, str]:
 def selection_account(challenges: list[dict[str, object]]) -> dict[str, object]:
     return {
         item["id"]: {
-            "challenger": item["challenger"],
+            "verification_challenge": item["verification_challenge"],
             "target": item["target"],
             "lane": item["lane"],
             "anchors": tuple(scope_item(value) for value in item["scope"]["anchors"]),
@@ -867,7 +867,7 @@ def selection_account(challenges: list[dict[str, object]]) -> dict[str, object]:
 def core_account(exported: dict[str, object], launch: dict[str, object]) -> dict[str, object]:
     mechanisms = exported["mechanism_implementations"]
     artifacts = exported["artifacts"]
-    judgments = exported["claim_judgments"]
+    judgments = exported["requirement_judgments"]
     challenges = launch["plan"]["challenges"]
     return {
         "sources": sorted((item["area"], item["address_kind"], item["address"])
@@ -889,20 +889,20 @@ def assert_selection_shapes(challenges: list[dict[str, object]]) -> None:
         "check", "check-implementation", "context", "method-qualification", "policy",
     }
     applicability_kinds = method_kinds | {
-        "applicability-decision", "binding", "case", "claim",
+        "applicability-decision", "binding", "scenario", "requirement",
     }
     judgment_kinds = applicability_kinds | {
-        "claim-judgment", "realization", "mechanism", "mechanism-implementation", "artifact",
+        "requirement-judgment", "realization", "mechanism", "mechanism-implementation", "artifact",
     }
     for family in FAMILIES:
         spec = f"identity-{family}"
         binding = f"{spec}/relocation"
         method = f"{spec}/relocation-method"
-        claim = f"{spec}-stable"
+        requirement = f"{spec}-stable"
         for target_kind, target_id, anchor_kind, expected_kinds in (
             ("method-qualification", method, "check", method_kinds),
             ("applicability-decision", binding, "binding", applicability_kinds),
-            ("claim-judgment", claim, "claim", judgment_kinds),
+            ("requirement-judgment", requirement, "requirement", judgment_kinds),
         ):
             selection = by_target[(target_kind, target_id)]
             prefix, identity_hash = selection["id"].split("/", 1)
@@ -924,11 +924,11 @@ def assert_selection_shapes(challenges: list[dict[str, object]]) -> None:
             assert by_kind["method-qualification"] == [method]
             assert by_kind["policy"] == ["relocation"]
             if target_kind != "method-qualification":
-                assert by_kind["claim"] == [claim]
+                assert by_kind["requirement"] == [requirement]
                 assert by_kind["binding"] == [binding]
                 assert by_kind["applicability-decision"] == [binding]
-            if target_kind == "claim-judgment":
-                assert by_kind["claim-judgment"] == [claim]
+            if target_kind == "requirement-judgment":
+                assert by_kind["requirement-judgment"] == [requirement]
                 assert by_kind["mechanism"] == [PRIMARY_MECHANISMS[family]]
 
 

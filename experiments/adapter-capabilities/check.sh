@@ -134,7 +134,7 @@ expect_status 0 "$AZIMUTH" run execute \
   --plan "$FIXTURE/substitution-reidentified.json" --config "$FIXTURE/adapters.json" \
   --out "$FIXTURE/substituted.json"
 
-# One dual-role activity remains an Observation and a successful Challenge finding record.
+# One dual-role activity remains a Check Result and a successful Challenge finding record.
 expect_status 0 "$AZIMUTH" run execute \
   --plan "$FIXTURE/dual-role.json" --config "$FIXTURE/adapters.json" \
   --out "$FIXTURE/dual-role-bundle.json"
@@ -204,12 +204,12 @@ assert correction["provenance"]["adapter"]["import_inputs"] != [identity]
 
 dual = load("dual-role-bundle.json")
 assert len(dual["check_executions"]) == 1
-assert len(dual["challenger_executions"]) == 1
+assert len(dual["verification_challenge_executions"]) == 1
 selection = dual["plan"]["challenges"][0]
 selection_preimage = {
     "format": "azimuth-challenge-selection-identity",
-    "version": 1,
-    "challenger_fingerprint": selection["challenger"]["fingerprint"],
+    "version": 2,
+    "verification_challenge_fingerprint": selection["verification_challenge"]["fingerprint"],
     "target_kind": selection["target"]["kind"],
     "target_fingerprint": selection["target"]["fingerprint"],
 }
@@ -221,7 +221,7 @@ assert selection["lane"] == "gate"
 scope = selection["scope"]
 scope_preimage = {
     "format": "azimuth-challenge-scope-fingerprint",
-    "version": 1,
+    "version": 2,
     "anchors": scope["anchors"],
     "inputs": scope["inputs"],
 }
@@ -229,13 +229,13 @@ assert scope["fingerprint"] == "sha256:" + hashlib.sha256(
     json.dumps(scope_preimage, separators=(",", ":"), sort_keys=True).encode()
 ).hexdigest()
 assert [(item["kind"], item["id"]) for item in scope["anchors"]] == [
-    ("claim", "behavior-is-observable")
+    ("requirement", "behavior-is-observable")
 ]
 assert [(item["kind"], item["id"]) for item in scope["inputs"]] == [
-    ("claim", "behavior-is-observable"),
-    ("claim-judgment", "behavior-is-observable"),
+    ("requirement", "behavior-is-observable"),
+    ("requirement-judgment", "behavior-is-observable"),
     ("realization", "synthetic|rust-symbol|behavior::execute"),
-    ("policy", "synthetic/claim-judgment-policy"),
+    ("policy", "synthetic/requirement-judgment-policy"),
 ]
 challenge_route = dual["provenance"]["adapter"]["routes"][1]
 assert challenge_route["selection"] == {"kind": "challenge", "id": selection["id"]}
@@ -254,16 +254,16 @@ assert challenge_route["inputs"][0]["source"] == {
     "site": "behavior::execute",
 }
 check_activity = dual["check_executions"][0]["units"][0]["attempts"][0]["activity"]
-challenge_activity = dual["challenger_executions"][0]["units"][0]["attempts"][0]["activity"]
+challenge_activity = dual["verification_challenge_executions"][0]["units"][0]["attempts"][0]["activity"]
 assert check_activity == challenge_activity == "shared-work"
-assert dual["check_executions"][0]["observations"][0]["outcome"] == "satisfied"
-challenge = dual["challenger_executions"][0]
+assert dual["check_executions"][0]["results"][0]["outcome"] == "satisfied"
+challenge = dual["verification_challenge_executions"][0]
 assert challenge["result"]["outcome"] == "findings"
 assert challenge["result"]["objections"] == ["challenge/synthetic-finding"]
 finding = dual["diagnostics"][0]
 assert finding["id"] == "challenge/synthetic-finding"
 assert finding["class"] == "objection"
-assert finding["scope"]["challenger_fingerprint"] == challenge["challenger"]["fingerprint"]
+assert finding["scope"]["verification_challenge_fingerprint"] == challenge["verification_challenge"]["fingerprint"]
 assert finding["scope"]["target_fingerprint"] == challenge["target"]["fingerprint"]
 
 expected = {
@@ -276,7 +276,7 @@ for name, (status, outcome) in expected.items():
     bundle = load(f"bundle-{name}.json")
     assert bundle["status"] == status
     actual = bundle["check_executions"]
-    assert (actual[0]["observations"][0]["outcome"] if actual else None) == outcome
+    assert (actual[0]["results"][0]["outcome"] if actual else None) == outcome
 PY
 
 echo "adapter capability conformance passed"
