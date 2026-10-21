@@ -1,4 +1,4 @@
-use super::{list, map, object, Schema};
+use super::{list, object, Schema};
 
 pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
     vec![
@@ -13,59 +13,7 @@ fn change() -> Schema {
     object(vec![
         ("id", Schema::Text),
         ("revision", Schema::Text),
-        (
-            "metadata",
-            object(vec![
-                (
-                    "request",
-                    object(vec![("title", Schema::Text), ("ref", Schema::Text)]),
-                ),
-                (
-                    "repositories",
-                    list(object(vec![
-                        ("repository", Schema::Text),
-                        ("commit", Schema::Text),
-                        ("pr", Schema::Text),
-                    ])),
-                ),
-                (
-                    "contributions",
-                    list(object(vec![
-                        ("kind", Schema::Text),
-                        ("ref", Schema::Text),
-                        ("digest", Schema::Text),
-                        ("author", Schema::Text),
-                        ("agent", Schema::Text),
-                        ("model", Schema::Text),
-                    ])),
-                ),
-            ]),
-        ),
-    ])
-}
-
-fn composition() -> Schema {
-    object(vec![
-        ("format", Schema::Text),
-        ("version", Schema::Number),
-        ("baseline_model_revision", Schema::Text),
-        ("baseline_content_fingerprint", Schema::Text),
-        (
-            "changes",
-            list(object(vec![
-                ("id", Schema::Text),
-                ("revision", Schema::Text),
-            ])),
-        ),
-        (
-            "files",
-            list(object(vec![
-                ("path", Schema::Text),
-                ("content", Schema::Text),
-            ])),
-        ),
-        ("content_fingerprint", Schema::Text),
-        ("fingerprint", Schema::Text),
+        ("metadata", Schema::Document),
     ])
 }
 
@@ -82,38 +30,13 @@ fn publication() -> Schema {
                 ("baseline_model_revision", Schema::Text),
                 ("model_revision", Schema::Text),
                 ("changes", list(Schema::Ref("change"))),
-                (
-                    "sources",
-                    list(object(vec![
-                        ("repository", Schema::Text),
-                        ("commit", Schema::Text),
-                        ("content_fingerprint", Schema::Text),
-                    ])),
-                ),
-                (
-                    "builds",
-                    list(object(vec![
-                        ("id", Schema::Text),
-                        ("sources", list(Schema::Text)),
-                        ("toolchain", map(Schema::Text)),
-                        ("configuration_fingerprint", Schema::Text),
-                        ("artifacts", list(Schema::Text)),
-                    ])),
-                ),
-                (
-                    "artifacts",
-                    list(object(vec![
-                        ("digest", Schema::Text),
-                        ("kind", Schema::Text),
-                    ])),
-                ),
+                ("sources", Schema::Document),
+                ("builds", Schema::Document),
+                ("artifacts", Schema::Document),
                 ("deployments", list(Schema::Ref("deployment"))),
-                (
-                    "components",
-                    list(object(vec![("id", Schema::Text), ("digest", Schema::Text)])),
-                ),
-                ("composition", composition()),
-                ("required_reviews", list(Schema::Text)),
+                ("components", Schema::Document),
+                ("composition", Schema::Document),
+                ("required_reviews", Schema::Document),
             ]),
         ),
         (
@@ -127,14 +50,7 @@ fn publication() -> Schema {
             ]),
         ),
         ("catalog", Schema::Ref("catalog")),
-        (
-            "evidence",
-            list(object(vec![
-                ("digest", Schema::Text),
-                ("media_type", Schema::Text),
-                ("availability", Schema::Text),
-            ])),
-        ),
+        ("evidence", Schema::Document),
     ])
 }
 
@@ -143,7 +59,7 @@ fn deployment() -> Schema {
         ("id", Schema::Text),
         ("environment", Schema::Text),
         ("configuration_fingerprint", Schema::Text),
-        ("artifacts", list(Schema::Text)),
+        ("artifacts", Schema::Document),
         ("verification_target", Schema::Ref("verification_target")),
         ("verification_target_fingerprint", Schema::Text),
     ])
@@ -160,17 +76,8 @@ fn deployment_observation() -> Schema {
         ("applied_revision", Schema::Text),
         ("rollout_id", Schema::Text),
         ("configuration_fingerprint", Schema::Text),
-        (
-            "components",
-            list(object(vec![
-                ("name", Schema::Text),
-                ("image", Schema::Text),
-                ("template_fingerprint", Schema::Text),
-                ("ready", Schema::Boolean),
-                ("instances", list(Schema::Text)),
-            ])),
-        ),
-        ("diagnostics", list(Schema::Text)),
+        ("components", Schema::Document),
+        ("diagnostics", Schema::Document),
     ])
 }
 

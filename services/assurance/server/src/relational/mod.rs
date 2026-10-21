@@ -15,9 +15,10 @@ pub(super) enum Schema {
     Text,
     Number,
     Boolean,
+    // Never queried by field: held as JSON text so a record's tail needs no tables.
+    Document,
     Object(Vec<(&'static str, Schema)>),
     List(Box<Schema>),
-    Map(Box<Schema>),
     Ref(&'static str),
     OneOf(Vec<Schema>),
 }
@@ -26,9 +27,6 @@ fn object(fields: Vec<(&'static str, Schema)>) -> Schema {
 }
 fn list(item: Schema) -> Schema {
     Schema::List(Box::new(item))
-}
-fn map(item: Schema) -> Schema {
-    Schema::Map(Box::new(item))
 }
 
 #[derive(Clone)]
@@ -83,7 +81,7 @@ impl Registry {
                 .filter(|(_, s)| !scalar(s))
                 .map(|(f, s)| ((*f).into(), s.clone()))
                 .collect(),
-            Schema::List(item) | Schema::Map(item) => vec![("item".into(), (**item).clone())],
+            Schema::List(item) => vec![("item".into(), (**item).clone())],
             Schema::OneOf(variants) => variants
                 .iter()
                 .enumerate()
@@ -137,11 +135,14 @@ pub(crate) fn assessment_triggers() -> String {
 }
 
 fn scalar(schema: &Schema) -> bool {
-    matches!(schema, Schema::Text | Schema::Number | Schema::Boolean)
+    matches!(
+        schema,
+        Schema::Text | Schema::Number | Schema::Boolean | Schema::Document
+    )
 }
 fn sql_type(schema: &Schema) -> &'static str {
     match schema {
-        Schema::Text => "text",
+        Schema::Text | Schema::Document => "text",
         Schema::Number => "numeric",
         Schema::Boolean => "boolean",
         _ => unreachable!(),
@@ -160,7 +161,7 @@ fn invalid(message: impl Into<String>) -> sqlx::Error {
     sqlx::Error::Protocol(message.into())
 }
 
-const SCHEMA_VERSION: i32 = 6;
+const SCHEMA_VERSION: i32 = 7;
 
 pub(crate) async fn initialize(pool: &PgPool) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
@@ -306,7 +307,7 @@ fn child_read(reg: &Registry, child: usize) -> String {
 }
 fn object_field(reg: &Registry, node: &Node, field: &str, schema: &Schema) -> String {
     let value = if scalar(schema) {
-        format!("to_jsonb(t.{})", column(field))
+        scalar_read(schema, &format!("t.{}", column(field)))
     } else {
         let Schema::Object(fields) = &node.schema else {
             unreachable!()
@@ -323,9 +324,15 @@ fn object_field(reg: &Registry, node: &Node, field: &str, schema: &Schema) -> St
         literal(field)
     )
 }
+fn scalar_read(schema: &Schema, expression: &str) -> String {
+    match schema {
+        Schema::Document => format!("{expression}::jsonb"),
+        _ => format!("to_jsonb({expression})"),
+    }
+}
 fn read_expression(reg: &Registry, node: &Node) -> String {
     match &node.schema {
-        s if scalar(s) => "to_jsonb(t._value)".into(),
+        s if scalar(s) => scalar_read(s, "t._value"),
         Schema::Object(fields) => {
             let fields=fields.iter().map(|(field,schema)|format!("CASE WHEN {}=ANY(t._present) THEN jsonb_build_object({}, {}) ELSE '{{}}'::jsonb END",literal(field),literal(field),object_field(reg,node,field,schema))).collect::<Vec<_>>();
             if fields.is_empty() {
@@ -337,10 +344,6 @@ fn read_expression(reg: &Registry, node: &Node) -> String {
         Schema::List(_) => {
             let child = &reg.nodes[node.children[0]].name;
             format!("COALESCE((SELECT jsonb_agg({}(rid,c._node) ORDER BY c._position) FROM {} c WHERE c._record_id=rid AND c._parent=t._node),'[]'::jsonb)",quote(&format!("read_{child}")),quote(child))
-        }
-        Schema::Map(_) => {
-            let child = &reg.nodes[node.children[0]].name;
-            format!("COALESCE((SELECT jsonb_object_agg(c._map_key,{}(rid,c._node)) FROM {} c WHERE c._record_id=rid AND c._parent=t._node),'{{}}'::jsonb)",quote(&format!("read_{child}")),quote(child))
         }
         Schema::Ref(_) => "assurance_record(t._ref_kind,t._ref_project,t._ref_key)".into(),
         Schema::OneOf(_) => format!(
@@ -507,23 +510,6 @@ impl Writer<'_> {
                         )?;
                     }
                 }
-                Schema::Map(_) => {
-                    for (i, (key, v)) in value
-                        .as_object()
-                        .ok_or_else(|| invalid(format!("{} requires map", node.name)))?
-                        .iter()
-                        .enumerate()
-                    {
-                        self.flatten(
-                            node.children[0],
-                            v,
-                            Some(current),
-                            i.try_into().map_err(|_| invalid("map too long"))?,
-                            Some(key.clone()),
-                            depth + 1,
-                        )?;
-                    }
-                }
                 Schema::Ref(kind) => {
                     if !self.reg.roots.contains_key(kind) {
                         return Err(invalid(format!("unknown relational kind {kind}")));
@@ -578,6 +564,7 @@ fn scalar_value(schema: &Schema, value: &Value) -> Option<String> {
         Schema::Text => value.as_str().map(str::to_owned),
         Schema::Number if value.is_number() => Some(value.to_string()),
         Schema::Boolean => value.as_bool().map(|v| v.to_string()),
+        Schema::Document => Some(value.to_string()),
         _ => None,
     }
 }
@@ -601,9 +588,6 @@ fn fits(reg: &Registry, schema: &Schema, value: &Value, depth: usize) -> bool {
         Schema::List(s) => value
             .as_array()
             .is_some_and(|a| a.iter().all(|v| fits(reg, s, v, depth + 1))),
-        Schema::Map(s) => value
-            .as_object()
-            .is_some_and(|m| m.values().all(|v| fits(reg, s, v, depth + 1))),
         Schema::Ref(kind) => reg
             .roots
             .get(kind)
@@ -795,9 +779,9 @@ mod schema_version_tests {
             sqlx::query_as("SELECT version,signature FROM assurance_storage_schema")
                 .fetch_one(&pool)
                 .await?;
-        assert_eq!(version, 6);
+        assert_eq!(version, 7);
         initialize(&pool).await?;
-        for (version, signature) in [(5, signature.clone()), (6, format!("{signature}-changed"))] {
+        for (version, signature) in [(6, signature.clone()), (7, format!("{signature}-changed"))] {
             sqlx::query("DELETE FROM assurance_storage_schema")
                 .execute(&pool)
                 .await?;
@@ -814,6 +798,15 @@ mod schema_version_tests {
                 .contains("relational schema changed without an explicit schema version"));
         }
         Ok(())
+    }
+
+    #[test]
+    fn only_queried_structure_is_normalized_into_tables() {
+        assert!(
+            registry().nodes.len() <= 60,
+            "{} generated tables: store fields that SQL never filters on as Schema::Document",
+            registry().nodes.len()
+        );
     }
 
     #[test]

@@ -1,32 +1,4 @@
-use super::{map, object, Schema};
-
-pub(super) fn snapshot() -> Schema {
-    object(vec![
-        ("captured_at_ms", Schema::Number),
-        ("instance", Schema::Text),
-        (
-            "report",
-            object(vec![
-                ("format", Schema::Text),
-                ("version", Schema::Number),
-                (
-                    "contexts",
-                    map(object(vec![
-                        ("contract_revision", Schema::Text),
-                        (
-                            "values",
-                            map(Schema::OneOf(vec![
-                                Schema::Text,
-                                Schema::Boolean,
-                                Schema::Number,
-                            ])),
-                        ),
-                    ])),
-                ),
-            ]),
-        ),
-    ])
-}
+use super::{object, Schema};
 
 pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
     vec![
@@ -38,7 +10,7 @@ pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
                     object(vec![
                         ("name", Schema::Text),
                         ("fingerprint", Schema::Text),
-                        ("fields", map(Schema::Text)),
+                        ("fields", Schema::Document),
                     ]),
                 ),
                 ("registered_by", Schema::Text),
@@ -61,8 +33,8 @@ pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
                         ("instance", Schema::Text),
                         ("started_at_ms", Schema::Number),
                         ("finished_at_ms", Schema::Number),
-                        ("before", snapshot()),
-                        ("after", snapshot()),
+                        ("before", Schema::Document),
+                        ("after", Schema::Document),
                         ("trusted", Schema::Boolean),
                     ]),
                 ),

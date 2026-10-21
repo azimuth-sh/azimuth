@@ -1,4 +1,4 @@
-use super::{list, object, Schema};
+use super::{object, Schema};
 
 pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
     vec![
@@ -6,146 +6,19 @@ pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
         ("review", review()),
         ("catalog", catalog()),
         ("package_fields", package_fields()),
-        ("package_type", package_type()),
     ]
 }
 
-fn identity() -> Schema {
-    object(vec![
-        ("id", Schema::Text),
-        ("fingerprint", Schema::Text),
-        (
-            "deployment",
-            object(vec![
-                ("verification_target", Schema::Text),
-                ("components", list(Schema::Text)),
-                ("contexts", list(Schema::Text)),
-                ("contribution", Schema::Text),
-                ("configuration_sources", list(Schema::Text)),
-                ("units", list(Schema::Text)),
-                (
-                    "controls",
-                    list(object(vec![
-                        ("unit", Schema::Text),
-                        ("contexts", list(Schema::Text)),
-                    ])),
-                ),
-                (
-                    "monitor",
-                    object(vec![
-                        ("id", Schema::Text),
-                        ("interval_seconds", Schema::Number),
-                        ("freshness_seconds", Schema::Number),
-                    ]),
-                ),
-            ]),
-        ),
-    ])
-}
-
-fn binding() -> Schema {
-    object(vec![
-        ("check", Schema::Text),
-        ("scenario", Schema::Text),
-        ("check_fingerprint", Schema::Text),
-        ("scenario_fingerprint", Schema::Text),
-        ("contribution", Schema::Text),
-        ("fingerprint", Schema::Text),
-    ])
-}
-
-fn verification_challenge() -> Schema {
-    object(vec![
-        ("id", Schema::Text),
-        ("fingerprint", Schema::Text),
-        ("form", Schema::Text),
-        ("targets", list(Schema::Text)),
-        ("requirements", list(Schema::Text)),
-        ("mechanisms", list(Schema::Text)),
-        ("checks", list(Schema::Text)),
-        ("searches_for", Schema::Text),
-        ("rationale", Schema::Text),
-        ("required_scope", list(Schema::Text)),
-        (
-            "implementations",
-            list(object(vec![
-                ("package", Schema::Text),
-                ("contract", Schema::Text),
-                ("entity", Schema::Text),
-                ("site", Schema::Text),
-                ("file", Schema::Text),
-                ("lang", Schema::Text),
-                ("source_fingerprint", Schema::Text),
-                (
-                    "inputs",
-                    list(object(vec![
-                        ("file", Schema::Text),
-                        ("fingerprint", Schema::Text),
-                    ])),
-                ),
-                ("schema", Schema::Ref("package_fields")),
-                ("area", Schema::Text),
-                ("address_kind", Schema::Text),
-                ("address", Schema::Text),
-                ("mount", Schema::Text),
-            ])),
-        ),
-    ])
-}
-
-fn requirement() -> Schema {
-    object(vec![
-        ("id", Schema::Text),
-        ("criticality", Schema::Text),
-        ("fingerprint", Schema::Text),
-        ("scenarios", list(Schema::Text)),
-        ("mechanisms", list(identity())),
-        (
-            "bindings",
-            list(object(vec![
-                ("check", Schema::Text),
-                ("scenario", Schema::Text),
-            ])),
-        ),
-        ("gaps", list(Schema::Text)),
-        ("verification_challenges", list(verification_challenge())),
-    ])
-}
-
-fn dependencies() -> Schema {
-    object(vec![
-        ("checks", list(identity())),
-        (
-            "scenarios",
-            list(object(vec![
-                ("id", Schema::Text),
-                ("requirement", Schema::Text),
-                ("fingerprint", Schema::Text),
-            ])),
-        ),
-        ("bindings", list(binding())),
-        ("requirements", list(requirement())),
-    ])
-}
-
 fn authority() -> Schema {
-    let Schema::Object(mut fields) = dependencies() else {
-        unreachable!()
-    };
-    fields.extend([
+    object(vec![
+        ("checks", Schema::Document),
+        ("scenarios", Schema::Document),
+        ("bindings", Schema::Document),
+        ("requirements", Schema::Document),
         ("project", Schema::Text),
         ("model_fingerprint", Schema::Text),
         ("fingerprint", Schema::Text),
-    ]);
-    object(fields)
-}
-
-fn basis() -> Schema {
-    list(object(vec![
-        ("run", Schema::Text),
-        ("bundle_fingerprint", Schema::Text),
-        ("check_result", Schema::Text),
-    ]))
+    ])
 }
 
 fn review() -> Schema {
@@ -155,49 +28,27 @@ fn review() -> Schema {
         ("reviewed_at_ms", Schema::Number),
         ("rationale", Schema::Text),
         ("fingerprint", Schema::Text),
-        (
-            "artifacts",
-            list(object(vec![
-                ("id", Schema::Text),
-                ("digest", Schema::Text),
-                ("locator", Schema::Text),
-            ])),
-        ),
-        (
-            "provenance",
-            object(vec![
-                ("agent", Schema::Text),
-                ("model", Schema::Text),
-                ("reassesses", Schema::Text),
-            ]),
-        ),
+        ("artifacts", Schema::Document),
+        ("provenance", Schema::Document),
     ];
-    let challenge_basis = || {
-        list(object(vec![
-            ("run", Schema::Text),
-            ("bundle_fingerprint", Schema::Text),
-            ("result_fingerprint", Schema::Text),
-            ("target_fingerprint", Schema::Text),
-        ]))
-    };
     let variants = vec![
         vec![
             ("requirement", Schema::Text),
             ("requirement_fingerprint", Schema::Text),
-            ("dependencies", dependencies()),
+            ("dependencies", Schema::Document),
             ("decision", Schema::Text),
-            ("challenge_basis", challenge_basis()),
+            ("challenge_basis", Schema::Document),
         ],
         vec![
             ("requirement", Schema::Text),
             ("requirement_fingerprint", Schema::Text),
-            ("dependencies", dependencies()),
+            ("dependencies", Schema::Document),
             ("verification_target_fingerprint", Schema::Text),
             ("requirement_review_fingerprint", Schema::Text),
-            ("basis", basis()),
+            ("basis", Schema::Document),
             ("conclusion", Schema::Text),
-            ("residual_risks", list(Schema::Text)),
-            ("challenge_basis", challenge_basis()),
+            ("residual_risks", Schema::Document),
+            ("challenge_basis", Schema::Document),
         ],
         vec![
             ("check", Schema::Text),
@@ -212,27 +63,19 @@ fn review() -> Schema {
             ("binding_fingerprint", Schema::Text),
             ("verification_target_fingerprint", Schema::Text),
             ("method_qualification_fingerprint", Schema::Text),
-            ("basis", basis()),
+            ("basis", Schema::Document),
             ("decision", Schema::Text),
-            ("limitations", list(Schema::Text)),
+            ("limitations", Schema::Document),
         ],
         vec![
             ("requirement", Schema::Text),
             ("requirement_fingerprint", Schema::Text),
             ("verification_target_fingerprint", Schema::Text),
-            ("scenarios", list(identity())),
-            ("mechanisms", list(identity())),
-            (
-                "bindings",
-                list(object(vec![
-                    ("check", Schema::Text),
-                    ("scenario", Schema::Text),
-                    ("fingerprint", Schema::Text),
-                    ("applicability_fingerprint", Schema::Text),
-                ])),
-            ),
+            ("scenarios", Schema::Document),
+            ("mechanisms", Schema::Document),
+            ("bindings", Schema::Document),
             ("conclusion", Schema::Text),
-            ("residual_risks", list(Schema::Text)),
+            ("residual_risks", Schema::Document),
         ],
     ];
     Schema::OneOf(
@@ -249,78 +92,15 @@ fn review() -> Schema {
 
 fn catalog() -> Schema {
     object(vec![
-        (
-            "modules",
-            list(object(vec![
-                ("id", Schema::Text),
-                ("title", Schema::Text),
-                ("requirements", list(Schema::Text)),
-                ("parent", Schema::Text),
-            ])),
-        ),
-        (
-            "requirements",
-            list(object(vec![
-                ("id", Schema::Text),
-                ("statement", Schema::Text),
-                ("title", Schema::Text),
-            ])),
-        ),
-        (
-            "scenarios",
-            list(object(vec![
-                ("id", Schema::Text),
-                ("description", Schema::Text),
-            ])),
-        ),
-        (
-            "checks",
-            list(object(vec![
-                ("id", Schema::Text),
-                ("description", Schema::Text),
-            ])),
-        ),
+        ("modules", Schema::Document),
+        ("requirements", Schema::Document),
+        ("scenarios", Schema::Document),
+        ("checks", Schema::Document),
     ])
 }
 
 fn package_fields() -> Schema {
-    object(vec![(
-        "fields",
-        list(object(vec![
-            ("name", Schema::Text),
-            ("schema", Schema::Ref("package_type")),
-        ])),
-    )])
-}
-
-fn package_type() -> Schema {
-    Schema::OneOf(vec![
-        object(vec![("kind", Schema::Text)]),
-        object(vec![("kind", Schema::Text), ("values", list(Schema::Text))]),
-        object(vec![
-            ("kind", Schema::Text),
-            ("items", Schema::Ref("package_type")),
-        ]),
-        object(vec![
-            ("kind", Schema::Text),
-            ("keys", Schema::Ref("package_type")),
-            ("values", Schema::Ref("package_type")),
-        ]),
-        object(vec![
-            ("kind", Schema::Text),
-            (
-                "fields",
-                list(object(vec![
-                    ("name", Schema::Text),
-                    ("schema", Schema::Ref("package_type")),
-                ])),
-            ),
-        ]),
-        object(vec![
-            ("kind", Schema::Text),
-            ("value", Schema::Ref("package_type")),
-        ]),
-    ])
+    object(vec![("fields", Schema::Document)])
 }
 
 #[cfg(test)]
@@ -431,7 +211,7 @@ mod tests {
             );
         }
         let mut unknown = review("requirement-review");
-        unknown["dependencies"]["unknown"] = true.into();
+        unknown["unknown"] = true.into();
         let registry = crate::relational::registry();
         let root = registry.roots["review"];
         assert!(!crate::relational::fits(
