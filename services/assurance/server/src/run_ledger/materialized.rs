@@ -154,6 +154,30 @@ fn deadline(request: &Value, requirement: &Value) -> i64 {
             }
         }
     }
+    // Only the newest deployment capture of an instance is ever selected, so older ones cannot change a status by ageing out.
+    let capture_instance = |capture: &Value| {
+        (
+            capture["verification_target_fingerprint"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            capture["component"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            capture["instance"].as_str().unwrap_or_default().to_string(),
+        )
+    };
+    let mut newest_deployment_capture: BTreeMap<(String, String, String), i64> = BTreeMap::new();
+    for capture in request["captures"].as_array().unwrap() {
+        if capture["kind"] == "deployment" {
+            let at = capture["finished_at_ms"].as_i64().unwrap();
+            let newest = newest_deployment_capture
+                .entry(capture_instance(capture))
+                .or_insert(at);
+            *newest = (*newest).max(at);
+        }
+    }
     for capture in request["captures"].as_array().unwrap() {
         let matches = capture["before"]["report"]["contexts"]
             .as_object()
@@ -166,6 +190,11 @@ fn deadline(request: &Value, requirement: &Value) -> i64 {
             });
         if matches {
             let at = capture["finished_at_ms"].as_i64().unwrap();
+            if capture["kind"] == "deployment"
+                && newest_deployment_capture.get(&capture_instance(capture)) != Some(&at)
+            {
+                continue;
+            }
             add(
                 at,
                 if capture["kind"] == "deployment" {
@@ -176,6 +205,15 @@ fn deadline(request: &Value, requirement: &Value) -> i64 {
             );
         }
     }
+    // A monitored Check is judged by the Check Results the evaluation selected; superseded results never regain
+    // influence by ageing, so their freshness windows are not boundaries.
+    let selected_results: BTreeSet<&str> =
+        ["supporting", "violations", "inconclusive", "unassessed"]
+            .into_iter()
+            .filter_map(|group| requirement["explanation"]["evidence"][group].as_array())
+            .flatten()
+            .filter_map(|reference| reference["check_result"].as_str())
+            .collect();
     let bundles = request["bundles"].as_array().unwrap().iter().chain(
         request["publication"]["snapshot"]["bundles"]
             .as_array()
@@ -190,15 +228,24 @@ fn deadline(request: &Value, requirement: &Value) -> i64 {
                 else {
                     continue;
                 };
+                let mut selected = window.is_none();
                 if let Some(results) = execution["results"].as_array() {
                     for result in results {
+                        if window.is_some()
+                            && !result["fingerprint"]
+                                .as_str()
+                                .is_some_and(|fingerprint| selected_results.contains(fingerprint))
+                        {
+                            continue;
+                        }
+                        selected = true;
                         add(
                             result["observed_at_ms"].as_i64().unwrap(),
                             window.unwrap_or(0),
                         );
                     }
                 }
-                if let Some(window) = window {
+                if let (Some(window), true) = (window, selected) {
                     add(bundle["finished_at_ms"].as_i64().unwrap_or(0), *window);
                     add(
                         bundle["finished_at_ms"].as_i64().unwrap_or(0),
@@ -594,6 +641,34 @@ mod tests {
                 "deployment_observation":{"verification_target_fingerprint":bundle.verification_target_fingerprint,"observed_at_ms":4,"valid_for_seconds":120,"state":"complete","trusted":true,"components":[{"id":"api","digest":fp('e'),"instances":["instance"]}]},
                 "context_contracts":[],"captures":[],"bundles":[value(&to_json(&bundle))],"reviews":[],"evaluated_at_ms":5})
         }
+    }
+    #[test]
+    fn superseded_probe_results_and_captures_do_not_shorten_validity() {
+        let capture = |finished_at_ms: i64| {
+            json!({"kind":"deployment","finished_at_ms":finished_at_ms,"verification_target_fingerprint":"target","component":"api","instance":"one",
+                "before":{"report":{"contexts":{"context":{"contract_revision":"revision"}}}}})
+        };
+        let result = |fingerprint: &str, observed_at_ms: i64| json!({"fingerprint":fingerprint,"observed_at_ms":observed_at_ms});
+        let request = json!({
+            "evaluated_at_ms":1_000_000,
+            "deployment_observation":{"observed_at_ms":999_000,"valid_for_seconds":120},
+            "publication":{"snapshot":{"bundles":[],"authority":{"checks":[
+                {"id":"probe","deployment":{"monitor":{"freshness_seconds":900},"contexts":["revision"]}}]}}},
+            "captures":[capture(900_000),capture(990_000)],
+            "bundles":[
+                {"finished_at_ms":150_000,"check_executions":[{"check":{"id":"probe"},"results":[result("first",150_000)]}]},
+                {"finished_at_ms":990_000,"check_executions":[{"check":{"id":"probe"},"results":[result("latest",990_000)]}]}]});
+        let assessed = |selected: &str| json!({"bindings":[{"check":"probe"}],"explanation":{"evidence":{"supporting":[{"check_result":selected}],"violations":[],"inconclusive":[],"unassessed":[]}}});
+        assert_eq!(
+            deadline(&request, &assessed("latest")),
+            990_000 + 120_000 + 1,
+            "only the newest capture and the selected result bound validity"
+        );
+        assert_eq!(
+            deadline(&request, &assessed("first")),
+            150_000 + 900_000 + 1,
+            "a result the evaluation selected still bounds validity even when a newer one exists"
+        );
     }
     #[test]
     fn expiry_matches_native_boundary_and_selected_evaluation_keeps_global_validation() {
