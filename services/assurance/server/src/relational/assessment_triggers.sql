@@ -134,7 +134,7 @@ BEGIN
         END IF;
     END IF;
     WITH affected AS (
-        UPDATE assessment_requirements c SET generation=c.generation+1
+        UPDATE assessment_requirements c SET generation=c.generation+1,renewing=false
          WHERE c.project=NEW.project AND (
             NEW.kind='review'
             OR EXISTS(SELECT 1 FROM deployment_assessments h

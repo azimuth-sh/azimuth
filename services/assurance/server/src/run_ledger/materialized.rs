@@ -23,6 +23,8 @@ async fn time(conn: &mut sqlx::PgConnection) -> Result<i64, LedgerError> {
     )
 }
 
+const RENEWAL_LEAD_MS: i64 = 30_000;
+
 async fn events(state: &LedgerState) -> Result<(), LedgerError> {
     let mut tx = state.pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(848332105)")
@@ -62,7 +64,9 @@ async fn events(state: &LedgerState) -> Result<(), LedgerError> {
         .execute(&mut *tx)
         .await?;
     let now = time(&mut tx).await?;
-    let expired: Vec<(String,String)> = sqlx::query_as("UPDATE assessment_requirements SET generation=generation+1 WHERE generation=published_generation AND valid_until_ms <= $1 RETURNING project,deployment").bind(now).fetch_all(&mut *tx).await?;
+    // Renewal starts before expiry, while the published assessment is still current, so a Requirement is never
+    // read as pending merely because its evidence ages: the new evaluation replaces it at publication.
+    let expired: Vec<(String,String)> = sqlx::query_as("UPDATE assessment_requirements SET generation=generation+1,renewing=true WHERE generation=published_generation AND valid_until_ms-$1 <= LEAST($2,(valid_until_ms-COALESCE(evaluated_at_ms,0))/2) RETURNING project,deployment").bind(now).bind(RENEWAL_LEAD_MS).fetch_all(&mut *tx).await?;
     for (project, deployment) in expired {
         sqlx::query("UPDATE deployment_assessments SET generation=generation+1,retry_at=now() WHERE project=$1 AND deployment=$2").bind(project).bind(deployment).execute(&mut *tx).await?;
     }
@@ -284,7 +288,7 @@ async fn publish(
             requirement,
         )
         .await?;
-        sqlx::query("INSERT INTO assessment_requirements(project,deployment,requirement,generation,published_generation,record_key,status,review,summary,evaluated_at_ms,valid_until_ms) VALUES($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(project,deployment,requirement) DO UPDATE SET published_generation=excluded.published_generation,record_key=excluded.record_key,status=excluded.status,review=excluded.review,summary=excluded.summary,evaluated_at_ms=excluded.evaluated_at_ms,valid_until_ms=excluded.valid_until_ms")
+        sqlx::query("INSERT INTO assessment_requirements(project,deployment,requirement,generation,published_generation,record_key,status,review,summary,evaluated_at_ms,valid_until_ms) VALUES($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(project,deployment,requirement) DO UPDATE SET published_generation=excluded.published_generation,record_key=excluded.record_key,status=excluded.status,review=excluded.review,summary=excluded.summary,evaluated_at_ms=excluded.evaluated_at_ms,valid_until_ms=excluded.valid_until_ms,renewing=false")
             .bind(project).bind(deployment).bind(id).bind(requirement_generation).bind(&key).bind(requirement["status"].as_str()).bind(requirement["review"].as_str()).bind(requirement["explanation"]["summary"].as_str()).bind(result["evaluated_at_ms"].as_i64()).bind(due).execute(&mut *tx).await?;
         if let Some(previous) = previous.filter(|previous| previous != &key) {
             relational::discard_assessment_requirement(&mut tx, project, &previous).await?;
@@ -396,14 +400,19 @@ pub(super) async fn read(
     let generation: i64 = row.get("generation");
     let published: i64 = row.get("published_generation");
     let due: Option<i64> = row.get("valid_until_ms");
-    let freshness = if generation != published || published == 0 || row.get::<bool, _>("unbound") {
+    // A renewing Requirement keeps its published assessment until that assessment's own validity ends.
+    let invalidated: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM assessment_requirements WHERE project=$1 AND deployment=$2 AND generation<>published_generation AND NOT renewing)").bind(project).bind(deployment).fetch_one(&mut *tx).await?;
+    let freshness = if (generation != published && invalidated)
+        || published == 0
+        || row.get::<bool, _>("unbound")
+    {
         "pending"
     } else if due.is_some_and(|due| due <= now) {
         "expired"
     } else {
         "ready"
     };
-    let entries=sqlx::query("SELECT requirement,record_key,status,review,summary,evaluated_at_ms,generation<>published_generation AS unpublished,valid_until_ms FROM assessment_requirements WHERE project=$1 AND deployment=$2 ORDER BY requirement").bind(project).bind(deployment).fetch_all(&mut *tx).await?;
+    let entries=sqlx::query("SELECT requirement,record_key,status,review,summary,evaluated_at_ms,generation<>published_generation AND NOT renewing AS unpublished,valid_until_ms FROM assessment_requirements WHERE project=$1 AND deployment=$2 ORDER BY requirement").bind(project).bind(deployment).fetch_all(&mut *tx).await?;
     let mut requirements = Vec::new();
     for entry in entries {
         let mut requirement = if summary {
@@ -1273,6 +1282,50 @@ mod tests {
                 .fetch_one(&pool)
                 .await?;
         assert_eq!(header, 4);
+        Ok(())
+    }
+    #[tokio::test]
+    async fn a_requirement_is_renewed_before_it_expires_without_reading_as_pending(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let postgres = Postgres::default().with_tag("17-alpine").start().await?;
+        let pool = crate::connect(&format!(
+            "postgres://postgres:postgres@127.0.0.1:{}/postgres",
+            postgres.get_host_port_ipv4(5432).await?
+        ))
+        .await?;
+        crate::migrate(&pool).await?;
+        let state = LedgerState {
+            pool: pool.clone(),
+            credentials: Arc::new(BTreeMap::new()),
+        };
+        let now = time(&mut *pool.acquire().await?).await?;
+        sqlx::query("INSERT INTO deployment_assessments(project,deployment,release,authority,model,verification_target,generation,published_generation,valid_until_ms,evaluated_at_ms) VALUES('project','deployment','release','authority','model','verification_target',1,1,$1,$2)").bind(now + 20_000).bind(now - 100_000).execute(&pool).await?;
+        for (requirement, lifetime) in [("renewed", 20_000), ("distant", 3_600_000)] {
+            sqlx::query("INSERT INTO assessment_requirements(project,deployment,requirement,generation,published_generation,status,review,summary,valid_until_ms,evaluated_at_ms) VALUES('project','deployment',$1,1,1,'unresolved','not-required','No evidence',$2,$3)").bind(requirement).bind(now + lifetime).bind(now - 100_000).execute(&pool).await?;
+        }
+        events(&state).await?;
+        let rows: Vec<(String, i64, bool)> = sqlx::query_as(
+            "SELECT requirement,generation,renewing FROM assessment_requirements ORDER BY requirement",
+        )
+        .fetch_all(&pool)
+        .await?;
+        assert_eq!(
+            rows,
+            vec![("distant".into(), 1, false), ("renewed".into(), 2, true)]
+        );
+        let view = read(&state, "project", "deployment", true).await?;
+        assert_eq!(
+            view["assessment"]["state"], "ready",
+            "renewal alone must not hide the published assessment"
+        );
+        assert!(view["requirements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|requirement| requirement["diagnostics"].as_array().unwrap().is_empty()));
+        sqlx::query("UPDATE assessment_requirements SET generation=generation+1,renewing=false WHERE requirement='renewed'").execute(&pool).await?;
+        let invalidated = read(&state, "project", "deployment", true).await?;
+        assert_eq!(invalidated["assessment"]["state"], "pending");
         Ok(())
     }
 }
