@@ -1,34 +1,5 @@
-use super::{list, object, Schema};
+use super::{object, Schema};
 
-fn fact() -> Schema {
-    object(vec![
-        ("kind", Schema::Text),
-        ("run", Schema::Text),
-        ("bundle_fingerprint", Schema::Text),
-        ("fingerprint", Schema::Text),
-        ("check_result", Schema::Text),
-        ("check", Schema::Text),
-        ("scenario", Schema::Text),
-        ("observed_at_ms", Schema::Number),
-        ("selected_in_basis", Schema::Boolean),
-        ("accepted_basis", Schema::Boolean),
-        ("diagnostics", list(Schema::Text)),
-        ("verification_target_fingerprint", Schema::Text),
-        ("outcome", Schema::Text),
-        ("applicable", Schema::Boolean),
-        ("component", Schema::Text),
-        ("instance", Schema::Text),
-    ])
-}
-fn decision() -> Schema {
-    object(vec![
-        ("status", Schema::Text),
-        ("fingerprint", Schema::Text),
-        ("reviewer", Schema::Text),
-        ("reviewed_at_ms", Schema::Number),
-        ("rationale", Schema::Text),
-    ])
-}
 pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
     vec![(
         "assessment_requirement",
@@ -36,65 +7,12 @@ pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
             ("requirement", Schema::Text),
             ("status", Schema::Text),
             ("review", Schema::Text),
-            ("diagnostics", list(Schema::Text)),
-            ("gaps", list(Schema::Text)),
-            (
-                "bindings",
-                list(object(vec![
-                    ("check", Schema::Text),
-                    ("scenario", Schema::Text),
-                    ("status", Schema::Text),
-                    (
-                        "monitor",
-                        object(vec![
-                            ("id", Schema::Text),
-                            ("interval_seconds", Schema::Number),
-                            ("freshness_seconds", Schema::Number),
-                        ]),
-                    ),
-                    ("reasons", list(Schema::Text)),
-                ])),
-            ),
-            ("challenges", list(Schema::Text)),
-            (
-                "explanation",
-                object(vec![
-                    ("summary", Schema::Text),
-                    ("status", Schema::Text),
-                    (
-                        "reasons",
-                        list(object(vec![
-                            ("code", Schema::Text),
-                            ("category", Schema::Text),
-                            ("message", Schema::Text),
-                        ])),
-                    ),
-                    ("review", decision()),
-                    ("requirement_status", decision()),
-                    (
-                        "coverage",
-                        list(object(vec![
-                            ("check", Schema::Text),
-                            ("scenario", Schema::Text),
-                            ("status", Schema::Text),
-                            ("check_results", list(fact())),
-                        ])),
-                    ),
-                    (
-                        "evidence",
-                        object(vec![
-                            ("supporting", list(fact())),
-                            ("violations", list(fact())),
-                            ("inconclusive", list(fact())),
-                            ("unassessed", list(fact())),
-                        ]),
-                    ),
-                    ("residual_risks", list(Schema::Text)),
-                    ("dependencies", list(fact())),
-                    ("adverse", list(fact())),
-                ]),
-            ),
-            ("dependencies", list(fact())),
+            ("diagnostics", Schema::Document),
+            ("gaps", Schema::Document),
+            ("bindings", Schema::Document),
+            ("challenges", Schema::Document),
+            ("explanation", Schema::Document),
+            ("dependencies", Schema::Document),
             ("evaluated_at_ms", Schema::Number),
         ]),
     )]
