@@ -115,7 +115,7 @@ Revision 10, like revision 9, requires explicit exact Verification Targets for l
 ```json
 {
   "format": "azimuth-assurance-verification-target-selection",
-  "version": 1,
+  "version": 2,
   "project": "example-project",
   "model_revision": "sha256:<prepared candidate revision>",
   "checks": [
@@ -142,7 +142,7 @@ The inventory is internal portable workflow metadata: Requirement definitions, s
 ```json
 {
   "format": "azimuth-workflow-definition",
-  "version": 1,
+  "version": 2,
   "id": "change-assurance",
   "tasks": [
     {

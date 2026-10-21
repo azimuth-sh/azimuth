@@ -884,7 +884,7 @@ fn model_enforces_project_cardinality_and_exports_only_current_fields() {
     let exported = model.to_json(&[]);
     assert_eq!(
         exported.get("version").and_then(|value| value.as_num()),
-        Some(7.0)
+        Some(8.0)
     );
     for key in ["covers", "mechanism_covers", "observations"] {
         assert!(exported.get(key).is_none(), "retired export key `{key}`");

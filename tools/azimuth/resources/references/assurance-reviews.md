@@ -4,7 +4,7 @@ Requirement Review assesses definitions. Requirement Status assesses observed be
 Neither execution, structural validation nor an implementation tag authors an independent review.
 Check Review, Method Qualification, Applicability Decision and Requirement Judgment are not mandatory
 steps in the current compact account. Their earlier records remain historical facts with their
-original meanings; see [the previous contract](https://github.com/azimuth-sh/azimuth/blob/main/contracts/history/assurance-reviews-before-requirement-status.md).
+original meanings; see [the previous contract](https://github.com/azimuth-sh/azimuth/blob/main/contracts/history/assurance-reviews-before-claim-health.md).
 
 ## Authority and dependencies
 

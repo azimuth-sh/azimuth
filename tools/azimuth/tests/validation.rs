@@ -532,3 +532,24 @@ fn finding_registry_is_exhaustive_and_has_guidance() {
         "verification"
     );
 }
+
+#[test]
+fn finding_records_name_the_model_entity_kind() {
+    let finding = azimuth::validation::Finding {
+        kind: FindingKind::UnboundScenario,
+        severity: azimuth::validation::Severity::Error,
+        requirement: Some("visible".into()),
+        entity_kind: Some(azimuth::diag::EntityKind::Scenario),
+        criticality: None,
+        path: "spec.md".into(),
+        line: 1,
+        detail: "unbound".into(),
+    };
+    let json = finding.to_json();
+    assert_eq!(
+        json.get("entity_kind").and_then(|value| value.as_str()),
+        Some("scenario")
+    );
+    assert!(json.get("verification_target_kind").is_none());
+    assert!(json.get("subject_kind").is_none());
+}

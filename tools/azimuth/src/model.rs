@@ -2607,7 +2607,7 @@ impl Model {
             .collect();
 
         Json::obj(vec![
-            ("version", Json::Num(7.0)),
+            ("version", Json::Num(8.0)),
             (
                 "extensions",
                 Json::Arr(

@@ -3258,7 +3258,7 @@ fn render_validation(
         let mut fields = vec![
             ("format", Json::str("azimuth-validation")),
             ("scope", Json::str(scope.name())),
-            ("version", Json::Num(2.0)),
+            ("version", Json::Num(3.0)),
             (
                 "structural_validity",
                 Json::str(if errors == 0 { "valid" } else { "invalid" }),

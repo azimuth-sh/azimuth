@@ -809,7 +809,7 @@ fn repository_envelope_preserves_check_linkage_in_stable_identity_export() {
     assert_eq!(source.mount, "tests");
 
     let export = loaded.model.to_json(&[]).to_string_pretty();
-    assert!(export.contains("\"version\": 7"));
+    assert!(export.contains("\"version\": 8"));
     assert!(export.contains("\"check_implementations\""));
     assert!(!export.contains("\"covers\""));
     assert!(!export.contains("\"mechanism_covers\""));
