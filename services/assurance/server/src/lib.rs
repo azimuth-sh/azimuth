@@ -54,7 +54,12 @@ pub async fn migrate(pool: &PgPool) -> Result<(), sqlx::migrate::MigrateError> {
     sqlx::migrate!("./relational_migrations").run(pool).await?;
     relational::initialize(pool)
         .await
-        .map_err(sqlx::migrate::MigrateError::Execute)
+        .map_err(sqlx::migrate::MigrateError::Execute)?;
+    sqlx::raw_sql(include_str!("relational/assessment_triggers.sql"))
+        .execute(pool)
+        .await
+        .map_err(sqlx::migrate::MigrateError::Execute)?;
+    Ok(())
 }
 
 pub fn app(state: AppState) -> Router {

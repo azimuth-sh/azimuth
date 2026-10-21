@@ -1,4 +1,5 @@
 mod account;
+mod assessment;
 mod domain;
 mod release;
 mod run;
@@ -56,6 +57,7 @@ fn registry() -> &'static Registry {
             .chain(domain::schemas())
             .chain(status::schemas())
             .chain(target::schemas())
+            .chain(assessment::schemas())
         {
             assert!(
                 !registry.roots.contains_key(kind),
@@ -162,17 +164,32 @@ pub(crate) async fn initialize(pool: &PgPool) -> Result<(), sqlx::Error> {
             "{:?}",
             reg.roots
                 .iter()
-                .filter(|(kind, _)| !matches!(**kind, "target_observation" | "target_normalizer"))
+                .filter(|(kind, _)| !matches!(
+                    **kind,
+                    "target_observation" | "target_normalizer" | "assessment_claim"
+                ))
                 .map(|(kind, root)| (kind, &reg.nodes[*root].schema))
                 .collect::<Vec<_>>()
         )
         .as_bytes(),
     );
-    let upgrading = matches!(&existing, Some((3, value)) if value == &previous_signature)
+    let version_four_signature = azimuth::fingerprint::sha256(
+        format!(
+            "{:?}",
+            reg.roots
+                .iter()
+                .filter(|(kind, _)| **kind != "assessment_claim")
+                .map(|(kind, root)| (kind, &reg.nodes[*root].schema))
+                .collect::<Vec<_>>()
+        )
+        .as_bytes(),
+    );
+    let upgrading = matches!(&existing, Some((4,value)) if value == &version_four_signature)
+        || matches!(&existing, Some((3, value)) if value == &previous_signature)
         || matches!(&existing, Some((1, value)) if value == "5f17f63dbf8b92e333cdc8ab106cf0cb0d5c6d4314c6a05533fe99af2042d598")
         || matches!(&existing, Some((2, value)) if value == "a8f5b811252e44a75eb6cbc7f9141af862d3bdb65ea9ca9ebe8953a77824ae47");
     if let Some((version, existing)) = &existing {
-        if !upgrading && (*version != 4 || existing != &signature) {
+        if !upgrading && (*version != 5 || existing != &signature) {
             return Err(invalid(
                 "relational schema changed without an explicit schema version",
             ));
@@ -295,7 +312,7 @@ pub(crate) async fn initialize(pool: &PgPool) -> Result<(), sqlx::Error> {
         }
     }
     sqlx::query(&format!("CREATE OR REPLACE FUNCTION assurance_record_field(k text,p text,r text,f text) RETURNS jsonb LANGUAGE sql STABLE AS $$ SELECT CASE k {} ELSE NULL END FROM assurance_records WHERE kind=k AND project=p AND record_key=r $$",field_cases.join(" "))).execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO assurance_storage_schema(version,signature) VALUES(4,$1)")
+    sqlx::query("INSERT INTO assurance_storage_schema(version,signature) VALUES(5,$1)")
         .bind(signature)
         .execute(&mut *tx)
         .await?;
@@ -744,6 +761,40 @@ pub(crate) async fn store(
     Ok(())
 }
 
+pub(crate) async fn discard_assessment_claim(
+    conn: &mut PgConnection,
+    project: &str,
+    key: &str,
+) -> Result<(), sqlx::Error> {
+    let id:Option<i64>=sqlx::query_scalar("SELECT id FROM assurance_records WHERE kind='assessment_claim' AND project=$1 AND record_key=$2").bind(project).bind(key).fetch_optional(&mut *conn).await?;
+    let Some(id) = id else {
+        return Ok(());
+    };
+    let reg = registry();
+    fn descendants(reg: &Registry, node: usize, nodes: &mut Vec<usize>) {
+        for child in &reg.nodes[node].children {
+            descendants(reg, *child, nodes);
+        }
+        nodes.push(node);
+    }
+    let mut nodes = Vec::new();
+    descendants(reg, reg.roots["assessment_claim"], &mut nodes);
+    for node in nodes {
+        sqlx::query(&format!(
+            "DELETE FROM {} WHERE _record_id=$1",
+            quote(&reg.nodes[node].name)
+        ))
+        .bind(id)
+        .execute(&mut *conn)
+        .await?;
+    }
+    sqlx::query("DELETE FROM assurance_records WHERE id=$1")
+        .bind(id)
+        .execute(&mut *conn)
+        .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod title_upgrade_tests {
     use super::*;
@@ -787,7 +838,7 @@ mod title_upgrade_tests {
         let version: i32 = sqlx::query_scalar("SELECT max(version) FROM assurance_storage_schema")
             .fetch_one(&pool)
             .await?;
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         sqlx::query("DELETE FROM assurance_storage_schema")
             .execute(&pool)
             .await?;
@@ -828,7 +879,7 @@ mod target_upgrade_tests {
                     .iter()
                     .filter(|(kind, _)| !matches!(
                         **kind,
-                        "target_observation" | "target_normalizer"
+                        "target_observation" | "target_normalizer" | "assessment_claim"
                     ))
                     .map(|(kind, root)| (kind, &reg.nodes[*root].schema))
                     .collect::<Vec<_>>()
@@ -846,12 +897,43 @@ mod target_upgrade_tests {
         initialize(&pool).await?;
         assert_eq!(
             load(&pool, "catalog", "example", "retained").await?,
-            Some(retained)
+            Some(retained.clone())
         );
         let version: i32 = sqlx::query_scalar("SELECT max(version) FROM assurance_storage_schema")
             .fetch_one(&pool)
             .await?;
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
+        let version_four = azimuth::fingerprint::sha256(
+            format!(
+                "{:?}",
+                reg.roots
+                    .iter()
+                    .filter(|(kind, _)| **kind != "assessment_claim")
+                    .map(|(kind, root)| (kind, &reg.nodes[*root].schema))
+                    .collect::<Vec<_>>()
+            )
+            .as_bytes(),
+        );
+        sqlx::query("DELETE FROM assurance_storage_schema")
+            .execute(&pool)
+            .await?;
+        sqlx::query("INSERT INTO assurance_storage_schema VALUES(4,$1)")
+            .bind(version_four)
+            .execute(&pool)
+            .await?;
+        initialize(&pool).await?;
+        initialize(&pool).await?;
+        assert_eq!(
+            load(&pool, "catalog", "example", "retained").await?,
+            Some(retained)
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i32>("SELECT max(version) FROM assurance_storage_schema")
+                .fetch_one(&pool)
+                .await?,
+            5
+        );
+
         Ok(())
     }
 }

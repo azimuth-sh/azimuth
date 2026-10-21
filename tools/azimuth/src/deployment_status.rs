@@ -805,6 +805,14 @@ struct Candidate<'a> {
 }
 
 pub fn assess(request: &Json) -> Result<Json, String> {
+    assess_selected(request, None)
+}
+
+/// Selection limits evaluation only; authority and evidence validation retain their full closure.
+pub fn assess_selected(
+    request: &Json,
+    selected: Option<&BTreeSet<String>>,
+) -> Result<Json, String> {
     let input = Inputs::new(request)?;
     let snapshot = field(field(request, "publication")?, "snapshot")?;
     let authority = field(snapshot, "authority")?;
@@ -842,9 +850,21 @@ pub fn assess(request: &Json) -> Result<Json, String> {
             reviews.push(review.clone());
         }
     }
+    if let Some(selected) = selected {
+        let declared = array(authority, "claims")?
+            .iter()
+            .map(|claim| text(claim, "id"))
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        if selected.iter().any(|id| !declared.contains(id.as_str())) {
+            return Err("selected Claim is absent from the complete authority".into());
+        }
+    }
     let mut claims = Vec::new();
     for claim in array(authority, "claims")? {
         let id = text(claim, "id")?;
+        if selected.is_some_and(|ids| !ids.contains(id)) {
+            continue;
+        }
         let target = Json::obj(vec![
             ("kind", Json::str("claim-review")),
             ("claim", Json::str(id)),

@@ -1,5 +1,9 @@
 import "server-only";
-import { readProject, type Page, type SubjectState } from "./assurance";
+import {
+  readProject,
+  type Page,
+  type DeploymentStatusSummary,
+} from "./assurance";
 
 interface Deployment {
   deployment: { id: string; environment: string; subject_fingerprint?: string };
@@ -30,31 +34,39 @@ interface DeploymentSelection extends Deployment {
   reason: string;
 }
 
-export async function environmentView(project: string, selected: string | null, environment = "production") {
-  const [deployments, authority, currentSelection, exact] = await Promise.all([
-    readProject<Page<Deployment>>(project, "/deployments?limit=100"),
-    readProject<{ fingerprint: string }>(project, "/authority"),
-    readProject<DeploymentSelection>(
-      project,
-      `/environments/${encodeURIComponent(environment)}/deployment`,
-    ),
-    selected
-      ? readProject<Deployment>(
-          project,
-          `/deployments/${encodeURIComponent(selected)}`,
-        )
-      : Promise.resolve(null),
-  ]);
-  const observation = await readProject<{
-    fresh: boolean;
-    deployment_id: string | null;
-    received_at: string;
-    observation: {
-      state: string;
-      observed_at_ms: number;
-      release_fingerprint: string | null;
-    };
-  }>(project, `/environments/${encodeURIComponent(environment)}/observations`);
+export async function environmentView(
+  project: string,
+  selected: string | null,
+  environment = "production",
+) {
+  const [deployments, authority, currentSelection, exact, observation] =
+    await Promise.all([
+      readProject<Page<Deployment>>(project, "/deployments?limit=100"),
+      readProject<{ fingerprint: string }>(project, "/authority"),
+      readProject<DeploymentSelection>(
+        project,
+        `/environments/${encodeURIComponent(environment)}/deployment`,
+      ),
+      selected
+        ? readProject<Deployment>(
+            project,
+            `/deployments/${encodeURIComponent(selected)}`,
+          )
+        : Promise.resolve(null),
+      readProject<{
+        fresh: boolean;
+        deployment_id: string | null;
+        received_at: string;
+        observation: {
+          state: string;
+          observed_at_ms: number;
+          release_fingerprint: string | null;
+        };
+      }>(
+        project,
+        `/environments/${encodeURIComponent(environment)}/observations`,
+      ),
+    ]);
   const observationFresh =
     !!observation?.fresh &&
     observation.observation.state === "complete" &&
@@ -68,27 +80,32 @@ export async function environmentView(project: string, selected: string | null, 
   const candidate = selected ? exact : currentSelection;
   const deployment =
     candidate?.deployment.environment === environment ? candidate : undefined;
-  const release = deployment
-    ? await readProject<Release>(
-        project,
-        `/releases/${encodeURIComponent(deployment.release_fingerprint)}/summary`,
-      )
-    : null;
-  const revision = release?.publication.release.model_revision;
   const subject = deployment?.deployment.subject_fingerprint;
-  const state =
-    revision && subject
-      ? await readProject<SubjectState>(
+  const [release, assessment] = await Promise.all([
+    deployment
+      ? readProject<Release>(
           project,
-          `/deployments/${encodeURIComponent(deployment!.deployment.id)}/status`,
+          `/releases/${encodeURIComponent(deployment.release_fingerprint)}/summary`,
         )
-      : null;
+      : Promise.resolve(null),
+    deployment && subject
+      ? readProject<DeploymentStatusSummary>(
+          project,
+          `/deployments/${encodeURIComponent(deployment.deployment.id)}/status/summary`,
+        )
+      : Promise.resolve(null),
+  ]);
+  const revision = release?.publication.release.model_revision;
   const catalog = revision
     ? await readProject<{ catalog: Catalog }>(
         project,
         `/model-revisions/${encodeURIComponent(revision)}/catalog`,
       )
     : null;
+  const recordedFreshness = assessment?.assessment;
+  const freshness = recordedFreshness?.state === "ready" && (typeof recordedFreshness.valid_until_ms !== "number" || recordedFreshness.valid_until_ms <= Date.now())
+    ? { ...recordedFreshness, state: "expired" as const } : recordedFreshness;
+  const state = freshness?.state === "ready" ? assessment : null;
   return {
     observation,
     observationFresh,
@@ -98,6 +115,7 @@ export async function environmentView(project: string, selected: string | null, 
     revision,
     subject,
     state,
+    freshness,
     authority,
     currentSelection,
     catalog: catalog?.catalog,

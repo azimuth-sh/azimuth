@@ -442,6 +442,16 @@ pub(super) async fn accept(
             "deployment observation is missing, stale or incomplete",
         ));
     }
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(format!("assessment initialization|{project}"))
+        .execute(&mut *tx)
+        .await?;
+    let current_assessment:Option<bool>=sqlx::query_scalar("SELECT generation=published_generation AND published_generation>0 AND valid_until_ms>(extract(epoch FROM clock_timestamp())*1000)::bigint FROM deployment_assessments WHERE project=$1 AND deployment=$2 FOR SHARE").bind(&project).bind(deployment["id"].as_str()).fetch_optional(&mut *tx).await?;
+    if current_assessment != Some(true) {
+        return Err(LedgerError::conflict(
+            "deployment assessment is pending or expired",
+        ));
+    }
     let assessment = super::deployment_status::assess_deployment(
         &state,
         &project,
@@ -450,6 +460,11 @@ pub(super) async fn accept(
             .ok_or_else(|| LedgerError::invalid("deployment identity missing"))?,
     )
     .await?;
+    if assessment["assessment"]["state"] != "ready" {
+        return Err(LedgerError::conflict(
+            "deployment assessment is pending or expired",
+        ));
+    }
     let current_authority: Value = sqlx::query_scalar(
         "SELECT assurance_record('authority',project,fingerprint) FROM assurance_authorities WHERE project=$1 AND fingerprint=$2",
     ).bind(&project).bind(revision).fetch_one(&mut *tx).await?;
@@ -480,6 +495,12 @@ pub(super) async fn accept(
                 "release composition does not extend accepted content",
             ));
         }
+    }
+    let unexpired:bool=sqlx::query_scalar("SELECT valid_until_ms>(extract(epoch FROM clock_timestamp())*1000)::bigint FROM deployment_assessments WHERE project=$1 AND deployment=$2").bind(&project).bind(deployment["id"].as_str()).fetch_one(&mut *tx).await?;
+    if !unexpired {
+        return Err(LedgerError::conflict(
+            "deployment assessment expired before the acceptance decision",
+        ));
     }
     sqlx::query("INSERT INTO release_acceptances(project,release_fingerprint,previous_model_revision,reason,accepted_by) VALUES($1,$2,$3,$4,$5)")
         .bind(&project).bind(&fingerprint).bind(&body.expected_accepted_model_revision).bind(&body.reason).bind(&owner).execute(&mut *tx).await?;

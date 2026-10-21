@@ -8,7 +8,7 @@ export function developmentScenario(): string | null {
   const origin = new URL(process.env.NEXTAUTH_URL ?? '');
   if (origin.protocol !== 'http:' || origin.hostname !== '127.0.0.1')
     throw new Error('Synthetic Assurance UI data requires a loopback HTTP origin');
-  if (!['mixed', 'healthy', 'incident', 'empty'].includes(scenario))
+  if (!['mixed', 'healthy', 'incident', 'empty', 'pending', 'expired'].includes(scenario))
     throw new Error(`Unknown Assurance UI scenario: ${scenario}`);
   return scenario;
 }

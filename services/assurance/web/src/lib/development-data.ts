@@ -41,10 +41,11 @@ export function developmentRead(project: string, path: string): unknown {
     diagnostics: c.gap?.endsWith('review') ? [c.reason] : [], historical: false,
     submitted_by: 'development-publisher', submitted_at: at(120), provenance_basis: 'synthetic-ui-data',
   }));
-  const reviewState = { authority_fingerprint: revision, claims: claims.map((c, i) => ({
+  const reviewState = { assessment: { state: 'ready', generation: 1, published_generation: 1, evaluated_at_ms: Date.now(), valid_until_ms: null }, authority_fingerprint: revision, claims: claims.map((c, i) => ({
     claim: c.id, record: reviews[i].record, assessment: reviews[i].assessment, diagnostics: reviews[i].diagnostics,
   })) };
-  const state = { format: 'azimuth-deployment-status', version: 1, deployment: 'payments-2026-10-18', subject_fingerprint: subject,
+  const freshness = { state: scenario === 'pending' ? 'pending' : scenario === 'expired' ? 'expired' : 'ready', generation: 2, published_generation: scenario === 'pending' ? 1 : 2, evaluated_at_ms: Date.now() - 60000, valid_until_ms: Date.now() + (scenario === 'expired' ? -1000 : 240000) };
+  const state = { assessment: freshness, format: 'azimuth-deployment-status', version: 1, deployment: 'payments-2026-10-18', subject_fingerprint: subject,
     evaluated_at_ms: Date.now(), authority_fingerprint: revision, model_fingerprint: authority.model_fingerprint,
     claims: claims.map((c, i) => {
       const computedStatus = 'computed';
@@ -144,6 +145,7 @@ export function developmentRead(project: string, path: string): unknown {
     observation: { state: 'complete', observed_at_ms: Date.now() - 60000, valid_for_seconds: 300, release_fingerprint: releaseId },
   };
   if (route === `/deployments/${stagingDeployment.id}`) return { deployment: stagingDeployment, release_fingerprint: releaseId };
+  if (route === `/deployments/${stagingDeployment.id}/status/summary`) return { ...state, deployment: stagingDeployment.id, subject_fingerprint: stagingSubject, claims: state.claims.map(({ bindings, explanation, ...claim }) => ({ ...claim, status: 'unresolved', explanation: { summary: 'Required Check observations are missing for this staging deployment.' } })) };
   if (route === `/deployments/${stagingDeployment.id}/status` || route === `/model-revisions/${revision}/subjects/${stagingSubject}/state`) return {
     ...state, deployment: stagingDeployment.id, subject_fingerprint: stagingSubject,
     claims: state.claims.map(claim => ({ ...claim, status: 'unresolved',
@@ -182,7 +184,7 @@ export function developmentRead(project: string, path: string): unknown {
   if (route === '/authority') return accepted ? authority : baselineAuthority;
   if (route === '/model-revisions') return page([{ revision, selected: accepted }, ...(!accepted ? [{ revision: baseline, selected: true }] : [])]);
   if (route === '/subjects') return page([{ fingerprint: subject, subject: deployment }]);
-  if (route === '/claim-reviews') return accepted ? reviewState : { authority_fingerprint: baseline, claims: [] };
+  if (route === '/claim-reviews') return accepted ? reviewState : { assessment: { state: 'ready', generation: 1, published_generation: 1, evaluated_at_ms: Date.now(), valid_until_ms: null }, authority_fingerprint: baseline, claims: [] };
   if (route === `/model-revisions/${revision}/claim-reviews`) return reviewState;
   if (route === '/reviews') return { records: accepted ? reviews : [], next: null };
   if (route === '/runs') return page(runs);
@@ -191,9 +193,10 @@ export function developmentRead(project: string, path: string): unknown {
   if (route === `/model-revisions/${revision}`) return { authority, selected: accepted };
   if (route === `/model-revisions/${revision}/snapshot`) return { authority, reviews: [...reviews.map(r => r.record), { kind: 'claim-health', claim: claims[0]?.id, subject_fingerprint: subject, fingerprint: identity('historical-assessment'), conclusion: 'supported', reviewed_at_ms: Date.now()-86400000, rationale: 'Historical authored conclusion retained for inspection.' }], bundles };
   if (route === `/subjects/${subject}/state`) return accepted ? state : { ...state, authority_fingerprint: baseline, claims: [] };
+  if (route === `/deployments/${deployment.id}/status/summary`) return { ...state, claims: state.claims.map(({ bindings, explanation, ...claim }) => ({ ...claim, status: freshness.state === 'ready' ? claim.status : 'unresolved', explanation: { summary: freshness.state === 'ready' ? explanation.summary : 'Evidence is being reassessed.' } })) };
   if (route === `/deployments/${deployment.id}/status` || route === `/model-revisions/${revision}/subjects/${subject}/state`) return state;
   if (route === `/model-revisions/${baseline}`) return { authority: baselineAuthority, selected: !accepted };
-  if (route === `/model-revisions/${baseline}/claim-reviews`) return { authority_fingerprint: baseline, claims: [] };
+  if (route === `/model-revisions/${baseline}/claim-reviews`) return { assessment: { state: 'ready', generation: 1, published_generation: 1, evaluated_at_ms: Date.now(), valid_until_ms: null }, authority_fingerprint: baseline, claims: [] };
   if (route === `/model-revisions/${baseline}/snapshot`) return { authority: baselineAuthority, reviews: [], bundles: [] };
   if (route === `/model-revisions/${baseline}/subjects/${subject}/state`) return { authority_fingerprint: baseline, model_fingerprint: baselineAuthority.model_fingerprint, claims: [] };
   if (route === '/releases') return page([{ fingerprint: releaseId, release, accepted }]);

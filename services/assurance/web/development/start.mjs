@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 
 const scenario = process.argv[2] ?? 'mixed';
-if (!['mixed', 'healthy', 'incident', 'empty'].includes(scenario))
+if (!['mixed', 'healthy', 'incident', 'empty', 'pending', 'expired'].includes(scenario))
   throw new Error('Choose mixed, healthy, incident or empty');
 const port = process.env.ASSURANCE_UI_PORT ?? '3100';
 if (!/^\d+$/.test(port) || Number(port) < 1024 || Number(port) > 65535)

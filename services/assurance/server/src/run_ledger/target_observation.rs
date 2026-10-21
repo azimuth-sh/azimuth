@@ -268,7 +268,6 @@ pub(super) async fn list(
     headers: HeaderMap,
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
-    resolve_pending(&state, &project).await?;
     let limit = page.limit()?;
     let after: i64 = if page.after.is_empty() {
         0

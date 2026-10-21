@@ -14,52 +14,9 @@ use testcontainers_modules::{
 const OWNER: &str = "owner-credential-for-context-integration-only";
 const PUBLISHER: &str = "publisher-credential-for-context-integration-only";
 const PRODUCER: &str = "producer-credential-for-context-integration-only";
+const OTHER_PRODUCER: &str = "another-producer-credential-for-context-integration-only";
 const VIEWER: &str = "viewer-credential-for-context-integration-only";
-fn fp(c: char) -> String {
-    format!("sha256:{}", c.to_string().repeat(64))
-}
-fn native(value: &Value) -> azimuth::json::Json {
-    azimuth::json::parse(&value.to_string()).unwrap()
-}
-fn value(value: &azimuth::json::Json) -> Value {
-    serde_json::from_str(&value.to_string_pretty()).unwrap()
-}
-fn contract() -> Value {
-    let mut result = json!({"name":"settings","fields":{"enabled":"boolean","revision":"integer","mode":"string"}});
-    result["fingerprint"] = json!(azimuth::run::canonical_fingerprint(&native(&result)).unwrap());
-    result
-}
-fn publication() -> Value {
-    publication_policy(
-        json!({"subject":"source","components":["api"],"contexts":[],"contribution":"both","monitor":null}),
-    )
-}
-fn publication_policy(policy: Value) -> Value {
-    let deployment_id = if policy["monitor"].is_null() {
-        "deployment"
-    } else {
-        "monitor-deployment"
-    };
-    let model=azimuth::model::Model {
-        specs:vec![azimuth::spec::parse_spec("spec.md","# Spec: sample\n\n## Claim: restricted\nCriticality: routine\n\nAccess SHALL be restricted.\n\n### Case: works\nEvent: request\nRequired: restricted access\n").unwrap()],
-        account_verifications:vec![azimuth::account_verification::parse_account_verification("verification.md",&format!("# Verification: sample\n\n## Claim verification: restricted\n\n### Check: recovery\n- Deployment: {policy}\n- Evidence bindings:\n  - Case: `works`\n    - Contribution: Establishes access restrictions.\n\nExercise access restrictions.\n")).unwrap()],
-        ..Default::default()
-    };
-    let authority = value(&azimuth::assurance_review::authority(&model, "project").unwrap());
-    let subject = json!({"kind":"deployment","environment":"production","deployment":deployment_id,"deployment_fingerprint":fp('c'),"artifacts":[{"id":"api","digest":fp('e')}]});
-    let subject_fp = azimuth::run::subject_fingerprint(
-        &azimuth::run::subject_from_json(&native(&subject)).unwrap(),
-    );
-    let deployment = json!({"id":deployment_id,"environment":"production","configuration_fingerprint":fp('c'),"artifacts":[fp('e')],"subject":subject,"subject_fingerprint":subject_fp});
-    value(&azimuth::release::prepare(&native(&json!({
-        "format":"azimuth-release-request","version":1,"project":"project","label":"Synthetic release",
-        "baseline_model_revision":fp('a'),"changes":[{"id":"restricted","revision":fp('a')}],
-        "sources":[{"repository":"root","commit":"a".repeat(40),"content_fingerprint":fp('a')}],
-        "builds":[{"id":"build-api","sources":["root"],"toolchain":{"compiler":"1"},"configuration_fingerprint":fp('b'),"artifacts":[fp('e')]}],
-        "artifacts":[{"digest":fp('e'),"kind":"container"}],"deployments":[deployment],"components":[{"id":"api","digest":fp('e')}],
-        "snapshot":{"project":"project","model_revision":authority["fingerprint"],"authority":authority,"reviews":[],"bundles":[]},"evidence":[]
-    }))).unwrap())
-}
+include!("support/deployment_evidence.rs");
 
 #[tokio::test]
 async fn context_contracts_and_capture_authorization_preserve_relational_storage(
@@ -78,7 +35,10 @@ async fn context_contracts_and_capture_authorization_preserve_relational_storage
             ProjectCredentials {
                 owners: BTreeMap::from([("owner".into(), OWNER.into())]),
                 publishers: BTreeMap::from([("publisher".into(), PUBLISHER.into())]),
-                producers: BTreeMap::from([("producer".into(), PRODUCER.into())]),
+                producers: BTreeMap::from([
+                    ("producer".into(), PRODUCER.into()),
+                    ("another-producer".into(), OTHER_PRODUCER.into()),
+                ]),
                 reviewers: BTreeMap::from([(
                     "reviewer".into(),
                     "reviewer-credential-for-context-integration-only".into(),
@@ -142,6 +102,20 @@ async fn context_contracts_and_capture_authorization_preserve_relational_storage
     );
     let package = publication();
     let response = client
+        .post(format!("{base}/authority"))
+        .bearer_auth(OWNER)
+        .header("if-none-match", "*")
+        .json(&package["snapshot"]["authority"])
+        .send()
+        .await?;
+    assert_eq!(
+        response.status(),
+        StatusCode::CREATED,
+        "{}",
+        response.text().await?
+    );
+
+    let response = client
         .post(format!("{base}/releases"))
         .bearer_auth(PUBLISHER)
         .json(&package)
@@ -164,13 +138,7 @@ async fn context_contracts_and_capture_authorization_preserve_relational_storage
         "{}",
         response.text().await?
     );
-    let result: Value = client
-        .get(format!("{base}/deployments/deployment/status"))
-        .bearer_auth(VIEWER)
-        .send()
-        .await?
-        .json()
-        .await?;
+    let result = ready_status(&client, &base, "deployment").await?;
     assert_eq!(result["claims"][0]["status"], "unresolved");
     assert_eq!(result["claims"][0]["claim"], "restricted");
     assert_eq!(
@@ -319,15 +287,87 @@ async fn context_contracts_and_capture_authorization_preserve_relational_storage
         .json()
         .await?;
     let deployment_id = observed["deployment_id"].as_str().unwrap();
+    let status = ready_status(&client, &base, deployment_id).await?;
+    assert_eq!(status["claims"][0]["status"], "supported", "{status}");
+    let acceptance = json!({"environment":"production","expected_accepted_model_revision":package["snapshot"]["authority"]["fingerprint"],"reason":"Owner accepts the observed synthetic composition."});
+    let mut projection_lock = pool.begin().await?;
+    sqlx::query("SELECT generation FROM deployment_assessments WHERE project='project' AND deployment=$1 FOR UPDATE").bind(deployment_id).execute(&mut *projection_lock).await?;
+    sqlx::query("UPDATE deployment_assessments SET generation=generation+1,retry_at='infinity' WHERE project='project' AND deployment=$1").bind(deployment_id).execute(&mut *projection_lock).await?;
+    sqlx::query("UPDATE assessment_claims SET generation=generation+1 WHERE project='project' AND deployment=$1").bind(deployment_id).execute(&mut *projection_lock).await?;
+    projection_lock.commit().await?;
     let response = client
-        .get(format!("{base}/deployments/{deployment_id}/status"))
-        .bearer_auth(VIEWER)
+        .post(format!(
+            "{base}/releases/{}/acceptance",
+            package["release"]["fingerprint"].as_str().unwrap()
+        ))
+        .bearer_auth(OWNER)
+        .json(&acceptance)
         .send()
         .await?;
-    let code = response.status();
-    let status: Value = response.json().await?;
-    assert_eq!(code, StatusCode::OK, "{status}");
-    assert_eq!(status["claims"][0]["status"], "supported", "{status}");
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let rejected: Value = response.json().await?;
+    assert!(
+        rejected["detail"].as_str().unwrap().contains("assessment"),
+        "{rejected}"
+    );
+    sqlx::query("UPDATE deployment_assessments SET retry_at=now() WHERE project='project' AND deployment=$1").bind(deployment_id).execute(&pool).await?;
+    ready_status(&client, &base, deployment_id).await?;
+    sqlx::raw_sql("CREATE FUNCTION pause_release_acceptance() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(848332109); RETURN NEW; END $$; CREATE TRIGGER pause_release_acceptance BEFORE INSERT ON release_acceptances FOR EACH ROW EXECUTE FUNCTION pause_release_acceptance()").execute(&pool).await?;
+    let mut decision_barrier = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(848332109)")
+        .execute(&mut *decision_barrier)
+        .await?;
+    let acceptance_client = client.clone();
+    let acceptance_url = format!(
+        "{base}/releases/{}/acceptance",
+        package["release"]["fingerprint"].as_str().unwrap()
+    );
+    let accepting = tokio::spawn(async move {
+        acceptance_client
+            .post(acceptance_url)
+            .bearer_auth(OWNER)
+            .json(&acceptance)
+            .send()
+            .await
+    });
+    wait_for_advisory_waiter(&pool, 848332109, false).await?;
+    let fact_client = client.clone();
+    let fact_url = format!("{base}/runs");
+    let mut concurrent_bundle = bundle.clone();
+    concurrent_bundle.provenance.source.execution = "native-concurrent-acceptance".into();
+    refresh(&mut concurrent_bundle);
+    assert!(azimuth::run::verify(&concurrent_bundle).is_empty());
+    let fact = value(&azimuth::run::to_json(&concurrent_bundle));
+    let recording = tokio::spawn(async move {
+        fact_client
+            .post(fact_url)
+            .bearer_auth(OTHER_PRODUCER)
+            .json(&fact)
+            .send()
+            .await
+    });
+    let initialization_lock: i64 = sqlx::query_scalar(
+        "SELECT hashtextextended('assessment initialization|project',0)&4294967295",
+    )
+    .fetch_one(&pool)
+    .await?;
+    wait_for_advisory_waiter(&pool, initialization_lock, true).await?;
+    decision_barrier.commit().await?;
+    let response = tokio::time::timeout(std::time::Duration::from_secs(5), accepting).await???;
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "{}",
+        response.text().await?
+    );
+    let response = tokio::time::timeout(std::time::Duration::from_secs(5), recording).await???;
+    assert_eq!(
+        response.status(),
+        StatusCode::CREATED,
+        "{}",
+        response.text().await?
+    );
+    sqlx::raw_sql("DROP TRIGGER pause_release_acceptance ON release_acceptances; DROP FUNCTION pause_release_acceptance()").execute(&pool).await?;
     let deployed: Value = client
         .get(format!("{base}/deployments/{deployment_id}"))
         .bearer_auth(VIEWER)
@@ -480,14 +520,7 @@ async fn context_contracts_and_capture_authorization_preserve_relational_storage
         sqlx::query(&format!("INSERT INTO {table}({names}) SELECT {selections} FROM assurance_records a CROSS JOIN {table} source JOIN assurance_records template ON template.id=source._record_id WHERE a.project='project' AND a.kind='run' AND a.record_key LIKE 'expired-monitor-%' AND template.project='project' AND template.kind='run' AND template.record_key=$1")).bind(&poll.bundle_fingerprint).execute(&pool).await?;
     }
     sqlx::query("INSERT INTO run_bundles(project,run_id,revision,fingerprint,subject_fingerprint,model_fingerprint) SELECT 'project',record_key,0,record_key,$1,$2 FROM assurance_records WHERE project='project' AND kind='run' AND record_key LIKE 'expired-monitor-%'").bind(&poll.subject_fingerprint).bind(&poll.plan.model_fingerprint).execute(&pool).await?;
-    let response = client
-        .get(format!("{base}/deployments/{selected}/status"))
-        .bearer_auth(VIEWER)
-        .send()
-        .await?;
-    let code = response.status();
-    let result: Value = response.json().await?;
-    assert_eq!(code, StatusCode::OK, "{result}");
+    let result = ready_status(&client, &base, &selected).await?;
     assert_eq!(result["claims"][0]["status"], "supported", "{result}");
     let columns:Vec<String>=sqlx::query_scalar("SELECT table_name||'.'||column_name FROM information_schema.columns WHERE table_schema='public' AND udt_name IN ('json','jsonb')").fetch_all(&pool).await?;
     assert!(
@@ -498,169 +531,47 @@ async fn context_contracts_and_capture_authorization_preserve_relational_storage
     Ok(())
 }
 
-fn context() -> BTreeMap<String, String> {
-    BTreeMap::new()
-}
-fn valid_bundle() -> RunBundle {
-    let check = CheckSelection {
-        id: "recovery".into(),
-        fingerprint: fp('b'),
-        cases: vec!["works".into()],
-        implementations: vec![Implementation {
-            identity: "payments|rust-symbol|recovery::replay".into(),
-            source_fingerprint: fp('c'),
-        }],
-        units: vec![WorkUnit {
-            id: "whole".into(),
-            parameters: BTreeMap::new(),
-        }],
-    };
-    let mut bundle = RunBundle {
-        contributions: Vec::new(),
-        run_id: fp('0'),
-        bundle_revision: 0,
-        corrects: None,
-        correction_reason: None,
-        bundle_fingerprint: fp('0'),
-        subject: Subject::Workspace {
-            repositories: vec![RepositoryState {
-                id: "root".into(),
-                revision: "revision-a".into(),
-                content_fingerprint: fp('a'),
-            }],
-        },
-        subject_fingerprint: fp('0'),
-        planned_at_ms: 1,
-        started_at_ms: 2,
-        finished_at_ms: 4,
-        status: RunStatus::Complete,
-        plan: Plan {
-            model_fingerprint: fp('d'),
-            required_context: context(),
-            checks: vec![check.clone()],
-            challenges: vec![],
-            fingerprint: fp('0'),
-        },
-        actual_selection: ActualSelection {
-            context: context(),
-            plan_fingerprint: fp('0'),
-            checks: vec![check],
-            challenges: vec![],
-            fingerprint: fp('0'),
-        },
-        provenance: Provenance {
-            mode: ProvenanceMode::Execute,
-            source: SourceProvenance {
-                system: "local-runner".into(),
-                execution: "native-17".into(),
-                uri: None,
-            },
-            normalizer: Normalizer {
-                id: "adapter/synthetic".into(),
-                version: "alpha.2".into(),
-                build_fingerprint: fp('e'),
-            },
-            adapter: AdapterProvenance {
-                id: "synthetic".into(),
-                adapter_version: "alpha.2".into(),
-                adapter_fingerprint: fp('e'),
-                descriptor_fingerprint: fp('f'),
-                configuration_fingerprint: fp('7'),
-                launch_fingerprint: fp('8'),
-                routes: vec![LaunchRoute {
-                    selection: RouteSelection {
-                        kind: RouteSelectionKind::Check,
-                        id: "recovery".into(),
-                    },
-                    capability: RouteCapability {
-                        address: "synthetic/checks".into(),
-                        class: RouteCapabilityClass::CheckExecute,
-                        challenge_form: None,
-                        fingerprint: fp('9'),
-                    },
-                    inputs: Vec::new(),
-                }],
-                import_inputs: vec![],
-            },
-            generated_at_ms: 5,
-            principal: None,
-            attributes: None,
-        },
-        artifacts: vec![],
-        diagnostics: vec![],
-        activities: vec![Activity {
-            id: "check-attempt".into(),
-            status: ActivityStatus::Completed,
-            started_at_ms: 2,
-            finished_at_ms: 3,
-            artifacts: vec![],
-            diagnostics: vec![],
-            attributes: BTreeMap::new(),
-        }],
-        check_executions: vec![CheckExecution {
-            check: CheckRef {
-                id: "recovery".into(),
-                fingerprint: fp('b'),
-            },
-            units: vec![CheckExecutionUnit {
-                id: "whole".into(),
-                attempts: vec![CheckAttempt {
-                    ordinal: 1,
-                    activity: "check-attempt".into(),
-                    outcomes: [("works".into(), ObservationOutcome::Satisfied)]
-                        .into_iter()
-                        .collect(),
-                }],
-            }],
-            observations: vec![Observation {
-                case: "works".into(),
-                outcome: ObservationOutcome::Satisfied,
-                observed_at_ms: 3,
-                fingerprint: fp('0'),
-                artifacts: vec![],
-                diagnostics: vec![],
-            }],
-        }],
-        challenger_executions: vec![],
-    };
-    refresh(&mut bundle);
-    bundle
-}
-fn refresh(bundle: &mut RunBundle) {
-    bundle.subject_fingerprint = subject_fingerprint(&bundle.subject);
-    bundle.plan.fingerprint = plan_fingerprint(&bundle.subject_fingerprint, &bundle.plan);
-    bundle.actual_selection.plan_fingerprint = bundle.plan.fingerprint.clone();
-    bundle.actual_selection.fingerprint = selection_fingerprint(&bundle.actual_selection);
-    bundle.provenance.adapter.launch_fingerprint = launch_fingerprint(
-        bundle.provenance.mode,
-        bundle.planned_at_ms,
-        &bundle.subject,
-        &bundle.subject_fingerprint,
-        &bundle.plan,
-        &LaunchAdapterIdentity {
-            id: bundle.provenance.adapter.id.clone(),
-            adapter_version: bundle.provenance.adapter.adapter_version.clone(),
-            adapter_fingerprint: bundle.provenance.adapter.adapter_fingerprint.clone(),
-            descriptor_fingerprint: bundle.provenance.adapter.descriptor_fingerprint.clone(),
-            configuration_fingerprint: bundle.provenance.adapter.configuration_fingerprint.clone(),
-        },
-        &bundle.provenance.adapter.routes,
-    );
-    bundle.run_id = run_id(bundle);
-    for index in 0..bundle.check_executions.len() {
-        for observation_index in 0..bundle.check_executions[index].observations.len() {
-            let fingerprint = observation_fingerprint(
-                bundle,
-                &bundle.check_executions[index],
-                &bundle.check_executions[index].observations[observation_index],
-            );
-            bundle.check_executions[index].observations[observation_index].fingerprint =
-                fingerprint;
+async fn ready_status(
+    client: &Client,
+    base: &str,
+    deployment: &str,
+) -> Result<Value, Box<dyn Error>> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(40);
+    loop {
+        let response = client
+            .get(format!("{base}/deployments/{deployment}/status"))
+            .bearer_auth(VIEWER)
+            .send()
+            .await?;
+        let code = response.status();
+        let value: Value = response.json().await?;
+        assert_eq!(code, StatusCode::OK, "{value}");
+        if value["assessment"]["state"] == "ready" {
+            return Ok(value);
         }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "assessment failed to converge: {value}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
-    for index in 0..bundle.challenger_executions.len() {
-        bundle.challenger_executions[index].result.fingerprint =
-            challenge_result_fingerprint(bundle, &bundle.challenger_executions[index]);
+}
+
+async fn wait_for_advisory_waiter(
+    pool: &sqlx::PgPool,
+    key: i64,
+    committing: bool,
+) -> Result<(), Box<dyn Error>> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let waiting:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_locks l JOIN pg_stat_activity a USING(pid) WHERE l.locktype='advisory' AND l.objid=$1::bigint::oid AND NOT l.granted AND (NOT $2 OR lower(a.query) LIKE 'commit%'))").bind(key).bind(committing).fetch_one(pool).await?;
+        if waiting {
+            return Ok(());
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "expected transaction to reach advisory lock {key}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
-    bundle.bundle_fingerprint = bundle_fingerprint(bundle);
 }
