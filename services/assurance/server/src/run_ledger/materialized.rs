@@ -24,7 +24,6 @@ async fn time(conn: &mut sqlx::PgConnection) -> Result<i64, LedgerError> {
 }
 
 const RENEWAL_LEAD_MS: i64 = 30_000;
-const RESOLUTION_RETRY_MS: i64 = 15_000;
 
 async fn events(state: &LedgerState) -> Result<(), LedgerError> {
     let mut tx = state.pool.begin().await?;
@@ -92,7 +91,7 @@ async fn tick_leader(state: &LedgerState) -> Result<(), LedgerError> {
     let started = std::time::Instant::now();
     // Resolution is ingestion-side background work, never a page-read side effect.
     for project in state.credentials.keys() {
-        target_observation::resolve_pending(state, project, RESOLUTION_RETRY_MS).await?;
+        target_observation::resolve_pending(state, project).await?;
     }
     let resolution = started.elapsed();
     let stage = std::time::Instant::now();
