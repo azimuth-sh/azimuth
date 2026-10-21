@@ -1,6 +1,6 @@
 # Design: framework/release-orchestration
 
-## Claim: qualification-lanes-converge
+## Requirement: qualification-lanes-converge
 Mechanism: same-run-release-dag
 Enforcement: guard
 Binding: release-build-dag
@@ -15,7 +15,7 @@ releases call the same graph; the tag run publishes only its own outputs. Removi
 guard would let a partial lane population look like a complete release; rebuilding in a consumer
 would let the tested bytes differ from the selected artifact.
 
-## Claim: tagged-candidates-are-verifiable
+## Requirement: tagged-candidates-are-verifiable
 Mechanism: catalog-bound-artifact-validation
 Enforcement: choke-point
 Binding: release-artifact-validator
@@ -27,7 +27,7 @@ accepts exactly one same-run file for every selected subject. It hashes the sele
 outputs before upload, and publication consumes those same-run artifacts. Removing the validation
 choke point would allow a missing, duplicate or substituted artifact to enter publication.
 
-## Claim: qualified-candidates-compose
+## Requirement: qualified-candidates-compose
 Mechanism: disposable-candidate-consumers
 Enforcement: guard
 Binding: release-consumer-rehearsal
@@ -36,7 +36,7 @@ Disposable Cargo, NuGet and npm consumers install retained archives rather than 
 native runners execute retained CLI archives; emulated image checks start each selected platform.
 Removing these checks would leave packer success as the only evidence that distributions compose.
 
-## Claim: partial-publication-resumes-safely
+## Requirement: partial-publication-resumes-safely
 Mechanism: registry-state-planner
 Enforcement: choke-point
 Binding: release-publication-plan
