@@ -88,11 +88,15 @@ pub(super) async fn tick(state: &LedgerState) -> Result<(), LedgerError> {
 }
 
 async fn tick_leader(state: &LedgerState) -> Result<(), LedgerError> {
+    let started = std::time::Instant::now();
     // Resolution is ingestion-side background work, never a page-read side effect.
     for project in state.credentials.keys() {
         target_observation::resolve_pending(state, project).await?;
     }
+    let resolution = started.elapsed();
+    let stage = std::time::Instant::now();
     events(state).await?;
+    let event_processing = stage.elapsed();
     let jobs: Vec<(String,String,i64)> = sqlx::query_as("SELECT project,deployment,generation FROM deployment_assessments WHERE (generation<>published_generation OR authority IS NULL) AND retry_at<=now() ORDER BY (EXISTS(SELECT 1 FROM deployment_observations o WHERE o.project=deployment_assessments.project AND o.deployment_id=deployment_assessments.deployment AND o.revision=(SELECT max(latest.revision) FROM deployment_observations latest WHERE latest.project=o.project AND latest.environment=o.environment))) DESC,retry_at,project,deployment LIMIT 1").fetch_all(&state.pool).await?;
     for (project, deployment, generation) in jobs {
         if let Err(error) = refresh(state, &project, &deployment, generation).await {
@@ -105,7 +109,18 @@ async fn tick_leader(state: &LedgerState) -> Result<(), LedgerError> {
             sqlx::query("UPDATE deployment_assessments SET last_error=$3,retry_at=now()+interval '10 seconds' WHERE project=$1 AND deployment=$2").bind(&project).bind(&deployment).bind(format!("{error:?}")).execute(&state.pool).await?;
         }
     }
+    let stage = std::time::Instant::now();
     materialized_reviews::process(state).await?;
+    let total = started.elapsed();
+    if total >= std::time::Duration::from_secs(1) {
+        tracing::info!(
+            resolution_ms = resolution.as_millis() as u64,
+            event_processing_ms = event_processing.as_millis() as u64,
+            review_processing_ms = stage.elapsed().as_millis() as u64,
+            total_ms = total.as_millis() as u64,
+            "assessment worker tick"
+        );
+    }
     Ok(())
 }
 
@@ -761,6 +776,7 @@ mod tests {
         let state = LedgerState {
             pool: pool.clone(),
             credentials: Arc::new(BTreeMap::new()),
+            evidence: Default::default(),
         };
         sqlx::query("INSERT INTO deployment_assessments(project,deployment,release,authority,model,verification_target,generation,published_generation,valid_until_ms) VALUES('project','deployment','release','authority','model','verification_target',1,1,9007199254740991)").execute(&pool).await?;
         for (requirement, check) in [("first", "recovery"), ("second", "unrelated")] {
@@ -828,6 +844,7 @@ mod tests {
         let restarted = LedgerState {
             pool: pool.clone(),
             credentials: Arc::new(BTreeMap::new()),
+            evidence: Default::default(),
         };
         events(&restarted).await?;
         let generations: Vec<(String, i64)> = sqlx::query_as(
@@ -1176,6 +1193,7 @@ mod tests {
         let state = LedgerState {
             pool: pool.clone(),
             credentials: Arc::new(BTreeMap::new()),
+            evidence: Default::default(),
         };
         Ok((state, pool, postgres))
     }
@@ -1380,6 +1398,7 @@ mod tests {
         let state = LedgerState {
             pool: pool.clone(),
             credentials: Arc::new(BTreeMap::new()),
+            evidence: Default::default(),
         };
         let now = time(&mut *pool.acquire().await?).await?;
         sqlx::query("INSERT INTO deployment_assessments(project,deployment,release,authority,model,verification_target,generation,published_generation,valid_until_ms,evaluated_at_ms) VALUES('project','deployment','release','authority','model','verification_target',1,1,$1,$2)").bind(now + 20_000).bind(now - 100_000).execute(&pool).await?;

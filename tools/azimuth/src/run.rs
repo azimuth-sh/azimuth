@@ -6130,6 +6130,15 @@ fn validate_result_time(
 
 pub fn verify_set(bundles: &[RunBundle]) -> Vec<Finding> {
     let mut findings = bundles.iter().flat_map(verify).collect::<Vec<_>>();
+    findings.extend(verify_history(bundles));
+    findings.sort();
+    findings.dedup();
+    findings
+}
+
+/// Checks how the bundles relate as correction histories; each bundle must already have passed [`verify`].
+pub fn verify_history(bundles: &[RunBundle]) -> Vec<Finding> {
+    let mut findings = Vec::new();
     let mut exact = Vec::<&RunBundle>::new();
     for bundle in bundles {
         if !exact.contains(&bundle) {

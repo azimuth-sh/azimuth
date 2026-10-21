@@ -372,6 +372,15 @@ fn validate_observation(v: &Json) -> Result<(), String> {
     Ok(())
 }
 
+struct Parts<'a> {
+    publication: &'a Json,
+    deployment: &'a Json,
+    observation: &'a Json,
+    contracts: &'a [Json],
+    captures: &'a [Json],
+    now: u64,
+}
+
 impl<'a> Inputs<'a> {
     fn new(request: &'a Json) -> Result<Self, String> {
         shape(
@@ -395,8 +404,29 @@ impl<'a> Inputs<'a> {
             return Err("unsupported deployment assessment request".into());
         }
         crate::release::verify(field(request, "publication")?)?;
-        let release = field(field(request, "publication")?, "release")?;
-        let deployment = field(request, "deployment")?;
+        Self::build(
+            Parts {
+                publication: field(request, "publication")?,
+                deployment: field(request, "deployment")?,
+                observation: field(request, "deployment_observation")?,
+                contracts: array(request, "context_contracts")?,
+                captures: array(request, "captures")?,
+                now: number(request, "evaluated_at_ms")?,
+            },
+            true,
+        )
+    }
+
+    fn build(parts: Parts<'a>, verify: bool) -> Result<Self, String> {
+        let Parts {
+            publication,
+            deployment,
+            observation,
+            contracts,
+            captures,
+            now,
+        } = parts;
+        let release = field(publication, "release")?;
         let artifacts = array(release, "artifacts")?
             .iter()
             .map(|a| text(a, "digest").map(str::to_string))
@@ -416,21 +446,19 @@ impl<'a> Inputs<'a> {
             .into_iter()
             .map(|a| (a.id, a.digest))
             .collect::<BTreeMap<_, _>>();
-        let observation = field(request, "deployment_observation")?;
         validate_observation(observation)?;
-        let contracts = array(request, "context_contracts")?;
-        let mut fingerprints = BTreeSet::new();
-        for contract in contracts {
-            validate_context_contract(contract)?;
-            if !fingerprints.insert(text(contract, "fingerprint")?) {
-                return Err("duplicate context contract".into());
+        if verify {
+            let mut fingerprints = BTreeSet::new();
+            for contract in contracts {
+                validate_context_contract(contract)?;
+                if !fingerprints.insert(text(contract, "fingerprint")?) {
+                    return Err("duplicate context contract".into());
+                }
+            }
+            for capture in captures {
+                validate_capture(capture, contracts)?;
             }
         }
-        let captures = array(request, "captures")?;
-        for capture in captures {
-            validate_capture(capture, contracts)?;
-        }
-        let now = number(request, "evaluated_at_ms")?;
         let mut reasons = Vec::new();
         if !trusted(observation)? {
             reasons.push("deployment observation is not trusted".into());
@@ -819,6 +847,37 @@ pub fn assess(request: &Json) -> Result<Json, String> {
     assess_selected(request, None)
 }
 
+/// Evidence the caller has already verified: the publication, the context contracts and captures, every Run
+/// individually and as a history, and every Requirement Review. Evaluation does not repeat that work.
+pub struct Evidence<'a> {
+    pub publication: &'a Json,
+    pub deployment: &'a Json,
+    pub observation: &'a Json,
+    pub contracts: &'a [Json],
+    pub captures: &'a [Json],
+    pub bundles: &'a [RunBundle],
+    pub reviews: &'a [Json],
+    pub evaluated_at_ms: u64,
+}
+
+/// Verifies a release publication together with the model policies it carries.
+pub fn verify_publication(publication: &Json) -> Result<(), String> {
+    crate::release::verify(publication)?;
+    validate_policies(field(field(publication, "snapshot")?, "authority")?)
+}
+
+/// Parses one Run and requires it to be protocol-valid on its own.
+pub fn verify_run(source: &str) -> Result<RunBundle, String> {
+    let bundle = crate::run::parse("deployment.bundles", source)
+        .map_err(|e| format!("invalid Run: {e:?}"))?;
+    let findings = crate::run::verify(&bundle);
+    if findings.is_empty() {
+        Ok(bundle)
+    } else {
+        Err(format!("invalid Run history: {findings:?}"))
+    }
+}
+
 /// Selection limits evaluation only; authority and evidence validation retain their full closure.
 pub fn assess_selected(
     request: &Json,
@@ -829,8 +888,12 @@ pub fn assess_selected(
     let authority = field(snapshot, "authority")?;
     validate_policies(authority)?;
     let mut raw = array(snapshot, "bundles")?.to_vec();
+    let mut known = raw
+        .iter()
+        .filter_map(|bundle| canonical(bundle).ok())
+        .collect::<BTreeSet<_>>();
     for bundle in array(request, "bundles")? {
-        if !raw.iter().any(|v| same(v, bundle)) {
+        if canonical(bundle).map_or(true, |canonical| known.insert(canonical)) {
             raw.push(bundle.clone());
         }
     }
@@ -845,20 +908,61 @@ pub fn assess_selected(
     if !findings.is_empty() {
         return Err(format!("invalid Run history: {findings:?}"));
     }
+    let mut reviews = array(snapshot, "reviews")?.to_vec();
+    let mut known_reviews = reviews
+        .iter()
+        .filter_map(|review| canonical(review).ok())
+        .collect::<BTreeSet<_>>();
+    for review in array(request, "reviews")? {
+        crate::assurance_review::validate_record(review)?;
+        if canonical(review).map_or(true, |canonical| known_reviews.insert(canonical)) {
+            reviews.push(review.clone());
+        }
+    }
+    evaluate(&input, authority, &bundles, &reviews, selected)
+}
+
+/// Evaluates evidence that has already been verified; see [`Evidence`].
+pub fn assess_evidence(
+    evidence: &Evidence,
+    selected: Option<&BTreeSet<String>>,
+) -> Result<Json, String> {
+    let input = Inputs::build(
+        Parts {
+            publication: evidence.publication,
+            deployment: evidence.deployment,
+            observation: evidence.observation,
+            contracts: evidence.contracts,
+            captures: evidence.captures,
+            now: evidence.evaluated_at_ms,
+        },
+        false,
+    )?;
+    let authority = field(field(evidence.publication, "snapshot")?, "authority")?;
+    evaluate(
+        &input,
+        authority,
+        evidence.bundles,
+        evidence.reviews,
+        selected,
+    )
+}
+
+fn evaluate(
+    input: &Inputs,
+    authority: &Json,
+    bundles: &[RunBundle],
+    reviews: &[Json],
+    selected: Option<&BTreeSet<String>>,
+) -> Result<Json, String> {
+    let runs = crate::assurance_review::Runs::verified(bundles);
     let mut heads = BTreeMap::<&str, &RunBundle>::new();
-    for bundle in &bundles {
+    for bundle in bundles {
         if heads
             .get(bundle.run_id.as_str())
             .is_none_or(|b| b.bundle_revision < bundle.bundle_revision)
         {
             heads.insert(&bundle.run_id, bundle);
-        }
-    }
-    let mut reviews = array(snapshot, "reviews")?.to_vec();
-    for review in array(request, "reviews")? {
-        crate::assurance_review::validate_record(review)?;
-        if !reviews.iter().any(|v| same(v, review)) {
-            reviews.push(review.clone());
         }
     }
     if let Some(selected) = selected {
@@ -880,13 +984,13 @@ pub fn assess_selected(
             ("kind", Json::str("requirement-review")),
             ("requirement", Json::str(id)),
         ]);
-        let latest = crate::assurance_review::latest_review(&reviews, &target);
+        let latest = crate::assurance_review::latest_review(reviews, &target);
         let (review_status, review_record) = if text(requirement, "criticality")? == "routine" {
             ("not-required".to_string(), None)
         } else {
             match latest {
                 Ok(Some(r)) => (
-                    crate::assurance_review::assess_record(r, authority, &reviews, &bundles).status,
+                    crate::assurance_review::assess_record_in(r, authority, reviews, &runs).status,
                     Some(r),
                 ),
                 Ok(None) => ("missing".into(), None),

@@ -997,32 +997,74 @@ fn authority_binding<'a>(authority: &'a Json, check: &str, scenario: &str) -> Op
             && value.get("scenario").and_then(Json::as_str) == Some(scenario)
     })
 }
-fn active_heads(bundles: &[RunBundle]) -> Result<Vec<&RunBundle>, String> {
-    for bundle in bundles {
-        let findings = crate::run::verify(bundle);
-        if !findings.is_empty() {
-            return Err(format!(
-                "Run head is protocol-invalid: {}",
-                findings[0].detail
-            ));
+/// Runs whose protocol validity and active heads are established once, however many assessments consult them.
+pub struct Runs<'a> {
+    bundles: &'a [RunBundle],
+    individually_verified: bool,
+    heads: std::cell::OnceCell<Result<Vec<usize>, String>>,
+}
+
+impl<'a> Runs<'a> {
+    pub fn new(bundles: &'a [RunBundle]) -> Self {
+        Self {
+            bundles,
+            individually_verified: false,
+            heads: std::cell::OnceCell::new(),
         }
     }
-    let mut heads: BTreeMap<&str, &RunBundle> = BTreeMap::new();
-    for bundle in bundles {
-        match heads.get(bundle.run_id.as_str()) {
-            Some(previous) if previous.bundle_revision > bundle.bundle_revision => {}
-            Some(previous)
-                if previous.bundle_revision == bundle.bundle_revision
-                    && previous.bundle_fingerprint != bundle.bundle_fingerprint =>
-            {
-                return Err("ambiguous corrected Run head".into())
-            }
-            _ => {
-                heads.insert(&bundle.run_id, bundle);
-            }
+
+    /// For Runs the caller has already passed through `run::verify`, so assessment does not repeat that work.
+    pub fn verified(bundles: &'a [RunBundle]) -> Self {
+        Self {
+            individually_verified: true,
+            ..Self::new(bundles)
         }
     }
-    Ok(heads.into_values().collect())
+
+    fn active_heads(&self) -> Result<Vec<&RunBundle>, String> {
+        self.heads
+            .get_or_init(|| {
+                if !self.individually_verified {
+                    for bundle in self.bundles {
+                        let findings = crate::run::verify(bundle);
+                        if !findings.is_empty() {
+                            return Err(format!(
+                                "Run head is protocol-invalid: {}",
+                                findings[0].detail
+                            ));
+                        }
+                    }
+                }
+                let mut heads: BTreeMap<&str, usize> = BTreeMap::new();
+                for (index, bundle) in self.bundles.iter().enumerate() {
+                    match heads.get(bundle.run_id.as_str()) {
+                        Some(&previous)
+                            if self.bundles[previous].bundle_revision > bundle.bundle_revision => {}
+                        Some(&previous)
+                            if self.bundles[previous].bundle_revision == bundle.bundle_revision
+                                && self.bundles[previous].bundle_fingerprint
+                                    != bundle.bundle_fingerprint =>
+                        {
+                            return Err("ambiguous corrected Run head".into())
+                        }
+                        _ => {
+                            heads.insert(&bundle.run_id, index);
+                        }
+                    }
+                }
+                Ok(heads.into_values().collect())
+            })
+            .as_ref()
+            .map(|indexes| indexes.iter().map(|&index| &self.bundles[index]).collect())
+            .map_err(Clone::clone)
+    }
+}
+
+impl std::ops::Deref for Runs<'_> {
+    type Target = [RunBundle];
+    fn deref(&self) -> &[RunBundle] {
+        self.bundles
+    }
 }
 
 pub fn assess_record(
@@ -1030,6 +1072,15 @@ pub fn assess_record(
     authority: &Json,
     reviews: &[Json],
     bundles: &[RunBundle],
+) -> Assessment {
+    assess_record_in(record, authority, reviews, &Runs::new(bundles))
+}
+
+pub fn assess_record_in(
+    record: &Json,
+    authority: &Json,
+    reviews: &[Json],
+    bundles: &Runs,
 ) -> Assessment {
     if let Err(error) = validate_authority(authority) {
         return assessed("invalid", format!("invalid model authority: {error}"));
@@ -1088,14 +1139,14 @@ pub fn assess_record(
         if record.get("method_qualification_fingerprint") != qualification.get("fingerprint") {
             return assessed("stale", "Method Qualification was superseded");
         }
-        let qualification_state = assess_record(qualification, authority, reviews, bundles);
+        let qualification_state = assess_record_in(qualification, authority, reviews, bundles);
         if qualification_state.status != "accepted" {
             return assessed(
                 &qualification_state.status,
                 "Method Qualification is not currently accepted",
             );
         }
-        let heads = match active_heads(bundles) {
+        let heads = match bundles.active_heads() {
             Ok(heads) => heads,
             Err(error) => return assessed("invalid", error),
         };
@@ -1265,7 +1316,7 @@ pub fn assess_record(
         if binding.get("applicability_fingerprint") != application.get("fingerprint") {
             return assessed("stale", "Judgment Applicability Decision was superseded");
         }
-        let state = assess_record(application, authority, reviews, bundles);
+        let state = assess_record_in(application, authority, reviews, bundles);
         if state.status != "accepted" {
             if matches!(state.status.as_str(), "stale" | "invalid") {
                 return assessed(
@@ -1308,10 +1359,10 @@ pub fn assess_record(
         _ => assessed("accepted", ""),
     }
 }
-fn bound_outcomes(record: &Json, bundles: &[RunBundle]) -> Vec<CheckResultOutcome> {
+fn bound_outcomes(record: &Json, bundles: &Runs) -> Vec<CheckResultOutcome> {
     let mut result = Vec::new();
     for basis in array(record, "basis").unwrap_or_default() {
-        for bundle in bundles {
+        for bundle in bundles.iter() {
             if text(basis, "run").ok() == Some(bundle.run_id.as_str())
                 && text(basis, "bundle_fingerprint").ok()
                     == Some(bundle.bundle_fingerprint.as_str())
@@ -1339,6 +1390,20 @@ pub fn historical_verification_target_state(
     bundles: &[RunBundle],
     verification_target_fingerprint: &str,
 ) -> Json {
+    historical_verification_target_state_in(
+        authority,
+        reviews,
+        &Runs::new(bundles),
+        verification_target_fingerprint,
+    )
+}
+
+pub fn historical_verification_target_state_in(
+    authority: &Json,
+    reviews: &[Json],
+    bundles: &Runs,
+    verification_target_fingerprint: &str,
+) -> Json {
     if let Err(error) = validate_authority(authority) {
         return Json::obj(vec![
             ("status", Json::str("invalid")),
@@ -1352,7 +1417,7 @@ pub fn historical_verification_target_state(
             ("check", check.get("id").cloned().unwrap()),
         ]);
         let assessment = match latest_review(reviews, &target) {
-            Ok(Some(record)) => assess_record(record, authority, reviews, bundles),
+            Ok(Some(record)) => assess_record_in(record, authority, reviews, bundles),
             Ok(None) => assessed("missing", "Method Qualification is absent"),
             Err(error) => assessed("invalid", error),
         };
@@ -1384,7 +1449,7 @@ pub fn historical_verification_target_state(
                 ),
             ]);
             let assessment = match latest_review(reviews, &target) {
-                Ok(Some(record)) => assess_record(record, authority, reviews, bundles),
+                Ok(Some(record)) => assess_record_in(record, authority, reviews, bundles),
                 Ok(None) => assessed("missing", "Applicability Decision is absent"),
                 Err(error) => assessed("invalid", error),
             };
@@ -1411,7 +1476,7 @@ pub fn historical_verification_target_state(
         } else {
             match latest_review(reviews, &target) {
                 Ok(Some(record)) => {
-                    let assessment = assess_record(record, authority, reviews, bundles);
+                    let assessment = assess_record_in(record, authority, reviews, bundles);
                     let state = if assessment.status == "accepted" {
                         text(record, "conclusion")
                             .unwrap_or("unresolved")
@@ -1465,6 +1530,16 @@ pub fn review_input(
     request: &Json,
     reviews: &[Json],
     bundles: &[RunBundle],
+) -> Result<Json, String> {
+    review_input_in(model, project, request, reviews, &Runs::new(bundles))
+}
+
+pub fn review_input_in(
+    model: &Model,
+    project: &str,
+    request: &Json,
+    reviews: &[Json],
+    bundles: &Runs,
 ) -> Result<Json, String> {
     let authority = authority(model, project)?;
     let kind = text(request, "kind")?;
@@ -1522,7 +1597,7 @@ pub fn review_input(
             finding.detail
         ));
     }
-    let heads = active_heads(bundles)?;
+    let heads = bundles.active_heads()?;
     let mut check_ids = BTreeSet::new();
     let mut scenario_ids = BTreeSet::new();
     let mut requirement_ids = BTreeSet::new();
@@ -1605,7 +1680,7 @@ pub fn review_input(
         let (record, state) = match latest_review(reviews, &target) {
             Ok(Some(record)) => (
                 Some(record),
-                assess_record(record, &authority, reviews, bundles),
+                assess_record_in(record, &authority, reviews, bundles),
             ),
             Ok(None) => (None, assessed("missing", "Independent review is absent")),
             Err(error) => (None, assessed("invalid", error)),
@@ -2298,13 +2373,27 @@ pub fn verification_target_state(
     bundles: &[RunBundle],
     verification_target_fingerprint: &str,
 ) -> Json {
+    verification_target_state_in(
+        authority,
+        reviews,
+        &Runs::new(bundles),
+        verification_target_fingerprint,
+    )
+}
+
+pub fn verification_target_state_in(
+    authority: &Json,
+    reviews: &[Json],
+    bundles: &Runs,
+    verification_target_fingerprint: &str,
+) -> Json {
     if let Err(error) = validate_authority(authority) {
         return Json::obj(vec![
             ("status", Json::str("invalid")),
             ("diagnostics", Json::Arr(vec![Json::str(error)])),
         ]);
     }
-    let heads = match active_heads(bundles) {
+    let heads = match bundles.active_heads() {
         Ok(heads) => heads,
         Err(error) => {
             return Json::obj(vec![
@@ -2323,7 +2412,7 @@ pub fn verification_target_state(
                 ("requirement", Json::str(id)),
             ]);
             let review = match latest_review(reviews, &review_target) {
-                Ok(Some(record)) => assess_record(record, authority, reviews, bundles),
+                Ok(Some(record)) => assess_record_in(record, authority, reviews, bundles),
                 Ok(None) => assessed("missing", "Requirement Review absent"),
                 Err(error) => assessed("invalid", error),
             };
@@ -2337,7 +2426,7 @@ pub fn verification_target_state(
             ]);
             let (requirement_status, status) = match latest_review(reviews, &target) {
                 Ok(Some(record)) => {
-                    let assessment = assess_record(record, authority, reviews, bundles);
+                    let assessment = assess_record_in(record, authority, reviews, bundles);
                     let status = if assessment.status == "accepted" {
                         text(record, "conclusion").unwrap().to_string()
                     } else {
@@ -2618,7 +2707,7 @@ fn assess_requirement_assessment(
     record: &Json,
     authority: &Json,
     reviews: &[Json],
-    bundles: &[RunBundle],
+    bundles: &Runs,
 ) -> Assessment {
     let requirement = text(record, "requirement").unwrap();
     if let Some(previous) = record
@@ -2660,7 +2749,7 @@ fn assess_requirement_assessment(
             "Requirement, implementation or verification dependencies changed",
         );
     }
-    let challenge_heads = match active_heads(bundles) {
+    let challenge_heads = match bundles.active_heads() {
         Ok(heads) => heads,
         Err(error) => return assessed("invalid", error),
     };
@@ -2727,10 +2816,10 @@ fn assess_requirement_assessment(
     if record.get("requirement_review_fingerprint") != review.get("fingerprint") {
         return assessed("stale", "Requirement Review superseded");
     }
-    if assess_record(review, authority, reviews, bundles).status != "accepted" {
+    if assess_record_in(review, authority, reviews, bundles).status != "accepted" {
         return assessed("rejected", "Requirement Review not current and accepted");
     }
-    let heads = match active_heads(bundles) {
+    let heads = match bundles.active_heads() {
         Ok(v) => v,
         Err(e) => return assessed("invalid", e),
     };
@@ -2896,7 +2985,7 @@ fn requirement_assessment_input(
     project: &str,
     request: &Json,
     reviews: &[Json],
-    bundles: &[RunBundle],
+    bundles: &Runs,
 ) -> Result<Json, String> {
     let kind = text(request, "kind")?;
     if kind == "requirement-review" {
@@ -2922,7 +3011,7 @@ fn requirement_assessment_input(
     for review in reviews {
         validate_record(review)?;
     }
-    let heads = active_heads(bundles)?;
+    let heads = bundles.active_heads()?;
     let mut challenge_results = Vec::new();
     let mut challenge_bundles = Vec::new();
     for bundle in &heads {
@@ -3017,7 +3106,7 @@ fn requirement_assessment_input(
     for target in targets {
         let record = latest_review(reviews, &target)?;
         let state = record
-            .map(|r| assess_record(r, &authority, reviews, bundles))
+            .map(|r| assess_record_in(r, &authority, reviews, bundles))
             .unwrap_or_else(|| assessed("missing", "Review absent"));
         if let Some(r) = record {
             existing.push(r.clone());

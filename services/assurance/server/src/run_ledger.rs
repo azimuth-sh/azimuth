@@ -16,6 +16,7 @@ use std::{collections::BTreeMap, sync::Arc};
 mod deployment_observation;
 mod deployment_status;
 mod environment;
+mod evidence_cache;
 mod materialized;
 mod materialized_reviews;
 mod model_catalog;
@@ -54,6 +55,7 @@ struct Credential {
 pub struct LedgerState {
     pool: PgPool,
     credentials: Arc<BTreeMap<String, Vec<Credential>>>,
+    evidence: evidence_cache::EvidenceCache,
 }
 
 impl LedgerState {
@@ -104,6 +106,7 @@ impl LedgerState {
         Ok(Self {
             pool,
             credentials: Arc::new(credentials),
+            evidence: Default::default(),
         })
     }
 
