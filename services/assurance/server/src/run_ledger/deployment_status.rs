@@ -332,10 +332,13 @@ pub(super) async fn compute_deployment(
     deployment: &str,
     selected: Option<std::collections::BTreeSet<String>>,
 ) -> Result<(Value, Value), LedgerError> {
+    let started = std::time::Instant::now();
     let mut tx = state.pool.begin().await?;
+    let connection_wait = started.elapsed();
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         .execute(&mut *tx)
         .await?;
+    let stage = std::time::Instant::now();
     let entry: Option<(String,Value)> = sqlx::query_as("SELECT release_fingerprint,assurance_record('deployment',project,deployment_id) FROM release_deployments WHERE project=$1 AND deployment_id=$2")
         .bind(project).bind(deployment).fetch_optional(&mut *tx).await?;
     let (release, deployment_record) = entry.ok_or_else(LedgerError::not_found)?;
@@ -348,7 +351,9 @@ pub(super) async fn compute_deployment(
         .ok_or_else(|| LedgerError::invalid("release authority fingerprint missing"))?;
     let observed: Option<(Value,Option<String>)> = sqlx::query_as("SELECT assurance_record('deployment_observation',project,fingerprint),deployment_id FROM deployment_observations WHERE project=$1 AND environment=$2 ORDER BY revision DESC LIMIT 1")
         .bind(project).bind(deployment_record["environment"].as_str()).fetch_optional(&mut *tx).await?;
+    let release_load = stage.elapsed();
     let time = now(&mut *tx).await?;
+    let stage = std::time::Instant::now();
     let mut observation = json!({"verification_target_fingerprint":deployment_record["verification_target_fingerprint"],"observed_at_ms":0,"valid_for_seconds":1,"state":"unknown","components":[],"trusted":false});
     if let Some((observed, selected)) = observed {
         let bound = selected.as_deref() == deployment_record["id"].as_str();
@@ -388,6 +393,8 @@ pub(super) async fn compute_deployment(
         .unwrap_or(0)
         .saturating_mul(1000);
     let cutoff = time.saturating_sub(monitor_window);
+    let observation_load = stage.elapsed();
+    let stage = std::time::Instant::now();
     let reviews: Vec<Value> = sqlx::query_scalar("SELECT assurance_record('review',r.project,r.fingerprint) FROM assurance_reviews r JOIN model_revision_reviews m ON m.project=r.project AND m.review_fingerprint=r.fingerprint WHERE r.project=$1 AND m.revision_fingerprint=$2 ORDER BY r.fingerprint LIMIT 5001")
         .bind(project).bind(revision).fetch_all(&mut *tx).await?;
     let review_fingerprints: Vec<&str> = reviews
@@ -408,6 +415,8 @@ pub(super) async fn compute_deployment(
                 })
         })
         .collect();
+    let review_load = stage.elapsed();
+    let stage = std::time::Instant::now();
     let bundles: Vec<Value> = sqlx::query_scalar(&relational::with_tables(r#"
         SELECT assurance_record('run',b.project,b.fingerprint)
         FROM run_bundles b
@@ -427,6 +436,8 @@ pub(super) async fn compute_deployment(
         ) ORDER BY b.run_id,b.revision LIMIT 5001
     "#)).bind(project).bind(&check_ids).bind(&check_fingerprints).bind(&persistent_checks)
         .bind(deployment_record["verification_target_fingerprint"].as_str()).bind(cutoff).bind(&review_runs).bind(&review_fingerprints).fetch_all(&mut *tx).await?;
+    let bundle_load = stage.elapsed();
+    let stage = std::time::Instant::now();
     let contract_records = records(&mut *tx, project, "context_contract").await?;
     let bundle_fingerprints: Vec<&str> = bundles
         .iter()
@@ -450,6 +461,7 @@ pub(super) async fn compute_deployment(
             "deployment context snapshot exceeds 5000 records",
         ));
     }
+    let capture_load = stage.elapsed();
     let contracts: Vec<Value> = contract_records
         .into_iter()
         .map(|record| record["contract"].clone())
@@ -461,13 +473,15 @@ pub(super) async fn compute_deployment(
     let request = json!({"format":"azimuth-deployment-assessment","version":2,"publication":publication,
         "deployment":deployment_record,"deployment_observation":observation,"context_contracts":contracts,"captures":captures,
         "bundles":bundles,"reviews":reviews,"evaluated_at_ms":time});
-    if bundles.len() > 5000 || reviews.len() > 5000 || request.to_string().len() > 33_554_432 {
+    let request_bytes = request.to_string().len();
+    if bundles.len() > 5000 || reviews.len() > 5000 || request_bytes > 33_554_432 {
         return Err(LedgerError::invalid(
             "deployment assessment exceeds bounded complete snapshot",
         ));
     }
     tx.commit().await?;
     let snapshot = request.clone();
+    let stage = std::time::Instant::now();
     let result = compute(move || {
         let result = azimuth::deployment_status::assess_selected(
             &core_json(request.to_string().as_bytes())?,
@@ -477,6 +491,22 @@ pub(super) async fn compute_deployment(
         to_value(&result)
     })
     .await?;
+    tracing::info!(
+        project,
+        deployment,
+        connection_wait_ms = connection_wait.as_millis() as u64,
+        release_load_ms = release_load.as_millis() as u64,
+        observation_load_ms = observation_load.as_millis() as u64,
+        review_load_ms = review_load.as_millis() as u64,
+        bundle_load_ms = bundle_load.as_millis() as u64,
+        capture_load_ms = capture_load.as_millis() as u64,
+        evaluation_ms = stage.elapsed().as_millis() as u64,
+        total_ms = started.elapsed().as_millis() as u64,
+        request_bytes,
+        bundles = snapshot["bundles"].as_array().map_or(0, Vec::len),
+        captures = snapshot["captures"].as_array().map_or(0, Vec::len),
+        "assessment evaluated"
+    );
     Ok((result, snapshot))
 }
 
