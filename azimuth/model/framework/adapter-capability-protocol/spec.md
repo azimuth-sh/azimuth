@@ -60,14 +60,14 @@ model without delegating semantic resolution to an adapter.
 ### Scenario: challenge-planning-resolves-current-decisions
 - Context: a request names Challenge Plans, finite work units and explicit capability addresses
 - Event: Azimuth plans the Run
-- Required outcome: it resolves exact current accepted Method Qualification, Applicability Decision or Claim Judgment targets
+- Required outcome: it resolves exact current accepted Method Qualification, Applicability Decision or Requirement Judgment targets
 - Additional condition or outcome: it freezes traceability-derived semantic scope before adapter translation
 
 ## Requirement: launch-plans-bind-capability-routing
 Title: Launch plans bind capability routing
 Criticality: routine
 
-Azimuth SHALL bind an exact Subject, operation and complete Run-bundle semantic plan to explicit
+Azimuth SHALL bind an exact Verification Target, operation and complete Run-bundle semantic plan to explicit
 capability routes in one canonical launch plan.
 
 ### Scenario: capability-substitution-changes-launch-identity
@@ -98,7 +98,7 @@ exactly one strict JSON response.
 
 ### Scenario: transport-status-is-not-a-product-outcome
 - Event: an adapter exits nonzero, times out or returns a malformed exchange
-- Required outcome: Azimuth does not reinterpret exit status or diagnostics as an Observation or Challenge Result
+- Required outcome: Azimuth does not reinterpret exit status or diagnostics as a Check Result or Challenge Result
 
 ### Scenario: timed-out-execute-is-not-retried-implicitly
 - Event: an execute operation times out after native work may have started
@@ -129,7 +129,7 @@ provenance, actual selection and complete Run bundle.
 ### Scenario: dual-role-results-remain-separate
 - Context: one adapter activity supports Check and Challenge capability routes
 - Event: it returns both result kinds for one physical activity
-- Required outcome: the bundle retains a separate Observation and Challenge Result
+- Required outcome: the bundle retains a separate Check Result and Challenge Result
 - Additional condition or outcome: neither result implies the other
 
 ## Requirement: import-inputs-are-content-addressed

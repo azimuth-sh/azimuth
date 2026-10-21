@@ -12,11 +12,11 @@ The team should be able to reconstruct what it can justify believing about an ex
 
 | Component | Responsibility |
 | --- | --- |
-| Repository Azimuth account | Authoritative product intent, design, verification methods and Check–Case relationships; accepted changes to those definitions. |
+| Repository Azimuth account | Authoritative product intent, design, verification methods and Check–Scenario relationships; accepted changes to those definitions. |
 | Azimuth tooling | Assemble pinned context, validate structure and dependencies, plan bounded verification execution, and expose assurance obligations. Intended workflow interfaces also identify eligible work and progression conditions. |
-| Assurance State Service (ASS) | Preserve submitted execution facts, independent assessments and authority history; compute exact-Subject Assurance State. Intended extensions preserve assurance-related decisions and resolution history. |
+| Assurance State Service (ASS) | Preserve submitted execution facts, independent assessments and authority history; compute exact-Verification-Target Assurance State. Intended extensions preserve assurance-related decisions and resolution history. |
 | Development harness | Execute engineering and review tasks using agents, models, tools and repository context; enforce execution permissions, manage delegation, retries and recovery. |
-| Verification tools and adapters | Execute enrolled Checks and capture observations with exact Subjects and provenance. Production probes are one execution form. |
+| Verification tools and adapters | Execute enrolled Checks and capture Check Results with exact Verification Targets and provenance. Production probes are one execution form. |
 | Humans with appropriate authority | Resolve product ambiguity, approve intent changes, grant bounded exceptions, authorize actions outside existing permissions and accept changes where required. |
 
 A **development harness** is the execution environment that turns engineering tasks into bounded agent and tool work. It supplies context, instructions, models, tools, isolation, permissions, delegation and execution telemetry. Codex can serve as that environment. A separate runner may dispatch work to several harness products later.
@@ -37,7 +37,7 @@ The intended interface has three parts. Their wire formats and command syntax re
 
 ### Bounded work request
 
-Azimuth prepares a task objective with project and change context, exact target identity and relevant fingerprints, repository and evidence inputs, constraints, required output contract and execution guarantees. Requests distinguish implementation, method review, applicability review, Claim Judgment and corrective work.
+Azimuth prepares a task objective with project and change context, exact target identity and relevant fingerprints, repository and evidence inputs, constraints, required output contract and execution guarantees. Requests distinguish implementation, method review, applicability review, Requirement Judgment and corrective work.
 
 Pinned context is a starting packet. The worker may inspect additional repository or deployment information, but must report missing or contradictory dependencies. ASS supplies recorded facts and assessments; repository context remains necessary for engineering and review.
 
@@ -61,19 +61,19 @@ Readiness and permission are separate. Evidence can establish that a task is rea
 2. Implement and capture realization and verification sites.
 3. Validate the prospective account against complete relevant source observations.
 4. Qualify applicable Check methods through independent review, potentially before execution.
-5. Execute Checks against exact Subjects and retain satisfied, violated and inconclusive observations and measurement failures.
-6. Review the applicability of particular observations to Check–Case contributions.
-7. Perform required independent Claim Judgments over current dependencies and visible gaps.
+5. Execute Checks against exact Verification Targets and retain satisfied, violated and inconclusive Check Results and measurement failures.
+6. Review the applicability of particular Check Results to Check–Scenario contributions.
+7. Perform required independent Requirement Judgments over current dependencies and visible gaps.
 8. Correct targeted deficiencies and reassess affected dependencies.
 9. Validate readiness and cross the explicit acceptance boundary.
 
-Routine Claims retain their current exemption from independent evidence reviews. The loop does not create universal review obligations merely by describing available activities.
+Routine Requirements retain their current exemption from independent evidence reviews. The loop does not create universal review obligations merely by describing available activities.
 
 | Result | Expected response |
 | --- | --- |
 | Rejected Method Qualification | Correct the method, oracle, inputs or instrumentation; prepare refreshed context and obtain independent reassessment. |
 | Rejected Applicability Decision | Correct the binding or obtain appropriate evidence; reassess applicability without unnecessarily requalifying an unchanged method. |
-| Violated or unresolved Claim Judgment | Address implementation defects, missing evidence or review gaps; bring intent problems to a responsible intent decision. |
+| Violated or unresolved Requirement Judgment | Address implementation defects, missing evidence or review gaps; bring intent problems to a responsible intent decision. |
 | Invalid review output | Repair the review submission or repeat the review task; do not treat it as a substantive rejection. |
 | Execution failure | Diagnose, retry or escalate under bounded harness execution policy. |
 
@@ -85,7 +85,7 @@ The harness bounds correction attempts and escalates repeated failure. Product a
 
 ```mermaid
 flowchart TD
-    P[Production Checks] --> A[ASS: exact deployment observations]
+    P[Production Checks] --> A[ASS: exact deployment Check Results]
     A --> T[External event or scheduled trigger]
     T --> H[Harness coordinator]
     H --> Z[Azimuth: context and obligations]
@@ -95,15 +95,15 @@ flowchart TD
     C --> A
 ```
 
-Production telemetry becomes assurance evidence through an enrolled Check and its capture contract. An ordinary operational alert does not automatically establish a Case or Claim conclusion.
+Production telemetry becomes assurance evidence through an enrolled Check and its capture contract. An ordinary operational alert does not automatically establish a Scenario or Requirement conclusion.
 
 An external event or schedule starts or resumes the coordinator. ASS storing an adverse fact does not itself launch an agent. Durable triggering, deduplication and execution recovery belong to integration and harness infrastructure.
 
-The coordinator retrieves the exact affected Subject, relevant evidence and repository context; diagnoses the problem; prepares a correction; obtains required reviews; and deploys within granted authority. Deployment provenance links source and artifact Subjects to the resulting deployed Subject without making their observations interchangeable.
+The coordinator retrieves the exact affected Verification Target, relevant evidence and repository context; diagnoses the problem; prepares a correction; obtains required reviews; and deploys within granted authority. Deployment provenance links source and artifact Verification Targets to the resulting deployed Verification Target without making their Check Results interchangeable.
 
 Restoring already approved behavior may be autonomous within explicit limits. Changing intended behavior requires an accountable intent decision. Successful editing, verification in another environment or deployment alone does not close a production finding.
 
-Closure requires observations of the corrected deployment and the applicable independent assessments. Adapters submit those facts, reviewers submit their decisions, and ASS exposes the resulting state and supporting history. Missing observations, stale reviews, failed controls and evidence for another Subject leave resolution unestablished.
+Closure requires Check Results for the corrected deployment and the applicable independent assessments. Adapters submit those facts, reviewers submit their decisions, and ASS exposes the resulting state and supporting history. Missing Check Results, stale reviews, failed controls and evidence for another Verification Target leave resolution unestablished.
 
 ## Decision handling within ASS
 
@@ -111,27 +111,27 @@ Decision handling is an ASS capability. There is no separate top-level Decision 
 
 A human decision is required when evidence alone cannot choose the next permitted action: changing intent, granting a bounded release exception, authorizing consequential production action outside existing permissions, or choosing among operational trade-offs.
 
-The intended interface groups a situation around a Claim and exact Subject, retaining Case-level causes, observations, assessments, requested decision and permitted options. Routine successful Runs should not create human approval requests. Agents may prepare analysis and proposals; the responsible authorized person owns the decision.
+The intended interface groups a situation around a Requirement and exact Verification Target, retaining Scenario-level causes, Check Results, Observations, assessments, requested decision and permitted options. Routine successful Runs should not create human approval requests. Agents may prepare analysis and proposals; the responsible authorized person owns the decision.
 
 Assurance-related decision records belong in ASS. They identify the situation, decision author and authority, chosen disposition, rationale, evidence basis, conditions, scope and any expiry. These fields express intended semantics rather than a finalized schema.
 
-An exception does not turn an unresolved Claim into a supported Claim. Authorization to deploy despite missing evidence remains a separate decision, with the gap visible. A decision authorizing an intent change does not itself change the repository specification; the accepted repository transition remains authoritative.
+An exception does not turn an unresolved Requirement into a supported Requirement. Authorization to deploy despite missing evidence remains a separate decision, with the gap visible. A decision authorizing an intent change does not itself change the repository specification; the accepted repository transition remains authoritative.
 
 Routine actions within existing authority can reference that authorization without inventing a human decision. Technical access remains enforced by the harness and infrastructure.
 
 ## Resolution history
 
-Resolution records belong in ASS because they connect an earlier problem to its correction and the evidence establishing the outcome. A record should reference the original finding and affected Subject, correction, resulting deployment Subject, supporting observations and assessments, declaring actor, rationale and remaining limitations.
+Resolution records belong in ASS because they connect an earlier problem to its correction and the evidence establishing the outcome. A record should reference the original finding and affected Verification Target, correction, resulting deployment Verification Target, supporting Check Results and assessments, declaring actor, rationale and remaining limitations.
 
 A deployed correction is a resolution attempt. Successful resolution requires declared closure conditions. A later recurrence retains the earlier history and introduces a newly assessed problem; it does not erase the prior outcome.
 
-Finding identity, closure conditions, resolution authorization and reassessment semantics need definition before introducing a resolution schema. Current Claim state and the resolution of a particular historical finding remain distinct.
+Finding identity, closure conditions, resolution authorization and reassessment semantics need definition before introducing a resolution schema. Current Requirement Status and the resolution of a particular historical finding remain distinct.
 
 ## Persistence and observability
 
 ASS preserves completed, deliberately submitted assurance decisions, including rejected assessments. Draft reviews, exploratory agent conversations and unfinished attempts remain harness execution material. Mandatory review workflows should retain their completed adverse decisions rather than submit only eventual successes.
 
-Immutable submitted documents can coexist with typed relational projections for querying Subjects, observations, dependencies, decisions and resolutions. Storage projections should follow concrete use cases; package-specific payloads need not all become relational entities.
+Immutable submitted documents can coexist with typed relational projections for querying Verification Targets, Check Results, Observations, dependencies, decisions and resolutions. Storage projections should follow concrete use cases; package-specific payloads need not all become relational entities.
 
 Harness telemetry supplies model and instruction provenance, duration, cost, retries and human effort where available. Link it to assurance records when useful without making ASS the repository of every agent trace.
 
@@ -140,7 +140,7 @@ Keep assurance conclusions, process health and business value separate. Missing 
 ## Production inspection context
 
 A model revision owns a separately registered, immutable navigation catalog of
-Modules, Claims, Cases and Checks. The catalog is validated against that exact
+Modules, Requirements, Scenarios and Checks. The catalog is validated against that exact
 revision and can be registered before any release exists. Release publication
 may attach the same catalog atomically. Descriptive navigation metadata does not
 select accepted authority or supply a review.
@@ -153,20 +153,20 @@ context; it neither proves readiness nor changes accepted model authority. The
 controller must designate the actual deployment after rollout, with concurrency
 control against a newer selection. Historical deployments remain inspectable.
 
-Exact-system Claim Health includes an assessor-produced explanation: typed
-assessment reasons, current Check–Case coverage, selected review identities and
+Exact-system Requirement Status includes an assessor-produced explanation: typed
+assessment reasons, current Check–Scenario coverage, selected review identities and
 exact evidence references. Supporting evidence is distinguished from matching but
-unassessed observations. The UI renders this account; it does not derive
+unassessed Check Results. The UI renders this account; it does not derive
 applicability from timestamps, labels, source/build provenance or English error
-messages. This does not introduce automatic evidence expiry or Health transition
-inference.
+messages. This does not introduce automatic evidence expiry or Requirement Status
+transition inference.
 
 ## Current capabilities and intended extensions
 
 | Capability | Status in this architecture |
 | --- | --- |
 | Repository accounts, source linkage, validation, bounded Run execution and package-specific verification | Existing tooling; exact behavior follows current contracts. |
-| Target-specific review input, compact independent review records, immutable Run and review histories, explicit authority selection and exact-Subject Assurance State | Existing tooling and service capabilities. |
+| Target-specific review input, compact independent review records, immutable Run and review histories, explicit authority selection and exact-Verification-Target Assurance State | Existing tooling and service capabilities. |
 | Harness-neutral eligible-work interface and correction routing | Implemented for explicit finite task graphs through `workflow next` and conditional `workflow update`; automatic scope discovery, deployment and archive handoff remain outside this increment. |
 | ASS human decision situations and accountable disposition records | Intended; no new decision schema or API is defined here. |
 | Finding-to-correction resolution records and closure evaluation | Intended; identity and closure rules remain open. |
@@ -185,7 +185,7 @@ Concrete workflow rehearsals belong to the consumer repository that owns the cha
 - Define independence guarantees and what tooling can validate versus what a harness must enforce.
 - Define authority, exceptions and policy-to-action boundaries without confusing assurance readiness with technical access.
 - Define findings, closure predicates, resolution records and effects of newer evidence.
-- Specify deployed Subject capture and provenance links across repository, artifact and production contexts.
+- Specify deployed Verification Target capture and provenance links across repository, artifact and production contexts.
 - Select trigger and recovery integrations; keep distributed scheduling outside the assurance core.
 
 This direction aligns with validation, accountable governance and evidence-based completion, but does not claim to supply every enterprise governance requirement. Runtime permission hooks, session audit, organization-specific compliance, cost telemetry and business outcome measurement require integrations and further design.

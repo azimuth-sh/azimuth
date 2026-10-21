@@ -8,11 +8,13 @@ Output goes to stdout, or to `--out <file>` when given. The rendering is determi
 
 ```json
 {
-  "version": 5,
+  "version": 7,
+  "extensions": [],
   "specs": [],
   "realizes": [],
   "workspace": {},
   "mechanism_implementations": [],
+  "account_checks": [],
   "check_implementations": [],
   "class_members": [],
   "enumerations": [],
@@ -22,10 +24,10 @@ Output goes to stdout, or to `--out <file>` when given. The rendering is determi
   "evidence_bindings": [],
   "method_qualifications": [],
   "applicability_decisions": [],
-  "claim_judgments": [],
+  "requirement_judgments": [],
   "decision_policies": [],
   "challenge_schedule": null,
-  "challengers": [],
+  "verification_challenges": [],
   "challenge_plans": [],
   "challenge_resolutions": [],
   "findings": []
@@ -33,10 +35,10 @@ Output goes to stdout, or to `--out <file>` when given. The rendering is determi
 ```
 
 These are the only root keys, in exactly this order. Every one is always present. `version` has
-exactly the value `5`.
+exactly the value `7`.
 
-The export root carries no `format` identifier. A consumer distinguishes version 5 export from
-traceability by root keys: the export has `specs`, the projection has `cases` and
+The export root carries no `format` identifier. A consumer distinguishes version 7 export from
+traceability by root keys: the export has `specs`, the projection has `scenarios` and
 `decision_impacts`.
 
 `challenge_schedule` is an object when a Decision Standards file was loaded and `null` otherwise. Every other value is an array.
@@ -45,23 +47,30 @@ traceability by root keys: the export has `specs`, the projection has `cases` an
 
 Ordering is derivation order, not a canonical sort, except where stated:
 
-- `specs` follow sorted spec file paths; Claims and Cases follow declaration order within their file. Terms sort by local id in each spec export.
+- `specs` follow sorted spec file paths; Requirements and Scenarios follow declaration order within their file. Terms sort by local id in each spec export.
 - `checks`, `evidence_bindings`, `method_qualifications`, `applicability_decisions`,
-  `claim_judgments`, `challengers` and `challenge_plans` follow sorted `verification.md` paths, then
+  `requirement_judgments`, `verification_challenges` and `challenge_plans` follow sorted `verification.md` paths, then
   declaration order within each file.
 - `mechanisms` follow design load order, then design entry order, then mechanism order.
 - `realizes`, `mechanism_implementations`, `check_implementations`, `class_members`, `enumerations` and `artifacts` follow `--manifest` argument order, then the order inside each manifest. Core concatenates and does not re-sort them.
 - `decision_policies` follow declaration order in the Decision Standards file.
-- `challenge_resolutions` are sorted by `(plan, challenger)`.
-- `findings` are sorted by `(file, line, kind, claim, detail)`.
+- `challenge_resolutions` are sorted by `(plan, verification_challenge)`.
+- `findings` are sorted by `(file, line, kind, requirement, detail)`.
 
 ## Selection
 
 `--only <pattern>` restricts the exported model to matching spec ids and the relations reachable from them. An export produced under `--only` is a partial account and is not the input to the model digest, which requires the complete unselected model.
 
+## Extensions
+
+Each `extensions` record is one extracted verification-package producer with `package`, `contract`,
+`entity`, `site`, `file`, `lang`, `source_fingerprint` and `inputs`, then optional `schema` and the
+optional `area`, `address_kind`, `address` and `mount` source-identity tail. See
+[verification-packages.md](verification-packages.md).
+
 ## Specs
 
-Each spec carries `id`, `path`, `terms` and `claims` in that order. A Term has only `id` and `definition`; source line is retained by the parser but is not exported. An empty vocabulary is `[]`. Definitions preserve their authored Markdown. Term order in export is sorted by id, so moving an unchanged Term block does not change the model digest.
+Each spec carries `id`, `path`, `terms` and `requirements` in that order. A Term has only `id` and `definition`; source line is retained by the parser but is not exported. An empty vocabulary is `[]`. Definitions preserve their authored Markdown. Term order in export is sorted by id, so moving an unchanged Term block does not change the model digest.
 
 ```json
 {
@@ -73,7 +82,7 @@ Each spec carries `id`, `path`, `terms` and `claims` in that order. A Term has o
       "definition": "One chargeable line in an invoice."
     }
   ],
-  "claims": [
+  "requirements": [
     {
       "id": "invoice-totals-are-exact",
       "criticality": "critical",
@@ -81,7 +90,7 @@ Each spec carries `id`, `path`, `terms` and `claims` in that order. A Term has o
       "line": 12,
       "domain": "behaviour",
       "over": null,
-      "cases": [
+      "scenarios": [
         {
           "id": "rounds-half-to-even",
           "line": 18,
@@ -93,23 +102,24 @@ Each spec carries `id`, `path`, `terms` and `claims` in that order. A Term has o
 }
 ```
 
-`criticality` is `critical | standard | routine`, or `null` when the Claim declares none. `line` is
+`criticality` is `critical | standard | routine`, or `null` when the Requirement declares none. `line` is
 the one-based source line of the heading. `domain` is `behaviour | sites`; `over` is a surface id
-for the sites domain and `null` otherwise. Claim and Case `statement` values preserve their
-free-form normative Markdown after outer blank lines and newline encoding are normalized.
+for the sites domain and `null` otherwise. Requirement and Scenario `statement` values preserve their
+free-form normative Markdown after outer blank lines and newline encoding are normalized. An
+optional `title` follows `scenarios` when the Requirement declares one.
 
-A site-domain Claim—one written as `## Invariant:`—appears here with exactly one synthesized Case
-whose id equals the Claim id and whose `statement` is empty.
+A site-domain Requirement—one written as `## Invariant:`—appears here with exactly one synthesized Scenario
+whose id equals the Requirement id and whose `statement` is empty.
 
-Every Claim digest includes its domain, `over` value and the complete ordered Case set. Every Case
-digest includes the parent Claim statement and domain plus that Case's free-form statement.
+Every Requirement digest includes its domain, `over` value and the complete ordered Scenario set. Every Scenario
+digest includes the parent Requirement statement and domain plus that Scenario's free-form statement.
 
 ## Realizes
 
 ```json
 {
   "spec": "billing/invoices",
-  "claim": "invoice-totals-are-exact",
+  "requirement": "invoice-totals-are-exact",
   "site": "Billing.Invoice.total",
   "file": "services/billing/invoice.cs",
   "lang": "csharp",
@@ -121,7 +131,7 @@ digest includes the parent Claim statement and domain plus that Case's free-form
 }
 ```
 
-`spec`, `claim`, `site`, `file` and `lang` are always present. `source_fingerprint` is emitted only
+`spec`, `requirement`, `site`, `file` and `lang` are always present. `source_fingerprint` is emitted only
 when non-empty. The record then carries exactly one of two tails:
 
 - when the relation has a semantic source identity, the four keys `area`, `address_kind`, `address` and `mount`, in that order; or
@@ -134,6 +144,7 @@ When the relation has no source identity and no mount contains the file, neither
 ```json
 {
   "path": "azimuth/workspace.json",
+  "packages": [],
   "areas": [{ "id": "billing", "mounts": [{ "id": "code", "path": "services/billing" }] }],
   "surfaces": [
     {
@@ -142,7 +153,7 @@ When the relation has no source identity and no mount contains the file, neither
     }
   ],
   "realization_obligations": [
-    { "spec": "billing/invoices", "claim": "rounds-half-to-even", "areas": ["billing"] }
+    { "spec": "billing/invoices", "requirement": "rounds-half-to-even", "areas": ["billing"] }
   ]
 }
 ```
@@ -164,6 +175,13 @@ These are the only workspace keys, in this order. `path` is the workspace file p
 ```
 
 `source_fingerprint` is always present here, empty string included. The optional `area`, `address_kind`, `address` and `mount` tail follows when the relation has a semantic source identity; there is no `derived_area` fallback on this record.
+
+## Account Checks
+
+Each `account_checks` record is one document-owned Check from a compact `verification.md` with
+`definition` (the Check record below), `rationale`, `bindings` (`[{scenario, contribution}]`),
+`inputs`, `selectors`, owning `requirement`, `scenarios`, `mechanisms` and nullable `proposition`, in
+that order. See [account-verification.md](account-verification.md).
 
 ## Check implementations
 
@@ -225,10 +243,10 @@ Evidence that a class was enumerated from a system-produced source. The optional
 ```json
 {
   "spec": "billing/invoices",
-  "target_kind": "claim",
+  "target_kind": "requirement",
   "target": "invoice-totals-are-exact",
   "id": "unique-invoice-number",
-  "cases": ["rounds-half-to-even"],
+  "scenarios": ["rounds-half-to-even"],
   "enforcement": "schema",
   "rung": 1,
   "binding": "billing.invoice_number_unique",
@@ -239,8 +257,8 @@ Evidence that a class was enumerated from a system-produced source. The optional
 }
 ```
 
-All twelve keys are always present in this order. `target_kind` is always `claim`. `cases` is the
-sorted stable Case relevance list and is empty when the mechanism bears on the complete Claim.
+All twelve keys are always present in this order. `target_kind` is always `requirement`. `scenarios` is the
+sorted stable Scenario relevance list and is empty when the mechanism bears on the complete Requirement.
 `enforcement` is `type | schema | constraint | choke-point | middleware | guard`, and `rung` is the
 integer that enforcement maps to: `type` and `schema` are 1, `constraint` and `choke-point` are 2,
 `middleware` is 3, `guard` is 4.
@@ -266,13 +284,13 @@ integer that enforcement maps to: `type` and `schema` are 1, `constraint` and `c
 {
   "id": "billing/invoice-total-binding",
   "check": "invoice-total-suite",
-  "case": "rounds-half-to-even",
+  "scenario": "rounds-half-to-even",
   "method_qualification": "billing/invoice-total-method",
   "proposition": "the suite exercises half-to-even rounding on two-line invoices",
-  "context": { "locale": "en-US" },
+  "execution_context": { "locale": "en-US" },
   "challenge_domain": ["oracle"],
   "policy": "standard-evidence",
-  "context_fingerprint": "sha256:<64-lowercase-hex>",
+  "execution_context_fingerprint": "sha256:<64-lowercase-hex>",
   "applicability_fingerprint": "sha256:<64-lowercase-hex>"
 }
 ```
@@ -280,8 +298,8 @@ integer that enforcement maps to: `type` and `schema` are 1, `constraint` and `c
 Each `challenge_domain` entry is `realization | mechanism | check-implementation | oracle |
 context`.
 
-`context` is the exact edge context object; it is `{}` when the binding requires no edge-specific
-context.
+`execution_context` is the exact edge Execution Context object; it is `{}` when the binding requires no
+edge-specific Execution Context.
 
 `applicability_fingerprint` is present only when the expected Applicability Decision fingerprint is
 derivable. Its absence marks incomplete composition, not a stale decision.
@@ -295,7 +313,7 @@ derivable. Its absence marks incomplete composition, not a stale decision.
   "scope": "unit",
   "quantification": "example",
   "oracle": "direct",
-  "context": {"locale":"en-US"},
+  "execution_context": {"locale":"en-US"},
   "challenge_domain": ["oracle"],
   "policy": "standard-evidence",
   "verdict": "qualified",
@@ -323,9 +341,9 @@ when the complete method composition is derivable.
 ```
 
 `verdict` is `applicable | rejected`. The id is exactly the binding id. The expected fingerprint is
-present only when the binding, Case, policy and referenced Method Qualification resolve.
+present only when the binding, Scenario, policy and referenced Method Qualification resolve.
 
-## Claim judgments
+## Requirement judgments
 
 ```json
 {
@@ -367,20 +385,26 @@ present only when the binding, Case, policy and referenced Method Qualification 
 
 The single `Challenge Schedule: current` block, or `null` when no Decision Standards file was loaded.
 
-## Challengers
+## Verification Challenges
 
 ```json
 {
   "id": "billing/mutation-search",
   "form": "mutation-search",
   "searches_for": "surviving mutants inside the invoice total path",
+  "targets": [],
+  "requirements": [],
+  "mechanisms": [],
+  "checks": [],
   "required_scope": ["check", "check-implementation"],
   "fingerprint": "sha256:<64-lowercase-hex>"
 }
 ```
 
-Each `required_scope` entry is one of `applicability-decision`, `case`, `claim`, `binding`,
-`method-qualification`, `claim-judgment`, `check`, `check-implementation`, `realization`,
+`targets`, `requirements`, `mechanisms` and `checks` restate the authored target assessment kinds and
+selected Requirements, Mechanisms and Checks. Each `required_scope` entry is one of
+`applicability-decision`, `scenario`, `requirement`, `binding`,
+`method-qualification`, `requirement-judgment`, `check`, `check-implementation`, `realization`,
 `mechanism`, `mechanism-implementation`, `artifact`, `context`, `policy`, `area`,
 `realization-obligation`, `surface`, `surface-member`, `enumeration`.
 
@@ -389,7 +413,7 @@ Each `required_scope` entry is one of `applicability-decision`, `case`, `claim`,
 ```json
 {
   "id": "billing/mutation-plan",
-  "challenger": "billing/mutation-search",
+  "verification_challenge": "billing/mutation-search",
   "selectors": ["applicability-decision from binding billing/invoice-total-binding"]
 }
 ```
@@ -403,9 +427,9 @@ One record per Challenge Plan, holding the deterministic resolution of that plan
 ```json
 {
   "format": "azimuth-challenge-resolution",
-  "version": 1,
+  "version": 2,
   "plan": "billing/mutation-plan",
-  "challenger": "billing/mutation-search",
+  "verification_challenge": "billing/mutation-search",
   "candidates": [
     {
       "selector": {
@@ -429,7 +453,7 @@ One record per Challenge Plan, holding the deterministic resolution of that plan
 
 These nested records are the one place in the export that names its own format.
 `selector.target` and `target.kind` are `method-qualification | applicability-decision |
-claim-judgment`. `selector.from` and `relation.kind` use the closed relation kinds in the
+requirement-judgment`. `selector.from` and `relation.kind` use the closed relation kinds in the
 verification contract. `target` is `null` when no decision target was reached;
 `expected_fingerprint` and `authored_fingerprint` are independently nullable.
 
@@ -441,28 +465,28 @@ verification contract. `target` is `null` when no decision target was reached;
 
 ```json
 {
-  "kind": "unbound-case",
+  "kind": "unbound-scenario",
   "category": "verification",
   "severity": "error",
-  "subject_kind": "case",
-  "claim": "rounds-half-to-even",
+  "verification_target_kind": "scenario",
+  "requirement": "rounds-half-to-even",
   "criticality": "critical",
   "file": "azimuth/model/billing/invoices/spec.md",
   "line": 18,
-  "detail": "non-routine Case has no Evidence Binding",
-  "help": "Bind at least one deliberately enrolled Check to the Case."
+  "detail": "non-routine Scenario has no Evidence Binding",
+  "help": "Bind at least one deliberately enrolled Check to the Scenario."
 }
 ```
 
-All ten keys are always present in this order. `subject_kind`, `claim` and `criticality` are nullable. Typed kind accompanies the stable entity ID; it is never inferred from ID spelling. `help` is a fixed remediation sentence owned by the kind, not authored per finding. See `contracts/findings.md` for the closed category set, the exhaustive kind registry and the severity rule.
+All ten keys are always present in this order. `verification_target_kind`, `requirement` and `criticality` are nullable. `verification_target_kind` names the typed model entity the Finding concerns (`requirement | scenario | mechanism | check`), not an execution Verification Target, and `requirement` holds that entity's stable ID. Typed kind accompanies the stable entity ID; it is never inferred from ID spelling. `help` is a fixed remediation sentence owned by the kind, not authored per finding. See `contracts/findings.md` for the closed category set, the exhaustive kind registry and the severity rule.
 
 Findings are part of the exported account and therefore part of the model digest.
 
 ## What the export does not contain
 
-- No Run ledger data. Observations, Challenge Results, Run bundles, Assurance State and any notion of what has been executed are absent. The export is a static account of the model as authored and derived, not of anything that ran. Run facts live in run bundles; see `contracts/run-bundle.md`.
-- No decision-impact edges. The impact of a change on existing decisions belongs to the traceability projection emitted by `azimuth report traceability`, which carries them under `decision_impacts` alongside the per-Case account. The export carries neither.
-- No independent Case `domain` or `over` value. Cases inherit both from their parent Claim.
+- No Run ledger data. Check Results, Challenge Results, Run bundles, Assurance State and any notion of what has been executed are absent. The export is a static account of the model as authored and derived, not of anything that ran. Run facts live in run bundles; see `contracts/run-bundle.md`.
+- No decision-impact edges. The impact of a change on existing decisions belongs to the traceability projection emitted by `azimuth report traceability`, which carries them under `decision_impacts` alongside the per-Scenario account. The export carries neither.
+- No independent Scenario `domain` or `over` value. Scenarios inherit both from their parent Requirement.
 - No derived surface membership inside the `workspace` block.
 
 ## Command boundary
@@ -478,4 +502,4 @@ Export exits zero whenever the model loads, including when it contains error-sev
 
 ## Stable entity identities: 2026-10-02
 
-Claim, Case, Mechanism and Check identities are stable project-wide lower-kebab IDs within their typed namespaces. Project context comes from the complete account; kind remains explicit. Module membership is navigation, not identity. Source references do not encode modules. Former qualified spellings are rejected without aliases. Regenerate current artifacts and fingerprints; historical bytes and facts remain immutable. See `contracts/entity-identity.md`.
+Requirement, Scenario, Mechanism and Check identities are stable project-wide lower-kebab IDs within their typed namespaces. Project context comes from the complete account; kind remains explicit. Module membership is navigation, not identity. Source references do not encode modules. Former qualified spellings are rejected without aliases. Regenerate current artifacts and fingerprints; historical bytes and facts remain immutable. See `contracts/entity-identity.md`.

@@ -2,7 +2,7 @@
 
 Status: **operating guidance**. The implementation, its tests and the parser contracts under `contracts/` remain authoritative.
 
-Azimuth separates repository-owned intent and reviewed meaning from execution facts. During the fast-moving alpha every current framework Claim is routine. Changes therefore use ordinary engineering tests and release gates without enrolling those tests as Azimuth evidence.
+Azimuth separates repository-owned intent and reviewed meaning from execution facts. During the fast-moving alpha every current framework Requirement is routine. Changes therefore use ordinary engineering tests and release gates without enrolling those tests as Azimuth evidence.
 
 ## Accountabilities
 
@@ -10,7 +10,7 @@ Azimuth separates repository-owned intent and reviewed meaning from execution fa
 |---|---|
 | Intent owner | what must be true and its consequence |
 | Mechanism owner | what makes it true and which boundaries matter |
-| Evidence owner | what would justify belief if the Claim later becomes non-routine |
+| Evidence owner | what would justify belief if the Requirement later becomes non-routine |
 
 These are accountabilities, not job titles. An agent is an authoring and review instrument; the person accepting its output remains accountable for the result.
 
@@ -26,9 +26,9 @@ Approval and archival are separate actions. After the actual exploration files a
 
 ### 2. Propose one transition
 
-Create one change id with singular authority. State the problem, outcome, in-scope and out-of-scope work, affected Claim ids and completion conditions. Carry explicit exploration decisions when applicable.
+Create one change id with singular authority. State the problem, outcome, in-scope and out-of-scope work, affected Requirement ids and completion conditions. Carry explicit exploration decisions when applicable.
 
-All new or changed framework Claims remain routine until a later accepted change deliberately raises criticality after the codebase stabilizes. Criticality follows consequence rather than implementation size, but this repository currently chooses the routine boundary to avoid manufacturing immature assurance decisions.
+All new or changed framework Requirements remain routine until a later accepted change deliberately raises criticality after the codebase stabilizes. Criticality follows consequence rather than implementation size, but this repository currently chooses the routine boundary to avoid manufacturing immature assurance decisions.
 
 Add a change `design.md` only when alternatives, failure modes, migration order or boundaries need review. Add `work-packages.md` when work can be delegated safely. `plan.md` remains an implementation sequence for the change; it is not a verification artifact or test inventory. `azimuth change brief <change> --package <package>` renders one contextual delegation handoff; authoring grammar comes from `azimuth reference`, not from that brief.
 
@@ -40,7 +40,7 @@ Before parallel work, freeze public formats, identities and ownership boundaries
 
 Implement product behavior, structural mechanisms, telemetry and testability seams inside the
 approved boundary. Add Realizes only where a production site genuinely establishes part of a
-non-routine parent Claim. Routine Claims do not require source linkage.
+non-routine parent Requirement. Routine Requirements do not require source linkage.
 
 Ordinary unit, component, integration and release tests remain normal software. A passing test is useful engineering feedback, but it is not an Azimuth Check merely because it executes in CI.
 
@@ -52,16 +52,16 @@ Keep intent deltas proposed while implementation is unfinished. During proposal 
 refresh the preview and review any drift. When implemented behavior satisfies the reviewed intent,
 run `azimuth change intent-apply --preview <file>` to update package `spec.md` mechanically.
 `finalize` and `archive` only verify that application occurred; they do not apply intent.
-Distil only mechanisms that now exist into current `design.md`. Because every current Claim is routine, do not create package `verification.md`
+Distil only mechanisms that now exist into current `design.md`. Because every current Requirement is routine, do not create package `verification.md`
 files or assurance decisions for this alpha transition.
 
-A compact non-routine change authors Checks and inline Check–Case contributions in `verification.md`, and enables any required packages explicitly. Surface field declarations, independent Expectation Sets and Probe origins describe module-specific verification without duplicating package mechanics. Source tags identify actual implementations. Emitters produce typed descriptors; `azimuth surface verify` checks runtime enumeration/expectation completeness and schema against those exact producers.
+A compact non-routine change authors Checks and inline Check–Scenario contributions in `verification.md`, and enables any required packages explicitly. Surface field declarations, independent Expectation Sets and Probe origins describe module-specific verification without duplicating package mechanics. Source tags identify actual implementations. Emitters produce typed descriptors; `azimuth surface verify` checks runtime enumeration/expectation completeness and schema against those exact producers.
 
-Review the full candidate account before relying on its verification. Prepare exact packets with `azimuth assurance review-input`; independently author and compile a Claim Review assessing Cases, design, implementation, oracle independence, coverage and Challenger scope. This definition assessment requires no execution Subject. Rejected or stale reviews return work to correction and independent reassessment.
+Review the full candidate account before relying on its verification. Prepare exact packets with `azimuth assurance review-input`; independently author and compile a Requirement Review assessing Scenarios, design, implementation, oracle independence, coverage and Verification Challenge scope. This definition assessment requires no execution Verification Target. Rejected or stale reviews return work to correction and independent reassessment.
 
-Execute Checks and machine-executed Challengers against exact source, artifact or deployment Subjects. Preserve actual measurement timestamps; importing an old report does not renew its freshness. A Challenger targets an exact Claim Review or Claim Health record while retaining its own execution Subject. Current mutation integration captures exact batch source input and native results, not materialized per-mutant Subjects or product Observations. Report `clean | findings | inconclusive` and resolve relevant objections; clean is not positive assurance.
+Execute Checks and machine-executed Verification Challenges against exact source, artifact or deployment Verification Targets. Preserve actual measurement timestamps; importing an old report does not renew its freshness. A Verification Challenge targets an exact Requirement Review or Requirement Status record while retaining its own execution Verification Target. Current mutation integration captures exact batch source input and native results, not materialized per-mutant Verification Targets or product Check Results. Report `clean | findings | inconclusive` and resolve relevant objections; clean is not positive assurance.
 
-Assess observed behavior through Claim Health, which names the current accepted Claim Review and exact Run/Observation basis for one Subject. Retain `supported | violated | unresolved`, missing coverage, failed controls and residual risks. Neither structural validation nor a successful execution writes an independent assessment. Do not add mandatory Method Qualification, Applicability Decision, Claim Judgment or Check Review stages to this account. Earlier records retain their historical meanings without positive conversion.
+Deployment Requirement Status is computed in ASS from applicable evidence for an observed deployment. An authored Requirement Status record names the current accepted Requirement Review and exact Run/Check Result basis for one Verification Target. Retain `supported | violated | unresolved`, missing coverage, failed controls and residual risks. Neither structural validation nor a successful execution writes an independent assessment. Do not add mandatory Method Qualification, Applicability Decision, Requirement Judgment or Check Review stages to this account. Earlier records retain their historical meanings without positive conversion.
 
 Export authority with `azimuth assurance authority`; register a candidate revision in the existing project without replacing accepted authority. Explicit owner selection and change acceptance follow required assessments, rollout and human decision conditions. Candidate registration and CI publication grant no deployment authorization.
 
@@ -75,7 +75,7 @@ azimuth report traceability
 azimuth export --out model.json
 ```
 
-Validation reports categorized Findings. Traceability is a derived, deterministic view over Cases
+Validation reports categorized Findings. Traceability is a derived, deterministic view over Scenarios
 and stable graph relations. Export writes the current versioned model projection. None of these commands executes native
 tests or creates an execution fact.
 
@@ -93,10 +93,10 @@ For federation, retain complete accepted-active and tested-archive worksets. The
 
 ## Run and adapter execution plane
 
-Azimuth implements a standalone [`azimuth-run-bundle` version 1](../contracts/run-bundle.md)
-exchange. A Run binds one exact Subject and may contain Check executions, Challenger executions or
-both. One Check execution may serve several selected Cases and reduces independently to one
-Observation per Case. Challengers search for objections to exact Claim Review or Claim Health assessments; a clean
+Azimuth implements a standalone [`azimuth-run-bundle` version 2](../contracts/run-bundle.md)
+exchange. A Run binds one exact Verification Target and may contain Check executions, Verification
+Challenge executions or both. One Check execution may serve several selected Scenarios and reduces
+independently to one Check Result per Scenario. Verification Challenges search for objections to exact Requirement Review or Requirement Status assessments; a clean
 result is not positive product evidence.
 
 Use the service-free protocol commands to verify or inspect an already normalized bundle or correction set:
@@ -106,9 +106,9 @@ azimuth run verify --bundle <file> [--bundle <file> ...]
 azimuth run inspect --bundle <file> [--bundle <file> ...] [--format text|json] [--out <file>]
 ```
 
-These commands validate the protocol account only. They do not establish that repository fingerprints remain current, apply execution results to Assurance State, call a provider or ingest the bundle. A protocol-consistent violated Observation, Challenge findings or partial Run remains a valid execution account rather than a command failure.
+These commands validate the protocol account only. They do not establish that repository fingerprints remain current, apply execution results to Assurance State, call a provider or ingest the bundle. A protocol-consistent violated Check Result, Challenge findings or partial Run remains a valid execution account rather than a command failure.
 
-Compact Challenger declarations select Claims and Mechanisms through stable semantic identities. Planning pins the exact current assessment and resolves tagged implementation locations into accountable scope. Mutation targets, analysis/build dependencies and exercised Checks are separate. Missing mappings or ambiguous scope must not silently expand to the entire repository. Historical repository Challenge Plans retain their separate native rules.
+Compact Verification Challenge declarations select Requirements and Mechanisms through stable semantic identities. Planning pins the exact current assessment and resolves tagged implementation locations into accountable scope. Mutation targets, analysis/build dependencies and exercised Checks are separate. Missing mappings or ambiguous scope must not silently expand to the entire repository. Historical repository Challenge Plans retain their separate native rules.
 
 Configure provider work explicitly in strict `azimuth/adapters.json`, then use:
 
@@ -122,7 +122,7 @@ azimuth run import --plan <file> --input <id>=<file>... \
   [--predecessor <bundle>...] [--config <file>] [--out <file>]
 ```
 
-Core loads the complete unselected model and accepts Check-only, Challenge-only and mixed strict requests. Requests name configured capabilities and finite work units; compact Challenge selection names a declared Challenger and a bounded target selection. Core resolves exact assessment fingerprints and scope rather than asking agents to maintain duplicate file inventories.
+Core loads the complete unselected model and accepts Check-only, Challenge-only and mixed strict requests. Requests name configured capabilities and finite work units; compact Challenge selection names a declared Verification Challenge and a bounded target selection. Core resolves exact assessment fingerprints and scope rather than asking agents to maintain duplicate file inventories.
 
 Launch inputs preserve source-backed semantic items and accountable locators. The adapter translates this frozen account into tool parameters and records exclusions, ambiguity and tool-driven scope expansion; it does not reinterpret the Azimuth model. Historical declaration Plans retain their own Decision Policy and schedule rules.
 
@@ -130,11 +130,11 @@ Execute and import stage executable, resource and input content from the streams
 
 Core validates the strict response, exact route provenance, actual selection and complete bundle before atomic publication. Repeatable predecessors must form one linear correction chain; the response is revision zero or the exact next complete revision.
 
-A valid violated Observation, Challenge finding, partial or cancelled Run, or adapter-returned protocol-valid `timed-out` Run fact is an execution fact and exits zero. A host-enforced process deadline is a transport timeout and exits one, as does a semantic, identity, content, other transport or bundle mismatch. The returned `timed-out` fact is valid only when its complete bundle arrives within the host deadline; the host timeout publishes nothing. CLI and schema failures exit two. Neither nonzero class leaves an output file.
+A valid violated Check Result, Challenge finding, partial or cancelled Run, or adapter-returned protocol-valid `timed-out` Run fact is an execution fact and exits zero. A host-enforced process deadline is a transport timeout and exits one, as does a semantic, identity, content, other transport or bundle mismatch. The returned `timed-out` fact is valid only when its complete bundle arrives within the host deadline; the host timeout publishes nothing. CLI and schema failures exit two. Neither nonzero class leaves an output file.
 
-Challenge Results are exactly `clean | findings | inconclusive`. Clean is only a negative search fact and creates no credibility or product evidence. Every planned Challenge omitted from a partial, cancelled or timed-out Run has one exact execution diagnostic and no fabricated Result; omitting scheduled work is allowed deferral, while gate omission records execution failure. Added or substituted targets, context, units or scope are selection mismatches and publish nothing.
+Challenge Results are exactly `clean | findings | inconclusive`. Clean is only a negative search fact and creates no credibility or product evidence. Every planned Challenge omitted from a partial, cancelled or timed-out Run has one exact execution diagnostic and no fabricated Result; omitting scheduled work is allowed deferral, while gate omission records execution failure. Added or substituted targets, Execution Context, units or scope are selection mismatches and publish nothing.
 
-`model.extract` execution is absent. The current Run ledger provides project-role authorization, append-only Run/review histories, explicit authority selection and exact-Subject compact Assurance State. Current planning defines no cache validity, cadence, historical-applicability or cross-Subject reuse semantics. Adapters are bounded short-lived processes; there is no daemon, webhook, inbound gateway or long-running adapter boundary.
+`model.extract` execution is absent. The current Run ledger provides project-role authorization, append-only Run/review histories, explicit authority selection and exact-Verification-Target compact Assurance State. Current planning defines no cache validity, cadence, historical-applicability or cross-target reuse semantics. Adapters are bounded short-lived processes; there is no daemon, webhook, inbound gateway or long-running adapter boundary.
 
 The earlier Assurance Service remains isolated on its alpha 1 wire; it does not ingest current Run bundles and has no compatibility bridge. The separate current `run-ledger` accepts those bundles and compact independent review records. `azimuth assurance authority` exports the full model projection, not persisted runtime records.
 
@@ -152,14 +152,14 @@ Archiving accepts a codebase transition; it does not assert universal production
 
 ## Check locator transition
 
-The stable entity identity change preserves project-wide Claim, Case, Mechanism and Check IDs independently of module membership and Case parents. Typed references and source markers use stable names directly. Use explicit declaration-backed mappings, preserve unresolved stale targets and never add aliases or rewrite historical artifacts. Fresh extraction and planning produce current identities and fingerprints; an old decision or Run is not silently current. Entity kind remains explicit for explorer and protocol consumers. The existing test prohibition applies until tests are explicitly requested.
+The stable entity identity change preserves project-wide Requirement, Scenario, Mechanism and Check IDs independently of Module membership and Scenario parents. Typed references and source markers use stable names directly. Use explicit declaration-backed mappings, preserve unresolved stale targets and never add aliases or rewrite historical artifacts. Fresh extraction and planning produce current identities and fingerprints; an old decision or Run is not silently current. Entity kind remains explicit for explorer and protocol consumers. The existing test prohibition applies until tests are explicitly requested.
 
 ## Explicit workflow coordination
 
 `azimuth workflow init --workflow change-development --inputs <file>` selects a shipped declarative process and expands declared module targets; `next`, `update` and `verify` coordinate its finite concrete graph. Later validated same-project inventories instantiate assurance tasks without a coordinator-authored DAG. `workflow definition --workflow change-development` exposes the pinned reusable contract. Request, plan steps and workflow tasks are distinct. `next` is read-only and gives full handoffs in `eligible` without recommending an execution order; no `next`, `blocked`, `current` or `superseded` fields are returned. The harness selects work, controls cost and permissions, and launches agents. `update` records actual results conditionally and idempotently; it does not perform work or grant permissions. See [workflow.md](../contracts/workflow.md) and `azimuth reference show workflow`.
 
-Independent authoring reviews cover intent completeness, design support and verification adequacy. Their exact inputs, reviewer and findings remain separate from artifact completion, structural validation and human approval. Adverse outcomes expose configured correction work and independent reassessment. After implementation, Claim Review assesses the complete candidate definitions and verification. Claim Health assesses observed behavior for exact Subjects. A valid adverse record is preserved; it does not satisfy readiness. No separate Check Review is required.
+Independent authoring reviews cover intent completeness, design support and verification adequacy. Their exact inputs, reviewer and findings remain separate from artifact completion, structural validation and human approval. Adverse outcomes expose configured correction work and independent reassessment. After implementation, Requirement Review assesses the complete candidate definitions and verification. Requirement Status assesses observed behavior from applicable evidence for a deployment. A valid adverse record is preserved; it does not satisfy readiness. No separate Check Review is required.
 
 Agents can perform all review work locally. CI/CD executes deterministic Checks and transports the current accountable delivery package to ASS, rather than uploading every draft or correction attempt. Include exact dependencies, necessary provenance and relevant adverse or unresolved facts. A CI producer token authorizes Runs only; publishing unchanged local review records requires the authorized reviewer credential matching their original reviewer. Transport must not fabricate a CI reviewer or silently refresh review time.
 
-Subsequent hosted Runs and Claim Health follow authorized deployment. ASS preserves immutable published reviews and correction chains, exposes definition review independently of Subject-specific health, and never joins different Subjects solely because model revisions match. Missing or stale assessments pause progression without requiring model calls in CI. Generated packets, compiled bundles, Runs and local scope reports belong in ignored change `.azimuth/`; authored definitions and aggregate review records remain in their owning source account. This increment does not automate deployment, federation acceptance, archive handoff or production scheduling.
+Subsequent hosted Runs and deployment Requirement Status follow authorized deployment. ASS preserves immutable published reviews and correction chains, exposes definition review independently of Verification-Target-specific Requirement Status, and never joins different Verification Targets solely because model revisions match. Missing or stale assessments pause progression without requiring model calls in CI. Generated packets, compiled bundles, Runs and local scope reports belong in ignored change `.azimuth/`; authored definitions and aggregate review records remain in their owning source account. This increment does not automate deployment, federation acceptance, archive handoff or production scheduling.

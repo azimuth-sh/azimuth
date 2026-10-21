@@ -1,6 +1,6 @@
 # Execution receipt format
 
-An execution receipt is a content-addressed result of composed engineering checks naming the exact repository revisions that were evaluated. It is not a Run: it carries no Subject, no semantic Plan, no Check identity and no Challenge Result, and it establishes no Assurance State. The file is strict JSON with format `azimuth-execution-receipt` and version `1`.
+An execution receipt is a content-addressed result of composed engineering checks naming the exact repository revisions that were evaluated. It is not a Run: it carries no Verification Target, no semantic Plan, no Check identity and no Challenge Result, and it establishes no Assurance State. The file is strict JSON with format `azimuth-execution-receipt` and version `1`.
 
 ```json
 {
@@ -33,7 +33,7 @@ Unrecognized fields are ignored. Duplicate object keys are accepted and the firs
 | `subjects[].repository` | non-empty string | yes | catalog repository id |
 | `subjects[].revision` | non-empty string | yes | the revision that repository was evaluated at |
 
-`subjects` must be present and an array. The receipt carries no timestamp, no producer, no provider locator and no per-check detail.
+`subjects` must be present and an array. Its entries name the repository revisions the receipt covers; they are not Run Verification Targets. The receipt carries no timestamp, no producer, no provider locator and no per-check detail.
 
 ## Identity and digest
 
@@ -46,11 +46,11 @@ A receipt is only meaningful against a catalog requirement of the same id. In an
 - an `id` the catalog does not require is an unexpected receipt and is a violation;
 - `project` must equal the catalog project;
 - `outcome` must be exactly `passed`. Every other value, including an otherwise well-formed failure report, fails the assembly;
-- a repeated `subjects[].repository` is a violation, and a subject naming a repository the catalog does not declare is a violation;
-- the set of subject repositories must equal the requirement's `subjects` exactly. An omitted subject and an extra subject are both violations;
-- each subject's `revision` must equal the revision the workset selected for that repository, otherwise `receipt-revision-mismatch`.
+- a repeated `subjects[].repository` is a violation, and a `subjects` entry naming a repository the catalog does not declare is a violation;
+- the set of `subjects` repositories must equal the requirement's `subjects` exactly. An omitted and an extra `subjects` entry are both violations;
+- each `subjects` entry's `revision` must equal the revision the workset selected for that repository, otherwise `receipt-revision-mismatch`.
 
-A required receipt that no workset entry supplies is `missing-input: receipt:<id>`, which is a violation of a complete account and a recorded missing input of a local one. A subject that is absent from the workset is a violation of a complete account only.
+A required receipt that no workset entry supplies is `missing-input: receipt:<id>`, which is a violation of a complete account and a recorded missing input of a local one. A `subjects` repository that is absent from the workset is a violation of a complete account only.
 
 ## Relationships
 

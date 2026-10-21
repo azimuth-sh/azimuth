@@ -17,7 +17,7 @@ SHALL present traceability only as a derived view.
 
 ### Scenario: traceability-is-derived
 - Event: a consumer invokes `azimuth report traceability`
-- Required outcome: the CLI derives a deterministic view from selected current Claims and realizations
+- Required outcome: the CLI derives a deterministic view from selected current Requirements and realizations
 - Additional condition or outcome: the view creates no repository authority or execution fact
 
 ### Scenario: initialization-points-to-validation

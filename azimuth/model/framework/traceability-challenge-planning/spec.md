@@ -1,26 +1,26 @@
 # Spec: framework/traceability-challenge-planning
 
 ## Requirement: claim-judgments-bind-total-composition
-Title: Claim judgments bind total composition
+Title: Requirement judgments bind total composition
 Criticality: routine
 
-Azimuth SHALL identify one current Claim Judgment by the complete applicable assurance composition
-for one non-routine parent Claim.
+Azimuth SHALL identify one current Requirement Judgment by the complete applicable assurance composition
+for one non-routine parent Requirement.
 
 ### Scenario: accepted-judgment-binds-composition
-- Context: a standard or critical Claim has an accepted Claim Judgment
+- Context: a standard or critical Requirement has an accepted Requirement Judgment
 - Event: its exact semantic composition is unchanged
-- Required outcome: the Judgment fingerprint identifies its Claim, obligations, realizations and mechanisms
-- Additional condition or outcome: it identifies every Case, binding, Method Qualification, Applicability Decision, policy, basis and residual risk
+- Required outcome: the Judgment fingerprint identifies its Requirement, obligations, realizations and mechanisms
+- Additional condition or outcome: it identifies every Scenario, binding, Method Qualification, Applicability Decision, policy, basis and residual risk
 
 ### Scenario: relevant-drift-stales-dependent-judgment
-- Event: a fingerprinted input to one Claim's composition changes
-- Required outcome: its current Claim Judgment becomes stale
-- Additional condition or outcome: unrelated Claim Judgments retain their identity
+- Event: a fingerprinted input to one Requirement's composition changes
+- Required outcome: its current Requirement Judgment becomes stale
+- Additional condition or outcome: unrelated Requirement Judgments retain their identity
 
 ### Scenario: routine-claims-reject-judgments
-- Event: a Claim has routine criticality
-- Required outcome: a Claim Judgment declaration for it is inapplicable
+- Event: a Requirement has routine criticality
+- Required outcome: a Requirement Judgment declaration for it is inapplicable
 
 ## Requirement: challenge-resolution-preserves-every-candidate
 Title: Challenge resolution preserves every candidate
@@ -35,7 +35,7 @@ invalid, inapplicable or unresolved decision candidates.
 - Required outcome: Azimuth reports every selected and non-selected disposition
 
 ### Scenario: overlapping-selectors-deduplicate-exact-targets
-- Event: several selectors or requested plans reach the same Challenger and decision fingerprint
+- Event: several selectors or requested plans reach the same Verification Challenge and decision fingerprint
 - Required outcome: Azimuth creates one semantic Challenge selection
 
 ### Scenario: relation-domain-exclusion-does-not-widen-selection
@@ -44,9 +44,9 @@ invalid, inapplicable or unresolved decision candidates.
 - Additional condition or outcome: it does not fall back to a path, glob or whole suite
 
 ### Scenario: required-scope-cannot-be-faked-by-form
-- Context: a Challenger declares required semantic scope kinds
+- Context: a Verification Challenge declares required semantic scope kinds
 - Event: a selector resolves its decision without those kinds
-- Required outcome: the Plan does not cover the Challenger's required form
+- Required outcome: the Plan does not cover the Verification Challenge's required form
 
 ## Requirement: challenge-planning-binds-current-decisions
 Title: Challenge planning binds current decisions
@@ -65,7 +65,7 @@ decision targets under one Run context.
 
 ### Scenario: challenger-form-binds-explicit-capability
 - Event: core expands a Challenge Plan
-- Required outcome: it derives the current Challenger fingerprint and open form
+- Required outcome: it derives the current Verification Challenge fingerprint and open form
 - Additional condition or outcome: it requires an explicitly named capability with the matching operation class and form
 
 ### Scenario: target-cap-fails-before-truncation
@@ -81,16 +81,16 @@ Azimuth SHALL freeze traceability-derived semantic scope and accountable launch 
 adapter translates a Challenge into provider-native work.
 
 ### Scenario: mutation-receives-realization-and-check-scope
-- Event: a mutation Challenger selects a Method Qualification through a realization
+- Event: a mutation Verification Challenge selects a Method Qualification through a realization
 - Required outcome: its scope contains the exact realization and bound Check implementations
 
 ### Scenario: fault-injection-receives-mechanism-and-check-scope
-- Event: a fault-injection Challenger selects a Method Qualification through a mechanism
+- Event: a fault-injection Verification Challenge selects a Method Qualification through a mechanism
 - Required outcome: its scope contains the exact mechanism and bound Check implementations
 
 ### Scenario: broad-analysis-receives-claim-composition
-- Event: broad static analysis directly challenges a Claim Judgment
-- Required outcome: its scope contains the exact selected Claim composition
+- Event: broad static analysis directly challenges a Requirement Judgment
+- Required outcome: its scope contains the exact selected Requirement composition
 
 ### Scenario: scope-substitution-fails-publication
 - Event: an adapter adds, removes or changes a semantic scope or accountable launch input
@@ -106,10 +106,10 @@ different states.
 ### Scenario: clean-is-not-product-evidence
 - Event: a Challenge Result is clean
 - Required outcome: it records only that no objection was found in the declared search
-- Additional condition or outcome: it creates no Observation, Method Qualification, Applicability Decision or Claim Judgment
+- Additional condition or outcome: it creates no Check Result, Method Qualification, Applicability Decision or Requirement Judgment
 
 ### Scenario: selected-inconclusive-work-remains-non-clean
-- Event: selected Challenger work cannot establish clean or findings
+- Event: selected Verification Challenge work cannot establish clean or findings
 - Required outcome: its Challenge Result is inconclusive
 
 ### Scenario: deferred-work-has-no-result
@@ -133,19 +133,19 @@ lane without treating omitted expensive work as success.
 ### Scenario: required-form-coverage-is-declared
 - Context: a current accepted decision uses a policy with required challenge forms
 - Event: the repository model is validated
-- Required outcome: every required form has a current Challenger and authored Plan that resolves the decision
+- Required outcome: every required form has a current Verification Challenge and authored Plan that resolves the decision
 
 ### Scenario: scheduling-lane-does-not-stale-decision
 - Event: a required form moves between gate and scheduled lanes
-- Required outcome: its Method Qualification, Applicability Decision or Claim Judgment fingerprint remains unchanged
+- Required outcome: its Method Qualification, Applicability Decision or Requirement Judgment fingerprint remains unchanged
 
 ### Scenario: scheduled-omission-is-not-clean
 - Event: a scheduled Challenge does not execute
 - Required outcome: Azimuth does not count it as a clean required form
 
 ### Scenario: temporal-reuse-remains-deferred
-- Event: prior Challenge facts exist for another Subject or time
-- Required outcome: this change defines no cache-validity or cross-Subject reuse inference
+- Event: prior Challenge facts exist for another Verification Target or time
+- Required outcome: this change defines no cache-validity or cross-target reuse inference
 
 ## Requirement: challenged-decision-impact-does-not-duplicate-results
 Title: Challenged decision impact does not duplicate results
@@ -156,19 +156,19 @@ additional Challenge Results.
 
 ### Scenario: method-finding-fans-out-through-dependent-edges
 - Event: one Method Qualification receives a findings Challenge Result
-- Required outcome: the impact graph reaches every dependent applicability edge, parent Claim and current Claim Judgment
-- Additional condition or outcome: no direct Claim Judgment Challenge Result is created
+- Required outcome: the impact graph reaches every dependent applicability edge, parent Requirement and current Requirement Judgment
+- Additional condition or outcome: no direct Requirement Judgment Challenge Result is created
 
 ### Scenario: applicability-finding-remains-local
 - Event: one Applicability Decision receives a findings Challenge Result
-- Required outcome: the impact graph reaches only its Case, parent Claim and current Claim Judgment
+- Required outcome: the impact graph reaches only its Scenario, parent Requirement and current Requirement Judgment
 - Additional condition or outcome: it does not manufacture sibling applicability results
 
 ### Scenario: direct-judgment-challenge-remains-distinct
-- Event: an authored Claim Judgment selector is planned explicitly
-- Required outcome: its Challenge Result targets the exact current Claim Judgment fingerprint
+- Event: an authored Requirement Judgment selector is planned explicitly
+- Required outcome: its Challenge Result targets the exact current Requirement Judgment fingerprint
 
 ### Scenario: several-edge-findings-deduplicate-claim-impact
-- Event: several Applicability Decisions of one Claim receive findings
-- Required outcome: the graph exposes one impacted Claim Judgment node
+- Event: several Applicability Decisions of one Requirement receive findings
+- Required outcome: the graph exposes one impacted Requirement Judgment node
 - Additional condition or outcome: it retains every distinct Applicability Decision result

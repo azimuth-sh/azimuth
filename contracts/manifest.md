@@ -29,7 +29,7 @@ There is no `format` or `version` key. The document carries no envelope identity
 
 Every collection is optional and every present collection may be empty, but at least one of the six must be present. A root that is not an object, a root that declares none of the six, a repeated top-level key and a collection whose value is not an array are each errors.
 
-Three alpha-era collections are retired and rejected by name:
+Three alpha-era collections are retired and rejected by name. Their historical key names are kept here because they are what the reader rejects:
 
 ```text
 covers
@@ -37,7 +37,7 @@ mechanism_covers
 observations
 ```
 
-Each produces `legacy manifest key <key> is not supported; use Check implementations and repository verification declarations`.
+Each produces ``legacy manifest key `<key>` is not supported; use Check implementations and repository verification declarations``.
 
 ## Common field rules
 
@@ -68,11 +68,11 @@ Local loading preserves a supplied, structurally valid source identity on realiz
 
 ## `realizes`
 
-A production realization site for one parent Claim.
+A production realization site for one parent Requirement.
 
 ```json
 {
-  "claim": "duplicate-completion-is-idempotent",
+  "requirement": "duplicate-completion-is-idempotent",
   "site": "capture::complete",
   "file": "src/capture.rs",
   "lang": "rust",
@@ -80,16 +80,16 @@ A production realization site for one parent Claim.
 }
 ```
 
-`claim`, `site`, `file` and `lang` are required. `source_fingerprint` is optional; when present it must be a fingerprint. The four source-identity fields are permitted. No other field is.
+`requirement`, `site`, `file` and `lang` are required. `source_fingerprint` is optional; when present it must be a fingerprint. The four source-identity fields are permitted. No other field is.
 
-`claim` is a stable lower-kebab ID; an undeclared target becomes a dangling-linkage finding. The module is derived from the current Claim declaration, never emitted by the source marker. `lang` is accepted as written and selects the address kind (see [Address kinds](#address-kinds)).
+`requirement` is a stable lower-kebab ID; an undeclared target becomes a dangling-linkage finding. The module is derived from the current Requirement declaration, never emitted by the source marker. `lang` is accepted as written and selects the address kind (see [Address kinds](#address-kinds)).
 
-Within one manifest the identity is `claim|site|file|lang`, and a repeat is a duplicate realization.
+Within one manifest the identity is `requirement|site|file|lang`, and a repeat is a duplicate realization.
 
 ## `check_implementations`
 
 One source site that implements one project-global Check, defined either by accepted verification or a document-authored candidate account. The marker carries implementation
-identity only: no Case, form, context, Method Qualification or Applicability Decision. Several
+identity only: no Scenario, form, Execution Context, Method Qualification or Applicability Decision. Several
 records may implement one Check.
 
 ```json
@@ -165,7 +165,7 @@ Within one manifest the identity is `class|site|file|lang`.
 
 ## `enumerations`
 
-The witness that a class was enumerated from a system-produced source rather than reconstructed from the declarations whose omissions the enumeration exists to find. Without a witness, tag-derived membership is incomplete and a site-domain Claim reports `enumerator-unsound-or-underived` rather than green.
+The witness that a class was enumerated from a system-produced source rather than reconstructed from the declarations whose omissions the enumeration exists to find. Without a witness, tag-derived membership is incomplete and a site-domain Requirement reports `enumerator-unsound-or-underived` rather than green.
 
 ```json
 {
@@ -182,7 +182,7 @@ All four fields are required. The four source-identity fields are permitted. No 
 
 ## `artifacts`
 
-A machine-addressable artifact emitted from a compiler or schema model. Optional properties carry only facts the extractor derived; semantic claims stay in design prose.
+A machine-addressable artifact emitted from a compiler or schema model. Optional properties carry only facts the extractor derived; semantic statements stay in design prose.
 
 ```json
 {
@@ -236,14 +236,14 @@ For an unqualified mechanism implementation, assembly atomically rewrites the im
 
 Several manifests are read together. Duplicate detection inside one manifest is by the raw identity tuples above; after assembly the following must additionally hold across all manifests:
 
-- one realization per `(claim, source key)`;
+- one realization per `(requirement, source key)`;
 - one Check implementation per `(check, source key)`;
 - any number of distinct marker sites per stable Mechanism, and one marker target per mechanism source key;
 - one enumeration witness per `(class, area, mount, kind)`;
 - one class member per `(class, file)`; and
 - one Artifact per `id`, with no ordinary Artifact colliding with a reserved raw marker id.
 
-The same qualified site in two different areas is legal and produces different assembled binding and Artifact ids. A locator-only move within one area that preserves the qualified site and the content preserves source identity, Claim Judgment and semantic Challenge scope; only the locator fingerprints change.
+The same qualified site in two different areas is legal and produces different assembled binding and Artifact ids. A locator-only move within one area that preserves the qualified site and the content preserves source identity, Requirement Judgment and semantic Challenge scope; only the locator fingerprints change.
 
 ## Diagnostics
 
@@ -258,8 +258,8 @@ A manifest diagnostic names the manifest path and, for a record-level failure, t
 
 ## Stable entity identities: 2026-10-02
 
-Claim, Case, Mechanism and Check identities are stable project-wide lower-kebab IDs within their typed namespaces. Project context comes from the complete account; kind remains explicit. Module membership is navigation, not identity. Source references do not encode modules. Former qualified spellings are rejected without aliases. Regenerate current artifacts and fingerprints; historical bytes and facts remain immutable. See `contracts/entity-identity.md`.
+Requirement, Scenario, Mechanism and Check identities are stable project-wide lower-kebab IDs within their typed namespaces. Project context comes from the complete account; kind remains explicit. Module membership is navigation, not identity. Source references do not encode modules. Former qualified spellings are rejected without aliases. Regenerate current artifacts and fingerprints; historical bytes and facts remain immutable. See `contracts/entity-identity.md`.
 
 ## Namespaced package producers
 
-The optional `extensions` collection follows [verification-packages.md](verification-packages.md). Records identify canonical package/contract/entity, a fingerprinted semantic producer and its source-derived output descriptor. Surface expectation producers may declare exact `inputs` of normalized workspace-relative `{file, fingerprint}` records for independent oracle data. Their content changes alter Check fingerprints. Probe implementations carry no member schema. Unknown contracts, descriptor fields, duplicate producers and disabled package participation fail. These records are source support, never execution observations or accepted reviews.
+The optional `extensions` collection follows [verification-packages.md](verification-packages.md). Records identify canonical package/contract/entity, a fingerprinted semantic producer and its source-derived output descriptor. Surface expectation producers may declare exact `inputs` of normalized workspace-relative `{file, fingerprint}` records for independent oracle data. Their content changes alter Check fingerprints. Probe implementations carry no member schema. Unknown contracts, descriptor fields, duplicate producers and disabled package participation fail. These records are source support, never Check Results or accepted reviews.

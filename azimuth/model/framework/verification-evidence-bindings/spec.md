@@ -5,22 +5,22 @@ Title: Checks bind through explicit edges
 Criticality: routine
 
 Azimuth SHALL represent a Check as one atomic terminal proposition with sparse explicit Evidence
-Bindings to normative Cases.
+Bindings to normative Scenarios.
 
 ### Scenario: one-check-binds-several-cases
 - Context: one Check whose terminal result bears on several product propositions
-- Event: the repository declares an Evidence Binding for each relevant Case
-- Required outcome: the Check has one identity and each Case edge remains independently addressable
+- Event: the repository declares an Evidence Binding for each relevant Scenario
+- Required outcome: the Check has one identity and each Scenario edge remains independently addressable
 
 ### Scenario: one-case-receives-several-checks
-- Context: several Checks bear on different observable aspects of one Case
-- Event: the repository declares one Evidence Binding for each Check-to-Case pair
-- Required outcome: the parent Claim composes the independent edges without merging their outcomes
+- Context: several Checks bear on different observable aspects of one Scenario
+- Event: the repository declares one Evidence Binding for each Check-to-Scenario pair
+- Required outcome: the parent Requirement composes the independent edges without merging their outcomes
 
 ### Scenario: implementation-does-not-declare-evidence
 - Event: source code implements an enrolled Check
 - Required outcome: its marker names only the Check identity
-- Additional condition or outcome: Case, form and decision meaning remain repository declarations
+- Additional condition or outcome: Scenario, form and decision meaning remain repository declarations
 
 ## Requirement: method-and-applicability-decisions-have-exact-boundaries
 Title: Method and applicability decisions have exact boundaries
@@ -30,7 +30,7 @@ Azimuth SHALL assign one exact Method Qualification to shared method inputs and 
 Applicability Decision to every Evidence Binding, expiring only decisions whose inputs change.
 
 ### Scenario: one-applicability-decision-per-binding
-- Context: an Evidence Binding names one Check, one Case and one Method Qualification
+- Context: an Evidence Binding names one Check, one Scenario and one Method Qualification
 - Event: the binding is applicable
 - Required outcome: one Applicability Decision with the binding identity records its verdict and fingerprint
 
@@ -41,8 +41,8 @@ Applicability Decision to every Evidence Binding, expiring only decisions whose 
 - Additional condition or outcome: does not stale an unrelated applicability edge
 
 ### Scenario: routine-claim-rejects-verification
-- Context: a Case whose parent Claim is routine
-- Event: a verification declaration targets that Case or Claim
+- Context: a Scenario whose parent Requirement is routine
+- Event: a verification declaration targets that Scenario or Requirement
 - Required outcome: validation reports inapplicable verification instead of granting optional evidence status
 
 ## Requirement: challenge-plans-resolve-through-traceability
@@ -50,7 +50,7 @@ Title: Challenge plans resolve through traceability
 Criticality: routine
 
 Azimuth SHALL resolve Challenge Plan selectors through stable model relations to exact current
-Method Qualification, Applicability Decision or Claim Judgment fingerprints.
+Method Qualification, Applicability Decision or Requirement Judgment fingerprints.
 
 ### Scenario: selectors-compose-deterministically
 - Context: selectors that reach overlapping decisions through several stable relations

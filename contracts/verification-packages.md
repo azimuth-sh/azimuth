@@ -1,16 +1,16 @@
 # Verification package contracts
 
-Packages extend the authoring and source contracts of a Check. They do not introduce another Check identity or establish qualification, applicability, execution or a Claim Judgment.
+Packages extend the authoring and source contracts of a Check. They do not introduce another Check identity or establish qualification, applicability, execution or a Requirement Judgment.
 
 ## Enablement and identity
 
 The project catalog and local workspace accept `packages: ["azimuth.surface", "azimuth.network"]`. Enablement is explicit. Unknown packages, duplicate enablement and use of a disabled package are diagnostics. Federation preserves the project package selection. Legacy workspace surfaces remain distinct from the surface package.
 
-Package-owned entity kinds and source contracts have canonical package identities. Authored entity IDs are stable lower-kebab names. Core Claim, Case, Mechanism and Check IDs retain their project-wide typed identities; moving a declaration changes membership only.
+Package-owned entity kinds and source contracts have canonical package identities. Authored entity IDs are stable lower-kebab names. Core Requirement, Scenario, Mechanism and Check IDs retain their project-wide typed identities; moving a declaration changes membership only.
 
 ## Compact authoring
 
-Shared declarations are outside Claim verification scopes:
+Shared declarations are outside Requirement verification scopes:
 
 ```markdown
 ## Shared inputs and probes
@@ -52,13 +52,13 @@ A Check retains its own method prose and may declare `Surface`, `Expectations`, 
 - Surface: `operations`
 - Expectations: `admission`
 - Evidence bindings:
-  - Case: `designated-caller-is-admitted`
+  - Scenario: `designated-caller-is-admitted`
     - Contribution: Establishes equality of declared admission; runtime enforcement needs separate evidence.
 
 Compare independently enumerated registrations with the expected records, preserving omissions and unexpected members.
 ```
 
-An inline binding owns a Case reference and nonempty Contribution. Inside a Case verification, omitting Case selects that enclosing Case. Outside a Case, Case is explicit. The typed `(Check, Case)` pair identifies the relation; no authored binding ID, Context, Decision Policy or Method Qualification field is required in this compact account. Source tags supply implementation identity only. They cannot generate the Case contribution or any approved decision. Separate review records remain separate authority.
+An inline binding owns a Scenario reference and nonempty Contribution. Inside a Scenario verification, omitting Scenario selects that enclosing Scenario. Outside a Scenario, Scenario is explicit. The typed `(Check, Scenario)` pair identifies the relation; no authored binding ID, Execution Context, Decision Policy or Method Qualification field is required in this compact account. Source tags supply implementation identity only. They cannot generate the Scenario contribution or any approved decision. Separate review records remain separate authority.
 
 ## Source producer records
 
@@ -90,6 +90,6 @@ The .NET package namespaces are `Azimuth.Surface.Annotations` and `Azimuth.Netwo
 
 ## Execution boundary
 
-Enumeration and expectation results must retain the exact Subject, producer identity, members, completeness and accountable membership fingerprint. Missing discovery cannot appear as a successful empty population. Every actual member must join one expected record before Check selection; duplicate and absent expectations, obsolete expected keys and unclassified registrations remain findings. Expectations cannot be generated from the policy under examination.
+Enumeration and expectation results must retain the exact Verification Target, producer identity, members, completeness and accountable membership fingerprint. Missing discovery cannot appear as a successful empty population. Every actual member must join one expected record before Check selection; duplicate and absent expectations, obsolete expected keys and unclassified registrations remain findings. Expectations cannot be generated from the policy under examination.
 
 Probe reports retain actual origins, target identities, replicas, controls, timestamps and measurement failures. A configured origin label alone proves no origin. A bounded adapter interprets native reports under the selected Check, preserves violated and inconclusive outcomes, and produces the existing Run protocol. Package validation and successful extraction do not establish a product proposition.
