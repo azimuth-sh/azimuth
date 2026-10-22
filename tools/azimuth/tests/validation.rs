@@ -511,7 +511,7 @@ fn relevant_plans_are_retained_atomically_without_success_filtering() {
 
 #[test]
 fn finding_registry_is_exhaustive_and_has_guidance() {
-    assert_eq!(FindingKind::ALL.len(), 54);
+    assert_eq!(FindingKind::ALL.len(), 59);
     let mut names = BTreeSet::new();
     for kind in FindingKind::ALL {
         assert!(!kind.name().is_empty());
