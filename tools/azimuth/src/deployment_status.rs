@@ -398,6 +398,7 @@ struct Inputs<'a> {
     verification_target: String,
     components: BTreeMap<String, String>,
     unit_manifest: BTreeMap<String, ManifestUnit>,
+    unit_manifest_repository: Option<String>,
     deployment_reasons: Vec<String>,
 }
 
@@ -411,8 +412,36 @@ pub fn validate_unit_manifest(v: &Json) -> Result<(), String> {
     parse_unit_manifest(v).map(|_| ())
 }
 
-fn parse_unit_manifest(v: &Json) -> Result<BTreeMap<String, ManifestUnit>, String> {
-    shape(v, &["format", "version", "rule_fingerprint", "units"])?;
+struct UnitManifest {
+    repository: Option<String>,
+    units: BTreeMap<String, ManifestUnit>,
+}
+
+fn parse_unit_manifest(v: &Json) -> Result<UnitManifest, String> {
+    let repository = match v.get("repository") {
+        None => None,
+        Some(value) => Some(
+            value
+                .as_str()
+                .filter(|id| !id.trim().is_empty())
+                .ok_or("unit input manifest `repository` must be a nonempty string")?
+                .to_string(),
+        ),
+    };
+    let Json::Obj(pairs) = v else {
+        return Err("expected object".into());
+    };
+    let without_repository = Json::Obj(
+        pairs
+            .iter()
+            .filter(|(key, _)| key != "repository")
+            .cloned()
+            .collect(),
+    );
+    shape(
+        &without_repository,
+        &["format", "version", "rule_fingerprint", "units"],
+    )?;
     if text(v, "format")? != "azimuth-unit-input-manifest" || number(v, "version")? != 1 {
         return Err("unsupported unit input manifest".into());
     }
@@ -440,7 +469,7 @@ fn parse_unit_manifest(v: &Json) -> Result<BTreeMap<String, ManifestUnit>, Strin
             },
         );
     }
-    Ok(units)
+    Ok(UnitManifest { repository, units })
 }
 
 fn validate_observation(v: &Json) -> Result<(), String> {
@@ -608,6 +637,13 @@ impl<'a> Inputs<'a> {
         } else {
             reasons.push("release has no component identities".into());
         }
+        let (unit_manifest, unit_manifest_repository) = match release.get("unit_inputs") {
+            Some(manifest) => {
+                let parsed = parse_unit_manifest(manifest)?;
+                (parsed.units, parsed.repository)
+            }
+            None => (BTreeMap::new(), None),
+        };
         Ok(Self {
             release,
             deployment,
@@ -616,10 +652,8 @@ impl<'a> Inputs<'a> {
             now,
             verification_target,
             components,
-            unit_manifest: match release.get("unit_inputs") {
-                Some(manifest) => parse_unit_manifest(manifest)?,
-                None => BTreeMap::new(),
-            },
+            unit_manifest,
+            unit_manifest_repository,
             deployment_reasons: reasons,
         })
     }
@@ -682,8 +716,9 @@ impl<'a> Inputs<'a> {
 
     /// Unit-level reuse for a source Check: every executed unit is hermetic in the release manifest and
     /// its input fingerprint equals the manifest's, so the commit may differ from the release's. The
-    /// manifest carries no repository identity, so reuse is accepted only when the Check's complete
-    /// build inputs are one repository.
+    /// manifest names the repository its unit rule was computed for; every other build input of the
+    /// Check must still equal the release. A manifest without a repository identity is accepted only
+    /// when the Check's complete build inputs are one repository.
     fn reuse_scope(
         &self,
         policy: &Json,
@@ -702,11 +737,40 @@ impl<'a> Inputs<'a> {
             return Err("release has no unit input manifest for this Check".into());
         }
         let expected = self.expected_sources(policy, &self.scoped_components(policy)?)?;
-        let [(repository, _, _)] = expected.iter().collect::<Vec<_>>()[..] else {
-            return Err("unit reuse requires exactly one source repository".into());
-        };
-        if repositories.len() != 1 || repositories[0].id != *repository {
-            return Err("Run source repository differs from the Check's build inputs".into());
+        match &self.unit_manifest_repository {
+            None => {
+                let [(repository, _, _)] = expected.iter().collect::<Vec<_>>()[..] else {
+                    return Err("unit reuse requires exactly one source repository".into());
+                };
+                if repositories.len() != 1 || repositories[0].id != *repository {
+                    return Err(
+                        "Run source repository differs from the Check's build inputs".into(),
+                    );
+                }
+            }
+            Some(manifest_repository) => {
+                if repositories.len() != expected.len()
+                    || !expected.iter().any(|(id, _, _)| id == manifest_repository)
+                {
+                    return Err(
+                        "Run source repositories differ from the Check's build inputs".into(),
+                    );
+                }
+                for (id, commit, content_fingerprint) in &expected {
+                    let state = repositories
+                        .iter()
+                        .find(|state| state.id == *id)
+                        .ok_or("Run source repositories differ from the Check's build inputs")?;
+                    if id != manifest_repository
+                        && (state.revision != *commit
+                            || state.content_fingerprint != *content_fingerprint)
+                    {
+                        return Err(format!(
+                            "source repository `{id}` differs from the release and is not the manifest's repository"
+                        ));
+                    }
+                }
+            }
         }
         for unit in &execution.units {
             let manifest = self
