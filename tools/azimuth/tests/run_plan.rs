@@ -953,7 +953,7 @@ fn planning_and_finalization_share_the_exact_model_fingerprint() {
     let model = model(&["alpha"]);
     let findings = validation::validate(&model);
     let expected = fingerprint::model_digest(&model, &findings);
-    let (finalized, _) = azimuth::change::finalization(&model, &findings);
+    let (finalized, _) = azimuth::change::finalization(&model, &findings, &[]);
     let launch = plan(
         &model,
         &configuration(),
