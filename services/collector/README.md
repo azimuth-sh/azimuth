@@ -28,7 +28,7 @@ Each context source has `id`, `project`, `environment`, `namespace`, `component`
 
 All runtime observations use `azimuth-target-observation` version 2 and POST exactly `{observation}` to `/v1/projects/{project}/target-observations`. ACK must equal the canonical submitted observation fingerprint before deletion. Checkpoint and outbox staging share one transaction; failure/full capacity preserves the cursor. Delivery retries preserve exact bytes even across release changes. Redirects, duplicate JSON fields, non-finite values and oversized responses are rejected; ambient HTTP proxies are disabled. A rejected delivery is never deleted: it is retried with its exact bytes and logged as `target-publication-failed` with the HTTP `status` (422 for a semantic rejection). Preserve the state PVC and use a single replica/Recreate strategy.
 
-The `outbox` (native Runs) and `context_outbox` (deployment captures) tables are drained through their original POST endpoints with unchanged bytes and receipt checks; no new runtime observation is assigned a configured Verification Target. The separate pinned native adapter CLI remains available through `register.py` and `adapter.py` for explicit native import workflows.
+The `outbox` (native Runs) table is drained through its original POST endpoint with unchanged bytes and receipt checks; deployment captures travel as target observations through `target_outbox`. No new runtime observation is assigned a configured Verification Target. The separate pinned native adapter CLI remains available through `register.py` and `adapter.py` for explicit native import workflows.
 
 ## Vocabulary upgrade: clear collector state
 

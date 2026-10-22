@@ -255,13 +255,12 @@ def target_observation(source, record):
 
 def initialize(db):
     db.executescript('CREATE TABLE IF NOT EXISTS checkpoints (source TEXT PRIMARY KEY, cursor TEXT NOT NULL); CREATE TABLE IF NOT EXISTS outbox (fingerprint TEXT PRIMARY KEY, project TEXT NOT NULL, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS collection_gaps (source TEXT NOT NULL, cursor TEXT NOT NULL, observed_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS target_outbox (fingerprint TEXT PRIMARY KEY, project TEXT NOT NULL, token_file TEXT, payload TEXT NOT NULL);')
-    db.execute("CREATE TABLE IF NOT EXISTS context_outbox (fingerprint TEXT PRIMARY KEY, source TEXT NOT NULL, project TEXT NOT NULL, token_file TEXT NOT NULL, payload TEXT NOT NULL)")
     db.commit()
 
 
 def stage_targets(db, project, observations, source=None, cursor=None, history_gap=False, max_pending=10000, token_file=None):
     with db:
-        pending = sum(db.execute('SELECT COUNT(*) FROM ' + table).fetchone()[0] for table in ('outbox', 'context_outbox', 'target_outbox'))
+        pending = sum(db.execute('SELECT COUNT(*) FROM ' + table).fetchone()[0] for table in ('outbox', 'target_outbox'))
         if pending + len(observations) > max_pending:
             fail('Outbox full; checkpoint retained')
         for observation in observations:
@@ -326,7 +325,6 @@ def main():
                 except Exception as failure:
                     logging.error('context-collection-failed source=%s error=%s', source['id'], type(failure).__name__)
             publish_targets(db, config)
-            contexts.publish(db, config['assurance_url'])
             for fingerprint, project, payload in db.execute('SELECT fingerprint,project,payload FROM outbox LIMIT 100').fetchall():
                 try:
                     token = Path(config['projects'][project]['token_file']).read_text().strip()

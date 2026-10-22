@@ -2,7 +2,6 @@
 import hashlib
 import ipaddress
 import json
-import logging
 from pathlib import Path
 import re
 import ssl
@@ -184,24 +183,3 @@ def collect(origin, source, kube, token=None):
                          "check": None, "capture": capture})
     return captures
 
-
-def initialize(db):
-    db.execute("CREATE TABLE IF NOT EXISTS context_outbox (fingerprint TEXT PRIMARY KEY, source TEXT NOT NULL, project TEXT NOT NULL, token_file TEXT NOT NULL, payload TEXT NOT NULL)")
-
-
-def stage(db, source, captures):
-    with db:
-        for capture in captures:
-            db.execute("INSERT OR IGNORE INTO context_outbox VALUES (?,?,?,?,?)", (fingerprint(capture), source["id"], source["project"], source["token_file"], canonical_json({"capture": capture})))
-
-
-def publish(db, origin):
-    for identity, source, project, token_file, payload in db.execute("SELECT fingerprint,source,project,token_file,payload FROM context_outbox ORDER BY rowid LIMIT 100").fetchall():
-        try:
-            token = Path(token_file).read_text().strip()
-            receipt = request_json(origin.rstrip("/") + "/v1/projects/" + quote(project, safe="") + "/context-captures", token, payload=json.loads(payload))[0]
-            require(receipt.get("fingerprint") == identity, "context publication receipt differs from immutable capture")
-            with db:
-                db.execute("DELETE FROM context_outbox WHERE fingerprint=?", (identity,))
-        except Exception as failure:
-            logging.error("context-publication-failed source=%s fingerprint=%s error=%s status=%s", source, identity, type(failure).__name__, getattr(failure, "code", None))
