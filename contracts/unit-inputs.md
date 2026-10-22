@@ -15,7 +15,8 @@ A Check's execution units can be derived from one project-level partition rule, 
       "id": "ingress-admission",
       "selection": "ingress-features",
       "private_paths": ["backend/src/DrimDev.Api.Tests/Features/Ingress/Admission/**"],
-      "hermetic": true
+      "hermetic": true,
+      "checks": ["ingress-admission-tests"]
     }
   ]
 }
@@ -24,6 +25,7 @@ A Check's execution units can be derived from one project-level partition rule, 
 - `id` is a unique lower-kebab id and is never `whole`.
 - `selection` names an entry in the project's canonical Check-to-test selection (`azimuth/standards/test-selection.json`), whose entries are named test-filter fragments. The rule adds no second filter vocabulary.
 - `private_paths` is a non-empty list of repository-relative glob paths that belong to this unit alone. Patterns have no traversal and are matched against normalized forward-slash paths.
+- `checks` is optional: a list of unique, non-empty Check ids the unit partitions. An absent or empty list means every Check. Planning gives a unit only to Checks that request default units and are named by its list (or by no list); a Check named by no unit keeps the single `whole` unit. The loader checks only the list's shape and does not verify that the ids name Checks of the model. The list is part of the rule fingerprint, and the release manifest carries it for restricted units ([below](#release-unit-input-manifest)).
 - `hermetic` is optional and defaults to `false`. `true` declares that the unit's result is a pure function of its declared inputs and its required execution context, which is the only condition under which an earlier result may be reused.
 - Unknown fields, duplicate ids and an invalid glob pattern are errors.
 
