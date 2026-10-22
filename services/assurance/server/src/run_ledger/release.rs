@@ -195,7 +195,7 @@ pub(super) async fn publish(
     Ok((
         StatusCode::CREATED,
         Json(
-            json!({"project":project,"fingerprint":fingerprint,"model_revision":revision,"status":"candidate","submitted_by":submitter,"review_provenance":"publisher-transported-assertion"}),
+            json!({"project":project,"fingerprint":fingerprint,"model_revision":revision,"submitted_by":submitter,"review_provenance":"publisher-transported-assertion"}),
         ),
     ))
 }
