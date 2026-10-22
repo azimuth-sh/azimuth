@@ -265,15 +265,245 @@ pub(super) async fn list(
         .bind(&project).bind(&page.after).bind(limit+1).fetch_all(&state.pool).await?;
     paged(rows, limit)
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct SummaryOptions {
+    #[serde(default)]
+    include: String,
+}
 pub(super) async fn summary(
     State(state): State<LedgerState>,
     Path((project, fingerprint)): Path<(String, String)>,
+    Query(options): Query<SummaryOptions>,
     headers: HeaderMap,
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
     let record: Option<Value> = sqlx::query_scalar(&format!("SELECT jsonb_build_object('publication',jsonb_build_object('release',jsonb_build_object('fingerprint',fingerprint,'label',label,'model_revision',model_revision,'integration',{RELEASE_INTEGRATION})),'submitted_by',submitted_by,'submitted_at',submitted_at) FROM assurance_releases r WHERE project=$1 AND fingerprint=$2"))
         .bind(&project).bind(&fingerprint).fetch_optional(&state.pool).await?;
-    Ok(Json(record.ok_or_else(LedgerError::not_found)?))
+    let mut record = record.ok_or_else(LedgerError::not_found)?;
+    match options.include.as_str() {
+        "" => {}
+        "checks" => {
+            record["requirements"] =
+                Value::Array(requirement_checks(&state, &project, &fingerprint).await?);
+        }
+        _ => return Err(LedgerError::invalid("include must be empty or `checks`")),
+    }
+    Ok(Json(record))
+}
+
+async fn requirement_checks(
+    state: &LedgerState,
+    project: &str,
+    fingerprint: &str,
+) -> Result<Vec<Value>, LedgerError> {
+    let release: Value = sqlx::query_scalar("SELECT assurance_record('release',project,fingerprint) FROM assurance_releases WHERE project=$1 AND fingerprint=$2")
+        .bind(project).bind(fingerprint).fetch_one(&state.pool).await?;
+    let model_revision = text(&release["release"], "model_revision")?.to_owned();
+    let authority_field = |field: &'static str| {
+        let pool = state.pool.clone();
+        let model_revision = model_revision.clone();
+        let project = project.to_owned();
+        async move {
+            let value: Option<Value> =
+                sqlx::query_scalar("SELECT assurance_record_field('authority',$1,$2,$3)")
+                    .bind(project)
+                    .bind(model_revision)
+                    .bind(field)
+                    .fetch_one(&pool)
+                    .await?;
+            Ok::<_, LedgerError>(
+                value
+                    .and_then(|v| v.as_array().cloned())
+                    .unwrap_or_default(),
+            )
+        }
+    };
+    let requirements = authority_field("requirements").await?;
+    let bindings = authority_field("bindings").await?;
+    let runs: Vec<Value> = sqlx::query_scalar("SELECT assurance_record('run',s.project,s.run_fingerprint) FROM release_run_submissions s WHERE s.project=$1 AND s.release_fingerprint=$2 ORDER BY s.run_fingerprint")
+        .bind(project).bind(fingerprint).fetch_all(&state.pool).await?;
+    Ok(requirements
+        .iter()
+        .map(|requirement| requirement_check_account(&release["release"], requirement, &bindings, &runs))
+        .collect())
+}
+
+fn requirement_check_account(
+    release: &Value,
+    requirement: &Value,
+    bindings: &[Value],
+    runs: &[Value],
+) -> Value {
+    let scenarios: Vec<&str> = requirement["scenarios"]
+        .as_array()
+        .map(|list| list.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    let mut check_scenarios = std::collections::BTreeMap::<&str, Vec<&str>>::new();
+    for binding in bindings {
+        if let (Some(check), Some(scenario)) =
+            (binding["check"].as_str(), binding["scenario"].as_str())
+        {
+            if scenarios.contains(&scenario) {
+                check_scenarios.entry(check).or_default().push(scenario);
+            }
+        }
+    }
+    let checks: Vec<Value> = check_scenarios
+        .into_iter()
+        .map(|(check_id, scenarios)| {
+            let mut executed_for_release = Vec::new();
+            let mut would_apply = Vec::new();
+            let mut skipped = false;
+            let mut inconclusive = false;
+            for run in runs {
+                let Some(execution) = run["check_executions"]
+                    .as_array()
+                    .and_then(|list| list.iter().find(|e| e["check"]["id"] == check_id))
+                else {
+                    continue;
+                };
+                let units: Vec<Value> = execution["units"]
+                    .as_array()
+                    .map(|list| {
+                        list.iter()
+                            .map(|unit| {
+                                json!({
+                                    "id":unit["id"],
+                                    "input_fingerprint":unit["input_fingerprint"],
+                                    "matched":unit_matches_release(release, unit),
+                                })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let run_skipped = execution["units"].as_array().is_some_and(|list| {
+                    list.iter().any(|unit| {
+                        unit["executed_tests"].as_array().is_some_and(|tests| {
+                            tests.iter().any(|test| {
+                                matches!(test["outcome"].as_str(), Some("skipped" | "not-executed"))
+                            })
+                        })
+                    })
+                });
+                let outcomes: serde_json::Map<String, Value> = execution["results"]
+                    .as_array()
+                    .map(|results| {
+                        results
+                            .iter()
+                            .filter(|result| {
+                                result["scenario"].as_str().is_some_and(|s| scenarios.contains(&s))
+                            })
+                            .map(|result| {
+                                (
+                                    result["scenario"].as_str().unwrap_or_default().to_owned(),
+                                    result["outcome"].clone(),
+                                )
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if outcomes.is_empty() {
+                    continue;
+                }
+                skipped |= run_skipped;
+                inconclusive |= outcomes.values().any(|o| o == "inconclusive");
+                let entry = json!({
+                    "run_fingerprint":run["bundle_fingerprint"],
+                    "run_id":run["run_id"],
+                    "subject":run_subject(run),
+                    "executed_at_ms":run["finished_at_ms"],
+                    "units":units,
+                    "outcomes":outcomes,
+                    "skipped_tests":run_skipped,
+                });
+                if run_has_release_subject(release, run) {
+                    executed_for_release.push(entry);
+                } else if !units.is_empty() && units.iter().all(|unit| unit["matched"] == true) {
+                    would_apply.push(entry);
+                }
+            }
+            let state = if executed_for_release.is_empty() && would_apply.is_empty() {
+                "missing"
+            } else if skipped {
+                "skipped"
+            } else if inconclusive {
+                "inconclusive"
+            } else if executed_for_release.is_empty() {
+                "would-apply"
+            } else {
+                "executed"
+            };
+            json!({
+                "check_id":check_id,
+                "scenarios":scenarios,
+                "state":state,
+                "executed_for_release":executed_for_release,
+                "would_apply":would_apply,
+            })
+        })
+        .collect();
+    json!({
+        "requirement":requirement["id"],
+        "criticality":requirement["criticality"],
+        "checks":checks,
+    })
+}
+
+fn run_subject(run: &Value) -> Value {
+    let target = &run["verification_target"];
+    match target["kind"].as_str() {
+        Some("source" | "ci-candidate" | "workspace") => target["repositories"]
+            .as_array()
+            .and_then(|list| list.iter().min_by_key(|r| r["id"].as_str().unwrap_or_default()))
+            .map_or(Value::Null, |repository| {
+                json!({"repository":repository["id"],"commit":repository["revision"]})
+            }),
+        Some("artifact") => json!({"artifacts":target["artifacts"]}),
+        _ => Value::Null,
+    }
+}
+
+fn run_has_release_subject(release: &Value, run: &Value) -> bool {
+    let target = &run["verification_target"];
+    match target["kind"].as_str() {
+        Some("source" | "ci-candidate") => {
+            let sources = release["sources"].as_array();
+            target["repositories"].as_array().is_some_and(|repositories| {
+                !repositories.is_empty()
+                    && repositories.iter().all(|repository| {
+                        sources.is_some_and(|sources| {
+                            sources.iter().any(|source| {
+                                source["repository"] == repository["id"]
+                                    && source["commit"] == repository["revision"]
+                                    && source["content_fingerprint"]
+                                        == repository["content_fingerprint"]
+                            })
+                        })
+                    })
+            })
+        }
+        Some("artifact") => {
+            let released = release["artifacts"].as_array();
+            target["artifacts"].as_array().is_some_and(|artifacts| {
+                !artifacts.is_empty()
+                    && artifacts.iter().all(|artifact| {
+                        released.is_some_and(|list| list.iter().any(|a| a["digest"] == artifact["digest"]))
+                    })
+            })
+        }
+        _ => false,
+    }
+}
+
+fn unit_matches_release(release: &Value, unit: &Value) -> bool {
+    release["unit_inputs"]["units"].as_array().is_some_and(|manifest| {
+        manifest.iter().any(|entry| {
+            entry["id"] == unit["id"]
+                && entry["hermetic"] == true
+                && entry["input_fingerprint"] == unit["input_fingerprint"]
+        })
+    })
 }
 pub(super) async fn show(
     State(state): State<LedgerState>,
