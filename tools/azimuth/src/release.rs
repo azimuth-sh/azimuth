@@ -327,7 +327,7 @@ pub fn verify(value: &Json) -> Result<Json, String> {
         )?;
         digest_field(source, "content_fingerprint")?;
         let commit = text(source, "commit")?;
-        if !matches!(commit.len(), 40 | 64) || !commit.bytes().all(|v| v.is_ascii_hexdigit()) {
+        if !is_git_id(commit) {
             return Err(
                 "release sources require full Git commit IDs, not branch names or abbreviated SHAs"
                     .into(),
@@ -851,11 +851,15 @@ fn change_pairs(value: &Json) -> Result<BTreeMap<String, String>, String> {
         })
         .collect()
 }
+/// Lowercase only, as `git rev-parse` prints and the service stores, so one commit has one spelling.
+fn is_git_id(value: &str) -> bool {
+    matches!(value.len(), 40 | 64) && value.bytes().all(|v| matches!(v, b'0'..=b'9' | b'a'..=b'f'))
+}
 fn verify_integration(value: &Json) -> Result<(), String> {
     shape(value, &["commit", "main_sequence"], &[])?;
     let commit = text(value, "commit")?;
-    if !matches!(commit.len(), 40 | 64) || !commit.bytes().all(|v| v.is_ascii_hexdigit()) {
-        return Err("integration commit must be a full Git ID".into());
+    if !is_git_id(commit) {
+        return Err("integration commit must be a full lowercase Git ID".into());
     }
     match field(value, "main_sequence")?.as_num() {
         Some(sequence) if sequence >= 1.0 && sequence.fract() == 0.0 => Ok(()),
@@ -877,7 +881,7 @@ fn verify_change_metadata(value: &Json) -> Result<(), String> {
             shape(source, &["repository", "commit"], &["pr"])?;
             text(source, "repository")?;
             let commit = text(source, "commit")?;
-            if !matches!(commit.len(), 40 | 64) || !commit.bytes().all(|v| v.is_ascii_hexdigit()) {
+            if !is_git_id(commit) {
                 return Err("Change repository commit must be a full Git ID".into());
             }
             if source.get("pr").is_some() && !text(source, "pr")?.starts_with("https://") {

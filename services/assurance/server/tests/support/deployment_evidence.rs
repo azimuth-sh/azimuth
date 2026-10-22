@@ -21,13 +21,16 @@ fn publication_policy(policy: Value) -> Value {
     publication_policy_with_criticality(policy,"routine")
 }
 fn publication_policy_with_criticality(policy: Value, criticality:&str) -> Value {
+    publication_policy_with_header(policy, criticality, "")
+}
+fn publication_policy_with_header(policy: Value, criticality:&str, extra_header:&str) -> Value {
     let deployment_id = if policy["monitor"].is_null() {
         "deployment"
     } else {
         "monitor-deployment"
     };
     let model=azimuth::model::Model {
-        specs:vec![azimuth::spec::parse_spec("spec.md",&"# Spec: sample\n\n## Requirement: restricted\nCriticality: routine\n\nAccess SHALL be restricted.\n\n### Scenario: works\nEvent: request\nRequired: restricted access\n".replace("Criticality: routine",&format!("Criticality: {criticality}"))).unwrap()],
+        specs:vec![azimuth::spec::parse_spec("spec.md",&"# Spec: sample\n\n## Requirement: restricted\nCriticality: routine\n\nAccess SHALL be restricted.\n\n### Scenario: works\nEvent: request\nRequired: restricted access\n".replace("Criticality: routine",&format!("Criticality: {criticality}{extra_header}"))).unwrap()],
         account_verifications:vec![azimuth::account_verification::parse_account_verification("verification.md",&format!("# Verification: sample\n\n## Requirement verification: restricted\n\n### Check: recovery\n- Deployment: {policy}\n- Evidence bindings:\n  - Scenario: `works`\n    - Contribution: Establishes access restrictions.\n\nExercise access restrictions.\n")).unwrap()],
         ..Default::default()
     };

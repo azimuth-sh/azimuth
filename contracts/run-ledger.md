@@ -164,7 +164,7 @@ See `contracts/deployment-observation.md` for exact CAS, replay, freshness, runt
 
 ```json
 {"format": "azimuth-main-model-publication", "version": 1,
- "commit": "<40-hex>", "main_sequence": 1234,
+ "commit": "<40-or-64-lowercase-hex>", "main_sequence": 1234,
  "authority": {},
  "reviews": [],
  "catalog": {},
@@ -173,7 +173,7 @@ See `contracts/deployment-observation.md` for exact CAS, replay, freshness, runt
    "verified_at_ms": 0}}
 ```
 
-`authority` is the native full-model authority projection, `reviews` the sealed native Requirement Review records committed in git, `catalog` an optional navigation catalog as in release publication, and `ratification.status` is `ratified | unratified`. `main_sequence` is the first-parent commit count of `commit` on main, computed and attested by CI.
+`authority` is the native full-model authority projection, `reviews` the sealed native Requirement Review records committed in git, `catalog` an optional navigation catalog as in release publication, and `ratification.status` is `ratified | unratified`; an `unratified` verdict requires a nonempty `reason`, and `verified_at_ms` is a non-negative integer. `commit` is 40 or 64 lowercase hex digits, here and in a release's `integration` and Change repository commits. `main_sequence` is the first-parent commit count of `commit` on main, computed and attested by CI.
 
 The service validates the authority, registers its model revision as for candidate revisions, stores each review with provenance basis `publisher-transported-assertion` and re-assesses every review against the posted authority, recording the result. It stores a publication keyed by `(project, commit)`, unique also by `(project, main_sequence)`. First publication returns HTTP 201 and an identical replay HTTP 200. HTTP 400 reports an invalid payload, authority or review failure; HTTP 403 a wrong role; HTTP 409 the same commit with different content or a different commit with an already used `main_sequence`. Every publication is stored. The latest model is the one with the highest `main_sequence`, never arrival order, and the default model never regresses to a lower sequence. `ratification` is a publisher assertion: the service stores it as submitted and cannot call the hosting API.
 

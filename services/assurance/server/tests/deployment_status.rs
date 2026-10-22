@@ -495,3 +495,187 @@ async fn ready_status(
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
 }
+
+struct Harness {
+    _postgres: testcontainers_modules::testcontainers::ContainerAsync<Postgres>,
+    pool: sqlx::PgPool,
+    client: Client,
+    base: String,
+    server: tokio::task::JoinHandle<()>,
+}
+
+async fn harness() -> Result<Harness, Box<dyn Error>> {
+    let postgres = Postgres::default().with_tag("17-alpine").start().await?;
+    let port = postgres.get_host_port_ipv4(5432).await?;
+    let pool = connect(&format!(
+        "postgres://postgres:postgres@127.0.0.1:{port}/postgres"
+    ))
+    .await?;
+    migrate(&pool).await?;
+    let state = LedgerState::new(
+        pool.clone(),
+        BTreeMap::from([(
+            "project".into(),
+            ProjectCredentials {
+                owners: BTreeMap::from([("owner".into(), OWNER.into())]),
+                publishers: BTreeMap::from([("publisher".into(), PUBLISHER.into())]),
+                producers: BTreeMap::from([("producer".into(), PRODUCER.into())]),
+                reviewers: BTreeMap::from([(
+                    "reviewer".into(),
+                    "reviewer-credential-for-context-integration-only".into(),
+                )]),
+                viewers: BTreeMap::from([("viewer".into(), VIEWER.into())]),
+            },
+        )]),
+    )
+    .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let base = format!("http://{}/v1/projects/project", listener.local_addr()?);
+    let server =
+        tokio::spawn(async move { axum::serve(listener, run_ledger::app(state)).await.unwrap() });
+    Ok(Harness {
+        _postgres: postgres,
+        pool,
+        client: Client::new(),
+        base,
+        server,
+    })
+}
+
+#[tokio::test]
+async fn a_context_leaf_that_changed_during_capture_leaves_the_condition_unresolved_in_the_service(
+) -> Result<(), Box<dyn Error>> {
+    let Harness {
+        _postgres,
+        pool,
+        client,
+        base,
+        server,
+    } = harness().await?;
+    let contract = contract();
+    let package = publication_policy_with_header(
+        json!({"verification_target":"source","components":["api"],"contexts":[],"contribution":"both","monitor":null}),
+        "routine",
+        "\nContext: api: enabled = true",
+    );
+    for (url, token, body) in [
+        (
+            format!("{base}/context-contracts"),
+            OWNER,
+            json!({"contract":contract}),
+        ),
+        (
+            format!("{base}/model-revisions"),
+            OWNER,
+            package["snapshot"]["authority"].clone(),
+        ),
+        (format!("{base}/releases"), PUBLISHER, package.clone()),
+    ] {
+        let response = client.post(&url).bearer_auth(token).json(&body).send().await?;
+        assert_eq!(response.status(), StatusCode::CREATED, "{url}: {}", response.text().await?);
+    }
+    let at: i64 = sqlx::query_scalar("SELECT (extract(epoch FROM clock_timestamp())*1000)::bigint")
+        .fetch_one(&pool)
+        .await?;
+    let observation = json!({"format":"azimuth-deployment-observation","version":1,"observed_at_ms":at,"valid_for_seconds":60,"state":"complete","release_fingerprint":package["release"]["fingerprint"],"applied_revision":"a".repeat(40),"rollout_id":"rollout-1","configuration_fingerprint":fp('c'),"components":[{"name":"api","image":format!("registry/api@{}",fp('e')),"template_fingerprint":fp('c'),"ready":true,"instances":["process-a"]}],"diagnostics":[]});
+    let response = client
+        .post(format!("{base}/environments/production/observations"))
+        .bearer_auth(PUBLISHER)
+        .json(&json!({"expected_revision":0,"observation":observation}))
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK, "{}", response.text().await?);
+    let observed: Value = client
+        .get(format!("{base}/environments/production/observations"))
+        .bearer_auth(VIEWER)
+        .send()
+        .await?
+        .json()
+        .await?;
+    let deployment_id = observed["deployment_id"].as_str().unwrap().to_string();
+    let deployed: Value = client
+        .get(format!("{base}/deployments/{deployment_id}"))
+        .bearer_auth(VIEWER)
+        .send()
+        .await?
+        .json()
+        .await?;
+    let snapshot = |time: i64, enabled: bool| {
+        json!({"captured_at_ms":time,"instance":"process-a","report":{"format":"azimuth-execution-context","version":2,"contexts":{"api":{"contract_revision":contract["fingerprint"],"values":{"enabled":enabled,"revision":1,"mode":"restricted"}}}}})
+    };
+    let capture = |start: i64, before: bool, after: bool| {
+        json!({"kind":"deployment","activity":null,"run":null,"bundle_fingerprint":null,"verification_target_fingerprint":deployed["deployment"]["verification_target_fingerprint"],"component":"api","instance":"process-a","started_at_ms":start,"finished_at_ms":start + 1,"before":snapshot(start, before),"after":snapshot(start + 1, after)})
+    };
+
+    let response = client
+        .post(format!("{base}/context-captures"))
+        .bearer_auth(PUBLISHER)
+        .json(&json!({"capture":capture(at + 1, true, false)}))
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::CREATED, "{}", response.text().await?);
+    let unstable = ready_status(&client, &base, &deployment_id).await?;
+    assert_eq!(unstable["requirements"][0]["status"], "unresolved", "{unstable}");
+
+    let response = client
+        .post(format!("{base}/context-captures"))
+        .bearer_auth(PUBLISHER)
+        .json(&json!({"capture":capture(at + 3, false, false)}))
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::CREATED, "{}", response.text().await?);
+    let stable = ready_status(&client, &base, &deployment_id).await?;
+    assert_eq!(stable["requirements"][0]["status"], "not-applicable", "{stable}");
+    server.abort();
+    Ok(())
+}
+
+fn main_publication(commit: &str, ratification: Value) -> Value {
+    let package = publication();
+    json!({"format":"azimuth-main-model-publication","version":1,"commit":commit,"main_sequence":1,"authority":package["snapshot"]["authority"],"reviews":[],"ratification":ratification})
+}
+
+#[tokio::test]
+async fn main_publication_accepts_exactly_the_contract_commit_and_ratification_shapes(
+) -> Result<(), Box<dyn Error>> {
+    let Harness {
+        _postgres,
+        client,
+        base,
+        server,
+        ..
+    } = harness().await?;
+    let ratified = json!({"status":"ratified","reason":"approved","pull_request":{"number":1,"approvals":[]},"verified_at_ms":0});
+    let publish = |body: Value| {
+        let client = client.clone();
+        let url = format!("{base}/main-models");
+        async move {
+            let response = client.post(url).bearer_auth(PUBLISHER).json(&body).send().await.unwrap();
+            let status = response.status();
+            (status, response.text().await.unwrap())
+        }
+    };
+    for commit in ["A".repeat(40), "a".repeat(39), "a".repeat(41), "g".repeat(40), "a".repeat(63)] {
+        let (status, body) = publish(main_publication(&commit, ratified.clone())).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{commit}: {body}");
+        assert!(body.contains("40 or 64 lowercase hex"), "{body}");
+    }
+    let unreasoned = json!({"status":"unratified","reason":"  ","pull_request":null,"verified_at_ms":1});
+    let (status, body) = publish(main_publication(&"a".repeat(40), unreasoned)).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert!(body.contains("nonempty reason"), "{body}");
+    let negative = json!({"status":"ratified","reason":"approved","pull_request":null,"verified_at_ms":-1});
+    let (status, body) = publish(main_publication(&"a".repeat(40), negative)).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert!(body.contains("non-negative"), "{body}");
+
+    let (status, body) = publish(main_publication(&"a".repeat(64), ratified.clone())).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let reasoned = json!({"status":"unratified","reason":"no owner approval","pull_request":null,"verified_at_ms":0});
+    let mut second = main_publication(&"b".repeat(40), reasoned);
+    second["main_sequence"] = json!(2);
+    let (status, body) = publish(second).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    server.abort();
+    Ok(())
+}

@@ -25,7 +25,7 @@ fn value(value: &azimuth::json::Json) -> Value {
     serde_json::from_str(&value.to_string_pretty()).unwrap()
 }
 fn contract() -> Value {
-    let mut result = json!({"name":"settings","fields":{"enabled":"boolean","revision":"integer","mode":"string"}});
+    let mut result = json!({"name":"api","fields":{"enabled":"boolean","revision":"integer","mode":"string"}});
     result["fingerprint"] = json!(azimuth::run::canonical_fingerprint(&native(&result)).unwrap());
     result
 }
@@ -228,7 +228,7 @@ fn refresh(bundle: &mut RunBundle) {
 }
 
 fn target(start: i64, end: i64, execution: &str, contract: &Value) -> Value {
-    let report = json!({"format":"azimuth-execution-context","version":2,"contexts":{"settings":{"contract_revision":contract["fingerprint"],"values":{"enabled":true,"revision":1,"mode":"strict"}}}});
+    let report = json!({"format":"azimuth-execution-context","version":2,"contexts":{"api":{"contract_revision":contract["fingerprint"],"values":{"enabled":true,"revision":1,"mode":"strict"}}}});
     json!({"format":"azimuth-target-observation","version":2,"kind":"context","source":"runtime","execution_id":execution,"environment":"production","started_at_ms":start,"finished_at_ms":end,"targets":[{"component":"api","image":format!("registry/api@{}",fp('e')),"instance":"process-a"}],"check":null,"capture":{"component":"api","instance":"process-a","started_at_ms":start,"finished_at_ms":end,"before":{"captured_at_ms":start,"instance":"process-a","report":report},"after":{"captured_at_ms":end,"instance":"process-a","report":report}}})
 }
 fn check_target(mut raw: Value, package: &Value, execution: &str) -> Value {
