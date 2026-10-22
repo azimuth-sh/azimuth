@@ -83,7 +83,7 @@ async function verifyMaterializedOverview() {
   });
   const routes = [];
   const { environmentView } = loadSource('../src/lib/production.ts', {
-    'server-only': {}, './assurance': { readProject: async (project, route) => {
+    'server-only': {}, './delivery': { readDeliveryGap: async () => null, readRollbackCandidates: async () => [] }, './assurance': { readProject: async (project, route) => {
       routes.push(route);
       return developmentRead(project, route);
     } },
@@ -104,12 +104,12 @@ async function verifyMaterializedOverview() {
     const markup = renderToStaticMarkup(await Page({ params: Promise.resolve({ projectId: 'payments-demo' }), searchParams: Promise.resolve({}) }));
     if (value === 'healthy') {
       assert(markup.includes('Assessment current'));
-      assert(markup.includes('All 7 assessed Requirements are satisfied'));
+      assert(markup.includes('All 7 applicable Requirements are satisfied'));
       assert(markup.includes('Modules organize Requirements. Scenarios describe expected behavior.'));
     } else {
       assert(markup.includes(value === 'expired' ? 'Assessment overdue' : 'Assessment updating'));
       assert(!markup.includes('No Requirements need attention'));
-      assert(!markup.includes('All 7 assessed Requirements are satisfied'));
+      assert(!markup.includes('All 7 applicable Requirements are satisfied'));
       assert(markup.includes('<td>2</td>'));
       assert(markup.includes('goodText">—'));
     }
