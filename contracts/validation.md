@@ -40,6 +40,17 @@ A change directory may carry `acceptance.json`, a recorded human decision that a
 
 The record is strict: unknown fields, an empty `requirements` list, duplicates and a non-identifier `accepted_by` are errors. `change finalize` and `change archive` accept only Requirements that the change itself adds, and the record then removes exactly the `missing-requirement-assurance` findings for those Requirements. It supplies no review, Run or Status and satisfies no other finding. The finalization receipt lists each accepting change, decider, date and Requirement set, so removing or editing the record makes the receipt stale. Archived records keep applying to plain `azimuth validate` at acceptance scope and to federated project finalization, because they are part of the immutable decision record. Azimuth does not contact an Assurance State Service to accept a change; the basis is the decider's statement.
 
+## Ratification gate at finalization
+
+A change is applied to the model and archived when it merges to main, so finalization is where a model change is ratified. Ratification evidence lives in git and moves with the change:
+
+- Sealed native Requirement Review records produced by `review-compile` are committed under the change (`reviews/*.json`) and move with it into the archive. The packets needed to recompile them are committed beside them.
+- `acceptance.json` for non-routine Requirements stays in the change as above.
+
+At finalization the CLI assesses each committed review record against the authority of the merged model, with the change's applied facets in place and the supplied Run bundles. A record assessed `stale`, `invalid`, `rejected`, `missing` or `unresolved` blocks ratification and finalization, the same way an unresolved `missing-requirement-assurance` finding does. Whole-authority fingerprint equality between a review and the merged model is not required for this gate; each record is judged against its own dependencies, so an unrelated Requirement edit does not stale it. A federated account applies the identical gate inside its finalization, and the finalization receipt lists every committed review record by fingerprint with its assessment, next to the accepting changes it already lists. Editing or removing a committed review record makes the receipt stale.
+
+The gate establishes that the records are present, current and accepted. Whether the commit came from a pull request with an owner's approving review is not known to the CLI: trusted CI verifies it and publishes the verdict ([release-publication.md](release-publication.md)).
+
 Reports keep the structural conclusion separate from evidence and acceptance conclusions. No-declared-gaps or no-declared-blockers is bounded by the inspected account; neither establishes a supported Requirement or an exact-target Assurance State. The structural workflow task uses `azimuth change validate --scope structure`; acceptance assessment belongs to the later explicit boundary. Validation never executes native Checks, generates independent decisions, commits or archives.
 
 The current alpha command has no `change check` or `change account-check` alias. Account preview/apply and intent preview/apply remain explicit authoring and acceptance operations.
