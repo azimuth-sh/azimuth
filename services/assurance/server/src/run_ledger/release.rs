@@ -251,7 +251,7 @@ fn is_commit(value: &str) -> bool {
             .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-const RELEASE_INTEGRATION: &str = "CASE WHEN integration_commit IS NULL THEN NULL ELSE jsonb_build_object('commit',integration_commit,'main_sequence',integration_sequence) END";
+const RELEASE_INTEGRATION: &str = "CASE WHEN r.integration_commit IS NULL THEN NULL ELSE jsonb_build_object('commit',r.integration_commit,'main_sequence',r.integration_sequence,'ratification',assurance_record_field('main_publication',r.project,r.integration_commit,'ratification')) END";
 
 pub(super) async fn list(
     State(state): State<LedgerState>,
@@ -281,7 +281,7 @@ pub(super) async fn show(
     headers: HeaderMap,
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
-    let record: Option<Value> = sqlx::query_scalar("SELECT jsonb_build_object('publication',assurance_record('release',r.project,r.fingerprint),'submitted_by',submitted_by,'submitted_at',submitted_at,'deployments',COALESCE((SELECT jsonb_agg(assurance_record('deployment',d.project,d.deployment_id)) FROM release_deployments d WHERE d.project=r.project AND d.release_fingerprint=r.fingerprint),'[]'::jsonb)) FROM assurance_releases r WHERE project=$1 AND fingerprint=$2")
+    let record: Option<Value> = sqlx::query_scalar(&format!("SELECT jsonb_build_object('publication',jsonb_set(assurance_record('release',r.project,r.fingerprint),'{{release,integration}}',COALESCE({RELEASE_INTEGRATION},'null'::jsonb)),'submitted_by',submitted_by,'submitted_at',submitted_at,'deployments',COALESCE((SELECT jsonb_agg(assurance_record('deployment',d.project,d.deployment_id)) FROM release_deployments d WHERE d.project=r.project AND d.release_fingerprint=r.fingerprint),'[]'::jsonb)) FROM assurance_releases r WHERE project=$1 AND fingerprint=$2"))
         .bind(&project).bind(&fingerprint).fetch_optional(&state.pool).await?;
     Ok(Json(record.ok_or_else(LedgerError::not_found)?))
 }
