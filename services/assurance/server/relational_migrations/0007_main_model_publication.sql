@@ -10,7 +10,7 @@ ALTER TABLE assurance_releases
 CREATE TABLE main_publications (
     project text NOT NULL,
     commit_sha text NOT NULL CHECK (commit_sha ~ '^([0-9a-f]{40}|[0-9a-f]{64})$'),
-    main_sequence bigint NOT NULL CHECK (main_sequence >= 0),
+    main_sequence bigint NOT NULL CHECK (main_sequence >= 1),
     model_revision text NOT NULL,
     ratification_status text NOT NULL CHECK (ratification_status IN ('ratified','unratified')),
     ratification_verified_at_ms bigint NOT NULL,

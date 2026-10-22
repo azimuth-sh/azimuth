@@ -242,9 +242,9 @@ fn integration_attestation(release: &Value) -> Result<Option<(&str, i64)>, Ledge
     let sequence = fields
         .get("main_sequence")
         .and_then(Value::as_i64)
-        .filter(|sequence| *sequence >= 0)
+        .filter(|sequence| *sequence >= 1)
         .ok_or_else(|| {
-            LedgerError::invalid("integration main_sequence requires a nonnegative integer")
+            LedgerError::invalid("integration main_sequence requires a positive integer")
         })?;
     Ok(Some((commit, sequence)))
 }
@@ -688,8 +688,8 @@ fn parse_main_publication(body: &[u8], project: &str) -> Result<MainPublication,
     }
     let main_sequence = payload["main_sequence"]
         .as_i64()
-        .filter(|sequence| *sequence >= 0)
-        .ok_or_else(|| LedgerError::invalid("main_sequence requires a nonnegative integer"))?;
+        .filter(|sequence| *sequence >= 1)
+        .ok_or_else(|| LedgerError::invalid("main_sequence requires a positive integer"))?;
     let ratification = payload["ratification"]
         .as_object()
         .filter(|fields| {
@@ -713,7 +713,7 @@ fn parse_main_publication(body: &[u8], project: &str) -> Result<MainPublication,
         .and_then(Value::as_i64)
         .filter(|verified| *verified >= 0)
         .ok_or_else(|| {
-            LedgerError::invalid("ratification verified_at_ms requires a nonnegative integer")
+            LedgerError::invalid("ratification verified_at_ms requires a positive integer")
         })?;
     let authority = core_json(payload["authority"].to_string().as_bytes())?;
     assurance_review::validate_authority(&authority).map_err(LedgerError::invalid)?;
