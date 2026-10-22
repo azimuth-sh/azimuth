@@ -8,7 +8,7 @@ fn value(value: &azimuth::json::Json) -> Value {
     serde_json::from_str(&value.to_string_pretty()).unwrap()
 }
 fn contract() -> Value {
-    let mut result = json!({"name":"settings","fields":{"enabled":"boolean","revision":"integer","mode":"string"}});
+    let mut result = json!({"name":"api","fields":{"enabled":"boolean","revision":"integer","mode":"string"}});
     result["fingerprint"] = json!(azimuth::run::canonical_fingerprint(&native(&result)).unwrap());
     result
 }
@@ -21,13 +21,16 @@ fn publication_policy(policy: Value) -> Value {
     publication_policy_with_criticality(policy,"routine")
 }
 fn publication_policy_with_criticality(policy: Value, criticality:&str) -> Value {
+    publication_policy_with_header(policy, criticality, "")
+}
+fn publication_policy_with_header(policy: Value, criticality:&str, extra_header:&str) -> Value {
     let deployment_id = if policy["monitor"].is_null() {
         "deployment"
     } else {
         "monitor-deployment"
     };
     let model=azimuth::model::Model {
-        specs:vec![azimuth::spec::parse_spec("spec.md",&"# Spec: sample\n\n## Requirement: restricted\nCriticality: routine\n\nAccess SHALL be restricted.\n\n### Scenario: works\nEvent: request\nRequired: restricted access\n".replace("Criticality: routine",&format!("Criticality: {criticality}"))).unwrap()],
+        specs:vec![azimuth::spec::parse_spec("spec.md",&"# Spec: sample\n\n## Requirement: restricted\nCriticality: routine\n\nAccess SHALL be restricted.\n\n### Scenario: works\nEvent: request\nRequired: restricted access\n".replace("Criticality: routine",&format!("Criticality: {criticality}{extra_header}"))).unwrap()],
         account_verifications:vec![azimuth::account_verification::parse_account_verification("verification.md",&format!("# Verification: sample\n\n## Requirement verification: restricted\n\n### Check: recovery\n- Deployment: {policy}\n- Evidence bindings:\n  - Scenario: `works`\n    - Contribution: Establishes access restrictions.\n\nExercise access restrictions.\n")).unwrap()],
         ..Default::default()
     };
@@ -39,7 +42,7 @@ fn publication_policy_with_criticality(policy: Value, criticality:&str) -> Value
     let deployment = json!({"id":deployment_id,"environment":"production","configuration_fingerprint":fp('c'),"artifacts":[fp('e')],"verification_target":verification_target,"verification_target_fingerprint":verification_target_fp});
     value(&azimuth::release::prepare(&native(&json!({
         "format":"azimuth-release-request","version":2,"project":"project","label":"Synthetic release",
-        "baseline_model_revision":authority["fingerprint"],"changes":[{"id":"restricted","revision":fp('a')}],
+        "changes":[{"id":"restricted","revision":fp('a')}],
         "sources":[{"repository":"root","commit":"a".repeat(40),"content_fingerprint":fp('a')}],
         "builds":[{"id":"build-api","sources":["root"],"toolchain":{"compiler":"1"},"configuration_fingerprint":fp('b'),"artifacts":[fp('e')]}],
         "artifacts":[{"digest":fp('e'),"kind":"container"}],"deployments":[deployment],"components":[{"id":"api","digest":fp('e')}],
@@ -153,6 +156,8 @@ fn valid_bundle() -> RunBundle {
             },
             units: vec![CheckExecutionUnit {
                 id: "whole".into(),
+                input_fingerprint: None,
+                executed_tests: Vec::new(),
                 attempts: vec![CheckAttempt {
                     ordinal: 1,
                     activity: "check-attempt".into(),

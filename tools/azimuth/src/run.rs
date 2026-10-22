@@ -624,7 +624,39 @@ pub struct CheckRef {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CheckExecutionUnit {
     pub id: String,
+    pub input_fingerprint: Option<String>,
+    pub executed_tests: Vec<ExecutedTest>,
     pub attempts: Vec<CheckAttempt>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecutedTest {
+    pub native_id: String,
+    pub file: String,
+    pub outcome: ExecutedTestOutcome,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutedTestOutcome {
+    Passed,
+    Failed,
+    Skipped,
+    NotExecuted,
+}
+
+impl ExecutedTestOutcome {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Passed => "passed",
+            Self::Failed => "failed",
+            Self::Skipped => "skipped",
+            Self::NotExecuted => "not-executed",
+        }
+    }
+
+    pub fn is_evidence_free(self) -> bool {
+        matches!(self, Self::Skipped | Self::NotExecuted)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2007,11 +2039,41 @@ fn parse_check_ref(value: &Json, where_: &str) -> Result<CheckRef, String> {
 }
 
 fn parse_check_unit(value: &Json, where_: &str) -> Result<CheckExecutionUnit, String> {
-    let object = object(value, where_, &["id", "attempts"])?;
+    let object = object(
+        value,
+        where_,
+        &["id", "input_fingerprint", "executed_tests", "attempts"],
+    )?;
     let attempts = parse_array(object, "attempts", where_, parse_check_attempt)?;
+    let input_fingerprint = match object.iter().find(|(key, _)| key == "input_fingerprint") {
+        Some(_) => Some(fingerprint(object, "input_fingerprint", where_)?),
+        None => None,
+    };
+    let executed_tests = match object.iter().find(|(key, _)| key == "executed_tests") {
+        Some(_) => parse_array(object, "executed_tests", where_, parse_executed_test)?,
+        None => Vec::new(),
+    };
     Ok(CheckExecutionUnit {
         id: id(object, "id", where_)?,
+        input_fingerprint,
+        executed_tests,
         attempts,
+    })
+}
+
+fn parse_executed_test(value: &Json, where_: &str) -> Result<ExecutedTest, String> {
+    let object = object(value, where_, &["native_id", "file", "outcome"])?;
+    let outcome = match string(object, "outcome", where_)? {
+        "passed" => ExecutedTestOutcome::Passed,
+        "failed" => ExecutedTestOutcome::Failed,
+        "skipped" => ExecutedTestOutcome::Skipped,
+        "not-executed" => ExecutedTestOutcome::NotExecuted,
+        other => return Err(format!("{where_}.outcome has unsupported value `{other}`")),
+    };
+    Ok(ExecutedTest {
+        native_id: nonempty(object, "native_id", where_)?,
+        file: nonempty(object, "file", where_)?,
+        outcome,
     })
 }
 
@@ -4418,35 +4480,54 @@ fn check_execution_json(item: &CheckExecution) -> Json {
 }
 
 fn check_execution_unit_json(item: &CheckExecutionUnit) -> Json {
-    Json::obj(vec![
-        ("id", Json::str(&item.id)),
-        (
-            "attempts",
+    let mut fields = vec![("id", Json::str(&item.id))];
+    if let Some(input_fingerprint) = &item.input_fingerprint {
+        fields.push(("input_fingerprint", Json::str(input_fingerprint)));
+    }
+    if !item.executed_tests.is_empty() {
+        fields.push((
+            "executed_tests",
             Json::Arr(
-                item.attempts
+                item.executed_tests
                     .iter()
-                    .map(|attempt| {
+                    .map(|test| {
                         Json::obj(vec![
-                            ("ordinal", Json::Num(attempt.ordinal as f64)),
-                            ("activity", Json::str(&attempt.activity)),
-                            (
-                                "outcomes",
-                                Json::Obj(
-                                    attempt
-                                        .outcomes
-                                        .iter()
-                                        .map(|(scenario, outcome)| {
-                                            (scenario.clone(), Json::str(outcome.name()))
-                                        })
-                                        .collect(),
-                                ),
-                            ),
+                            ("native_id", Json::str(&test.native_id)),
+                            ("file", Json::str(&test.file)),
+                            ("outcome", Json::str(test.outcome.name())),
                         ])
                     })
                     .collect(),
             ),
+        ));
+    }
+    fields.push((
+        "attempts",
+        Json::Arr(
+            item.attempts
+                .iter()
+                .map(|attempt| {
+                    Json::obj(vec![
+                        ("ordinal", Json::Num(attempt.ordinal as f64)),
+                        ("activity", Json::str(&attempt.activity)),
+                        (
+                            "outcomes",
+                            Json::Obj(
+                                attempt
+                                    .outcomes
+                                    .iter()
+                                    .map(|(scenario, outcome)| {
+                                        (scenario.clone(), Json::str(outcome.name()))
+                                    })
+                                    .collect(),
+                            ),
+                        ),
+                    ])
+                })
+                .collect(),
         ),
-    ])
+    ));
+    Json::obj(fields)
 }
 
 fn check_result_json(item: &CheckResult) -> Json {
@@ -5708,6 +5789,18 @@ fn validate_check_execution(
                 execution.check.id
             ),
         );
+    }
+    if let Some(planned) = planned {
+        for reported in &execution.units {
+            if let Some(planned_unit) = planned.units.iter().find(|unit| unit.id == reported.id) {
+                crate::unit_inputs::verify_reported_unit(
+                    &execution.check.id,
+                    planned_unit,
+                    reported,
+                    add,
+                );
+            }
+        }
     }
     let selected_scenarios = actual
         .map(|item| item.scenarios.iter().cloned().collect::<BTreeSet<_>>())

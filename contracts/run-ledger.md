@@ -22,7 +22,7 @@ Run bundles are append-only. No automatic expiry, deletion, cross-target reuse o
 
 ## Authority of the state
 
-State joins execution facts with the explicitly selected current authority and independent review records, as specified below. Protocol validation alone does not approve a method, applicability or Requirement.
+State joins execution facts with the default model's authority and independent review records, as specified below. Protocol validation alone does not approve a method, applicability or Requirement.
 
 The earlier service executable and database records remain isolated. They are not a compatibility bridge into current Run state.
 
@@ -31,29 +31,27 @@ The earlier service executable and database records remain isolated. They are no
 
 The ledger uses the compact independent-review contract in `contracts/assurance-reviews.md`. Executions, Method Qualifications, Applicability Decisions and Requirement Judgments remain distinct records. A satisfied Check Result alone cannot establish a supported Requirement.
 
-Credentials are loaded from the private `ASSURANCE_RUN_TOKENS_FILE` as a project map. Each project supplies nonempty `producers`, `reviewers` and `owners` maps from identity to token. Duplicate JSON object keys in the credential file fail startup. Tokens contain at least 32 non-whitespace bytes and are distinct across all projects and roles. Producers submit Runs, reviewers submit review records, and owners select the current authority. Any role can read its own project's records. The authenticated reviewer identity must equal the review record's `reviewer` field. Identity and role assignment are operator-controlled; credentials do not prove human independence or review quality.
+Credentials are loaded from the private `ASSURANCE_RUN_TOKENS_FILE` as a project map. Each project supplies nonempty `producers`, `reviewers` and `owners` maps from identity to token. Duplicate JSON object keys in the credential file fail startup. Tokens contain at least 32 non-whitespace bytes and are distinct across all projects and roles. Producers submit Runs, reviewers submit review records, publishers publish main models, releases and deployments, and owners register candidate model revisions. Any role can read its own project's records. The authenticated reviewer identity must equal the review record's `reviewer` field. Identity and role assignment are operator-controlled; credentials do not prove human independence or review quality.
 
-`POST /v1/projects/{project}/authority` validates and retains an immutable full-model authority projection. The route's project must match the projection. Initial selection requires `If-None-Match: *`; replacement requires `If-Match` containing the current authority fingerprint. Owner selection history is retained. Supply exactly one conditional header; duplicate or conflicting conditions fail with HTTP 409. Repeating the current selection with its matching `If-Match`, or retrying the same initial selection with `If-None-Match: *`, returns HTTP 200 without adding a selection event. Missing or stale preconditions fail with HTTP 409. Selection is an explicit owner action: ingestion of a new Run or review does not select a model or approve intent. Candidate revisions are registered inside the same existing project without replacing selected accepted authority. Registration is not Azimuth change acceptance; see the model revision endpoints below.
+There is no accepted-authority pointer, owner selection or release acceptance. The default model of a project is the latest main-model publication (see "Main-model publication"); `GET /v1/projects/{project}/authority` returns that publication's authority with its `main_sequence` and `ratification_status`, or HTTP 404 when none exists. `POST /v1/projects/{project}/reviews` validates record structure, fingerprints and authenticated reviewer identity, and assesses its dependencies against the default model, stored reviews and correction heads. Invalid dependencies fail; stale or rejected records remain auditable. Identical content is an idempotent replay. `GET /v1/projects/{project}/reviews` returns immutable records.
 
-`GET /v1/projects/{project}/authority` returns the selected authority. `POST /v1/projects/{project}/reviews` validates record structure, fingerprints and authenticated reviewer identity, and assesses its dependencies against the selected authority, stored reviews and correction heads. Invalid dependencies fail; stale or rejected records remain auditable. Identical content is an idempotent replay. `GET /v1/projects/{project}/reviews` returns immutable records.
-
-`GET /v1/projects/{project}/verification-targets/{verification_target}/state` joins the selected authority, review records and latest valid Run corrections for the exact Verification Target. It exposes missing, rejected, stale, invalid or accepted review assessments and Requirement conclusions without generating reviews. Complete current credible evidence plus an independent supported Requirement Judgment is required for supported state. Missing structural support and omitted evidence remain gaps; ambiguous review records remain unresolved. Routine Requirements report when review is not required without inventing a positive Judgment.
+`GET /v1/projects/{project}/verification-targets/{verification_target}/state` joins the default model's authority, review records and latest valid Run corrections for the exact Verification Target. It exposes missing, rejected, stale, invalid or accepted review assessments and Requirement conclusions without generating reviews. Complete current credible evidence plus an independent supported Requirement Judgment is required for supported state. Missing structural support and omitted evidence remain gaps; ambiguous review records remain unresolved. Routine Requirements report when review is not required without inventing a positive Judgment.
 
 Run history and review history are not deleted when authority changes. No evidence is silently reused across Verification Targets. Decision Policies and challenge scheduling for this compact review lane remain deferred.
 
 ## Candidate model revisions
 
-Owner `POST /v1/projects/{project}/model-revisions` accepts a strict full authority projection and registers its fingerprint as an immutable revision. It returns HTTP 201 initially and HTTP 200 for an identical replay, without updating `current_authorities`. No project or credential set is created. Owners, reviewers and producers are configured during onboarding.
+Owner `POST /v1/projects/{project}/model-revisions` accepts a strict full authority projection and registers its fingerprint as an immutable revision. It returns HTTP 201 initially and HTTP 200 for an identical replay, without selecting it as the default model. No project or credential set is created. Owners, reviewers and producers are configured during onboarding.
 
 - `GET .../model-revisions` lists paginated registration metadata.
-- `GET .../model-revisions/{revision}` returns the projection, registration metadata and whether it is selected.
+- `GET .../model-revisions/{revision}` returns the projection, registration metadata and whether it is the default model.
 - `GET .../model-revisions/{revision}/snapshot` returns `{project, model_revision, authority, reviews, bundles}` in one bounded database snapshot. Reviews are explicitly linked to this revision; bundles are current project Run heads whose semantic applicability remains the core assessor's responsibility.
 - Reviewer `POST .../model-revisions/{revision}/reviews` validates the unchanged strict review record and credential-backed reviewer identity against that revision.
-- `GET .../model-revisions/{revision}/verification-targets/{verification_target}/state` assesses the exact recorded Verification Target without changing accepted authority.
+- `GET .../model-revisions/{revision}/verification-targets/{verification_target}/state` assesses the exact recorded Verification Target without changing the default model.
 
-Snapshots fail above 5000 review/Run records or 32 MiB including authority bytes. They never infer support from partial evidence. Absent revision or Verification Target returns HTTP 404. Candidate registration and accepted selection remain separate: an owner selects the exact revision through the existing conditional `/authority` operation after the relevant rollout, assessments and acceptance decision. The endpoint authorizes selection; it does not itself perform or prove those workflow obligations. Selecting a registered candidate preserves its linked review records.
+Snapshots fail above 5000 review/Run records or 32 MiB including authority bytes. They never infer support from partial evidence. Absent revision or Verification Target returns HTTP 404. A revision becomes the default model only by main-model publication; candidate registration never selects anything.
 
-Review payloads remain immutable; explicit revision links preserve submission provenance. There is no automatic cross-revision reuse. The additive migration distinguishes links captured against the authority selected at migration from authenticated reviewer submissions, and does not infer historical validity. Current review reads follow selected authority; historical candidate reviews remain accessible through their revision snapshots.
+Review payloads remain immutable; explicit revision links preserve submission provenance. There is no automatic cross-revision reuse. Current review reads follow the default model; historical candidate reviews remain accessible through their revision snapshots.
 
 
 ## Explicit Check Run model association
@@ -90,8 +88,7 @@ explicitly by the owner or through verified publication replay.
 ## Current deployment selection
 
 A recorded deployment and the deployment currently designated for an environment
-are separate facts. No timestamp, deployment ID order, release publication or
-release acceptance implicitly makes a deployment current.
+are separate facts. No timestamp, deployment ID order or release publication implicitly makes a deployment current.
 
 - `GET .../deployments/{deployment_id}` returns one immutable deployment record and
   its release fingerprint, including when it lies outside the first list page.
@@ -112,8 +109,8 @@ reason and predecessor revision, returns the existing selection without another
 history event. Every other successful selection appends a monotonically numbered
 history row. Rollback means explicitly selecting another recorded deployment;
 records and earlier selections are retained. Publisher authorization expresses
-operational designation, not model or release acceptance. Viewer and producer
-credentials cannot select deployments; deployment selection itself remains an automation operation. Owner release acceptance is a separate authenticated Web action.
+operational designation, not model approval. Viewer and producer
+credentials cannot select deployments; deployment selection itself remains an automation operation.
 
 The environment API does not independently observe the cluster. A deployment
 controller or authorized operator must publish the actual deployment record and
@@ -155,12 +152,35 @@ Missing coverage is inspectable information, not a newly authored assessment.
 There is no automatic expiry, alert interpretation, cross-system evidence transfer
 or Requirement Status transition event stream. Such policies remain separate framework work.
 
-The additive migration `0007_model_catalogs_and_environment_deployments.sql` creates
-new tables only. Existing authority, review, Run, release, deployment and acceptance
-history is preserved. Deploy API and Web as a compatible pair; the Web now expects
-structured explanations and the catalog/current-deployment APIs. No current
-production designation or catalog registration is manufactured at migration.
+Deployments of an environment are listed with ordinary keyset pagination by deployment id and, separately, as history (see "Deployment history"). Version 8 storage replaces earlier migration history; see [deployment-requirement-status.md](deployment-requirement-status.md).
 
-## Reconciled deployment observations and owner acceptance
+## Reconciled deployment observations
 
-Migration 0008 adds append-only deployment observations. See `contracts/deployment-observation.md` for exact CAS, replay, freshness, runtime component and deployment Verification Target rules. The latest observation may invalidate confidence in an earlier current selection without deleting history. Web acceptance uses a configured per-user owner token on the server and requires explicit environment, expected accepted baseline and reason; missing/stale/incomplete exact deployment observation or unsupported non-routine exact-target Requirement Status rejects acceptance. No automatic acceptance, source/model application, archival or workload mutation occurs.
+See `contracts/deployment-observation.md` for exact CAS, replay, freshness, runtime component and deployment Verification Target rules. The latest observation may invalidate confidence in an earlier current selection without deleting history. There is no acceptance: no automatic or owner action accepts a release, applies source or model changes, archives a Change or mutates a workload, and rollback is performed by the deployment system and only observed.
+
+## Main-model publication
+
+`POST /v1/projects/{project}/main-models`, role Publisher, body bounded to 16 MiB, publishes the model of one commit on main:
+
+```json
+{"format": "azimuth-main-model-publication", "version": 1,
+ "commit": "<40-or-64-lowercase-hex>", "main_sequence": 1234,
+ "authority": {},
+ "reviews": [],
+ "catalog": {},
+ "ratification": {"status": "ratified", "reason": "...",
+   "pull_request": {"number": 54, "approvals": [{"login": "...", "submitted_at_ms": 0}]},
+   "verified_at_ms": 0}}
+```
+
+`authority` is the native full-model authority projection, `reviews` the sealed native Requirement Review records committed in git, `catalog` an optional navigation catalog as in release publication, and `ratification.status` is `ratified | unratified`; an `unratified` verdict requires a nonempty `reason`, and `verified_at_ms` is a non-negative integer. `commit` is 40 or 64 lowercase hex digits, here and in a release's `integration` and Change repository commits. `main_sequence` is the first-parent commit count of `commit` on main, computed and attested by CI.
+
+The service validates the authority, registers its model revision as for candidate revisions, stores each review with provenance basis `publisher-transported-assertion` and re-assesses every review against the posted authority, recording the result. It stores a publication keyed by `(project, commit)`, unique also by `(project, main_sequence)`. First publication returns HTTP 201 and an identical replay HTTP 200. HTTP 422 reports an invalid payload, authority or review failure; HTTP 403 a wrong role; HTTP 409 the same commit with different content or a different commit with an already used `main_sequence`. Every publication is stored. The latest model is the one with the highest `main_sequence`, never arrival order, and the default model never regresses to a lower sequence. `ratification` is a publisher assertion: the service stores it as submitted and cannot call the hosting API.
+
+## Delivery gap, history and rollback candidates
+
+All routes below are read-only and accept any role.
+
+- `GET .../environments/{environment}/delivery-gap` returns `{environment, deployment_id, release_fingerprint, release_model_revision, main_model_revision, main_sequence, requirements: [{id, difference, criticality, release_status}]}`. `difference` is `added | changed | removed`, computed between the model of the environment's selected deployment's release and the latest main model by the Requirement fingerprint (which covers text, criticality and conditions); the response also carries `main_commit`, and the route returns HTTP 404 when the environment has no selected deployment or no main-model publication exists; `release_status` is the deployed release's Status for the Requirement, or null when it is added. A deployment is never assessed against main's model; the gap report is the only place main's model meets an environment.
+- `GET .../environments/{environment}/deployment-history?limit=&page_token=` returns `{deployments: [{deployment_id, release_fingerprint, label, first_observed_ms, last_observed_ms, rollout_id, current}], next_page_token}`, newest first with token-based pagination. `current` marks the deployment currently selected for the environment (the latest `POST .../environments/{environment}/deployment` selection), not the latest observed deployment. It replaces the capped, id-ordered deployment list for history display.
+- `GET .../environments/{environment}/rollback-candidates?limit=` returns earlier deployments of the environment whose last stored per-deployment status summary had every non-routine Requirement Satisfied, each with `deployment_id`, `release_fingerprint`, `label`, `first_observed_ms`, `last_observed_ms`, `rollout_id`, `last_status_at_ms` and a `non_routine_requirements` count (the non-routine Requirements of that deployment's model revision that are not `not-applicable`). The criterion is evaluated on the summary stored by the latest assessment of that deployment; no history table exists, so a candidate's status may be old and is never presented as current. A not-applicable Requirement is neither satisfied nor failing: it does not disqualify a candidate and is not counted in `non_routine_requirements`, so a deployment whose non-routine Requirements are all not-applicable qualifies with a count of 0. Azimuth performs no rollback.

@@ -717,6 +717,8 @@ fn materialize_run(
         },
         units: vec![run::CheckExecutionUnit {
             id: check.units[0].id.clone(),
+            input_fingerprint: None,
+            executed_tests: Vec::new(),
             attempts: vec![run::CheckAttempt {
                 ordinal: 1,
                 activity: "measurement".into(),
@@ -787,7 +789,7 @@ fn materialize_run(
                 ("after-reconciliation".into(), after.into()),
                 (
                     "normalization".into(),
-                    "ASS historical target identity resolution".into(),
+                    "AAS historical target identity resolution".into(),
                 ),
             ])),
         },

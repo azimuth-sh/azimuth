@@ -1,5 +1,6 @@
 mod account;
 mod assessment;
+mod main_model;
 mod release;
 mod run;
 mod status;
@@ -54,6 +55,7 @@ fn registry() -> &'static Registry {
             .chain(status::schemas())
             .chain(target::schemas())
             .chain(assessment::schemas())
+            .chain(main_model::schemas())
         {
             assert!(
                 !registry.roots.contains_key(kind),
@@ -161,7 +163,7 @@ fn invalid(message: impl Into<String>) -> sqlx::Error {
     sqlx::Error::Protocol(message.into())
 }
 
-const SCHEMA_VERSION: i32 = 7;
+const SCHEMA_VERSION: i32 = 8;
 
 pub(crate) async fn initialize(pool: &PgPool) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
@@ -779,9 +781,9 @@ mod schema_version_tests {
             sqlx::query_as("SELECT version,signature FROM assurance_storage_schema")
                 .fetch_one(&pool)
                 .await?;
-        assert_eq!(version, 7);
+        assert_eq!(version, 8);
         initialize(&pool).await?;
-        for (version, signature) in [(6, signature.clone()), (7, format!("{signature}-changed"))] {
+        for (version, signature) in [(7, signature.clone()), (8, format!("{signature}-changed"))] {
             sqlx::query("DELETE FROM assurance_storage_schema")
                 .execute(&pool)
                 .await?;
@@ -797,6 +799,65 @@ mod schema_version_tests {
                 .to_string()
                 .contains("relational schema changed without an explicit schema version"));
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn fresh_database_reaches_schema_version_eight_and_restarts(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let postgres = Postgres::default().start().await?;
+        let pool = crate::connect(&format!(
+            "postgres://postgres:postgres@127.0.0.1:{}/postgres",
+            postgres.get_host_port_ipv4(5432).await?
+        ))
+        .await?;
+        crate::migrate(&pool).await?;
+        let version: i32 = sqlx::query_scalar("SELECT version FROM assurance_storage_schema")
+            .fetch_one(&pool)
+            .await?;
+        assert_eq!(version, 8);
+        let tables: Vec<String> = sqlx::query_scalar(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema='public'",
+        )
+        .fetch_all(&pool)
+        .await?;
+        for expected in [
+            "main_publications",
+            "main_publication_reviews",
+            "assurance_main_publication",
+            "assurance_release",
+            "model_revisions",
+        ] {
+            assert!(tables.iter().any(|t| t == expected), "missing {expected}");
+        }
+        for removed in [
+            "current_authorities",
+            "authority_selections",
+            "release_acceptances",
+        ] {
+            assert!(
+                !tables.iter().any(|t| t == removed),
+                "{removed} must not exist"
+            );
+        }
+        let columns: Vec<(String, String)> = sqlx::query_as(
+            "SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND (table_name,column_name) IN (('assurance_releases','baseline_model_revision'),('assurance_releases','integration_commit'),('assurance_releases','integration_sequence'),('assessment_requirements','supported_since_ms'))",
+        )
+        .fetch_all(&pool)
+        .await?;
+        let columns: Vec<String> = columns
+            .into_iter()
+            .map(|(t, c)| format!("{t}.{c}"))
+            .collect();
+        assert!(!columns.contains(&"assurance_releases.baseline_model_revision".into()));
+        for expected in [
+            "assurance_releases.integration_commit",
+            "assurance_releases.integration_sequence",
+            "assessment_requirements.supported_since_ms",
+        ] {
+            assert!(columns.iter().any(|c| c == expected), "missing {expected}");
+        }
+        crate::migrate(&pool).await?;
         Ok(())
     }
 

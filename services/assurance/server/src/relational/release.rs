@@ -27,7 +27,6 @@ fn publication() -> Schema {
             object(vec![
                 ("fingerprint", Schema::Text),
                 ("label", Schema::Text),
-                ("baseline_model_revision", Schema::Text),
                 ("model_revision", Schema::Text),
                 ("changes", list(Schema::Ref("change"))),
                 ("sources", Schema::Document),
@@ -35,8 +34,9 @@ fn publication() -> Schema {
                 ("artifacts", Schema::Document),
                 ("deployments", list(Schema::Ref("deployment"))),
                 ("components", Schema::Document),
-                ("composition", Schema::Document),
                 ("required_reviews", Schema::Document),
+                ("integration", Schema::Document),
+                ("unit_inputs", Schema::Document),
             ]),
         ),
         (
@@ -97,19 +97,12 @@ mod tests {
             azimuth::assurance_review::authority(&azimuth::model::Model::default(), "project")
                 .unwrap();
         let authority: Value = serde_json::from_str(&authority.to_string_pretty()).unwrap();
-        let composition = azimuth::release::compose(&native(&json!({
-            "format":"azimuth-release-composition-request","version":1,
-            "baseline_model_revision":DIGEST,"files":[],
-            "changes":[{"id":"change","revision":DIGEST,"files":[{"path":"module/spec.md","before_fingerprint":null,"content":"# Spec: module\n"}]}]
-        }))).unwrap();
-        let composition: Value = serde_json::from_str(&composition.to_string_pretty()).unwrap();
         let verification_target = json!({"kind":"deployment","environment":"production","deployment":"deployment","deployment_fingerprint":DIGEST,"artifacts":[{"id":"service","digest":DIGEST}]});
         let verification_target_fingerprint = azimuth::run::verification_target_fingerprint(
             &azimuth::run::verification_target_from_json(&native(&verification_target)).unwrap(),
         );
         let request = json!({
             "format":"azimuth-release-request","version":2,"project":"project","label":"Release 1",
-            "baseline_model_revision":DIGEST,
             "changes":[{"id":"change","revision":DIGEST,"metadata":{
                 "request":{"title":"Bounded change","ref":"https://example.com/issues/1"},
                 "repositories":[{"repository":"source","commit":"a".repeat(40),"pr":"https://example.com/pull/1"}],
@@ -121,7 +114,7 @@ mod tests {
             "deployments":[{"id":"deployment","environment":"production","configuration_fingerprint":DIGEST,"artifacts":[DIGEST],"verification_target":verification_target,"verification_target_fingerprint":verification_target_fingerprint}],
             "snapshot":{"project":"project","model_revision":authority["fingerprint"],"authority":authority,"reviews":[],"bundles":[]},
             "evidence":[{"digest":DIGEST,"media_type":"text/plain","availability":"unavailable"}],
-            "catalog":{"modules":[],"requirements":[],"scenarios":[],"checks":[]},"composition":composition,"required_reviews":[]
+            "catalog":{"modules":[],"requirements":[],"scenarios":[],"checks":[]},"required_reviews":[]
         });
         let prepared = azimuth::release::prepare(&native(&request)).unwrap();
         serde_json::from_str(&prepared.to_string_pretty()).unwrap()

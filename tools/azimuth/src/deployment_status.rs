@@ -112,16 +112,17 @@ pub fn validate_policy(v: &Json) -> Result<(), String> {
     if v.get("units").is_some() && units.is_empty() {
         return Err("required unit inventory cannot be empty".into());
     }
+    let dependencies = context_dependencies(v, "contexts")?;
     if v.get("controls").is_some() {
         let mut controlled = BTreeSet::new();
         for control in array(v, "controls")? {
             shape(control, &["unit", "contexts"])?;
             let unit = text(control, "unit")?;
-            let contexts = strings(control, "contexts")?;
+            let contexts = context_dependencies(control, "contexts")?;
             if !units.contains(unit)
                 || !controlled.insert(unit)
                 || contexts.is_empty()
-                || !contexts.is_subset(&strings(v, "contexts")?)
+                || !contexts.is_subset(&dependencies)
             {
                 return Err("controls require unique declared units and required contexts".into());
             }
@@ -137,11 +138,16 @@ pub fn validate_policy(v: &Json) -> Result<(), String> {
     if components.is_empty() {
         return Err("deployment Check requires component scope".into());
     }
-    for id in components {
-        crate::diag::validate_id(&id, false)?;
+    for id in &components {
+        crate::diag::validate_id(id, false)?;
     }
-    for fp in strings(v, "contexts")? {
-        digest(&fp)?;
+    if let Some((component, _)) = dependencies
+        .iter()
+        .find(|(component, _)| !components.contains(component))
+    {
+        return Err(format!(
+            "context dependency names component `{component}` outside the Check's components"
+        ));
     }
     if !matches!(
         text(v, "contribution")?,
@@ -163,6 +169,69 @@ pub fn validate_policy(v: &Json) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Parses `[{component, leaves}]` into the (component, leaf) pairs a Check depends on.
+pub fn context_dependencies(v: &Json, key: &str) -> Result<BTreeSet<(String, String)>, String> {
+    let mut pairs = BTreeSet::new();
+    let mut components = BTreeSet::new();
+    for entry in array(v, key)? {
+        shape(entry, &["component", "leaves"])?;
+        let component = text(entry, "component")?;
+        crate::diag::validate_id(component, false)?;
+        if !components.insert(component) {
+            return Err(format!(
+                "duplicate context dependency component `{component}`"
+            ));
+        }
+        let leaves = strings(entry, "leaves")?;
+        if leaves.is_empty() {
+            return Err(format!("context dependency `{component}` lists no leaves"));
+        }
+        for leaf in leaves {
+            if !crate::model::is_leaf_path(&leaf) {
+                return Err(format!("invalid context leaf `{leaf}`"));
+            }
+            pairs.insert((component.to_string(), leaf));
+        }
+    }
+    Ok(pairs)
+}
+
+/// Requirement and Scenario conditions as carried by the authority: `[{component, leaf, value}]`.
+pub fn validate_conditions(v: &Json) -> Result<(), String> {
+    parse_conditions(v).map(|_| ())
+}
+
+struct ConditionRef {
+    component: String,
+    leaf: String,
+    value: Json,
+}
+
+fn parse_conditions(v: &Json) -> Result<Vec<ConditionRef>, String> {
+    let items = v.as_array().ok_or("conditions requires array")?;
+    items
+        .iter()
+        .map(|item| {
+            shape(item, &["component", "leaf", "value"])?;
+            let component = text(item, "component")?;
+            crate::diag::validate_id(component, false)?;
+            let leaf = text(item, "leaf")?;
+            if !crate::model::is_leaf_path(leaf) {
+                return Err(format!("invalid condition leaf `{leaf}`"));
+            }
+            let value = field(item, "value")?;
+            if !matches!(value, Json::Bool(_) | Json::Num(_) | Json::Str(_)) {
+                return Err("condition value requires boolean, integer or string".into());
+            }
+            Ok(ConditionRef {
+                component: component.to_string(),
+                leaf: leaf.to_string(),
+                value: value.clone(),
+            })
+        })
+        .collect()
 }
 
 pub fn validate_context_contract(v: &Json) -> Result<(), String> {
@@ -300,7 +369,8 @@ pub fn validate_capture(v: &Json, contracts: &[Json]) -> Result<(), String> {
         text(v, "activity")?;
     }
     digest(text(v, "verification_target_fingerprint")?)?;
-    crate::diag::validate_id(text(v, "component")?, false)?;
+    let component = text(v, "component")?;
+    crate::diag::validate_id(component, false)?;
     text(v, "instance")?;
     trusted(v)?;
     let start = number(v, "started_at_ms")?;
@@ -311,6 +381,14 @@ pub fn validate_capture(v: &Json, contracts: &[Json]) -> Result<(), String> {
     for (key, time) in [("before", start), ("after", finish)] {
         let snapshot = field(v, key)?;
         validate_snapshot(snapshot, contracts)?;
+        let Json::Obj(contexts) = field(field(snapshot, "report")?, "contexts")? else {
+            unreachable!("validated report holds a contexts object")
+        };
+        if !matches!(contexts.as_slice(), [(name, _)] if name == component) {
+            return Err(
+                "capture must hold exactly one context, named by the capture's component".into(),
+            );
+        }
         if number(snapshot, "captured_at_ms")? != time
             || snapshot.get("instance") != v.get("instance")
         {
@@ -324,12 +402,100 @@ struct Inputs<'a> {
     release: &'a Json,
     deployment: &'a Json,
     observation: &'a Json,
-    contracts: &'a [Json],
     captures: &'a [Json],
     now: u64,
     verification_target: String,
     components: BTreeMap<String, String>,
+    unit_manifest: BTreeMap<String, ManifestUnit>,
+    unit_manifest_repository: Option<String>,
     deployment_reasons: Vec<String>,
+}
+
+#[derive(Clone)]
+struct ManifestUnit {
+    input_fingerprint: String,
+    hermetic: bool,
+    /// Checks the unit partitions; empty means every Check.
+    checks: BTreeSet<String>,
+}
+
+pub fn validate_unit_manifest(v: &Json) -> Result<(), String> {
+    parse_unit_manifest(v).map(|_| ())
+}
+
+struct UnitManifest {
+    repository: Option<String>,
+    units: BTreeMap<String, ManifestUnit>,
+}
+
+fn parse_unit_manifest(v: &Json) -> Result<UnitManifest, String> {
+    let repository = match v.get("repository") {
+        None => None,
+        Some(value) => Some(
+            value
+                .as_str()
+                .filter(|id| !id.trim().is_empty())
+                .ok_or("unit input manifest `repository` must be a nonempty string")?
+                .to_string(),
+        ),
+    };
+    let Json::Obj(pairs) = v else {
+        return Err("expected object".into());
+    };
+    let without_repository = Json::Obj(
+        pairs
+            .iter()
+            .filter(|(key, _)| key != "repository")
+            .cloned()
+            .collect(),
+    );
+    shape(
+        &without_repository,
+        &["format", "version", "rule_fingerprint", "units"],
+    )?;
+    if text(v, "format")? != "azimuth-unit-input-manifest" || number(v, "version")? != 1 {
+        return Err("unsupported unit input manifest".into());
+    }
+    digest(text(v, "rule_fingerprint")?)?;
+    let mut units = BTreeMap::new();
+    let mut previous: Option<&str> = None;
+    for unit in array(v, "units")? {
+        let optional_checks = unit.get("checks").is_some();
+        if optional_checks {
+            shape(unit, &["id", "input_fingerprint", "hermetic", "checks"])?;
+        } else {
+            shape(unit, &["id", "input_fingerprint", "hermetic"])?;
+        }
+        let checks = if optional_checks {
+            let listed = strings(unit, "checks")?;
+            if listed.is_empty() {
+                return Err("unit input manifest `checks` must be omitted when empty".into());
+            }
+            listed
+        } else {
+            BTreeSet::new()
+        };
+        let id = text(unit, "id")?;
+        crate::diag::validate_id(id, false)?;
+        if previous.is_some_and(|previous| previous >= id) {
+            return Err("unit input manifest units must be sorted and unique".into());
+        }
+        previous = Some(id);
+        let input_fingerprint = text(unit, "input_fingerprint")?;
+        digest(input_fingerprint)?;
+        let hermetic = field(unit, "hermetic")?
+            .as_bool()
+            .ok_or("hermetic requires boolean")?;
+        units.insert(
+            id.to_string(),
+            ManifestUnit {
+                input_fingerprint: input_fingerprint.to_string(),
+                hermetic,
+                checks,
+            },
+        );
+    }
+    Ok(UnitManifest { repository, units })
 }
 
 fn validate_observation(v: &Json) -> Result<(), String> {
@@ -490,36 +656,219 @@ impl<'a> Inputs<'a> {
                         && c.get("digest").and_then(Json::as_str) == Some(digest)
                 }) {
                     reasons.push(format!(
-                        "component `{id}` is not linked to release composition"
+                        "component `{id}` is not linked to a release component"
                     ));
                 }
             }
         } else {
             reasons.push("release has no component identities".into());
         }
+        let (unit_manifest, unit_manifest_repository) = match release.get("unit_inputs") {
+            Some(manifest) => {
+                let parsed = parse_unit_manifest(manifest)?;
+                (parsed.units, parsed.repository)
+            }
+            None => (BTreeMap::new(), None),
+        };
         Ok(Self {
             release,
             deployment,
             observation,
-            contracts,
             captures,
             now,
             verification_target,
             components,
+            unit_manifest,
+            unit_manifest_repository,
             deployment_reasons: reasons,
         })
     }
 
-    fn scope(&self, policy: &Json, bundle: &RunBundle) -> Result<(), String> {
-        let selected = strings(policy, "components")?;
+    fn expected_sources(
+        &self,
+        policy: &Json,
+        digests: &BTreeMap<String, String>,
+    ) -> Result<BTreeSet<(String, String, String)>, String> {
+        let mut required = BTreeSet::new();
+        for digest in digests.values() {
+            let producers = array(self.release, "builds")?
+                .iter()
+                .filter(|b| {
+                    array(b, "artifacts")
+                        .is_ok_and(|a| a.iter().any(|v| v.as_str() == Some(digest)))
+                })
+                .collect::<Vec<_>>();
+            if producers.is_empty() {
+                return Err("component artifact has no build provenance".into());
+            }
+            let mut sets = BTreeSet::new();
+            for build in producers {
+                sets.insert(strings(build, "sources")?);
+            }
+            if sets.len() != 1 {
+                return Err("component artifact has conflicting build source inputs".into());
+            }
+            required.extend(sets.into_iter().next().unwrap());
+        }
+        if policy.get("configuration_sources").is_some() {
+            required.extend(strings(policy, "configuration_sources")?);
+        }
+        let mut expected = BTreeSet::new();
+        for id in required {
+            let source = array(self.release, "sources")?
+                .iter()
+                .find(|s| s.get("repository").and_then(Json::as_str) == Some(&id))
+                .ok_or("build source is missing from release")?;
+            expected.insert((
+                id,
+                text(source, "commit")?.to_string(),
+                text(source, "content_fingerprint")?.to_string(),
+            ));
+        }
+        Ok(expected)
+    }
+
+    fn scoped_components(&self, policy: &Json) -> Result<BTreeMap<String, String>, String> {
         let mut digests = BTreeMap::new();
-        for id in selected {
+        for id in strings(policy, "components")? {
             let digest = self
                 .components
                 .get(&id)
                 .ok_or_else(|| format!("component `{id}` is not deployed"))?;
             digests.insert(id, digest.clone());
         }
+        Ok(digests)
+    }
+
+    /// Unit-level reuse for a source Check: every executed unit is hermetic in the release manifest and
+    /// its input fingerprint equals the manifest's, so the commit may differ from the release's. The
+    /// manifest names the repository its unit rule was computed for; every other build input of the
+    /// Check must still equal the release. A manifest without a repository identity is accepted only
+    /// when the Check's complete build inputs are one repository.
+    fn reuse_scope(
+        &self,
+        policy: &Json,
+        bundle: &RunBundle,
+        execution: &crate::run::CheckExecution,
+    ) -> Result<(), String> {
+        if text(policy, "verification_target")? != "source" {
+            return Err("only source Checks reuse unit results".into());
+        }
+        let (VerificationTarget::Source { repositories }
+        | VerificationTarget::CiCandidate { repositories }) = &bundle.verification_target
+        else {
+            return Err("only source Runs reuse unit results".into());
+        };
+        if self.unit_manifest.is_empty() || execution.units.is_empty() {
+            return Err("release has no unit input manifest for this Check".into());
+        }
+        let expected = self.expected_sources(policy, &self.scoped_components(policy)?)?;
+        match &self.unit_manifest_repository {
+            None => {
+                let [(repository, _, _)] = expected.iter().collect::<Vec<_>>()[..] else {
+                    return Err("unit reuse requires exactly one source repository".into());
+                };
+                if repositories.len() != 1 || repositories[0].id != *repository {
+                    return Err(
+                        "Run source repository differs from the Check's build inputs".into(),
+                    );
+                }
+            }
+            Some(manifest_repository) => {
+                if repositories.len() != expected.len()
+                    || !expected.iter().any(|(id, _, _)| id == manifest_repository)
+                {
+                    return Err(
+                        "Run source repositories differ from the Check's build inputs".into(),
+                    );
+                }
+                for (id, commit, content_fingerprint) in &expected {
+                    let state = repositories
+                        .iter()
+                        .find(|state| state.id == *id)
+                        .ok_or("Run source repositories differ from the Check's build inputs")?;
+                    if id != manifest_repository
+                        && (state.revision != *commit
+                            || state.content_fingerprint != *content_fingerprint)
+                    {
+                        return Err(format!(
+                            "source repository `{id}` differs from the release and is not the manifest's repository"
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The units of the execution whose results apply to the release: all of them under whole-source
+    /// equality, otherwise the hermetic units whose input fingerprint equals the manifest's. A reused
+    /// Run must pass in every unit it executed, because its Check Result speaks for all of them; the
+    /// units whose inputs changed are then simply left for another Run to cover.
+    fn applicable_scope(
+        &self,
+        policy: &Json,
+        bundle: &RunBundle,
+        execution: &crate::run::CheckExecution,
+        scenario: &str,
+    ) -> Result<BTreeSet<String>, String> {
+        let executed = || execution.units.iter().map(|unit| unit.id.clone()).collect();
+        match self.scope(policy, bundle) {
+            Ok(()) => Ok(executed()),
+            Err(reason) => {
+                if self.reuse_scope(policy, bundle, execution).is_err() {
+                    return Err(reason);
+                }
+                let mut covered = BTreeSet::new();
+                for unit in &execution.units {
+                    let passing = unit
+                        .executed_tests
+                        .iter()
+                        .all(|test| test.outcome == crate::run::ExecutedTestOutcome::Passed)
+                        && unit
+                            .attempts
+                            .iter()
+                            .filter_map(|attempt| attempt.outcomes.get(scenario))
+                            .all(|outcome| *outcome == CheckResultOutcome::Satisfied);
+                    if !passing {
+                        return Err(format!("unit `{}` has no passing result to reuse", unit.id));
+                    }
+                    let unchanged = self.unit_manifest.get(&unit.id).is_some_and(|manifest| {
+                        manifest.hermetic
+                            && unit.input_fingerprint.as_deref()
+                                == Some(manifest.input_fingerprint.as_str())
+                    });
+                    if unchanged {
+                        covered.insert(unit.id.clone());
+                    }
+                }
+                if covered.is_empty() {
+                    return Err(
+                        "no unit of the Run has inputs equal to the release or is hermetic".into(),
+                    );
+                }
+                Ok(covered)
+            }
+        }
+    }
+
+    /// The release-manifest units a source Check must have passing results for. A `whole` execution
+    /// runs every test, so it covers them all; a project without a manifest requires nothing.
+    fn uncovered_units(&self, check_id: &str, covered: &BTreeSet<String>) -> Vec<String> {
+        if covered.contains("whole") {
+            return Vec::new();
+        }
+        self.unit_manifest
+            .iter()
+            .filter(|(id, unit)| {
+                (unit.checks.is_empty() || unit.checks.contains(check_id)) && !covered.contains(*id)
+            })
+            .map(|(id, _)| id.clone())
+            .collect()
+    }
+
+    fn scope(&self, policy: &Json, bundle: &RunBundle) -> Result<(), String> {
+        let digests = self.scoped_components(policy)?;
         match (
             text(policy, "verification_target")?,
             &bundle.verification_target,
@@ -542,42 +891,7 @@ impl<'a> Inputs<'a> {
             }
             ("source", VerificationTarget::Source { repositories })
             | ("source", VerificationTarget::CiCandidate { repositories }) => {
-                let mut required = BTreeSet::new();
-                for digest in digests.values() {
-                    let producers = array(self.release, "builds")?
-                        .iter()
-                        .filter(|b| {
-                            array(b, "artifacts")
-                                .is_ok_and(|a| a.iter().any(|v| v.as_str() == Some(digest)))
-                        })
-                        .collect::<Vec<_>>();
-                    if producers.is_empty() {
-                        return Err("component artifact has no build provenance".into());
-                    }
-                    let mut sets = BTreeSet::new();
-                    for build in producers {
-                        sets.insert(strings(build, "sources")?);
-                    }
-                    if sets.len() != 1 {
-                        return Err("component artifact has conflicting build source inputs".into());
-                    }
-                    required.extend(sets.into_iter().next().unwrap());
-                }
-                if policy.get("configuration_sources").is_some() {
-                    required.extend(strings(policy, "configuration_sources")?);
-                }
-                let mut expected = BTreeSet::new();
-                for id in required {
-                    let source = array(self.release, "sources")?
-                        .iter()
-                        .find(|s| s.get("repository").and_then(Json::as_str) == Some(&id))
-                        .ok_or("build source is missing from release")?;
-                    expected.insert((
-                        id,
-                        text(source, "commit")?.to_string(),
-                        text(source, "content_fingerprint")?.to_string(),
-                    ));
-                }
+                let expected = self.expected_sources(policy, &digests)?;
                 let actual = repositories
                     .iter()
                     .map(|r| {
@@ -630,202 +944,318 @@ impl<'a> Inputs<'a> {
             }
         }
         let mut dependencies = Vec::new();
-        for fp in strings(policy, "contexts")? {
-            let contract = self
-                .contracts
+        for (component, leaf) in context_dependencies(policy, "contexts")? {
+            let controlled = policy
+                .get("controls")
+                .and_then(Json::as_array)
+                .unwrap_or(&[])
                 .iter()
-                .find(|c| c.get("fingerprint").and_then(Json::as_str) == Some(&fp))
-                .ok_or("required context contract is missing")?;
-            let name = text(contract, "name")?;
-            for component in strings(policy, "components")? {
-                let controlled = policy
-                    .get("controls")
-                    .and_then(Json::as_array)
-                    .unwrap_or(&[])
-                    .iter()
-                    .filter(|control| {
-                        strings(control, "contexts").is_ok_and(|values| values.contains(&fp))
-                    })
-                    .map(|control| text(control, "unit").map(str::to_owned))
-                    .collect::<Result<BTreeSet<_>, _>>()?;
-                let mut tested = Vec::new();
-                let mut positive = false;
-                for unit in &execution.units {
-                    for attempt in &unit.attempts {
-                        if !attempt.outcomes.contains_key(scenario) {
-                            continue;
-                        }
-                        let activity = bundle
-                            .activities
-                            .iter()
-                            .find(|activity| activity.id == attempt.activity)
-                            .ok_or("Check attempt activity is absent")?;
-                        let candidates = self
-                            .captures
-                            .iter()
-                            .filter(|capture| {
-                                capture.get("kind").and_then(Json::as_str) == Some("execution")
-                                    && capture.get("run").and_then(Json::as_str)
-                                        == Some(bundle.run_id.as_str())
-                                    && capture.get("bundle_fingerprint").and_then(Json::as_str)
-                                        == Some(bundle.bundle_fingerprint.as_str())
-                                    && capture.get("component").and_then(Json::as_str)
-                                        == Some(component.as_str())
-                                    && (capture.get("activity") == Some(&Json::Null)
-                                        || capture.get("activity").and_then(Json::as_str)
-                                            == Some(activity.id.as_str()))
-                                    && contains_context(capture, name)
-                            })
-                            .collect::<Vec<_>>();
-                        if candidates.is_empty() {
-                            return Err(format!(
-                                "activity `{}` has no required context capture",
-                                activity.id
-                            ));
-                        }
-                        let mut captured = None;
-                        for capture in candidates {
-                            let whole_run = capture.get("activity") == Some(&Json::Null);
-                            let (start, finish) = if whole_run {
-                                (bundle.started_at_ms, bundle.finished_at_ms)
-                            } else {
-                                (activity.started_at_ms, activity.finished_at_ms)
-                            };
-                            if !trusted(capture)?
-                                || number(capture, "finished_at_ms")?
-                                    > self.now.saturating_add(CLOCK_SKEW_MS)
-                                || text(capture, "verification_target_fingerprint")?
-                                    != bundle.verification_target_fingerprint
-                                || number(capture, "started_at_ms")? > start
-                                || number(capture, "finished_at_ms")? < finish
-                            {
-                                return Err("execution context capture does not cover trusted activity interval".into());
-                            }
-                            let value = stable_context(capture, name, &fp)?;
-                            let key = if whole_run {
-                                format!("context/{fp}")
-                            } else {
-                                format!("context/{fp}/activity/{}", activity.id)
-                            };
-                            if bundle.actual_selection.execution_context.get(&key)
-                                != Some(&canonical(&value)?)
-                            {
-                                return Err(
-                                    "Run selection does not pin captured context fingerprint"
-                                        .into(),
-                                );
-                            }
-                            if captured
-                                .as_ref()
-                                .is_some_and(|previous| !same(previous, &value))
-                            {
-                                return Err("activity instances disagree on context".into());
-                            }
-                            captured = Some(value);
-                            dependencies.push(capture_reference(capture)?);
-                        }
-                        if !controlled.contains(&unit.id) {
-                            positive |= attempt.outcomes.get(scenario)
-                                == Some(&CheckResultOutcome::Satisfied);
-                            tested.push(captured.unwrap());
-                        }
+                .filter(|control| {
+                    context_dependencies(control, "contexts")
+                        .is_ok_and(|pairs| pairs.contains(&(component.clone(), leaf.clone())))
+                })
+                .map(|control| text(control, "unit").map(str::to_owned))
+                .collect::<Result<BTreeSet<_>, _>>()?;
+            let mut tested = Vec::new();
+            let mut positive = false;
+            for unit in &execution.units {
+                for attempt in &unit.attempts {
+                    if !attempt.outcomes.contains_key(scenario) {
+                        continue;
                     }
-                }
-                if tested.is_empty()
-                    || (!controlled.is_empty()
-                        && !positive
-                        && execution.results.iter().any(|check_result| {
-                            check_result.scenario == scenario
-                                && check_result.outcome == CheckResultOutcome::Satisfied
-                        }))
-                {
-                    return Err(
-                        "control activities cannot alone establish positive Scenario support"
-                            .into(),
-                    );
-                }
-                let observed = array(self.observation, "components")?
-                    .iter()
-                    .find(|c| c.get("id").and_then(Json::as_str) == Some(component.as_str()))
-                    .ok_or("production component context is not observed")?;
-                let instances = strings(observed, "instances")?;
-                if instances.is_empty() {
-                    return Err("production context has no observed live instances".into());
-                }
-                for instance in instances {
-                    let captures = self
+                    let activity = bundle
+                        .activities
+                        .iter()
+                        .find(|activity| activity.id == attempt.activity)
+                        .ok_or("Check attempt activity is absent")?;
+                    let candidates = self
                         .captures
                         .iter()
-                        .filter(|c| {
-                            c.get("kind").and_then(Json::as_str) == Some("deployment")
-                                && c.get("verification_target_fingerprint")
-                                    .and_then(Json::as_str)
-                                    == Some(self.verification_target.as_str())
-                                && c.get("component").and_then(Json::as_str)
+                        .filter(|capture| {
+                            capture.get("kind").and_then(Json::as_str) == Some("execution")
+                                && capture.get("run").and_then(Json::as_str)
+                                    == Some(bundle.run_id.as_str())
+                                && capture.get("bundle_fingerprint").and_then(Json::as_str)
+                                    == Some(bundle.bundle_fingerprint.as_str())
+                                && capture.get("component").and_then(Json::as_str)
                                     == Some(component.as_str())
-                                && c.get("instance").and_then(Json::as_str)
-                                    == Some(instance.as_str())
-                                && contains_context(c, name)
+                                && (capture.get("activity") == Some(&Json::Null)
+                                    || capture.get("activity").and_then(Json::as_str)
+                                        == Some(activity.id.as_str()))
+                                && contains_context(capture, &component)
                         })
                         .collect::<Vec<_>>();
-                    let latest = captures
-                        .iter()
-                        .map(|c| number(c, "finished_at_ms"))
-                        .collect::<Result<Vec<_>, _>>()?
-                        .into_iter()
-                        .max()
-                        .ok_or_else(|| {
-                            format!("production instance `{instance}` has no context capture")
-                        })?;
-                    if latest > self.now
-                        || self.now.saturating_sub(latest)
-                            > number(self.observation, "valid_for_seconds")?.saturating_mul(1000)
-                    {
-                        return Err("production context capture is stale or future-dated".into());
+                    if candidates.is_empty() {
+                        return Err(format!(
+                            "activity `{}` has no required context capture",
+                            activity.id
+                        ));
                     }
-                    for capture in captures
-                        .into_iter()
-                        .filter(|c| number(c, "finished_at_ms").ok() == Some(latest))
-                    {
-                        if !trusted(capture)? {
-                            return Err("production context capture is not trusted".into());
-                        }
-                        // Startup-fixed values belong to the process lifetime, so independent observers need not collect at the same instant.
-                        if latest.abs_diff(number(self.observation, "observed_at_ms")?)
-                            > number(self.observation, "valid_for_seconds")?.saturating_mul(1000)
+                    let mut captured = None;
+                    for capture in candidates {
+                        let whole_run = capture.get("activity") == Some(&Json::Null);
+                        let (start, finish) = if whole_run {
+                            (bundle.started_at_ms, bundle.finished_at_ms)
+                        } else {
+                            (activity.started_at_ms, activity.finished_at_ms)
+                        };
+                        if !trusted(capture)?
+                            || number(capture, "finished_at_ms")?
+                                > self.now.saturating_add(CLOCK_SKEW_MS)
+                            || text(capture, "verification_target_fingerprint")?
+                                != bundle.verification_target_fingerprint
+                            || number(capture, "started_at_ms")? > start
+                            || number(capture, "finished_at_ms")? < finish
                         {
-                            return Err("production context capture is outside the current observation window".into());
+                            return Err("execution context capture does not cover trusted activity interval".into());
                         }
-                        if tested.iter().any(|value| {
-                            !stable_context(capture, name, &fp)
-                                .is_ok_and(|production| same(value, &production))
-                        }) {
-                            return Err(format!(
-                                "effective context `{name}` differs on instance `{instance}`"
-                            ));
+                        let value = stable_leaf(capture, &component, &leaf)?;
+                        let key = if whole_run {
+                            format!("context/{component}/{leaf}")
+                        } else {
+                            format!("context/{component}/{leaf}/activity/{}", activity.id)
+                        };
+                        if bundle.actual_selection.execution_context.get(&key)
+                            != Some(&canonical(&value)?)
+                        {
+                            return Err(
+                                "Run selection does not pin captured context leaf value".into()
+                            );
                         }
+                        if captured
+                            .as_ref()
+                            .is_some_and(|previous| !same(previous, &value))
+                        {
+                            return Err("activity instances disagree on context".into());
+                        }
+                        captured = Some(value);
                         dependencies.push(capture_reference(capture)?);
                     }
+                    if !controlled.contains(&unit.id) {
+                        positive |=
+                            attempt.outcomes.get(scenario) == Some(&CheckResultOutcome::Satisfied);
+                        tested.push(captured.unwrap());
+                    }
                 }
+            }
+            if tested.is_empty()
+                || (!controlled.is_empty()
+                    && !positive
+                    && execution.results.iter().any(|check_result| {
+                        check_result.scenario == scenario
+                            && check_result.outcome == CheckResultOutcome::Satisfied
+                    }))
+            {
+                return Err(
+                    "control activities cannot alone establish positive Scenario support".into(),
+                );
+            }
+            for instance in self.live_instances(&component)? {
+                let capture = self.current_capture(&component, &instance)?;
+                let production = stable_leaf(capture, &component, &leaf);
+                if tested.iter().any(|value| {
+                    !production
+                        .as_ref()
+                        .is_ok_and(|production| same(value, production))
+                }) {
+                    return Err(format!(
+                        "effective context leaf `{component}.{leaf}` differs on instance `{instance}`"
+                    ));
+                }
+                dependencies.push(capture_reference(capture)?);
             }
         }
         Ok(dependencies)
     }
+
+    fn live_instances(&self, component: &str) -> Result<BTreeSet<String>, String> {
+        let observed = array(self.observation, "components")?
+            .iter()
+            .find(|c| c.get("id").and_then(Json::as_str) == Some(component))
+            .ok_or("production component context is not observed")?;
+        let instances = strings(observed, "instances")?;
+        if instances.is_empty() {
+            return Err("production context has no observed live instances".into());
+        }
+        Ok(instances)
+    }
+
+    /// The newest deployment capture of one live instance, required to be trusted and inside the observation window.
+    fn current_capture(&self, component: &str, instance: &str) -> Result<&'a Json, String> {
+        let captures = self
+            .captures
+            .iter()
+            .filter(|c| {
+                c.get("kind").and_then(Json::as_str) == Some("deployment")
+                    && c.get("verification_target_fingerprint")
+                        .and_then(Json::as_str)
+                        == Some(self.verification_target.as_str())
+                    && c.get("component").and_then(Json::as_str) == Some(component)
+                    && c.get("instance").and_then(Json::as_str) == Some(instance)
+                    && contains_context(c, component)
+            })
+            .collect::<Vec<_>>();
+        let latest = captures
+            .iter()
+            .map(|c| number(c, "finished_at_ms"))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .max()
+            .ok_or_else(|| format!("production instance `{instance}` has no context capture"))?;
+        let window = number(self.observation, "valid_for_seconds")?.saturating_mul(1000);
+        if latest > self.now || self.now.saturating_sub(latest) > window {
+            return Err("production context capture is stale or future-dated".into());
+        }
+        // Startup-fixed values belong to the process lifetime, so independent observers need not collect at the same instant.
+        if latest.abs_diff(number(self.observation, "observed_at_ms")?) > window {
+            return Err(
+                "production context capture is outside the current observation window".into(),
+            );
+        }
+        let mut newest = captures
+            .into_iter()
+            .filter(|c| number(c, "finished_at_ms").ok() == Some(latest));
+        let capture = newest
+            .next()
+            .ok_or("production context capture is absent")?;
+        for other in std::iter::once(capture).chain(newest) {
+            if !trusted(other)? {
+                return Err("production context capture is not trusted".into());
+            }
+        }
+        Ok(capture)
+    }
+
+    /// Whether the deployment's current context capture satisfies one `Context:` condition.
+    fn condition_truth(&self, condition: &ConditionRef) -> Truth {
+        if !self.deployment_reasons.is_empty() {
+            return Truth::Unknown(format!(
+                "context of component `{}` cannot be established from the current deployment observation",
+                condition.component
+            ));
+        }
+        let instances = match self.live_instances(&condition.component) {
+            Ok(instances) => instances,
+            Err(_) => {
+                return Truth::Unknown(format!(
+                    "no observed instances of component `{}` for its context",
+                    condition.component
+                ))
+            }
+        };
+        let mut holds = BTreeSet::new();
+        for instance in instances {
+            let capture = match self.current_capture(&condition.component, &instance) {
+                Ok(capture) => capture,
+                Err(reason) => {
+                    return Truth::Unknown(format!(
+                        "no current context capture of component `{}`: {reason}",
+                        condition.component
+                    ))
+                }
+            };
+            match stable_leaf(capture, &condition.component, &condition.leaf) {
+                Ok(value) => holds.insert(same(&value, &condition.value)),
+                Err(LeafError::Absent(_)) => holds.insert(false),
+                Err(LeafError::Changed(reason)) => {
+                    return Truth::Unknown(format!(
+                        "context of component `{}` is unstable: {reason}",
+                        condition.component
+                    ))
+                }
+            };
+        }
+        match (holds.contains(&true), holds.contains(&false)) {
+            (true, false) => Truth::True,
+            (false, true) => Truth::False,
+            _ => Truth::Unknown(format!(
+                "instances of component `{}` disagree on context leaf `{}`",
+                condition.component, condition.leaf
+            )),
+        }
+    }
 }
 
-fn stable_context(capture: &Json, name: &str, fp: &str) -> Result<Json, String> {
-    let before = field(
-        field(field(field(capture, "before")?, "report")?, "contexts")?,
-        name,
-    )?;
-    let after = field(
-        field(field(field(capture, "after")?, "report")?, "contexts")?,
-        name,
-    )?;
-    if text(before, "contract_revision")? != fp || !same(before, after) {
-        return Err(format!("context `{name}` changed or uses another contract"));
+#[derive(Clone)]
+enum Truth {
+    True,
+    False,
+    Unknown(String),
+}
+
+impl Truth {
+    fn name(&self) -> &'static str {
+        match self {
+            Truth::True => "holds",
+            Truth::False => "fails",
+            Truth::Unknown(_) => "unknown",
+        }
     }
-    Ok(before.clone())
+}
+
+fn condition_record(scope: &str, condition: &ConditionRef, truth: &Truth) -> Json {
+    Json::obj(vec![
+        ("scope", Json::str(scope)),
+        ("component", Json::str(&condition.component)),
+        ("leaf", Json::str(&condition.leaf)),
+        ("value", condition.value.clone()),
+        ("state", Json::str(truth.name())),
+    ])
+}
+
+/// A false condition makes its scope not applicable even beside unknown ones, because no later capture
+/// could make the scope applicable while that leaf holds.
+fn conjunction(truths: &[Truth]) -> Truth {
+    let mut unknown = None;
+    for truth in truths {
+        match truth {
+            Truth::False => return Truth::False,
+            Truth::Unknown(reason) => unknown = unknown.or(Some(reason.clone())),
+            Truth::True => {}
+        }
+    }
+    unknown.map_or(Truth::True, Truth::Unknown)
+}
+
+/// A leaf that changed between the before and after snapshots is unknown, not false: neither value
+/// describes the process, so a condition on it must not conclude `not-applicable`.
+enum LeafError {
+    Absent(String),
+    Changed(String),
+}
+
+impl From<String> for LeafError {
+    fn from(reason: String) -> Self {
+        LeafError::Absent(reason)
+    }
+}
+
+impl From<LeafError> for String {
+    fn from(error: LeafError) -> Self {
+        match error {
+            LeafError::Absent(reason) | LeafError::Changed(reason) => reason,
+        }
+    }
+}
+
+fn stable_leaf(capture: &Json, component: &str, leaf: &str) -> Result<Json, LeafError> {
+    let leaf_value = |phase: &str| -> Result<Json, LeafError> {
+        let values = field(
+            field(
+                field(field(field(capture, phase)?, "report")?, "contexts")?,
+                component,
+            )?,
+            "values",
+        )?;
+        Ok(field(values, leaf)?.clone())
+    };
+    let before = leaf_value("before")?;
+    if leaf_value("after").map_or(true, |after| !same(&before, &after)) {
+        return Err(LeafError::Changed(format!(
+            "context leaf `{component}.{leaf}` changed during capture"
+        )));
+    }
+    Ok(before)
 }
 fn capture_reference(capture: &Json) -> Result<Json, String> {
     Ok(Json::obj(vec![
@@ -841,6 +1271,43 @@ struct Candidate<'a> {
     check_result: &'a crate::run::CheckResult,
     dependencies: Vec<Json>,
     inapplicable: Option<String>,
+    executed_for_release: bool,
+    covered_units: BTreeSet<String>,
+    skipped_tests: bool,
+    units: Vec<Json>,
+}
+
+#[derive(Default)]
+struct CheckAccount {
+    scenarios: BTreeSet<String>,
+    states: BTreeSet<&'static str>,
+    runs: BTreeMap<String, Json>,
+}
+
+impl CheckAccount {
+    fn outcome(&self) -> &'static str {
+        ["counterexample", "skipped", "inconclusive", "missing"]
+            .into_iter()
+            .find(|state| self.states.contains(state))
+            .unwrap_or("supported")
+    }
+}
+
+fn run_subject(bundle: &RunBundle) -> Json {
+    match &bundle.verification_target {
+        VerificationTarget::Source { repositories }
+        | VerificationTarget::CiCandidate { repositories }
+        | VerificationTarget::Workspace { repositories } => repositories
+            .iter()
+            .min_by(|left, right| left.id.cmp(&right.id))
+            .map_or(Json::Null, |repository| {
+                Json::obj(vec![
+                    ("repository", Json::str(&repository.id)),
+                    ("commit", Json::str(&repository.revision)),
+                ])
+            }),
+        _ => Json::Null,
+    }
 }
 
 pub fn assess(request: &Json) -> Result<Json, String> {
@@ -1013,6 +1480,58 @@ fn evaluate(
             ]));
         }
         let scenarios = strings(requirement, "scenarios")?;
+        let requirement_conditions = match requirement.get("conditions") {
+            Some(conditions) => parse_conditions(conditions)?,
+            None => Vec::new(),
+        };
+        let requirement_truths = requirement_conditions
+            .iter()
+            .map(|condition| input.condition_truth(condition))
+            .collect::<Vec<_>>();
+        let mut condition_records = requirement_conditions
+            .iter()
+            .zip(&requirement_truths)
+            .map(|(condition, truth)| condition_record("requirement", condition, truth))
+            .collect::<Vec<_>>();
+        let requirement_truth = conjunction(&requirement_truths);
+        let mut not_applicable_scenarios = BTreeSet::new();
+        let mut unknown_scenarios = BTreeMap::new();
+        for scenario in &scenarios {
+            let declared = array(authority, "scenarios")?
+                .iter()
+                .find(|item| item.get("id").and_then(Json::as_str) == Some(scenario.as_str()))
+                .ok_or("Requirement Scenario absent from authority")?;
+            let own_conditions = match declared.get("conditions") {
+                Some(conditions) => parse_conditions(conditions)?,
+                None => Vec::new(),
+            };
+            let own_truths = own_conditions
+                .iter()
+                .map(|condition| input.condition_truth(condition))
+                .collect::<Vec<_>>();
+            condition_records.extend(
+                own_conditions
+                    .iter()
+                    .zip(&own_truths)
+                    .map(|(condition, truth)| condition_record(scenario, condition, truth)),
+            );
+            match conjunction(&[requirement_truth.clone(), conjunction(&own_truths)]) {
+                Truth::False => {
+                    not_applicable_scenarios.insert(scenario.clone());
+                }
+                Truth::Unknown(reason) => {
+                    unknown_scenarios.insert(scenario.clone(), reason);
+                }
+                Truth::True => {}
+            }
+        }
+        let not_applicable = matches!(requirement_truth, Truth::False)
+            || (!scenarios.is_empty() && not_applicable_scenarios.len() == scenarios.len());
+        let required_scenarios = scenarios
+            .difference(&not_applicable_scenarios)
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let mut check_accounts = BTreeMap::<String, CheckAccount>::new();
         let mut supported_scenarios = BTreeSet::new();
         let mut bindings_out = Vec::new();
         let mut coverage = Vec::new();
@@ -1026,12 +1545,13 @@ fn evaluate(
         let requirement_bindings = array(authority, "bindings")?
             .iter()
             .filter(|b| {
-                b.get("scenario")
-                    .and_then(Json::as_str)
-                    .is_some_and(|c| scenarios.contains(c))
+                !not_applicable
+                    && b.get("scenario").and_then(Json::as_str).is_some_and(|c| {
+                        required_scenarios.contains(c) && !unknown_scenarios.contains_key(c)
+                    })
             })
             .collect::<Vec<_>>();
-        if requirement_bindings.is_empty() {
+        if requirement_bindings.is_empty() && !not_applicable {
             all_bindings = false;
             reasons.push("Requirement has no required Check/Scenario bindings".into());
         }
@@ -1075,10 +1595,48 @@ fn evaluate(
                         if check_results.is_empty() {
                             continue;
                         }
-                        if let Err(reason) = input.scope(policy, bundle) {
-                            missing.push(reason);
-                            continue;
-                        }
+                        let covered_units =
+                            match input.applicable_scope(policy, bundle, execution, scenario) {
+                                Ok(covered) => covered,
+                                Err(reason) => {
+                                    missing.push(reason);
+                                    continue;
+                                }
+                            };
+                        let executed_for_release = input.scope(policy, bundle).is_ok();
+                        let skipped_tests = execution.units.iter().any(|unit| {
+                            unit.executed_tests.iter().any(|test| {
+                                matches!(
+                                    test.outcome,
+                                    crate::run::ExecutedTestOutcome::Skipped
+                                        | crate::run::ExecutedTestOutcome::NotExecuted
+                                )
+                            })
+                        });
+                        let units = execution
+                            .units
+                            .iter()
+                            .map(|unit| {
+                                Json::obj(vec![
+                                    ("id", Json::str(&unit.id)),
+                                    (
+                                        "input_fingerprint",
+                                        unit.input_fingerprint
+                                            .as_ref()
+                                            .map_or(Json::Null, Json::str),
+                                    ),
+                                    (
+                                        "matched",
+                                        Json::Bool(input.unit_manifest.get(&unit.id).is_some_and(
+                                            |manifest| {
+                                                unit.input_fingerprint.as_deref()
+                                                    == Some(manifest.input_fingerprint.as_str())
+                                            },
+                                        )),
+                                    ),
+                                ])
+                            })
+                            .collect::<Vec<_>>();
                         let (context_dependencies, inapplicable) =
                             match input.contexts(policy, bundle, execution, scenario) {
                                 Ok(v) => (v, None),
@@ -1094,12 +1652,41 @@ fn evaluate(
                                 check_result,
                                 dependencies: context_dependencies.clone(),
                                 inapplicable: inapplicable.clone(),
+                                executed_for_release,
+                                covered_units: covered_units.clone(),
+                                skipped_tests,
+                                units: units.clone(),
                             });
                         }
                     }
                 }
             } else {
                 missing.push("Check has no deployment applicability policy".into());
+            }
+            if text(policy.unwrap_or(&Json::Null), "verification_target")
+                .is_ok_and(|t| t == "source")
+            {
+                let mut covered = BTreeSet::new();
+                for candidate in &candidates {
+                    if candidate.check_result.outcome == CheckResultOutcome::Satisfied
+                        && candidate.bundle.status == RunStatus::Complete
+                        && !candidate.skipped_tests
+                        && candidate.inapplicable.is_none()
+                    {
+                        covered.extend(candidate.covered_units.iter().cloned());
+                    }
+                }
+                let uncovered = input.uncovered_units(check_id, &covered);
+                let before = candidates.len();
+                if !uncovered.is_empty() {
+                    candidates.retain(|c| c.check_result.outcome != CheckResultOutcome::Satisfied);
+                    if candidates.len() != before {
+                        missing.push(format!(
+                            "units without a passing result: {}",
+                            uncovered.join(", ")
+                        ));
+                    }
+                }
             }
             let mut selected = candidates.iter().collect::<Vec<_>>();
             if monitored {
@@ -1119,8 +1706,11 @@ fn evaluate(
                     missing.push("latest Monitor execution is incomplete".into());
                 }
             }
+            let account = check_accounts.entry(check_id.to_string()).or_default();
+            account.scenarios.insert(scenario.to_string());
             let mut outcomes = BTreeSet::new();
             let mut binding_check_results = Vec::new();
+            let mut binding_counterexample = false;
             let mut binding_ok = !selected.is_empty();
             for candidate in &selected {
                 let mut usable = input.deployment_reasons.is_empty();
@@ -1129,6 +1719,13 @@ fn evaluate(
                     missing.push(reason.clone());
                 }
                 let check_result = candidate.check_result;
+                if candidate.skipped_tests {
+                    usable = false;
+                    missing.push(
+                        "selected tests were skipped or not executed, so the result is inconclusive"
+                            .into(),
+                    );
+                }
                 if candidate.bundle.status != RunStatus::Complete {
                     usable = false;
                     missing.push("Run is incomplete".into());
@@ -1173,7 +1770,35 @@ fn evaluate(
                     ),
                     ("outcome", Json::str(check_result.outcome.name())),
                     ("applicable", Json::Bool(usable)),
+                    (
+                        "executed_for_release",
+                        Json::Bool(candidate.executed_for_release),
+                    ),
+                    ("reused", Json::Bool(!candidate.executed_for_release)),
                 ]);
+                if usable {
+                    account.runs.insert(
+                        candidate.bundle.bundle_fingerprint.clone(),
+                        Json::obj(vec![
+                            (
+                                "run_fingerprint",
+                                Json::str(&candidate.bundle.bundle_fingerprint),
+                            ),
+                            ("run_id", Json::str(&candidate.bundle.run_id)),
+                            (
+                                "executed_for_release",
+                                Json::Bool(candidate.executed_for_release),
+                            ),
+                            ("reused", Json::Bool(!candidate.executed_for_release)),
+                            ("subject", run_subject(candidate.bundle)),
+                            ("units", Json::Arr(candidate.units.clone())),
+                            (
+                                "executed_at_ms",
+                                Json::Num(check_result.observed_at_ms as f64),
+                            ),
+                        ]),
+                    );
+                }
                 binding_check_results.push(reference.clone());
                 if !usable {
                     unassessed_evidence.push(reference.clone());
@@ -1213,6 +1838,7 @@ fn evaluate(
                     && !(monitored && outcomes.len() > 1)
                 {
                     definitive = true;
+                    binding_counterexample = true;
                 } else {
                     missing.push(
                         "adverse Check Result has no declared counterexample contribution".into(),
@@ -1234,6 +1860,17 @@ fn evaluate(
             if !binding_ok {
                 all_bindings = false;
             }
+            account.states.insert(if binding_counterexample {
+                "counterexample"
+            } else if selected.iter().any(|candidate| candidate.skipped_tests) {
+                "skipped"
+            } else if outcomes.contains("inconclusive") || outcomes.len() > 1 {
+                "inconclusive"
+            } else if binding_ok && outcomes.contains("satisfied") {
+                "supported"
+            } else {
+                "missing"
+            });
             missing.sort();
             missing.dedup();
             if !binding_ok {
@@ -1280,31 +1917,45 @@ fn evaluate(
                 ),
             ]));
         }
-        for scenario in scenarios.difference(&supported_scenarios) {
-            reasons.push(format!(
-                "Scenario `{scenario}` lacks applicable supporting evidence"
-            ));
+        for scenario in required_scenarios.difference(&supported_scenarios) {
+            match unknown_scenarios.get(scenario) {
+                Some(reason) => reasons.push(format!(
+                    "Scenario `{scenario}` condition is unknown: {reason}"
+                )),
+                None => reasons.push(format!(
+                    "Scenario `{scenario}` lacks applicable supporting evidence"
+                )),
+            }
         }
         for gap in array(requirement, "gaps")? {
             if let Some(gap) = gap.as_str() {
                 reasons.push(gap.into());
             }
         }
+        if not_applicable {
+            reasons.clear();
+        }
         reasons.sort();
         reasons.dedup();
-        let status = if definitive && review_ok {
+        let status = if not_applicable {
+            "not-applicable"
+        } else if definitive && review_ok {
             "violated"
         } else if review_ok
             && all_bindings
-            && scenarios == supported_scenarios
-            && !scenarios.is_empty()
+            && required_scenarios == supported_scenarios
+            && !required_scenarios.is_empty()
+            && unknown_scenarios.is_empty()
             && reasons.is_empty()
         {
             "supported"
         } else {
             "unresolved"
         };
-        let summary = if status == "supported" {
+        let summary = if status == "not-applicable" {
+            "Not applicable here: the deployment's context fails a condition of the Requirement"
+                .into()
+        } else if status == "supported" {
             "All required deployment evidence supports the Requirement".into()
         } else if status == "violated" {
             "Applicable evidence provides a declared counterexample to the Requirement".into()
@@ -1377,6 +2028,7 @@ fn evaluate(
                 ]),
             ),
             ("coverage", Json::Arr(coverage)),
+            ("conditions", Json::Arr(condition_records)),
             (
                 "evidence",
                 Json::obj(vec![
@@ -1400,6 +2052,25 @@ fn evaluate(
             ),
             ("gaps", field(requirement, "gaps")?.clone()),
             ("bindings", Json::Arr(bindings_out)),
+            (
+                "checks",
+                Json::Arr(
+                    check_accounts
+                        .iter()
+                        .map(|(check_id, account)| {
+                            Json::obj(vec![
+                                ("check_id", Json::str(check_id)),
+                                (
+                                    "scenarios",
+                                    Json::Arr(account.scenarios.iter().map(Json::str).collect()),
+                                ),
+                                ("outcome", Json::str(account.outcome())),
+                                ("runs", Json::Arr(account.runs.values().cloned().collect())),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
             ("challenges", Json::Arr(vec![])),
             ("explanation", explanation),
             ("dependencies", Json::Arr(dependencies)),

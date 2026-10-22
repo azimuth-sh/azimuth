@@ -62,6 +62,11 @@ macro_rules! define_finding_kinds {
 
 define_finding_kinds! {
     Unclassified,
+    ConditionUnknownComponent,
+    ConditionUnknownLeaf,
+    ConditionTypeMismatch,
+    ConditionConflict,
+    CheckUnknownLeaf,
     Unrealized,
     DanglingRealization,
     DanglingDesignEntry,
@@ -121,6 +126,11 @@ impl FindingKind {
     pub fn name(self) -> &'static str {
         match self {
             Self::Unclassified => "unclassified",
+            Self::ConditionUnknownComponent => "condition-unknown-component",
+            Self::ConditionUnknownLeaf => "condition-unknown-leaf",
+            Self::ConditionTypeMismatch => "condition-type-mismatch",
+            Self::ConditionConflict => "condition-conflict",
+            Self::CheckUnknownLeaf => "check-unknown-leaf",
             Self::Unrealized => "unrealized",
             Self::DanglingRealization => "dangling-realization",
             Self::DanglingDesignEntry => "dangling-design-entry",
@@ -179,7 +189,12 @@ impl FindingKind {
 
     pub fn category(self) -> FindingCategory {
         match self {
-            Self::Unclassified => FindingCategory::Intent,
+            Self::Unclassified
+            | Self::ConditionUnknownComponent
+            | Self::ConditionUnknownLeaf
+            | Self::ConditionTypeMismatch
+            | Self::ConditionConflict => FindingCategory::Intent,
+            Self::CheckUnknownLeaf => FindingCategory::Verification,
             Self::Unrealized
             | Self::DanglingRealization
             | Self::MissingRequiredRealization
@@ -226,6 +241,21 @@ impl FindingKind {
     pub fn help(self) -> &'static str {
         match self {
             Self::Unclassified => "Declare the Requirement's criticality explicitly.",
+            Self::ConditionUnknownComponent => {
+                "Declare the component in the project catalog `components`, or remove the condition."
+            }
+            Self::ConditionUnknownLeaf => {
+                "Declare the leaf in the component's execution-context declaration, or remove the condition."
+            }
+            Self::ConditionTypeMismatch => {
+                "Write a value of the type the leaf declares."
+            }
+            Self::CheckUnknownLeaf => {
+                "Declare the component and leaf in the project catalog and its execution-context declaration, or remove the dependency from the Check's `Deployment:` contexts."
+            }
+            Self::ConditionConflict => {
+                "Remove one of the conditions; all conditions hold together and a Scenario cannot override an inherited one."
+            }
             Self::Unrealized => "Link production code that establishes the Requirement predicate.",
             Self::DanglingRealization => {
                 "Retarget or remove the production link to the unknown Requirement."
@@ -271,7 +301,7 @@ impl FindingKind {
             }
             Self::MissingRequirementJudgment => "Record the Requirement's total-composition Judgment.",
             Self::PendingRequirementReview => "Complete the pending historical Requirement review against implementation and evidence before judgment.",
-            Self::MissingRequirementAssurance => "Supply a matching native assurance snapshot with current accepted Requirement Review and supported exact-target Requirement Status.",
+            Self::MissingRequirementAssurance => "Supply a matching native assurance snapshot with current accepted Requirement Review and supported exact-target Requirement Status, or ratify the Requirement with a committed accepted Requirement Review plus the change's acceptance.json.",
             Self::InvalidRequirementReview => "Repair the Requirement review references before judgment.",
             Self::VerificationElementSupportUnresolved => "Provide source/configuration support for the required verification element.",
             Self::ScenarioCheckContributionUnresolved => "Declare a source-authored Check contribution to this Scenario.",
@@ -1164,8 +1194,162 @@ fn severity_for(criticality: Option<Criticality>) -> Severity {
     }
 }
 
-pub fn validate(model: &Model) -> Vec<Finding> {
+fn condition_findings(model: &Model) -> Vec<Finding> {
     let mut findings = Vec::new();
+    for spec in &model.specs {
+        for requirement in &spec.requirements {
+            let mut report = |kind: FindingKind, line: usize, detail: String| {
+                findings.push(Finding {
+                    kind,
+                    severity: Severity::Error,
+                    requirement: Some(requirement.id.clone()),
+                    entity_kind: Some(crate::diag::EntityKind::Requirement),
+                    criticality: requirement.criticality,
+                    path: spec.path.clone(),
+                    line,
+                    detail,
+                });
+            };
+            let scenario_conditions = requirement
+                .scenarios
+                .iter()
+                .flat_map(|scenario| &scenario.conditions);
+            for condition in requirement.conditions.iter().chain(scenario_conditions) {
+                let Some(component) = model.component(&condition.component) else {
+                    report(
+                        FindingKind::ConditionUnknownComponent,
+                        condition.line,
+                        format!(
+                            "condition `{}` names component `{}` which the project catalog does not declare",
+                            condition.render(),
+                            condition.component
+                        ),
+                    );
+                    continue;
+                };
+                let Some(declared) = component
+                    .leaves
+                    .as_ref()
+                    .and_then(|leaves| leaves.get(&condition.leaf))
+                else {
+                    report(
+                        FindingKind::ConditionUnknownLeaf,
+                        condition.line,
+                        format!(
+                            "condition `{}` names leaf `{}` which component `{}` does not declare",
+                            condition.render(),
+                            condition.leaf,
+                            condition.component
+                        ),
+                    );
+                    continue;
+                };
+                if condition.value.leaf_type() != *declared {
+                    report(
+                        FindingKind::ConditionTypeMismatch,
+                        condition.line,
+                        format!(
+                            "condition `{}` compares {} leaf `{}` of `{}` with a {} value",
+                            condition.render(),
+                            declared.name(),
+                            condition.leaf,
+                            condition.component,
+                            condition.value.leaf_type().name()
+                        ),
+                    );
+                }
+            }
+            let conflicting = |first: &crate::model::Condition,
+                               second: &crate::model::Condition| {
+                first.component == second.component
+                    && first.leaf == second.leaf
+                    && first.value != second.value
+            };
+            for (index, later) in requirement.conditions.iter().enumerate() {
+                if let Some(earlier) = requirement.conditions[..index]
+                    .iter()
+                    .find(|earlier| conflicting(earlier, later))
+                {
+                    report(
+                        FindingKind::ConditionConflict,
+                        later.line,
+                        format!(
+                            "condition `{}` conflicts with `{}` on line {}",
+                            later.render(),
+                            earlier.render(),
+                            earlier.line
+                        ),
+                    );
+                }
+            }
+            for scenario in &requirement.scenarios {
+                for (index, later) in scenario.conditions.iter().enumerate() {
+                    let earlier = requirement
+                        .conditions
+                        .iter()
+                        .chain(&scenario.conditions[..index])
+                        .find(|earlier| conflicting(earlier, later));
+                    if let Some(earlier) = earlier {
+                        report(
+                            FindingKind::ConditionConflict,
+                            later.line,
+                            format!(
+                                "condition `{}` of Scenario `{}` conflicts with `{}` on line {}",
+                                later.render(),
+                                scenario.id,
+                                earlier.render(),
+                                earlier.line
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+    }
+    findings
+}
+
+fn check_leaf_findings(model: &Model) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for document in &model.account_verifications {
+        for check in &document.checks {
+            let Some(policy) = check
+                .inputs
+                .get("deployment-policy")
+                .and_then(|raw| crate::run::strict_json("Deployment", raw).ok())
+            else {
+                continue;
+            };
+            let Ok(dependencies) = crate::deployment_status::context_dependencies(&policy, "contexts")
+            else {
+                continue;
+            };
+            for (component, leaf) in dependencies {
+                if model.component_leaf_type(&component, &leaf).is_some() {
+                    continue;
+                }
+                findings.push(Finding {
+                    kind: FindingKind::CheckUnknownLeaf,
+                    severity: Severity::Error,
+                    requirement: Some(check.requirement.clone()),
+                    entity_kind: Some(crate::diag::EntityKind::Requirement),
+                    criticality: None,
+                    path: document.path.clone(),
+                    line: 1,
+                    detail: format!(
+                        "Check `{}` depends on leaf `{leaf}` of component `{component}`, which the project catalog and its execution-context declaration do not declare",
+                        check.definition.id
+                    ),
+                });
+            }
+        }
+    }
+    findings
+}
+
+pub fn validate(model: &Model) -> Vec<Finding> {
+    let mut findings = condition_findings(model);
+    findings.extend(check_leaf_findings(model));
     for spec in &model.specs {
         for requirement in &spec.requirements {
             if requirement.criticality.is_none() {

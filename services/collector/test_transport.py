@@ -110,7 +110,7 @@ class TargetTransportTests(unittest.TestCase):
 
 
 class RenamedAssuranceServiceTests(unittest.TestCase):
-    """Delivery against an ASS that, like the renamed server, accepts only target observation version 2."""
+    """Delivery against an AAS that, like the renamed server, accepts only target observation version 2."""
 
     def setUp(self):
         self.uploads = []

@@ -103,7 +103,7 @@ pub(super) async fn read(
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         .execute(&mut *tx)
         .await?;
-    let selected:Option<String>=sqlx::query_scalar("SELECT fingerprint FROM model_revisions WHERE project=$1 AND fingerprint=$2 UNION ALL SELECT fingerprint FROM current_authorities WHERE project=$1 AND $2::text IS NULL").bind(project).bind(revision).fetch_optional(&mut *tx).await?;
+    let selected:Option<String>=sqlx::query_scalar(&format!("SELECT fingerprint FROM model_revisions WHERE project=$1 AND fingerprint=$2 UNION ALL ({DEFAULT_MODEL_SELECT})")).bind(project).bind(revision).fetch_optional(&mut *tx).await?;
     let revision = selected.ok_or_else(LedgerError::not_found)?;
     let relevant = relevant_event();
     let row=sqlx::query(&format!("SELECT d.*,EXISTS(SELECT 1 FROM definition_events e WHERE {relevant}) AS pending FROM definition_assessments d WHERE d.project=$1 AND d.revision=$2")).bind(project).bind(&revision).fetch_optional(&mut *tx).await?;

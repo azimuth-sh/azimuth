@@ -1,4 +1,4 @@
-"""Prepare an explicit reviewed collector configuration without contacting ASS."""
+"""Prepare an explicit reviewed collector configuration without contacting AAS."""
 import argparse
 import json
 import os

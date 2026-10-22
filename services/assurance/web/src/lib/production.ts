@@ -1,4 +1,5 @@
 import "server-only";
+import { readDeliveryGap, readRollbackCandidates } from "./delivery";
 import {
   readProject,
   type Page,
@@ -18,11 +19,18 @@ interface Release {
     release: { label: string; model_revision: string };
     catalog?: Catalog;
   };
-  acceptance: unknown;
 }
 
-export function requirementStatus(status: string) {
-  return status === "supported" || status === "violated"
+export type RequirementStatusKind =
+  | "supported"
+  | "violated"
+  | "not-applicable"
+  | "unresolved";
+
+export function requirementStatus(status: string): RequirementStatusKind {
+  return status === "supported" ||
+    status === "violated" ||
+    status === "not-applicable"
     ? status
     : "unresolved";
 }
@@ -39,8 +47,15 @@ export async function environmentView(
   selected: string | null,
   environment = "production",
 ) {
-  const [deployments, authority, currentSelection, exact, observation] =
-    await Promise.all([
+  const [
+    deployments,
+    authority,
+    currentSelection,
+    exact,
+    observation,
+    deliveryGap,
+    rollbackCandidates,
+  ] = await Promise.all([
       readProject<Page<Deployment>>(project, "/deployments?limit=100"),
       readProject<{ fingerprint: string }>(project, "/authority"),
       readProject<DeploymentSelection>(
@@ -66,6 +81,8 @@ export async function environmentView(
         project,
         `/environments/${encodeURIComponent(environment)}/observations`,
       ),
+      readDeliveryGap(project, environment),
+      readRollbackCandidates(project, environment),
     ]);
   const observationFresh =
     !!observation?.fresh &&
@@ -117,6 +134,8 @@ export async function environmentView(
     state,
     freshness,
     authority,
+    deliveryGap,
+    rollbackCandidates: rollbackCandidates?.candidates ?? [],
     currentSelection,
     catalog: catalog?.catalog,
     isCurrent:

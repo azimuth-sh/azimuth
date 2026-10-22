@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { requireViewer } from '@/lib/auth';
-import { readProject, routeFingerprint, type Page, type RequirementReviewState, type VerificationTargetState, type DeploymentCheckPolicy } from '@/lib/assurance';
+import { readProject, routeFingerprint, type Page, type RequirementReviewState, type VerificationTargetState, type DeploymentCheckPolicy, type ModelRevision, type ReleaseSummary, type ReleaseDetail, type DeploymentReference as Deployment } from '@/lib/assurance';
 import { requirementStatus } from '@/lib/production';
 import { ModelNavigation } from '@/components/model-navigation';
 import { ModelWorkspace } from '@/components/model-workspace';
@@ -22,12 +22,10 @@ type Authority = {
   requirements: { id: string; scenarios: string[]; bindings: { check: string; scenario: string }[]; gaps: unknown }[];
   checks: { id: string; fingerprint: string; deployment?: DeploymentCheckPolicy | null }[];
 };
-type Revision = { revision: string; selected: boolean };
-type ReleaseSummary = { fingerprint: string; release: { label: string; model_revision: string }; accepted: boolean };
-type Deployment = { deployment: { id: string; environment: string; verification_target_fingerprint?: string }; release_fingerprint: string };
+type Version = { kind: 'environment' | 'release' | 'main' | 'revision'; label: string };
 type Snapshot = { reviews: Record<string, unknown>[] };
-const labels = { supported: 'Satisfied', violated: 'Not satisfied', unresolved: 'Unresolved' };
-const tones = { supported: 'good', violated: 'bad', unresolved: 'warn' };
+const labels = { supported: 'Satisfied', violated: 'Not satisfied', unresolved: 'Unresolved', 'not-applicable': 'Not applicable here' };
+const tones = { supported: 'good', violated: 'bad', unresolved: 'warn', 'not-applicable': 'neutral' };
 function date(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value)
     ? new Date(value).toLocaleString('en-GB', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' }) + ' UTC'
@@ -43,14 +41,15 @@ export default async function ModelPage({ params, searchParams }: {
   const query = await searchParams;
   const environment = await selectedEnvironment(projectId, query.environment);
   const pinned = (await cookies()).get('assurance-modules-pinned')?.value === '1';
-  if (['revision', 'verification-target', 'module', 'requirement', 'context'].some(key => Array.isArray(query[key]))) notFound();
+  if (['revision', 'verification-target', 'module', 'requirement', 'version'].some(key => Array.isArray(query[key]))) notFound();
   const requestedRevision = typeof query.revision === 'string' ? routeFingerprint(query.revision) : null;
   const requestedTarget = query['verification-target'];
   let verificationTarget = typeof requestedTarget === 'string' ? routeFingerprint(requestedTarget) : null;
   if (query.revision && !requestedRevision || requestedTarget && !verificationTarget) notFound();
+  const requestedVersion = typeof query.version === 'string' ? query.version : undefined;
   const root = `/projects/${encodeURIComponent(projectId)}`;
   const [revisions, deployments, releases, currentEnvironment] = await Promise.all([
-    readProject<Page<Revision>>(projectId, '/model-revisions?limit=100'),
+    readProject<Page<ModelRevision>>(projectId, '/model-revisions?limit=100'),
     readProject<Page<Deployment>>(projectId, '/deployments?limit=100'),
     readProject<Page<ReleaseSummary>>(projectId, '/releases?limit=100'),
     readProject<Deployment>(projectId, `/environments/${encodeURIComponent(environment)}/deployment`),
@@ -60,45 +59,59 @@ export default async function ModelPage({ params, searchParams }: {
     const recorded = deployments?.items.filter(d => d.release_fingerprint === fingerprint && d.deployment.environment === environment) ?? [];
     return !deployments?.next && recorded.length === 1 ? recorded[0] : null;
   }
-  const context = typeof query.context === 'string' ? query.context : undefined;
-  let revision = requestedRevision ?? revisions?.items.find(r => r.selected)?.revision;
+  const defaultRevision = revisions?.items.find(r => r.selected)?.revision;
+  let revision: string | undefined;
   let deployment: Deployment | null = null;
   let release: ReleaseSummary | undefined;
-  if (context?.startsWith('deployment:')) {
-    deployment = await readProject<Deployment>(projectId, `/deployments/${encodeURIComponent(context.slice(11))}`);
-    if (!deployment) notFound();
-  } else if (!context && verificationTarget) {
-    deployment = deployments?.items.find(d => d.deployment.verification_target_fingerprint === verificationTarget) ?? null;
-    if (!deployment) notFound();
-  }
-  if (deployment && deployment.deployment.environment !== environment) notFound();
-  const releaseFingerprint = deployment?.release_fingerprint ?? (context?.startsWith('release:') ? routeFingerprint(context.slice(8)) : null);
-  if (releaseFingerprint) {
-    const record = await readProject<{ publication: { release: ReleaseSummary['release'] }; acceptance: unknown }>(projectId, `/releases/${encodeURIComponent(releaseFingerprint)}/summary`);
+  let version: Version;
+  let versionParam: string | null = null;
+  async function loadRelease(fingerprint: string) {
+    const record = await readProject<ReleaseDetail>(projectId, `/releases/${encodeURIComponent(fingerprint)}/summary`);
     if (!record) notFound();
-    release = { fingerprint: releaseFingerprint, release: record.publication.release, accepted: !!record.acceptance };
+    release = { fingerprint, release: record.publication.release };
     revision = release.release.model_revision;
-    deployment ??= environmentDeployment(releaseFingerprint);
+    deployment = environmentDeployment(fingerprint);
     verificationTarget = deployment?.deployment.verification_target_fingerprint ?? null;
-  } else if (context === 'accepted') {
-    revision = revisions?.items.find(r => r.selected)?.revision;
-    verificationTarget = null;
-  } else if (context) {
-    notFound();
-  } else {
-    const matching = releases?.items.filter(r => r.release.model_revision === revision) ?? [];
-    release = matching.length === 1 ? matching[0] : undefined;
-    if (release) {
-      deployment = environmentDeployment(release.fingerprint);
-      verificationTarget = deployment?.deployment.verification_target_fingerprint ?? null;
-    }
   }
-  const contextValue = release ? `release:${release.fingerprint}` : 'accepted';
-  const contexts = [
-    { value: 'accepted', label: 'Accepted model · definitions' },
-    ...(releases?.items ?? []).map(r => ({
-      value: `release:${r.fingerprint}`,
-      label: `${r.release.label} · ${environmentDeployment(r.fingerprint) ? environment : `no ${environment} deployment selected`}`,
+  if (requestedRevision) {
+    revision = requestedRevision;
+    version = { kind: 'revision', label: 'Selected model' };
+    if (verificationTarget) {
+      deployment = deployments?.items.find(d => d.deployment.verification_target_fingerprint === verificationTarget) ?? null;
+      if (!deployment || deployment.deployment.environment !== environment) notFound();
+      release = releases?.items.find(r => r.fingerprint === deployment?.release_fingerprint);
+    } else {
+      release = releases?.items.find(r => r.release.model_revision === requestedRevision && environmentDeployment(r.fingerprint));
+      if (release) {
+        deployment = environmentDeployment(release.fingerprint);
+        verificationTarget = deployment?.deployment.verification_target_fingerprint ?? null;
+      }
+    }
+  } else if (requestedVersion === 'main') {
+    revision = defaultRevision;
+    version = { kind: 'main', label: 'Main default model' };
+    versionParam = 'main';
+  } else if (requestedVersion?.startsWith('release:')) {
+    const fingerprint = routeFingerprint(requestedVersion.slice(8));
+    if (!fingerprint) notFound();
+    await loadRelease(fingerprint);
+    version = { kind: 'release', label: release!.release.label };
+    versionParam = requestedVersion;
+  } else if (requestedVersion) {
+    notFound();
+  } else if (currentEnvironment) {
+    await loadRelease(currentEnvironment.release_fingerprint);
+    version = { kind: 'environment', label: release!.release.label };
+  } else {
+    revision = defaultRevision;
+    version = { kind: 'main', label: 'Main default model' };
+  }
+  const otherVersions = [
+    ...(version.kind === 'main' ? [] : [{ href: `${root}/model?${new URLSearchParams({ environment, version: 'main' })}`, label: 'Main default model', detail: 'definitions only' }]),
+    ...(releases?.items ?? []).filter(r => r.fingerprint !== release?.fingerprint).map(r => ({
+      href: `${root}/model?${new URLSearchParams({ environment, version: `release:${r.fingerprint}` })}`,
+      label: r.release.label,
+      detail: environmentDeployment(r.fingerprint) ? `deployed in ${environment}` : `not deployed in ${environment}`,
     })),
   ];
   const [catalogRecord, model, reviewState, deploymentStatus] = revision ? await Promise.all([
@@ -118,9 +131,11 @@ export default async function ModelPage({ params, searchParams }: {
   const module = modules.find(m => m.id === moduleId);
   const title = (id: string) => catalog?.requirements.find(c => c.id === id)?.title ?? id;
   const values = new URLSearchParams({ environment });
-  if (release) values.set("release", release.fingerprint);
-  if (context || deployment || release) values.set('context', deployment ? `deployment:${deployment.deployment.id}` : contextValue);
-  else if (revision) values.set('revision', revision);
+  if (versionParam) values.set('version', versionParam);
+  else if (requestedRevision) {
+    values.set('revision', requestedRevision);
+    if (verificationTarget) values.set('verification-target', verificationTarget);
+  }
   const base = `${root}/model?${values}`;
   const historyRequested = query.history === '1';
   const snapshot = requirement && revision && historyRequested ? await readProject<Snapshot>(projectId, `/model-revisions/${encodeURIComponent(revision)}/snapshot`) : null;
@@ -130,8 +145,8 @@ export default async function ModelPage({ params, searchParams }: {
   const reviewFallback = reviewFresh ? 'missing' : 'Updating';
   const review = reviewFresh ? reviewState?.requirements.find(c => c.requirement === requirement?.id) : undefined;
   const status = requirementStatus(state?.status ?? 'unresolved');
-  const systemName = deployment ? `${deployment.deployment.environment} · ${deployment.deployment.id}` : release ? `No ${environment} deployment selected · definitions only` : 'Definitions only';
-  const modelName = release?.release.label ?? (model?.selected ? 'Accepted baseline' : 'Selected model');
+  const systemName = deployment ? `${deployment.deployment.environment} · ${deployment.deployment.id}` : release ? `Not deployed in ${environment} · definitions only` : `No ${environment} deployment · definitions only`;
+  const modelName = version.label;
   function descendants(id: string, trail: string[] = []): string[] {
     if (trail.includes(id)) return [];
     return [id, ...modules.filter(m => m.parent === id).flatMap(m => descendants(m.id,[...trail,id]))];
@@ -143,11 +158,11 @@ export default async function ModelPage({ params, searchParams }: {
     const assessment = assessmentFresh ? deploymentStatus?.requirements.find(c => c.requirement === id) : undefined;
     const status = requirementStatus(assessment?.status ?? 'unresolved');
     const review = reviewFresh ? reviewState?.requirements.find(c => c.requirement === id) : undefined;
-    return <Link className="modelRequirementRow" href={`${base}&requirement=${encodeURIComponent(id)}`} key={id} scroll={false}><span className={`modelStatusDot ${verificationTarget ? tones[status] : 'neutral'}`} /><div><h3>{title(id)}</h3><p>{assessment?.explanation.summary || (verificationTarget ? 'No assessment available for this system version.' : 'Requirement definition · open a deployment context to inspect evidence.')}</p></div><div className="modelRowStatuses"><span className={`badge ${verificationTarget ? tones[status] : 'neutral'}`}>{verificationTarget ? labels[status] : 'Definition'}</span><small>Review: {review?.assessment ?? reviewFallback}</small></div><span aria-hidden="true">›</span></Link>;
+    return <Link className="modelRequirementRow" href={`${base}&requirement=${encodeURIComponent(id)}`} key={id} scroll={false}><span className={`modelStatusDot ${verificationTarget ? tones[status] : 'neutral'}`} /><div><h3>{title(id)}</h3><p>{assessment?.explanation.summary || (verificationTarget ? 'No assessment available for this system version.' : 'Requirement definition · open a version running in an environment to inspect evidence.')}</p></div><div className="modelRowStatuses"><span className={`badge ${verificationTarget ? tones[status] : 'neutral'}`}>{verificationTarget ? labels[status] : 'Definition'}</span><small>Review: {review?.assessment ?? reviewFallback}</small></div><span aria-hidden="true">›</span></Link>;
   };
   return <div className="modelPage">
     <header className="modelPageHeading"><div><p className="overline">MODEL WORKSPACE</p><h1>Model</h1></div><Link className="textLink" href={`${root}?environment=${encodeURIComponent(environment)}`}>← Environment overview</Link></header>
-    <div className="modelContext"><div><strong>{modelName}</strong><span className="badge neutral">{release ? 'Release model' : model?.selected ? 'Accepted model' : 'Model definitions'}</span><span className="contextSystem">{systemName}</span></div><details className="contextChange"><summary>Change context</summary><form method="get"><input type="hidden" name="environment" value={environment} /><label>Browse context<select name="context" defaultValue={contextValue}>{contexts.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}{!contexts.some(option => option.value === contextValue) && <option value={contextValue}>{modelName} · {systemName}</option>}</select></label><button type="submit">Apply</button></form></details></div>
+    <div className="modelContext"><div><strong>{modelName}</strong><span className="badge neutral">{version.kind === 'environment' ? 'Environment release model' : version.kind === 'release' ? 'Release model' : version.kind === 'main' ? 'Default model on main' : model?.selected ? 'Default model on main' : 'Model definitions'}</span><span className="contextSystem">{systemName}</span></div><details className="contextChange"><summary>Other versions</summary><ul>{otherVersions.map(option => <li key={option.href}><Link href={option.href}>{option.label}</Link> <small>· {option.detail}</small></li>)}{!otherVersions.length && <li>No other versions published.</li>}</ul></details></div>
     {deploymentStatus?.assessment && !assessmentFresh && <section className="dashboardPanel" role="status"><h2>{deploymentStatus.assessment.state === 'expired' ? 'Assessment overdue' : 'Assessment updating'}</h2><p>Evidence is being reassessed. Previous conclusions are not shown as current.</p></section>}
     {(deployments?.next || releases?.next) && <p className="modelContextNotice">Showing the first 100 release and deployment contexts. Exact links remain available for older records.</p>}
     <ModelWorkspace
@@ -158,7 +173,7 @@ export default async function ModelPage({ params, searchParams }: {
       <section className="modelDetail" aria-label="Selected module or Requirement">
         {requirementId && !requirement ? <div className="panelEmpty"><h2>Requirement not found in this model</h2><Link className="textLink" href={base}>Browse modules →</Link></div> : requirement ? <>
           <h2 className="requirementStatement">{title(requirement.id)}</h2>
-          <section className="requirementStatusSummary" aria-label="Requirement Status"><div><span className={`badge ${verificationTarget ? tones[status] : 'neutral'}`}>{verificationTarget ? labels[status] : 'Definition'}</span><span className="modelDetailMuted">{systemName}</span></div><p>{state?.explanation.summary || (verificationTarget ? 'No Requirement Status is available for this deployment.' : 'Browsing definitions. Open a deployment context to inspect Requirement Status and evidence.')}</p><span className="reviewSummary">{state?.evaluated_at_ms ? <>Evaluated {date(state.evaluated_at_ms)} · </> : null}Requirement Review: <strong>{review?.assessment ?? reviewFallback}</strong></span></section>
+          <section className="requirementStatusSummary" aria-label="Requirement Status"><div><span className={`badge ${verificationTarget ? tones[status] : 'neutral'}`}>{verificationTarget ? labels[status] : 'Definition'}</span><span className="modelDetailMuted">{systemName}</span></div><p>{state?.explanation.summary || (verificationTarget ? 'No Requirement Status is available for this deployment.' : 'Browsing definitions. Open a version running in this environment to inspect Requirement Status and evidence.')}</p><span className="reviewSummary">{state?.evaluated_at_ms ? <>Evaluated {date(state.evaluated_at_ms)} · </> : null}Requirement Review: <strong>{review?.assessment ?? reviewFallback}</strong></span></section>
           <nav className="requirementSections" aria-label="Requirement sections"><a href="#requirement-monitors">Monitoring</a><a href="#requirement-deployment">Deployment</a><a href="#requirement-implementation">Implementation</a><a href="#requirement-statement">Statement</a><a href="#requirement-review">Review</a><Link prefetch={false} href={`${base}&requirement=${encodeURIComponent(requirement.id)}&history=1#requirement-history`}>History</Link></nav>
           {state && state.explanation.reasons.length > 0 && <details className="statusReasons"><summary>Why this Requirement is {labels[status].toLowerCase()}</summary><ul>{state.explanation.reasons.map((reason,i) => <li key={`${reason.code}:${i}`}><span>{reason.message}</span>{reason.check && <small>Check: {reason.check}</small>}</li>)}</ul></details>}
           <RequirementVerification bindings={requirement.bindings} checks={model?.authority.checks ?? []} descriptions={catalog?.checks ?? []} scenarios={catalog?.scenarios ?? []} scenarioIds={requirement.scenarios} state={state} evaluatedAt={state?.evaluated_at_ms ?? deploymentStatus?.evaluated_at_ms} hasDeployment={!!verificationTarget} projectRoot={root} />
@@ -168,7 +183,7 @@ export default async function ModelPage({ params, searchParams }: {
         </> : <>
           <p className="overline">{module ? 'MODULE' : 'MODEL STRUCTURE'}</p><h2 className="moduleDetailTitle">{module ? module.title : 'Modules & Requirements'}</h2><p className="modelDetailMuted">{module ? 'Requirements owned by this module and its nested modules.' : 'Select a module to explore its Requirements, reviews and evidence.'}</p>
           {!module && <div className="moduleOverview">{modules.filter(m => !m.parent || !modules.some(parent => parent.id === m.parent)).map(m => <Link href={`${base}&module=${encodeURIComponent(m.id)}`} key={m.id}><span className="moduleIcon">◇</span><strong>{m.title}</strong><span>{definitions.filter(c => modules.some(n => descendants(m.id).includes(n.id) && n.requirements.includes(c.id))).length} Requirements</span><span aria-hidden="true">›</span></Link>)}</div>}
-          {module ? <div className="moduleRequirementList">{visibleRequirements.map(c => requirementRow(c.id))}{!visibleRequirements.length && <p className="panelEmpty">No Requirements in this module.</p>}</div> : !definitions.length && <div className="panelEmpty"><h3>{model ? 'No Requirements in this model' : 'No model available'}</h3><p>Use Change context to select a published model.</p></div>}
+          {module ? <div className="moduleRequirementList">{visibleRequirements.map(c => requirementRow(c.id))}{!visibleRequirements.length && <p className="panelEmpty">No Requirements in this module.</p>}</div> : !definitions.length && <div className="panelEmpty"><h3>{model ? 'No Requirements in this model' : 'No model available'}</h3><p>Open Other versions to select a published model.</p></div>}
         </>}
         <details className="modelTechnical"><summary>Technical details</summary>{revision && <CopyValue label="Model revision" value={revision} />}{verificationTarget && <CopyValue label="Verification Target fingerprint" value={verificationTarget} />}{requirement && <CopyValue label="Requirement ID" value={requirement.id} />}{module && <CopyValue label="Module ID" value={module.id} />}{state && <details><summary>Complete Requirement Status</summary><pre>{JSON.stringify(state,null,2)}</pre></details>}{requirement && <details><summary>Definition gaps</summary><pre>{JSON.stringify(requirement.gaps ?? [],null,2)}</pre></details>}</details>
       </section>

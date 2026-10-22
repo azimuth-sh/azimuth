@@ -87,8 +87,8 @@ BEGIN
         SELECT assurance_record('context_capture',NEW.project,NEW.record_key)->'capture' INTO capture;
         IF capture->>'kind'='deployment' THEN
             captured_verification_target := capture->>'verification_target_fingerprint';
-            SELECT COALESCE(array_agg(value->>'contract_revision'),'{}') INTO context_ids
-              FROM jsonb_each(capture->'before'->'report'->'contexts');
+            SELECT COALESCE(array_agg(component),'{}') INTO context_ids
+              FROM jsonb_object_keys(capture->'before'->'report'->'contexts') AS component;
             -- A heartbeat that repeats the instance's previous capture cannot change any Requirement; its freshness
             -- is picked up when the published assessment expires. Replayed events always invalidate.
             IF NOT NEW.replayed THEN
@@ -113,7 +113,7 @@ BEGIN
              WHERE a.kind='run' AND a.project=NEW.project AND a.record_key=capture->>'bundle_fingerprint';
         END IF;
     ELSIF NEW.kind='context_contract' THEN
-        context_ids := ARRAY[NEW.record_key];
+        context_ids := ARRAY[assurance_record('context_contract',NEW.project,NEW.record_key)->'contract'->>'name'];
     ELSIF NEW.kind='reconciliation' THEN
         environment_name := NEW.record_key;
         -- An observation that repeats the previous composition only extends its freshness, which expiry re-evaluates.

@@ -251,15 +251,26 @@ async fn verify_execution_capture(
             "capture must enclose the exact execution interval",
         ));
     }
-    for (name, context) in capture["before"]["report"]["contexts"].as_object().unwrap() {
-        let fp = context["contract_revision"].as_str().unwrap();
-        let context_key = match capture["activity"].as_str() {
-            Some(activity) => format!("context/{fp}/activity/{activity}"),
-            None => format!("context/{fp}"),
-        };
-        if capture["after"]["report"]["contexts"].get(name) != Some(context)
-            || bundle["actual_selection"]["execution_context"][context_key] != fingerprint(context)?
-        {
+    for (component, context) in capture["before"]["report"]["contexts"].as_object().unwrap() {
+        let mut pinned = false;
+        for (leaf, value) in context["values"].as_object().into_iter().flatten() {
+            let pin = match capture["activity"].as_str() {
+                Some(activity) => format!("context/{component}/{leaf}/activity/{activity}"),
+                None => format!("context/{component}/{leaf}"),
+            };
+            let Some(expected) = bundle["actual_selection"]["execution_context"].get(&pin) else {
+                continue;
+            };
+            pinned = true;
+            if capture["after"]["report"]["contexts"][component]["values"].get(leaf) != Some(value)
+                || *expected != fingerprint(value)?
+            {
+                return Err(LedgerError::invalid(
+                    "Run does not pin a stable captured Execution Context",
+                ));
+            }
+        }
+        if !pinned {
             return Err(LedgerError::invalid(
                 "Run does not pin a stable captured Execution Context",
             ));

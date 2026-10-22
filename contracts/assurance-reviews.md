@@ -11,7 +11,7 @@ original meanings; see [the previous contract](history/assurance-reviews-before-
 
 `azimuth assurance authority` exports the complete unselected model projection with stable Requirement,
 Scenario, Check and Mechanism identities, inline Check–Scenario contributions and source support.
-Candidate registration does not select accepted authority or authorize deployment.
+Candidate registration does not select the default model or authorize deployment; the default model is the latest main-model publication.
 Review currentness follows relevant definitions and implementation/input fingerprints, rather
 than unrelated changes to the whole model. Changing a relevant dependency requires reassessment.
 The latest unambiguous assessment of a typed target is current; never fall back to an earlier
@@ -122,7 +122,14 @@ dump of all project execution history. Compilation validates those bundles and p
 corresponding `challenge_basis` references. It creates no reviewer, time,
 decision or positive conclusion. `azimuth assurance review-compile` compiles aggregate Markdown
 against those exact packets and the current account. Placeholders and changed inputs fail.
-Generated packets, compiled bundles and execution reports belong in ignored change `.azimuth/`.
+Generated packets and execution reports belong in ignored change `.azimuth/`. The compiled bundle
+is printed (or written with `--out`) and is not committed. `review-compile` also seals each compiled
+native review record into the change's `reviews/` directory beside the Markdown, as the committed JSON
+the ratification gate reads: a Markdown file holding one review seals to `reviews/<stem>.json`; one
+holding several seals each to `reviews/<stem>.<review-id>.json`. The record is created at review time
+against the reviewed model by the reviewer's own step, and the author commits Markdown and sealed JSON
+together. Recompiling an identical record leaves the file untouched; a different record at the same name
+fails unless `--replace-sealed` is passed, and two reviews never seal to one file.
 
 ## Challenging an assessment
 
@@ -150,7 +157,7 @@ reassessments, so the service can validate exact proof dependencies. Submission 
 the revision-linked review history and existing latest Run correction heads; native optional
 fields are retained unchanged in the immutable record.
 The service preserves immutable histories and exposes currentness and dependency gaps against
-explicit model authority. Source, artifact and deployed evidence cannot be joined solely because
+the default model's authority. Source, artifact and deployed evidence cannot be joined solely because
 their model revision matches. Any cross-target reliance requires an explicit applicability and
 provenance contract; unsupported composition remains a visible gap.
 
@@ -163,7 +170,7 @@ assessments are exposed independently of Verification Targets through selected a
 Authenticated submitter and receive time are transport facts, distinct from authored review
 provenance. Missing, stale, rejected and ambiguous records cannot infer a supported Requirement Status.
 
-There is no automatic authority selection, deployment acceptance or reassessment from execution.
+There is no authority selection, release acceptance or reassessment from execution.
 Historical parsers retain their original meanings for inspection; they do not convert old
 qualifications or judgments into new reviews. After new-kind ingestion, application rollback
 requires a parser capable of those records or an isolated pre-rollout database recovery; deleting

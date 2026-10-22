@@ -20,7 +20,7 @@ Its second position is that **evidence needs an argument, not a link**. That a t
 
 ## How it works
 
-Modules organize Requirements. Scenarios describe expected behavior. Checks produce Results. ASS assesses the evidence and shows Requirement Status for a deployment.
+Modules organize Requirements. Scenarios describe expected behavior. Checks produce Results. The Azimuth Assurance Service (AAS) assesses the evidence and shows Requirement Status for a deployment.
 
 Concepts arrive in the order you use them. Each step depends on the one before it, so nothing can be asserted before the thing it rests on exists.
 

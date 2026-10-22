@@ -4,7 +4,7 @@ These standard-library Python modules connect public xUnit/Playwright capture in
 Azimuth's existing configured adapter protocol. Harness reports are execution facts, not Runs.
 Explicit project mappings give those facts their Check/Scenario meaning. Publication is independent.
 Expose the commit-pinned `packages/python` directory through `PYTHONPATH`; nothing uses an
-installed floating release, ambient source discovery, or a connection from tests to ASS.
+installed floating release, ambient source discovery, or a connection from tests to AAS.
 
 ## Mapping
 
@@ -69,14 +69,16 @@ Typed harness report format is the shared `azimuth-test-report` version 1.
 
 ## Contexts and explicit partitions
 
-`contexts` in the mapping lists the exact context contract fingerprints required by the test.
+`contexts` in the mapping lists the required context leaves per component as
+`[{"component": "api", "leaves": ["auth.registered_schemes"]}]`; a component serves one context named by
+its id and leaves are dotted names. A mapping that still lists contract fingerprints is rejected.
 Captures require identical before/after process-lifetime identity and selected effective values.
 The planned required Execution Context must already contain
-`context/<contract-fingerprint>/activity/<activity-id>` with the canonical SHA-256 fingerprint of
-`{contract_revision, values}`. `activity_identity(check, unit, ordinal)` derives the stable ID
+`context/<component>/<leaf>/activity/<activity-id>` for every required leaf, with the canonical
+SHA-256 fingerprint of that leaf's scalar value. `activity_identity(check, unit, ordinal)` derives the stable ID
 from the exact mapped Check, unit and zero-based attempt ordinal. No ambient setting is inferred.
 Capture diagnostics make outcomes inconclusive. Contracts and secret-field declarations are
-validated by core/ASS; adapters do not manufacture contract acceptance.
+validated by core/AAS; adapters do not manufacture contract acceptance.
 
 A Run may contain many independently captured test units and retries. Each context-bearing unit
 must map exactly one native test; every attempt has its own activity interval and context pin.
@@ -87,13 +89,13 @@ inconclusive. `partition_report(...)` offers explicit per-attempt selections whe
 Plan each selection before importing; partitioning never silently discards retries.
 
 Capture sidecars bind exact Run ID, bundle fingerprint, Verification Target fingerprint, **activity**, component, instance
-and actual before/after snapshots. They never assert `trusted`; ASS derives attribution from
+and actual before/after snapshots. They never assert `trusted`; AAS derives attribution from
 authentication. Startup-fixed context is supported. Each capture covers its referenced activity's
 actual body interval, rather than a fictitious whole-suite interval. Native producers may instead
 use `activity:null` only when a genuine capture brackets the entire Run.
 
 A Check's reviewed deployment policy may pin an exact `units` inventory and explicitly declare
-`controls:[{unit,contexts:[contractFingerprint]}]`. Only those unit/contract pairs may intentionally
+`controls:[{unit,contexts:[{component,leaves}]}]`. Only those unit/leaf pairs may intentionally
 differ from deployed context; their capture stability and Run context pins are still required.
 The full declared unit inventory must match both plan and execution. Controls cannot alone
 establish positive Scenario support. The adapter never infers controls from mismatching settings.
@@ -140,7 +142,7 @@ errors are terminal; transient transport/429/5xx failures have bounded exponenti
 Redirects are refused to prevent forwarding credentials. HTTPS is mandatory outside explicit
 loopback integration tests. Tokens and response bodies are never included in error messages.
 Use an always-run artifact step after test execution, then normalize/publish unsuccessful facts
-where possible without granting ASS credentials to untrusted PR execution.
+where possible without granting AAS credentials to untrusted PR execution.
 
 ## Verification
 

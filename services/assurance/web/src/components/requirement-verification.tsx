@@ -37,10 +37,11 @@ export function RequirementVerification(props: RequirementVerificationProps) {
   const sections = [
     { id: 'requirement-monitors', title: 'Production monitoring', summary: 'Recurring deployment Checks. A missed or overdue execution leaves required evidence unresolved.', matches: (binding: typeof bindings[number]) => !!binding.monitor },
     { id: 'requirement-deployment', title: 'Deployment verification', summary: 'Checks executed against the observed deployment.', matches: (binding: typeof bindings[number]) => !binding.monitor && binding.checkDefinition?.deployment?.verification_target === 'deployment' },
-    { id: 'requirement-implementation', title: 'Implementation verification', summary: 'Source and artifact evidence applied through the release composition.', matches: (binding: typeof bindings[number]) => !binding.monitor && binding.checkDefinition?.deployment?.verification_target !== 'deployment' },
+    { id: 'requirement-implementation', title: 'Implementation verification', summary: 'Source and artifact evidence applied through the release lineage.', matches: (binding: typeof bindings[number]) => !binding.monitor && binding.checkDefinition?.deployment?.verification_target !== 'deployment' },
   ];
   const uncoveredScenarios = (props.scenarioIds ?? []).filter(id => !props.bindings.some(binding => binding.scenario === id));
-  return <>{sections.map(section => {
+  const requirementNotApplicable = props.state?.status === 'not-applicable';
+  return <>{requirementNotApplicable && <section id="requirement-not-applicable" className="requirementDetailSection" aria-label="Not applicable here"><div className="requirementSectionHeading"><h3>Not applicable here</h3><span className="badge neutral">Not applicable</span></div><p className="modelDetailMuted">A required context condition does not hold for this deployment. The Requirement is neither satisfied nor failing here and is not counted as passing.</p></section>}{sections.map(section => {
     const entries = bindings.filter(section.matches);
     return <section id={section.id} className="requirementDetailSection verificationSection" key={section.id} aria-label={section.title}>
       <div className="requirementSectionHeading"><h3>{section.title}</h3><span className="panelCount">{entries.length}</span></div>
@@ -56,9 +57,10 @@ export function RequirementVerification(props: RequirementVerificationProps) {
         const expired = !!binding.monitor && !!latest && evaluated !== undefined && (latest.observed_at_ms > evaluated || evaluated - latest.observed_at_ms > binding.monitor.freshness_seconds * 1000);
         const reasons = binding.assessed?.reasons ?? [];
         const overdue = !!binding.monitor && (expired || reasons.some(reason => /monitor.*(?:overdue|stale|expired)/i.test(reason)));
-        const label = !props.hasDeployment ? 'Definition' : overdue ? 'Overdue' : !latest ? 'No Check Result' : applicable ? latest?.outcome === 'violated' ? 'Failed Check Result' : 'Applicable evidence' : 'Not applicable';
+        const notApplicableHere = props.hasDeployment && (requirementNotApplicable || binding.assessed?.status === 'not-applicable');
+        const label = !props.hasDeployment ? 'Definition' : notApplicableHere ? 'Not applicable here' : overdue ? 'Overdue' : !latest ? 'No Check Result' : applicable ? latest?.outcome === 'violated' ? 'Failed Check Result' : 'Applicable evidence' : 'Not applicable';
         return <article className="verificationCard" key={`${binding.check}:${binding.scenario}`}>
-          <div className="requirementSectionHeading"><h4>{props.descriptions.find(item => item.id === binding.check)?.description ?? binding.check}</h4><span className={`badge ${!props.hasDeployment ? 'neutral' : applicable && !overdue ? latest?.outcome === 'violated' ? 'bad' : 'good' : 'warn'}`}>{label}</span></div>
+          <div className="requirementSectionHeading"><h4>{props.descriptions.find(item => item.id === binding.check)?.description ?? binding.check}</h4><span className={`badge ${!props.hasDeployment || notApplicableHere ? 'neutral' : applicable && !overdue ? latest?.outcome === 'violated' ? 'bad' : 'good' : 'warn'}`}>{label}</span></div>
           <p className="verificationScenario">Scenario: {props.scenarios.find(item => item.id === binding.scenario)?.description ?? binding.scenario}</p>
           <dl className="verificationFacts">
             <div><dt>Verification Target</dt><dd>{policy?.verification_target ?? 'Not declared'}</dd></div>

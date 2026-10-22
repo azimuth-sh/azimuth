@@ -124,6 +124,23 @@ def validate_report(report):
             raise ValueError("test attempts require contiguous zero-based ordinals")
 
 
+def required_context_leaves(contexts):
+    """Map each required component to its leaves; reject the retired contract-fingerprint list."""
+    required = {}
+    for dependency in array(contexts):
+        if not isinstance(dependency, dict):
+            raise ValueError("mapping contexts must be [{component, leaves}]; contract-fingerprint lists are no longer supported")
+        fields(dependency, ("component", "leaves"))
+        component = text(dependency["component"])
+        leaves = array(dependency["leaves"])
+        if component in required or not leaves or len(leaves) != len(set(leaves)):
+            raise ValueError("mapping contexts require one entry per component with unique nonempty leaves")
+        for leaf in leaves:
+            text(leaf)
+        required[component] = set(leaves)
+    return required
+
+
 def validate_mapping(mapping):
     fields(mapping, ("format", "version", "framework", "source_system", "tests"))
     if mapping["format"] != "azimuth-test-mapping" or type(mapping["version"]) is not int or mapping["version"] != 2:
@@ -143,12 +160,13 @@ def validate_mapping(mapping):
             raise ValueError("duplicate test mapping")
         seen.add(identity)
         native.add(item["native_id"])
-        for key in ("scenarios", "components", "contexts"):
+        for key in ("scenarios", "components"):
             values = array(item[key])
             if len(values) != len(set(values)):
                 raise ValueError("duplicate mapping value")
             for value in values:
-                digest(value) if key == "contexts" else text(value)
+                text(value)
+        required_context_leaves(item["contexts"])
         if not item["scenarios"] or not item["components"]:
             raise ValueError("mapping requires explicit Scenario and component scope")
         if item.get("failed_outcome", "inconclusive") not in ("inconclusive", "violated"):
@@ -267,7 +285,7 @@ def _facts(report, mapping, native_results):
     return facts
 
 
-def _context_key(test):
+def _context_key(test, required):
     values = {}
     instances = {}
     for context in test["contexts"]:
@@ -275,11 +293,10 @@ def _context_key(test):
         name = context["name"]
         if before["instance"] != after["instance"] or canonical_json(before["report"]) != canonical_json(after["report"]):
             raise ValueError("effective context or process lifetime changed during test")
-        value = before["report"]["contexts"][name]
-        key = "context/" + value["contract_revision"]
-        if key in values:
-            raise ValueError("duplicate context contract fingerprint")
-        values[key] = fingerprint(value)
+        captured = before["report"]["contexts"][name]["values"]
+        for leaf in sorted(required.get(name, ())):
+            if leaf in captured:
+                values["context/" + name + "/" + leaf] = fingerprint(captured[leaf])
         instances[name] = before["instance"]
     return values, instances
 
@@ -305,7 +322,7 @@ def partition_report(report, mapping, *, native_results):
         attempts = facts[item["id"]]
         if item["contexts"]:
             for fact in attempts:
-                values, instances = _context_key(fact)
+                values, instances = _context_key(fact, required_context_leaves(item["contexts"]))
                 partitions.append({"tests": [{"id": item["id"], "attempt": fact["attempt"]}],
                                    "checks": {item["check"]: [item["unit"]]}, "context": activity_context(values, activity_identity(item["check"], item["unit"], 0)), "instances": instances})
         else:
@@ -347,17 +364,18 @@ def normalize_report(launch, report, mapping, *, native_results, import_inputs, 
     contexts = {}
     captures = []
     for item in selected_mapping:
+        required = required_context_leaves(item["contexts"])
+        required_keys = {"context/" + component + "/" + leaf for component, leaves in required.items() for leaf in leaves}
         if item["contexts"] and sum(other["check"] == item["check"] and other["unit"] == item["unit"] for other in selected_mapping) != 1:
             raise ValueError("context-bearing units require one explicitly mapped native test")
         for ordinal, fact in enumerate(facts[item["id"]]):
             activity = activity_identity(item["check"], item["unit"], ordinal)
             try:
-                values, _ = _context_key(fact)
+                values, _ = _context_key(fact, required)
             except ValueError:
                 values = {}
                 fact["diagnostics"].append("effective-context-changed")
-            required = {"context/" + fp for fp in item["contexts"]}
-            if set(values) != required:
+            if set(values) != required_keys or {context["name"] for context in fact["contexts"]} != set(required):
                 fact["diagnostics"].append("required-effective-context-not-captured")
             contexts.update(activity_context(values, activity))
             for context in fact["contexts"] if not fact["diagnostics"] else []:

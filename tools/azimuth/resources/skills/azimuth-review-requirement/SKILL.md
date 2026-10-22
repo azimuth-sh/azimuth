@@ -47,4 +47,4 @@ Use `Reassesses` for successor records and retain the predecessor in compilation
 
 Return a compact result with `work: review-requirement`, the selected Requirement target, `outcome: accepted | rejected`, a concise report and a `requirement-review` output selecting the compiled `record` ID. Output references are relative to the workflow directory unless a repository is explicit. The coordinator records the result using the original captured handoff and current coordination revision; a delegated reviewer does not advance the workflow unless assigned that responsibility.
 
-Stop after retaining the review. Findings return to correction and independent reassessment. Review work alone authorizes no source fixes, test or Verification Challenge execution, ASS publication, accepted-authority selection, deployment, commit or archive.
+Stop after retaining the review. Findings return to correction and independent reassessment. Review work alone authorizes no source fixes, test or Verification Challenge execution, AAS publication, accepted-authority selection, deployment, commit or archive.

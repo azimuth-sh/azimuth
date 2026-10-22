@@ -665,3 +665,18 @@ Every child must pass standalone protocol verification and share the parent's ex
 The parent uses the deterministic `azimuth-coordinator` identity derived from all exact child adapter identities. It records the complete global routes, union of import input identities and global launch fingerprint. Parent status is complete only if every contribution is complete; otherwise it remains partial. Adverse facts remain adverse. Bounded exchange failures retain explicit execution diagnostics and missing selection without fabricating positive Check Results.
 
 Corrections retain parent and corresponding child immediate-predecessor histories. No coordinated Run joins source, artifact and deployment Verification Targets or implies cross-target evidence applicability.
+
+## Unit input fingerprints and executed tests
+
+A plan unit derived from the project partition rule ([unit-inputs.md](unit-inputs.md)) carries `input_fingerprint` and `hermetic` in addition to `id` and `parameters`; both belong to the unit's canonical form in the Plan fingerprint. The actual selection repeats each selected unit's `input_fingerprint` exactly, and bundle verification rejects any difference, an omission or an addition. Plan, actual selection and executions of a `whole` or pinned unit have neither field.
+
+Every Check execution unit of a rule unit additionally carries `executed_tests`, sorted by `(file, native_id)`:
+
+```json
+"executed_tests": [
+  {"native_id": "Ns.Class.Method", "file": "backend/src/Tests/Features/X/Y.cs", "outcome": "passed"}
+]
+```
+
+`outcome` is `passed | failed | skipped | not-executed`; `file` is the repository-relative normalized path of the source file that defines the test. Every selected test appears, including skipped and not-executed tests, so a silent skip is visible in the Run. Verification rejects a bundle in which an executed test's `file` lies inside the private paths of a unit other than the reporting one. When any listed test is `skipped` or `not-executed`, no attempt of that unit may report a satisfied outcome (`run/skipped-test-support`); a skipped test contributes no evidence, and when any listed test is `failed` no attempt of that unit may report a satisfied outcome (`run/failed-test-support`). Core cannot verify that the list equals the selection, because it sees only the selection's filter fragment and the bundle carries no selected-test count; completeness is the adapter's responsibility, and a selected test omitted from the list is invisible to core. A `whole` unit of an adapter that cannot report defining files omits `executed_tests`. `executed_tests` belongs to the execution record and is covered by the bundle fingerprint.
+

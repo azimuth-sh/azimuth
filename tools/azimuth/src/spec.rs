@@ -14,7 +14,7 @@
 //! into something a reviewer never sees in the matrix.
 
 use crate::diag::{validate_id, Diag};
-use crate::model::{Criticality, Domain, Requirement, Scenario, Spec, Term};
+use crate::model::{Condition, Criticality, Domain, Requirement, Scenario, Spec, Term};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -286,6 +286,7 @@ impl<'a> SpecParser<'a> {
         let mut criticality = None;
         let mut title = None;
         let mut over = None;
+        let mut conditions = Vec::new();
         while i < lines.len() {
             let trimmed = lines[i].trim();
             if trimmed.is_empty() {
@@ -318,6 +319,8 @@ impl<'a> SpecParser<'a> {
                         "critical, standard or routine",
                     )),
                 }
+            } else if let Some(value) = trimmed.strip_prefix(Condition::LABEL) {
+                self.condition(value, ln, &mut conditions);
             } else if let Some(value) = trimmed.strip_prefix("Over:") {
                 let value = value.trim();
                 if let Err(why) = validate_id(value, true) {
@@ -334,7 +337,7 @@ impl<'a> SpecParser<'a> {
                     self.path,
                     ln,
                     format!("unknown label `{label}:` on an invariant"),
-                    "Title:, Criticality: or Over:",
+                    "Title:, Criticality:, Context: or Over:",
                 ));
             } else {
                 self.errors.push(Diag::expecting(
@@ -362,9 +365,11 @@ impl<'a> SpecParser<'a> {
             id: id.clone(),
             title,
             criticality,
+            conditions,
             statement,
             scenarios: vec![Scenario {
                 id,
+                conditions: Vec::new(),
                 statement: String::new(),
                 line: line_no,
             }],
@@ -407,6 +412,7 @@ impl<'a> SpecParser<'a> {
         let mut criticality = None;
         let mut title = None;
         let mut saw_criticality = false;
+        let mut conditions = Vec::new();
 
         // Labelled lines sit directly under the heading and end at the first blank line.
         while i < lines.len() {
@@ -449,12 +455,15 @@ impl<'a> SpecParser<'a> {
                     )),
                 }
                 i += 1;
+            } else if let Some(value) = trimmed.strip_prefix(Condition::LABEL) {
+                self.condition(value, ln, &mut conditions);
+                i += 1;
             } else if let Some((label, _)) = split_label(trimmed) {
                 self.errors.push(Diag::expecting(
                     self.path,
                     ln,
                     format!("unknown label `{label}:` on a requirement"),
-                    "Title: or Criticality:",
+                    "Title:, Criticality: or Context:",
                 ));
                 i += 1;
             } else {
@@ -518,6 +527,7 @@ impl<'a> SpecParser<'a> {
             id,
             title,
             criticality,
+            conditions,
             statement,
             scenarios,
             line: line_no,
@@ -553,7 +563,17 @@ impl<'a> SpecParser<'a> {
             ));
         }
 
-        let (statement, i) = markdown_body(lines, start + 1);
+        let mut conditions = Vec::new();
+        let mut body_start = start + 1;
+        while let Some(value) = lines
+            .get(body_start)
+            .and_then(|line| line.trim().strip_prefix(Condition::LABEL))
+        {
+            self.condition(value, body_start + 1, &mut conditions);
+            body_start += 1;
+        }
+
+        let (statement, i) = markdown_body(lines, body_start);
         if statement.is_empty() {
             self.errors.push(Diag::expecting(
                 self.path,
@@ -566,11 +586,24 @@ impl<'a> SpecParser<'a> {
         (
             Some(Scenario {
                 id,
+                conditions,
                 statement,
                 line: line_no,
             }),
             i,
         )
+    }
+
+    fn condition(&mut self, text: &str, line: usize, conditions: &mut Vec<Condition>) {
+        match Condition::parse(text, line) {
+            Ok(condition) => conditions.push(condition),
+            Err(why) => self.errors.push(Diag::expecting(
+                self.path,
+                line,
+                format!("invalid condition: {why}"),
+                Condition::EXPECTED,
+            )),
+        }
     }
 
     fn finish(self) -> Result<Spec, Vec<Diag>> {

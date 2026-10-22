@@ -120,9 +120,180 @@ impl Oracle {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LeafType {
+    String,
+    Boolean,
+    Integer,
+}
+
+impl LeafType {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "string" => Some(Self::String),
+            "boolean" => Some(Self::Boolean),
+            "integer" => Some(Self::Integer),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::String => "string",
+            Self::Boolean => "boolean",
+            Self::Integer => "integer",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConditionValue {
+    Boolean(bool),
+    Integer(i64),
+    Text(String),
+}
+
+impl ConditionValue {
+    pub fn leaf_type(&self) -> LeafType {
+        match self {
+            Self::Boolean(_) => LeafType::Boolean,
+            Self::Integer(_) => LeafType::Integer,
+            Self::Text(_) => LeafType::String,
+        }
+    }
+
+    pub fn render(&self) -> String {
+        match self {
+            Self::Boolean(value) => value.to_string(),
+            Self::Integer(value) => value.to_string(),
+            Self::Text(value) => format!("\"{value}\""),
+        }
+    }
+
+    fn to_json(&self) -> Json {
+        match self {
+            Self::Boolean(value) => Json::Bool(*value),
+            Self::Integer(value) => Json::Num(*value as f64),
+            Self::Text(value) => Json::str(value),
+        }
+    }
+}
+
+/// One `Context: <component>: <leaf> = <value>` line. All conditions of a Requirement and of a
+/// Scenario hold together; the line locates diagnostics and takes no part in identity.
+#[derive(Debug, Clone)]
+pub struct Condition {
+    pub component: String,
+    pub leaf: String,
+    pub value: ConditionValue,
+    pub line: usize,
+}
+
+impl PartialEq for Condition {
+    fn eq(&self, other: &Self) -> bool {
+        self.component == other.component && self.leaf == other.leaf && self.value == other.value
+    }
+}
+
+impl Eq for Condition {}
+
+impl Condition {
+    pub const LABEL: &'static str = "Context:";
+    pub const EXPECTED: &'static str = "`Context: <component-id>: <leaf> = <value>` with a value of true, false, an integer or a double-quoted string";
+
+    pub fn parse(text: &str, line: usize) -> Result<Self, String> {
+        let (component, rest) = text
+            .split_once(':')
+            .ok_or_else(|| "missing `:` after the component id".to_string())?;
+        let component = component.trim();
+        crate::diag::validate_id(component, false)
+            .map_err(|why| format!("invalid component id: {why}"))?;
+        let (leaf, value) = rest
+            .split_once('=')
+            .ok_or_else(|| "missing `=` after the leaf".to_string())?;
+        let leaf = leaf.trim();
+        if !is_leaf_path(leaf) {
+            return Err(format!(
+                "invalid leaf `{leaf}`; a leaf is dot-separated names of letters, digits and `_`"
+            ));
+        }
+        Ok(Self {
+            component: component.to_string(),
+            leaf: leaf.to_string(),
+            value: parse_condition_value(value.trim())?,
+            line,
+        })
+    }
+
+    pub fn render(&self) -> String {
+        format!(
+            "{}: {} = {}",
+            self.component,
+            self.leaf,
+            self.value.render()
+        )
+    }
+
+    pub fn to_json(&self) -> Json {
+        Json::obj(vec![
+            ("component", Json::str(&self.component)),
+            ("leaf", Json::str(&self.leaf)),
+            ("value", self.value.to_json()),
+        ])
+    }
+}
+
+pub fn is_leaf_path(leaf: &str) -> bool {
+    !leaf.is_empty()
+        && leaf.split('.').all(|segment| {
+            !segment.is_empty()
+                && segment
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        })
+}
+
+fn parse_condition_value(value: &str) -> Result<ConditionValue, String> {
+    match value {
+        "true" => return Ok(ConditionValue::Boolean(true)),
+        "false" => return Ok(ConditionValue::Boolean(false)),
+        _ => {}
+    }
+    if let Some(inner) = value
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+    {
+        if inner.contains('"') {
+            return Err("a string value contains an unescaped `\"`".into());
+        }
+        return Ok(ConditionValue::Text(inner.to_string()));
+    }
+    value
+        .parse::<i64>()
+        .map(ConditionValue::Integer)
+        .map_err(|_| format!("invalid value `{value}`"))
+}
+
+fn conditions_json(conditions: &[Condition]) -> Json {
+    Json::Arr(conditions.iter().map(Condition::to_json).collect())
+}
+
+/// A runtime unit that serves one execution-context document. Distinct from an area, which is a
+/// code ownership namespace.
+#[derive(Debug, Clone)]
+pub struct Component {
+    pub id: String,
+    pub repository: String,
+    pub areas: Vec<String>,
+    pub shared_areas: Vec<String>,
+    /// `None` when the component declares no execution context.
+    pub leaves: Option<BTreeMap<String, LeafType>>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Scenario {
     pub id: String,
+    pub conditions: Vec<Condition>,
     /// Authoritative free-form Markdown. Core preserves and fingerprints it without interpreting
     /// its natural-language or diagram semantics.
     pub statement: String,
@@ -156,6 +327,7 @@ pub struct Requirement {
     /// `None` is the `unclassified` finding, not a parse error: a missing *declaration* is a
     /// semantic gap, while an unrecognized *construct* fails the parse.
     pub criticality: Option<Criticality>,
+    pub conditions: Vec<Condition>,
     pub statement: String,
     pub scenarios: Vec<Scenario>,
     pub line: usize,
@@ -405,6 +577,8 @@ pub struct Model {
     pub verifications: Vec<crate::verification::Verification>,
     pub designs: Vec<crate::design::Design>,
     pub workspace: crate::workspace::Workspace,
+    /// Empty when the project catalog declares no `components`.
+    pub components: Vec<Component>,
 }
 
 /// A normative Scenario plus its independently governed parent Requirement.
@@ -433,6 +607,18 @@ impl RequirementView<'_> {
 }
 
 impl Model {
+    pub fn component(&self, id: &str) -> Option<&Component> {
+        self.components.iter().find(|component| component.id == id)
+    }
+
+    pub fn component_leaf_type(&self, component: &str, leaf: &str) -> Option<LeafType> {
+        self.component(component)?
+            .leaves
+            .as_ref()?
+            .get(leaf)
+            .copied()
+    }
+
     pub fn entity_declaration_issues(&self) -> Vec<crate::diag::Diag> {
         let mut issues = Vec::new();
         let mut identities = BTreeMap::<(String, String), String>::new();
@@ -1367,7 +1553,7 @@ impl Model {
     /// Semantic Scenario digest for Evidence Binding identity. Criticality and locations are omitted.
     pub fn scenario_digest(&self, scenario_id: &str) -> Option<String> {
         let scenario = self.find_scenario(scenario_id)?;
-        Some(crate::fingerprint::canonical_sha256(&Json::obj(vec![
+        let mut fields = vec![
             ("format", Json::str("azimuth-scenario-digest")),
             ("version", Json::Num(3.0)),
             ("id", Json::str(scenario_id)),
@@ -1385,14 +1571,24 @@ impl Model {
                     .unwrap_or(Json::Null),
             ),
             ("statement", Json::str(&scenario.scenario.statement)),
-        ])))
+        ];
+        if !scenario.requirement.conditions.is_empty() {
+            fields.push((
+                "requirement_conditions",
+                conditions_json(&scenario.requirement.conditions),
+            ));
+        }
+        if !scenario.scenario.conditions.is_empty() {
+            fields.push(("conditions", conditions_json(&scenario.scenario.conditions)));
+        }
+        Some(crate::fingerprint::canonical_sha256(&Json::obj(fields)))
     }
 
     pub fn requirement_digest(&self, requirement_id: &str) -> Option<String> {
         let requirement = self
             .requirements()
             .find(|requirement| requirement.id() == requirement_id)?;
-        Some(crate::fingerprint::canonical_sha256(&Json::obj(vec![
+        let mut fields = vec![
             ("format", Json::str("azimuth-requirement-digest")),
             ("version", Json::Num(3.0)),
             ("id", Json::str(requirement_id)),
@@ -1428,7 +1624,14 @@ impl Model {
                         .collect(),
                 ),
             ),
-        ])))
+        ];
+        if !requirement.requirement.conditions.is_empty() {
+            fields.push((
+                "conditions",
+                conditions_json(&requirement.requirement.conditions),
+            ));
+        }
+        Some(crate::fingerprint::canonical_sha256(&Json::obj(fields)))
     }
 
     pub fn expected_method_qualification_fingerprint(
@@ -2569,11 +2772,15 @@ impl Model {
                             .scenarios
                             .iter()
                             .map(|sc| {
-                                Json::obj(vec![
+                                let mut fields = vec![
                                     ("id", Json::str(&sc.id)),
                                     ("line", Json::Num(sc.line as f64)),
                                     ("statement", Json::str(&sc.statement)),
-                                ])
+                                ];
+                                if !sc.conditions.is_empty() {
+                                    fields.push(("conditions", conditions_json(&sc.conditions)));
+                                }
+                                Json::obj(fields)
                             })
                             .collect();
                         let mut fields = vec![
@@ -2593,6 +2800,9 @@ impl Model {
                         ];
                         if let Some(title) = &r.title {
                             fields.push(("title", Json::str(title)));
+                        }
+                        if !r.conditions.is_empty() {
+                            fields.push(("conditions", conditions_json(&r.conditions)));
                         }
                         Json::obj(fields)
                     })

@@ -29,9 +29,10 @@ class Cluster:
                                                "syncResult": {"revision": "a" * 40}, "operation": {"sync": {"revision": "a" * 40}}}}
         self.context_reads = {}
         self.report_version = 2
+        self.context_name = "component"
         self.uploads = []
         self.fail_upload = False
-        self.contract = {"name": "settings", "fields": {"enabled": "boolean"}}
+        self.contract = {"name": "component", "fields": {"features.enabled": "boolean", "auth.scheme": "string"}}
         self.contract["fingerprint"] = fingerprint(self.contract)
         self.template = {"metadata": {"labels": {"app": "example"}}, "spec": {"containers": [{"name": "application", "image": IMAGE}]}}
         self.deploy = {"metadata": {"uid": "deployment-uid", "resourceVersion": "1", "generation": 1},
@@ -60,7 +61,7 @@ class Cluster:
                     number = state.context_reads.get(host, 0) + 1; state.context_reads[host] = number
                     if state.mode == "unavailable": self.send_response(503); self.end_headers(); return
                     report = {"format": "azimuth-execution-context", "version": state.report_version,
-                              "contexts": {"settings": {"contract_revision": state.contract["fingerprint"], "values": {"enabled": not (state.mode == "context-change" and number > 1)}}}}
+                              "contexts": {state.context_name: {"contract_revision": state.contract["fingerprint"], "values": {"features.enabled": not (state.mode == "context-change" and number > 1), "auth.scheme": "Bearer"}}}}
                     self.send_response(200)
                     if state.mode != "missing-boot": self.send_header("X-Azimuth-Instance", "boot-" + host + ("-replacement" if state.mode == "boot-change" and number > 1 else ""))
                     self.end_headers(); self.wfile.write(json.dumps(report).encode()); return
@@ -141,6 +142,24 @@ class ContextCollectionTests(unittest.TestCase):
         self.cluster.report_version = 1
         with self.assertRaisesRegex(ValueError, "azimuth-execution-context version 2 required"):
             collect(self.cluster.origin, self.source, self.kube, "publisher-only")
+
+    def test_context_named_other_than_the_component_is_rejected(self):
+        self.cluster.context_name = "settings"
+        with self.assertRaisesRegex(ValueError, "named by the component id"):
+            collect(self.cluster.origin, self.source, self.kube, "publisher-only")
+
+    def test_captured_values_are_the_dotted_leaves_of_the_component_context(self):
+        capture = collect(self.cluster.origin, self.source, self.kube, "publisher-only")[0]["capture"]
+        self.assertEqual(capture["before"]["report"]["contexts"]["component"]["values"], {"features.enabled": True, "auth.scheme": "Bearer"})
+
+    def test_contract_must_be_one_named_by_the_component_with_safe_leaves(self):
+        config = {"context_sources": [dict(self.source, port=9001, token_file="/credentials/context-publisher")], "namespaces": ["application"], "projects": {"example": {}}}
+        wrong_name = dict(self.cluster.contract, name="other"); wrong_name["fingerprint"] = fingerprint({"name": "other", "fields": wrong_name["fields"]})
+        secret = {"name": "component", "fields": {"auth.api_token": "string"}}; secret["fingerprint"] = fingerprint(secret)
+        for contracts in ([], [self.cluster.contract, self.cluster.contract], [wrong_name], [secret]):
+            with self.subTest(contracts=contracts):
+                invalid = deepcopy(config); invalid["context_sources"][0]["contracts"] = contracts
+                with self.assertRaises(ValueError): validate_sources(invalid)
 
     def test_durable_context_retry_preserves_exact_bytes(self):
         captures = collect(self.cluster.origin, self.source, self.kube, "publisher-only")

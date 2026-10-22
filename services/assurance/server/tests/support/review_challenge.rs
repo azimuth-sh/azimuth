@@ -197,6 +197,8 @@ fn challenge_bundle() -> RunBundle {
             },
             units: vec![CheckExecutionUnit {
                 id: "whole".into(),
+                input_fingerprint: None,
+                executed_tests: Vec::new(),
                 attempts: vec![CheckAttempt {
                     ordinal: 1,
                     activity: "fault-probe".into(),

@@ -6,7 +6,7 @@ export default function Login() {
     <div className="shell">
       <section className="hero">
         <p className="eyebrow">Private inspection</p>
-        <h1>Assurance State Service</h1>
+        <h1>Azimuth Assurance Service</h1>
         <p className="lede">
           Sign in with an authorized GitHub account. Project access is
           explicitly assigned.

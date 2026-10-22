@@ -24,8 +24,8 @@ USAGE
     azimuth workflow next|verify --instance <file> --repositories <file> [--out <file>]
     azimuth workflow assurance-targets --instance <file> --repositories <file> --snapshot <relative-ref> [--verification-targets <relative-ref>] [--out <file>]
     azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--out <file>]
-    azimuth release project --baseline-revision <sha256> --change <dir>... [model options]
-    azimuth release compose|prepare|verify|inputs --input <file> [--model-out <absent directory>] [--out <file>]
+    azimuth release prepare|verify|inputs --input <file> [--out <file>]
+        [--unit-rule <file>] [--checkout <dir>] [--repository <id>]   (prepare only)
     azimuth assurance deployment-status --input <file> [--out <file>]
 \
     azimuth assurance catalog --project <id> [model options] [--out <file>]
@@ -41,13 +41,15 @@ USAGE
     azimuth assurance snapshot --project <id> [--review <file>...] [--bundle <file>...] [options]
     azimuth assurance review-draft --input <packet> --input-ref <change-relative ref> --id <id> [--out <file>]
     azimuth assurance review-compile --project <id> --change-root <dir> --input <relative Markdown>...
-        [--review <file>...] [--bundle <file>...] [options] [--out <file>]
+        [--review <file>...] [--bundle <file>...] [--replace-sealed] [options] [--out <file>]
     azimuth assurance review-export --input <compiled bundle> --id <id> [--out <file>]
         [--catalog <project.json> --workset <workset.json>]
     azimuth adapter verify [--config <file>]
     azimuth run select --policy <file> [model options] [--config <file>] [--out <file>]
     azimuth run plan --request <file>|--selection <file> [--model <dir>] [--standards <file>]
         [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
+        [--unit-rule <file>] [--checkout <dir>] [--unit-explanation <file>]
+    azimuth run unit-inputs --rule <file> [--checkout <dir>] [--out <file>]
     azimuth run execute --plan <file> [--predecessor <bundle>...] [--config <file>] [--out <file>]
     azimuth run import --plan <file> --input <id>=<file>... [--predecessor <bundle>...]
         [--config <file>] [--out <file>]
@@ -1207,10 +1209,11 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
     };
     let mut findings = validation::validate(&loaded.model);
     let mut acceptances = Vec::new();
+    let mut ratified = Vec::new();
     if acceptance_boundary {
         apply_native_assurance(&loaded.model, &options, &mut findings)?;
-        acceptances = change_acceptances(&root, &report)?;
-        azimuth::change::waive_accepted_requirements(&mut findings, &acceptances);
+        (acceptances, ratified) = change_acceptances(&root, &report, &loaded.model)?;
+        azimuth::change::waive_accepted_requirements(&mut findings, &acceptances, &ratified);
     }
     let projection = match azimuth::intent::project(&root, &options.model, &loaded.model) {
         Ok(projection) => projection,
@@ -1410,7 +1413,7 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
                 return Ok(ExitCode::from(1));
             }
             let (fingerprint, finalization) =
-                azimuth::change::finalization(&loaded.model, &findings, &acceptances);
+                azimuth::change::finalization(&loaded.model, &findings, &acceptances, &ratified);
             std::fs::write(root.join("finalization.json"), finalization).map_err(|error| {
                 format!("cannot write {}/finalization.json: {error}", root.display())
             })?;
@@ -1456,7 +1459,7 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
                 )
             })?;
             let (_, expected) =
-                azimuth::change::finalization(&loaded.model, &findings, &acceptances);
+                azimuth::change::finalization(&loaded.model, &findings, &acceptances, &ratified);
             if recorded != expected {
                 return Ok({
                     eprintln!("error: finalization is stale; run `azimuth change finalize` again");
@@ -1842,6 +1845,15 @@ struct RunPlanOptions {
     manifests: Vec<PathBuf>,
     config: PathBuf,
     out: Option<PathBuf>,
+    unit_rule: Option<PathBuf>,
+    checkout: PathBuf,
+    unit_explanation: Option<PathBuf>,
+}
+
+struct UnitInputsOptions {
+    rule: PathBuf,
+    checkout: PathBuf,
+    out: Option<PathBuf>,
 }
 
 struct RunInvokeOptions {
@@ -1950,6 +1962,7 @@ fn command_run(args: &[String]) -> Result<ExitCode, String> {
             command_run_select(parse_run_plan_options(&arguments)?)
         }
         "plan" => command_run_plan(parse_run_plan_options(&args[1..])?),
+        "unit-inputs" => command_unit_inputs(parse_unit_inputs_options(&args[1..])?),
         "execute" => command_run_invoke(parse_run_invoke_options(&args[1..], false)?, false),
         "import" => command_run_invoke(parse_run_invoke_options(&args[1..], true)?, true),
         "verify" => command_run_verify(parse_run_options(&args[1..], false)?),
@@ -1967,10 +1980,28 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
     let mut manifests = Vec::new();
     let mut config = None;
     let mut out = None;
+    let mut unit_rule = None;
+    let mut checkout = None;
+    let mut unit_explanation = None;
     let mut index = 0;
     while index < args.len() {
         let option = args[index].as_str();
         match option {
+            "--unit-rule" => set_once_path(
+                &mut unit_rule,
+                PathBuf::from(argument_value(args, index, option)?),
+                option,
+            )?,
+            "--checkout" => set_once_path(
+                &mut checkout,
+                PathBuf::from(argument_value(args, index, option)?),
+                option,
+            )?,
+            "--unit-explanation" => set_once_path(
+                &mut unit_explanation,
+                PathBuf::from(argument_value(args, index, option)?),
+                option,
+            )?,
             "--request" | "--selection" => {
                 set_once_path(
                     &mut request,
@@ -2027,10 +2058,18 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
         .chain(std::iter::once(&standards))
         .chain(std::iter::once(&workspace))
         .chain(manifests.iter())
-        .chain(std::iter::once(&config));
+        .chain(std::iter::once(&config))
+        .chain(unit_rule.iter());
     reject_output_input_equality(out.as_ref(), input_paths, "run plan")?;
     reject_model_output_descendant(out.as_ref(), &model)?;
+    let unit_rule = unit_rule.or_else(|| {
+        let default = PathBuf::from("azimuth/standards/units.json");
+        default.is_file().then_some(default)
+    });
     Ok(RunPlanOptions {
+        unit_rule,
+        checkout: checkout.unwrap_or_else(|| PathBuf::from(".")),
+        unit_explanation,
         selection,
         request,
         model,
@@ -2176,7 +2215,7 @@ fn command_run_plan(options: RunPlanOptions) -> Result<ExitCode, String> {
         }
     };
     report(&loaded.warnings, "warning");
-    let request = if options.selection {
+    let mut request = if options.selection {
         let source = fs::read_to_string(&options.request)
             .map_err(|error| format!("{}: {error}", options.request.display()))?;
         match azimuth::run_selection::request_from_selection(
@@ -2194,6 +2233,33 @@ fn command_run_plan(options: RunPlanOptions) -> Result<ExitCode, String> {
             Err(errors) => return Ok(report_schema_errors(&errors)),
         }
     };
+    if let Some(rule_path) = &options.unit_rule {
+        let rule = azimuth::unit_inputs::load_rule(rule_path)?;
+        let files = azimuth::unit_inputs::read_checkout(&options.checkout)?;
+        let inputs = azimuth::unit_inputs::compute_inputs(&rule, &files);
+        let assigned = azimuth::unit_inputs::assign_units(&mut request.checks, &rule, &inputs);
+        for widened in &inputs.widened_paths {
+            eprintln!(
+                "note: `{}` is claimed by units {} and is a shared input of every unit",
+                widened.path,
+                widened.claimed_by.join(", ")
+            );
+        }
+        if let Some(path) = &options.unit_explanation {
+            let unpartitioned = request
+                .checks
+                .iter()
+                .map(|check| check.id.clone())
+                .filter(|id| !assigned.contains_key(id))
+                .collect::<Vec<_>>();
+            publish_output(
+                azimuth::unit_inputs::explanation_json(&inputs, &assigned, &unpartitioned)
+                    .to_string_pretty()
+                    .as_bytes(),
+                Some(path),
+            )?;
+        }
+    }
     let launch = match azimuth::run_plan::plan(&loaded.model, &configuration, &request) {
         Ok(launch) => launch,
         Err(errors) => {
@@ -2205,6 +2271,53 @@ fn command_run_plan(options: RunPlanOptions) -> Result<ExitCode, String> {
     };
     publish_output(
         azimuth::run_plan::launch_plan_to_json(&launch)
+            .to_string_pretty()
+            .as_bytes(),
+        options.out.as_ref(),
+    )?;
+    Ok(ExitCode::SUCCESS)
+}
+
+fn parse_unit_inputs_options(args: &[String]) -> Result<UnitInputsOptions, String> {
+    let mut rule = None;
+    let mut checkout = None;
+    let mut out = None;
+    let mut index = 0;
+    while index < args.len() {
+        let option = args[index].as_str();
+        let target = match option {
+            "--rule" => &mut rule,
+            "--checkout" => &mut checkout,
+            "--out" => &mut out,
+            value if value.starts_with('-') => {
+                return Err(format!("unknown run unit-inputs option `{value}`"));
+            }
+            value => {
+                return Err(format!(
+                    "unexpected run unit-inputs positional argument `{value}`"
+                ));
+            }
+        };
+        set_once_path(
+            target,
+            PathBuf::from(argument_value(args, index, option)?),
+            option,
+        )?;
+        index += 2;
+    }
+    Ok(UnitInputsOptions {
+        rule: rule.ok_or("run unit-inputs needs `--rule <file>`")?,
+        checkout: checkout.unwrap_or_else(|| PathBuf::from(".")),
+        out,
+    })
+}
+
+fn command_unit_inputs(options: UnitInputsOptions) -> Result<ExitCode, String> {
+    let rule = azimuth::unit_inputs::load_rule(&options.rule)?;
+    let files = azimuth::unit_inputs::read_checkout(&options.checkout)?;
+    let inputs = azimuth::unit_inputs::compute_inputs(&rule, &files);
+    publish_output(
+        azimuth::unit_inputs::manifest_json(&inputs)
             .to_string_pretty()
             .as_bytes(),
         options.out.as_ref(),
@@ -2945,7 +3058,10 @@ fn command_validate(options: Options) -> Result<ExitCode, String> {
         if let Some(changes) = options.model.parent().map(|root| root.join("changes")) {
             let acceptances =
                 azimuth::change::acceptances(&changes).map_err(|errors| errors.join("\n"))?;
-            azimuth::change::waive_accepted_requirements(&mut findings, &acceptances);
+            let reviews =
+                azimuth::change::reviews(&changes).map_err(|errors| errors.join("\n"))?;
+            let ratified = azimuth::change::ratifications(&loaded.model, &acceptances, &reviews)?;
+            azimuth::change::waive_accepted_requirements(&mut findings, &acceptances, &ratified);
         }
     }
     render_validation(
@@ -2985,14 +3101,28 @@ fn apply_native_assurance(
 fn change_acceptances(
     root: &std::path::Path,
     report: &azimuth::change::Report,
-) -> Result<Vec<azimuth::change::Acceptance>, String> {
+    model: &azimuth::model::Model,
+) -> Result<
+    (
+        Vec<azimuth::change::Acceptance>,
+        Vec<azimuth::change::Ratification>,
+    ),
+    String,
+> {
     let Some(changes) = root.parent() else {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     };
     let acceptances = azimuth::change::acceptances(changes).map_err(|errors| errors.join("\n"))?;
-    let issues = azimuth::change::acceptance_issues(&acceptances, report);
+    let mut issues = azimuth::change::acceptance_issues(&acceptances, report);
+    let reviews = azimuth::change::reviews(changes).map_err(|errors| errors.join("\n"))?;
+    let ratified = azimuth::change::ratifications(model, &acceptances, &reviews)?;
+    issues.extend(azimuth::change::ratification_issues(
+        &acceptances,
+        &ratified,
+        report,
+    ));
     if issues.is_empty() {
-        Ok(acceptances)
+        Ok((acceptances, ratified))
     } else {
         Err(issues.join("\n"))
     }
@@ -3656,6 +3786,7 @@ fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
     let mut request = None;
     let mut change_root = None;
     let mut markdown = Vec::new();
+    let mut replace_sealed = false;
     let mut reviews = Vec::new();
     let mut bundles = Vec::new();
     let mut options = Vec::new();
@@ -3669,6 +3800,10 @@ fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
                     "--change-root",
                 )?;
                 cursor += 2;
+            }
+            "--replace-sealed" if operation == "review-compile" => {
+                replace_sealed = true;
+                cursor += 1;
             }
             "--input" if operation == "review-compile" => {
                 markdown.push(argument_value(args, cursor, "--input")?.to_string());
@@ -3780,14 +3915,24 @@ fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
             if markdown.is_empty() {
                 return Err("review-compile needs --input <change-relative Markdown>".into());
             }
-            azimuth::review_authoring::compile(
-                &change_root.ok_or("review-compile needs --change-root")?,
+            let change_root = change_root.ok_or("review-compile needs --change-root")?;
+            let bundle = azimuth::review_authoring::compile(
+                &change_root,
                 &markdown,
                 &loaded.model,
                 &project,
                 &native_reviews,
                 &bundles,
-            )?
+            )?;
+            for sealed in azimuth::review_authoring::seal_records(
+                &change_root,
+                &markdown,
+                &bundle,
+                replace_sealed,
+            )? {
+                eprintln!("sealed review record {}", sealed.display());
+            }
+            bundle
         }
         "catalog" => azimuth::release::catalog(&loaded.model),
         "prepare-candidate" => {
@@ -3846,59 +3991,29 @@ fn command_release(args: &[String]) -> Result<ExitCode, String> {
     let operation = args
         .first()
         .map(String::as_str)
-        .ok_or("release requires compose, prepare, verify or inputs")?;
-    if operation == "project" {
-        let mut baseline = None;
-        let mut changes = Vec::new();
-        let mut options = Vec::new();
-        let mut cursor = 1;
-        while cursor < args.len() {
-            match args[cursor].as_str() {
-                "--baseline-revision" => {
-                    if baseline
-                        .replace(argument_value(args, cursor, "--baseline-revision")?.to_string())
-                        .is_some()
-                    {
-                        return Err("duplicate --baseline-revision".into());
-                    }
-                    cursor += 2;
-                }
-                "--change" => {
-                    changes.push(PathBuf::from(argument_value(args, cursor, "--change")?));
-                    cursor += 2;
-                }
-                _ => {
-                    options.push(args[cursor].clone());
-                    cursor += 1;
-                }
-            }
-        }
-        if changes.is_empty() {
-            return Err("release project requires --change".into());
-        }
-        let options = parse_options(&options, false)?;
-        if options.project.is_some() || options.workset.is_some() || !options.only.is_empty() {
-            return Err("release project requires an explicit complete model directory, not a selected or federated overlay".into());
-        }
-        let loaded = load_validation_inputs(&options)?;
-        let request = azimuth::release::project(
-            &loaded.model,
-            &options.model,
-            &changes,
-            &baseline.ok_or("release project requires --baseline-revision")?,
-        )?;
-        publish_output(request.to_string_pretty().as_bytes(), options.out.as_ref())?;
-        return Ok(ExitCode::SUCCESS);
-    }
+        .ok_or("release requires prepare, verify or inputs")?;
     let mut input = None;
     let mut out = None;
-    let mut model_out = None;
+    let mut unit_rule = None;
+    let mut checkout = None;
+    let mut repository = None;
     let mut cursor = 1;
     while cursor < args.len() {
+        if args[cursor] == "--repository" {
+            if repository
+                .replace(argument_value(args, cursor, "--repository")?)
+                .is_some()
+            {
+                return Err("`--repository` may be supplied only once".into());
+            }
+            cursor += 2;
+            continue;
+        }
         let target = match args[cursor].as_str() {
             "--input" => &mut input,
             "--out" => &mut out,
-            "--model-out" if operation == "compose" => &mut model_out,
+            "--unit-rule" => &mut unit_rule,
+            "--checkout" => &mut checkout,
             other => return Err(format!("unsupported release option `{other}`")),
         };
         set_once_path(
@@ -3909,22 +4024,38 @@ fn command_release(args: &[String]) -> Result<ExitCode, String> {
         cursor += 2;
     }
     let input = input.ok_or("release requires --input")?;
+    if operation != "prepare"
+        && (unit_rule.is_some() || checkout.is_some() || repository.is_some())
+    {
+        return Err("--unit-rule, --checkout and --repository apply only to release prepare".into());
+    }
     reject_output_input_equality(out.as_ref(), std::iter::once(&input), "release")?;
     let source =
         fs::read_to_string(&input).map_err(|error| format!("{}: {error}", input.display()))?;
     let value =
         azimuth::json::parse(&source).map_err(|error| format!("{}: {error}", input.display()))?;
     let result = match operation {
-        "compose" => azimuth::release::compose(&value),
-        "prepare" => azimuth::release::prepare(&value),
+        "prepare" => {
+            let units_requested = unit_rule.is_some() || checkout.is_some();
+            let prepared = if units_requested {
+                azimuth::release::with_unit_inputs(
+                    &value,
+                    &azimuth::release::UnitInputsSource {
+                        rule: unit_rule.as_deref(),
+                        checkout: checkout.as_deref().unwrap_or(std::path::Path::new(".")),
+                        repository: repository.as_deref(),
+                    },
+                )
+            } else {
+                Ok(value.clone())
+            };
+            prepared.and_then(|request| azimuth::release::prepare(&request))
+        }
         "verify" => azimuth::release::verify(&value),
         "inputs" => azimuth::release::publication_inputs(&value),
-        _ => return Err("release requires compose, prepare, verify or inputs".into()),
+        _ => return Err("release requires prepare, verify or inputs".into()),
     }
     .map_err(|error| format!("{}:1: {error}", input.display()))?;
-    if let Some(directory) = model_out {
-        azimuth::release::materialize(&result, &directory)?;
-    }
     publish_output(result.to_string_pretty().as_bytes(), out.as_ref())?;
     Ok(ExitCode::SUCCESS)
 }

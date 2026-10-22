@@ -16,15 +16,16 @@ export function developmentRead(project: string, path: string): unknown {
   const route = decodeURIComponent(url.pathname);
   const page = (items: unknown[]) => ({ items, next: null });
   const revision = identity('model');
-  const baseline = identity('baseline');
+  const priorMain = identity('prior-main');
   const releaseId = identity('release');
   const verificationTarget = identity('production');
   const at = (minutes: number) => new Date(Date.now() - minutes * 60000).toISOString();
+  const notApplicableHere = (id: string) => scenario !== 'healthy' && id === 'delivery-recovers-after-outage';
   const requirements = scenario === 'empty' ? [] : data.requirements.map((requirement) => ({
     ...requirement,
-    status: scenario === 'healthy' ? 'supported' : scenario === 'incident' && requirement.id === 'reminders-arrive-on-time' ? 'violated' : requirement.status,
-    reason: scenario === 'healthy' ? 'Illustrative current review and applicable Check Results satisfy this Requirement.' : scenario === 'incident' && requirement.id === 'reminders-arrive-on-time' ? 'The production delivery probe exceeded the five-minute deadline.' : requirement.reason,
-    gap: scenario === 'healthy' ? undefined : requirement.gap,
+    status: scenario === 'healthy' ? 'supported' : notApplicableHere(requirement.id) ? 'not-applicable' : scenario === 'incident' && requirement.id === 'reminders-arrive-on-time' ? 'violated' : requirement.status,
+    reason: scenario === 'healthy' ? 'Illustrative current review and applicable Check Results satisfy this Requirement.' : notApplicableHere(requirement.id) ? 'Outage recovery applies only where the queue-backed delivery context holds; this deployment runs without it.' : scenario === 'incident' && requirement.id === 'reminders-arrive-on-time' ? 'The production delivery probe exceeded the five-minute deadline.' : requirement.reason,
+    gap: scenario === 'healthy' || notApplicableHere(requirement.id) ? undefined : requirement.gap,
   }));
   const authority = {
     fingerprint: revision, model_fingerprint: identity('source-model'),
@@ -104,28 +105,27 @@ export function developmentRead(project: string, path: string): unknown {
     scenarios: requirements.map(c => ({ id: c.scenario, description: c.scenario.replaceAll('-', ' ') })),
     checks: requirements.map(c => ({ id: c.check, description: c.method })),
   };
-  const baselineRequirements = requirements.filter(c => c.id !== 'delivery-recovers-after-outage');
-  const baselineIds = new Set(baselineRequirements.map(c => c.id));
-  const baselineAuthority = {
+  const priorMainRequirements = requirements.filter(c => c.id !== 'delivery-recovers-after-outage');
+  const priorMainIds = new Set(priorMainRequirements.map(c => c.id));
+  const priorMainAuthority = {
     ...authority,
-    fingerprint: baseline,
-    model_fingerprint: identity('baseline-source-model'),
-    requirements: authority.requirements.filter(c => baselineIds.has(c.id)),
-    checks: authority.checks.filter(c => baselineRequirements.some(requirement => requirement.check === c.id)),
+    fingerprint: priorMain,
+    model_fingerprint: identity('prior-main-source-model'),
+    requirements: authority.requirements.filter(c => priorMainIds.has(c.id)),
+    checks: authority.checks.filter(c => priorMainRequirements.some(requirement => requirement.check === c.id)),
   };
-  const baselineCatalog = {
+  const priorMainCatalog = {
     ...catalog,
-    modules: catalog.modules.map(module => ({ ...module, requirements: module.requirements.filter(id => baselineIds.has(id)) })),
-    requirements: catalog.requirements.filter(c => baselineIds.has(c.id)),
-    scenarios: catalog.scenarios.filter(c => baselineRequirements.some(requirement => requirement.scenario === c.id)),
-    checks: catalog.checks.filter(c => baselineRequirements.some(requirement => requirement.check === c.id)),
+    modules: catalog.modules.map(module => ({ ...module, requirements: module.requirements.filter(id => priorMainIds.has(id)) })),
+    requirements: catalog.requirements.filter(c => priorMainIds.has(c.id)),
+    scenarios: catalog.scenarios.filter(c => priorMainRequirements.some(requirement => requirement.scenario === c.id)),
+    checks: catalog.checks.filter(c => priorMainRequirements.some(requirement => requirement.check === c.id)),
   };
   const deployment = { id: 'payments-2026-10-18', environment: 'production', verification_target_fingerprint: verificationTarget, deployed_at: at(60) };
   const stagingTarget = identity('staging');
   const stagingDeployment = { id: 'payments-staging-2026-10-19', environment: 'staging', verification_target_fingerprint: stagingTarget, deployed_at: at(20) };
-  const accepted = scenario === 'healthy';
-  const release = { fingerprint: releaseId, label: 'Payments 1.8', baseline_model_revision: baseline,
-    model_revision: revision, changes: [{ id: 'payment-reminders', label: 'Payment reminders' }],
+  const onMain = scenario === 'healthy';
+  const release = { fingerprint: releaseId, label: 'Payments 1.8', model_revision: revision, changes: [{ id: 'payment-reminders', label: 'Payment reminders' }],
     sources: [{ repository: 'example/payments', commit: 'synthetic-source' }],
     builds: [{ id: 'synthetic-build' }], artifacts: [{ label: 'payments:1.8 (illustrative)' }], deployments: [deployment, stagingDeployment] };
   if (scenario === 'empty') {
@@ -134,6 +134,35 @@ export function developmentRead(project: string, path: string): unknown {
     if (route === '/reviews') return { records: [], next: null };
     if (['/runs', '/verification-targets', '/model-revisions', '/releases', '/changes', '/deployments', '/environments'].includes(route)) return page([]);
     return null;
+  }
+  const hour = 3600000;
+  const olderDeployment = { deployment_id: 'payments-2026-09-12', release_fingerprint: identity('release:1.7'), label: 'Payments 1.7',
+    first_observed_ms: Date.now() - 40 * 24 * hour, last_observed_ms: Date.now() - 10 * 24 * hour, rollout_id: 'rollout-1.7' };
+  const previousDeployment = { deployment_id: 'payments-2026-10-10', release_fingerprint: identity('release:1.8-rc'), label: 'Payments 1.8 RC',
+    first_observed_ms: Date.now() - 10 * 24 * hour, last_observed_ms: Date.now() - 2 * 24 * hour, rollout_id: 'rollout-1.8-rc' };
+  const history = (environment: string) => [
+    ...(environment === 'production' ? [{ deployment_id: deployment.id, release_fingerprint: releaseId, label: release.label, first_observed_ms: Date.now() - 2 * 24 * hour, last_observed_ms: Date.now() - 60000, rollout_id: 'rollout-1.8', current: true }] : [{ deployment_id: stagingDeployment.id, release_fingerprint: releaseId, label: release.label, first_observed_ms: Date.now() - 20 * 60000, last_observed_ms: Date.now() - 60000, rollout_id: 'rollout-1.8-staging', current: true }]),
+    ...(environment === 'production' ? [{ ...previousDeployment, current: false }, { ...olderDeployment, current: false }] : []),
+  ];
+  const deliveryGapFor = (environment: string) => {
+    const current = environment === 'production' ? deployment : stagingDeployment;
+    return { environment, deployment_id: current.id, release_fingerprint: releaseId, release_model_revision: revision, main_model_revision: identity('main-model'),
+      main_commit: '9fb783f0c2d14e6a8b7d5c3e1a09f4b2d6c8e7a1', main_sequence: 42,
+      requirements: [
+        { id: 'delivery-recovers-after-outage', difference: 'added', criticality: 'critical', release_status: null },
+        { id: 'reminders-follow-current-payment', difference: 'changed', criticality: 'important', release_status: scenario === 'healthy' ? 'supported' : 'violated' },
+        { id: 'notification-content-is-complete', difference: 'changed', criticality: 'routine', release_status: 'supported' },
+      ].filter(r => scenario !== 'healthy' || r.difference !== 'changed' || r.id !== 'notification-content-is-complete') };
+  };
+  const environmentRoute = /^\/environments\/([^/]+)\/(delivery-gap|rollback-candidates|deployment-history)$/.exec(route);
+  if (environmentRoute && ['production', 'staging'].includes(environmentRoute[1])) {
+    const [, environment, kind] = environmentRoute;
+    if (kind === 'delivery-gap') return deliveryGapFor(environment);
+    if (kind === 'deployment-history') return { project, environment, deployments: history(environment), next_page_token: null };
+    return { project, environment, candidates: environment === 'production' ? [
+      { ...previousDeployment, last_status_at_ms: Date.now() - 2 * 24 * hour, non_routine_requirements: 4 },
+      { ...olderDeployment, last_status_at_ms: Date.now() - 38 * 24 * hour, non_routine_requirements: 3 },
+    ] : [] };
   }
   if (route === '/environments/staging/deployment') return {
     project, environment: 'staging', revision: 1, deployment: stagingDeployment, release_fingerprint: releaseId,
@@ -160,7 +189,7 @@ export function developmentRead(project: string, path: string): unknown {
     })),
   };
   if (route === `/model-revisions/${revision}/catalog`) return { project, model_revision: revision, catalog, provenance_basis: 'synthetic-ui-data' };
-  if (route === `/model-revisions/${baseline}/catalog`) return { project, model_revision: baseline, catalog: baselineCatalog, provenance_basis: 'synthetic-ui-data' };
+  if (route === `/model-revisions/${priorMain}/catalog`) return { project, model_revision: priorMain, catalog: priorMainCatalog, provenance_basis: 'synthetic-ui-data' };
   if (route === '/environments/production/observations') return {
     revision: 1,
     fingerprint: identity('deployment-observation'),
@@ -181,27 +210,27 @@ export function developmentRead(project: string, path: string): unknown {
   };
   if (route === `/deployments/${deployment.id}`) return { deployment, release_fingerprint: releaseId };
   if (route === '/environments') return page([{ environment: 'production', revision: 1, deployment_id: deployment.id }, { environment: 'staging', revision: 1, deployment_id: stagingDeployment.id }]);
-  if (route === '/authority') return accepted ? authority : baselineAuthority;
-  if (route === '/model-revisions') return page([{ revision, selected: accepted }, ...(!accepted ? [{ revision: baseline, selected: true }] : [])]);
+  if (route === '/authority') return onMain ? authority : priorMainAuthority;
+  if (route === '/model-revisions') return page([{ revision, selected: onMain }, ...(!onMain ? [{ revision: priorMain, selected: true }] : [])]);
   if (route === '/verification-targets') return page([{ fingerprint: verificationTarget, verification_target: deployment }]);
-  if (route === '/requirement-reviews') return accepted ? reviewState : { assessment: { state: 'ready', generation: 1, published_generation: 1, evaluated_at_ms: Date.now(), valid_until_ms: null }, authority_fingerprint: baseline, requirements: [] };
+  if (route === '/requirement-reviews') return onMain ? reviewState : { assessment: { state: 'ready', generation: 1, published_generation: 1, evaluated_at_ms: Date.now(), valid_until_ms: null }, authority_fingerprint: priorMain, requirements: [] };
   if (route === `/model-revisions/${revision}/requirement-reviews`) return reviewState;
-  if (route === '/reviews') return { records: accepted ? reviews : [], next: null };
+  if (route === '/reviews') return { records: onMain ? reviews : [], next: null };
   if (route === '/runs') return page(runs);
   const run = runs.find(r => route === `/runs/${r.run_id}`);
   if (run) return { items: [bundles.find(b => b.run_id === run.run_id)], next: null };
-  if (route === `/model-revisions/${revision}`) return { authority, selected: accepted };
+  if (route === `/model-revisions/${revision}`) return { authority, selected: onMain };
   if (route === `/model-revisions/${revision}/snapshot`) return { authority, reviews: [...reviews.map(r => r.record), { kind: 'requirement-status', requirement: requirements[0]?.id, verification_target_fingerprint: verificationTarget, fingerprint: identity('historical-assessment'), conclusion: 'supported', reviewed_at_ms: Date.now()-86400000, rationale: 'Historical authored conclusion retained for inspection.' }], bundles };
-  if (route === `/verification-targets/${verificationTarget}/state`) return accepted ? state : { ...state, authority_fingerprint: baseline, requirements: [] };
+  if (route === `/verification-targets/${verificationTarget}/state`) return onMain ? state : { ...state, authority_fingerprint: priorMain, requirements: [] };
   if (route === `/deployments/${deployment.id}/status/summary`) return { ...state, requirements: state.requirements.map(({ bindings, explanation, ...requirement }) => ({ ...requirement, status: freshness.state === 'ready' ? requirement.status : 'unresolved', explanation: { summary: freshness.state === 'ready' ? explanation.summary : 'Evidence is being reassessed.' } })) };
   if (route === `/deployments/${deployment.id}/status` || route === `/model-revisions/${revision}/verification-targets/${verificationTarget}/state`) return state;
-  if (route === `/model-revisions/${baseline}`) return { authority: baselineAuthority, selected: !accepted };
-  if (route === `/model-revisions/${baseline}/requirement-reviews`) return { assessment: { state: 'ready', generation: 1, published_generation: 1, evaluated_at_ms: Date.now(), valid_until_ms: null }, authority_fingerprint: baseline, requirements: [] };
-  if (route === `/model-revisions/${baseline}/snapshot`) return { authority: baselineAuthority, reviews: [], bundles: [] };
-  if (route === `/model-revisions/${baseline}/verification-targets/${verificationTarget}/state`) return { authority_fingerprint: baseline, model_fingerprint: baselineAuthority.model_fingerprint, requirements: [] };
-  if (route === '/releases') return page([{ fingerprint: releaseId, release, accepted }]);
-  if (route === `/releases/${releaseId}` || route === `/releases/${releaseId}/summary`) return { publication: { release, catalog, evidence: [] }, submitted_by: 'development-publisher', submitted_at: at(90), acceptance: accepted ? { owner: 'development-owner', rationale: 'Illustrative acceptance' } : null, deployments: [deployment, stagingDeployment] };
-  if (route === '/changes') return page([{ id: 'payment-reminders', revisions: [{ status: accepted ? 'accepted' : 'under-assessment' }] }]);
+  if (route === `/model-revisions/${priorMain}`) return { authority: priorMainAuthority, selected: !onMain };
+  if (route === `/model-revisions/${priorMain}/requirement-reviews`) return { assessment: { state: 'ready', generation: 1, published_generation: 1, evaluated_at_ms: Date.now(), valid_until_ms: null }, authority_fingerprint: priorMain, requirements: [] };
+  if (route === `/model-revisions/${priorMain}/snapshot`) return { authority: priorMainAuthority, reviews: [], bundles: [] };
+  if (route === `/model-revisions/${priorMain}/verification-targets/${verificationTarget}/state`) return { authority_fingerprint: priorMain, model_fingerprint: priorMainAuthority.model_fingerprint, requirements: [] };
+  if (route === '/releases') return page([{ fingerprint: releaseId, release }]);
+  if (route === `/releases/${releaseId}` || route === `/releases/${releaseId}/summary`) return { publication: { release, catalog, evidence: [] }, submitted_by: 'development-publisher', submitted_at: at(90), deployments: [deployment, stagingDeployment] };
+  if (route === '/changes') return page([{ id: 'payment-reminders', revisions: [{ status: onMain ? 'accepted' : 'under-assessment' }] }]);
   if (route === '/deployments') return page([{ deployment, release_fingerprint: releaseId }, { deployment: stagingDeployment, release_fingerprint: releaseId }]);
   if (/^\/environments\/[^/]+\/(deployment|observations)$/.test(route)) return null;
   throw new Error(`Synthetic Assurance UI data does not implement ${route}`);
