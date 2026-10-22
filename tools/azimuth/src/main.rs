@@ -40,7 +40,7 @@ USAGE
     azimuth assurance snapshot --project <id> [--review <file>...] [--bundle <file>...] [options]
     azimuth assurance review-draft --input <packet> --input-ref <change-relative ref> --id <id> [--out <file>]
     azimuth assurance review-compile --project <id> --change-root <dir> --input <relative Markdown>...
-        [--review <file>...] [--bundle <file>...] [options] [--out <file>]
+        [--review <file>...] [--bundle <file>...] [--replace-sealed] [options] [--out <file>]
     azimuth assurance review-export --input <compiled bundle> --id <id> [--out <file>]
         [--catalog <project.json> --workset <workset.json>]
     azimuth adapter verify [--config <file>]
@@ -3785,6 +3785,7 @@ fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
     let mut request = None;
     let mut change_root = None;
     let mut markdown = Vec::new();
+    let mut replace_sealed = false;
     let mut reviews = Vec::new();
     let mut bundles = Vec::new();
     let mut options = Vec::new();
@@ -3798,6 +3799,10 @@ fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
                     "--change-root",
                 )?;
                 cursor += 2;
+            }
+            "--replace-sealed" if operation == "review-compile" => {
+                replace_sealed = true;
+                cursor += 1;
             }
             "--input" if operation == "review-compile" => {
                 markdown.push(argument_value(args, cursor, "--input")?.to_string());
@@ -3909,14 +3914,24 @@ fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
             if markdown.is_empty() {
                 return Err("review-compile needs --input <change-relative Markdown>".into());
             }
-            azimuth::review_authoring::compile(
-                &change_root.ok_or("review-compile needs --change-root")?,
+            let change_root = change_root.ok_or("review-compile needs --change-root")?;
+            let bundle = azimuth::review_authoring::compile(
+                &change_root,
                 &markdown,
                 &loaded.model,
                 &project,
                 &native_reviews,
                 &bundles,
-            )?
+            )?;
+            for sealed in azimuth::review_authoring::seal_records(
+                &change_root,
+                &markdown,
+                &bundle,
+                replace_sealed,
+            )? {
+                eprintln!("sealed review record {}", sealed.display());
+            }
+            bundle
         }
         "catalog" => azimuth::release::catalog(&loaded.model),
         "prepare-candidate" => {

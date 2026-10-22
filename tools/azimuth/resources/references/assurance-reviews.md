@@ -113,7 +113,14 @@ dump of all project execution history. Compilation validates those bundles and p
 corresponding `challenge_basis` references. It creates no reviewer, time,
 decision or positive conclusion. `azimuth assurance review-compile` compiles aggregate Markdown
 against those exact packets and the current account. Placeholders and changed inputs fail.
-Generated packets, compiled bundles and execution reports belong in ignored change `.azimuth/`.
+Generated packets and execution reports belong in ignored change `.azimuth/`. The compiled bundle
+is printed (or written with `--out`) and is not committed. `review-compile` also seals each compiled
+native review record into the change's `reviews/` directory beside the Markdown, as the committed JSON
+the ratification gate reads: a Markdown file holding one review seals to `reviews/<stem>.json`; one
+holding several seals each to `reviews/<stem>.<review-id>.json`. The record is created at review time
+against the reviewed model by the reviewer's own step, and the author commits Markdown and sealed JSON
+together. Recompiling an identical record leaves the file untouched; a different record at the same name
+fails unless `--replace-sealed` is passed, and two reviews never seal to one file.
 
 ## Challenging an assessment
 
