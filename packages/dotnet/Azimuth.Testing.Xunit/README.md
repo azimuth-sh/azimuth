@@ -2,7 +2,7 @@
 
 Reusable xUnit **v2** fixture integration for startup-fixed effective Execution Contexts.
 Targets .NET 8 and supports .NET 10 consumers. Tests still run with `dotnet test`.
-No ASS connection, credential, publisher, Check mapping or Requirement assessment is included.
+No AAS connection, credential, publisher, Check mapping or Requirement assessment is included.
 
 ## Consumer fixture
 

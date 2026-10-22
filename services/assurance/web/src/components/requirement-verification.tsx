@@ -37,7 +37,7 @@ export function RequirementVerification(props: RequirementVerificationProps) {
   const sections = [
     { id: 'requirement-monitors', title: 'Production monitoring', summary: 'Recurring deployment Checks. A missed or overdue execution leaves required evidence unresolved.', matches: (binding: typeof bindings[number]) => !!binding.monitor },
     { id: 'requirement-deployment', title: 'Deployment verification', summary: 'Checks executed against the observed deployment.', matches: (binding: typeof bindings[number]) => !binding.monitor && binding.checkDefinition?.deployment?.verification_target === 'deployment' },
-    { id: 'requirement-implementation', title: 'Implementation verification', summary: 'Source and artifact evidence applied through the release composition.', matches: (binding: typeof bindings[number]) => !binding.monitor && binding.checkDefinition?.deployment?.verification_target !== 'deployment' },
+    { id: 'requirement-implementation', title: 'Implementation verification', summary: 'Source and artifact evidence applied through the release lineage.', matches: (binding: typeof bindings[number]) => !binding.monitor && binding.checkDefinition?.deployment?.verification_target !== 'deployment' },
   ];
   const uncoveredScenarios = (props.scenarioIds ?? []).filter(id => !props.bindings.some(binding => binding.scenario === id));
   const requirementNotApplicable = props.state?.status === 'not-applicable';

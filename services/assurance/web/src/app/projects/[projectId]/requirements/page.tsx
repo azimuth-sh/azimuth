@@ -10,9 +10,10 @@ const filters = [
   { id: 'supported', label: 'Satisfied' },
   { id: 'violated', label: 'Not satisfied' },
   { id: 'unresolved', label: 'Unresolved' },
+  { id: 'not-applicable', label: 'Not applicable here' },
 ] as const;
-const statusLabels = { supported: 'Satisfied', violated: 'Not satisfied', unresolved: 'Unresolved' };
-const tones = { supported: 'good', violated: 'bad', unresolved: 'warn' };
+const statusLabels = { supported: 'Satisfied', violated: 'Not satisfied', unresolved: 'Unresolved', 'not-applicable': 'Not applicable here' };
+const tones = { supported: 'good', violated: 'bad', unresolved: 'warn', 'not-applicable': 'neutral' };
 
 export default async function RequirementsPage({ params, searchParams }: {
   params: Promise<{ projectId: string }>;
@@ -53,7 +54,7 @@ export default async function RequirementsPage({ params, searchParams }: {
     {!state ? <section className="dashboardPanel panelEmpty"><h2>Deployment Requirement Status is not available</h2><p>{deployment ? 'No assessment is available for this deployment. Missing data does not satisfy any Requirement.' : 'Select a recorded environment deployment to see its Requirement Status.'}</p></section> : !matching.length ? <section className="dashboardPanel panelEmpty"><h2>No {filter.id === 'all' ? '' : `${filter.label.toLowerCase()} `}Requirements</h2><p>{requirements.length ? 'No Requirements match this status in the selected deployment. Choose another status above.' : 'No Requirements have been assessed for this deployment.'}</p></section> : <div className="requirementGroups">{[...groups].map(([id,group]) => <section className="dashboardPanel requirementGroup" key={id}><div className="panelHeading"><h2><span className="moduleIcon" aria-hidden="true">◇</span>{group.title}</h2><span className="panelCount">{group.requirements.length}</span></div>{group.requirements.map(requirement => {
       const status = requirementStatus(requirement.status);
       const details = `${root}/model?${new URLSearchParams({ environment, revision: revision!, 'verification-target': verificationTarget!, requirement: requirement.requirement })}`;
-      return <Link className="attentionRow" key={requirement.requirement} href={details}><span className={`attentionIcon ${tones[status]}`} aria-hidden="true">{status === 'supported' ? '✓' : status === 'violated' ? '!' : '?'}</span><div><div className="rowMeta"><span className={`badge ${tones[status]}`}>{statusLabels[status]}</span></div><h3>{catalog?.requirements.find(c => c.id === requirement.requirement)?.title ?? requirement.requirement}</h3><p>{requirement.explanation.summary}</p><span className="rowAction">View Requirement, review & evidence ↗</span></div></Link>;
+      return <Link className="attentionRow" key={requirement.requirement} href={details}><span className={`attentionIcon ${tones[status]}`} aria-hidden="true">{status === 'supported' ? '✓' : status === 'violated' ? '!' : status === 'not-applicable' ? '–' : '?'}</span><div><div className="rowMeta"><span className={`badge ${tones[status]}`}>{statusLabels[status]}</span></div><h3>{catalog?.requirements.find(c => c.id === requirement.requirement)?.title ?? requirement.requirement}</h3><p>{requirement.explanation.summary}</p><span className="rowAction">View Requirement, review & evidence ↗</span></div></Link>;
     })}</section>)}</div>}
   </div>;
 }

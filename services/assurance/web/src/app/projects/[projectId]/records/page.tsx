@@ -44,7 +44,7 @@ export default async function ProjectPage({
           </details>
         ) : (
           <p className="notice">
-            No authority selected. Assurance State remains unresolved.
+            No main-model publication. Assurance State remains unresolved.
           </p>
         )}
       </section>
@@ -68,7 +68,7 @@ export default async function ProjectPage({
               </details>
             )}
           </article>
-        )) ?? <p>No selected authority; definition assessments unresolved.</p>}
+        )) ?? <p>No main-model publication; definition assessments unresolved.</p>}
       </section>
       <section className="section">
         <h2>Verification Targets</h2>
@@ -145,7 +145,7 @@ export default async function ProjectPage({
           ))
         ) : (
           <p>
-            No reviews available. A selected authority is required to assess
+            No reviews available. A main-model publication is required to assess
             review freshness.
           </p>
         )}

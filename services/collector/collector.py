@@ -330,7 +330,7 @@ def main():
                     token = Path(config['projects'][project]['token_file']).read_text().strip()
                     receipt = fetch(config['assurance_url'].rstrip('/') + '/v1/projects/' + quote(project, safe='') + '/runs', token=token, method='POST', body=payload.encode())
                     if receipt.get('bundle_fingerprint') != fingerprint:
-                        raise ValueError('Unexpected ASS receipt')
+                        raise ValueError('Unexpected AAS receipt')
                     with db:
                         db.execute('DELETE FROM outbox WHERE fingerprint=?', (fingerprint,))
                 except Exception as failure:

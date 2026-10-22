@@ -53,10 +53,10 @@ def publish_bundle(*, bundle_bytes, cli, base_url, project, token, captures=None
                 status = error.code
                 error.close()
                 if status not in (408, 429, 500, 502, 503, 504) or attempt == retries:
-                    raise ValueError("ASS publication failed with HTTP " + str(status)) from None
+                    raise ValueError("AAS publication failed with HTTP " + str(status)) from None
             except (URLError, TimeoutError, ConnectionError, OSError):
                 if attempt == retries:
-                    raise ValueError("ASS publication transport failed after bounded retries") from None
+                    raise ValueError("AAS publication transport failed after bounded retries") from None
             time.sleep(retry_delay_seconds * (2 ** attempt))
         raise ValueError("publication retry budget exhausted")
     for capture in captures or []:
@@ -64,7 +64,7 @@ def publish_bundle(*, bundle_bytes, cli, base_url, project, token, captures=None
             raise ValueError("context sidecar must reference this Run and cannot assert trust")
     response = upload("/runs", bundle_bytes)
     if not isinstance(response, dict) or response.get("bundle_fingerprint") != payload.get("bundle_fingerprint") or response.get("run_id") != payload.get("run_id"):
-        raise ValueError("ASS publication receipt does not identify the uploaded immutable Run")
+        raise ValueError("AAS publication receipt does not identify the uploaded immutable Run")
     if captures:
         for capture in captures:
             if "trusted" in capture or capture.get("run") != payload["run_id"] or capture.get("bundle_fingerprint") != payload["bundle_fingerprint"]:

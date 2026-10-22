@@ -28,7 +28,7 @@ A snapshot is `{captured_at_ms,instance,report}`. Every capture has `activity`: 
 
 ## Ingestion and assessment
 
-Owners POST `{contract}` to `/v1/projects/{project}/context-contracts`. Authenticated producers or publishers POST `{capture}` to `/context-captures`. Client captures never contain `trusted`; ASS derives trust from authenticated Run ownership or the current deployment observation. Replays preserve original immutable bytes and do not renew timestamps.
+Owners POST `{contract}` to `/v1/projects/{project}/context-contracts`. Authenticated producers or publishers POST `{capture}` to `/context-captures`. Client captures never contain `trusted`; AAS derives trust from authenticated Run ownership or the current deployment observation. Replays preserve original immutable bytes and do not renew timestamps.
 
 `GET /v1/projects/{project}/deployments/{deployment}/status` assembles a bounded consistent relational snapshot and invokes the same native assessor as `azimuth assurance deployment-status --input request.json`. Current model Verification Target state routes delegate registered deployments to that assessor. Missing relations, contexts, reviews or fresh Monitor Check Results produce explained unresolved results. Routine Requirements retain their review exemption. Accepted Requirement Review establishes verification credibility, not an observed deployment result.
 
@@ -42,4 +42,4 @@ Publishing is a separate operation. It verifies native bundles and uploads exact
 
 ## Storage rollout
 
-ASS storage version 8 uses the Requirement, Scenario, Verification Target and Check Result vocabulary and initializes an empty database; an existing assurance schema of another version or signature is refused rather than upgraded. Rolling it out replaces ASS-owned data: stop producers, reset the ASS database, start the service, confirm fresh initialization and republish evidence from source. Rolling an image back alone is unsupported; recovery is re-initialization and republication, not an automatic destructive rollback.
+AAS storage version 8 uses the Requirement, Scenario, Verification Target and Check Result vocabulary and initializes an empty database; an existing assurance schema of another version or signature is refused rather than upgraded. Rolling it out replaces AAS-owned data: stop producers, reset the AAS database, start the service, confirm fresh initialization and republish evidence from source. Rolling an image back alone is unsupported; recovery is re-initialization and republication, not an automatic destructive rollback.

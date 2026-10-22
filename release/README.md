@@ -80,7 +80,7 @@ The first-alpha package cohort also includes `Azimuth.Testing.Xunit` (NuGet, .NE
 release version are qualified with the existing artifact cohort. Package qualification installs
 the actual xUnit archive through a private NuGet cache/source mapping and executes its report API;
 it installs the actual npm tarball and runs a real synthetic Playwright test with the packaged
-fixture/reporter. These smokes do not contact ASS or require a browser download. Canonical source
+fixture/reporter. These smokes do not contact AAS or require a browser download. Canonical source
 checks separately cover failures, retries, contexts and missing captures through real runners.
 
 `execution-context`, `test-report`, `test-mapping`, `native-test-results`, `deployment-assessment`

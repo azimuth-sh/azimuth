@@ -1,6 +1,6 @@
-# Assurance State Service
+# Azimuth Assurance Service
 
-The current API stores validated Runs, append-only correction histories, definition-level Requirement Reviews, Requirement Status records for one exact Verification Target and explicit model authority. Earlier Method Qualification, Applicability Decision and Requirement Judgment records remain immutable readable history; they do not substitute for the new assessments. The inspection-only Web UI uses this API. Execution never creates an approved review or a supported Requirement conclusion.
+The current API stores validated Runs, append-only correction histories, definition-level Requirement Reviews, Requirement Status records for one exact Verification Target and main-model publications. Earlier Method Qualification, Applicability Decision and Requirement Judgment records remain immutable readable history; they do not substitute for the new assessments. The inspection-only Web UI uses this API. Execution never creates an approved review or a supported Requirement conclusion.
 
 ## UI development
 
@@ -78,37 +78,35 @@ All data routes below require a project bearer credential; `/health` is process 
 | `GET .../runs` | Latest revision summaries, including exact Verification Target and executed model fingerprints. |
 | `GET .../runs/{run_id}` | Immutable revision history, oldest first, with a revision cursor. |
 | `GET .../verification-targets` | Exact recorded Verification Target fingerprints and descriptors. |
-| `GET .../verification-targets/{fingerprint}/state` | Current authority's derived state for that exact recorded Verification Target. |
+| `GET .../verification-targets/{fingerprint}/state` | Default model's derived state for that exact recorded Verification Target. |
 | `POST .../reviews` | Reviewer ingestion of a Requirement Review or a Requirement Status record; execution never fabricates an assessment. |
 | `GET .../requirement-reviews` | Current definition assessments, independent of Verification Targets. |
 | `GET .../reviews` | Immutable review records with current assessment and diagnostics. |
-| `POST .../authority` | Owner selection with `If-None-Match: *` initially or exact `If-Match`. |
-| `GET .../authority` | Currently selected complete authority. |
-| `POST .../model-revisions` | Owner registration of an immutable candidate projection, without authority selection. |
+| `POST .../main-models` | Publisher registration of the model on main with its commit, `main_sequence` and ratification status. |
+| `GET .../authority` | Complete authority of the highest `main_sequence` main-model publication, with its commit, sequence and `ratification_status`. |
+| `POST .../model-revisions` | Owner registration of an immutable candidate projection. |
 | `GET .../model-revisions` | Bounded registration metadata; no projection payloads in lists. |
-| `GET .../model-revisions/{revision}` | Exact projection, original registration metadata and current selection indicator. |
-| `GET .../model-revisions/{revision}/requirement-reviews` | Candidate definition assessments without authority selection or a Verification Target. |
+| `GET .../model-revisions/{revision}` | Exact projection and original registration metadata. |
+| `GET .../model-revisions/{revision}/requirement-reviews` | Candidate definition assessments without a Verification Target. |
 | `GET .../model-revisions/{revision}/snapshot` | Consistent complete bounded authority, revision-linked reviews and latest project Run bundles. |
 | `POST .../model-revisions/{revision}/reviews` | Authenticated reviewer ingestion and explicit linkage to this revision. |
-| `GET .../model-revisions/{revision}/verification-targets/{fingerprint}/state` | This revision's exact recorded Verification Target assessment without changing accepted authority. |
+| `GET .../model-revisions/{revision}/verification-targets/{fingerprint}/state` | This revision's exact recorded Verification Target assessment without changing the default model. |
 
-List reads accept `limit=1..100` (default 25) and an opaque `after` cursor returned as `next`. Run revision cursors are integer revisions. Payload pages include a SQL-side 32 MiB guard; lookahead records return only cursor metadata; oversized pages fail explicitly before application materialization and require a smaller limit. Each list is an independent keyset traversal; concurrent arrivals before a cursor become visible on refresh. UI Run detail fetches one revision per page. Exact Verification Target state is never inferred for an unrecorded Verification Target. Missing authority returns 404; the UI reports an unresolved conclusion. Missing, stale, rejected and invalid reviews retain their actual core assessment and diagnostics.
+List reads accept `limit=1..100` (default 25) and an opaque `after` cursor returned as `next`. Run revision cursors are integer revisions. Payload pages include a SQL-side 32 MiB guard; lookahead records return only cursor metadata; oversized pages fail explicitly before application materialization and require a smaller limit. Each list is an independent keyset traversal; concurrent arrivals before a cursor become visible on refresh. UI Run detail fetches one revision per page. Exact Verification Target state is never inferred for an unrecorded Verification Target. A project with no main-model publication returns 404 for `/authority`; the UI reports an unresolved conclusion. Missing, stale, rejected and invalid reviews retain their actual core assessment and diagnostics.
 
-State assessment reads one consistent database snapshot of current authority, all reviews and latest Run revisions. More than 5000 records or 32 MiB of review/Run payloads fails explicitly; it never substitutes truncated evidence for a complete assessment. This bound is an operational limit, not an Assurance validity rule. Larger accounts require a later bounded incremental projection. Ingestion remains limited to 16 MiB per request.
+State assessment reads one consistent database snapshot of the default model's authority, all reviews and latest Run revisions. More than 5000 records or 32 MiB of review/Run payloads fails explicitly; it never substitutes truncated evidence for a complete assessment. This bound is an operational limit, not an Assurance validity rule. Larger accounts require a later bounded incremental projection. Ingestion remains limited to 16 MiB per request.
 
 Browser-accessible `/inspection/{project}/...` routes are GET-only and allow only the listed inspection resources. They recheck the human's project access before server-side API calls; they do not proxy arbitrary paths or bearer writes.
 
 ## Candidate model revisions
 
-The project is configured once through credentials; a change does not provision another project. Owner registration accepts the same strict authority projection as authority selection. Its content fingerprint is the revision ID. `POST /v1/projects/{project}/model-revisions` returns HTTP 201 on first registration and HTTP 200 on identical replay. Project mismatch or invalid projection returns HTTP 422. Registration metadata is append-only and retains `registration_status: candidate`, the original registering owner and timestamp; current selection is reported separately. Registration never writes `current_authorities` or the selection history.
-
-An owner may later select that exact projection through the existing conditional `/authority` endpoint. This explicit operation retains history and requires the existing precondition; it does not automatically certify deployment, adoption or change acceptance. Selection of a projection not yet registered also creates its immutable registration. The same revision-linked reviews then remain available under selected authority. No automatic lifecycle promotion, rollout gate or archive operation is implemented.
+The project is configured once through credentials; a change does not provision another project. Owner registration accepts the same strict authority projection as a main-model publication. Its content fingerprint is the revision ID. `POST /v1/projects/{project}/model-revisions` returns HTTP 201 on first registration and HTTP 200 on identical replay. Project mismatch or invalid projection returns HTTP 422. Registration metadata is append-only and retains `registration_status: candidate`, the original registering owner and timestamp. A candidate never becomes the default model by registration; the default model is the highest `main_sequence` main-model publication, and ratification is recorded in git. No automatic lifecycle promotion, rollout gate or archive operation is implemented.
 
 Revision snapshot responses contain `project`, `model_revision`, `authority`, `reviews` and `bundles`. All are read in one bounded SQL snapshot. Reviews are only those explicitly linked to the revision; bundles are the latest correction heads of shared project Runs, including unjoined evidence for other definitions and Verification Targets. Their presence is not assignment or applicability approval. Exact dependency matching remains the core assessor's responsibility. A missing revision or Verification Target returns HTTP 404. Bounds include 5000 review/Run records, 32 MiB review/Run payloads and the authority projection; exceeding them fails rather than returning partial support.
 
-Revision-scoped review submission reuses strict record validation, authenticated reviewer matching and current dependency assessment. Invalid dependencies fail with HTTP 422; protocol-valid rejected and stale assessments are retained. An identical record may be explicitly submitted for another revision when its exact dependencies permit assessment there. The record itself stays immutable; the link records authenticated submission provenance. There is no automatic cross-revision review reuse. Current `/reviews` writes and reads use the selected revision. Candidate records cannot silently affect selected authority. The additive migration links pre-existing review history to the authority selected at migration, preserving records and selection history without asserting their earlier validity or assessment context. Such links are explicitly marked `migration-selected-authority` rather than `reviewer-submission`; migration does not manufacture reviewer approval.
+Revision-scoped review submission reuses strict record validation, authenticated reviewer matching and current dependency assessment. Invalid dependencies fail with HTTP 422; protocol-valid rejected and stale assessments are retained. An identical record may be explicitly submitted for another revision when its exact dependencies permit assessment there. The record itself stays immutable; the link records authenticated submission provenance. There is no automatic cross-revision review reuse. Current `/reviews` writes and reads use the default model's revision. Candidate records cannot silently affect the default model's assessments.
 
-Snapshot and review assessment are observations at read time. A correction or another review arriving afterward may change the next assessment. No lease, freshness guarantee or review-quality guarantee is supplied by an HTTP receipt. The Web model workspace browses selected and candidate revisions with explicit model/system context. Authenticated API and harness clients use the same revision endpoints.
+Snapshot and review assessment are observations at read time. A correction or another review arriving afterward may change the next assessment. No lease, freshness guarantee or review-quality guarantee is supplied by an HTTP receipt. The Web model workspace browses main and candidate revisions with explicit model/system context. Authenticated API and harness clients use the same revision endpoints.
 
 ## Requirement Review and Requirement Status
 
@@ -122,11 +120,11 @@ Local drafts and debugging Runs need not be uploaded. CI publication is the defa
 
 ### Migration and rollback
 
-The relational storage generation starts in a fresh database using `server/relational_migrations` and explicit schema initialization at storage schema version 6. Only fresh initialization is supported: startup rejects databases containing the former document columns before any migration writes, and rejects any recorded storage schema whose version or signature differs from the running binary. There is no in-place upgrade from earlier storage schema versions. Retain the original database and take a backup; select a separate database, restore the approved baseline before release-managed publication, republish the exact current release package, and let the reconciler record the actual deployment. This is a reset and republication, not a historical-data migration. Records omitted from the package remain only in the retained database/backup. New review writes accept only `requirement-review` and `requirement-status`. Historical kinds remain parseable for inspection; they are never silently promoted into accepted Requirement Reviews or supported Requirement Status. Existing projects therefore show unresolved new assessments until independently authored records are published.
+The relational storage generation starts in a fresh database using `server/relational_migrations` and explicit schema initialization at storage schema version 8. Only fresh initialization is supported: startup rejects any recorded storage schema whose version or signature differs from the running binary. There is no in-place upgrade from earlier storage schema versions. Retain the original database and take an offline dump; reset the database, republish main's model, reviews and releases from git and CI, and let the reconciler and collector rebuild deployments and captures. This is a reset and republication, not a historical-data migration. Records omitted from the republication remain only in the retained dump. New review writes accept only `requirement-review` and `requirement-status`. Historical kinds remain parseable for inspection; they are never silently promoted into accepted Requirement Reviews or supported Requirement Status. Existing projects therefore show unresolved new assessments until independently authored records are published.
 
-Back up the PostgreSQL volume before rollout. Downgrading the application after publishing new records is unsafe because an earlier parser may reject the complete snapshot. Roll back code only before new-kind ingestion, or restore a separately retained pre-rollout database snapshot into an isolated recovery deployment. Do not delete or rewrite published history to make an older binary appear compatible. Image publication and deployment are separate operator actions; neither accepts a release.
+Back up the PostgreSQL volume before rollout. Downgrading the application after publishing new records is unsafe because an earlier parser may reject the complete snapshot. Roll back code only before new-kind ingestion, or restore a separately retained pre-rollout database snapshot into an isolated recovery deployment. Do not delete or rewrite published history to make an older binary appear compatible. Image publication and deployment are separate operator actions; neither authorizes a release.
 
-Build and source inspection establish compilation and schema integration, not PostgreSQL-backed behavior, OAuth authorization or live Challenge execution. Existing historical parsers remain readable; there is no automatic cross-Verification-Target composition, recency expiration, telemetry ingestion or review-quality guarantee. Full snapshots retain the existing bounded-record and payload limits.
+Build and source inspection establish compilation and schema integration, not PostgreSQL-backed behavior, OAuth authorization or live Challenge execution. Existing historical parsers remain readable; there is no automatic cross-Verification-Target reuse, recency expiration, telemetry ingestion or review-quality guarantee. Full snapshots retain the existing bounded-record and payload limits.
 
 ## Local private profile
 
@@ -168,7 +166,7 @@ Use the selection revision returned by GET for replacements. First selection use
 A stale predecessor returns 409, preventing a late rollout from overwriting a
 more recent selection. The deployment controller must obtain the expected revision
 before its rollout and publish this designation only after actual rollout. A
-rollback explicitly selects its recorded target. Designation neither accepts a
+rollback explicitly selects its recorded target. Designation neither authorizes a
 release nor proves deployment readiness or Requirement Status. Tokens remain in the
 calling publisher/controller; the browser has no write capability.
 
@@ -186,9 +184,9 @@ database in this work; compilation does not establish those runtime properties.
 No production registration, selection or deployment is performed by these source
 changes.
 
-## Owner acceptance and deployment observations
+## Deployment observations
 
-Web users may have server-only `ownerTokens: {project: token}` in addition to read projects. Tokens are distinct per user/project and correspond to separately configured ASS owner identities. Terraform's user `owners` map selects those existing identities; it defaults to empty, so no user gains owner access implicitly. Acceptance uses an authenticated same-origin Server Action and server-side bearer transport; credentials never reach the browser. Owners choose the assessed environment and enter a reason. Server concurrency, observed rollout/freshness and native exact-Verification-Target supported Requirement Status gates remain authoritative. Acceptance never applies repository model files or archives Changes.
+The Web config parser still accepts server-only `ownerTokens: {project: token}` per user, but no Web action uses it: the UI is inspection only and there is no release acceptance.
 
 Deploy API and Web together. The production dashboard labels last observed release and explicitly warns when no fresh complete observation matches its selected deployment. Enable the separate reconciler only after image, credential, configured workload and network prerequisites are ready. No existing deployment is selected by migration.
 

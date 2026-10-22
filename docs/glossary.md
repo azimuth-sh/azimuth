@@ -2,7 +2,7 @@
 
 Bounded definitions for the current framework. Borrowed terms are narrowed where Azimuth cannot support their broader formal meaning. If another active document uses one of these terms differently, that document is wrong.
 
-Modules organize Requirements. Scenarios describe expected behavior. Checks produce Results. ASS assesses the evidence and shows Requirement Status for a deployment.
+Modules organize Requirements. Scenarios describe expected behavior. Checks produce Results. The Azimuth Assurance Service (AAS) assesses the evidence and shows Requirement Status for a deployment.
 
 ---
 
@@ -58,7 +58,7 @@ which Scenarios and why. Compact `verification.md` owns Checks and inline Eviden
 **Requirement assurance record** — the logical body of assurance information associated with one
 Requirement. Its definition-time part is the per-Requirement cluster of authored Module documents
 (`spec.md`, `design.md`, `verification.md` and `judgments.md` where present) assembled into one
-account. ASS separately holds the Requirement Reviews, Runs, Check Results, Execution Context
+account. AAS separately holds the Requirement Reviews, Runs, Check Results, Execution Context
 captures and derived assessments that bear on it. *Narrowing:* it names that collection only; there
 is no first-class aggregate, table, API resource or lifecycle with this name. Broader scopes such as
 the installation account remain distinct.
@@ -246,7 +246,7 @@ as an OIDC subject or a release attestation subject, are not Verification Target
 **Execution Context** — the behavior-relevant conditions under which a Check or an application
 instance executes. A **Run Execution Context** records the relevant conditions under which a Check
 executed; an **Application Execution Context** records the relevant conditions under which an
-application instance operates. The application reports facts; ASS determines whether those facts
+application instance operates. The application reports facts; AAS determines whether those facts
 establish evidence applicability.
 
 **Context Contract** — an owner-registered definition of the relevant Execution Context properties
@@ -311,7 +311,7 @@ assessment fingerprint. A clean result records a negative search, not positive p
 
 A protocol-valid adapter-returned `timed-out` Run is an execution fact and exits zero only when its complete response arrives within that deadline. A host-enforced deadline is a transport timeout, exits one and publishes no bundle.
 
-**Assurance Service** — the current project-scoped `run-ledger` persists valid Run histories, explicit model authority selections and independent compact reviews, then derives exact-Verification-Target state. Its producer, reviewer and owner roles authorize different actions. The earlier service API and version 2 project-snapshot wire stay isolated with no compatibility bridge. A bounded adapter is not this ledger or a long-running webhook host.
+**Azimuth Assurance Service (AAS)** — the current project-scoped `run-ledger` persists valid Run histories, main-model publications and independent compact reviews, then derives exact-Verification-Target state. Its producer, reviewer and owner roles authorize different actions. The earlier service API and version 2 project-snapshot wire stay isolated with no compatibility bridge. A bounded adapter is not this ledger or a long-running webhook host.
 
 ## Current compact assessment vocabulary
 
@@ -323,7 +323,7 @@ Verification Target or Check Results are required. It is distinct from deploymen
 Status.
 
 **Requirement Status** — the conclusion established by applicable evidence about a Requirement for
-a deployment. ASS computes it from reviewed definitions, release provenance, the observed deployment
+a deployment. AAS computes it from reviewed definitions, release provenance, the observed deployment
 and compatible Execution Context captures. Internal values `supported | violated | unresolved` are
 presented as **Satisfied**, **Not satisfied** and **Unresolved**. Missing, stale, conflicting or
 incomplete support remains unresolved. A passing Check or an accepted Requirement Review alone never

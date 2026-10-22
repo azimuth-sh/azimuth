@@ -8,7 +8,7 @@ import {
 } from '@/lib/assurance';
 import { requirementStatus } from '@/lib/production';
 export const dynamic = 'force-dynamic';
-const statusLabels = { supported: 'Satisfied', violated: 'Not satisfied', unresolved: 'Unresolved' };
+const statusLabels = { supported: 'Satisfied', violated: 'Not satisfied', unresolved: 'Unresolved', 'not-applicable': 'Not applicable here' };
 export default async function VerificationTargetPage({
   params,
 }: {
@@ -28,7 +28,7 @@ export default async function VerificationTargetPage({
       <h1>Verification Target evidence inspection</h1>
       <p>Inspect exact Verification Target records here. The environment overview shows computed deployment Requirement Status.</p><code>{verificationTarget}</code>
       {!state ? (
-        <p>No selected authority; conclusion unresolved.</p>
+        <p>No main-model publication; conclusion unresolved.</p>
       ) : (
         <>
           <p>

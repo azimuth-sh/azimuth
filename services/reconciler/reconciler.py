@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reconcile observed deployment state into ASS without changing workloads."""
+"""Reconcile observed deployment state into AAS without changing workloads."""
 import hashlib
 import datetime
 import json
@@ -233,7 +233,7 @@ def load(path):
     config = json.loads(raw, object_pairs_hook=unique)
     require(set(config) == {"assurance_url", "interval_seconds", "bindings"}, "invalid reconciler configuration fields")
     url = urllib.parse.urlparse(config["assurance_url"])
-    require(url.scheme in ("http", "https") and url.hostname and not url.username and not url.password and url.path in ("", "/") and not url.query and not url.fragment, "ASS origin required")
+    require(url.scheme in ("http", "https") and url.hostname and not url.username and not url.password and url.path in ("", "/") and not url.query and not url.fragment, "AAS origin required")
     require(type(config["interval_seconds"]) is int and 5 <= config["interval_seconds"] <= 60, "interval must be 5..60 seconds")
     require(isinstance(config["bindings"], list) and 0 < len(config["bindings"]) <= 32, "1..32 explicit bindings required")
     seen = set()
