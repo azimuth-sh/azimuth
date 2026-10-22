@@ -4,7 +4,7 @@ These standard-library Python modules connect public xUnit/Playwright capture in
 Azimuth's existing configured adapter protocol. Harness reports are execution facts, not Runs.
 Explicit project mappings give those facts their Check/Scenario meaning. Publication is independent.
 Expose the commit-pinned `packages/python` directory through `PYTHONPATH`; nothing uses an
-installed floating release, ambient source discovery, or a connection from tests to ASS.
+installed floating release, ambient source discovery, or a connection from tests to AAS.
 
 ## Mapping
 
@@ -78,7 +78,7 @@ The planned required Execution Context must already contain
 SHA-256 fingerprint of that leaf's scalar value. `activity_identity(check, unit, ordinal)` derives the stable ID
 from the exact mapped Check, unit and zero-based attempt ordinal. No ambient setting is inferred.
 Capture diagnostics make outcomes inconclusive. Contracts and secret-field declarations are
-validated by core/ASS; adapters do not manufacture contract acceptance.
+validated by core/AAS; adapters do not manufacture contract acceptance.
 
 A Run may contain many independently captured test units and retries. Each context-bearing unit
 must map exactly one native test; every attempt has its own activity interval and context pin.
@@ -89,7 +89,7 @@ inconclusive. `partition_report(...)` offers explicit per-attempt selections whe
 Plan each selection before importing; partitioning never silently discards retries.
 
 Capture sidecars bind exact Run ID, bundle fingerprint, Verification Target fingerprint, **activity**, component, instance
-and actual before/after snapshots. They never assert `trusted`; ASS derives attribution from
+and actual before/after snapshots. They never assert `trusted`; AAS derives attribution from
 authentication. Startup-fixed context is supported. Each capture covers its referenced activity's
 actual body interval, rather than a fictitious whole-suite interval. Native producers may instead
 use `activity:null` only when a genuine capture brackets the entire Run.
@@ -142,7 +142,7 @@ errors are terminal; transient transport/429/5xx failures have bounded exponenti
 Redirects are refused to prevent forwarding credentials. HTTPS is mandatory outside explicit
 loopback integration tests. Tokens and response bodies are never included in error messages.
 Use an always-run artifact step after test execution, then normalize/publish unsuccessful facts
-where possible without granting ASS credentials to untrusted PR execution.
+where possible without granting AAS credentials to untrusted PR execution.
 
 ## Verification
 

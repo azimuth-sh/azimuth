@@ -21,7 +21,7 @@ OAuth application, credentials, Tailscale or API process is needed.
 
 UI scenarios are local fixture profiles; they are unrelated to the Scenarios of a
 Requirement. These are synthetic **UI read models**, not native authority projections, Run
-bundles or assessor output. Never ingest them into ASS. They deliberately permit
+bundles or assessor output. Never ingest them into AAS. They deliberately permit
 exploring proposed experiences before the API supports them. Deployment observation freshness is provided by an explicit synthetic observation.
 The read models mirror computed deployment Requirement Status: source evidence is linked through
 release provenance, Execution Context mismatches remain unresolved, and Monitor
@@ -33,10 +33,10 @@ link keys, not protocol content fingerprints.
 
 `payments.json` owns the example Requirements, Scenarios, methods, outcomes and explanations.
 `src/lib/development-data.ts` adapts them to existing inspection screens. The dashboard opens the exact model and deployment referenced by the release.
-The accepted baseline contains six reminder Requirements; the candidate adds retry
-recovery as a seventh Requirement. Baseline definitions have no synthetic reviews or
-production assessments; candidate evidence is not transferred to the baseline.
-The model selector defaults to that baseline in the mixed/incident scenario; choose
+The prior main model contains six reminder Requirements; the candidate adds retry
+recovery as a seventh Requirement. Prior-main definitions have no synthetic reviews or
+production assessments; candidate evidence is not transferred to the prior main model.
+The model selector defaults to the prior main model in the mixed/incident scenario; choose
 the candidate revision and production version to inspect the deployed change.
 The banner remains visible throughout navigation. Pagination is intentionally one
 page; unknown resources fail explicitly. This is not a backend integration or
@@ -114,7 +114,7 @@ the browser never picks the newest deployment by assumption. Definitions have a 
 Definition label rather than an Unresolved status. The selector never permits
 an independent model/deployment pairing. Existing exact links resolve deployment
 context to its release model. Candidate evidence remains separate from the
-accepted baseline.
+prior main model.
 
 ## Environment selection
 
@@ -125,12 +125,12 @@ read that environment's selection and observations. Switching environment clears
 an explicitly selected deployment so evidence cannot follow the wrong environment.
 The local fixture includes production and staging; staging has seven unresolved
 Requirements with no execution evidence. Environment selection never deploys or updates
-ASS records.
+AAS records.
 
 ## Deployment Requirement Status
 
 Modules organize Requirements. Scenarios describe expected behavior. Checks
-produce Results. ASS assesses the evidence and shows Requirement Status for a
+produce Results. AAS assesses the evidence and shows Requirement Status for a
 deployment.
 
 Requirement details show production Monitors first, deployment Checks second, then source

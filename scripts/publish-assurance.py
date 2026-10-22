@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publication preserves original assessments and never selects accepted model authority."""
+"""Publication preserves original assessments and never changes the default model."""
 import argparse
 import json
 from pathlib import Path
@@ -82,7 +82,7 @@ def main():
             json.dump({'format': 'azimuth-assurance-publication-receipt', 'version': 1,
                        'project': args.project, 'model_revision': revision,
                        'snapshot_fingerprint': validation['snapshot_fingerprint'],
-                       'status': status, 'accepted_authority_selected': False,
+                       'status': status,
                        'submissions': receipts}, output, indent=2)
             output.write('\n')
             output.truncate()
@@ -105,7 +105,7 @@ def main():
             except urllib.error.URLError:
                 raise ValueError('publication connectivity/TLS failure; partial receipt retained') from None
         persist('published')
-    print(f'Published {len(receipts)} immutable records; accepted authority was not selected')
+    print(f'Published {len(receipts)} immutable records')
 
 
 if __name__ == '__main__':

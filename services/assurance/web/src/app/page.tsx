@@ -14,7 +14,7 @@ export default async function Home() {
         <h1>Assurance for exact Verification Targets</h1>
         <p className="lede">
           Modules organize Requirements. Scenarios describe expected behavior.
-          Checks produce Results. ASS assesses the evidence and shows
+          Checks produce Results. AAS assesses the evidence and shows
           Requirement Status for a deployment.
         </p>
         <p className="lede">

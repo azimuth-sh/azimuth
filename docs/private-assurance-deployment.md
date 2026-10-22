@@ -1,4 +1,4 @@
-# Private Assurance State Service deployment
+# Private Azimuth Assurance Service deployment
 
 ## Ownership and access
 

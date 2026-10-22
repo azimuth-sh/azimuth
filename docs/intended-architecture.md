@@ -14,7 +14,7 @@ The team should be able to reconstruct what it can justify believing about an ex
 | --- | --- |
 | Repository Azimuth account | Authoritative product intent, design, verification methods and Check–Scenario relationships; accepted changes to those definitions. |
 | Azimuth tooling | Assemble pinned context, validate structure and dependencies, plan bounded verification execution, and expose assurance obligations. Intended workflow interfaces also identify eligible work and progression conditions. |
-| Assurance State Service (ASS) | Preserve submitted execution facts, independent assessments and authority history; compute exact-Verification-Target Assurance State. Intended extensions preserve assurance-related decisions and resolution history. |
+| Azimuth Assurance Service (AAS) | Preserve submitted execution facts, independent assessments and authority history; compute exact-Verification-Target Assurance State. Intended extensions preserve assurance-related decisions and resolution history. |
 | Development harness | Execute engineering and review tasks using agents, models, tools and repository context; enforce execution permissions, manage delegation, retries and recovery. |
 | Verification tools and adapters | Execute enrolled Checks and capture Check Results with exact Verification Targets and provenance. Production probes are one execution form. |
 | Humans with appropriate authority | Resolve product ambiguity, approve intent changes, grant bounded exceptions, authorize actions outside existing permissions and accept changes where required. |
@@ -29,7 +29,7 @@ Start with one Codex coordinator calling Azimuth tooling, delegating bounded imp
 
 Workers may perform independent local validation concurrently. The coordinator owns shared workflow progression and submissions. A single coordinator does not establish review independence: reviewer context, permissions, authorship separation and provenance need explicit treatment.
 
-Distributed workers can be supported later without making Azimuth their scheduler. Task claiming, leases, queues, worker assignments, retry budgets and interrupted-task recovery belong to the harness or workflow runner. ASS owns assurance facts and decisions rather than worker scheduling state.
+Distributed workers can be supported later without making Azimuth their scheduler. Task claiming, leases, queues, worker assignments, retry budgets and interrupted-task recovery belong to the harness or workflow runner. AAS owns assurance facts and decisions rather than worker scheduling state.
 
 ## Information exchanged with the harness
 
@@ -39,7 +39,7 @@ The intended interface has three parts. Their wire formats and command syntax re
 
 Azimuth prepares a task objective with project and change context, exact target identity and relevant fingerprints, repository and evidence inputs, constraints, required output contract and execution guarantees. Requests distinguish implementation, method review, applicability review, Requirement Judgment and corrective work.
 
-Pinned context is a starting packet. The worker may inspect additional repository or deployment information, but must report missing or contradictory dependencies. ASS supplies recorded facts and assessments; repository context remains necessary for engineering and review.
+Pinned context is a starting packet. The worker may inspect additional repository or deployment information, but must report missing or contradictory dependencies. AAS supplies recorded facts and assessments; repository context remains necessary for engineering and review.
 
 ### Structured work result
 
@@ -85,7 +85,7 @@ The harness bounds correction attempts and escalates repeated failure. Product a
 
 ```mermaid
 flowchart TD
-    P[Production Checks] --> A[ASS: exact deployment Check Results]
+    P[Production Checks] --> A[AAS: exact deployment Check Results]
     A --> T[External event or scheduled trigger]
     T --> H[Harness coordinator]
     H --> Z[Azimuth: context and obligations]
@@ -97,23 +97,23 @@ flowchart TD
 
 Production telemetry becomes assurance evidence through an enrolled Check and its capture contract. An ordinary operational alert does not automatically establish a Scenario or Requirement conclusion.
 
-An external event or schedule starts or resumes the coordinator. ASS storing an adverse fact does not itself launch an agent. Durable triggering, deduplication and execution recovery belong to integration and harness infrastructure.
+An external event or schedule starts or resumes the coordinator. AAS storing an adverse fact does not itself launch an agent. Durable triggering, deduplication and execution recovery belong to integration and harness infrastructure.
 
 The coordinator retrieves the exact affected Verification Target, relevant evidence and repository context; diagnoses the problem; prepares a correction; obtains required reviews; and deploys within granted authority. Deployment provenance links source and artifact Verification Targets to the resulting deployed Verification Target without making their Check Results interchangeable.
 
 Restoring already approved behavior may be autonomous within explicit limits. Changing intended behavior requires an accountable intent decision. Successful editing, verification in another environment or deployment alone does not close a production finding.
 
-Closure requires Check Results for the corrected deployment and the applicable independent assessments. Adapters submit those facts, reviewers submit their decisions, and ASS exposes the resulting state and supporting history. Missing Check Results, stale reviews, failed controls and evidence for another Verification Target leave resolution unestablished.
+Closure requires Check Results for the corrected deployment and the applicable independent assessments. Adapters submit those facts, reviewers submit their decisions, and AAS exposes the resulting state and supporting history. Missing Check Results, stale reviews, failed controls and evidence for another Verification Target leave resolution unestablished.
 
-## Decision handling within ASS
+## Decision handling within AAS
 
-Decision handling is an ASS capability. There is no separate top-level Decision Workbench concept or required service boundary. The UI may present a Decisions section.
+Decision handling is an AAS capability. There is no separate top-level Decision Workbench concept or required service boundary. The UI may present a Decisions section.
 
 A human decision is required when evidence alone cannot choose the next permitted action: changing intent, granting a bounded release exception, authorizing consequential production action outside existing permissions, or choosing among operational trade-offs.
 
 The intended interface groups a situation around a Requirement and exact Verification Target, retaining Scenario-level causes, Check Results, Observations, assessments, requested decision and permitted options. Routine successful Runs should not create human approval requests. Agents may prepare analysis and proposals; the responsible authorized person owns the decision.
 
-Assurance-related decision records belong in ASS. They identify the situation, decision author and authority, chosen disposition, rationale, evidence basis, conditions, scope and any expiry. These fields express intended semantics rather than a finalized schema.
+Assurance-related decision records belong in AAS. They identify the situation, decision author and authority, chosen disposition, rationale, evidence basis, conditions, scope and any expiry. These fields express intended semantics rather than a finalized schema.
 
 An exception does not turn an unresolved Requirement into a supported Requirement. Authorization to deploy despite missing evidence remains a separate decision, with the gap visible. A decision authorizing an intent change does not itself change the repository specification; the accepted repository transition remains authoritative.
 
@@ -121,7 +121,7 @@ Routine actions within existing authority can reference that authorization witho
 
 ## Resolution history
 
-Resolution records belong in ASS because they connect an earlier problem to its correction and the evidence establishing the outcome. A record should reference the original finding and affected Verification Target, correction, resulting deployment Verification Target, supporting Check Results and assessments, declaring actor, rationale and remaining limitations.
+Resolution records belong in AAS because they connect an earlier problem to its correction and the evidence establishing the outcome. A record should reference the original finding and affected Verification Target, correction, resulting deployment Verification Target, supporting Check Results and assessments, declaring actor, rationale and remaining limitations.
 
 A deployed correction is a resolution attempt. Successful resolution requires declared closure conditions. A later recurrence retains the earlier history and introduces a newly assessed problem; it does not erase the prior outcome.
 
@@ -129,11 +129,11 @@ Finding identity, closure conditions, resolution authorization and reassessment 
 
 ## Persistence and observability
 
-ASS preserves completed, deliberately submitted assurance decisions, including rejected assessments. Draft reviews, exploratory agent conversations and unfinished attempts remain harness execution material. Mandatory review workflows should retain their completed adverse decisions rather than submit only eventual successes.
+AAS preserves completed, deliberately submitted assurance decisions, including rejected assessments. Draft reviews, exploratory agent conversations and unfinished attempts remain harness execution material. Mandatory review workflows should retain their completed adverse decisions rather than submit only eventual successes.
 
 Immutable submitted documents can coexist with typed relational projections for querying Verification Targets, Check Results, Observations, dependencies, decisions and resolutions. Storage projections should follow concrete use cases; package-specific payloads need not all become relational entities.
 
-Harness telemetry supplies model and instruction provenance, duration, cost, retries and human effort where available. Link it to assurance records when useful without making ASS the repository of every agent trace.
+Harness telemetry supplies model and instruction provenance, duration, cost, retries and human effort where available. Link it to assurance records when useful without making AAS the repository of every agent trace.
 
 Keep assurance conclusions, process health and business value separate. Missing execution, decision backlog, repeated failures and correction latency describe process health. Baselines and comparable outcomes are needed to evaluate value. Accepted reviews or rejection counts alone do not measure agent quality.
 
@@ -166,9 +166,9 @@ transition inference.
 | Capability | Status in this architecture |
 | --- | --- |
 | Repository accounts, source linkage, validation, bounded Run execution and package-specific verification | Existing tooling; exact behavior follows current contracts. |
-| Target-specific review input, compact independent review records, immutable Run and review histories, explicit authority selection and exact-Verification-Target Assurance State | Existing tooling and service capabilities. |
+| Target-specific review input, compact independent review records, immutable Run and review histories, main-model publication and exact-Verification-Target Assurance State | Existing tooling and service capabilities. |
 | Harness-neutral eligible-work interface and correction routing | Implemented for explicit finite task graphs through `workflow next` and conditional `workflow update`; automatic scope discovery, deployment and archive handoff remain outside this increment. |
-| ASS human decision situations and accountable disposition records | Intended; no new decision schema or API is defined here. |
+| AAS human decision situations and accountable disposition records | Intended; no new decision schema or API is defined here. |
 | Finding-to-correction resolution records and closure evaluation | Intended; identity and closure rules remain open. |
 | Durable production-trigger integration and bounded autonomous maintenance | Intended integration; requires permissions, deployed provenance and recovery contracts. |
 | Compact-account Decision Policies and challenge scheduling | Deferred in the current contract; this direction does not implement or finalize them. |
@@ -192,6 +192,6 @@ This direction aligns with validation, accountable governance and evidence-based
 
 ## Git release coordination and deployment reconciliation
 
-The local standard workflow ends with native validated Git-trackable publication inputs and does not contact ASS. A declared release repository owns named requests, exact source selection and desired environment references. Deterministic trusted CI publishes candidate/release records together, generates component-bound deployment values, and retains the actual receipt. Deployment and accepted intent remain separate.
+The local standard workflow ends with native validated Git-trackable publication inputs and does not contact AAS. A declared release repository owns named requests, exact source selection and desired environment references. Deterministic trusted CI publishes candidate/release records together, generates component-bound deployment values, and retains the actual receipt. Deployment and accepted intent remain separate.
 
-A separate reconciler observes actual runtime image identities, rollout state and configuration; it retries idempotently and records append-only observations with freshness. It does not collect Checks, repair workloads or accept models. Kubernetes/Argo discovery is one adapter, not a required deployment platform. Stale/partial/drifted observation means the current environment is unconfirmed. An authenticated owner can accept an exact release for an explicitly assessed environment through ASS after server preconditions; Git model application/archive remains separate. Automatic acceptance remains deferred.
+A separate reconciler observes actual runtime image identities, rollout state and configuration; it retries idempotently and records append-only observations with freshness. It does not collect Checks, repair workloads or accept models. Kubernetes/Argo discovery is one adapter, not a required deployment platform. Stale/partial/drifted observation means the current environment is unconfirmed. An authenticated owner can accept an exact release for an explicitly assessed environment through AAS after server preconditions; Git model application/archive remains separate. Automatic acceptance remains deferred.

@@ -24,8 +24,8 @@ type Authority = {
 };
 type Version = { kind: 'environment' | 'release' | 'main' | 'revision'; label: string };
 type Snapshot = { reviews: Record<string, unknown>[] };
-const labels = { supported: 'Satisfied', violated: 'Not satisfied', unresolved: 'Unresolved' };
-const tones = { supported: 'good', violated: 'bad', unresolved: 'warn' };
+const labels = { supported: 'Satisfied', violated: 'Not satisfied', unresolved: 'Unresolved', 'not-applicable': 'Not applicable here' };
+const tones = { supported: 'good', violated: 'bad', unresolved: 'warn', 'not-applicable': 'neutral' };
 function date(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value)
     ? new Date(value).toLocaleString('en-GB', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' }) + ' UTC'

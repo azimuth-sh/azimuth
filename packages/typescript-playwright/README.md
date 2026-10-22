@@ -4,7 +4,7 @@ Runs under ordinary `playwright test`; no browser is required for request-only t
 The fixture reads effective settings from the actual application before and after
 **each attempt**, after project overrides. The reporter retains unsuccessful
 attempts, retries and skipped tests in the shared `azimuth-test-report` v1 format.
-It does not infer Requirements, build native Runs, hold ASS credentials or publish.
+It does not infer Requirements, build native Runs, hold AAS credentials or publish.
 
 ```ts
 // fixtures.ts
@@ -80,7 +80,7 @@ Install that generated tarball in the consumer workspace using
 Record the source commit and tarball digest with CI inputs. Avoid installing a
 moving branch. The package declares Playwright as a peer so the consumer uses its
 existing runner. Test execution stays unprivileged; a separate protected publisher
-uploads validated native Runs. No registry publication or ASS access is needed to
+uploads validated native Runs. No registry publication or AAS access is needed to
 execute tests.
 
 ## Verification

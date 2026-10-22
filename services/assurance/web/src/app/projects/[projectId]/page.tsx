@@ -274,7 +274,7 @@ export default async function ProjectPage({
               <span className="emptySymbol good">✓</span>
               <h3>No Requirements need attention</h3>
               <p>
-                All {requirements.length} assessed Requirements are satisfied for this
+                All {requirements.length - notApplicable.length} applicable Requirements are satisfied for this
                 deployment.
               </p>
             </div>

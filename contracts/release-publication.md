@@ -98,7 +98,7 @@ Object storage is deferred. Evidence descriptors explicitly state `unavailable`;
 fake URL. New native artifacts may use Run locator `{kind: "unavailable", value: <artifact-digest>}`.
 Historical native Run artifacts can retain immutable local locators only when the envelope names
 that exact digest as unavailable. Those locators are opaque historical data, never paths CI needs
-or links ASS should offer. Other local generated packet/file references in native records fail.
+or links AAS should offer. Other local generated packet/file references in native records fail.
 Native Verification Challenge reports and stdout remain local; the producer emits only digest/size metadata,
 execution details and normalized findings into its Run. Existing Run fingerprints never change.
 
@@ -118,7 +118,7 @@ Catalog describes navigation; native authority/reviews/Runs determine assessment
 ## API and authority
 
 Trusted release CI posts the package to `POST /v1/projects/{project}/releases` using a project-scoped
-publisher credential. It does not receive owner/reviewer impersonation credentials. ASS retains
+publisher credential. It does not receive owner/reviewer impersonation credentials. AAS retains
 `submitted_by` separately from native reviewer provenance. Release publication does not select or replace main's model.
 
 After actual deployment, publish
@@ -133,7 +133,7 @@ There is no release acceptance: `POST .../releases/{fingerprint}/acceptance`, th
 
 ## Git-driven handoff
 
-The standard local workflow ends at `prepare-publication-inputs`. `azimuth release inputs` validates a strict `{format:"azimuth-publication-inputs",version:1,request,composition?}` envelope; a supplied `composition` must equal the request's. The native request must name a label, include explicit required review coverage and contain no builds/artifacts/deployments. The CLI preserves immutable native records, validates portability and size, and requires no ASS connection. Commit the compact envelope in the release repository; no local draft Release upload or fabricated registration receipt is required. CI later publishes candidate and release together.
+The standard local workflow ends at `prepare-publication-inputs`. `azimuth release inputs` validates a strict `{format:"azimuth-publication-inputs",version:1,request,composition?}` envelope; a supplied `composition` must equal the request's. The native request must name a label, include explicit required review coverage and contain no builds/artifacts/deployments. The CLI preserves immutable native records, validates portability and size, and requires no AAS connection. Commit the compact envelope in the release repository; no local draft Release upload or fabricated registration receipt is required. CI later publishes candidate and release together.
 
 Optional request/release `components: [{id,digest}]` binds unique explicit runtime component identities to declared build artifacts. When the project catalog declares `components` ([project-catalog.md](project-catalog.md)), preparation that receives that catalog requires every release component id to be a registered component id; without a catalog this check is not made. Unused build artifacts need not be deployed. Components are fingerprinted with the release and never inferred by ordering. Native runtime deployment observation requires these explicit bindings.
 

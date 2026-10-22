@@ -1,8 +1,8 @@
 # Release publication
 
-Release publication, deployment and acceptance are separate operations. None invokes an agent. A
-release publication cannot accept a model, authorize a deployment, archive a Change, or manufacture
-a Run or Requirement Status.
+Release publication and deployment are separate operations. Neither invokes an agent. A
+release publication cannot authorize a deployment, archive a Change, or manufacture
+a Run or Requirement Status. A model is ratified in git, never by the service.
 
 A release is built from the model on main at the integrated commit. It has no baseline and needs no
 composition or Change; those fields remain optional for packages that carry them.
@@ -76,7 +76,7 @@ Object storage is deferred. Evidence descriptors explicitly state `unavailable`;
 fake URL. New native artifacts may use Run locator `{kind: "unavailable", value: <artifact-digest>}`.
 Historical native Run artifacts can retain immutable local locators only when the envelope names
 that exact digest as unavailable. Those locators are opaque historical data, never paths CI needs
-or links ASS should offer. Other local generated packet/file references in native records fail.
+or links AAS should offer. Other local generated packet/file references in native records fail.
 Native Verification Challenge reports and stdout remain local; the producer emits only digest/size metadata,
 execution details and normalized findings into its Run. Existing Run fingerprints never change.
 
@@ -97,9 +97,8 @@ Catalog describes navigation; native authority/reviews/Runs determine assessment
 ## API and authority
 
 Trusted release CI posts the package to `POST /v1/projects/{project}/releases` using a project-scoped
-publisher credential. It does not receive owner/reviewer impersonation credentials. ASS retains
-`submitted_by` separately from native reviewer provenance. Candidate registration is not accepted
-model selection.
+publisher credential. It does not receive owner/reviewer impersonation credentials. AAS retains
+`submitted_by` separately from native reviewer provenance.
 
 After actual deployment, publish
 `POST /v1/projects/{project}/deployments` with `{release_fingerprint, deployment}`. A deployment
@@ -108,7 +107,5 @@ provenance. It is not owned by one Change. Append a new deployment for changed c
 artifacts. Runs and Requirement Status still name their exact native Verification Target; matching model revisions do
 not authorize cross-target reuse.
 
-Owner-only acceptance uses `POST /v1/projects/{project}/releases/{fingerprint}/acceptance` with
-`{expected_accepted_model_revision, reason}`. This is an explicit whole-release decision with a
-concurrency precondition. Archival occurs later through repository finalization, not publication.
-CI never invokes a model to author missing evidence or resolve composition conflicts.
+There is no release acceptance. Archival occurs later through repository finalization, not publication.
+CI never invokes a model to author missing evidence or resolve merge conflicts.

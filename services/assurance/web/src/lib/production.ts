@@ -21,8 +21,16 @@ interface Release {
   };
 }
 
-export function requirementStatus(status: string) {
-  return status === "supported" || status === "violated"
+export type RequirementStatusKind =
+  | "supported"
+  | "violated"
+  | "not-applicable"
+  | "unresolved";
+
+export function requirementStatus(status: string): RequirementStatusKind {
+  return status === "supported" ||
+    status === "violated" ||
+    status === "not-applicable"
     ? status
     : "unresolved";
 }

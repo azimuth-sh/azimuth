@@ -934,7 +934,7 @@ async fn load_revision_snapshot(
     project: &str,
     revision: Option<&str>,
 ) -> Result<(CoreJson, Vec<CoreJson>, Vec<run::RunBundle>), LedgerError> {
-    // One database snapshot prevents a correction or authority selection from producing a torn assessment.
+    // One database snapshot prevents a correction or main-model publication from producing a torn assessment.
     // A complete bounded snapshot is preferable to a misleading conclusion from truncated evidence.
     let value: Value = sqlx::query_scalar(&r#"
         WITH selected AS MATERIALIZED (

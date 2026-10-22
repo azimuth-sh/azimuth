@@ -74,7 +74,7 @@ A source Check whose every unit is declared hermetic by the project partition ru
 
 ## Ingestion and assessment
 
-Owners POST `{contract}` to `/v1/projects/{project}/context-contracts`. Authenticated producers or publishers POST `{capture}` to `/context-captures`. Client captures never contain `trusted`; ASS derives trust from authenticated Run ownership or the current deployment observation. Replays preserve original immutable bytes and do not renew timestamps.
+Owners POST `{contract}` to `/v1/projects/{project}/context-contracts`. Authenticated producers or publishers POST `{capture}` to `/context-captures`. Client captures never contain `trusted`; AAS derives trust from authenticated Run ownership or the current deployment observation. Replays preserve original immutable bytes and do not renew timestamps.
 
 A durable background worker assembles a bounded consistent relational snapshot and invokes the same native assessor as `azimuth assurance deployment-status --input request.json`. `GET /v1/projects/{project}/deployments/{deployment}/status` and registered-deployment model Verification Target state routes read the resulting typed relational assessment projection; they do not invoke the assessor or resolve target observations on the request path. Missing relations, contexts, reviews or fresh Monitor Check Results produce explained unresolved results. Routine Requirements retain their review exemption. Accepted Requirement Review establishes verification credibility, not an observed deployment result.
 
@@ -92,7 +92,7 @@ The Azimuth Assurance Service storage is at version 8. It initializes an empty d
 
 ## Runtime target evidence
 
-The [target observation protocol](target-observation.md) separates measurement identity from deployment attribution. A collector POSTs measured image/process identities and stable Check definitions or locally allowlisted context reports. It does not query ASS for a Verification Target, deployment selection or contract. ASS retains raw facts relationally, correlates them with independently reconciled historical intervals and materializes validated native evidence only after an unambiguous match. Original observation fingerprints and both reconciliation records remain accountable. Unmatched records are visible and pending; they do not establish support and cannot be assigned by arrival time. Existing exact-target Run and capture protocols retain their separate meaning.
+The [target observation protocol](target-observation.md) separates measurement identity from deployment attribution. A collector POSTs measured image/process identities and stable Check definitions or locally allowlisted context reports. It does not query AAS for a Verification Target, deployment selection or contract. AAS retains raw facts relationally, correlates them with independently reconciled historical intervals and materializes validated native evidence only after an unambiguous match. Original observation fingerprints and both reconciliation records remain accountable. Unmatched records are visible and pending; they do not establish support and cannot be assigned by arrival time. Existing exact-target Run and capture protocols retain their separate meaning.
 
 
 ## Materialized assessment reads

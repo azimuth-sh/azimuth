@@ -10,7 +10,7 @@ original meanings; see [the previous contract](https://github.com/azimuth-sh/azi
 
 `azimuth assurance authority` exports the complete unselected model projection with stable Requirement,
 Scenario, Check and Mechanism identities, inline Check–Scenario contributions and source support.
-Candidate registration does not select accepted authority or authorize deployment.
+Candidate registration does not authorize deployment; the default model is the highest-sequence main publication.
 Review currentness follows relevant definitions and implementation/input fingerprints, rather
 than unrelated changes to the whole model. Changing a relevant dependency requires reassessment.
 The latest unambiguous assessment of a typed target is current; never fall back to an earlier
@@ -161,7 +161,7 @@ assessments are exposed independently of Verification Targets through selected a
 Authenticated submitter and receive time are transport facts, distinct from authored review
 provenance. Missing, stale, rejected and ambiguous records cannot infer supported Requirement Status.
 
-There is no automatic authority selection, deployment acceptance or reassessment from execution.
+There is no automatic deployment acceptance or reassessment from execution.
 Historical parsers retain their original meanings for inspection; they do not convert old
 qualifications or judgments into new reviews. After new-kind ingestion, application rollback
 requires a parser capable of those records or an isolated pre-rollout database recovery; deleting
@@ -170,4 +170,4 @@ or rewriting immutable history is not a migration strategy.
 
 ## Deployment Requirement Status
 
-The standard change-development revision 10 requires independent Requirement Reviews and machine execution facts before publication, not an authored positive Requirement Status record. ASS computes deployment Requirement Status after deployment reconciliation, using reviewed definitions, exact Run Verification Targets, release provenance and compatible effective-context captures. Historical Requirement Status records and the native compilation commands above retain their original wire contracts; they do not substitute for deployment applicability or create current positive Status. Release acceptance remains an explicit owner decision.
+The standard change-development revision 10 requires independent Requirement Reviews and machine execution facts before publication, not an authored positive Requirement Status record. AAS computes deployment Requirement Status after deployment reconciliation, using reviewed definitions, exact Run Verification Targets, release provenance and compatible effective-context captures. Historical Requirement Status records and the native compilation commands above retain their original wire contracts; they do not substitute for deployment applicability or create current positive Status.

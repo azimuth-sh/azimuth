@@ -59,7 +59,7 @@ export default async function ReleasePage({ params, searchParams }: {
   const selectedRelease = environmentState.deployment?.release_fingerprint === fingerprint;
   const confirmedDeployment = selectedRelease && environmentState.observationFresh;
   const requirements = selectedRelease ? environmentState.state?.requirements ?? [] : [];
-  const counts = { supported: 0, violated: 0, unresolved: 0 };
+  const counts = { supported: 0, violated: 0, unresolved: 0, "not-applicable": 0 };
   for (const requirement of requirements) counts[requirementStatus(requirement.status)]++;
   const components = release.components ?? [];
   const selectedDeploymentId = selectedRelease ? environmentState.deployment?.deployment.id : undefined;
@@ -76,16 +76,15 @@ export default async function ReleasePage({ params, searchParams }: {
     </header>
     <section className="deploymentBar" aria-label="Release summary">
       <div><span className="fieldLabel">{environment.toUpperCase()}</span><strong>{confirmedDeployment ? `Observed in ${environment}` : selectedRelease ? "Current state unconfirmed" : "Not confirmed as current"}</strong><small>{selectedRelease ? environmentState.deployment?.deployment.id : `No matching current ${environment} deployment`}</small></div>
-      <div><span className="fieldLabel">COMPOSITION</span><strong>{release.changes.length} {release.changes.length === 1 ? "change" : "changes"} · {release.sources.length} {release.sources.length === 1 ? "repository" : "repositories"}</strong></div>
+      <div><span className="fieldLabel">SOURCES</span><strong>{release.sources.length} {release.sources.length === 1 ? "repository" : "repositories"}</strong></div>
       <Link className="outlineButton" href={modelUrl}>Inspect Requirements ↗</Link>
     </section>
     <div className="releaseColumns">
       <div className="releaseSections">
-        <section className="dashboardPanel">
-          <header className="panelHeading"><div><h2>Included changes</h2><p>Changes composed into this release.</p></div><span className="badge neutral">{release.changes.length}</span></header>
+        {release.changes.length > 0 && <section className="dashboardPanel">
+          <header className="panelHeading"><div><h2>Included changes</h2><p>Changes recorded with this release.</p></div><span className="badge neutral">{release.changes.length}</span></header>
           {release.changes.map((change, i) => <div className="releaseCompactRow" key={i}><strong>{title(change, `Change ${i + 1}`)}</strong>{typeof change.revision === "string" && <span className="modelDetailMuted">Pinned revision</span>}</div>)}
-          {!release.changes.length && <p className="releaseEmpty">No changes recorded.</p>}
-        </section>
+        </section>}
         <section className="dashboardPanel">
           <header className="panelHeading"><div><h2>Source repositories</h2><p>Exact source versions used for this release.</p></div></header>
           {release.sources.map((source, i) => <div className="releaseCompactRow" key={i}><strong>{title(source, `Repository ${i + 1}`)}</strong><span className="modelDetailMuted">{typeof source.commit === "string" && /^[0-9a-f]{40,64}$/.test(source.commit) ? source.commit.slice(0, 8) : "Source snapshot recorded"}</span></div>)}
@@ -106,7 +105,7 @@ export default async function ReleasePage({ params, searchParams }: {
       <aside className="releaseSections">
         <section className="dashboardPanel releaseAssessment">
           <p className="overline">{environment.toUpperCase()} EVIDENCE</p><h2>{confirmedDeployment ? "Current Requirement Status" : "Current state unconfirmed"}</h2>
-          {requirements.length ? <><p>{confirmedDeployment ? "Evidence for the observed deployment." : "Recorded evidence; current environment is not confirmed."}</p><dl className="releaseStatusCounts"><div><dt>Satisfied</dt><dd>{counts.supported}</dd></div><div><dt>Not satisfied</dt><dd>{counts.violated}</dd></div><div><dt>Unresolved</dt><dd>{counts.unresolved}</dd></div></dl><Link className="textLink" href={modelUrl}>Inspect evidence ↗</Link></> : <p>No Requirement Status available for a matching selected environment deployment.</p>}
+          {requirements.length ? <><p>{confirmedDeployment ? "Evidence for the observed deployment." : "Recorded evidence; current environment is not confirmed."}</p><dl className="releaseStatusCounts"><div><dt>Satisfied</dt><dd>{counts.supported}</dd></div><div><dt>Not satisfied</dt><dd>{counts.violated}</dd></div><div><dt>Unresolved</dt><dd>{counts.unresolved}</dd></div><div><dt>Not applicable here</dt><dd>{counts["not-applicable"]}</dd></div></dl><Link className="textLink" href={modelUrl}>Inspect evidence ↗</Link></> : <p>No Requirement Status available for a matching selected environment deployment.</p>}
         </section>
         <section className="dashboardPanel releaseAssessment">
           <p className="overline">INTEGRATION</p><h2>{release.integration ? `Integrated at commit ${release.integration.commit.slice(0, 8)}` : "No integration recorded"}</h2>
