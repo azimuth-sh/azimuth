@@ -10,7 +10,9 @@ use std::process::Command;
 
 use crate::fingerprint::{canonical_sha256, sha256};
 use crate::json::{self, Json};
-use crate::run::{CheckExecutionUnit, CheckResultOutcome, ExecutedTest, WorkUnit};
+use crate::run::{
+    CheckExecutionUnit, CheckResultOutcome, ExecutedTest, ExecutedTestOutcome, WorkUnit,
+};
 use crate::run_plan::{whole_units, RequestedCheck};
 
 pub const RULE_FORMAT: &str = "azimuth-unit-rule";
@@ -51,6 +53,8 @@ pub struct ComputedUnit {
     pub hermetic: bool,
     pub input_fingerprint: String,
     pub input_file_count: usize,
+    /// Checks the unit partitions; empty means every Check that requests default units.
+    pub checks: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -367,6 +371,7 @@ pub fn compute_inputs(rule: &UnitRule, files: &[SourceFile]) -> UnitInputs {
             hermetic: unit.hermetic,
             input_fingerprint: input_fingerprint(&rule.fingerprint, &inputs),
             input_file_count: inputs.len(),
+            checks: unit.checks.clone(),
         })
         .collect();
     UnitInputs {
@@ -510,11 +515,21 @@ pub fn manifest_json(inputs: &UnitInputs) -> Json {
                     .units
                     .iter()
                     .map(|unit| {
-                        Json::obj(vec![
+                        let mut fields = vec![
                             ("id", Json::str(&unit.id)),
                             ("input_fingerprint", Json::str(&unit.input_fingerprint)),
                             ("hermetic", Json::Bool(unit.hermetic)),
-                        ])
+                        ];
+                        if !unit.checks.is_empty() {
+                            let mut checks = unit.checks.clone();
+                            checks.sort();
+                            checks.dedup();
+                            fields.push((
+                                "checks",
+                                Json::Arr(checks.iter().map(Json::str).collect()),
+                            ));
+                        }
+                        Json::obj(fields)
                     })
                     .collect(),
             ),
@@ -732,6 +747,26 @@ pub fn verify_reported_unit(
             "run/skipped-test-support",
             format!(
                 "Check `{check}` unit `{}` has skipped or unexecuted tests and cannot report a satisfied outcome",
+                reported.id
+            ),
+        );
+    }
+    let failed = reported
+        .executed_tests
+        .iter()
+        .any(|test: &ExecutedTest| test.outcome == ExecutedTestOutcome::Failed);
+    if failed
+        && reported.attempts.iter().any(|attempt| {
+            attempt
+                .outcomes
+                .values()
+                .any(|outcome| *outcome == CheckResultOutcome::Satisfied)
+        })
+    {
+        add(
+            "run/failed-test-support",
+            format!(
+                "Check `{check}` unit `{}` has failed tests and cannot report a satisfied outcome",
                 reported.id
             ),
         );

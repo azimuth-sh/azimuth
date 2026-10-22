@@ -250,7 +250,7 @@ fn integration_attestation(release: &Value) -> Result<Option<(&str, i64)>, Ledge
 }
 
 fn is_commit(value: &str) -> bool {
-    value.len() == 40
+    matches!(value.len(), 40 | 64)
         && value
             .bytes()
             .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
@@ -713,8 +713,18 @@ fn parse_main_publication(body: &[u8], project: &str) -> Result<MainPublication,
         .and_then(Value::as_i64)
         .filter(|verified| *verified >= 0)
         .ok_or_else(|| {
-            LedgerError::invalid("ratification verified_at_ms requires a positive integer")
+            LedgerError::invalid("ratification verified_at_ms requires a non-negative integer")
         })?;
+    if ratification_status == "unratified"
+        && !ratification
+            .get("reason")
+            .and_then(Value::as_str)
+            .is_some_and(|reason| !reason.trim().is_empty())
+    {
+        return Err(LedgerError::invalid(
+            "an unratified ratification requires a nonempty reason",
+        ));
+    }
     let authority = core_json(payload["authority"].to_string().as_bytes())?;
     assurance_review::validate_authority(&authority).map_err(LedgerError::invalid)?;
     if payload["authority"]["project"].as_str() != Some(project) {

@@ -15,7 +15,7 @@ OAuth profile below.
 
 The canonical API image starts `run-ledger` on port 8081; the Web image serves port 3000. Terraform in the consuming infrastructure repository provisions PostgreSQL, workloads, Tailscale connectivity and HTTP-01 certificates. Image references must name published immutable digests; building source does not publish or deploy images.
 
-`https://assurance.drim.dev` is reachable through Tailscale. GitHub OAuth independently authenticates people, and an explicit allowlist of stable numeric GitHub user IDs assigns project access. No GitHub organization membership, username or email grants implicit access. The UI is inspection only: neither a browser session nor its dedicated viewer credential can ingest Runs, submit reviews or select authority.
+`https://assurance.drim.dev` is reachable through Tailscale. GitHub OAuth independently authenticates people, and an explicit allowlist of stable numeric GitHub user IDs assigns project access. No GitHub organization membership, username or email grants implicit access. The UI is inspection only: neither a browser session nor its dedicated viewer credential can ingest Runs, submit reviews, publish models, releases or deployments, or register model revisions.
 
 The private HTTPS proxy routes `/api/auth/*` to Web unchanged and `/api/v1/*` and exact `/api/health` to API with `/api` stripped. Other `/api` paths return 404. Public ingress exposes only cert-manager HTTP-01 solver paths, never Web or API. DNS must distinguish public ACME ingress from the Tailscale endpoint. Forwarded origin headers come from the trusted proxy; the Web's canonical origin is fixed by configuration.
 
@@ -32,6 +32,7 @@ The credential file is a project map:
 ```json
 {
   "drim-dev": {
+    "publishers": {"main-ci": "REPLACE_WITH_A_DISTINCT_GENERATED_TOKEN"},
     "producers": {"ci": "REPLACE_WITH_A_DISTINCT_GENERATED_TOKEN"},
     "reviewers": {"reviewer": "REPLACE_WITH_ANOTHER_GENERATED_TOKEN"},
     "owners": {"owner": "REPLACE_WITH_ANOTHER_GENERATED_TOKEN"},
@@ -40,7 +41,7 @@ The credential file is a project map:
 }
 ```
 
-These strings illustrate the schema, not deployable credentials. Generate independent random tokens of at least 32 non-whitespace bytes. Duplicate tokens across roles or projects are rejected. A project requires producer, reviewer and owner identities; viewers are optional for API-only deployments. Each write requires the exact corresponding role. Reviewer identity must equal the record's reviewer. Any valid role can inspect only its own project; viewer never authorizes a write.
+These strings illustrate the schema, not deployable credentials. Generate independent random tokens of at least 32 non-whitespace bytes. Duplicate tokens across roles or projects are rejected. A project requires producer, reviewer and owner identities; publishers (main models, releases and deployments) and viewers are optional for API-only deployments, but without a publisher nothing can be published. Each write requires the exact corresponding role. Reviewer identity must equal the record's reviewer. Any valid role can inspect only its own project; viewer never authorizes a write.
 
 Credentials load at API startup. Restart the API after changing accepted tokens. This implementation does not provide automatic credential rotation. `/health` reports process liveness; startup connects and migrates PostgreSQL before listening.
 

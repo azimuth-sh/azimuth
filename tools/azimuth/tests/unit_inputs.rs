@@ -256,3 +256,24 @@ fn bundle_rejects_fingerprint_drift_and_support_from_skipped_tests() {
     );
     assert_eq!(codes(&planned, &inconclusive), Vec::<String>::new());
 }
+
+#[test]
+fn bundle_rejects_a_satisfied_outcome_beside_a_failed_test() {
+    let (planned, _) = planned_unit("admission", &checkout("a", "c", "s"));
+    let failed = reported(
+        &planned,
+        vec![
+            ("A.One", "tests/Admission/A.cs", ExecutedTestOutcome::Passed),
+            ("A.Two", "tests/Admission/A.cs", ExecutedTestOutcome::Failed),
+        ],
+        CheckResultOutcome::Satisfied,
+    );
+    assert_eq!(codes(&planned, &failed), ["run/failed-test-support"]);
+
+    let violated = reported(
+        &planned,
+        vec![("A.Two", "tests/Admission/A.cs", ExecutedTestOutcome::Failed)],
+        CheckResultOutcome::Violated,
+    );
+    assert_eq!(codes(&planned, &violated), Vec::<String>::new());
+}

@@ -369,7 +369,8 @@ pub fn validate_capture(v: &Json, contracts: &[Json]) -> Result<(), String> {
         text(v, "activity")?;
     }
     digest(text(v, "verification_target_fingerprint")?)?;
-    crate::diag::validate_id(text(v, "component")?, false)?;
+    let component = text(v, "component")?;
+    crate::diag::validate_id(component, false)?;
     text(v, "instance")?;
     trusted(v)?;
     let start = number(v, "started_at_ms")?;
@@ -380,6 +381,14 @@ pub fn validate_capture(v: &Json, contracts: &[Json]) -> Result<(), String> {
     for (key, time) in [("before", start), ("after", finish)] {
         let snapshot = field(v, key)?;
         validate_snapshot(snapshot, contracts)?;
+        let Json::Obj(contexts) = field(field(snapshot, "report")?, "contexts")? else {
+            unreachable!("validated report holds a contexts object")
+        };
+        if !matches!(contexts.as_slice(), [(name, _)] if name == component) {
+            return Err(
+                "capture must hold exactly one context, named by the capture's component".into(),
+            );
+        }
         if number(snapshot, "captured_at_ms")? != time
             || snapshot.get("instance") != v.get("instance")
         {
@@ -406,6 +415,8 @@ struct Inputs<'a> {
 struct ManifestUnit {
     input_fingerprint: String,
     hermetic: bool,
+    /// Checks the unit partitions; empty means every Check.
+    checks: BTreeSet<String>,
 }
 
 pub fn validate_unit_manifest(v: &Json) -> Result<(), String> {
@@ -449,7 +460,21 @@ fn parse_unit_manifest(v: &Json) -> Result<UnitManifest, String> {
     let mut units = BTreeMap::new();
     let mut previous: Option<&str> = None;
     for unit in array(v, "units")? {
-        shape(unit, &["id", "input_fingerprint", "hermetic"])?;
+        let optional_checks = unit.get("checks").is_some();
+        if optional_checks {
+            shape(unit, &["id", "input_fingerprint", "hermetic", "checks"])?;
+        } else {
+            shape(unit, &["id", "input_fingerprint", "hermetic"])?;
+        }
+        let checks = if optional_checks {
+            let listed = strings(unit, "checks")?;
+            if listed.is_empty() {
+                return Err("unit input manifest `checks` must be omitted when empty".into());
+            }
+            listed
+        } else {
+            BTreeSet::new()
+        };
         let id = text(unit, "id")?;
         crate::diag::validate_id(id, false)?;
         if previous.is_some_and(|previous| previous >= id) {
@@ -466,6 +491,7 @@ fn parse_unit_manifest(v: &Json) -> Result<UnitManifest, String> {
             ManifestUnit {
                 input_fingerprint: input_fingerprint.to_string(),
                 hermetic,
+                checks,
             },
         );
     }
@@ -772,37 +798,28 @@ impl<'a> Inputs<'a> {
                 }
             }
         }
-        for unit in &execution.units {
-            let manifest = self
-                .unit_manifest
-                .get(&unit.id)
-                .ok_or_else(|| format!("unit `{}` is absent from the release manifest", unit.id))?;
-            if !manifest.hermetic
-                || unit.input_fingerprint.as_deref() != Some(&manifest.input_fingerprint)
-            {
-                return Err(format!(
-                    "unit `{}` inputs differ from the release or the unit is not hermetic",
-                    unit.id
-                ));
-            }
-        }
         Ok(())
     }
 
-    /// Whole-source equality, or unit-level reuse where the Check qualifies for it.
+    /// The units of the execution whose results apply to the release: all of them under whole-source
+    /// equality, otherwise the hermetic units whose input fingerprint equals the manifest's. A reused
+    /// Run must pass in every unit it executed, because its Check Result speaks for all of them; the
+    /// units whose inputs changed are then simply left for another Run to cover.
     fn applicable_scope(
         &self,
         policy: &Json,
         bundle: &RunBundle,
         execution: &crate::run::CheckExecution,
         scenario: &str,
-    ) -> Result<(), String> {
+    ) -> Result<BTreeSet<String>, String> {
+        let executed = || execution.units.iter().map(|unit| unit.id.clone()).collect();
         match self.scope(policy, bundle) {
-            Ok(()) => Ok(()),
+            Ok(()) => Ok(executed()),
             Err(reason) => {
                 if self.reuse_scope(policy, bundle, execution).is_err() {
                     return Err(reason);
                 }
+                let mut covered = BTreeSet::new();
                 for unit in &execution.units {
                     let passing = unit
                         .executed_tests
@@ -816,10 +833,38 @@ impl<'a> Inputs<'a> {
                     if !passing {
                         return Err(format!("unit `{}` has no passing result to reuse", unit.id));
                     }
+                    let unchanged = self.unit_manifest.get(&unit.id).is_some_and(|manifest| {
+                        manifest.hermetic
+                            && unit.input_fingerprint.as_deref()
+                                == Some(manifest.input_fingerprint.as_str())
+                    });
+                    if unchanged {
+                        covered.insert(unit.id.clone());
+                    }
                 }
-                Ok(())
+                if covered.is_empty() {
+                    return Err(
+                        "no unit of the Run has inputs equal to the release or is hermetic".into(),
+                    );
+                }
+                Ok(covered)
             }
         }
+    }
+
+    /// The release-manifest units a source Check must have passing results for. A `whole` execution
+    /// runs every test, so it covers them all; a project without a manifest requires nothing.
+    fn uncovered_units(&self, check_id: &str, covered: &BTreeSet<String>) -> Vec<String> {
+        if covered.contains("whole") {
+            return Vec::new();
+        }
+        self.unit_manifest
+            .iter()
+            .filter(|(id, unit)| {
+                (unit.checks.is_empty() || unit.checks.contains(check_id)) && !covered.contains(*id)
+            })
+            .map(|(id, _)| id.clone())
+            .collect()
     }
 
     fn scope(&self, policy: &Json, bundle: &RunBundle) -> Result<(), String> {
@@ -1109,10 +1154,16 @@ impl<'a> Inputs<'a> {
                     ))
                 }
             };
-            holds.insert(
-                stable_leaf(capture, &condition.component, &condition.leaf)
-                    .is_ok_and(|value| same(&value, &condition.value)),
-            );
+            match stable_leaf(capture, &condition.component, &condition.leaf) {
+                Ok(value) => holds.insert(same(&value, &condition.value)),
+                Err(LeafError::Absent(_)) => holds.insert(false),
+                Err(LeafError::Changed(reason)) => {
+                    return Truth::Unknown(format!(
+                        "context of component `{}` is unstable: {reason}",
+                        condition.component
+                    ))
+                }
+            };
         }
         match (holds.contains(&true), holds.contains(&false)) {
             (true, false) => Truth::True,
@@ -1166,8 +1217,29 @@ fn conjunction(truths: &[Truth]) -> Truth {
     unknown.map_or(Truth::True, Truth::Unknown)
 }
 
-fn stable_leaf(capture: &Json, component: &str, leaf: &str) -> Result<Json, String> {
-    let leaf_value = |phase: &str| -> Result<Json, String> {
+/// A leaf that changed between the before and after snapshots is unknown, not false: neither value
+/// describes the process, so a condition on it must not conclude `not-applicable`.
+enum LeafError {
+    Absent(String),
+    Changed(String),
+}
+
+impl From<String> for LeafError {
+    fn from(reason: String) -> Self {
+        LeafError::Absent(reason)
+    }
+}
+
+impl From<LeafError> for String {
+    fn from(error: LeafError) -> Self {
+        match error {
+            LeafError::Absent(reason) | LeafError::Changed(reason) => reason,
+        }
+    }
+}
+
+fn stable_leaf(capture: &Json, component: &str, leaf: &str) -> Result<Json, LeafError> {
+    let leaf_value = |phase: &str| -> Result<Json, LeafError> {
         let values = field(
             field(
                 field(field(field(capture, phase)?, "report")?, "contexts")?,
@@ -1178,10 +1250,10 @@ fn stable_leaf(capture: &Json, component: &str, leaf: &str) -> Result<Json, Stri
         Ok(field(values, leaf)?.clone())
     };
     let before = leaf_value("before")?;
-    if !same(&before, &leaf_value("after")?) {
-        return Err(format!(
+    if leaf_value("after").map_or(true, |after| !same(&before, &after)) {
+        return Err(LeafError::Changed(format!(
             "context leaf `{component}.{leaf}` changed during capture"
-        ));
+        )));
     }
     Ok(before)
 }
@@ -1200,6 +1272,7 @@ struct Candidate<'a> {
     dependencies: Vec<Json>,
     inapplicable: Option<String>,
     executed_for_release: bool,
+    covered_units: BTreeSet<String>,
     skipped_tests: bool,
     units: Vec<Json>,
 }
@@ -1522,12 +1595,14 @@ fn evaluate(
                         if check_results.is_empty() {
                             continue;
                         }
-                        if let Err(reason) =
-                            input.applicable_scope(policy, bundle, execution, scenario)
-                        {
-                            missing.push(reason);
-                            continue;
-                        }
+                        let covered_units =
+                            match input.applicable_scope(policy, bundle, execution, scenario) {
+                                Ok(covered) => covered,
+                                Err(reason) => {
+                                    missing.push(reason);
+                                    continue;
+                                }
+                            };
                         let executed_for_release = input.scope(policy, bundle).is_ok();
                         let skipped_tests = execution.units.iter().any(|unit| {
                             unit.executed_tests.iter().any(|test| {
@@ -1578,6 +1653,7 @@ fn evaluate(
                                 dependencies: context_dependencies.clone(),
                                 inapplicable: inapplicable.clone(),
                                 executed_for_release,
+                                covered_units: covered_units.clone(),
                                 skipped_tests,
                                 units: units.clone(),
                             });
@@ -1586,6 +1662,31 @@ fn evaluate(
                 }
             } else {
                 missing.push("Check has no deployment applicability policy".into());
+            }
+            if text(policy.unwrap_or(&Json::Null), "verification_target")
+                .is_ok_and(|t| t == "source")
+            {
+                let mut covered = BTreeSet::new();
+                for candidate in &candidates {
+                    if candidate.check_result.outcome == CheckResultOutcome::Satisfied
+                        && candidate.bundle.status == RunStatus::Complete
+                        && !candidate.skipped_tests
+                        && candidate.inapplicable.is_none()
+                    {
+                        covered.extend(candidate.covered_units.iter().cloned());
+                    }
+                }
+                let uncovered = input.uncovered_units(check_id, &covered);
+                let before = candidates.len();
+                if !uncovered.is_empty() {
+                    candidates.retain(|c| c.check_result.outcome != CheckResultOutcome::Satisfied);
+                    if candidates.len() != before {
+                        missing.push(format!(
+                            "units without a passing result: {}",
+                            uncovered.join(", ")
+                        ));
+                    }
+                }
             }
             let mut selected = candidates.iter().collect::<Vec<_>>();
             if monitored {

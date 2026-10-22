@@ -48,14 +48,14 @@ model can be published, observed and assessed, and is shown as unratified.
 - `project`, `label`;
 - no baseline: the service stores no `baseline_model_revision` and rejects a release publication that carries one as an undeclared field (the CLI still accepts the key in a request and in the optional `composition` assertion);
 - optional `changes`: `{id, revision, metadata?}`; a release need not name any Change, because the shipped model is already main's model;
-- `sources`: `{repository, commit, content_fingerprint}`; full 40/64-character Git IDs only;
+- `sources`: `{repository, commit, content_fingerprint}`; full 40/64-character lowercase hex Git IDs only;
 - `builds`: `{id, sources: [repository-id], toolchain: {name: version-string}, configuration_fingerprint, artifacts: [digest]}`;
 - `artifacts`: `{digest, kind}`;
 - `deployments`: `{id, environment, configuration_fingerprint, artifacts: [digest], verification_target?, verification_target_fingerprint?}`;
 - `snapshot`: the complete existing native snapshot (`project`, `model_revision`, `authority`, `reviews`, `bundles`);
 - `evidence`: `{digest, media_type, availability: "unavailable"}`.
 
-Optional `composition` is accepted only as an exact assertion and is never produced by Azimuth. Optional `integration` is `{commit, main_sequence}`: trusted CI's attestation that `commit` (a full 40/64-hex Git ID) is on main at first-parent commit count `main_sequence` (a positive integer); it is hashed into the release fingerprint only when present. The service records it and does not re-verify ancestry. Optional `unit_inputs` is the release unit-input manifest in [unit-inputs.md](unit-inputs.md); `release prepare --checkout/--unit-rule/--repository` computes it, `verify` checks its shape and that its optional `repository` is a release source. Optional `catalog` contains
+Optional `composition` is accepted only as an exact assertion and is never produced by Azimuth. Optional `integration` is `{commit, main_sequence}`: trusted CI's attestation that `commit` (a full 40/64-lowercase-hex Git ID) is on main at first-parent commit count `main_sequence` (a positive integer); it is hashed into the release fingerprint only when present. The service records it and does not re-verify ancestry. Optional `unit_inputs` is the release unit-input manifest in [unit-inputs.md](unit-inputs.md); `release prepare --checkout/--unit-rule/--repository` computes it, `verify` checks its shape and that its optional `repository` is a release source. Optional `catalog` contains
 `modules`, `requirements`, `scenarios`, `checks` as below. Optional `required_reviews` is an explicit array of
 native Requirement Review fingerprints. When present it covers every non-routine Requirement; each selected
 record must be accepted, current against the snapshot's authority and latest without ambiguity.
