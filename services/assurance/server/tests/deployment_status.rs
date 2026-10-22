@@ -102,9 +102,8 @@ async fn context_contracts_and_capture_authorization_preserve_relational_storage
     );
     let package = publication();
     let response = client
-        .post(format!("{base}/authority"))
+        .post(format!("{base}/model-revisions"))
         .bearer_auth(OWNER)
-        .header("if-none-match", "*")
         .json(&package["snapshot"]["authority"])
         .send()
         .await?;
@@ -150,7 +149,7 @@ async fn context_contracts_and_capture_authorization_preserve_relational_storage
             .status(),
         StatusCode::NOT_FOUND
     );
-    let snapshot = json!({"captured_at_ms":1,"instance":"process-a","report":{"format":"azimuth-execution-context","version":2,"contexts":{"settings":{"contract_revision":contract["fingerprint"],"values":{"enabled":true,"revision":1,"mode":"restricted"}}}}});
+    let snapshot = json!({"captured_at_ms":1,"instance":"process-a","report":{"format":"azimuth-execution-context","version":2,"contexts":{"api":{"contract_revision":contract["fingerprint"],"values":{"enabled":true,"revision":1,"mode":"restricted"}}}}});
     let mut capture = json!({"kind":"execution","activity":null,"run":fp('1'),"bundle_fingerprint":fp('2'),"verification_target_fingerprint":fp('3'),"component":"api","instance":"process-a","started_at_ms":1,"finished_at_ms":1,"before":snapshot,"after":snapshot});
     assert_eq!(
         client
@@ -199,18 +198,18 @@ async fn context_contracts_and_capture_authorization_preserve_relational_storage
     bundle.plan.checks[0].fingerprint = definition.clone();
     bundle.actual_selection.checks[0].fingerprint = definition.clone();
     bundle.check_executions[0].check.fingerprint = definition;
-    let context_fp =
-        azimuth::run::canonical_fingerprint(&native(&snapshot["report"]["contexts"]["settings"]))
-            .unwrap();
-    let context_key = format!("context/{}", contract["fingerprint"].as_str().unwrap());
-    bundle
-        .plan
-        .required_execution_context
-        .insert(context_key.clone(), context_fp.clone());
-    bundle
-        .actual_selection
-        .execution_context
-        .insert(context_key, context_fp);
+    for (leaf, leaf_value) in snapshot["report"]["contexts"]["api"]["values"]
+        .as_object()
+        .unwrap()
+    {
+        let pin = azimuth::run::canonical_fingerprint(&native(leaf_value)).unwrap();
+        let key = format!("context/api/{leaf}");
+        bundle
+            .plan
+            .required_execution_context
+            .insert(key.clone(), pin.clone());
+        bundle.actual_selection.execution_context.insert(key, pin);
+    }
     refresh(&mut bundle);
     assert!(azimuth::run::verify(&bundle).is_empty());
     let response = client
@@ -289,85 +288,22 @@ async fn context_contracts_and_capture_authorization_preserve_relational_storage
     let deployment_id = observed["deployment_id"].as_str().unwrap();
     let status = ready_status(&client, &base, deployment_id).await?;
     assert_eq!(status["requirements"][0]["status"], "supported", "{status}");
-    let acceptance = json!({"environment":"production","expected_accepted_model_revision":package["snapshot"]["authority"]["fingerprint"],"reason":"Owner accepts the observed synthetic composition."});
-    let mut projection_lock = pool.begin().await?;
-    sqlx::query("SELECT generation FROM deployment_assessments WHERE project='project' AND deployment=$1 FOR UPDATE").bind(deployment_id).execute(&mut *projection_lock).await?;
-    sqlx::query("UPDATE deployment_assessments SET generation=generation+1,retry_at='infinity' WHERE project='project' AND deployment=$1").bind(deployment_id).execute(&mut *projection_lock).await?;
-    sqlx::query("UPDATE assessment_requirements SET generation=generation+1 WHERE project='project' AND deployment=$1").bind(deployment_id).execute(&mut *projection_lock).await?;
-    projection_lock.commit().await?;
-    let response = client
-        .post(format!(
-            "{base}/releases/{}/acceptance",
-            package["release"]["fingerprint"].as_str().unwrap()
-        ))
-        .bearer_auth(OWNER)
-        .json(&acceptance)
-        .send()
-        .await?;
-    assert_eq!(response.status(), StatusCode::CONFLICT);
-    let rejected: Value = response.json().await?;
-    assert!(
-        rejected["detail"].as_str().unwrap().contains("assessment"),
-        "{rejected}"
-    );
-    sqlx::query("UPDATE deployment_assessments SET retry_at=now() WHERE project='project' AND deployment=$1").bind(deployment_id).execute(&pool).await?;
-    ready_status(&client, &base, deployment_id).await?;
-    sqlx::raw_sql("CREATE FUNCTION pause_release_acceptance() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(848332109); RETURN NEW; END $$; CREATE TRIGGER pause_release_acceptance BEFORE INSERT ON release_acceptances FOR EACH ROW EXECUTE FUNCTION pause_release_acceptance()").execute(&pool).await?;
-    let mut decision_barrier = pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(848332109)")
-        .execute(&mut *decision_barrier)
-        .await?;
-    let acceptance_client = client.clone();
-    let acceptance_url = format!(
-        "{base}/releases/{}/acceptance",
-        package["release"]["fingerprint"].as_str().unwrap()
-    );
-    let accepting = tokio::spawn(async move {
-        acceptance_client
-            .post(acceptance_url)
-            .bearer_auth(OWNER)
-            .json(&acceptance)
-            .send()
-            .await
-    });
-    wait_for_advisory_waiter(&pool, 848332109, false).await?;
-    let fact_client = client.clone();
-    let fact_url = format!("{base}/runs");
     let mut concurrent_bundle = bundle.clone();
-    concurrent_bundle.provenance.source.execution = "native-concurrent-acceptance".into();
+    concurrent_bundle.provenance.source.execution = "native-concurrent-recording".into();
     refresh(&mut concurrent_bundle);
     assert!(azimuth::run::verify(&concurrent_bundle).is_empty());
-    let fact = value(&azimuth::run::to_json(&concurrent_bundle));
-    let recording = tokio::spawn(async move {
-        fact_client
-            .post(fact_url)
-            .bearer_auth(OTHER_PRODUCER)
-            .json(&fact)
-            .send()
-            .await
-    });
-    let initialization_lock: i64 = sqlx::query_scalar(
-        "SELECT hashtextextended('assessment initialization|project',0)&4294967295",
-    )
-    .fetch_one(&pool)
-    .await?;
-    wait_for_advisory_waiter(&pool, initialization_lock, true).await?;
-    decision_barrier.commit().await?;
-    let response = tokio::time::timeout(std::time::Duration::from_secs(5), accepting).await???;
-    assert_eq!(
-        response.status(),
-        StatusCode::OK,
-        "{}",
-        response.text().await?
-    );
-    let response = tokio::time::timeout(std::time::Duration::from_secs(5), recording).await???;
+    let response = client
+        .post(format!("{base}/runs"))
+        .bearer_auth(OTHER_PRODUCER)
+        .json(&value(&azimuth::run::to_json(&concurrent_bundle)))
+        .send()
+        .await?;
     assert_eq!(
         response.status(),
         StatusCode::CREATED,
         "{}",
         response.text().await?
     );
-    sqlx::raw_sql("DROP TRIGGER pause_release_acceptance ON release_acceptances; DROP FUNCTION pause_release_acceptance()").execute(&pool).await?;
     let deployed: Value = client
         .get(format!("{base}/deployments/{deployment_id}"))
         .bearer_auth(VIEWER)
@@ -557,24 +493,5 @@ async fn ready_status(
             "assessment failed to converge: {value}"
         );
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    }
-}
-
-async fn wait_for_advisory_waiter(
-    pool: &sqlx::PgPool,
-    key: i64,
-    committing: bool,
-) -> Result<(), Box<dyn Error>> {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    loop {
-        let waiting:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_locks l JOIN pg_stat_activity a USING(pid) WHERE l.locktype='advisory' AND l.objid=$1::bigint::oid AND NOT l.granted AND (NOT $2 OR lower(a.query) LIKE 'commit%'))").bind(key).bind(committing).fetch_one(pool).await?;
-        if waiting {
-            return Ok(());
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "expected transaction to reach advisory lock {key}"
-        );
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
 }

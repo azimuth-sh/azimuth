@@ -690,11 +690,16 @@ fn missing_review_blocks_support_without_hiding_declared_counterexample() {
     );
 }
 fn context_contract() -> Json {
-    let mut contract =
-        json::parse(r#"{"name":"authentication","fields":{"enabled":"boolean"}}"#).unwrap();
+    let mut contract = json::parse(r#"{"name":"api","fields":{"enabled":"boolean"}}"#).unwrap();
     let fingerprint = canonical_fingerprint(&contract).unwrap();
     set(&mut contract, "fingerprint", Json::str(fingerprint));
     contract
+}
+fn enabled_leaf_dependency() -> Json {
+    json::parse(r#"[{"component":"api","leaves":["enabled"]}]"#).unwrap()
+}
+fn enabled_pin(enabled: bool) -> String {
+    canonical_fingerprint(&Json::Bool(enabled)).unwrap()
 }
 fn context_report(contract: &Json, enabled: bool) -> Json {
     Json::obj(vec![
@@ -703,7 +708,7 @@ fn context_report(contract: &Json, enabled: bool) -> Json {
         (
             "contexts",
             Json::obj(vec![(
-                "authentication",
+                "api",
                 Json::obj(vec![
                     (
                         "contract_revision",
@@ -782,11 +787,7 @@ fn capture(
 fn context_fixture() -> (Json, RunBundle, Json, Vec<Json>) {
     let contract = context_contract();
     let mut p = policy("source");
-    set(
-        &mut p,
-        "contexts",
-        Json::Arr(vec![contract.get("fingerprint").unwrap().clone()]),
-    );
+    set(&mut p, "contexts", enabled_leaf_dependency());
     let mut request = request(p);
     set(
         &mut request,
@@ -794,19 +795,10 @@ fn context_fixture() -> (Json, RunBundle, Json, Vec<Json>) {
         Json::Arr(vec![contract.clone()]),
     );
     let mut bundle = bundle_for(&request, source(), 100, CheckResultOutcome::Satisfied);
-    let report = context_report(&contract, true);
-    let context = report
-        .get("contexts")
-        .unwrap()
-        .get("authentication")
-        .unwrap();
-    bundle.plan.required_execution_context.insert(
-        format!(
-            "context/{}",
-            contract.get("fingerprint").unwrap().as_str().unwrap()
-        ),
-        canonical_fingerprint(context).unwrap(),
-    );
+    bundle
+        .plan
+        .required_execution_context
+        .insert("context/api/enabled".into(), enabled_pin(true));
     bundle.actual_selection.execution_context = bundle.plan.required_execution_context.clone();
     refresh(&mut bundle);
     attach(&mut request, &[bundle.clone()]);
@@ -1133,21 +1125,11 @@ fn per_activity_captures_cover_distinct_fixture_lifetimes_and_ignore_baselines()
     bundle.finished_at_ms = 103;
     bundle.provenance.generated_at_ms = 104;
     bundle.check_executions[0].results[0].observed_at_ms = 102;
-    let value = bundle
-        .plan
-        .required_execution_context
-        .values()
-        .next()
-        .unwrap()
-        .clone();
+    let value = enabled_pin(true);
     bundle.plan.required_execution_context.clear();
     for activity in &bundle.activities {
         bundle.plan.required_execution_context.insert(
-            format!(
-                "context/{}/activity/{}",
-                contract.get("fingerprint").unwrap().as_str().unwrap(),
-                activity.id
-            ),
+            format!("context/api/enabled/activity/{}", activity.id),
             value.clone(),
         );
     }
@@ -1208,9 +1190,8 @@ fn per_activity_captures_cover_distinct_fixture_lifetimes_and_ignore_baselines()
 #[test]
 fn reviewed_controls_require_complete_units_and_cannot_alone_support() {
     let contract = context_contract();
-    let fp = contract.get("fingerprint").unwrap().as_str().unwrap();
     let mut p = policy("source");
-    set(&mut p, "contexts", Json::Arr(vec![Json::str(fp)]));
+    set(&mut p, "contexts", enabled_leaf_dependency());
     set(
         &mut p,
         "units",
@@ -1221,7 +1202,7 @@ fn reviewed_controls_require_complete_units_and_cannot_alone_support() {
         "controls",
         Json::Arr(vec![Json::obj(vec![
             ("unit", Json::str("control")),
-            ("contexts", Json::Arr(vec![Json::str(fp)])),
+            ("contexts", enabled_leaf_dependency()),
         ])]),
     );
     let mut request = request(p);
@@ -1244,15 +1225,9 @@ fn reviewed_controls_require_complete_units_and_cannot_alone_support() {
     bundle.activities.push(activity);
     bundle.plan.required_execution_context.clear();
     for (activity, enabled) in [("check-attempt", true), ("control-activity", false)] {
-        let report = context_report(&contract, enabled);
-        let value = report
-            .get("contexts")
-            .unwrap()
-            .get("authentication")
-            .unwrap();
         bundle.plan.required_execution_context.insert(
-            format!("context/{fp}/activity/{activity}"),
-            canonical_fingerprint(value).unwrap(),
+            format!("context/api/enabled/activity/{activity}"),
+            enabled_pin(enabled),
         );
     }
     bundle.actual_selection.execution_context = bundle.plan.required_execution_context.clone();
@@ -1330,4 +1305,150 @@ fn configuration_sources_require_exact_released_repository_versions() {
     refresh(&mut bundle);
     attach(&mut request, &[bundle]);
     assert_eq!(status(&request), "unresolved");
+}
+
+fn set_unit_manifest(request: &mut Json, input_fingerprint: &str, hermetic: bool) {
+    mutate_release(request, |release| {
+        set(
+            release,
+            "unit_inputs",
+            json::parse(&format!(
+                r#"{{"format":"azimuth-unit-input-manifest","version":1,"rule_fingerprint":"{}","units":[{{"id":"ingress","input_fingerprint":"{input_fingerprint}","hermetic":{hermetic}}}]}}"#,
+                fp('1')
+            ))
+            .unwrap(),
+        );
+    });
+}
+fn earlier_source() -> VerificationTarget {
+    VerificationTarget::Source {
+        repositories: vec![RepositoryState {
+            id: "root".into(),
+            revision: "b".repeat(40),
+            content_fingerprint: fp('b'),
+        }],
+    }
+}
+fn unit_bundle(
+    request: &Json,
+    verification_target: VerificationTarget,
+    input_fingerprint: &str,
+) -> RunBundle {
+    let mut bundle = bundle_for(
+        request,
+        verification_target,
+        100,
+        CheckResultOutcome::Satisfied,
+    );
+    bundle.plan.checks[0].units = vec![WorkUnit {
+        id: "ingress".into(),
+        parameters: BTreeMap::from([
+            (
+                azimuth::unit_inputs::INPUT_FINGERPRINT_PARAMETER.to_string(),
+                input_fingerprint.to_string(),
+            ),
+            (
+                azimuth::unit_inputs::HERMETIC_PARAMETER.to_string(),
+                "true".to_string(),
+            ),
+        ]),
+    }];
+    bundle.actual_selection.checks = bundle.plan.checks.clone();
+    let unit = &mut bundle.check_executions[0].units[0];
+    unit.id = "ingress".into();
+    unit.input_fingerprint = Some(input_fingerprint.to_string());
+    unit.executed_tests = vec![ExecutedTest {
+        native_id: "ingress::admits".into(),
+        file: "tests/ingress.rs".into(),
+        outcome: ExecutedTestOutcome::Passed,
+    }];
+    refresh(&mut bundle);
+    assert!(verify(&bundle).is_empty(), "{:?}", verify(&bundle));
+    bundle
+}
+
+#[test]
+fn unit_results_apply_only_when_unit_inputs_and_leaf_values_match() {
+    let mut reused = request(policy("source"));
+    set_unit_manifest(&mut reused, &fp('2'), true);
+    let bundle = unit_bundle(&reused, earlier_source(), &fp('2'));
+    attach(&mut reused, &[bundle]);
+    assert_eq!(status(&reused), "supported");
+    let output = deployment_status::assess(&reused).unwrap();
+    let requirement = &output.get("requirements").unwrap().as_array().unwrap()[0];
+    let supporting = &requirement
+        .get("explanation")
+        .unwrap()
+        .get("evidence")
+        .unwrap()
+        .get("supporting")
+        .unwrap()
+        .as_array()
+        .unwrap()[0];
+    assert_eq!(supporting.get("reused"), Some(&Json::Bool(true)));
+    assert_eq!(
+        supporting.get("executed_for_release"),
+        Some(&Json::Bool(false))
+    );
+    let run = &requirement.get("checks").unwrap().as_array().unwrap()[0]
+        .get("runs")
+        .unwrap()
+        .as_array()
+        .unwrap()[0];
+    assert_eq!(
+        run.get("units").unwrap().as_array().unwrap()[0].get("matched"),
+        Some(&Json::Bool(true))
+    );
+
+    let mut changed_inputs = request(policy("source"));
+    set_unit_manifest(&mut changed_inputs, &fp('2'), true);
+    let bundle = unit_bundle(&changed_inputs, earlier_source(), &fp('3'));
+    attach(&mut changed_inputs, &[bundle]);
+    assert_eq!(status(&changed_inputs), "unresolved");
+
+    let mut not_hermetic = request(policy("source"));
+    set_unit_manifest(&mut not_hermetic, &fp('2'), false);
+    let bundle = unit_bundle(&not_hermetic, earlier_source(), &fp('2'));
+    attach(&mut not_hermetic, &[bundle]);
+    assert_eq!(status(&not_hermetic), "unresolved");
+
+    let mut same_source = request(policy("source"));
+    set_unit_manifest(&mut same_source, &fp('2'), true);
+    let bundle = unit_bundle(&same_source, source(), &fp('3'));
+    attach(&mut same_source, &[bundle]);
+    assert_eq!(status(&same_source), "supported");
+
+    let contract = context_contract();
+    let mut leaf_policy = policy("source");
+    set(&mut leaf_policy, "contexts", enabled_leaf_dependency());
+    let mut with_leaf = request(leaf_policy);
+    set(
+        &mut with_leaf,
+        "context_contracts",
+        Json::Arr(vec![contract.clone()]),
+    );
+    set_unit_manifest(&mut with_leaf, &fp('2'), true);
+    let mut bundle = unit_bundle(&with_leaf, earlier_source(), &fp('2'));
+    bundle
+        .plan
+        .required_execution_context
+        .insert("context/api/enabled".into(), enabled_pin(true));
+    bundle.actual_selection.execution_context = bundle.plan.required_execution_context.clone();
+    refresh(&mut bundle);
+    attach(&mut with_leaf, &[bundle.clone()]);
+    for (deployed_value, expected) in [(true, "supported"), (false, "unresolved")] {
+        let captures = vec![
+            capture(&with_leaf, &bundle, &contract, true, "test-process", true),
+            capture(
+                &with_leaf,
+                &bundle,
+                &contract,
+                false,
+                "process-1",
+                deployed_value,
+            ),
+        ];
+        set(&mut with_leaf, "captures", Json::Arr(captures));
+        assert_eq!(status(&with_leaf), expected);
+    }
 }

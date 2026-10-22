@@ -10,6 +10,7 @@ pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
             ("diagnostics", Schema::Document),
             ("gaps", Schema::Document),
             ("bindings", Schema::Document),
+            ("checks", Schema::Document),
             ("challenges", Schema::Document),
             ("explanation", Schema::Document),
             ("dependencies", Schema::Document),

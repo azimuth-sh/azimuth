@@ -34,7 +34,7 @@ pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
     let scenarios = model
         .scenarios()
         .map(|scenario| {
-            Json::obj(vec![
+            let mut fields = vec![
                 ("id", Json::str(&scenario.scenario.id)),
                 ("requirement", Json::str(&scenario.requirement.id)),
                 (
@@ -45,7 +45,21 @@ pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
                             .unwrap_or_default(),
                     ),
                 ),
-            ])
+            ];
+            if !scenario.scenario.conditions.is_empty() {
+                fields.push((
+                    "conditions",
+                    Json::Arr(
+                        scenario
+                            .scenario
+                            .conditions
+                            .iter()
+                            .map(crate::model::Condition::to_json)
+                            .collect(),
+                    ),
+                ));
+            }
+            Json::obj(fields)
         })
         .collect::<Vec<_>>();
     let mut bindings = Vec::new();
@@ -252,7 +266,7 @@ pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
             ),
             ("gaps", Json::Arr(gaps.iter().map(Json::str).collect())),
         ]);
-        requirements.push(Json::obj(vec![
+        let mut requirement_fields = vec![
             ("id", Json::str(id)),
             ("criticality", Json::str(criticality)),
             (
@@ -286,7 +300,20 @@ pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
                 "verification_challenges",
                 requirement_verification_challenges(model, id),
             ),
-        ]));
+        ];
+        if !view.requirement.conditions.is_empty() {
+            requirement_fields.push((
+                "conditions",
+                Json::Arr(
+                    view.requirement
+                        .conditions
+                        .iter()
+                        .map(crate::model::Condition::to_json)
+                        .collect(),
+                ),
+            ));
+        }
+        requirements.push(Json::obj(requirement_fields));
     }
     let result = Json::obj(vec![
         ("project", Json::str(project)),
@@ -492,6 +519,10 @@ pub fn validate_authority(value: &Json) -> Result<(), String> {
         if requirement.get("verification_challenges").is_some() {
             requirement_fields.push("verification_challenges");
         }
+        if let Some(conditions) = requirement.get("conditions") {
+            requirement_fields.push("conditions");
+            crate::deployment_status::validate_conditions(conditions)?;
+        }
         object(requirement, &requirement_fields)?;
         if requirement.get("verification_challenges").is_some() {
             let mut seen = BTreeSet::new();
@@ -573,7 +604,12 @@ pub fn validate_authority(value: &Json) -> Result<(), String> {
     }
     let mut scenarios = BTreeMap::new();
     for scenario in array(value, "scenarios")? {
-        object(scenario, &["id", "requirement", "fingerprint"])?;
+        let mut scenario_fields = vec!["id", "requirement", "fingerprint"];
+        if let Some(conditions) = scenario.get("conditions") {
+            scenario_fields.push("conditions");
+            crate::deployment_status::validate_conditions(conditions)?;
+        }
+        object(scenario, &scenario_fields)?;
         id(scenario, "id")?;
         id(scenario, "requirement")?;
         fingerprint(scenario, "fingerprint")?;

@@ -164,10 +164,17 @@ fn deadline(request: &Value, requirement: &Value) -> i64 {
                 .map(|seconds| seconds.saturating_mul(1000)),
         );
         if let Some(required) = check["deployment"]["contexts"].as_array() {
-            for fp in required {
-                contexts.insert(fp.as_str().unwrap());
+            for dependency in required {
+                contexts.insert(dependency["component"].as_str().unwrap());
             }
         }
+    }
+    for condition in requirement["explanation"]["conditions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        contexts.insert(condition["component"].as_str().unwrap());
     }
     // Only the newest deployment capture of an instance is ever selected, so older ones cannot change a status by ageing out.
     let capture_instance = |capture: &Value| {
@@ -196,13 +203,7 @@ fn deadline(request: &Value, requirement: &Value) -> i64 {
     for capture in request["captures"].as_array().unwrap() {
         let matches = capture["before"]["report"]["contexts"]
             .as_object()
-            .is_some_and(|values| {
-                values.values().any(|context| {
-                    context["contract_revision"]
-                        .as_str()
-                        .is_some_and(|fp| contexts.contains(fp))
-                })
-            });
+            .is_some_and(|values| values.keys().any(|component| contexts.contains(component.as_str())));
         if matches {
             let at = capture["finished_at_ms"].as_i64().unwrap();
             if capture["kind"] == "deployment"
@@ -358,7 +359,7 @@ async fn publish(
             requirement,
         )
         .await?;
-        sqlx::query("INSERT INTO assessment_requirements(project,deployment,requirement,generation,published_generation,record_key,status,review,summary,evaluated_at_ms,valid_until_ms) VALUES($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(project,deployment,requirement) DO UPDATE SET published_generation=excluded.published_generation,record_key=excluded.record_key,status=excluded.status,review=excluded.review,summary=excluded.summary,evaluated_at_ms=excluded.evaluated_at_ms,valid_until_ms=excluded.valid_until_ms,renewing=false")
+        sqlx::query("INSERT INTO assessment_requirements(project,deployment,requirement,generation,published_generation,record_key,status,review,summary,evaluated_at_ms,valid_until_ms,supported_since_ms) VALUES($1,$2,$3,$4,$4,$5,$6::text,$7,$8,$9::bigint,$10,CASE WHEN $6::text='supported' THEN $9::bigint END) ON CONFLICT(project,deployment,requirement) DO UPDATE SET published_generation=excluded.published_generation,record_key=excluded.record_key,supported_since_ms=CASE WHEN excluded.status<>'supported' THEN NULL WHEN assessment_requirements.status='supported' AND assessment_requirements.supported_since_ms IS NOT NULL THEN assessment_requirements.supported_since_ms ELSE excluded.evaluated_at_ms END,status=excluded.status,review=excluded.review,summary=excluded.summary,evaluated_at_ms=excluded.evaluated_at_ms,valid_until_ms=excluded.valid_until_ms,renewing=false")
             .bind(project).bind(deployment).bind(id).bind(requirement_generation).bind(&key).bind(requirement["status"].as_str()).bind(requirement["review"].as_str()).bind(requirement["explanation"]["summary"].as_str()).bind(result["evaluated_at_ms"].as_i64()).bind(due).execute(&mut *tx).await?;
         if let Some(previous) = previous.filter(|previous| previous != &key) {
             relational::discard_assessment_requirement(&mut tx, project, &previous).await?;
@@ -377,6 +378,16 @@ async fn publish(
                 .unwrap()
                 .to_string(),
         ));
+        for condition in requirement["explanation"]["conditions"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            dependencies.insert((
+                "context".into(),
+                condition["component"].as_str().unwrap().into(),
+            ));
+        }
         for binding in declaration["bindings"].as_array().unwrap() {
             let check_id = binding["check"].as_str().unwrap();
             dependencies.insert(("check".into(), check_id.into()));
@@ -388,7 +399,10 @@ async fn publish(
             {
                 if let Some(contexts) = check["deployment"]["contexts"].as_array() {
                     for context in contexts {
-                        dependencies.insert(("context".into(), context.as_str().unwrap().into()));
+                        dependencies.insert((
+                            "context".into(),
+                            context["component"].as_str().unwrap().into(),
+                        ));
                     }
                 }
             }
@@ -498,11 +512,17 @@ pub(super) async fn read(
     } else {
         "ready"
     };
-    let entries=sqlx::query("SELECT requirement,record_key,status,review,summary,evaluated_at_ms,generation<>published_generation AND NOT renewing AS unpublished,valid_until_ms FROM assessment_requirements WHERE project=$1 AND deployment=$2 ORDER BY requirement").bind(project).bind(deployment).fetch_all(&mut *tx).await?;
+    let entries=sqlx::query("SELECT requirement,record_key,status,review,summary,evaluated_at_ms,supported_since_ms,generation<>published_generation AND NOT renewing AS unpublished,valid_until_ms FROM assessment_requirements WHERE project=$1 AND deployment=$2 ORDER BY requirement").bind(project).bind(deployment).fetch_all(&mut *tx).await?;
     let mut requirements = Vec::new();
     for entry in entries {
         let mut requirement = if summary {
-            json!({"requirement":entry.get::<String,_>("requirement"),"status":entry.get::<String,_>("status"),"review":entry.get::<String,_>("review"),"diagnostics":[],"gaps":[],"explanation":{"summary":entry.get::<String,_>("summary")}})
+            let checks: Option<Value> = sqlx::query_scalar::<_, Option<Value>>("SELECT assurance_record_field('assessment_requirement',$1,$2,'checks')")
+                .bind(project)
+                .bind(entry.get::<Option<String>, _>("record_key"))
+                .fetch_optional(&mut *tx)
+                .await?
+                .flatten();
+            json!({"requirement":entry.get::<String,_>("requirement"),"status":entry.get::<String,_>("status"),"review":entry.get::<String,_>("review"),"diagnostics":[],"gaps":[],"explanation":{"summary":entry.get::<String,_>("summary")},"checks":checks.unwrap_or_else(|| json!([]))})
         } else {
             sqlx::query_scalar::<_, Value>(
                 "SELECT assurance_record('assessment_requirement',$1,$2)",
@@ -534,7 +554,15 @@ pub(super) async fn read(
             requirement["diagnostics"] = json!([message]);
             requirement["explanation"] = json!({"summary":message,"status":"unresolved","reasons":[{"code":"assessment-pending","category":"freshness","message":message}],"coverage":[],"evidence":{"supporting":[],"violations":[],"inconclusive":[],"unassessed":[]}});
             requirement["bindings"] = json!([]);
+            requirement["checks"] = json!([]);
         }
+        requirement["supported_since_ms"] = if requirement_freshness == "ready"
+            && requirement["status"] == "supported"
+        {
+            json!(entry.get::<Option<i64>, _>("supported_since_ms"))
+        } else {
+            Value::Null
+        };
         requirements.push(requirement);
     }
     Ok(
@@ -692,7 +720,7 @@ mod tests {
             "evaluated_at_ms":1_000_000,
             "deployment_observation":{"observed_at_ms":999_000,"valid_for_seconds":120},
             "publication":{"snapshot":{"bundles":[],"authority":{"checks":[
-                {"id":"probe","deployment":{"monitor":{"freshness_seconds":900},"contexts":["revision"]}}]}}},
+                {"id":"probe","deployment":{"monitor":{"freshness_seconds":900},"contexts":[{"component":"context","leaves":["mode"]}]}}]}}},
             "captures":[capture(900_000),capture(990_000)],
             "bundles":[
                 {"finished_at_ms":150_000,"check_executions":[{"check":{"id":"probe"},"results":[result("first",150_000)]}]},
@@ -1032,7 +1060,7 @@ mod tests {
         let release_fp = publication["release"]["fingerprint"].as_str().unwrap();
         let mut released = pool.begin().await?;
         relational::store(&mut released, "release", "project", release_fp, publication).await?;
-        sqlx::query("INSERT INTO assurance_releases(project,fingerprint,model_revision,label,baseline_model_revision,submitted_by) VALUES('project',$1,$2,'Synthetic release',$2,'publisher')").bind(release_fp).bind(revision).execute(&mut *released).await?;
+        sqlx::query("INSERT INTO assurance_releases(project,fingerprint,model_revision,label,submitted_by) VALUES('project',$1,$2,'Synthetic release','publisher')").bind(release_fp).bind(revision).execute(&mut *released).await?;
         release::insert_deployment(
             &mut released,
             "project",
@@ -1264,7 +1292,7 @@ mod tests {
         let (_state, pool, _postgres) = migrated_state().await?;
         sqlx::query("INSERT INTO deployment_assessments(project,deployment,release,authority,model,verification_target,generation,published_generation,valid_until_ms,observed_current) VALUES('project','deployment','release','authority','model','deployment-target',1,1,9007199254740991,true)").execute(&pool).await?;
         sqlx::query("INSERT INTO assessment_requirements(project,deployment,requirement,generation,published_generation,status,review,summary,valid_until_ms) VALUES('project','deployment','restricted',1,1,'unresolved','not-required','No evidence',9007199254740991)").execute(&pool).await?;
-        for (kind, identity) in [("context", "contract-a"), ("environment", "production")] {
+        for (kind, identity) in [("context", "settings"), ("environment", "production")] {
             sqlx::query("INSERT INTO assessment_dependencies(project,deployment,requirement,kind,identity) VALUES('project','deployment','restricted',$1,$2)").bind(kind).bind(identity).execute(&pool).await?;
         }
 
