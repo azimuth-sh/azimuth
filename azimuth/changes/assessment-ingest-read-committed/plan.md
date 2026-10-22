@@ -1,0 +1,3 @@
+- [x] Remove the REPEATABLE READ setting from the context-capture ingest and state why.
+- [x] Write each Requirement's dependencies in one statement.
+- [x] Write each Requirement's Scenario results in one statement, keeping the last result of a repeated binding.
