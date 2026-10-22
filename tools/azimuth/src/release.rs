@@ -141,12 +141,10 @@ pub fn prepare(request: &Json) -> Result<Json, String> {
             "evidence",
         ],
         &[
-            "baseline_model_revision",
             "changes",
             "integration",
             "unit_inputs",
             "catalog",
-            "composition",
             "required_reviews",
             "components",
         ],
@@ -163,7 +161,7 @@ pub fn prepare(request: &Json) -> Result<Json, String> {
             field(field(request, "snapshot")?, "model_revision")?.clone(),
         ),
     ];
-    for key in ["baseline_model_revision", "changes", "integration", "unit_inputs"] {
+    for key in ["changes", "integration", "unit_inputs"] {
         if let Some(value) = request.get(key) {
             release.push((key, value.clone()));
         }
@@ -173,9 +171,6 @@ pub fn prepare(request: &Json) -> Result<Json, String> {
     }
     if let Some(components) = request.get("components") {
         release.push(("components", components.clone()));
-    }
-    if let Some(composition) = request.get("composition") {
-        release.push(("composition", composition.clone()));
     }
     if let Some(reviews) = request.get("required_reviews") {
         release.push(("required_reviews", reviews.clone()));
@@ -251,11 +246,9 @@ pub fn verify(value: &Json) -> Result<Json, String> {
             "deployments",
         ],
         &[
-            "baseline_model_revision",
             "changes",
             "integration",
             "unit_inputs",
-            "composition",
             "required_reviews",
             "components",
         ],
@@ -265,9 +258,6 @@ pub fn verify(value: &Json) -> Result<Json, String> {
         None => None,
     };
     id(release, "label")?;
-    if release.get("baseline_model_revision").is_some() {
-        digest_field(release, "baseline_model_revision")?;
-    }
     if let Some(integration) = release.get("integration") {
         verify_integration(integration)?;
     }
@@ -465,15 +455,6 @@ pub fn verify(value: &Json) -> Result<Json, String> {
             }
         }
     }
-    if let Some(composition) = release.get("composition") {
-        verify_composition(composition)?;
-        if release.get("baseline_model_revision").is_none()
-            || composition.get("baseline_model_revision") != release.get("baseline_model_revision")
-            || change_pairs(composition)? != change_pairs(release)?
-        {
-            return Err("release composition baseline/Changes differ from release".into());
-        }
-    }
     Ok(Json::obj(vec![
         ("format", Json::str("azimuth-release-validation")),
         ("version", Json::Num(2.0)),
@@ -483,7 +464,6 @@ pub fn verify(value: &Json) -> Result<Json, String> {
             field(release, "fingerprint")?.clone(),
         ),
         ("valid", Json::Bool(true)),
-        ("acceptance", Json::Bool(false)),
         ("assurance", assessment),
     ]))
 }
@@ -742,115 +722,6 @@ pub fn catalog(model: &crate::model::Model) -> Json {
     ])
 }
 
-fn facet_path(value: &str) -> Result<(), String> {
-    let path = std::path::Path::new(value);
-    if value.contains('\\')
-        || path.is_absolute()
-        || path
-            .components()
-            .any(|part| !matches!(part, std::path::Component::Normal(_)))
-        || !matches!(
-            path.file_name().and_then(|v| v.to_str()),
-            Some("spec.md" | "design.md" | "verification.md")
-        )
-    {
-        return Err(format!(
-            "`{value}`: expected a relative model facet path without traversal"
-        ));
-    }
-    Ok(())
-}
-
-fn files_json(files: &BTreeMap<String, String>) -> Json {
-    Json::Arr(
-        files
-            .iter()
-            .map(|(path, content)| {
-                Json::obj(vec![
-                    ("path", Json::str(path)),
-                    ("content", Json::str(content)),
-                ])
-            })
-            .collect(),
-    )
-}
-fn tree_fingerprint(files: &BTreeMap<String, String>) -> Result<String, String> {
-    fingerprint(&files_json(files))
-}
-
-pub fn verify_composition(value: &Json) -> Result<(), String> {
-    shape(
-        value,
-        &[
-            "format",
-            "version",
-            "baseline_model_revision",
-            "baseline_content_fingerprint",
-            "changes",
-            "files",
-            "content_fingerprint",
-            "fingerprint",
-        ],
-        &[],
-    )?;
-    if text(value, "format")? != "azimuth-release-composition"
-        || field(value, "version")?.as_num() != Some(1.0)
-    {
-        return Err("expected azimuth-release-composition version 1".into());
-    }
-    for key in [
-        "baseline_model_revision",
-        "baseline_content_fingerprint",
-        "content_fingerprint",
-    ] {
-        digest_field(value, key)?;
-    }
-    let Json::Obj(fields) = value else {
-        unreachable!()
-    };
-    if text(value, "fingerprint")?
-        != fingerprint(&Json::Obj(
-            fields
-                .iter()
-                .filter(|(key, _)| key != "fingerprint")
-                .cloned()
-                .collect(),
-        ))?
-    {
-        return Err("composition fingerprint mismatch".into());
-    }
-    let mut files = BTreeMap::new();
-    for file in array(value, "files")? {
-        shape(file, &["path", "content"], &[])?;
-        let path = text(file, "path")?;
-        facet_path(path)?;
-        let content = field(file, "content")?
-            .as_str()
-            .ok_or("facet content must be string")?;
-        if files
-            .insert(path.to_string(), content.to_string())
-            .is_some()
-        {
-            return Err("duplicate composed facet".into());
-        }
-    }
-    if text(value, "content_fingerprint")? != tree_fingerprint(&files)? {
-        return Err("composed content fingerprint mismatch".into());
-    }
-    Ok(())
-}
-
-fn change_pairs(value: &Json) -> Result<BTreeMap<String, String>, String> {
-    optional_array(value, "changes")?
-        .iter()
-        .map(|change| {
-            Ok((
-                text(change, "id")?.to_string(),
-                text(change, "revision")?.to_string(),
-            ))
-        })
-        .collect()
-}
 /// Lowercase only, as `git rev-parse` prints and the service stores, so one commit has one spelling.
 fn is_git_id(value: &str) -> bool {
     matches!(value.len(), 40 | 64) && value.bytes().all(|v| matches!(v, b'0'..=b'9' | b'a'..=b'f'))
@@ -944,7 +815,7 @@ fn portable_evidence(value: &Json, at: &str, unavailable: &BTreeSet<String>) -> 
 }
 
 pub fn publication_inputs(value: &Json) -> Result<Json, String> {
-    shape(value, &["format", "version", "request"], &["composition"])?;
+    shape(value, &["format", "version", "request"], &[])?;
     if text(value, "format")? != "azimuth-publication-inputs"
         || field(value, "version")?.as_num() != Some(1.0)
     {
@@ -957,9 +828,6 @@ pub fn publication_inputs(value: &Json) -> Result<Json, String> {
         }
     }
     array(request, "required_reviews")?;
-    if request.get("composition") != value.get("composition") {
-        return Err("request must retain the exact composed candidate".into());
-    }
     prepare(request)?;
     if value.to_string_pretty().len() > PACKAGE_LIMIT {
         return Err(

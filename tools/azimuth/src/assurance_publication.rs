@@ -85,7 +85,6 @@ pub fn verify_snapshot(value: &Json) -> Result<Json, String> {
             Json::str(crate::fingerprint::canonical_sha256(value)),
         ),
         ("valid", Json::Bool(true)),
-        ("acceptance", Json::Bool(false)),
         ("assessments", Json::Arr(assessments)),
     ]))
 }

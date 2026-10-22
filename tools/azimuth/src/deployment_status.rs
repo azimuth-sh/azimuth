@@ -656,7 +656,7 @@ impl<'a> Inputs<'a> {
                         && c.get("digest").and_then(Json::as_str) == Some(digest)
                 }) {
                     reasons.push(format!(
-                        "component `{id}` is not linked to release composition"
+                        "component `{id}` is not linked to a release component"
                     ));
                 }
             }

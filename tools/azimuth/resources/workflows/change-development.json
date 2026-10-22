@@ -522,7 +522,7 @@
       ],
       "required_output": {
         "kind": "candidate-preparation",
-        "description": "Prepare a complete local candidate authority and digest-pinned assurance snapshot. No ASS registration or accepted-authority selection is required."
+        "description": "Prepare a complete local candidate authority and digest-pinned assurance snapshot. No AAS registration is required."
       },
       "correction": null,
       "outcomes": [
@@ -698,7 +698,7 @@
       ],
       "required_output": {
         "kind": "publication-inputs",
-        "description": "Prepare compact Git-trackable azimuth-publication-inputs version 1 containing the complete native release request; a composition is optional and only carried when supplied. Validate the envelope with azimuth release inputs --input <draft> --out <Git-tracked-file>. No ASS connection, registration receipt, accepted-authority selection or local upload is required. CI publishes unchanged native reviews and Runs with recorded transport provenance. Deployment Requirement Status is computed after observed rollout; publication does not require an authored positive Requirement Status assessment. Deployment-only Checks and Monitors execute in their hosted environment."
+        "description": "Prepare compact Git-trackable azimuth-publication-inputs version 1 containing the complete native release request; Validate the envelope with azimuth release inputs --input <draft> --out <Git-tracked-file>. No AAS connection, registration receipt or local upload is required. CI publishes unchanged native reviews and Runs with recorded transport provenance. Deployment Requirement Status is computed after observed rollout; publication does not require an authored positive Requirement Status assessment. Deployment-only Checks and Monitors execute in their hosted environment."
       },
       "correction": null,
       "outcomes": [

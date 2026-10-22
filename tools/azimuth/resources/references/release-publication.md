@@ -4,8 +4,8 @@ Release publication and deployment are separate operations. Neither invokes an a
 release publication cannot authorize a deployment, archive a Change, or manufacture
 a Run or Requirement Status. A model is ratified in git, never by the service.
 
-A release is built from the model on main at the integrated commit. It has no baseline and needs no
-composition or Change; those fields remain optional for packages that carry them.
+A release is built from the model on main at the integrated commit. It has no baseline or
+composition, and needs no Change.
 
 ## Commands
 
@@ -30,8 +30,8 @@ There is no `release project` or `release compose`: releases are not composed fr
 - `snapshot`: the complete existing native snapshot (`project`, `model_revision`, `authority`, `reviews`, `bundles`);
 - `evidence`: `{digest, media_type, availability: "unavailable"}`.
 
-Optional `baseline_model_revision`, `changes` (`{id, revision, metadata?}`) and `composition` (an existing
-`azimuth-release-composition`, accepted only together with a baseline) are carried unchanged when supplied.
+Optional `changes` (`{id, revision, metadata?}`) are carried unchanged when supplied. A request or
+package with `baseline_model_revision` or `composition` is rejected as an undeclared field.
 Optional `integration` is `{commit, main_sequence}`: the full Git ID of the main commit the release was built
 from and its positive integer first-parent sequence, attested by CI. Optional `catalog` contains
 `modules`, `requirements`, `scenarios`, `checks` as below. Optional `required_reviews` is an explicit array of

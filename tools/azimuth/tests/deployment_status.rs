@@ -227,7 +227,7 @@ fn request_with_header(policy: Json, criticality: &str, extra_header: &str) -> J
         ("bundles", Json::Arr(vec![])),
     ]);
     let release=azimuth::release::prepare(&Json::obj(vec![
-  ("format",Json::str("azimuth-release-request")),("version",Json::Num(2.0)),("project",Json::str("sample-project")),("label",Json::str("Synthetic release")),("baseline_model_revision",Json::str(fp('a'))),
+  ("format",Json::str("azimuth-release-request")),("version",Json::Num(2.0)),("project",Json::str("sample-project")),("label",Json::str("Synthetic release")),
   ("changes",json::parse(&format!(r#"[{{"id":"restricted-access","revision":"{}"}}]"#,fp('a'))).unwrap()),
   ("sources",json::parse(&format!(r#"[{{"repository":"root","commit":"{}","content_fingerprint":"{}"}}]"#,"a".repeat(40),fp('a'))).unwrap()),
   ("builds",json::parse(&format!(r#"[{{"id":"build-api","sources":["root"],"toolchain":{{"compiler":"1"}},"configuration_fingerprint":"{}","artifacts":["{}"]}}]"#,fp('b'),fp('e'))).unwrap()),
