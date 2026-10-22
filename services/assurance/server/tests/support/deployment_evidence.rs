@@ -8,7 +8,7 @@ fn value(value: &azimuth::json::Json) -> Value {
     serde_json::from_str(&value.to_string_pretty()).unwrap()
 }
 fn contract() -> Value {
-    let mut result = json!({"name":"settings","fields":{"enabled":"boolean","revision":"integer","mode":"string"}});
+    let mut result = json!({"name":"api","fields":{"enabled":"boolean","revision":"integer","mode":"string"}});
     result["fingerprint"] = json!(azimuth::run::canonical_fingerprint(&native(&result)).unwrap());
     result
 }
@@ -39,7 +39,7 @@ fn publication_policy_with_criticality(policy: Value, criticality:&str) -> Value
     let deployment = json!({"id":deployment_id,"environment":"production","configuration_fingerprint":fp('c'),"artifacts":[fp('e')],"verification_target":verification_target,"verification_target_fingerprint":verification_target_fp});
     value(&azimuth::release::prepare(&native(&json!({
         "format":"azimuth-release-request","version":2,"project":"project","label":"Synthetic release",
-        "baseline_model_revision":authority["fingerprint"],"changes":[{"id":"restricted","revision":fp('a')}],
+        "changes":[{"id":"restricted","revision":fp('a')}],
         "sources":[{"repository":"root","commit":"a".repeat(40),"content_fingerprint":fp('a')}],
         "builds":[{"id":"build-api","sources":["root"],"toolchain":{"compiler":"1"},"configuration_fingerprint":fp('b'),"artifacts":[fp('e')]}],
         "artifacts":[{"digest":fp('e'),"kind":"container"}],"deployments":[deployment],"components":[{"id":"api","digest":fp('e')}],

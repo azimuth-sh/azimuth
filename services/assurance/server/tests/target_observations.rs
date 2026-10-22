@@ -47,7 +47,7 @@ fn publication_variant(policy: Value, artifact: char) -> Value {
     let deployment = json!({"id":deployment_id,"environment":"production","configuration_fingerprint":fp('c'),"artifacts":[fp(artifact)],"verification_target":verification_target,"verification_target_fingerprint":verification_target_fp});
     value(&azimuth::release::prepare(&native(&json!({
         "format":"azimuth-release-request","version":2,"project":"project","label":"Synthetic release",
-        "baseline_model_revision":fp('a'),"changes":[{"id":"restricted","revision":fp('a')}],
+        "changes":[{"id":"restricted","revision":fp('a')}],
         "sources":[{"repository":"root","commit":artifact.to_string().repeat(40),"content_fingerprint":fp('a')}],
         "builds":[{"id":"build-api","sources":["root"],"toolchain":{"compiler":"1"},"configuration_fingerprint":fp('b'),"artifacts":[fp(artifact)]}],
         "artifacts":[{"digest":fp(artifact),"kind":"container"}],"deployments":[deployment],"components":[{"id":"api","digest":fp(artifact)}],

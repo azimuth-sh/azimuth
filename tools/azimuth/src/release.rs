@@ -100,6 +100,7 @@ pub fn prepare(request: &Json) -> Result<Json, String> {
             "baseline_model_revision",
             "changes",
             "integration",
+            "unit_inputs",
             "catalog",
             "composition",
             "required_reviews",
@@ -118,7 +119,7 @@ pub fn prepare(request: &Json) -> Result<Json, String> {
             field(field(request, "snapshot")?, "model_revision")?.clone(),
         ),
     ];
-    for key in ["baseline_model_revision", "changes", "integration"] {
+    for key in ["baseline_model_revision", "changes", "integration", "unit_inputs"] {
         if let Some(value) = request.get(key) {
             release.push((key, value.clone()));
         }
@@ -209,11 +210,15 @@ pub fn verify(value: &Json) -> Result<Json, String> {
             "baseline_model_revision",
             "changes",
             "integration",
+            "unit_inputs",
             "composition",
             "required_reviews",
             "components",
         ],
     )?;
+    if let Some(manifest) = release.get("unit_inputs") {
+        crate::deployment_status::validate_unit_manifest(manifest)?;
+    }
     id(release, "label")?;
     if release.get("baseline_model_revision").is_some() {
         digest_field(release, "baseline_model_revision")?;

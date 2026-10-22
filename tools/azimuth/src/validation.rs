@@ -66,6 +66,7 @@ define_finding_kinds! {
     ConditionUnknownLeaf,
     ConditionTypeMismatch,
     ConditionConflict,
+    CheckUnknownLeaf,
     Unrealized,
     DanglingRealization,
     DanglingDesignEntry,
@@ -129,6 +130,7 @@ impl FindingKind {
             Self::ConditionUnknownLeaf => "condition-unknown-leaf",
             Self::ConditionTypeMismatch => "condition-type-mismatch",
             Self::ConditionConflict => "condition-conflict",
+            Self::CheckUnknownLeaf => "check-unknown-leaf",
             Self::Unrealized => "unrealized",
             Self::DanglingRealization => "dangling-realization",
             Self::DanglingDesignEntry => "dangling-design-entry",
@@ -192,6 +194,7 @@ impl FindingKind {
             | Self::ConditionUnknownLeaf
             | Self::ConditionTypeMismatch
             | Self::ConditionConflict => FindingCategory::Intent,
+            Self::CheckUnknownLeaf => FindingCategory::Verification,
             Self::Unrealized
             | Self::DanglingRealization
             | Self::MissingRequiredRealization
@@ -246,6 +249,9 @@ impl FindingKind {
             }
             Self::ConditionTypeMismatch => {
                 "Write a value of the type the leaf declares."
+            }
+            Self::CheckUnknownLeaf => {
+                "Declare the component and leaf in the project catalog and its execution-context declaration, or remove the dependency from the Check's `Deployment:` contexts."
             }
             Self::ConditionConflict => {
                 "Remove one of the conditions; all conditions hold together and a Scenario cannot override an inherited one."
@@ -1303,8 +1309,47 @@ fn condition_findings(model: &Model) -> Vec<Finding> {
     findings
 }
 
+fn check_leaf_findings(model: &Model) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for document in &model.account_verifications {
+        for check in &document.checks {
+            let Some(policy) = check
+                .inputs
+                .get("deployment-policy")
+                .and_then(|raw| crate::run::strict_json("Deployment", raw).ok())
+            else {
+                continue;
+            };
+            let Ok(dependencies) = crate::deployment_status::context_dependencies(&policy, "contexts")
+            else {
+                continue;
+            };
+            for (component, leaf) in dependencies {
+                if model.component_leaf_type(&component, &leaf).is_some() {
+                    continue;
+                }
+                findings.push(Finding {
+                    kind: FindingKind::CheckUnknownLeaf,
+                    severity: Severity::Error,
+                    requirement: Some(check.requirement.clone()),
+                    entity_kind: Some(crate::diag::EntityKind::Requirement),
+                    criticality: None,
+                    path: document.path.clone(),
+                    line: 1,
+                    detail: format!(
+                        "Check `{}` depends on leaf `{leaf}` of component `{component}`, which the project catalog and its execution-context declaration do not declare",
+                        check.definition.id
+                    ),
+                });
+            }
+        }
+    }
+    findings
+}
+
 pub fn validate(model: &Model) -> Vec<Finding> {
     let mut findings = condition_findings(model);
+    findings.extend(check_leaf_findings(model));
     for spec in &model.specs {
         for requirement in &spec.requirements {
             if requirement.criticality.is_none() {
