@@ -101,13 +101,13 @@ pub const REFERENCES: &[ReferenceDescriptor] = &[
         id: "release-publication",
         format_version: 2,
         accepted: &[
-            "explicit composed release",
+            "release built from the model on main",
             "immutable source/build/deployment provenance",
             "portable native records",
             "unavailable supporting evidence",
         ],
         rejected: &[
-            "publication implies acceptance",
+            "release acceptance",
             "deployment owned by one Change",
             "silent semantic merge",
             "CI invokes an agent",
@@ -128,7 +128,7 @@ pub const REFERENCES: &[ReferenceDescriptor] = &[
         rejected: &[
             "invented reviewer facts",
             "local compilation authenticates identity",
-            "compilation selects accepted authority",
+            "compilation publishes to AAS",
         ],
         prose: include_str!("../resources/references/assurance-reviews.md"),
     },
@@ -147,7 +147,7 @@ pub const REFERENCES: &[ReferenceDescriptor] = &[
         rejected: &[
             "implicit agent execution",
             "file-presence approval",
-            "candidate registration selects accepted authority",
+            "candidate registration publishes to AAS",
         ],
         prose: include_str!("../resources/references/workflow.md"),
     },
