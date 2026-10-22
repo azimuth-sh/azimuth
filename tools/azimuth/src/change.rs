@@ -571,19 +571,215 @@ pub fn completion_issues(root: &Path, report: &Report) -> Vec<String> {
     issues
 }
 
-pub fn finalization(model: &Model, findings: &[Finding]) -> (String, String) {
+/// A recorded human decision that accepts non-routine Requirements without a locally authored
+/// Requirement Status. The record preserves who decided, when and on what basis; it supplies no
+/// review, Run or Status, and Assurance State stays the computed account of evidence.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Acceptance {
+    pub change: String,
+    pub accepted_by: String,
+    pub accepted_on: String,
+    pub basis: String,
+    pub requirements: Vec<String>,
+}
+
+const ACCEPTANCE_FILE: &str = "acceptance.json";
+const ACCEPTANCE_KEYS: [&str; 6] = [
+    "format",
+    "version",
+    "accepted_by",
+    "accepted_on",
+    "requirements",
+    "basis",
+];
+
+fn plain_date(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 10
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| index == 4 || index == 7 || byte.is_ascii_digit())
+}
+
+pub fn read_acceptance(change_root: &Path) -> Result<Option<Acceptance>, Vec<String>> {
+    let path = change_root.join(ACCEPTANCE_FILE);
+    let display = path.display().to_string();
+    let content = match fs::read_to_string(&path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(vec![format!("{display}: {error}")]),
+    };
+    let fail = |detail: &str| vec![format!("{display}: {detail}")];
+    let value = crate::json::parse(&content).map_err(|error| fail(&error.to_string()))?;
+    let Json::Obj(pairs) = &value else {
+        return Err(fail("acceptance record must be a JSON object"));
+    };
+    if let Some((key, _)) = pairs
+        .iter()
+        .find(|(key, _)| !ACCEPTANCE_KEYS.contains(&key.as_str()))
+    {
+        return Err(fail(&format!("unknown acceptance field `{key}`")));
+    }
+    if value.get("format").and_then(Json::as_str) != Some("azimuth-change-acceptance")
+        || value.get("version").and_then(Json::as_num) != Some(1.0)
+    {
+        return Err(fail(
+            "expected format `azimuth-change-acceptance` and version 1",
+        ));
+    }
+    let text = |key: &str| -> Result<String, Vec<String>> {
+        match value.get(key).and_then(Json::as_str) {
+            Some(text) if !text.trim().is_empty() => Ok(text.to_string()),
+            _ => Err(fail(&format!("`{key}` requires a non-empty string"))),
+        }
+    };
+    let accepted_by = text("accepted_by")?;
+    if !accepted_by
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    {
+        return Err(fail(
+            "`accepted_by` must be a plain identifier of letters, digits, `-`, `_` or `.`",
+        ));
+    }
+    let accepted_on = text("accepted_on")?;
+    if !plain_date(&accepted_on) {
+        return Err(fail("`accepted_on` must be YYYY-MM-DD"));
+    }
+    let basis = text("basis")?;
+    let listed = value
+        .get("requirements")
+        .and_then(Json::as_array)
+        .ok_or_else(|| fail("`requirements` requires an array"))?;
+    let mut requirements = Vec::new();
+    for item in listed {
+        let id = item
+            .as_str()
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| fail("`requirements` entries must be non-empty strings"))?;
+        if requirements.iter().any(|seen| seen == id) {
+            return Err(fail(&format!("duplicate accepted Requirement `{id}`")));
+        }
+        requirements.push(id.to_string());
+    }
+    if requirements.is_empty() {
+        return Err(fail("`requirements` must name at least one Requirement"));
+    }
+    let change = change_root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_string();
+    Ok(Some(Acceptance {
+        change,
+        accepted_by,
+        accepted_on,
+        basis,
+        requirements,
+    }))
+}
+
+/// Reads the acceptance records of active and archived changes under one `changes/` directory.
+pub fn acceptances(changes_dir: &Path) -> Result<Vec<Acceptance>, Vec<String>> {
+    let mut roots = Vec::new();
+    for directory in [changes_dir.to_path_buf(), changes_dir.join("archive")] {
+        let Ok(entries) = fs::read_dir(&directory) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            if entry.path().is_dir() && entry.file_name() != "archive" {
+                roots.push(entry.path());
+            }
+        }
+    }
+    roots.sort();
+    let mut found = Vec::new();
+    let mut errors = Vec::new();
+    for root in roots {
+        match read_acceptance(&root) {
+            Ok(Some(acceptance)) => found.push(acceptance),
+            Ok(None) => {}
+            Err(mut issues) => errors.append(&mut issues),
+        }
+    }
+    if errors.is_empty() {
+        Ok(found)
+    } else {
+        Err(errors)
+    }
+}
+
+/// An active change may accept only Requirements it adds; archived records are immutable.
+pub fn acceptance_issues(acceptances: &[Acceptance], report: &Report) -> Vec<String> {
+    let mut issues = Vec::new();
+    for acceptance in acceptances.iter().filter(|value| value.change == report.id) {
+        for requirement in &acceptance.requirements {
+            if !report
+                .additions
+                .iter()
+                .any(|addition| &addition.requirement == requirement)
+            {
+                issues.push(format!(
+                    "{ACCEPTANCE_FILE} accepts `{requirement}`, which this change does not add"
+                ));
+            }
+        }
+    }
+    issues
+}
+
+/// Removes the missing-assurance findings that a recorded human acceptance covers.
+pub fn waive_accepted_requirements(findings: &mut Vec<Finding>, acceptances: &[Acceptance]) {
+    findings.retain(|finding| {
+        finding.kind != validation::FindingKind::MissingRequirementAssurance
+            || !finding.requirement.as_ref().is_some_and(|requirement| {
+                acceptances
+                    .iter()
+                    .any(|acceptance| acceptance.requirements.contains(requirement))
+            })
+    });
+}
+
+pub fn finalization(
+    model: &Model,
+    findings: &[Finding],
+    acceptances: &[Acceptance],
+) -> (String, String) {
     let fingerprint = crate::fingerprint::model_digest(model, findings);
     let summary = validation::summarize(model, findings);
-    let json = Json::obj(vec![
+    let mut pairs = vec![
         ("version", Json::Num(2.0)),
         ("model_fingerprint", Json::str(&fingerprint)),
         ("requirements", Json::Num(summary.requirements as f64)),
         ("specs", Json::Num(model.specs.len() as f64)),
         ("errors", Json::Num(summary.errors as f64)),
         ("warnings", Json::Num(summary.warnings as f64)),
-    ])
-    .to_string_pretty();
-    (fingerprint, json)
+    ];
+    if !acceptances.is_empty() {
+        pairs.push((
+            "human_acceptances",
+            Json::Arr(
+                acceptances
+                    .iter()
+                    .map(|acceptance| {
+                        Json::obj(vec![
+                            ("change", Json::str(&acceptance.change)),
+                            ("accepted_by", Json::str(&acceptance.accepted_by)),
+                            ("accepted_on", Json::str(&acceptance.accepted_on)),
+                            (
+                                "requirements",
+                                Json::Arr(acceptance.requirements.iter().map(Json::str).collect()),
+                            ),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ));
+    }
+    (fingerprint, Json::obj(pairs).to_string_pretty())
 }
 
 #[cfg(test)]

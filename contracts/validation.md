@@ -25,6 +25,21 @@ Change validation stages the prospective intent and account facets before loadin
 
 The same snapshot can be supplied at explicit `change finalize` and `change archive` boundaries with `--scope acceptance`. Each command reassesses it against the complete loaded current model and preserves existing completion, applied-facet, finding and finalization-currentness gates. Partial `--only` selection is rejected. These local commands do not perform full federated finalization, select ASS authority or publish records. A snapshot does not authorize intent/account application or archive an incomplete change. Finalize writes its ordinary model finalization receipt; archive additionally verifies that receipt against current model findings before moving the completed change. Without native evidence, a compact non-routine Requirement remains blocked at either boundary.
 
+A change directory may carry `acceptance.json`, a recorded human decision that accepts the non-routine Requirements the change adds without a locally authored Requirement Status:
+
+```json
+{
+  "format": "azimuth-change-acceptance",
+  "version": 1,
+  "accepted_by": "<plain identifier>",
+  "accepted_on": "YYYY-MM-DD",
+  "requirements": ["<requirement-id>"],
+  "basis": "What the decider relied on, for example an Assurance State status read for a named release."
+}
+```
+
+The record is strict: unknown fields, an empty `requirements` list, duplicates and a non-identifier `accepted_by` are errors. `change finalize` and `change archive` accept only Requirements that the change itself adds, and the record then removes exactly the `missing-requirement-assurance` findings for those Requirements. It supplies no review, Run or Status and satisfies no other finding. The finalization receipt lists each accepting change, decider, date and Requirement set, so removing or editing the record makes the receipt stale. Archived records keep applying to plain `azimuth validate` at acceptance scope and to federated project finalization, because they are part of the immutable decision record. Azimuth does not contact an Assurance State Service to accept a change; the basis is the decider's statement.
+
 Reports keep the structural conclusion separate from evidence and acceptance conclusions. No-declared-gaps or no-declared-blockers is bounded by the inspected account; neither establishes a supported Requirement or an exact-target Assurance State. The structural workflow task uses `azimuth change validate --scope structure`; acceptance assessment belongs to the later explicit boundary. Validation never executes native Checks, generates independent decisions, commits or archives.
 
 The current alpha command has no `change check` or `change account-check` alias. Account preview/apply and intent preview/apply remain explicit authoring and acceptance operations.

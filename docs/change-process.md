@@ -87,7 +87,7 @@ Complete plan and work-package statuses. Write `outcome.md` with departures and 
 
 ### 8. Finalize and archive
 
-Confirm completion conditions, current facet updates, fresh manifests and all required engineering checks. Run `azimuth change finalize`, then archive only after the finalization fingerprint is current. These commands do not create Git commits, provider executions or deployment records.
+Confirm completion conditions, current facet updates, fresh manifests and all required engineering checks. Run `azimuth change finalize`, then archive only after the finalization fingerprint is current. These commands do not create Git commits, provider executions or deployment records. A human who accepts a non-routine Requirement without a locally authored Requirement Status records that decision in the change as `acceptance.json` (see `contracts/validation.md`); the change record then states what the decider relied on, such as an Assurance State status for a named release, and Azimuth never contacts that service itself.
 
 For federation, retain complete accepted-active and tested-archive worksets. The singular authority repository owns the content-preserving archive move. `azimuth project accept-change` verifies the two complete accounts and emits a snapshot; a local account cannot substitute for project acceptance.
 

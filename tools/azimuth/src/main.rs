@@ -1206,8 +1206,11 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
         }
     };
     let mut findings = validation::validate(&loaded.model);
+    let mut acceptances = Vec::new();
     if acceptance_boundary {
         apply_native_assurance(&loaded.model, &options, &mut findings)?;
+        acceptances = change_acceptances(&root, &report)?;
+        azimuth::change::waive_accepted_requirements(&mut findings, &acceptances);
     }
     let projection = match azimuth::intent::project(&root, &options.model, &loaded.model) {
         Ok(projection) => projection,
@@ -1407,7 +1410,7 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
                 return Ok(ExitCode::from(1));
             }
             let (fingerprint, finalization) =
-                azimuth::change::finalization(&loaded.model, &findings);
+                azimuth::change::finalization(&loaded.model, &findings, &acceptances);
             std::fs::write(root.join("finalization.json"), finalization).map_err(|error| {
                 format!("cannot write {}/finalization.json: {error}", root.display())
             })?;
@@ -1452,7 +1455,8 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
                     finalization_path.display()
                 )
             })?;
-            let (_, expected) = azimuth::change::finalization(&loaded.model, &findings);
+            let (_, expected) =
+                azimuth::change::finalization(&loaded.model, &findings, &acceptances);
             if recorded != expected {
                 return Ok({
                     eprintln!("error: finalization is stale; run `azimuth change finalize` again");
@@ -2937,6 +2941,13 @@ fn command_validate(options: Options) -> Result<ExitCode, String> {
     report(&loaded.warnings, "warning");
     let mut findings = validation::validate(&loaded.model);
     apply_native_assurance(&loaded.model, &options, &mut findings)?;
+    if options.project.is_none() {
+        if let Some(changes) = options.model.parent().map(|root| root.join("changes")) {
+            let acceptances =
+                azimuth::change::acceptances(&changes).map_err(|errors| errors.join("\n"))?;
+            azimuth::change::waive_accepted_requirements(&mut findings, &acceptances);
+        }
+    }
     render_validation(
         &loaded.model,
         &findings,
@@ -2969,6 +2980,22 @@ fn apply_native_assurance(
                 .is_some_and(|requirement| supported.contains(requirement))
     });
     Ok(())
+}
+
+fn change_acceptances(
+    root: &std::path::Path,
+    report: &azimuth::change::Report,
+) -> Result<Vec<azimuth::change::Acceptance>, String> {
+    let Some(changes) = root.parent() else {
+        return Ok(Vec::new());
+    };
+    let acceptances = azimuth::change::acceptances(changes).map_err(|errors| errors.join("\n"))?;
+    let issues = azimuth::change::acceptance_issues(&acceptances, report);
+    if issues.is_empty() {
+        Ok(acceptances)
+    } else {
+        Err(issues.join("\n"))
+    }
 }
 
 fn reject_validation_output(
