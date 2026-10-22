@@ -1412,6 +1412,22 @@ fn unit_results_apply_only_when_unit_inputs_and_leaf_values_match() {
     attach(&mut not_hermetic, &[bundle]);
     assert_eq!(status(&not_hermetic), "unresolved");
 
+    {
+        let mut named_repository = request(policy("source"));
+        set_unit_manifest(&mut named_repository, &fp('2'), true);
+        mutate_release(&mut named_repository, |release| {
+            let Some(Json::Obj(manifest)) = release.get("unit_inputs").cloned() else {
+                panic!("unit_inputs missing");
+            };
+            let mut manifest = manifest;
+            manifest.push(("repository".into(), Json::str("root")));
+            set(release, "unit_inputs", Json::Obj(manifest));
+        });
+        let bundle = unit_bundle(&named_repository, earlier_source(), &fp('2'));
+        attach(&mut named_repository, &[bundle]);
+        assert_eq!(status(&named_repository), "supported");
+    }
+
     let mut same_source = request(policy("source"));
     set_unit_manifest(&mut same_source, &fp('2'), true);
     let bundle = unit_bundle(&same_source, source(), &fp('3'));
