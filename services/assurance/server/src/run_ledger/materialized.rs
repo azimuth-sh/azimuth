@@ -927,7 +927,7 @@ mod tests {
         let version: i32 = sqlx::query_scalar("SELECT max(version) FROM assurance_storage_schema")
             .fetch_one(&pool)
             .await?;
-        assert_eq!(version, 7);
+        assert_eq!(version, 8);
         sqlx::query("UPDATE deployment_assessments SET generation=2 WHERE project='project' AND deployment='monitor-deployment'").execute(&pool).await?;
         sqlx::query("UPDATE assessment_requirements SET generation=2 WHERE project='project' AND deployment='monitor-deployment'").execute(&pool).await?;
         let mut refreshed_request = request.clone();
