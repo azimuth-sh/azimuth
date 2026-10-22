@@ -49,6 +49,8 @@ The document is parsed by the core JSON reader and then read field by field. Unr
 | `model_sources` | array of objects | yes | declared intent owners |
 | `standards` | object | yes | the singular Decision Policies and Challenge Schedule locator |
 | `required_receipts` | array of objects | no | composed engineering-check requirements |
+| `components` | array of objects | no | runtime component registry |
+| `unshipped_areas` | array of strings | no | areas that are code or configuration but no running component; read only when `components` is present |
 
 `repositories`, `areas` and `model_sources` must each be present and be arrays; an empty array is accepted. `required_receipts` may be omitted, and must be an array when present.
 
@@ -102,6 +104,48 @@ A model source whose `repository` is undeclared, or whose `path` is not normaliz
 | `subjects` | array of strings | yes | the exact repository ids the receipt must cover |
 
 `subjects` must be present and an array; a non-string element is a violation. The key names the repositories a receipt covers; it is not an assurance Verification Target. Repository ids are unique within one required receipt and must each be a declared repository. The required receipt is exact: a supplied receipt whose repository set differs from `subjects` in either direction fails assembly.
+
+## Components
+
+Optional `components` is the registry of runtime units, each of which may serve one execution-context document. A component is not an area: areas are code ownership namespaces, components are what runs. The component-to-areas mapping is declared intent and the core cannot detect a wrong mapping. A catalog without `components` is read exactly as before, and a Requirement or Scenario `Context:` condition then names an unknown component.
+
+```json
+"components": [
+  { "id": "web-api", "repository": "backend", "areas": ["api"],
+    "context": "azimuth/execution-contexts/web-api.json" },
+  { "id": "web-app", "repository": "experience", "areas": ["web", "bff"] }
+],
+"unshipped_areas": ["deployment"]
+```
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `id` | non-empty string | yes | component id, lowercase kebab-case, unique across the catalog |
+| `repository` | non-empty string | yes | owning repository, which must be declared |
+| `areas` | non-empty array of strings | yes | areas whose code the component runs; each must be declared and owned by the same repository |
+| `shared_areas` | array of strings | no | the subset of `areas` the component deliberately shares with another component |
+| `context` | non-empty string | no | normalized repository-relative path of the execution-context declaration |
+
+Structural violations, each reported with its code:
+
+| Code | Violation |
+|---|---|
+| `component-duplicate-id` | an id is invalid or repeated |
+| `component-unknown-area` | `areas` is empty, names an undeclared area, `shared_areas` names an area outside `areas`, or `unshipped_areas` names an undeclared area |
+| `component-area-repository-mismatch` | an area belongs to a different repository than the component |
+| `component-area-unmapped` | a declared area is in no component and not in `unshipped_areas` |
+| `component-area-shared-undeclared` | an area is in several components and not every one lists it in `shared_areas` |
+| `component-context-missing` | the declared `context` file cannot be read or parsed in the supplying checkout |
+
+A component whose `repository` is undeclared, or whose `context` is not a normalized repository-relative path, is also a violation. The context file is read when the workset's checkout for the component's repository is available; a component without `context` declares no leaves.
+
+### Execution-context declaration
+
+The `context` file is strict JSON with format `azimuth-component-context`, version `1` and the string `component` equal to the registry id. `leaves` is a flat object from a dotted leaf path to `{ "type": "string" | "boolean" | "integer", "description"?: string }`. A leaf path is dot-separated names of ASCII letters, digits and `_`; hierarchy is naming only. A leaf whose name contains `password`, `secret`, `credential`, `token`, `privatekey` or `private_key` is rejected.
+
+### Conditions
+
+A Requirement or Scenario `Context: <component-id>: <leaf> = <value>` line is validated against this registry: `condition-unknown-component` when the component is not declared, `condition-unknown-leaf` when the component declares no such leaf, `condition-type-mismatch` when the value's type differs from the leaf's declared type, and `condition-conflict` when one component leaf is given two different values among the lines that hold together. Removing a leaf or a component therefore fails validation until its conditions are removed.
 
 ## Digest
 

@@ -200,6 +200,11 @@ pub fn load_assembly(
     only: &[String],
 ) -> Result<Loaded, Vec<Diag>> {
     let mut model = Model::default();
+    let mut errors = Vec::new();
+    match federation::load_component_registry(assembly) {
+        Ok(components) => model.components = components,
+        Err(mut diagnostics) => errors.append(&mut diagnostics),
+    }
     model.workspace.packages = assembly.project.packages.clone();
     model.workspace.areas = assembly
         .project
@@ -219,7 +224,6 @@ pub fn load_assembly(
         .collect();
 
     let mut warnings = Vec::new();
-    let mut errors = Vec::new();
 
     for root in &assembly.model_roots {
         match spec::load_specs(root) {
