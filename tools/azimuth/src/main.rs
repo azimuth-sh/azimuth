@@ -25,6 +25,7 @@ USAGE
     azimuth workflow assurance-targets --instance <file> --repositories <file> --snapshot <relative-ref> [--verification-targets <relative-ref>] [--out <file>]
     azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--out <file>]
     azimuth release prepare|verify|inputs --input <file> [--out <file>]
+        [--unit-rule <file>] [--checkout <dir>] [--repository <id>]   (prepare only)
     azimuth assurance deployment-status --input <file> [--out <file>]
 \
     azimuth assurance catalog --project <id> [model options] [--out <file>]
@@ -3993,11 +3994,26 @@ fn command_release(args: &[String]) -> Result<ExitCode, String> {
         .ok_or("release requires prepare, verify or inputs")?;
     let mut input = None;
     let mut out = None;
+    let mut unit_rule = None;
+    let mut checkout = None;
+    let mut repository = None;
     let mut cursor = 1;
     while cursor < args.len() {
+        if args[cursor] == "--repository" {
+            if repository
+                .replace(argument_value(args, cursor, "--repository")?)
+                .is_some()
+            {
+                return Err("`--repository` may be supplied only once".into());
+            }
+            cursor += 2;
+            continue;
+        }
         let target = match args[cursor].as_str() {
             "--input" => &mut input,
             "--out" => &mut out,
+            "--unit-rule" => &mut unit_rule,
+            "--checkout" => &mut checkout,
             other => return Err(format!("unsupported release option `{other}`")),
         };
         set_once_path(
@@ -4008,13 +4024,33 @@ fn command_release(args: &[String]) -> Result<ExitCode, String> {
         cursor += 2;
     }
     let input = input.ok_or("release requires --input")?;
+    if operation != "prepare"
+        && (unit_rule.is_some() || checkout.is_some() || repository.is_some())
+    {
+        return Err("--unit-rule, --checkout and --repository apply only to release prepare".into());
+    }
     reject_output_input_equality(out.as_ref(), std::iter::once(&input), "release")?;
     let source =
         fs::read_to_string(&input).map_err(|error| format!("{}: {error}", input.display()))?;
     let value =
         azimuth::json::parse(&source).map_err(|error| format!("{}: {error}", input.display()))?;
     let result = match operation {
-        "prepare" => azimuth::release::prepare(&value),
+        "prepare" => {
+            let units_requested = unit_rule.is_some() || checkout.is_some();
+            let prepared = if units_requested {
+                azimuth::release::with_unit_inputs(
+                    &value,
+                    &azimuth::release::UnitInputsSource {
+                        rule: unit_rule.as_deref(),
+                        checkout: checkout.as_deref().unwrap_or(std::path::Path::new(".")),
+                        repository: repository.as_deref(),
+                    },
+                )
+            } else {
+                Ok(value.clone())
+            };
+            prepared.and_then(|request| azimuth::release::prepare(&request))
+        }
         "verify" => azimuth::release::verify(&value),
         "inputs" => azimuth::release::publication_inputs(&value),
         _ => return Err("release requires prepare, verify or inputs".into()),

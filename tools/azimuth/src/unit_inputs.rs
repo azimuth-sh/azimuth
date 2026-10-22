@@ -522,6 +522,41 @@ pub fn manifest_json(inputs: &UnitInputs) -> Json {
     ])
 }
 
+pub fn release_manifest_json(inputs: &UnitInputs, repository: &str) -> Json {
+    let Json::Obj(mut pairs) = manifest_json(inputs) else {
+        unreachable!("manifest_json builds an object")
+    };
+    pairs.insert(2, ("repository".to_string(), Json::str(repository)));
+    Json::Obj(pairs)
+}
+
+/// The repository is optional so manifests produced without it stay valid; the remaining fields are
+/// validated by the assessor's manifest parser so the two cannot drift.
+pub fn validate_release_manifest(manifest: &Json) -> Result<Option<String>, String> {
+    let Json::Obj(pairs) = manifest else {
+        return Err("unit input manifest must be an object".into());
+    };
+    let repository = match manifest.get("repository") {
+        None => None,
+        Some(value) => Some(
+            value
+                .as_str()
+                .filter(|id| !id.trim().is_empty())
+                .ok_or("unit input manifest `repository` must be a nonempty string")?
+                .to_string(),
+        ),
+    };
+    let without_repository = Json::Obj(
+        pairs
+            .iter()
+            .filter(|(key, _)| key != "repository")
+            .cloned()
+            .collect(),
+    );
+    crate::deployment_status::validate_unit_manifest(&without_repository)?;
+    Ok(repository)
+}
+
 pub fn explanation_json(
     inputs: &UnitInputs,
     assigned: &BTreeMap<String, Vec<String>>,
