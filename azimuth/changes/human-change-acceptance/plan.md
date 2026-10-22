@@ -1,0 +1,3 @@
+- [x] Add the strict `acceptance.json` reader, the finding waiver and the receipt field to `change.rs`.
+- [x] Apply the record at `change finalize`, `change archive`, acceptance-scope `azimuth validate` and federated project finalization.
+- [x] Document the record in `contracts/validation.md`, `docs/change-process.md` and the outcome reference.
