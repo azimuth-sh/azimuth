@@ -1,0 +1,3 @@
+- [x] Delete `initialize`, `stage` and `publish` from `contexts.py` and the logging import they alone used.
+- [x] Drop the `context_outbox` definition, its capacity-count entry and the `contexts.publish` call from `collector.py`.
+- [x] Update the README sentence about the outboxes.
