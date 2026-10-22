@@ -988,6 +988,71 @@ pub fn compile(
     seal(&mut output)?;
     Ok(output)
 }
+const SEALED_DIRECTORY: &str = "reviews";
+
+/// Writes each compiled native record next to its Markdown source as the committed sealed JSON that
+/// the ratification gate reads. A Markdown file holding one review seals to `<stem>.json`; one
+/// holding several seals each to `<stem>.<review-id>.json`, so every name is derivable from the source.
+pub fn seal_records(
+    root: &Path,
+    paths: &[String],
+    bundle: &Json,
+    replace: bool,
+) -> Result<Vec<std::path::PathBuf>, String> {
+    let compiled = array(bundle, "records")?;
+    let directory = root.join(SEALED_DIRECTORY);
+    let mut targets: Vec<(std::path::PathBuf, Json)> = Vec::new();
+    for name in paths {
+        let source = fs::read_to_string(relative(root, name)?).map_err(|e| e.to_string())?;
+        let parsed = parse(&source).map_err(|e| format!("{name}: {e}"))?;
+        let stem = Path::new(name)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .ok_or_else(|| format!("{name}: no file stem"))?;
+        for review in &parsed {
+            let record = compiled
+                .iter()
+                .find(|entry| entry.get("id").and_then(Json::as_str) == Some(review.id.as_str()))
+                .and_then(|entry| entry.get("record"))
+                .ok_or_else(|| format!("{name}: compiled record for {} missing", review.id))?;
+            let file = if parsed.len() == 1 {
+                format!("{stem}.json")
+            } else {
+                format!("{stem}.{}.json", review.id)
+            };
+            let target = directory.join(file);
+            if targets.iter().any(|(existing, _)| *existing == target) {
+                return Err(format!("{}: two reviews seal to the same file", target.display()));
+            }
+            targets.push((target, record.clone()));
+        }
+    }
+    for (target, record) in &targets {
+        match fs::read_to_string(target) {
+            Ok(existing) => {
+                let same = crate::json::parse(&existing).is_ok_and(|found| found == *record);
+                if !same && !replace {
+                    return Err(format!(
+                        "{} holds a different sealed record; pass --replace-sealed to overwrite it",
+                        target.display()
+                    ));
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("{}: {error}", target.display())),
+        }
+    }
+    fs::create_dir_all(&directory).map_err(|e| format!("{}: {e}", directory.display()))?;
+    let mut written = Vec::new();
+    for (target, record) in targets {
+        let content = format!("{}\n", record.to_string_pretty());
+        if fs::read_to_string(&target).ok().as_deref() != Some(content.as_str()) {
+            fs::write(&target, content).map_err(|e| format!("{}: {e}", target.display()))?;
+        }
+        written.push(target);
+    }
+    Ok(written)
+}
 fn exact(v: &Json, keys: &[&str]) -> Result<(), String> {
     let Json::Obj(fields) = v else {
         return Err("expected object".into());
