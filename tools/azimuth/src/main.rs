@@ -24,8 +24,7 @@ USAGE
     azimuth workflow next|verify --instance <file> --repositories <file> [--out <file>]
     azimuth workflow assurance-targets --instance <file> --repositories <file> --snapshot <relative-ref> [--verification-targets <relative-ref>] [--out <file>]
     azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--out <file>]
-    azimuth release project --baseline-revision <sha256> --change <dir>... [model options]
-    azimuth release compose|prepare|verify|inputs --input <file> [--model-out <absent directory>] [--out <file>]
+    azimuth release prepare|verify|inputs --input <file> [--out <file>]
     azimuth assurance deployment-status --input <file> [--out <file>]
 \
     azimuth assurance catalog --project <id> [model options] [--out <file>]
@@ -3846,59 +3845,14 @@ fn command_release(args: &[String]) -> Result<ExitCode, String> {
     let operation = args
         .first()
         .map(String::as_str)
-        .ok_or("release requires compose, prepare, verify or inputs")?;
-    if operation == "project" {
-        let mut baseline = None;
-        let mut changes = Vec::new();
-        let mut options = Vec::new();
-        let mut cursor = 1;
-        while cursor < args.len() {
-            match args[cursor].as_str() {
-                "--baseline-revision" => {
-                    if baseline
-                        .replace(argument_value(args, cursor, "--baseline-revision")?.to_string())
-                        .is_some()
-                    {
-                        return Err("duplicate --baseline-revision".into());
-                    }
-                    cursor += 2;
-                }
-                "--change" => {
-                    changes.push(PathBuf::from(argument_value(args, cursor, "--change")?));
-                    cursor += 2;
-                }
-                _ => {
-                    options.push(args[cursor].clone());
-                    cursor += 1;
-                }
-            }
-        }
-        if changes.is_empty() {
-            return Err("release project requires --change".into());
-        }
-        let options = parse_options(&options, false)?;
-        if options.project.is_some() || options.workset.is_some() || !options.only.is_empty() {
-            return Err("release project requires an explicit complete model directory, not a selected or federated overlay".into());
-        }
-        let loaded = load_validation_inputs(&options)?;
-        let request = azimuth::release::project(
-            &loaded.model,
-            &options.model,
-            &changes,
-            &baseline.ok_or("release project requires --baseline-revision")?,
-        )?;
-        publish_output(request.to_string_pretty().as_bytes(), options.out.as_ref())?;
-        return Ok(ExitCode::SUCCESS);
-    }
+        .ok_or("release requires prepare, verify or inputs")?;
     let mut input = None;
     let mut out = None;
-    let mut model_out = None;
     let mut cursor = 1;
     while cursor < args.len() {
         let target = match args[cursor].as_str() {
             "--input" => &mut input,
             "--out" => &mut out,
-            "--model-out" if operation == "compose" => &mut model_out,
             other => return Err(format!("unsupported release option `{other}`")),
         };
         set_once_path(
@@ -3915,16 +3869,12 @@ fn command_release(args: &[String]) -> Result<ExitCode, String> {
     let value =
         azimuth::json::parse(&source).map_err(|error| format!("{}: {error}", input.display()))?;
     let result = match operation {
-        "compose" => azimuth::release::compose(&value),
         "prepare" => azimuth::release::prepare(&value),
         "verify" => azimuth::release::verify(&value),
         "inputs" => azimuth::release::publication_inputs(&value),
-        _ => return Err("release requires compose, prepare, verify or inputs".into()),
+        _ => return Err("release requires prepare, verify or inputs".into()),
     }
     .map_err(|error| format!("{}:1: {error}", input.display()))?;
-    if let Some(directory) = model_out {
-        azimuth::release::materialize(&result, &directory)?;
-    }
     publish_output(result.to_string_pretty().as_bytes(), out.as_ref())?;
     Ok(ExitCode::SUCCESS)
 }
