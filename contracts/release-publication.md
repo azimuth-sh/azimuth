@@ -39,7 +39,11 @@ pull request with an approving review from an owner, read through the hosting AP
 credential. Failing a check is published with `ratification.status: "unratified"` and a reason, and is
 displayed that way. The service stores the verdict as submitted; it cannot call the hosting API and does
 not re-verify it. Branch protection is not assumed. Ratification is separate from release: an unratified
-model can be published, observed and assessed, and is shown as unratified.
+model can be published, observed and assessed, and is shown as unratified. `ratified` records who
+approved the merge and that the sealed records are present; it does not assert that every review is
+current. Review currency is assessed per Requirement against the merged model, so a publication can be
+ratified while a review it carries is `stale` (for example right after the pull request that changed
+that Requirement, before its re-review).
 
 ## Publication request
 
