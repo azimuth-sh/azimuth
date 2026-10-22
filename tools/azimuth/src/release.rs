@@ -81,6 +81,50 @@ fn fingerprint(value: &Json) -> Result<String, String> {
     crate::run::canonical_fingerprint(value)
 }
 
+pub struct UnitInputsSource<'a> {
+    pub rule: Option<&'a std::path::Path>,
+    pub checkout: &'a std::path::Path,
+    pub repository: Option<&'a str>,
+}
+
+/// Computes the release unit-input manifest for one source checkout. Without a partition rule the
+/// request is returned unchanged, because unit reuse is opt-in.
+pub fn with_unit_inputs(request: &Json, source: &UnitInputsSource) -> Result<Json, String> {
+    let default_rule = source.checkout.join("azimuth/standards/units.json");
+    let rule_path = match source.rule {
+        Some(path) => path,
+        None if default_rule.is_file() => &default_rule,
+        None => return Ok(request.clone()),
+    };
+    if request.get("unit_inputs").is_some() {
+        return Err("request already carries unit_inputs; remove it or drop the unit rule".into());
+    }
+    let repository = match source.repository {
+        Some(repository) => repository.to_string(),
+        None => match array(request, "sources")? {
+            [only] => text(only, "repository")?.to_string(),
+            _ => return Err("release has several sources; name the checkout's with --repository".into()),
+        },
+    };
+    if !array(request, "sources")?
+        .iter()
+        .any(|source| text(source, "repository").is_ok_and(|id| id == repository))
+    {
+        return Err(format!("`{repository}` is not a release source"));
+    }
+    let rule = crate::unit_inputs::load_rule(rule_path)?;
+    let files = crate::unit_inputs::read_checkout(source.checkout)?;
+    let inputs = crate::unit_inputs::compute_inputs(&rule, &files);
+    let Json::Obj(mut pairs) = request.clone() else {
+        return Err("expected object".into());
+    };
+    pairs.push((
+        "unit_inputs".to_string(),
+        crate::unit_inputs::release_manifest_json(&inputs, &repository),
+    ));
+    Ok(Json::Obj(pairs))
+}
+
 pub fn prepare(request: &Json) -> Result<Json, String> {
     shape(
         request,
@@ -216,9 +260,10 @@ pub fn verify(value: &Json) -> Result<Json, String> {
             "components",
         ],
     )?;
-    if let Some(manifest) = release.get("unit_inputs") {
-        crate::deployment_status::validate_unit_manifest(manifest)?;
-    }
+    let manifest_repository = match release.get("unit_inputs") {
+        Some(manifest) => crate::unit_inputs::validate_release_manifest(manifest)?,
+        None => None,
+    };
     id(release, "label")?;
     if release.get("baseline_model_revision").is_some() {
         digest_field(release, "baseline_model_revision")?;
@@ -294,6 +339,11 @@ pub fn verify(value: &Json) -> Result<Json, String> {
     }
     if repositories.is_empty() {
         return Err("release sources must be explicit".into());
+    }
+    if let Some(repository) = manifest_repository {
+        if !repositories.contains(&repository) {
+            return Err("unit input manifest repository is not a release source".into());
+        }
     }
     let mut artifacts = BTreeSet::new();
     for artifact in array(release, "artifacts")? {

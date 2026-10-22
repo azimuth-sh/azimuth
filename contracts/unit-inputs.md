@@ -49,12 +49,13 @@ Adapters report every executed test of a unit with its defining source file. Eac
 
 ## Release unit-input manifest
 
-`azimuth release prepare` computes, from the release's source checkouts, the manifest carried in the release as `unit_inputs`:
+`azimuth release prepare` computes, from one source checkout, the manifest carried in the release as `unit_inputs`. It does so when a partition rule is available (`--unit-rule <file>`, or `azimuth/standards/units.json` under `--checkout <dir>`) and the request carries no `unit_inputs`; without a rule the field stays absent and nothing else changes. `--repository <id>` names the release source the checkout belongs to and may be omitted only when the release has exactly one source.
 
 ```json
 {
   "format": "azimuth-unit-input-manifest",
   "version": 1,
+  "repository": "<release-source-id>",
   "rule_fingerprint": "sha256:<rule-fingerprint>",
   "units": [
     {"id": "ingress-admission", "input_fingerprint": "sha256:<unit-input-fingerprint>", "hermetic": true}
@@ -62,7 +63,7 @@ Adapters report every executed test of a unit with its defining source file. Eac
 }
 ```
 
-Units sort by id and are unique. The Azimuth Assurance Service stores the manifest with the release, keyed by the release fingerprint.
+`repository` is optional: it is the release source id the rule was computed for and must be one of the release's sources. A manifest without it names no repository, so reuse is limited to Checks whose build inputs are one repository; with it, a unit result is reusable for a Check only when the Run's source for that repository is the manifest's `repository`. Units sort by id and are unique. The Azimuth Assurance Service stores the manifest with the release, keyed by the release fingerprint.
 
 ## Reuse in applicability
 
