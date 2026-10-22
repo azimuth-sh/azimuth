@@ -130,6 +130,37 @@ export interface VerificationTargetState {
     challenges?: unknown;
   }>;
 }
+export interface ModelRevision {
+  revision: string;
+  selected: boolean;
+}
+export interface ReleaseIntegration {
+  commit: string;
+  main_sequence: number;
+}
+export interface ReleaseModelReference {
+  fingerprint?: string;
+  label: string;
+  model_revision: string;
+  integration: ReleaseIntegration | null;
+}
+export interface ReleaseSummary {
+  fingerprint: string;
+  release: ReleaseModelReference;
+}
+export interface ReleaseDetail {
+  publication: { release: ReleaseModelReference };
+}
+export interface DeploymentReference {
+  deployment: { id: string; environment: string; verification_target_fingerprint?: string };
+  release_fingerprint: string;
+}
+export interface DefaultAuthority {
+  commit: string;
+  main_sequence: number;
+  ratification_status: string;
+  [key: string]: unknown;
+}
 export async function readProject<T>(
   project: string,
   path: string,
