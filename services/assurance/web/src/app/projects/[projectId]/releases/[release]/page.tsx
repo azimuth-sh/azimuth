@@ -5,6 +5,8 @@ import { readProject, routeFingerprint } from "@/lib/assurance";
 import { requireViewer } from "@/lib/auth";
 import { environmentView, requirementStatus } from "@/lib/production";
 import { CopyValue } from "@/components/copy-value";
+import { DeploymentCheckRuns, ReleaseCheckRuns } from "@/components/check-runs";
+import { readDeploymentChecks, readReleaseChecks } from "@/lib/checks-run";
 
 export const dynamic = "force-dynamic";
 type Identity = Record<string, unknown>;
@@ -60,6 +62,11 @@ export default async function ReleasePage({ params, searchParams }: {
   const counts = { supported: 0, violated: 0, unresolved: 0 };
   for (const requirement of requirements) counts[requirementStatus(requirement.status)]++;
   const components = release.components ?? [];
+  const selectedDeploymentId = selectedRelease ? environmentState.deployment?.deployment.id : undefined;
+  const [releaseChecks, deploymentChecks] = await Promise.all([
+    readReleaseChecks(projectId, fingerprint),
+    selectedDeploymentId ? readDeploymentChecks(projectId, selectedDeploymentId) : Promise.resolve(null),
+  ]);
   const modelUrl = `${root}/model?environment=${encodeURIComponent(environment)}&revision=${encodeURIComponent(release.model_revision)}${selectedRelease && environmentState.verificationTarget ? `&verification-target=${encodeURIComponent(environmentState.verificationTarget)}` : ""}`;
   return <div className="dashboard releaseWorkspace">
     <nav className="pageBreadcrumb" aria-label="Breadcrumb"><Link href={`${root}/releases?environment=${encodeURIComponent(environment)}`}>Releases</Link><span>/</span><span>{release.label}</span></nav>
@@ -110,6 +117,9 @@ export default async function ReleasePage({ params, searchParams }: {
             {!ratification && <p className="modelDetailMuted">Not on main</p>}
           </> : <p>This release was published without an integration attestation.</p>}
         </section>
+        {releaseChecks && <ReleaseCheckRuns requirements={releaseChecks} />}
+        {selectedDeploymentId && deploymentChecks ? <DeploymentCheckRuns environment={environment} deploymentId={selectedDeploymentId} requirements={deploymentChecks} />
+          : <section className="dashboardPanel"><header className="panelHeading"><div><h2>Runs relied on</h2><p>Appears per environment once this release is deployed there. Select an environment where it runs to see it.</p></div></header></section>}
         {/* C4: delivery-gap and rollback-candidate panels go here. */}
       </aside>
     </div>
