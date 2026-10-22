@@ -69,11 +69,13 @@ Typed harness report format is the shared `azimuth-test-report` version 1.
 
 ## Contexts and explicit partitions
 
-`contexts` in the mapping lists the exact context contract fingerprints required by the test.
+`contexts` in the mapping lists the required context leaves per component as
+`[{"component": "api", "leaves": ["auth.registered_schemes"]}]`; a component serves one context named by
+its id and leaves are dotted names. A mapping that still lists contract fingerprints is rejected.
 Captures require identical before/after process-lifetime identity and selected effective values.
 The planned required Execution Context must already contain
-`context/<contract-fingerprint>/activity/<activity-id>` with the canonical SHA-256 fingerprint of
-`{contract_revision, values}`. `activity_identity(check, unit, ordinal)` derives the stable ID
+`context/<component>/<leaf>/activity/<activity-id>` for every required leaf, with the canonical
+SHA-256 fingerprint of that leaf's scalar value. `activity_identity(check, unit, ordinal)` derives the stable ID
 from the exact mapped Check, unit and zero-based attempt ordinal. No ambient setting is inferred.
 Capture diagnostics make outcomes inconclusive. Contracts and secret-field declarations are
 validated by core/ASS; adapters do not manufacture contract acceptance.
@@ -93,7 +95,7 @@ actual body interval, rather than a fictitious whole-suite interval. Native prod
 use `activity:null` only when a genuine capture brackets the entire Run.
 
 A Check's reviewed deployment policy may pin an exact `units` inventory and explicitly declare
-`controls:[{unit,contexts:[contractFingerprint]}]`. Only those unit/contract pairs may intentionally
+`controls:[{unit,contexts:[{component,leaves}]}]`. Only those unit/leaf pairs may intentionally
 differ from deployed context; their capture stability and Run context pins are still required.
 The full declared unit inventory must match both plan and execution. Controls cannot alone
 establish positive Scenario support. The adapter never infers controls from mismatching settings.
