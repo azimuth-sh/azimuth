@@ -88,7 +88,12 @@ pub(super) async fn publish(
         )
         .await?;
     }
-    for change in array(release, "changes")? {
+    let no_changes = Vec::new();
+    let changes = match release.get("changes") {
+        None | Some(Value::Null) => &no_changes,
+        Some(_) => array(release, "changes")?,
+    };
+    for change in changes {
         let key = format!("{fingerprint}|{}", text(change, "id")?);
         crate::relational::store(&mut *tx, "change", &project, &key, change).await?;
         sqlx::query("INSERT INTO release_changes(project,release_fingerprint,change_id,change_revision) VALUES($1,$2,$3,$4)")
