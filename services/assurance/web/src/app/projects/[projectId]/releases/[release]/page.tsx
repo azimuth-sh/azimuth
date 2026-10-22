@@ -8,10 +8,11 @@ import { CopyValue } from "@/components/copy-value";
 
 export const dynamic = "force-dynamic";
 type Identity = Record<string, unknown>;
+type Ratification = { status: "ratified" | "unratified"; reason?: string; pull_request?: string | number; verified_at_ms: number };
 type Release = {
   fingerprint: string;
   label: string;
-  integration: { commit: string; main_sequence: number } | null;
+  integration: { commit: string; main_sequence: number; ratification: Ratification | null } | null;
   model_revision: string;
   changes: Identity[];
   sources: Identity[];
@@ -48,6 +49,9 @@ export default async function ReleasePage({ params, searchParams }: {
   }>(projectId, `/releases/${encodeURIComponent(fingerprint)}`);
   if (!record) notFound();
   const release = record.publication.release;
+  const ratification = release.integration?.ratification ?? null;
+  const commit = release.integration?.commit.slice(0, 8) ?? "";
+  const pullRequest = ratification?.pull_request === undefined ? null : String(ratification.pull_request);
   const root = `/projects/${encodeURIComponent(projectId)}`;
   const environmentState = await environmentView(projectId, null, environment);
   const selectedRelease = environmentState.deployment?.release_fingerprint === fingerprint;
@@ -99,7 +103,12 @@ export default async function ReleasePage({ params, searchParams }: {
         </section>
         <section className="dashboardPanel releaseAssessment">
           <p className="overline">INTEGRATION</p><h2>{release.integration ? `Integrated at commit ${release.integration.commit.slice(0, 8)}` : "No integration recorded"}</h2>
-          <p>{release.integration ? `Main sequence ${release.integration.main_sequence}. Ratification of the model change is recorded in Git and shown with the main publication.` : "This release was published without an integration attestation."}</p>
+          {release.integration ? <>
+            <p>Main sequence {release.integration.main_sequence}.</p>
+            {ratification?.status === "ratified" && <p><span className="badge good">Ratified at {commit} — verified by CI</span></p>}
+            {ratification?.status === "unratified" && <p><span className="badge neutral">Unratified</span>{ratification.reason ? ` ${ratification.reason}` : ""}{pullRequest && (/^https?:\/\//.test(pullRequest) ? <> · <a className="textLink" href={pullRequest} rel="noreferrer">Pull request ↗</a></> : ` · Pull request ${pullRequest}`)}</p>}
+            {!ratification && <p className="modelDetailMuted">Not on main</p>}
+          </> : <p>This release was published without an integration attestation.</p>}
         </section>
         {/* C4: delivery-gap and rollback-candidate panels go here. */}
       </aside>
