@@ -323,6 +323,7 @@ impl Assembly {
         }
         let mut findings = crate::validation::validate(&loaded.model);
         let mut acceptances = Vec::new();
+        let mut reviews = Vec::new();
         for change in &self.changes {
             let Some(repository) = self
                 .repositories
@@ -337,8 +338,13 @@ impl Assembly {
             {
                 acceptances.push(acceptance);
             }
+            reviews.extend(
+                crate::change::read_reviews(&repository.root.join(&change.path))
+                    .map_err(|errors| errors.join("\n"))?,
+            );
         }
-        crate::change::waive_accepted_requirements(&mut findings, &acceptances);
+        let ratified = crate::change::ratifications(&loaded.model, &acceptances, &reviews)?;
+        crate::change::waive_accepted_requirements(&mut findings, &acceptances, &ratified);
         let summary = crate::validation::summarize(&loaded.model, &findings);
         if summary.errors > 0 || summary.warnings > 0 {
             return Err(format!(
@@ -346,7 +352,7 @@ impl Assembly {
                 summary.errors, summary.warnings
             ));
         }
-        let (model_fingerprint, _) = crate::change::finalization(&loaded.model, &findings, &[]);
+        let (model_fingerprint, _) = crate::change::finalization(&loaded.model, &findings, &[], &[]);
         let repositories = self
             .repositories
             .iter()

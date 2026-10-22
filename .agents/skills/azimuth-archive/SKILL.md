@@ -27,7 +27,9 @@ azimuth change finalize <id> [model and manifest options]
 azimuth change archive <id> --date YYYY-MM-DD [model and manifest options]
 ```
 
-Finalization fingerprints the accepted model. Archive must fail if that fingerprint is stale.
+Finalization fingerprints the accepted model. Archive must fail if that fingerprint is stale. Run both on the pull-request branch against the model merged with current `main`; the merge to `main` then updates the current model, so a rebase that changes the model requires finalizing again.
+
+A non-routine Requirement accepted without a locally authored Requirement Status needs both an accepted Requirement Review committed under `reviews/` and `acceptance.json`. Finalization reassesses each committed review against the merged model; a stale review blocks ratification until it is re-reviewed and recommitted. An agent never writes `acceptance.json` on its own initiative.
 
 ## Federated acceptance
 
