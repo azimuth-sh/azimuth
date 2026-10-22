@@ -18,6 +18,12 @@ fn array<'a>(value: &'a Json, name: &str) -> Result<&'a [Json], String> {
         .as_array()
         .ok_or_else(|| format!("`{name}` must be an array"))
 }
+fn optional_array<'a>(value: &'a Json, name: &str) -> Result<&'a [Json], String> {
+    match value.get(name) {
+        None => Ok(&[]),
+        Some(_) => array(value, name),
+    }
+}
 fn shape(value: &Json, required: &[&str], optional: &[&str]) -> Result<(), String> {
     let Json::Obj(pairs) = value else {
         return Err("expected object".into());
@@ -83,8 +89,6 @@ pub fn prepare(request: &Json) -> Result<Json, String> {
             "version",
             "project",
             "label",
-            "baseline_model_revision",
-            "changes",
             "sources",
             "builds",
             "artifacts",
@@ -92,7 +96,15 @@ pub fn prepare(request: &Json) -> Result<Json, String> {
             "snapshot",
             "evidence",
         ],
-        &["catalog", "composition", "required_reviews", "components"],
+        &[
+            "baseline_model_revision",
+            "changes",
+            "integration",
+            "catalog",
+            "composition",
+            "required_reviews",
+            "components",
+        ],
     )?;
     if text(request, "format")? != "azimuth-release-request"
         || field(request, "version")?.as_num() != Some(2.0)
@@ -102,15 +114,16 @@ pub fn prepare(request: &Json) -> Result<Json, String> {
     let mut release = vec![
         ("label", field(request, "label")?.clone()),
         (
-            "baseline_model_revision",
-            field(request, "baseline_model_revision")?.clone(),
-        ),
-        (
             "model_revision",
             field(field(request, "snapshot")?, "model_revision")?.clone(),
         ),
     ];
-    for key in ["changes", "sources", "builds", "artifacts", "deployments"] {
+    for key in ["baseline_model_revision", "changes", "integration"] {
+        if let Some(value) = request.get(key) {
+            release.push((key, value.clone()));
+        }
+    }
+    for key in ["sources", "builds", "artifacts", "deployments"] {
         release.push((key, field(request, key)?.clone()));
     }
     if let Some(components) = request.get("components") {
@@ -186,18 +199,28 @@ pub fn verify(value: &Json) -> Result<Json, String> {
         &[
             "fingerprint",
             "label",
-            "baseline_model_revision",
             "model_revision",
-            "changes",
             "sources",
             "builds",
             "artifacts",
             "deployments",
         ],
-        &["composition", "required_reviews", "components"],
+        &[
+            "baseline_model_revision",
+            "changes",
+            "integration",
+            "composition",
+            "required_reviews",
+            "components",
+        ],
     )?;
     id(release, "label")?;
-    digest_field(release, "baseline_model_revision")?;
+    if release.get("baseline_model_revision").is_some() {
+        digest_field(release, "baseline_model_revision")?;
+    }
+    if let Some(integration) = release.get("integration") {
+        verify_integration(integration)?;
+    }
     digest_field(release, "model_revision")?;
     if release.get("model_revision") != snapshot.get("model_revision") {
         return Err("release model differs from snapshot".into());
@@ -216,7 +239,7 @@ pub fn verify(value: &Json) -> Result<Json, String> {
         return Err("release fingerprint mismatch".into());
     }
     let mut change_ids = BTreeSet::new();
-    for change in array(release, "changes")? {
+    for change in optional_array(release, "changes")? {
         shape(change, &["id", "revision"], &["metadata"])?;
         if let Some(metadata) = change.get("metadata") {
             verify_change_metadata(metadata)?;
@@ -225,9 +248,6 @@ pub fn verify(value: &Json) -> Result<Json, String> {
         if !change_ids.insert(id(change, "id")?) {
             return Err("duplicate Change identity".into());
         }
-    }
-    if change_ids.is_empty() {
-        return Err("release must explicitly include at least one Change".into());
     }
     if let Some(components) = release.get("components") {
         let components = components.as_array().ok_or("components requires array")?;
@@ -392,7 +412,8 @@ pub fn verify(value: &Json) -> Result<Json, String> {
     }
     if let Some(composition) = release.get("composition") {
         verify_composition(composition)?;
-        if composition.get("baseline_model_revision") != release.get("baseline_model_revision")
+        if release.get("baseline_model_revision").is_none()
+            || composition.get("baseline_model_revision") != release.get("baseline_model_revision")
             || change_pairs(composition)? != change_pairs(release)?
         {
             return Err("release composition baseline/Changes differ from release".into());
@@ -685,121 +706,6 @@ fn facet_path(value: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn compose(request: &Json) -> Result<Json, String> {
-    shape(
-        request,
-        &[
-            "format",
-            "version",
-            "baseline_model_revision",
-            "files",
-            "changes",
-        ],
-        &[],
-    )?;
-    if text(request, "format")? != "azimuth-release-composition-request"
-        || field(request, "version")?.as_num() != Some(1.0)
-    {
-        return Err("expected azimuth-release-composition-request version 1".into());
-    }
-    digest_field(request, "baseline_model_revision")?;
-    let mut files = BTreeMap::new();
-    for file in array(request, "files")? {
-        shape(file, &["path", "content"], &[])?;
-        let path = text(file, "path")?;
-        facet_path(path)?;
-        let content = field(file, "content")?
-            .as_str()
-            .ok_or("facet content must be a string")?;
-        if files
-            .insert(path.to_string(), content.to_string())
-            .is_some()
-        {
-            return Err(format!("duplicate baseline facet `{path}`"));
-        }
-    }
-    let baseline_content = tree_fingerprint(&files)?;
-    let mut writes = BTreeSet::new();
-    let mut changes = Vec::new();
-    let mut change_ids = BTreeSet::new();
-    for change in array(request, "changes")? {
-        shape(change, &["id", "revision", "files"], &[])?;
-        let change_id = id(change, "id")?;
-        digest_field(change, "revision")?;
-        if !change_ids.insert(change_id.clone()) {
-            return Err(format!("duplicate Change `{change_id}`"));
-        }
-        if array(change, "files")?.is_empty() {
-            return Err(format!("Change `{change_id}` has no facet transformations"));
-        }
-        for file in array(change, "files")? {
-            shape(file, &["path", "before_fingerprint", "content"], &[])?;
-            let path = text(file, "path")?;
-            facet_path(path)?;
-            if !writes.insert(path.to_string()) {
-                return Err(format!("composition conflict at `{path}`; rebase the Changes locally and reassess affected reviews"));
-            }
-            let before = files.get(path).map(|content| {
-                format!("sha256:{}", crate::fingerprint::sha256(content.as_bytes()))
-            });
-            let expected = match field(file, "before_fingerprint")? {
-                Json::Null => None,
-                Json::Str(value) => {
-                    digest(value)?;
-                    Some(value.clone())
-                }
-                _ => {
-                    return Err(
-                        "before_fingerprint must be sha256 or null for an absent facet".into(),
-                    )
-                }
-            };
-            if before != expected {
-                return Err(format!("baseline drift at `{path}` in Change `{change_id}`; regenerate its projection locally"));
-            }
-            match field(file, "content")? {
-                Json::Null => {
-                    if files.remove(path).is_none() {
-                        return Err(format!("cannot delete absent facet `{path}`"));
-                    }
-                }
-                Json::Str(content) => {
-                    files.insert(path.to_string(), content.clone());
-                }
-                _ => {
-                    return Err(
-                        "projected facet content must be a string or null for deletion".into(),
-                    )
-                }
-            }
-        }
-        changes.push(Json::obj(vec![
-            ("id", Json::str(change_id)),
-            ("revision", field(change, "revision")?.clone()),
-        ]));
-    }
-    if changes.is_empty() {
-        return Err("composition requires explicit Changes".into());
-    }
-    let body = Json::obj(vec![
-        ("format", Json::str("azimuth-release-composition")),
-        ("version", Json::Num(1.0)),
-        (
-            "baseline_model_revision",
-            field(request, "baseline_model_revision")?.clone(),
-        ),
-        ("baseline_content_fingerprint", Json::str(baseline_content)),
-        ("changes", Json::Arr(changes)),
-        ("files", files_json(&files)),
-        ("content_fingerprint", Json::str(tree_fingerprint(&files)?)),
-    ]);
-    let hash = fingerprint(&body)?;
-    let Json::Obj(mut fields) = body else {
-        unreachable!()
-    };
-    fields.push(("fingerprint".into(), Json::str(hash)));
-    Ok(Json::Obj(fields))
-}
 fn files_json(files: &BTreeMap<String, String>) -> Json {
     Json::Arr(
         files
@@ -879,182 +785,8 @@ pub fn verify_composition(value: &Json) -> Result<(), String> {
     Ok(())
 }
 
-pub fn materialize(composition: &Json, target: &std::path::Path) -> Result<(), String> {
-    verify_composition(composition)?;
-    if target.exists() || target.symlink_metadata().is_ok() {
-        return Err(
-            "--model-out must be an absent directory; accepted model files are never overwritten"
-                .into(),
-        );
-    }
-    let parent = target
-        .parent()
-        .filter(|v| !v.as_os_str().is_empty())
-        .unwrap_or(std::path::Path::new("."));
-    let parent = parent
-        .canonicalize()
-        .map_err(|e| format!("model output parent: {e}"))?;
-    let name = target
-        .file_name()
-        .ok_or("model output requires directory name")?;
-    let destination = parent.join(name);
-    std::fs::create_dir(&destination).map_err(|e| format!("{}: {e}", destination.display()))?;
-    for file in array(composition, "files")? {
-        let path = destination.join(text(file, "path")?);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        std::fs::write(
-            &path,
-            field(file, "content")?
-                .as_str()
-                .ok_or("facet content must be a string")?,
-        )
-        .map_err(|e| format!("{}: {e}", path.display()))?;
-    }
-    Ok(())
-}
-
-fn collect_files(
-    root: &std::path::Path,
-    relative: &std::path::Path,
-    facets: bool,
-    output: &mut BTreeMap<String, String>,
-) -> Result<(), String> {
-    let directory = root.join(relative);
-    for entry in std::fs::read_dir(&directory)
-        .map_err(|error| format!("{}: {error}", directory.display()))?
-    {
-        let entry = entry.map_err(|error| error.to_string())?;
-        let name = entry.file_name();
-        if name == ".azimuth" || name == ".git" {
-            continue;
-        }
-        let path = relative.join(&name);
-        let kind = entry.file_type().map_err(|error| error.to_string())?;
-        if kind.is_symlink() {
-            return Err(format!(
-                "{}: symbolic links cannot define release inputs",
-                root.join(&path).display()
-            ));
-        }
-        if kind.is_dir() {
-            collect_files(root, &path, facets, output)?;
-        } else if kind.is_file() {
-            if facets
-                && !matches!(
-                    name.to_str(),
-                    Some("spec.md" | "design.md" | "verification.md")
-                )
-            {
-                continue;
-            }
-            let source = std::fs::read(root.join(&path)).map_err(|error| error.to_string())?;
-            let value = if facets {
-                String::from_utf8(source).map_err(|error| error.to_string())?
-            } else {
-                format!("sha256:{}", crate::fingerprint::sha256(&source))
-            };
-            output.insert(path.to_string_lossy().replace('\\', "/"), value);
-        } else {
-            return Err(format!(
-                "{}: expected a regular file or directory",
-                root.join(&path).display()
-            ));
-        }
-    }
-    Ok(())
-}
-
-pub fn project(
-    model: &crate::model::Model,
-    model_root: &std::path::Path,
-    roots: &[std::path::PathBuf],
-    baseline_revision: &str,
-) -> Result<Json, String> {
-    digest(baseline_revision)?;
-    let mut baseline = BTreeMap::new();
-    collect_files(model_root, std::path::Path::new(""), true, &mut baseline)?;
-    let mut changes = Vec::new();
-    for root in roots {
-        let report = crate::change::inspect(root, model).map_err(|errors| errors.join("\n"))?;
-        let intent =
-            crate::intent::project(root, model_root, model).map_err(|errors| errors.join("\n"))?;
-        let account = crate::account_delta::project_new_modules(&root.join("deltas"), model_root)
-            .map_err(|errors| errors.join("\n"))?;
-        let mut authored = BTreeMap::new();
-        collect_files(root, std::path::Path::new(""), false, &mut authored)?;
-        let revision = tree_fingerprint(&authored)?;
-        let mut files = Vec::new();
-        for (path, before, after) in intent
-            .files
-            .into_iter()
-            .map(|file| {
-                let before = if file.path.exists() {
-                    Some(file.before)
-                } else {
-                    None
-                };
-                (
-                    file.path,
-                    before,
-                    if file.after.is_empty() {
-                        None
-                    } else {
-                        Some(file.after)
-                    },
-                )
-            })
-            .chain(
-                account
-                    .files
-                    .into_iter()
-                    .map(|file| (file.path, file.before, Some(file.after))),
-            )
-        {
-            if before == after {
-                continue;
-            }
-            let relative = path
-                .strip_prefix(model_root)
-                .map_err(|_| "projected facet lies outside model root")?
-                .to_string_lossy()
-                .replace('\\', "/");
-            files.push(Json::obj(vec![
-                ("path", Json::str(relative)),
-                (
-                    "before_fingerprint",
-                    before
-                        .map(|text| {
-                            Json::str(format!(
-                                "sha256:{}",
-                                crate::fingerprint::sha256(text.as_bytes())
-                            ))
-                        })
-                        .unwrap_or(Json::Null),
-                ),
-                ("content", after.map(Json::str).unwrap_or(Json::Null)),
-            ]));
-        }
-        changes.push(Json::obj(vec![
-            ("id", Json::str(&report.id)),
-            ("revision", Json::str(revision)),
-            ("files", Json::Arr(files)),
-        ]));
-    }
-    let request = Json::obj(vec![
-        ("format", Json::str("azimuth-release-composition-request")),
-        ("version", Json::Num(1.0)),
-        ("baseline_model_revision", Json::str(baseline_revision)),
-        ("files", files_json(&baseline)),
-        ("changes", Json::Arr(changes)),
-    ]);
-    compose(&request)?;
-    Ok(request)
-}
-
 fn change_pairs(value: &Json) -> Result<BTreeMap<String, String>, String> {
-    array(value, "changes")?
+    optional_array(value, "changes")?
         .iter()
         .map(|change| {
             Ok((
@@ -1063,6 +795,17 @@ fn change_pairs(value: &Json) -> Result<BTreeMap<String, String>, String> {
             ))
         })
         .collect()
+}
+fn verify_integration(value: &Json) -> Result<(), String> {
+    shape(value, &["commit", "main_sequence"], &[])?;
+    let commit = text(value, "commit")?;
+    if !matches!(commit.len(), 40 | 64) || !commit.bytes().all(|v| v.is_ascii_hexdigit()) {
+        return Err("integration commit must be a full Git ID".into());
+    }
+    match field(value, "main_sequence")?.as_num() {
+        Some(sequence) if sequence >= 1.0 && sequence.fract() == 0.0 => Ok(()),
+        _ => Err("integration main_sequence must be a positive integer".into()),
+    }
 }
 fn verify_change_metadata(value: &Json) -> Result<(), String> {
     shape(value, &[], &["request", "repositories", "contributions"])?;
@@ -1142,7 +885,7 @@ fn portable_evidence(value: &Json, at: &str, unavailable: &BTreeSet<String>) -> 
 }
 
 pub fn publication_inputs(value: &Json) -> Result<Json, String> {
-    shape(value, &["format", "version", "request", "composition"], &[])?;
+    shape(value, &["format", "version", "request"], &["composition"])?;
     if text(value, "format")? != "azimuth-publication-inputs"
         || field(value, "version")?.as_num() != Some(1.0)
     {
@@ -1155,8 +898,7 @@ pub fn publication_inputs(value: &Json) -> Result<Json, String> {
         }
     }
     array(request, "required_reviews")?;
-    let composed = compose(field(value, "composition")?)?;
-    if request.get("composition") != Some(&composed) {
+    if request.get("composition") != value.get("composition") {
         return Err("request must retain the exact composed candidate".into());
     }
     prepare(request)?;
