@@ -2,7 +2,7 @@
 
 Model publication, release publication and deployment are separate operations. None invokes an agent.
 A change is applied to the model and archived when it merges to main, before any release or deployment;
-a release therefore has no baseline, composes no deltas and is never accepted as a gate. A release
+a release therefore needs no baseline, composes no deltas and is never accepted as a gate. A release
 publication cannot accept a model, authorize a deployment, archive a Change, or manufacture a Run or
 Requirement Status. A deployment's Requirement Status is measured against that deployment's own release
 model only.
@@ -16,7 +16,7 @@ azimuth release verify --input publication.json --out publication-report.json
 azimuth release inputs --input publication-inputs-draft.json --out publication-inputs.json
 ```
 
-There is no `release project` or `release compose`: releases neither project change deltas onto a
+There is no `release project` or `release compose` and no `--model-out`: releases neither project change deltas onto a
 baseline nor compose a candidate model. Change revisions, where a request lists them, hash a sorted list
 of relative authored file names and file digests, excluding `.azimuth` and `.git`. Symbolic links fail.
 
@@ -46,7 +46,8 @@ model can be published, observed and assessed, and is shown as unratified.
 `azimuth-release-request` version 2 requires these fields:
 
 - `project`, `label`;
-- `changes`: `{id, revision, metadata?}`; the array may be empty, because the shipped model is already main's model and a release need not name any Change;
+- optional `baseline_model_revision`, retained only as an explicit assertion when supplied;
+- optional `changes`: `{id, revision, metadata?}`; a release need not name any Change, because the shipped model is already main's model;
 - `sources`: `{repository, commit, content_fingerprint}`; full 40/64-character Git IDs only;
 - `builds`: `{id, sources: [repository-id], toolchain: {name: version-string}, configuration_fingerprint, artifacts: [digest]}`;
 - `artifacts`: `{digest, kind}`;
@@ -54,7 +55,7 @@ model can be published, observed and assessed, and is shown as unratified.
 - `snapshot`: the complete existing native snapshot (`project`, `model_revision`, `authority`, `reviews`, `bundles`);
 - `evidence`: `{digest, media_type, availability: "unavailable"}`.
 
-Optional `integration` is `{commit, main_sequence}`: trusted CI's attestation that `commit` is on main at first-parent commit count `main_sequence`. The service records it and does not re-verify ancestry. Optional `unit_inputs` is the release unit-input manifest in [unit-inputs.md](unit-inputs.md). Optional `catalog` contains
+Optional `composition` is accepted only as an exact assertion and is never produced by Azimuth. Optional `integration` is `{commit, main_sequence}`: trusted CI's attestation that `commit` (a full 40/64-hex Git ID) is on main at first-parent commit count `main_sequence` (a positive integer); it is hashed into the release fingerprint only when present. The service records it and does not re-verify ancestry. Optional `unit_inputs` is the release unit-input manifest in [unit-inputs.md](unit-inputs.md). Optional `catalog` contains
 `modules`, `requirements`, `scenarios`, `checks` as below. Optional `required_reviews` is an explicit array of
 native Requirement Review fingerprints. When present it covers every non-routine Requirement; each selected
 record must be accepted, current against the snapshot's authority and latest without ambiguity.
@@ -132,7 +133,7 @@ There is no release acceptance: `POST .../releases/{fingerprint}/acceptance`, th
 
 ## Git-driven handoff
 
-The standard local workflow ends at `prepare-publication-inputs`. `azimuth release inputs` validates a strict `{format:"azimuth-publication-inputs",version:1,request}` envelope. The native request must name a label, include explicit required review coverage and contain no builds/artifacts/deployments. The CLI preserves immutable native records, validates portability and size, and requires no ASS connection. Commit the compact envelope in the release repository; no local draft Release upload or fabricated registration receipt is required. CI later publishes candidate and release together.
+The standard local workflow ends at `prepare-publication-inputs`. `azimuth release inputs` validates a strict `{format:"azimuth-publication-inputs",version:1,request,composition?}` envelope; a supplied `composition` must equal the request's. The native request must name a label, include explicit required review coverage and contain no builds/artifacts/deployments. The CLI preserves immutable native records, validates portability and size, and requires no ASS connection. Commit the compact envelope in the release repository; no local draft Release upload or fabricated registration receipt is required. CI later publishes candidate and release together.
 
 Optional request/release `components: [{id,digest}]` binds unique explicit runtime component identities to declared build artifacts. When the project catalog declares `components` ([project-catalog.md](project-catalog.md)), preparation that receives that catalog requires every release component id to be a registered component id; without a catalog this check is not made. Unused build artifacts need not be deployed. Components are fingerprinted with the release and never inferred by ordering. Native runtime deployment observation requires these explicit bindings.
 
