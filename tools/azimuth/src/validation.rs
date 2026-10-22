@@ -271,7 +271,7 @@ impl FindingKind {
             }
             Self::MissingRequirementJudgment => "Record the Requirement's total-composition Judgment.",
             Self::PendingRequirementReview => "Complete the pending historical Requirement review against implementation and evidence before judgment.",
-            Self::MissingRequirementAssurance => "Supply a matching native assurance snapshot with current accepted Requirement Review and supported exact-target Requirement Status.",
+            Self::MissingRequirementAssurance => "Supply a matching native assurance snapshot with current accepted Requirement Review and supported exact-target Requirement Status, or ratify the Requirement with a committed accepted Requirement Review plus the change's acceptance.json.",
             Self::InvalidRequirementReview => "Repair the Requirement review references before judgment.",
             Self::VerificationElementSupportUnresolved => "Provide source/configuration support for the required verification element.",
             Self::ScenarioCheckContributionUnresolved => "Declare a source-authored Check contribution to this Scenario.",

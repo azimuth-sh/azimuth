@@ -682,8 +682,7 @@ pub fn read_acceptance(change_root: &Path) -> Result<Option<Acceptance>, Vec<Str
     }))
 }
 
-/// Reads the acceptance records of active and archived changes under one `changes/` directory.
-pub fn acceptances(changes_dir: &Path) -> Result<Vec<Acceptance>, Vec<String>> {
+fn change_roots(changes_dir: &Path) -> Vec<std::path::PathBuf> {
     let mut roots = Vec::new();
     for directory in [changes_dir.to_path_buf(), changes_dir.join("archive")] {
         let Ok(entries) = fs::read_dir(&directory) else {
@@ -696,9 +695,14 @@ pub fn acceptances(changes_dir: &Path) -> Result<Vec<Acceptance>, Vec<String>> {
         }
     }
     roots.sort();
+    roots
+}
+
+/// Reads the acceptance records of active and archived changes under one `changes/` directory.
+pub fn acceptances(changes_dir: &Path) -> Result<Vec<Acceptance>, Vec<String>> {
     let mut found = Vec::new();
     let mut errors = Vec::new();
-    for root in roots {
+    for root in change_roots(changes_dir) {
         match read_acceptance(&root) {
             Ok(Some(acceptance)) => found.push(acceptance),
             Ok(None) => {}
@@ -710,6 +714,128 @@ pub fn acceptances(changes_dir: &Path) -> Result<Vec<Acceptance>, Vec<String>> {
     } else {
         Err(errors)
     }
+}
+
+const REVIEWS_DIRECTORY: &str = "reviews";
+const RATIFICATION_PROJECT: &str = "ratification";
+
+/// Reads the sealed native review records committed under `reviews/` of one change.
+pub fn read_reviews(change_root: &Path) -> Result<Vec<Json>, Vec<String>> {
+    let directory = change_root.join(REVIEWS_DIRECTORY);
+    let entries = match fs::read_dir(&directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(vec![format!("{}: {error}", directory.display())]),
+    };
+    let mut paths = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "json"))
+        .collect::<Vec<_>>();
+    paths.sort();
+    let mut records = Vec::new();
+    let mut errors = Vec::new();
+    for path in paths {
+        let display = path.display().to_string();
+        let loaded = fs::read_to_string(&path)
+            .map_err(|error| error.to_string())
+            .and_then(|content| crate::json::parse(&content).map_err(|error| error.to_string()))
+            .and_then(|value| crate::review_authoring::records(&value));
+        match loaded {
+            Ok(mut found) => records.append(&mut found),
+            Err(error) => errors.push(format!("{display}: {error}")),
+        }
+    }
+    if errors.is_empty() {
+        Ok(records)
+    } else {
+        Err(errors)
+    }
+}
+
+/// Reads the committed review records of active and archived changes under one `changes/` directory.
+pub fn reviews(changes_dir: &Path) -> Result<Vec<Json>, Vec<String>> {
+    let mut found = Vec::new();
+    let mut errors = Vec::new();
+    for root in change_roots(changes_dir) {
+        match read_reviews(&root) {
+            Ok(mut records) => found.append(&mut records),
+            Err(mut issues) => errors.append(&mut issues),
+        }
+    }
+    if errors.is_empty() {
+        Ok(found)
+    } else {
+        Err(errors)
+    }
+}
+
+/// An accepted Requirement Review that is still current against the merged model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ratification {
+    pub requirement: String,
+    pub review: String,
+}
+
+/// Assesses the latest Requirement Review of every accepted Requirement against the merged model,
+/// so a review that went stale in a rebase or merge cannot ratify.
+pub fn ratifications(
+    model: &Model,
+    acceptances: &[Acceptance],
+    reviews: &[Json],
+) -> Result<Vec<Ratification>, String> {
+    if acceptances.is_empty() {
+        return Ok(Vec::new());
+    }
+    let authority = crate::assurance_review::authority(model, RATIFICATION_PROJECT)?;
+    let mut ratified = Vec::new();
+    for requirement in acceptances
+        .iter()
+        .flat_map(|acceptance| &acceptance.requirements)
+    {
+        let target = Json::obj(vec![
+            ("kind", Json::str("requirement-review")),
+            ("requirement", Json::str(requirement)),
+        ]);
+        let Some(review) = crate::assurance_review::latest_review(reviews, &target)? else {
+            continue;
+        };
+        if crate::assurance_review::assess_record(review, &authority, reviews, &[]).status
+            != "accepted"
+        {
+            continue;
+        }
+        let fingerprint = review
+            .get("fingerprint")
+            .and_then(Json::as_str)
+            .ok_or("review record has no fingerprint")?;
+        ratified.push(Ratification {
+            requirement: requirement.clone(),
+            review: fingerprint.to_string(),
+        });
+    }
+    ratified.sort_by(|left, right| left.requirement.cmp(&right.requirement));
+    ratified.dedup();
+    Ok(ratified)
+}
+
+/// An accepted Requirement without a current accepted review blocks the change that records it.
+pub fn ratification_issues(
+    acceptances: &[Acceptance],
+    ratified: &[Ratification],
+    report: &Report,
+) -> Vec<String> {
+    let mut issues = Vec::new();
+    for acceptance in acceptances.iter().filter(|value| value.change == report.id) {
+        for requirement in &acceptance.requirements {
+            if !ratified.iter().any(|item| &item.requirement == requirement) {
+                issues.push(format!(
+                    "{ACCEPTANCE_FILE} accepts `{requirement}`, which has no accepted Requirement Review that is current against the merged model; commit it under {REVIEWS_DIRECTORY}/"
+                ));
+            }
+        }
+    }
+    issues
 }
 
 /// An active change may accept only Requirements it adds; archived records are immutable.
@@ -731,14 +857,20 @@ pub fn acceptance_issues(acceptances: &[Acceptance], report: &Report) -> Vec<Str
     issues
 }
 
-/// Removes the missing-assurance findings that a recorded human acceptance covers.
-pub fn waive_accepted_requirements(findings: &mut Vec<Finding>, acceptances: &[Acceptance]) {
+/// Removes the missing-assurance findings of Requirements whose human acceptance is backed by a
+/// current accepted Requirement Review.
+pub fn waive_accepted_requirements(
+    findings: &mut Vec<Finding>,
+    acceptances: &[Acceptance],
+    ratified: &[Ratification],
+) {
     findings.retain(|finding| {
         finding.kind != validation::FindingKind::MissingRequirementAssurance
             || !finding.requirement.as_ref().is_some_and(|requirement| {
                 acceptances
                     .iter()
                     .any(|acceptance| acceptance.requirements.contains(requirement))
+                    && ratified.iter().any(|item| &item.requirement == requirement)
             })
     });
 }
@@ -747,6 +879,7 @@ pub fn finalization(
     model: &Model,
     findings: &[Finding],
     acceptances: &[Acceptance],
+    ratified: &[Ratification],
 ) -> (String, String) {
     let fingerprint = crate::fingerprint::model_digest(model, findings);
     let summary = validation::summarize(model, findings);
@@ -779,6 +912,22 @@ pub fn finalization(
             ),
         ));
     }
+    if !ratified.is_empty() {
+        pairs.push((
+            "ratifying_reviews",
+            Json::Arr(
+                ratified
+                    .iter()
+                    .map(|item| {
+                        Json::obj(vec![
+                            ("requirement", Json::str(&item.requirement)),
+                            ("review", Json::str(&item.review)),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ));
+    }
     (fingerprint, Json::obj(pairs).to_string_pretty())
 }
 
@@ -789,6 +938,29 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_CHANGE: AtomicU64 = AtomicU64::new(1);
+
+    #[test]
+    fn finalization_receipt_without_acceptance_keeps_its_recorded_shape() {
+        let model = Model::default();
+        let (fingerprint, receipt) = finalization(&model, &[], &[], &[]);
+        let expected = Json::obj(vec![
+            ("version", Json::Num(2.0)),
+            ("model_fingerprint", Json::str(&fingerprint)),
+            ("requirements", Json::Num(0.0)),
+            ("specs", Json::Num(0.0)),
+            ("errors", Json::Num(0.0)),
+            ("warnings", Json::Num(0.0)),
+        ])
+        .to_string_pretty();
+        assert_eq!(receipt, expected);
+
+        let ratified = [Ratification {
+            requirement: "r".into(),
+            review: "sha256:x".into(),
+        }];
+        let (_, with_review) = finalization(&model, &[], &[], &ratified);
+        assert!(with_review.contains("ratifying_reviews"));
+    }
 
     #[test]
     fn additions_project_until_the_current_facet_contains_them() {
