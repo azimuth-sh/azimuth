@@ -1,0 +1,71 @@
+# Unit inputs and verification reuse
+
+A Check's execution units can be derived from one project-level partition rule, so that a narrow change re-runs only the units whose inputs changed. This document defines the rule file, the unit input fingerprint, the release unit-input manifest and the applicability rule for reused results. The Run protocol shapes are in [run-launch-plan.md](run-launch-plan.md) and [run-bundle.md](run-bundle.md); evidence applicability is in [deployment-requirement-status.md](deployment-requirement-status.md).
+
+## Partition rule
+
+`azimuth/standards/units.json` is a project-owned, human-reviewed file. Neither agents nor humans author units per Check or per change.
+
+```json
+{
+  "format": "azimuth-unit-rule",
+  "version": 1,
+  "units": [
+    {
+      "id": "ingress-admission",
+      "selection": "ingress-features",
+      "private_paths": ["backend/src/DrimDev.Api.Tests/Features/Ingress/Admission/**"],
+      "hermetic": true
+    }
+  ]
+}
+```
+
+- `id` is a unique lower-kebab id and is never `whole`.
+- `selection` names an entry in the project's canonical Check-to-test selection (`azimuth/standards/test-selection.json`), whose entries are named test-filter fragments. The rule adds no second filter vocabulary.
+- `private_paths` is a non-empty list of repository-relative glob paths that belong to this unit alone. Patterns have no traversal and are matched against normalized forward-slash paths.
+- `hermetic` is optional and defaults to `false`. `true` declares that the unit's result is a pure function of its declared inputs and its required execution context, which is the only condition under which an earlier result may be reused.
+- Unknown fields, duplicate ids and an invalid glob pattern are errors.
+
+A Check that no rule unit covers keeps the single `whole` unit. Pinned `units` in a Check's `Deployment:` metadata remain only for Checks whose unit inventory carries meaning, namely Checks with Monitors and controls.
+
+## Unit inputs and widening
+
+A unit's inputs are all files of the Verification Target's checkout of the repository, minus the private paths of every other unit. A path matched by the private paths of two or more units belongs to none of them: it is a shared input of every unit and is recorded as widened. The result is deterministic. The launch plan's explanation lists these paths as `widened_paths`. Planning fails only when the rule file is invalid or a pattern cannot be applied; widening never fails it.
+
+## Unit input fingerprint
+
+For each unit core computes, at planning time and from the checkout at the exact source snapshot of the Verification Target:
+
+```text
+input_fingerprint = sha256( rule_fingerprint ‖ sorted [(path, content digest)] of the unit's inputs )
+```
+
+using the same canonical JSON preimage discipline as other core fingerprints, with format `azimuth-unit-input-fingerprint` version 1. `rule_fingerprint` is the canonical fingerprint of the complete rule file, so any rule change changes every unit fingerprint. The value is recorded on the unit entry of the plan, and the Run bundle must repeat it exactly; a mismatch is a bundle verification error. A unit that is `whole` has no input fingerprint.
+
+## Reporting and rejection
+
+Adapters report every executed test of a unit with its defining source file. Each unit result in a bundle includes `executed_tests`: a list of `{native_id, file, outcome}`, where `outcome` is `passed | failed | skipped | not-executed` and `file` is the repository-relative file that defines the test. Core rejects a bundle containing a test whose `file` lies inside another unit's private paths, that is, outside the reporting unit's inputs. A unit with any selected test reported `skipped` or `not-executed` cannot contribute support: its Check Result is inconclusive and a diagnostic names the test. A stack whose adapter cannot report defining files stays on `whole` units. See [run-bundle.md](run-bundle.md).
+
+## Release unit-input manifest
+
+`azimuth release prepare` computes, from the release's source checkouts, the manifest carried in the release as `unit_inputs`:
+
+```json
+{
+  "format": "azimuth-unit-input-manifest",
+  "version": 1,
+  "rule_fingerprint": "sha256:<rule-fingerprint>",
+  "units": [
+    {"id": "ingress-admission", "input_fingerprint": "sha256:<unit-input-fingerprint>", "hermetic": true}
+  ]
+}
+```
+
+Units sort by id and are unique. The Azimuth Assurance Service stores the manifest with the release, keyed by the release fingerprint.
+
+## Reuse in applicability
+
+A source Check normally applies to a release or deployment only when the Run's repository, commit and content fingerprint equal the release's. A Check whose every unit is declared `hermetic` applies instead when, for every unit, a passing unit result exists whose `input_fingerprint` equals the manifest entry with the same unit id, and the Check fingerprint, adapter configuration and the Check's leaf values ([deployment-requirement-status.md](deployment-requirement-status.md)) are equal. Otherwise whole-source equality decides. Deployment-level and artifact-level Checks, including end-to-end tests, never use this rule; they run once per release and do not take part in reuse.
+
+The evidence record gains `reused`, true when the Run's Subject commit differs from the release's, and `executed_for_release`. A reused result is displayed as reused and names the Run that produced it. Reuse is never inferred across Verification Targets of different kinds and does not change what a Run records.

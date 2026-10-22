@@ -16,12 +16,17 @@ Non-empty module vocabulary definition in free-form Markdown. Repeat for each te
 ## Requirement: <requirement-id>
 Title: <optional concise authored title>
 Criticality: critical | standard | routine
+Context: <component-id>: <leaf> = <value>
 
 Non-empty free-form normative Markdown stating the Requirement.
 
 ### Scenario: <scenario-id>
+Context: <component-id>: <leaf> = <value>
+
 Non-empty free-form normative Markdown stating this Scenario.
 ```
+
+`Context:` lines are optional and repeatable.
 
 The parser reserves `# Spec:`, `## Term:`, `## Requirement:` or `## Invariant:` and `### Scenario:` headings for the
 semantic structure. A Requirement or Scenario body ends at the next unfenced heading at one of those levels.
@@ -60,6 +65,19 @@ Requirements and Scenarios have stable project-wide lower-kebab IDs in separate 
 ## Title
 
 `Title:` is optional display metadata, declared once in the header of a Requirement or site-domain Invariant. It contains 1–120 characters on one line. Titles appear in catalogs, lists and navigation; the normative statement remains authoritative. Titles do not participate in Requirement or Scenario semantic fingerprints. An untitled Requirement is displayed by its stable ID, never by an automatically generated summary. Editing only a title does not invalidate the normative Requirement definition used by Requirement Reviews. Titles do participate in the complete model export and model revision, so each immutable catalog remains bound to its authored display metadata.
+
+## Context conditions
+
+A `Context:` line states a condition on the effective Execution Context of a deployed component under which the Requirement or Scenario applies. The line is `Context: <component-id>: <leaf> = <value>`: the component id and leaf split at the first `: `, the leaf is a dotted name declared by that component's execution-context declaration ([deployment-requirement-status.md](deployment-requirement-status.md)), and `<value>` is `true`, `false`, an integer, or a double-quoted string with JSON escapes. A feature flag is such a leaf; Azimuth never sets one.
+
+- Context lines occupy the header block of a Requirement (after `Criticality:` and `Title:`) and, new, the header block of a Scenario: the maximal run of consecutive `Context:` lines immediately after the heading, before the first blank line. A later line that happens to begin with `Context:` is body text. A Scenario whose body would begin with such a line must separate it from the heading with a blank line to remain body.
+- All lines hold together (AND). There is no OR; author two Scenarios.
+- Requirement-level lines apply to every Scenario of the Requirement. Scenario lines add to them. A Scenario cannot remove or override an inherited line: a repeated component and leaf with a different value, at either level, is `condition-conflict`. An identical repeat is a duplicate-line error.
+- The lines are part of the Requirement and Scenario text and therefore of their semantic digests, so editing one makes dependent Requirement Reviews stale.
+- Validation: the component exists in the project catalog's `components` ([project-catalog.md](project-catalog.md)); the leaf exists in that component's declaration; the value has the declared leaf type. Findings are `condition-unknown-component`, `condition-unknown-leaf`, `condition-type-mismatch` and `condition-conflict`, all errors. Deleting a leaf or a component from a declaration while any condition names it fails validation, which forces the condition lines out in the same change. A project whose catalog declares no `components` rejects every condition as `condition-unknown-component`.
+- Intent deltas carry complete Requirement blocks, so `Context:` lines travel inside them; a delta parser that cannot represent them exactly is a defect, not a reason to drop the lines.
+
+Conditions do not alter identity, criticality or realization. Their meaning for Requirement Status is in [deployment-requirement-status.md](deployment-requirement-status.md): a deployment whose captured context does not satisfy a condition is shown as not applicable, never as a violation.
 
 ## Identity
 

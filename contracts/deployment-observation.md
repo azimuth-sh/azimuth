@@ -18,10 +18,15 @@ Read the release ConfigMap (`data.release.json` is `{release_fingerprint,compone
 
 SQLite retains one pending request per environment. Delivery retries preserve exact bytes. A stale/conflicting rejected pending request is discarded with a warning; the next cycle obtains a new revision and observation. Authentication/server failures retain pending data. Discovery failure emits unknown rather than retaining fresh complete state. Single replica/Recreate/PVC prevents concurrent local writers. Keep PVC data and monitor logs plus observation freshness.
 
-## Acceptance
+## No acceptance
 
-Owner acceptance requires explicit `environment`, exact release and expected accepted baseline plus reason. The selected environment's latest designated deployment must be this release, its latest observation must be fresh and complete, and each non-routine Requirement must have a supported (Satisfied) deployment Requirement Status according to the native assessor. This is a manual decision, not an automatic acceptance policy. Historical releases lacking component-bound observations are not silently promoted.
+No release acceptance exists. A complete, fresh observation makes a deployment's Requirement Status computable against its own release's model; whether to keep, advance or roll back a deployment is decided and performed by the deployment system. Historical releases lacking component-bound observations are not silently promoted.
 
 ## Runtime evidence correlation
 
 Check and context collection may publish [target observations](target-observation.md) that carry no Verification Target. Reconciliation continues to report actual deployments independently; it does not distribute bindings or mutate collectors. ASS retains measurements before resolving them against a complete historical reconciliation bracket. Matching requires the same deployment, actual immutable images and process instances across the measurement interval. Delayed delivery and rollback cannot use current-selection or image-only shortcuts. Missing brackets remain pending. A new application release therefore needs no observer/collector configuration update unless a reviewed Check, context contract or collection route changes.
+
+A complete component `name` is the component id registered in the project catalog; the component's execution-context report names its single context by that id, and the deployment's current context capture is the set of those reports for its observed components. A component the catalog marks as reporting a context but whose capture is missing leaves context-dependent conditions unknown rather than false ([deployment-requirement-status.md](deployment-requirement-status.md)).
+
+Rollback is performed by the deployment system and only observed here. Reverting to an earlier release yields a new observation whose `release_fingerprint` names that release; deployments are listed by history, not by a designation Azimuth sets ([run-ledger.md](run-ledger.md)).
+

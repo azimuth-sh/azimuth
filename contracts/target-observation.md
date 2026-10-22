@@ -21,3 +21,6 @@ Materialized Runs identify the built-in `assurance-target-observations` normaliz
 Resolution attempts isolate semantic incompatibilities per observation. A malformed historical Verification Target or unsupported mapping remains pending with a diagnostic and cannot block unrelated evidence. Database/infrastructure failures remain failures. Processing is bounded and pending attempts rotate so permanently unmatched observations cannot starve newer facts.
 
 Target observations, resolution links and normalizer descriptors are typed relational storage in ASS storage version 6, which initializes only a fresh, empty database and refuses any other schema signature (see [deployment Requirement Status](deployment-requirement-status.md#storage-rollout)). Version 1 target observations are not accepted; producers move to version 2 together with ASS. Do not roll back the binary alone; recovery is re-initialization and republication.
+
+For kind context, the contract named by a capture is the component's derived contract: `contracts` in the collector configuration are keyed by component id, a report holds exactly one context named by that id, and its dotted leaf names are the keys of `values` ([deployment-requirement-status.md](deployment-requirement-status.md)). The service rejects a capture whose key set differs from the registered contract.
+

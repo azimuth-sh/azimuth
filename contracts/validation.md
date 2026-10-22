@@ -25,7 +25,7 @@ Change validation stages the prospective intent and account facets before loadin
 
 The same snapshot can be supplied at explicit `change finalize` and `change archive` boundaries with `--scope acceptance`. Each command reassesses it against the complete loaded current model and preserves existing completion, applied-facet, finding and finalization-currentness gates. Partial `--only` selection is rejected. These local commands do not perform full federated finalization, select ASS authority or publish records. A snapshot does not authorize intent/account application or archive an incomplete change. Finalize writes its ordinary model finalization receipt; archive additionally verifies that receipt against current model findings before moving the completed change. Without native evidence, a compact non-routine Requirement remains blocked at either boundary.
 
-A change directory may carry `acceptance.json`, a recorded human decision that accepts the non-routine Requirements the change adds without a locally authored Requirement Status:
+A change directory may carry `acceptance.json`, a recorded human decision. A Requirement the change adds is waived from the `missing-requirement-assurance` finding only when `acceptance.json` names it AND a ratifying review exists (see the ratification gate below):
 
 ```json
 {
@@ -39,6 +39,17 @@ A change directory may carry `acceptance.json`, a recorded human decision that a
 ```
 
 The record is strict: unknown fields, an empty `requirements` list, duplicates and a non-identifier `accepted_by` are errors. `change finalize` and `change archive` accept only Requirements that the change itself adds, and the record then removes exactly the `missing-requirement-assurance` findings for those Requirements. It supplies no review, Run or Status and satisfies no other finding. The finalization receipt lists each accepting change, decider, date and Requirement set, so removing or editing the record makes the receipt stale. Archived records keep applying to plain `azimuth validate` at acceptance scope and to federated project finalization, because they are part of the immutable decision record. Azimuth does not contact an Assurance State Service to accept a change; the basis is the decider's statement.
+
+## Ratification gate at finalization
+
+A change is applied to the model and archived when it merges to main, so finalization is where a model change is ratified. Ratification evidence lives in git and moves with the change:
+
+- Sealed native Requirement Review records produced by `review-compile` are committed under the change (`reviews/*.json`) and move with it into the archive. The packets needed to recompile them are committed beside them.
+- `acceptance.json` for non-routine Requirements stays in the change as above.
+
+At finalization the CLI takes the latest Requirement Review of each accepted Requirement from the sealed review JSON under `<change>/reviews/*.json` (active and archived changes) and assesses it against the merged model. Only status `accepted` ratifies; any other status leaves the Requirement unwaived, so the `missing-requirement-assurance` finding remains and blocks finalization. Known limit: a review carrying a `challenge_basis` assesses as stale because finalization is given no Run bundles, so only definition-only reviews ratify. Whole-authority fingerprint equality between a review and the merged model is not required for this gate; each record is judged against its own dependencies, so an unrelated Requirement edit does not stale it. A federated account applies the identical gate inside its finalization, and the finalization receipt gains a `ratifying_reviews` key, present only when there are ratifications (otherwise the receipt keeps its earlier shape), listing each ratifying review by fingerprint next to the accepting changes it already lists. Editing or removing a committed review record makes the receipt stale.
+
+The gate establishes that the records are present, current and accepted. Whether the commit came from a pull request with an owner's approving review is not known to the CLI: trusted CI verifies it and publishes the verdict ([release-publication.md](release-publication.md)).
 
 Reports keep the structural conclusion separate from evidence and acceptance conclusions. No-declared-gaps or no-declared-blockers is bounded by the inspected account; neither establishes a supported Requirement or an exact-target Assurance State. The structural workflow task uses `azimuth change validate --scope structure`; acceptance assessment belongs to the later explicit boundary. Validation never executes native Checks, generates independent decisions, commits or archives.
 

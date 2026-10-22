@@ -1,82 +1,53 @@
-# Composed releases and portable publication
+# Releases and portable publication
 
-Release composition, publication, deployment and acceptance are separate operations. None invokes
-an agent. A release publication cannot accept a model, authorize a deployment, archive a Change,
-or manufacture a Run or Requirement Status. Acceptance is for a complete composed release.
+Model publication, release publication and deployment are separate operations. None invokes an agent.
+A change is applied to the model and archived when it merges to main, before any release or deployment;
+a release therefore needs no baseline, composes no deltas and is never accepted as a gate. A release
+publication cannot accept a model, authorize a deployment, archive a Change, or manufacture a Run or
+Requirement Status. A deployment's Requirement Status is measured against that deployment's own release
+model only.
 
 ## Commands
 
 ```text
-azimuth release project --baseline-revision <sha256> --change <directory>... \
-  --model <accepted-model> --workspace <workspace> --manifest <manifest>... --out request.json
-azimuth release compose --input request.json --model-out <absent-directory> --out composition.json
-azimuth assurance catalog --project <id> --model <composed-model> [model options] --out catalog.json
+azimuth assurance catalog --project <id> --model <model> [model options] --out catalog.json
 azimuth release prepare --input release-request.json --out publication.json
 azimuth release verify --input publication.json --out publication-report.json
 azimuth release inputs --input publication-inputs-draft.json --out publication-inputs.json
 ```
 
-`project` accepts ordinary complete model options (`--standards`, `--support` included), not a
-selected or federated overlay. Federated inputs must first be assembled into an explicit complete
-model directory. It uses the native intent and account delta projectors; it does not parse diff
-presentation text or ask an agent to resolve meaning. Change revisions hash a sorted list of
-relative authored file names and file digests, excluding `.azimuth` and `.git`. Symbolic links fail.
-The baseline consists of all `spec.md`, `design.md`, `verification.md` facets, including unaffected
-modules. Projection does not modify the accepted model or Change artifacts.
+There is no `release project` or `release compose` and no `--model-out`: releases neither project change deltas onto a
+baseline nor compose a candidate model. Change revisions, where a request lists them, hash a sorted list
+of relative authored file names and file digests, excluding `.azimuth` and `.git`. Symbolic links fail.
 
-`compose` checks exact before-content digests and rejects overlapping facet writes, including
-apparently independent edits to the same facet. Authors must rebase those Changes and reassess
-relevant reviews locally. There is no last-writer-wins merge or automatic semantic conflict repair.
-The new directory is a materialized candidate, not the accepted model. Re-extract source linkage,
-load and structurally validate it, and regenerate authority/snapshot against that directory before
-publication. Composition alone does not establish that its model is implemented.
+## Model publication and ratification
 
-## Composition request and result
+Main's current model reaches the Azimuth Assurance Service through a separate main-model publication
+([run-ledger.md](run-ledger.md)), made by trusted CI for each commit that reaches main. That publication
+carries the commit's complete native authority, the sealed native Requirement Review records committed in
+git, the optional navigation catalog and a ratification verdict. A release names the model it ships
+through `model_revision` in its snapshot; it does not select or replace main's model.
 
-Strict request fields:
+Ratification of a model change is recorded in git, never by the service:
 
-```json
-{
-  "format": "azimuth-release-composition-request",
-  "version": 1,
-  "baseline_model_revision": "sha256:<64 lowercase hexadecimal digits>",
-  "files": [{"path": "module/spec.md", "content": "<complete baseline facet>"}],
-  "changes": [{
-    "id": "bounded-change",
-    "revision": "sha256:<authored Change revision>",
-    "files": [{
-      "path": "module/spec.md",
-      "before_fingerprint": "sha256:<exact baseline file bytes>",
-      "content": "<complete projected facet>"
-    }]
-  }]
-}
-```
+- accepted Requirement Review records, sealed under the change, with every record assessed current against the merged authority;
+- for each non-routine Requirement the change adds, an owner acceptance record (`acceptance.json`, see [validation.md](validation.md));
+- an owner's approving review on the pull request that brought the commit to main.
 
-`before_fingerprint: null` requires an absent baseline facet. `content: null` deletes an existing
-facet. Paths are relative normalized facet paths without traversal. `project` creates this request;
-manual requests remain explicit assertions, not evidence of native projection or ownership review.
-
-Composition output (`azimuth-release-composition`, version 1) contains `baseline_model_revision`,
-`baseline_content_fingerprint`, exact `changes` identities, complete resulting `files`,
-`content_fingerprint` and `fingerprint`. All aggregate fingerprints use the core Run canonical JSON
-fingerprint (RFC 8785); file before-digests use SHA-256 of exact UTF-8 bytes. The outer fingerprint
-excludes only its own field. The model revision remains the native authority fingerprint, independent
-of the composed file-tree digest.
-
-The named baseline revision is an authority assertion: CI must obtain it from the accepted baseline,
-not invent it from a branch name. On acceptance ASS compares it to the current accepted pointer;
-when the accepted release has composition provenance, its content fingerprint must also match the
-candidate's baseline-content fingerprint. Importing an earlier baseline needs an explicit bootstrap
-policy. Baseline freshness must be checked again at deployment authorization/acceptance; it is not
-proof furnished by local composition alone.
+The publishing workflow verifies these facts itself: the records exist in git and the commit comes from a
+pull request with an approving review from an owner, read through the hosting API with a read-only
+credential. Failing either check is published with `ratification.status: "unratified"` and a reason, and is
+displayed that way. The service stores the verdict as submitted; it cannot call the hosting API and does
+not re-verify it. Branch protection is not assumed. Ratification is separate from release: an unratified
+model can be published, observed and assessed, and is shown as unratified.
 
 ## Publication request
 
 `azimuth-release-request` version 2 requires these fields:
 
-- `project`, `label`, `baseline_model_revision`;
-- `changes`: `{id, revision, metadata?}`;
+- `project`, `label`;
+- optional `baseline_model_revision`, retained only as an explicit assertion when supplied;
+- optional `changes`: `{id, revision, metadata?}`; a release need not name any Change, because the shipped model is already main's model;
 - `sources`: `{repository, commit, content_fingerprint}`; full 40/64-character Git IDs only;
 - `builds`: `{id, sources: [repository-id], toolchain: {name: version-string}, configuration_fingerprint, artifacts: [digest]}`;
 - `artifacts`: `{digest, kind}`;
@@ -84,16 +55,16 @@ proof furnished by local composition alone.
 - `snapshot`: the complete existing native snapshot (`project`, `model_revision`, `authority`, `reviews`, `bundles`);
 - `evidence`: `{digest, media_type, availability: "unavailable"}`.
 
-Optional `composition` contains the exact complete composition result. Optional `catalog` contains
+Optional `composition` is accepted only as an exact assertion and is never produced by Azimuth. Optional `integration` is `{commit, main_sequence}`: trusted CI's attestation that `commit` (a full 40/64-hex Git ID) is on main at first-parent commit count `main_sequence` (a positive integer); it is hashed into the release fingerprint only when present. The service records it and does not re-verify ancestry. Optional `unit_inputs` is the release unit-input manifest in [unit-inputs.md](unit-inputs.md). Optional `catalog` contains
 `modules`, `requirements`, `scenarios`, `checks` as below. Optional `required_reviews` is an explicit array of
 native Requirement Review fingerprints. When present it covers every non-routine Requirement; each selected
-record must be accepted, current against the composed authority and latest without ambiguity.
+record must be accepted, current against the snapshot's authority and latest without ambiguity.
 Missing/stale/rejected records produce actionable errors for local correction. Historical adverse
 predecessors remain in the snapshot; they are not mistaken for the selected current review.
-Omitting this optional gate permits publication of unresolved candidate facts, not release readiness.
+Omitting this optional gate permits publication of unresolved facts, not release readiness.
 
 Prepare returns `azimuth-release-publication` version 2 with `project`, `release`, `snapshot`,
-`evidence`, optional `catalog`. Release contains the request's identity/provenance fields plus
+`evidence`, optional `catalog`. Optional request keys are fingerprinted only when present. Release contains the request's identity/provenance fields plus
 `model_revision` copied from the native snapshot and a canonical `fingerprint` excluding itself.
 Display labels are not identity. Native review and Run identities and Check Results are preserved.
 The output is portable structured data and contains no generated candidate-directory copies.
@@ -148,8 +119,7 @@ Catalog describes navigation; native authority/reviews/Runs determine assessment
 
 Trusted release CI posts the package to `POST /v1/projects/{project}/releases` using a project-scoped
 publisher credential. It does not receive owner/reviewer impersonation credentials. ASS retains
-`submitted_by` separately from native reviewer provenance. Candidate registration is not accepted
-model selection.
+`submitted_by` separately from native reviewer provenance. Release publication does not select or replace main's model.
 
 After actual deployment, publish
 `POST /v1/projects/{project}/deployments` with `{release_fingerprint, deployment}`. A deployment
@@ -158,20 +128,17 @@ provenance. It is not owned by one Change. Append a new deployment for changed c
 artifacts. Runs and Requirement Status records still name their exact native Verification Target; matching model revisions do
 not authorize cross-target reuse.
 
-Owner-only acceptance uses `POST /v1/projects/{project}/releases/{fingerprint}/acceptance` with
-`{environment, expected_accepted_model_revision, reason}`. This is an explicit whole-release decision with a
-concurrency precondition. Archival occurs later through repository finalization, not publication.
-CI never invokes a model to author missing evidence or resolve composition conflicts.
+There is no release acceptance: `POST .../releases/{fingerprint}/acceptance`, the accepted-authority pointer and `expected_accepted_model_revision` do not exist. Reading what main's model contains that an environment does not run is the delivery-gap report ([run-ledger.md](run-ledger.md)). CI never invokes a model to author missing evidence or resolve merge conflicts.
 
 
 ## Git-driven handoff
 
-The standard local workflow ends at `prepare-publication-inputs`. `azimuth release inputs` validates a strict `{format:"azimuth-publication-inputs",version:1,request,composition}` envelope. The native request must retain the exact composed result, name a label, include explicit required review coverage and contain no builds/artifacts/deployments. The CLI preserves immutable native records, validates portability and size, and requires no ASS connection. Commit the compact envelope in the release repository; no local draft Release upload or fabricated registration receipt is required. CI later publishes candidate and release together.
+The standard local workflow ends at `prepare-publication-inputs`. `azimuth release inputs` validates a strict `{format:"azimuth-publication-inputs",version:1,request,composition?}` envelope; a supplied `composition` must equal the request's. The native request must name a label, include explicit required review coverage and contain no builds/artifacts/deployments. The CLI preserves immutable native records, validates portability and size, and requires no ASS connection. Commit the compact envelope in the release repository; no local draft Release upload or fabricated registration receipt is required. CI later publishes candidate and release together.
 
-Optional request/release `components: [{id,digest}]` binds unique explicit runtime component identities to declared build artifacts. Unused build artifacts need not be deployed. Components are fingerprinted with the release and never inferred by ordering. Native runtime deployment observation requires these explicit bindings.
+Optional request/release `components: [{id,digest}]` binds unique explicit runtime component identities to declared build artifacts. When the project catalog declares `components` ([project-catalog.md](project-catalog.md)), preparation that receives that catalog requires every release component id to be a registered component id; without a catalog this check is not made. Unused build artifacts need not be deployed. Components are fingerprinted with the release and never inferred by ordering. Native runtime deployment observation requires these explicit bindings.
 
-A Git release request is `{format:"azimuth-git-release-request",version:1,name,environment,sources:{repository:fullCommit},inputs:{path,digest}}`. Name is bounded, nonblank and non-unique; fingerprint is the generated identity. Source IDs and component build settings are allowlisted by trusted project policy; cross-repository reads require explicit credentials. Configuration commits precede metadata-only release request commits, avoiding source/input self-reference. CI resolves each full commit once, verifies implementation membership in main, validates exact source content and reviewed authority, runs consumer gates, builds component outputs and publishes. No AI inference occurs in CI.
+A Git release request is `{format:"azimuth-git-release-request",version:1,name,environment,sources:{repository:fullCommit},inputs:{path,digest}}`. Name is bounded, nonblank and non-unique; fingerprint is the generated identity. Source IDs and component build settings are allowlisted by trusted project policy; cross-repository reads require explicit credentials. Configuration commits precede metadata-only release request commits, avoiding source/input self-reference. CI resolves each full commit once, verifies implementation membership in main, attests the `integration` pair, validates exact source content and reviewed authority, runs consumer gates, builds component outputs and publishes. No AI inference occurs in CI.
 
 Unprivileged PR validation handles data only. A successful validation can trigger trusted-main coordination; protected publication jobs re-read exact current same-repository PR identity and enforce allowlists. Never run PR scripts under publication credentials. Generated outputs carry request content identity; matching result files suppress recursive builds. Moving request/base fails closed. Deployment merge gates independently verify published artifacts, receipt, generated values and rendered configuration.
 
-Environment selection may reference retained immutable release records and generate Helm values without rebuilding artifacts. Rollback creates a new observed deployment; it cannot restore data or rewind accepted authority. The consumer must review schema/configuration compatibility and maintain deployment adapters per environment. Existing evidence/receipt retention limits rollback eligibility.
+Environment selection may reference retained immutable release records and generate Helm values without rebuilding artifacts. Rollback is performed by the deployment system and only observed here: it creates a new observed deployment, cannot restore data, and never rewinds main's model; the rolled-back deployment is again measured against its own release's model. The consumer must review schema/configuration compatibility and maintain deployment adapters per environment. Existing evidence/receipt retention limits rollback eligibility.
