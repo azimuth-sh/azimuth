@@ -3,10 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { readProject, routeFingerprint } from "@/lib/assurance";
 import { requireViewer } from "@/lib/auth";
-import { webConfig } from "@/lib/config";
-import { developmentScenario } from "@/lib/development";
 import { environmentView, requirementStatus } from "@/lib/production";
-import { ReleaseAcceptance } from "@/components/release-acceptance";
 import { CopyValue } from "@/components/copy-value";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +11,7 @@ type Identity = Record<string, unknown>;
 type Release = {
   fingerprint: string;
   label: string;
-  baseline_model_revision: string;
+  integration: { commit: string; main_sequence: number } | null;
   model_revision: string;
   changes: Identity[];
   sources: Identity[];
@@ -40,16 +37,13 @@ export default async function ReleasePage({ params, searchParams }: {
 }) {
   const { projectId, release: segment } = await params;
   const environment = await selectedEnvironment(projectId, (await searchParams).environment);
-  const viewer = await requireViewer(projectId);
-  const synthetic = !!developmentScenario();
-  const canAccept = !synthetic && !!webConfig().users[viewer.githubId]?.ownerTokens?.[projectId];
+  await requireViewer(projectId);
   const fingerprint = routeFingerprint(segment);
   if (!fingerprint) notFound();
   const record = await readProject<{
     publication: { release: Release; evidence: Identity[] };
     submitted_by: string;
     submitted_at: string;
-    acceptance: Identity | null;
     deployments: Identity[];
   }>(projectId, `/releases/${encodeURIComponent(fingerprint)}`);
   if (!record) notFound();
@@ -61,14 +55,13 @@ export default async function ReleasePage({ params, searchParams }: {
   const requirements = selectedRelease ? environmentState.state?.requirements ?? [] : [];
   const counts = { supported: 0, violated: 0, unresolved: 0 };
   for (const requirement of requirements) counts[requirementStatus(requirement.status)]++;
-  const environments = [...new Set(record.deployments.flatMap(d => typeof d.environment === "string" ? [d.environment] : []))];
   const components = release.components ?? [];
   const modelUrl = `${root}/model?environment=${encodeURIComponent(environment)}&revision=${encodeURIComponent(release.model_revision)}${selectedRelease && environmentState.verificationTarget ? `&verification-target=${encodeURIComponent(environmentState.verificationTarget)}` : ""}`;
   return <div className="dashboard releaseWorkspace">
     <nav className="pageBreadcrumb" aria-label="Breadcrumb"><Link href={`${root}/releases?environment=${encodeURIComponent(environment)}`}>Releases</Link><span>/</span><span>{release.label}</span></nav>
     <header className="dashboardHeading">
       <div><p className="overline">RELEASE</p><h1>{release.label}</h1><p>Published {receivedAt(record.submitted_at)}</p></div>
-      <span className={`badge ${record.acceptance ? "good" : "neutral"}`}>{record.acceptance ? "Accepted" : "Pending acceptance"}</span>
+      <span className={`badge ${release.integration ? "good" : "neutral"}`}>{release.integration ? `Integrated at ${release.integration.commit.slice(0, 8)}` : "No integration commit"}</span>
     </header>
     <section className="deploymentBar" aria-label="Release summary">
       <div><span className="fieldLabel">{environment.toUpperCase()}</span><strong>{confirmedDeployment ? `Observed in ${environment}` : selectedRelease ? "Current state unconfirmed" : "Not confirmed as current"}</strong><small>{selectedRelease ? environmentState.deployment?.deployment.id : `No matching current ${environment} deployment`}</small></div>
@@ -105,21 +98,19 @@ export default async function ReleasePage({ params, searchParams }: {
           {requirements.length ? <><p>{confirmedDeployment ? "Evidence for the observed deployment." : "Recorded evidence; current environment is not confirmed."}</p><dl className="releaseStatusCounts"><div><dt>Satisfied</dt><dd>{counts.supported}</dd></div><div><dt>Not satisfied</dt><dd>{counts.violated}</dd></div><div><dt>Unresolved</dt><dd>{counts.unresolved}</dd></div></dl><Link className="textLink" href={modelUrl}>Inspect evidence ↗</Link></> : <p>No Requirement Status available for a matching selected environment deployment.</p>}
         </section>
         <section className="dashboardPanel releaseAssessment">
-          <p className="overline">OWNER DECISION</p><h2>{record.acceptance ? "Release accepted" : "Awaiting acceptance"}</h2>
-          <p>{record.acceptance ? "Model application and change archival remain separate Git operations. Their completion is not recorded here." : "Acceptance advances the accepted model after the required reviews and evidence are established."}</p>
-          {!record.acceptance && !canAccept && <p className="modelDetailMuted">{synthetic ? "Acceptance is read-only in this local preview." : "An authorized project owner can accept this release."}</p>}
+          <p className="overline">INTEGRATION</p><h2>{release.integration ? `Integrated at commit ${release.integration.commit.slice(0, 8)}` : "No integration recorded"}</h2>
+          <p>{release.integration ? `Main sequence ${release.integration.main_sequence}. Ratification of the model change is recorded in Git and shown with the main publication.` : "This release was published without an integration attestation."}</p>
         </section>
+        {/* C4: delivery-gap and rollback-candidate panels go here. */}
       </aside>
     </div>
-    {!record.acceptance && canAccept && <ReleaseAcceptance project={projectId} release={release.fingerprint} baseline={release.baseline_model_revision} environments={environments} />}
     <details className="dashboardPanel releaseTechnical"><summary>Technical details</summary>
       <CopyValue label="Release fingerprint" value={release.fingerprint} />
-      <CopyValue label="Baseline model" value={release.baseline_model_revision} />
-      <CopyValue label="Composed model" value={release.model_revision} />
+      {release.integration && <CopyValue label="Integration commit" value={release.integration.commit} />}
+      <CopyValue label="Release model" value={release.model_revision} />
       <p className="modelDetailMuted">Published by {record.submitted_by} · {receivedAt(record.submitted_at)}</p>
       <details><summary>Publication and provenance records</summary><pre>{JSON.stringify(record.publication, null, 2)}</pre></details>
       <details><summary>Deployment records</summary><pre>{JSON.stringify(record.deployments, null, 2)}</pre></details>
-      {record.acceptance && <details><summary>Owner acceptance decision</summary><pre>{JSON.stringify(record.acceptance, null, 2)}</pre></details>}
     </details>
   </div>;
 }
