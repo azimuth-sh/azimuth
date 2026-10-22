@@ -617,8 +617,9 @@ fn apply_operation(
             ))
         }
         Kind::Replace => {
+            let (context_lines, header_source) = take_context_labels(&operation.source);
             let (labels, body) = labels_and_body(
-                &operation.source,
+                &header_source,
                 &[
                     "From",
                     "Because",
@@ -635,8 +636,12 @@ fn apply_operation(
                 .get("Title")
                 .map(|value| format!("Title: {value}\n"))
                 .unwrap_or_default();
+            let context = context_lines
+                .iter()
+                .map(|line| format!("Context: {line}\n"))
+                .collect::<String>();
             let block = format!(
-                "## Requirement: {requirement_id}\n{title}Criticality: {criticality}\n\n{}",
+                "## Requirement: {requirement_id}\n{title}Criticality: {criticality}\n{context}\n{}",
                 body.trim()
             );
             let target = parse_requirement(&operation.spec, &block)?;
@@ -774,6 +779,20 @@ fn apply_operation(
     }
 }
 
+/// Context lines repeat, so they leave the header before the single-valued labels are read.
+fn take_context_labels(source: &str) -> (Vec<String>, String) {
+    let (header, body) = source.split_once("\n\n").unwrap_or((source, ""));
+    let mut context = Vec::new();
+    let mut remaining = Vec::new();
+    for line in header.lines() {
+        match line.strip_prefix(crate::model::Condition::LABEL) {
+            Some(value) => context.push(value.trim().to_string()),
+            None => remaining.push(line),
+        }
+    }
+    (context, format!("{}\n\n{body}", remaining.join("\n")))
+}
+
 fn labels_and_body(
     source: &str,
     allowed: &[&str],
@@ -838,12 +857,12 @@ fn same_requirement(left: &str, right: &str, spec: &str) -> Result<bool, String>
     Ok(a.id == b.id
         && a.title == b.title
         && a.criticality == b.criticality
+        && a.conditions == b.conditions
         && a.statement == b.statement
         && a.scenarios.len() == b.scenarios.len()
-        && a.scenarios
-            .iter()
-            .zip(&b.scenarios)
-            .all(|(a, b)| a.id == b.id && a.statement == b.statement))
+        && a.scenarios.iter().zip(&b.scenarios).all(|(a, b)| {
+            a.id == b.id && a.conditions == b.conditions && a.statement == b.statement
+        }))
 }
 
 fn find_block(source: &str, heading: &str) -> Option<(usize, usize)> {

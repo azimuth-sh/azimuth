@@ -67,7 +67,17 @@ pub struct ReceiptRequirement {
 }
 
 #[derive(Debug, Clone)]
+pub struct ComponentDecl {
+    pub id: String,
+    pub repository: String,
+    pub areas: Vec<String>,
+    pub shared_areas: Vec<String>,
+    pub context: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub struct Project {
+    pub components: Vec<ComponentDecl>,
     pub release: Option<StandardsDecl>,
     pub packages: Vec<String>,
     pub id: String,
@@ -565,8 +575,26 @@ pub fn load_project(path: &Path) -> Result<Project, Vec<Diag>> {
         &required_receipts,
         &mut errors,
     );
+    let components = match root.get("components") {
+        Some(_) => {
+            let components = components(&display, &root, &mut errors);
+            let unshipped_areas =
+                optional_string_array(&display, &root, "unshipped_areas", &mut errors);
+            validate_components(
+                &display,
+                &repositories,
+                &areas,
+                &components,
+                &unshipped_areas,
+                &mut errors,
+            );
+            components
+        }
+        None => Vec::new(),
+    };
     if errors.is_empty() {
         Ok(Project {
+            components,
             release,
             packages,
             id,
@@ -580,6 +608,292 @@ pub fn load_project(path: &Path) -> Result<Project, Vec<Diag>> {
         Err(errors)
     }
 }
+
+fn components(path: &str, root: &Json, errors: &mut Vec<Diag>) -> Vec<ComponentDecl> {
+    optional_object_array(path, root, "components", errors)
+        .into_iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let where_ = format!("components[{index}]");
+            let context = match item.get("context") {
+                None => None,
+                Some(value) => match value.as_str() {
+                    Some(context) if repository_relative(context) => Some(context.to_string()),
+                    _ => {
+                        errors.push(Diag::file(
+                            path,
+                            format!(
+                                "{where_}.`context` must be a normalized repository-relative path"
+                            ),
+                        ));
+                        None
+                    }
+                },
+            };
+            ComponentDecl {
+                id: nested_string(path, &where_, item, "id", errors),
+                repository: nested_string(path, &where_, item, "repository", errors),
+                areas: string_array(path, &where_, item, "areas", errors),
+                shared_areas: match item.get("shared_areas") {
+                    Some(_) => string_array(path, &where_, item, "shared_areas", errors),
+                    None => Vec::new(),
+                },
+                context,
+            }
+        })
+        .collect()
+}
+
+fn validate_components(
+    path: &str,
+    repositories: &[RepositoryDecl],
+    areas: &[AreaDecl],
+    components: &[ComponentDecl],
+    unshipped_areas: &[String],
+    errors: &mut Vec<Diag>,
+) {
+    let mut seen = BTreeSet::new();
+    for component in components {
+        if let Err(why) = crate::diag::validate_id(&component.id, false) {
+            errors.push(Diag::file(
+                path,
+                format!(
+                    "component-duplicate-id: invalid component id `{}`: {why}",
+                    component.id
+                ),
+            ));
+        } else if !seen.insert(component.id.as_str()) {
+            errors.push(Diag::file(
+                path,
+                format!(
+                    "component-duplicate-id: duplicate component id `{}`",
+                    component.id
+                ),
+            ));
+        }
+        if !repositories
+            .iter()
+            .any(|item| item.id == component.repository)
+        {
+            errors.push(Diag::file(
+                path,
+                format!(
+                    "component `{}` belongs to unknown repository `{}`",
+                    component.id, component.repository
+                ),
+            ));
+        }
+        if component.areas.is_empty() {
+            errors.push(Diag::file(
+                path,
+                format!(
+                    "component-unknown-area: component `{}` lists no areas",
+                    component.id
+                ),
+            ));
+        }
+        for area_id in &component.areas {
+            match areas.iter().find(|area| &area.id == area_id) {
+                None => errors.push(Diag::file(
+                    path,
+                    format!(
+                        "component-unknown-area: component `{}` names undeclared area `{area_id}`",
+                        component.id
+                    ),
+                )),
+                Some(area) if area.repository != component.repository => {
+                    errors.push(Diag::file(
+                        path,
+                        format!(
+                            "component-area-repository-mismatch: component `{}` is in repository `{}` but area `{area_id}` belongs to `{}`",
+                            component.id, component.repository, area.repository
+                        ),
+                    ))
+                }
+                Some(_) => {}
+            }
+        }
+        for area_id in &component.shared_areas {
+            if !component.areas.contains(area_id) {
+                errors.push(Diag::file(
+                    path,
+                    format!(
+                        "component-unknown-area: component `{}` marks `{area_id}` shared without listing it in `areas`",
+                        component.id
+                    ),
+                ));
+            }
+        }
+    }
+    for area_id in unshipped_areas {
+        if !areas.iter().any(|area| &area.id == area_id) {
+            errors.push(Diag::file(
+                path,
+                format!(
+                    "component-unknown-area: `unshipped_areas` names undeclared area `{area_id}`"
+                ),
+            ));
+        }
+    }
+    for area in areas {
+        let owners = components
+            .iter()
+            .filter(|component| component.areas.contains(&area.id))
+            .collect::<Vec<_>>();
+        if owners.is_empty() && !unshipped_areas.contains(&area.id) {
+            errors.push(Diag::file(
+                path,
+                format!(
+                    "component-area-unmapped: area `{}` is in no component and not in `unshipped_areas`",
+                    area.id
+                ),
+            ));
+        }
+        if owners.len() > 1
+            && owners
+                .iter()
+                .any(|component| !component.shared_areas.contains(&area.id))
+        {
+            errors.push(Diag::file(
+                path,
+                format!(
+                    "component-area-shared-undeclared: area `{}` is in several components and not every one lists it in `shared_areas`",
+                    area.id
+                ),
+            ));
+        }
+    }
+}
+
+/// Declared contexts are read only from checkouts the workset supplies; a component whose
+/// repository is not selected keeps no declaration and the account is already incomplete.
+pub fn load_component_registry(
+    assembly: &Assembly,
+) -> Result<Vec<crate::model::Component>, Vec<Diag>> {
+    let mut errors = Vec::new();
+    let mut registry = Vec::new();
+    for component in &assembly.project.components {
+        let leaves = component.context.as_ref().and_then(|context| {
+            let repository = assembly
+                .repositories
+                .iter()
+                .find(|item| item.id == component.repository)?;
+            read_context_declaration(&repository.root.join(context), &component.id, &mut errors)
+        });
+        registry.push(crate::model::Component {
+            id: component.id.clone(),
+            repository: component.repository.clone(),
+            areas: component.areas.clone(),
+            shared_areas: component.shared_areas.clone(),
+            leaves,
+        });
+    }
+    if errors.is_empty() {
+        Ok(registry)
+    } else {
+        Err(errors)
+    }
+}
+
+fn read_context_declaration(
+    path: &Path,
+    component: &str,
+    errors: &mut Vec<Diag>,
+) -> Option<BTreeMap<String, crate::model::LeafType>> {
+    let display = path.display().to_string();
+    let Ok(source) = fs::read_to_string(path) else {
+        errors.push(Diag::file(
+            &display,
+            format!("component-context-missing: component `{component}` declares a context that cannot be read"),
+        ));
+        return None;
+    };
+    let document = match json::parse(&source) {
+        Ok(document) => document,
+        Err(error) => {
+            errors.push(Diag::file(
+                &display,
+                format!("component-context-missing: malformed context declaration: {error}"),
+            ));
+            return None;
+        }
+    };
+    let before = errors.len();
+    if document.get("format").and_then(Json::as_str) != Some("azimuth-component-context") {
+        errors.push(Diag::file(
+            &display,
+            "context declaration format must be `azimuth-component-context`",
+        ));
+    }
+    if document.get("version").and_then(Json::as_num) != Some(1.0) {
+        errors.push(Diag::file(
+            &display,
+            "context declaration version must be 1",
+        ));
+    }
+    if document.get("component").and_then(Json::as_str) != Some(component) {
+        errors.push(Diag::file(
+            &display,
+            format!("context declaration `component` must be `{component}`"),
+        ));
+    }
+    let mut leaves = BTreeMap::new();
+    match document.get("leaves") {
+        Some(Json::Obj(entries)) => {
+            for (name, declaration) in entries {
+                let lower = name.to_ascii_lowercase();
+                if !crate::model::is_leaf_path(name) {
+                    errors.push(Diag::file(
+                        &display,
+                        format!(
+                            "leaf `{name}` must be dot-separated names of letters, digits and `_`"
+                        ),
+                    ));
+                } else if SECRET_LEAF_MARKERS
+                    .iter()
+                    .any(|marker| lower.contains(marker))
+                {
+                    errors.push(Diag::file(
+                        &display,
+                        format!("leaf `{name}` is secret-bearing and forbidden"),
+                    ));
+                }
+                match declaration
+                    .get("type")
+                    .and_then(Json::as_str)
+                    .and_then(crate::model::LeafType::parse)
+                {
+                    Some(leaf_type) => {
+                        if leaves.insert(name.clone(), leaf_type).is_some() {
+                            errors.push(Diag::file(
+                                &display,
+                                format!("leaf `{name}` is declared twice"),
+                            ));
+                        }
+                    }
+                    None => errors.push(Diag::file(
+                        &display,
+                        format!("leaf `{name}` needs `type` string, boolean or integer"),
+                    )),
+                }
+            }
+        }
+        _ => errors.push(Diag::file(
+            &display,
+            "context declaration `leaves` must be an object",
+        )),
+    }
+    (errors.len() == before).then_some(leaves)
+}
+
+const SECRET_LEAF_MARKERS: [&str; 6] = [
+    "password",
+    "secret",
+    "credential",
+    "token",
+    "privatekey",
+    "private_key",
+];
 
 pub fn load_workset(path: &Path) -> Result<Workset, Vec<Diag>> {
     let root = read_json(path, "workset")?;
