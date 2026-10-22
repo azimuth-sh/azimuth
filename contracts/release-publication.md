@@ -30,13 +30,13 @@ through `model_revision` in its snapshot; it does not select or replace main's m
 
 Ratification of a model change is recorded in git, never by the service:
 
-- accepted Requirement Review records, sealed under the change, with every record assessed current against the merged authority;
+- for each Requirement the change accepts in `acceptance.json`, its latest sealed Requirement Review record under the change, assessed against the merged authority (without Run bundles, so only definition-only reviews ratify; see [validation.md](validation.md));
 - for each non-routine Requirement the change adds, an owner acceptance record (`acceptance.json`, see [validation.md](validation.md));
 - an owner's approving review on the pull request that brought the commit to main.
 
-The publishing workflow verifies these facts itself: the records exist in git and the commit comes from a
+The finalization gate of the CLI verifies the first two facts ([validation.md](validation.md)). Trusted CI verifies the third: the commit comes from a
 pull request with an approving review from an owner, read through the hosting API with a read-only
-credential. Failing either check is published with `ratification.status: "unratified"` and a reason, and is
+credential. Failing a check is published with `ratification.status: "unratified"` and a reason, and is
 displayed that way. The service stores the verdict as submitted; it cannot call the hosting API and does
 not re-verify it. Branch protection is not assumed. Ratification is separate from release: an unratified
 model can be published, observed and assessed, and is shown as unratified.
@@ -46,7 +46,7 @@ model can be published, observed and assessed, and is shown as unratified.
 `azimuth-release-request` version 2 requires these fields:
 
 - `project`, `label`;
-- optional `baseline_model_revision`, retained only as an explicit assertion when supplied;
+- no baseline: the service stores no `baseline_model_revision` and rejects a release publication that carries one as an undeclared field (the CLI still accepts the key in a request and in the optional `composition` assertion);
 - optional `changes`: `{id, revision, metadata?}`; a release need not name any Change, because the shipped model is already main's model;
 - `sources`: `{repository, commit, content_fingerprint}`; full 40/64-character Git IDs only;
 - `builds`: `{id, sources: [repository-id], toolchain: {name: version-string}, configuration_fingerprint, artifacts: [digest]}`;

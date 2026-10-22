@@ -42,4 +42,4 @@ Publishing is a separate operation. It verifies native bundles and uploads exact
 
 ## Storage rollout
 
-ASS storage version 6 uses the Requirement, Scenario, Verification Target and Check Result vocabulary and initializes only a fresh, empty database; any other schema signature is refused rather than upgraded. Rolling it out replaces ASS-owned data: stop producers, reset the ASS database, start the service, confirm fresh initialization and republish evidence from source. Rolling an image back alone is unsupported; recovery is re-initialization and republication, not an automatic destructive rollback.
+ASS storage version 8 uses the Requirement, Scenario, Verification Target and Check Result vocabulary and initializes an empty database; an existing assurance schema of another version or signature is refused rather than upgraded. Rolling it out replaces ASS-owned data: stop producers, reset the ASS database, start the service, confirm fresh initialization and republish evidence from source. Rolling an image back alone is unsupported; recovery is re-initialization and republication, not an automatic destructive rollback.
