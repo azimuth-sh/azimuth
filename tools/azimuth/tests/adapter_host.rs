@@ -439,6 +439,8 @@ impl Fixture {
             },
             units: vec![CheckExecutionUnit {
                 id: "whole".into(),
+                input_fingerprint: None,
+                executed_tests: Vec::new(),
                 attempts: vec![CheckAttempt {
                     ordinal: 1,
                     activity: "native-check".into(),

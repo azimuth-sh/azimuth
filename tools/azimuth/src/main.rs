@@ -47,6 +47,8 @@ USAGE
     azimuth run select --policy <file> [model options] [--config <file>] [--out <file>]
     azimuth run plan --request <file>|--selection <file> [--model <dir>] [--standards <file>]
         [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
+        [--unit-rule <file>] [--checkout <dir>] [--unit-explanation <file>]
+    azimuth run unit-inputs --rule <file> [--checkout <dir>] [--out <file>]
     azimuth run execute --plan <file> [--predecessor <bundle>...] [--config <file>] [--out <file>]
     azimuth run import --plan <file> --input <id>=<file>... [--predecessor <bundle>...]
         [--config <file>] [--out <file>]
@@ -1842,6 +1844,15 @@ struct RunPlanOptions {
     manifests: Vec<PathBuf>,
     config: PathBuf,
     out: Option<PathBuf>,
+    unit_rule: Option<PathBuf>,
+    checkout: PathBuf,
+    unit_explanation: Option<PathBuf>,
+}
+
+struct UnitInputsOptions {
+    rule: PathBuf,
+    checkout: PathBuf,
+    out: Option<PathBuf>,
 }
 
 struct RunInvokeOptions {
@@ -1950,6 +1961,7 @@ fn command_run(args: &[String]) -> Result<ExitCode, String> {
             command_run_select(parse_run_plan_options(&arguments)?)
         }
         "plan" => command_run_plan(parse_run_plan_options(&args[1..])?),
+        "unit-inputs" => command_unit_inputs(parse_unit_inputs_options(&args[1..])?),
         "execute" => command_run_invoke(parse_run_invoke_options(&args[1..], false)?, false),
         "import" => command_run_invoke(parse_run_invoke_options(&args[1..], true)?, true),
         "verify" => command_run_verify(parse_run_options(&args[1..], false)?),
@@ -1967,10 +1979,28 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
     let mut manifests = Vec::new();
     let mut config = None;
     let mut out = None;
+    let mut unit_rule = None;
+    let mut checkout = None;
+    let mut unit_explanation = None;
     let mut index = 0;
     while index < args.len() {
         let option = args[index].as_str();
         match option {
+            "--unit-rule" => set_once_path(
+                &mut unit_rule,
+                PathBuf::from(argument_value(args, index, option)?),
+                option,
+            )?,
+            "--checkout" => set_once_path(
+                &mut checkout,
+                PathBuf::from(argument_value(args, index, option)?),
+                option,
+            )?,
+            "--unit-explanation" => set_once_path(
+                &mut unit_explanation,
+                PathBuf::from(argument_value(args, index, option)?),
+                option,
+            )?,
             "--request" | "--selection" => {
                 set_once_path(
                     &mut request,
@@ -2027,10 +2057,18 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
         .chain(std::iter::once(&standards))
         .chain(std::iter::once(&workspace))
         .chain(manifests.iter())
-        .chain(std::iter::once(&config));
+        .chain(std::iter::once(&config))
+        .chain(unit_rule.iter());
     reject_output_input_equality(out.as_ref(), input_paths, "run plan")?;
     reject_model_output_descendant(out.as_ref(), &model)?;
+    let unit_rule = unit_rule.or_else(|| {
+        let default = PathBuf::from("azimuth/standards/units.json");
+        default.is_file().then_some(default)
+    });
     Ok(RunPlanOptions {
+        unit_rule,
+        checkout: checkout.unwrap_or_else(|| PathBuf::from(".")),
+        unit_explanation,
         selection,
         request,
         model,
@@ -2176,7 +2214,7 @@ fn command_run_plan(options: RunPlanOptions) -> Result<ExitCode, String> {
         }
     };
     report(&loaded.warnings, "warning");
-    let request = if options.selection {
+    let mut request = if options.selection {
         let source = fs::read_to_string(&options.request)
             .map_err(|error| format!("{}: {error}", options.request.display()))?;
         match azimuth::run_selection::request_from_selection(
@@ -2194,6 +2232,33 @@ fn command_run_plan(options: RunPlanOptions) -> Result<ExitCode, String> {
             Err(errors) => return Ok(report_schema_errors(&errors)),
         }
     };
+    if let Some(rule_path) = &options.unit_rule {
+        let rule = azimuth::unit_inputs::load_rule(rule_path)?;
+        let files = azimuth::unit_inputs::read_checkout(&options.checkout)?;
+        let inputs = azimuth::unit_inputs::compute_inputs(&rule, &files);
+        let assigned = azimuth::unit_inputs::assign_units(&mut request.checks, &rule, &inputs);
+        for widened in &inputs.widened_paths {
+            eprintln!(
+                "note: `{}` is claimed by units {} and is a shared input of every unit",
+                widened.path,
+                widened.claimed_by.join(", ")
+            );
+        }
+        if let Some(path) = &options.unit_explanation {
+            let unpartitioned = request
+                .checks
+                .iter()
+                .map(|check| check.id.clone())
+                .filter(|id| !assigned.contains_key(id))
+                .collect::<Vec<_>>();
+            publish_output(
+                azimuth::unit_inputs::explanation_json(&inputs, &assigned, &unpartitioned)
+                    .to_string_pretty()
+                    .as_bytes(),
+                Some(path),
+            )?;
+        }
+    }
     let launch = match azimuth::run_plan::plan(&loaded.model, &configuration, &request) {
         Ok(launch) => launch,
         Err(errors) => {
@@ -2205,6 +2270,53 @@ fn command_run_plan(options: RunPlanOptions) -> Result<ExitCode, String> {
     };
     publish_output(
         azimuth::run_plan::launch_plan_to_json(&launch)
+            .to_string_pretty()
+            .as_bytes(),
+        options.out.as_ref(),
+    )?;
+    Ok(ExitCode::SUCCESS)
+}
+
+fn parse_unit_inputs_options(args: &[String]) -> Result<UnitInputsOptions, String> {
+    let mut rule = None;
+    let mut checkout = None;
+    let mut out = None;
+    let mut index = 0;
+    while index < args.len() {
+        let option = args[index].as_str();
+        let target = match option {
+            "--rule" => &mut rule,
+            "--checkout" => &mut checkout,
+            "--out" => &mut out,
+            value if value.starts_with('-') => {
+                return Err(format!("unknown run unit-inputs option `{value}`"));
+            }
+            value => {
+                return Err(format!(
+                    "unexpected run unit-inputs positional argument `{value}`"
+                ));
+            }
+        };
+        set_once_path(
+            target,
+            PathBuf::from(argument_value(args, index, option)?),
+            option,
+        )?;
+        index += 2;
+    }
+    Ok(UnitInputsOptions {
+        rule: rule.ok_or("run unit-inputs needs `--rule <file>`")?,
+        checkout: checkout.unwrap_or_else(|| PathBuf::from(".")),
+        out,
+    })
+}
+
+fn command_unit_inputs(options: UnitInputsOptions) -> Result<ExitCode, String> {
+    let rule = azimuth::unit_inputs::load_rule(&options.rule)?;
+    let files = azimuth::unit_inputs::read_checkout(&options.checkout)?;
+    let inputs = azimuth::unit_inputs::compute_inputs(&rule, &files);
+    publish_output(
+        azimuth::unit_inputs::manifest_json(&inputs)
             .to_string_pretty()
             .as_bytes(),
         options.out.as_ref(),
