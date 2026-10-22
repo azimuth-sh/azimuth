@@ -1637,12 +1637,16 @@ pub fn tree_digest(root: &Path) -> Result<String, String> {
     let mut files = Vec::new();
     collect_files(root, root, &mut files).map_err(|error| error.to_string())?;
     files.sort_by(|left, right| left.0.cmp(&right.0));
+    digest_files(&files)
+}
+
+fn digest_files(files: &[(String, PathBuf)]) -> Result<String, String> {
     let mut input = Vec::new();
     for (relative, path) in files {
         input.extend_from_slice(relative.as_bytes());
         input.push(0);
         input.extend_from_slice(
-            &fs::read(&path).map_err(|error| format!("cannot read {}: {error}", path.display()))?,
+            &fs::read(path).map_err(|error| format!("cannot read {}: {error}", path.display()))?,
         );
         input.push(0xff);
     }
@@ -1655,7 +1659,10 @@ fn observe_changes(root: &Path, repository: &str) -> Result<Vec<ChangeObservatio
     if !changes_root.exists() {
         return Ok(Vec::new());
     }
-    let non_versioned = non_versioned_paths(root, relative_root)?;
+    let non_versioned = non_versioned_paths(root, relative_root)?
+        .into_iter()
+        .filter(|path| !is_change_local_output(path))
+        .collect::<Vec<_>>();
     if !non_versioned.is_empty() {
         return Err(format!(
             "change source contains non-versioned input(s): {}",
@@ -1718,6 +1725,26 @@ fn observe_changes(root: &Path, repository: &str) -> Result<Vec<ChangeObservatio
     Ok(changes)
 }
 
+/// A change's `.azimuth/` holds generated packets and reports that the review contracts place there
+/// and git ignores; they are outputs of observing the change, never authored inputs to it.
+fn is_change_local_output(path: &str) -> bool {
+    let components = path.split('/').collect::<Vec<_>>();
+    let offset = match components.as_slice() {
+        ["azimuth", "changes", "archive", ..] => 4,
+        ["azimuth", "changes", ..] => 3,
+        _ => return false,
+    };
+    components.get(offset) == Some(&".azimuth")
+}
+
+fn change_tree_digest(root: &Path) -> Result<String, String> {
+    let mut files = Vec::new();
+    collect_files(root, root, &mut files).map_err(|error| error.to_string())?;
+    files.retain(|(relative, _)| relative.split('/').next() != Some(".azimuth"));
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+    digest_files(&files)
+}
+
 fn change_observation(
     root: &Path,
     repository: &str,
@@ -1732,7 +1759,7 @@ fn change_observation(
         id: id.to_string(),
         state,
         path: path.to_string(),
-        digest: tree_digest(&root.join(path))?,
+        digest: change_tree_digest(&root.join(path))?,
         repository: repository.to_string(),
     })
 }

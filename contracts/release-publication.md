@@ -52,7 +52,7 @@ model can be published, observed and assessed, and is shown as unratified.
 - `sources`: `{repository, commit, content_fingerprint}`; full 40/64-character lowercase hex Git IDs only;
 - `builds`: `{id, sources: [repository-id], toolchain: {name: version-string}, configuration_fingerprint, artifacts: [digest]}`;
 - `artifacts`: `{digest, kind}`;
-- `deployments`: `{id, environment, configuration_fingerprint, artifacts: [digest], verification_target?, verification_target_fingerprint?}`;
+- `deployments`: `{id, environment, configuration_fingerprint, artifacts: [digest], verification_target, verification_target_fingerprint}`; both are required, because Requirement Status is computed per exact deployment Verification Target and an entry without one could never be assessed. The target must be a native deployment target naming the entry's environment, id and exact artifact digests, and the fingerprint must match it. `release prepare`, `verify` and `POST /releases` reject an entry that omits the pair;
 - `snapshot`: the complete existing native snapshot (`project`, `model_revision`, `authority`, `reviews`, `bundles`);
 - `evidence`: `{digest, media_type, availability: "unavailable"}`.
 

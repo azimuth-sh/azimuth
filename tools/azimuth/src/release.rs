@@ -476,8 +476,10 @@ pub fn verify_deployment(value: &Json, artifacts: &BTreeSet<String>) -> Result<(
             "environment",
             "configuration_fingerprint",
             "artifacts",
+            "verification_target",
+            "verification_target_fingerprint",
         ],
-        &["verification_target", "verification_target_fingerprint"],
+        &[],
     )?;
     id(value, "id")?;
     id(value, "environment")?;
@@ -486,41 +488,37 @@ pub fn verify_deployment(value: &Json, artifacts: &BTreeSet<String>) -> Result<(
     if deployed.is_empty() || !deployed.is_subset(artifacts) {
         return Err("deployment must identify registered artifact digests".into());
     }
-    match (value.get("verification_target"), value.get("verification_target_fingerprint")) {
-        (None, None) => {}
-        (Some(verification_target), Some(fingerprint)) => {
-            let native = crate::run::verification_target_from_json(verification_target)?;
-            if !crate::run::validate_verification_target_component(&native).is_empty() {
-                return Err("deployment Verification Target is invalid".into());
-            }
-            if fingerprint.as_str() != Some(crate::run::verification_target_fingerprint(&native).as_str()) {
-                return Err("deployment Verification Target fingerprint mismatch".into());
-            }
-            let crate::run::VerificationTarget::Deployment {
-                environment,
-                deployment,
-                artifacts,
-                ..
-            } = native
-            else {
-                return Err("deployment requires a native deployment Verification Target".into());
-            };
-            let digests = artifacts
-                .iter()
-                .map(|artifact| artifact.digest.clone())
-                .collect::<BTreeSet<_>>();
-            if environment != text(value, "environment")?
-                || deployment != text(value, "id")?
-                || digests != deployed
-            {
-                return Err("deployment Verification Target must describe the recorded environment, deployment and exact artifact digests".into());
-            }
-        }
-        _ => {
-            return Err(
-                "deployment verification target and verification_target_fingerprint must be supplied together".into(),
-            )
-        }
+    let verification_target = value
+        .get("verification_target")
+        .ok_or("deployment requires verification_target")?;
+    let fingerprint = value
+        .get("verification_target_fingerprint")
+        .ok_or("deployment requires verification_target_fingerprint")?;
+    let native = crate::run::verification_target_from_json(verification_target)?;
+    if !crate::run::validate_verification_target_component(&native).is_empty() {
+        return Err("deployment Verification Target is invalid".into());
+    }
+    if fingerprint.as_str() != Some(crate::run::verification_target_fingerprint(&native).as_str()) {
+        return Err("deployment Verification Target fingerprint mismatch".into());
+    }
+    let crate::run::VerificationTarget::Deployment {
+        environment,
+        deployment,
+        artifacts,
+        ..
+    } = native
+    else {
+        return Err("deployment requires a native deployment Verification Target".into());
+    };
+    let digests = artifacts
+        .iter()
+        .map(|artifact| artifact.digest.clone())
+        .collect::<BTreeSet<_>>();
+    if environment != text(value, "environment")?
+        || deployment != text(value, "id")?
+        || digests != deployed
+    {
+        return Err("deployment Verification Target must describe the recorded environment, deployment and exact artifact digests".into());
     }
     Ok(())
 }
