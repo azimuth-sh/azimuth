@@ -20,11 +20,12 @@ export function developmentRead(project: string, path: string): unknown {
   const releaseId = identity('release');
   const verificationTarget = identity('production');
   const at = (minutes: number) => new Date(Date.now() - minutes * 60000).toISOString();
+  const notApplicableHere = (id: string) => scenario !== 'healthy' && id === 'delivery-recovers-after-outage';
   const requirements = scenario === 'empty' ? [] : data.requirements.map((requirement) => ({
     ...requirement,
-    status: scenario === 'healthy' ? 'supported' : scenario === 'incident' && requirement.id === 'reminders-arrive-on-time' ? 'violated' : requirement.status,
-    reason: scenario === 'healthy' ? 'Illustrative current review and applicable Check Results satisfy this Requirement.' : scenario === 'incident' && requirement.id === 'reminders-arrive-on-time' ? 'The production delivery probe exceeded the five-minute deadline.' : requirement.reason,
-    gap: scenario === 'healthy' ? undefined : requirement.gap,
+    status: scenario === 'healthy' ? 'supported' : notApplicableHere(requirement.id) ? 'not-applicable' : scenario === 'incident' && requirement.id === 'reminders-arrive-on-time' ? 'violated' : requirement.status,
+    reason: scenario === 'healthy' ? 'Illustrative current review and applicable Check Results satisfy this Requirement.' : notApplicableHere(requirement.id) ? 'Outage recovery applies only where the queue-backed delivery context holds; this deployment runs without it.' : scenario === 'incident' && requirement.id === 'reminders-arrive-on-time' ? 'The production delivery probe exceeded the five-minute deadline.' : requirement.reason,
+    gap: scenario === 'healthy' || notApplicableHere(requirement.id) ? undefined : requirement.gap,
   }));
   const authority = {
     fingerprint: revision, model_fingerprint: identity('source-model'),
@@ -134,6 +135,35 @@ export function developmentRead(project: string, path: string): unknown {
     if (route === '/reviews') return { records: [], next: null };
     if (['/runs', '/verification-targets', '/model-revisions', '/releases', '/changes', '/deployments', '/environments'].includes(route)) return page([]);
     return null;
+  }
+  const hour = 3600000;
+  const olderDeployment = { deployment_id: 'payments-2026-09-12', release_fingerprint: identity('release:1.7'), label: 'Payments 1.7',
+    first_observed_ms: Date.now() - 40 * 24 * hour, last_observed_ms: Date.now() - 10 * 24 * hour, rollout_id: 'rollout-1.7' };
+  const previousDeployment = { deployment_id: 'payments-2026-10-10', release_fingerprint: identity('release:1.8-rc'), label: 'Payments 1.8 RC',
+    first_observed_ms: Date.now() - 10 * 24 * hour, last_observed_ms: Date.now() - 2 * 24 * hour, rollout_id: 'rollout-1.8-rc' };
+  const history = (environment: string) => [
+    ...(environment === 'production' ? [{ deployment_id: deployment.id, release_fingerprint: releaseId, label: release.label, first_observed_ms: Date.now() - 2 * 24 * hour, last_observed_ms: Date.now() - 60000, rollout_id: 'rollout-1.8', current: true }] : [{ deployment_id: stagingDeployment.id, release_fingerprint: releaseId, label: release.label, first_observed_ms: Date.now() - 20 * 60000, last_observed_ms: Date.now() - 60000, rollout_id: 'rollout-1.8-staging', current: true }]),
+    ...(environment === 'production' ? [{ ...previousDeployment, current: false }, { ...olderDeployment, current: false }] : []),
+  ];
+  const deliveryGapFor = (environment: string) => {
+    const current = environment === 'production' ? deployment : stagingDeployment;
+    return { environment, deployment_id: current.id, release_fingerprint: releaseId, release_model_revision: revision, main_model_revision: identity('main-model'),
+      main_commit: '9fb783f0c2d14e6a8b7d5c3e1a09f4b2d6c8e7a1', main_sequence: 42,
+      requirements: [
+        { id: 'delivery-recovers-after-outage', difference: 'added', criticality: 'critical', release_status: null },
+        { id: 'reminders-follow-current-payment', difference: 'changed', criticality: 'important', release_status: scenario === 'healthy' ? 'supported' : 'violated' },
+        { id: 'notification-content-is-complete', difference: 'changed', criticality: 'routine', release_status: 'supported' },
+      ].filter(r => scenario !== 'healthy' || r.difference !== 'changed' || r.id !== 'notification-content-is-complete') };
+  };
+  const environmentRoute = /^\/environments\/([^/]+)\/(delivery-gap|rollback-candidates|deployment-history)$/.exec(route);
+  if (environmentRoute && ['production', 'staging'].includes(environmentRoute[1])) {
+    const [, environment, kind] = environmentRoute;
+    if (kind === 'delivery-gap') return deliveryGapFor(environment);
+    if (kind === 'deployment-history') return { project, environment, deployments: history(environment), next_page_token: null };
+    return { project, environment, candidates: environment === 'production' ? [
+      { ...previousDeployment, last_status_at_ms: Date.now() - 2 * 24 * hour, non_routine_requirements: 4 },
+      { ...olderDeployment, last_status_at_ms: Date.now() - 38 * 24 * hour, non_routine_requirements: 3 },
+    ] : [] };
   }
   if (route === '/environments/staging/deployment') return {
     project, environment: 'staging', revision: 1, deployment: stagingDeployment, release_fingerprint: releaseId,

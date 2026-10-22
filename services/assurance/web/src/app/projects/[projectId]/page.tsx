@@ -8,9 +8,21 @@ const statusLabel = (status: string) =>
     ? "Satisfied"
     : status === "violated"
       ? "Not satisfied"
-      : "Unresolved";
+      : status === "not-applicable"
+        ? "Not applicable here"
+        : "Unresolved";
 const tone = (status: string) =>
-  status === "supported" ? "good" : status === "violated" ? "bad" : "warn";
+  status === "supported"
+    ? "good"
+    : status === "violated"
+      ? "bad"
+      : status === "not-applicable"
+        ? "neutral"
+        : "warn";
+const STALE_STATUS_MS = 30 * 24 * 60 * 60 * 1000;
+const utc = (ms: number) =>
+  `${new Date(ms).toISOString().replace("T", " ").slice(0, 16)} UTC`;
+const differenceLabel = { added: "Added", changed: "Changed", removed: "Removed" } as const;
 
 export default async function ProjectPage({
   params,
@@ -34,6 +46,8 @@ export default async function ProjectPage({
     state,
     freshness,
     authority,
+    deliveryGap,
+    rollbackCandidates,
     hasMore,
     catalog,
     isCurrent,
@@ -56,11 +70,12 @@ export default async function ProjectPage({
     supported: requirements.filter((c) => c.status === "supported").length,
     violated: requirements.filter((c) => c.status === "violated").length,
     unresolved: requirements.filter(
-      (c) => !["supported", "violated"].includes(c.status),
+      (c) => !["supported", "violated", "not-applicable"].includes(c.status),
     ).length,
   };
+  const notApplicable = requirements.filter((c) => c.status === "not-applicable");
   const attention = requirements
-    .filter((c) => c.status !== "supported")
+    .filter((c) => c.status !== "supported" && c.status !== "not-applicable")
     .sort(
       (a, b) =>
         Number(b.status === "violated") - Number(a.status === "violated"),
@@ -114,25 +129,28 @@ export default async function ProjectPage({
           </small>
         </div>
         <div>
-          <span className="fieldLabel">ACCEPTANCE</span>
-          <span className={`badge ${release?.acceptance ? "good" : "neutral"}`}>
-            {release
-              ? release.acceptance
-                ? "Accepted"
-                : "Pending acceptance"
-              : "Not available"}
-          </span>
+          <span className="fieldLabel">RELEASE MODEL</span>
+          {revision ? (
+            <Link className="mono" href={modelLink()}>
+              {revision.slice(7, 19)} ↗
+            </Link>
+          ) : (
+            <span className="mono">Not available</span>
+          )}
+          <small>The model this deployment is assessed against</small>
         </div>
         <div>
-          <span className="fieldLabel">ACCEPTED MODEL</span>
+          <span className="fieldLabel">DEFAULT MODEL</span>
           <Link className="mono" href={`${root}/model?environment=${encodeURIComponent(environment)}`}>
-            {authority ? authority.fingerprint.slice(7, 19) : "Not selected"}
+            {authority ? authority.fingerprint.slice(7, 19) : "Not available"}
             {authority ? " ↗" : ""}
           </Link>
           <small>
-            {revision && authority?.fingerprint !== revision
-              ? "Differs from deployed release"
-              : "Selected model baseline"}
+            {deliveryGap
+              ? `Main, commit ${deliveryGap.main_commit.slice(0, 7)} · ${deliveryGap.requirements.length ? `${deliveryGap.requirements.length} Requirement${deliveryGap.requirements.length === 1 ? "" : "s"} not yet deployed` : "nothing undeployed"}`
+              : revision && authority?.fingerprint !== revision
+                ? "Differs from the deployed release model"
+                : "Model shown when no release is selected"}
           </small>
         </div>
         <Link className="outlineButton" href={`${root}/records`}>
@@ -202,6 +220,36 @@ export default async function ProjectPage({
           </Link>
         ))}
       </div>
+      {state && notApplicable.length > 0 && (
+        <section className="dashboardPanel" id="not-applicable" aria-label="Not applicable here">
+          <div className="panelHeading">
+            <div>
+              <h2>Not applicable here</h2>
+              <p>
+                The required context of this deployment does not hold, so these
+                Requirements are neither satisfied nor failing. They are not
+                counted as passing.
+              </p>
+            </div>
+            <span className="panelCount">{notApplicable.length}</span>
+          </div>
+          <div className="attentionList">
+            {notApplicable.map((c) => (
+              <Link className="attentionRow" key={c.requirement} href={modelLink(c.requirement)}>
+                <span className="attentionIcon neutral">–</span>
+                <div>
+                  <div className="rowMeta">
+                    <span>{moduleName(c.requirement)}</span>
+                    <span className="badge neutral">Not applicable here</span>
+                  </div>
+                  <h3>{title(c.requirement)}</h3>
+                  <p>{c.explanation.summary}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
       <div className="dashboardColumns">
         <section className="dashboardPanel" id="attention">
           <div className="panelHeading">
@@ -265,8 +313,9 @@ export default async function ProjectPage({
           <h2>Evidence, with boundaries.</h2>
           <p>
             Modules organize Requirements. Scenarios describe expected behavior.
-            Checks produce Results. ASS assesses the evidence and shows
-            Requirement Status for a deployment.
+            Checks produce Results. Azimuth Assurance Service assesses the
+            evidence against the deployment&apos;s own release model and shows
+            Requirement Status for it.
           </p>
           <p>
             A passing Check or an accepted Requirement Review alone does not
@@ -287,16 +336,6 @@ export default async function ProjectPage({
                 )}
               </dd>
             </div>
-            <div>
-              <dt>Release acceptance</dt>
-              <dd>
-                {release
-                  ? release.acceptance
-                    ? "Accepted"
-                    : "Pending"
-                  : "Unavailable"}
-              </dd>
-            </div>
           </dl>
           <Link
             className="textLink"
@@ -306,6 +345,131 @@ export default async function ProjectPage({
           </Link>
         </aside>
       </div>
+      <section className="dashboardPanel" id="delivery-gap" aria-label="Delivery gap">
+        <div className="panelHeading">
+          <div>
+            <h2>Delivery gap</h2>
+            <p>
+              What main has that the deployed release does not, per Requirement.
+            </p>
+          </div>
+          <span className="panelCount">
+            {deliveryGap ? deliveryGap.requirements.length : "—"}
+          </span>
+        </div>
+        {!deliveryGap ? (
+          <p className="tableEmpty">
+            Not available: this environment has no selected deployment or main
+            has no published model.
+          </p>
+        ) : !deliveryGap.requirements.length ? (
+          <p className="tableEmpty">
+            The deployed release contains every Requirement of main (commit{" "}
+            <span className="mono">{deliveryGap.main_commit.slice(0, 7)}</span>).
+          </p>
+        ) : (
+          <>
+            <p className="modelDetailMuted">
+              Main at commit{" "}
+              <span className="mono">{deliveryGap.main_commit.slice(0, 7)}</span>{" "}
+              (sequence {deliveryGap.main_sequence}) against deployment{" "}
+              <span className="mono">{deliveryGap.deployment_id}</span>. The
+              status shown is the one measured on the deployed release.
+            </p>
+            <div className="tableScroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Requirement</th>
+                    <th>Difference</th>
+                    <th>Criticality</th>
+                    <th>Status on deployed release</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deliveryGap.requirements.map((r) => (
+                    <tr key={r.id}>
+                      <td>{r.difference === "added" ? title(r.id) : <Link href={modelLink(r.id)}>{title(r.id)}</Link>}</td>
+                      <td>{differenceLabel[r.difference]}</td>
+                      <td>{r.criticality ?? "—"}</td>
+                      <td>
+                        {r.release_status ? (
+                          <span className={`badge ${tone(r.release_status)}`}>
+                            {statusLabel(r.release_status)}
+                          </span>
+                        ) : (
+                          "Not in the deployed release"
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </section>
+      <section className="dashboardPanel" id="rollback-candidates" aria-label="Rollback candidates">
+        <div className="panelHeading">
+          <div>
+            <h2>Rollback candidates</h2>
+            <p>
+              Earlier deployments of this environment whose non-routine
+              Requirements were all satisfied at their last stored status.
+              Rollback is performed by the deployment system; Azimuth only
+              observes it.
+            </p>
+          </div>
+          <span className="panelCount">{rollbackCandidates.length}</span>
+        </div>
+        {!rollbackCandidates.length ? (
+          <p className="tableEmpty">No earlier deployment qualifies as a rollback candidate.</p>
+        ) : (
+          <div className="tableScroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Release</th>
+                  <th>Deployment</th>
+                  <th>Last observed</th>
+                  <th>Last stored status</th>
+                  <th>Non-routine Requirements</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rollbackCandidates.map((c) => {
+                  const stale = Date.now() - c.last_status_at_ms > STALE_STATUS_MS;
+                  return (
+                    <tr key={c.deployment_id}>
+                      <td>
+                        <Link href={`${root}/releases/${encodeURIComponent(c.release_fingerprint)}?environment=${encodeURIComponent(environment)}`}>
+                          {c.label}
+                        </Link>
+                      </td>
+                      <td>
+                        <Link href={`${root}?environment=${encodeURIComponent(environment)}&deployment=${encodeURIComponent(c.deployment_id)}`}>
+                          {c.deployment_id}
+                        </Link>
+                      </td>
+                      <td>{utc(c.last_observed_ms)}</td>
+                      <td>
+                        <time dateTime={new Date(c.last_status_at_ms).toISOString()}>{utc(c.last_status_at_ms)}</time>{" "}
+                        {stale && <span className="badge warn">Stale</span>}
+                      </td>
+                      <td>{c.non_routine_requirements}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="modelDetailMuted">
+          The timestamp is the last stored status of that deployment. Status
+          older than 30 days is labeled stale: the evidence may no longer hold,
+          so open the deployment before relying on it.
+        </p>
+      </section>
       <section className="dashboardPanel modulePanel" id="modules">
         <div className="panelHeading">
           <div>
@@ -328,6 +492,7 @@ export default async function ProjectPage({
                 <th>Satisfied</th>
                 <th>Not satisfied</th>
                 <th>Unresolved</th>
+                <th>Not applicable</th>
                 <th>
                   <span className="srOnly">Details</span>
                 </th>
@@ -354,9 +519,12 @@ export default async function ProjectPage({
                     <td className="warnText">
                       {
                         state ? rows.filter(
-                          (c) => !["supported", "violated"].includes(c.status),
+                          (c) => !["supported", "violated", "not-applicable"].includes(c.status),
                         ).length : "—"
                       }
+                    </td>
+                    <td>
+                      {state ? rows.filter((c) => c.status === "not-applicable").length : "—"}
                     </td>
                     <td>
                       <Link
@@ -379,8 +547,8 @@ export default async function ProjectPage({
         )}
       </section>
       <p className="dashboardFootnote">
-        Read-only view · Assessments are retrieved on page load · Acceptance is
-        an explicit decision
+        Read-only view · Assessments are retrieved on page load · Rollback is
+        performed by the deployment system
       </p>
     </div>
   );
