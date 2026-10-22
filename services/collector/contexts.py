@@ -15,6 +15,8 @@ MAX_BYTES = 4 * 1024 * 1024
 ID = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\Z")
 SHA = re.compile(r"sha256:[0-9a-f]{64}\Z")
 INSTANCE = re.compile(r"[a-z0-9][a-z0-9+.-]*://[A-Za-z0-9_.:-]{1,480}\Z")
+LEAF = re.compile(r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*\Z")
+SECRET_FRAGMENTS = ("password", "secret", "credential", "token", "privatekey", "private_key")
 BOOT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
 CONTEXT_PATH = "/internal/execution-context"
 TARGET_OBSERVATION_VERSION = 2
@@ -71,8 +73,8 @@ def validate_sources(config):
         require(source["namespace"] in config["namespaces"] and source["project"] in config["projects"], "context source outside approved namespace/project")
         require(type(source["port"]) is int and source["port"] == 9001 and source["path"] == CONTEXT_PATH, "context scraping requires approved telemetry port and route")
         contracts = source["contracts"]
-        require(isinstance(contracts, list) and 0 < len(contracts) <= 32, "explicit full reviewed context contracts required")
-        registered_contracts({"records": [{"contract": contract} for contract in contracts]}, [contract.get("fingerprint") for contract in contracts])
+        require(isinstance(contracts, list) and len(contracts) == 1 and isinstance(contracts[0], dict), "exactly one explicit full reviewed component context contract required")
+        component_contract(source)
         require(isinstance(source["token_file"], str) and source["token_file"].startswith("/credentials/") and ".." not in Path(source["token_file"]).parts, "context publisher credential must be separately mounted")
     return sources
 
@@ -134,38 +136,42 @@ def registered_contracts(response, references):
             continue
         require(set(contract) == {"name", "fields", "fingerprint"} and fingerprint({"name": contract["name"], "fields": contract["fields"]}) == contract["fingerprint"], "registered context contract fingerprint differs")
         require(contract["name"] not in found and isinstance(contract["fields"], dict) and contract["fields"], "ambiguous or empty registered context contract")
-        require(all(isinstance(field, str) and field and kind in ("string", "boolean", "integer") for field, kind in contract["fields"].items()), "unsupported context contract field")
+        require(all(isinstance(field, str) and LEAF.fullmatch(field) and not any(fragment in field.lower() for fragment in SECRET_FRAGMENTS) and kind in ("string", "boolean", "integer") for field, kind in contract["fields"].items()), "unsupported context contract leaf")
         found[contract["name"]] = contract
     require({contract["fingerprint"] for contract in found.values()} == set(references), "approved context contract is not registered")
     return found
 
 
-def select_report(report, contracts):
+def component_contract(source):
+    contracts = registered_contracts({"records": [{"contract": item} for item in source["contracts"]]}, [item.get("fingerprint") for item in source["contracts"]])
+    require(set(contracts) == {source["component"]}, "component context contract must be named by the component id")
+    return contracts[source["component"]]
+
+
+def select_report(report, contract, component):
     require(isinstance(report, dict) and set(report) == {"format", "version", "contexts"} and report["format"] == "azimuth-execution-context" and type(report["version"]) is int and report["version"] == 2 and isinstance(report["contexts"], dict), "unsupported application Execution Context report; azimuth-execution-context version 2 required")
-    selected = {}
-    for name, contract in contracts.items():
-        context = report["contexts"].get(name)
-        require(isinstance(context, dict) and set(context) == {"contract_revision", "values"} and context["contract_revision"] == contract["fingerprint"] and isinstance(context["values"], dict) and set(context["values"]) == set(contract["fields"]), "effective context differs from registered contract")
-        for key, kind in contract["fields"].items():
-            value = context["values"][key]
-            require((kind == "boolean" and type(value) is bool) or (kind == "string" and isinstance(value, str)) or (kind == "integer" and type(value) is int and 0 <= value <= 9007199254740991), "effective context value has wrong type")
-        selected[name] = context
-    return {"format": report["format"], "version": report["version"], "contexts": selected}
+    require(set(report["contexts"]) == {component}, "application must serve exactly one context named by the component id")
+    context = report["contexts"][component]
+    require(isinstance(context, dict) and set(context) == {"contract_revision", "values"} and context["contract_revision"] == contract["fingerprint"] and isinstance(context["values"], dict) and set(context["values"]) == set(contract["fields"]), "effective context differs from registered contract")
+    for key, kind in contract["fields"].items():
+        value = context["values"][key]
+        require((kind == "boolean" and type(value) is bool) or (kind == "string" and isinstance(value, str)) or (kind == "integer" and type(value) is int and 0 <= value <= 9007199254740991), "effective context value has wrong type")
+    return {"format": report["format"], "version": report["version"], "contexts": {component: context}}
 
 
-def snapshot(source, instance, contracts):
+def snapshot(source, instance, contract):
     address = "[" + instance["ip"] + "]" if ":" in instance["ip"] else instance["ip"]
     report, headers = request_json("http://" + address + ":" + str(source["port"]) + source["path"])
     boot = next((value for key, value in headers.items() if key.lower() == "x-azimuth-instance"), None)
     require(isinstance(boot, str) and BOOT.fullmatch(boot), "application process boot identity is missing")
-    return {"captured_at_ms": int(time.time() * 1000), "instance": instance["instance"], "report": select_report(report, contracts)}, boot
+    return {"captured_at_ms": int(time.time() * 1000), "instance": instance["instance"], "report": select_report(report, contract, source["component"])}, boot
 
 
 def collect(origin, source, kube, token=None):
-    contracts = registered_contracts({"records": [{"contract": item} for item in source["contracts"]]}, [item["fingerprint"] for item in source["contracts"]])
+    contract = component_contract(source)
     initial = kube.instances(source)
-    before = {item["instance"]: snapshot(source, item, contracts) for item in initial["instances"]}
-    after = {item["instance"]: snapshot(source, item, contracts) for item in initial["instances"]}
+    before = {item["instance"]: snapshot(source, item, contract) for item in initial["instances"]}
+    after = {item["instance"]: snapshot(source, item, contract) for item in initial["instances"]}
     require(kube.instances(source) == initial, "Pod lifetime, ownership or readiness changed during capture")
     captures = []
     for item in initial["instances"]:
