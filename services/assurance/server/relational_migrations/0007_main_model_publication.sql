@@ -4,12 +4,12 @@ DROP TABLE current_authorities;
 
 ALTER TABLE assurance_releases
     DROP COLUMN baseline_model_revision,
-    ADD COLUMN integration_commit text CHECK (integration_commit ~ '^[0-9a-f]{40}$'),
+    ADD COLUMN integration_commit text CHECK (integration_commit ~ '^([0-9a-f]{40}|[0-9a-f]{64})$'),
     ADD COLUMN integration_sequence bigint CHECK (integration_sequence >= 0);
 
 CREATE TABLE main_publications (
     project text NOT NULL,
-    commit_sha text NOT NULL CHECK (commit_sha ~ '^[0-9a-f]{40}$'),
+    commit_sha text NOT NULL CHECK (commit_sha ~ '^([0-9a-f]{40}|[0-9a-f]{64})$'),
     main_sequence bigint NOT NULL CHECK (main_sequence >= 0),
     model_revision text NOT NULL,
     ratification_status text NOT NULL CHECK (ratification_status IN ('ratified','unratified')),

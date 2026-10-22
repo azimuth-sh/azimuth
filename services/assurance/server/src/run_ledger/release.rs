@@ -232,7 +232,7 @@ fn integration_attestation(release: &Value) -> Result<Option<(&str, i64)>, Ledge
         .and_then(Value::as_str)
         .filter(|commit| is_commit(commit))
         .ok_or_else(|| {
-            LedgerError::invalid("integration commit requires 40 lowercase hex digits")
+            LedgerError::invalid("integration commit requires 40 or 64 lowercase hex digits")
         })?;
     let sequence = fields
         .get("main_sequence")
@@ -448,7 +448,7 @@ fn parse_main_publication(body: &[u8], project: &str) -> Result<MainPublication,
     let commit = text(&payload, "commit")?;
     if !is_commit(commit) {
         return Err(LedgerError::invalid(
-            "commit requires 40 lowercase hex digits",
+            "commit requires 40 or 64 lowercase hex digits",
         ));
     }
     let main_sequence = payload["main_sequence"]
