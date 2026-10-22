@@ -414,9 +414,13 @@ async fn publish(
                 }
             }
         }
-        for (kind, identity) in dependencies {
-            sqlx::query("INSERT INTO assessment_dependencies(project,deployment,requirement,kind,identity) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING").bind(project).bind(deployment).bind(id).bind(kind).bind(identity).execute(&mut *tx).await?;
-        }
+        let (dependency_kinds, dependency_identities): (Vec<String>, Vec<String>) =
+            dependencies.into_iter().unzip();
+        sqlx::query("INSERT INTO assessment_dependencies(project,deployment,requirement,kind,identity) SELECT $1,$2,$3,kind,identity FROM UNNEST($4::text[],$5::text[]) AS d(kind,identity) ON CONFLICT DO NOTHING")
+            .bind(project).bind(deployment).bind(id).bind(&dependency_kinds).bind(&dependency_identities).execute(&mut *tx).await?;
+        // One statement per Requirement keeps the row locks of the publication short; a repeated binding keeps
+        // its last result, as sequential upserts would.
+        let mut scenario_results: BTreeMap<(String, String), (String, String)> = BTreeMap::new();
         for binding in requirement["bindings"].as_array().unwrap() {
             let coverage = requirement["explanation"]["coverage"]
                 .as_array()
@@ -429,8 +433,20 @@ async fn publish(
                 .unwrap();
             let evidence = run::canonical_fingerprint(&core_json(coverage.to_string().as_bytes())?)
                 .map_err(LedgerError::invalid)?;
-            sqlx::query("INSERT INTO assessment_scenarios(project,deployment,requirement,scenario_id,check_id,status,generation,result_fingerprint) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(project,deployment,requirement,scenario_id,check_id) DO UPDATE SET status=excluded.status,generation=excluded.generation,result_fingerprint=excluded.result_fingerprint WHERE assessment_scenarios.status IS DISTINCT FROM excluded.status OR assessment_scenarios.result_fingerprint IS DISTINCT FROM excluded.result_fingerprint").bind(project).bind(deployment).bind(id).bind(binding["scenario"].as_str()).bind(binding["check"].as_str()).bind(binding["status"].as_str()).bind(requirement_generation).bind(evidence).execute(&mut *tx).await?;
+            scenario_results.insert(
+                (
+                    binding["scenario"].as_str().unwrap().to_string(),
+                    binding["check"].as_str().unwrap().to_string(),
+                ),
+                (binding["status"].as_str().unwrap().to_string(), evidence),
+            );
         }
+        let (scenario_ids, check_ids): (Vec<String>, Vec<String>) =
+            scenario_results.keys().cloned().unzip();
+        let (statuses, fingerprints): (Vec<String>, Vec<String>) =
+            scenario_results.into_values().unzip();
+        sqlx::query("INSERT INTO assessment_scenarios(project,deployment,requirement,scenario_id,check_id,status,generation,result_fingerprint) SELECT $1,$2,$3,s.scenario_id,s.check_id,s.status,$4,s.result_fingerprint FROM UNNEST($5::text[],$6::text[],$7::text[],$8::text[]) AS s(scenario_id,check_id,status,result_fingerprint) ON CONFLICT(project,deployment,requirement,scenario_id,check_id) DO UPDATE SET status=excluded.status,generation=excluded.generation,result_fingerprint=excluded.result_fingerprint WHERE assessment_scenarios.status IS DISTINCT FROM excluded.status OR assessment_scenarios.result_fingerprint IS DISTINCT FROM excluded.result_fingerprint")
+            .bind(project).bind(deployment).bind(id).bind(requirement_generation).bind(&scenario_ids).bind(&check_ids).bind(&statuses).bind(&fingerprints).execute(&mut *tx).await?;
     }
     let unpublished: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM assessment_requirements WHERE project=$1 AND deployment=$2 AND generation<>published_generation)")
         .bind(project).bind(deployment).fetch_one(&mut *tx).await?;

@@ -161,10 +161,10 @@ pub(super) async fn record_capture(
         .as_object_mut()
         .unwrap()
         .insert("trusted".into(), json!(true));
+    // Read committed: the assessment invalidation trigger locks every deployment assessment of the project at
+    // commit, and under a snapshot isolation level that lock fails whenever the worker published since the first
+    // statement. Read committed sees the published state and finishes invalidation without a worker replay.
     let mut tx = state.pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
-        .execute(&mut *tx)
-        .await?;
     let contract_records = records(&mut *tx, &project, "context_contract").await?;
     let contracts = contract_records
         .iter()
