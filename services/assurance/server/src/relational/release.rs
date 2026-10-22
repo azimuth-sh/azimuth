@@ -34,7 +34,6 @@ fn publication() -> Schema {
                 ("artifacts", Schema::Document),
                 ("deployments", list(Schema::Ref("deployment"))),
                 ("components", Schema::Document),
-                ("composition", Schema::Document),
                 ("required_reviews", Schema::Document),
                 ("integration", Schema::Document),
                 ("unit_inputs", Schema::Document),
