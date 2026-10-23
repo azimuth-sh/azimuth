@@ -931,6 +931,21 @@ pub fn finalization(
     (fingerprint, Json::obj(pairs).to_string_pretty())
 }
 
+/// Writes `provenance/ledger.json` when the change was coordinated by a workflow instance. The
+/// ledger is produced here rather than at archive so that archiving moves an unchanged tree, which
+/// federation's change-acceptance digest compares.
+pub fn finalize_provenance(root: &Path) -> Result<Option<std::path::PathBuf>, String> {
+    if !crate::provenance::default_instance(root).is_file() {
+        return Ok(None);
+    }
+    crate::provenance::write_ledger(root, &[], None).map(|(path, _)| Some(path))
+}
+
+/// Archive refuses a committed ledger that a fresh export would not reproduce.
+pub fn provenance_archive_issues(root: &Path) -> Vec<String> {
+    crate::provenance::committed_ledger_issues(root)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

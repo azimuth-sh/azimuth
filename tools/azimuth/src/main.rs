@@ -20,10 +20,13 @@ azimuth — derives and validates an evidence-control-plane model
 
 USAGE
     azimuth workflow definition --workflow change-development [--out <file>]\n\
-    azimuth workflow init (--workflow change-development --inputs <file> | --definition <file>) --instance <file> --repositories <file>
+    azimuth workflow init (--workflow change-development --inputs <file> | --definition <file>) --instance <file> --repositories <file> [--predecessor <file>]
     azimuth workflow next|verify --instance <file> --repositories <file> [--out <file>]
     azimuth workflow assurance-targets --instance <file> --repositories <file> --snapshot <relative-ref> [--verification-targets <relative-ref>] [--out <file>]
-    azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--out <file>]
+    azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--descriptor <file>] [--out <file>]
+    azimuth workflow abandon --instance <file> --expected-revision <number> --reason <text> [--out <file>]
+    azimuth provenance ledger --change <dir> [--instance <file>...] [--out <file>]
+    azimuth provenance attributions --input <failure-attributions.md> [--out <file>]
     azimuth release prepare|verify|inputs --input <file> [--out <file>]
         [--unit-rule <file>] [--checkout <dir>] [--repository <id>]   (prepare only)
     azimuth assurance deployment-status --input <file> [--out <file>]
@@ -31,6 +34,7 @@ USAGE
     azimuth assurance catalog --project <id> [model options] [--out <file>]
     azimuth validate [options]
     azimuth report traceability [options]
+    azimuth report provenance [--root <repository>] [--change <id>] [--out <file>]
     azimuth export [options]
     azimuth surface verify --manifest <file>... --enumeration <file> --expectations <file>
     azimuth assurance review-input --project <id> --request <file> [--review <file>...]
@@ -167,7 +171,7 @@ fn command_workflow(args: &[String]) -> Result<ExitCode, String> {
         for pair in selected.windows(2) {
             let protected = match pair[0].as_str() {
                 "--instance" | "--definition" | "--inputs" | "--result" | "--repositories"
-                | "--project" => Some(PathBuf::from(&pair[1])),
+                | "--project" | "--descriptor" | "--predecessor" => Some(PathBuf::from(&pair[1])),
                 "--change" => Some(PathBuf::from(&pair[1]).join("workflow.json")),
                 _ => None,
             };
@@ -237,6 +241,9 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
     if command == "workflow" {
         return command_workflow(&args[1..]);
     }
+    if command == "provenance" {
+        return command_provenance(&args[1..]);
+    }
     if command == "change" {
         return command_change(&args[1..]);
     }
@@ -288,6 +295,79 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
         "export" => command_export(parse_options(&args[1..], false)?),
         other => Err(format!("unknown command `{other}`\n\n{USAGE}")),
     }
+}
+
+fn command_provenance(args: &[String]) -> Result<ExitCode, String> {
+    let Some(operation) = args.first() else {
+        return Err("provenance needs ledger or attributions".into());
+    };
+    let mut change = None;
+    let mut input = None;
+    let mut instances = Vec::new();
+    let mut out = None;
+    let mut index = 1;
+    while index < args.len() {
+        let flag = args[index].as_str();
+        let value = argument_value(args, index, flag)?;
+        match (operation.as_str(), flag) {
+            ("ledger", "--change") if change.is_none() => change = Some(PathBuf::from(value)),
+            ("ledger", "--instance") => instances.push(PathBuf::from(value)),
+            ("attributions", "--input") if input.is_none() => input = Some(PathBuf::from(value)),
+            ("ledger" | "attributions", "--out") if out.is_none() => {
+                out = Some(PathBuf::from(value))
+            }
+            _ => {
+                return Err(format!(
+                    "unknown or repeated provenance {operation} option `{flag}`"
+                ))
+            }
+        }
+        index += 2;
+    }
+    match operation.as_str() {
+        "ledger" => {
+            let change = change.ok_or("provenance ledger needs `--change <change-directory>`")?;
+            let (path, ledger) =
+                azimuth::provenance::write_ledger(&change, &instances, out.as_deref())?;
+            println!(
+                "wrote Work Provenance ledger {} ({})",
+                path.display(),
+                azimuth::provenance::ledger_fingerprint(&ledger)
+            );
+            Ok(ExitCode::SUCCESS)
+        }
+        "attributions" => {
+            let input = input.ok_or("provenance attributions needs `--input <file>`")?;
+            let source = fs::read_to_string(&input)
+                .map_err(|error| format!("{}: {error}", input.display()))?;
+            let compiled =
+                azimuth::provenance::compile_attributions(&input.display().to_string(), &source)?;
+            publish_output(compiled.to_string_pretty().as_bytes(), out.as_ref())?;
+            Ok(ExitCode::SUCCESS)
+        }
+        other => Err(format!("unknown provenance operation `{other}`")),
+    }
+}
+
+fn command_report_provenance(args: &[String]) -> Result<ExitCode, String> {
+    let mut root = PathBuf::from(".");
+    let mut change = None;
+    let mut out = None;
+    let mut index = 0;
+    while index < args.len() {
+        let flag = args[index].as_str();
+        let value = argument_value(args, index, flag)?;
+        match flag {
+            "--root" => root = PathBuf::from(value),
+            "--change" => change = Some(value),
+            "--out" => out = Some(PathBuf::from(value)),
+            other => return Err(format!("unknown report provenance option `{other}`")),
+        }
+        index += 2;
+    }
+    let dataset = azimuth::provenance::dataset(&root, change.as_deref())?;
+    publish_output(dataset.as_bytes(), out.as_ref())?;
+    Ok(ExitCode::SUCCESS)
 }
 
 fn command_init(args: &[String]) -> Result<ExitCode, String> {
@@ -1417,6 +1497,9 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
             std::fs::write(root.join("finalization.json"), finalization).map_err(|error| {
                 format!("cannot write {}/finalization.json: {error}", root.display())
             })?;
+            if let Some(ledger) = azimuth::change::finalize_provenance(&root)? {
+                println!("exported Work Provenance to {}", ledger.display());
+            }
             println!("finalized `{}` at model {fingerprint}", report.id);
             Ok(ExitCode::SUCCESS)
         }
@@ -1468,6 +1551,13 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
             }
             if !findings.is_empty() {
                 eprintln!("error: accepted-state model has findings");
+                return Ok(ExitCode::from(1));
+            }
+            let provenance_issues = azimuth::change::provenance_archive_issues(&root);
+            if !provenance_issues.is_empty() {
+                for issue in &provenance_issues {
+                    eprintln!("error: {issue}");
+                }
                 return Ok(ExitCode::from(1));
             }
             if root
@@ -3506,8 +3596,11 @@ fn render_validation(
 
 fn command_report(args: &[String]) -> Result<ExitCode, String> {
     let Some(operation) = args.first() else {
-        return Err("report needs traceability".into());
+        return Err("report needs traceability or provenance".into());
     };
+    if operation == "provenance" {
+        return command_report_provenance(&args[1..]);
+    }
     if operation != "traceability" {
         return Err(format!("unknown report `{operation}`"));
     }

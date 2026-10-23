@@ -6,10 +6,11 @@ The CLI coordinates work; the harness assigns it, executes agents, obtains crede
 
 ```text
 azimuth workflow definition --workflow change-development [--out <file>]
-azimuth workflow init --workflow change-development --inputs <file> --instance <file> --repositories <file>
-azimuth workflow init --definition <file> [--inputs <file>] --instance <file> --repositories <file>
+azimuth workflow init --workflow change-development --inputs <file> --instance <file> --repositories <file> [--predecessor <file>]
+azimuth workflow init --definition <file> [--inputs <file>] --instance <file> --repositories <file> [--predecessor <file>]
 azimuth workflow next --instance <file> --repositories <file> [--out <file>]
-azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--out <file>]
+azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--descriptor <file>] [--out <file>]
+azimuth workflow abandon --instance <file> --expected-revision <number> --reason <text> [--out <file>]
 azimuth workflow verify --instance <file> --repositories <file> [--out <file>]
 ```
 
@@ -48,7 +49,7 @@ The engine resolves declarative reusable templates into explicit finite task gra
 
 ## Select the standard change workflow
 
-Ordinary coordination selects the shipped `change-development` definition. `workflow definition --workflow change-development` returns its exact reusable JSON. `init` embeds that template, its declared revision and canonical fingerprint, its portable parameters, and the resolved concrete tasks. The instance's definition fingerprint pins the entire expansion. Template/version identity and exact task definitions remain available offline; an upgrade of the CLI never silently changes an existing instance. The workflow definition, instance, template, handoff and result formats and the internal `azimuth-assurance-target-inventory` are version 2; obsolete intent-action spellings are replaced without aliases. Version 1 instances use the retired Claim, Case, Subject and Challenger names; this CLI rejects them rather than reading them through an alias, so an in-progress version 1 instance is preserved as a historical record and replaced by a fresh instance.
+Ordinary coordination selects the shipped `change-development` definition. `workflow definition --workflow change-development` returns its exact reusable JSON. `init` embeds that template, its declared revision and canonical fingerprint, its portable parameters, and the resolved concrete tasks. The instance's definition fingerprint pins the entire expansion. Template/version identity and exact task definitions remain available offline; an upgrade of the CLI never silently changes an existing instance. The workflow definition and template formats and the internal `azimuth-assurance-target-inventory` are version 2, and the instance, handoff and result formats are version 3 (see Work Provenance capture); obsolete intent-action spellings are replaced without aliases. Version 1 instances use the retired Claim, Case, Subject and Challenger names; this CLI rejects them rather than reading them through an alias, so an in-progress version 1 instance is preserved as a historical record and replaced by a fresh instance.
 
 Create the instance directory and its `inputs/request.md`. Supply `inputs.json`:
 
@@ -114,7 +115,7 @@ Actions are declared in dependency order. Unknown actions/outcomes/bindings, dup
 
 A concrete work reference is exactly `{action, target}`. `action` is the definition action ID; `target` contains the declared typed locators. The target includes explicit project/change and, for assurance, exact model revision; Requirement Review tasks carry Requirement identity without Verification Target, while Check execution and Requirement Status tasks carry exact Verification Target. References are compared by canonical JSON, independent of field order, inventory order and local checkout paths. No target hash is an identity. Each handoff's `id`, result `task`, concrete definition `id`/`depends_on`/`correction`, and review or approval `task` use this same structure. Artifact fingerprints, basis fingerprints and definition fingerprints remain hashes because they detect content drift rather than name work. Unknown action/target pairs are rejected.
 
-The previous alpha hashed/string work references are replaced without aliases or automatic migration. Preserve an old instance and its immutable records, then initialize a fresh instance and reassess its obligations. Do not rewrite accepted historical results or their basis fingerprints. The workflow definition, instance, handoff and result formats are version 2.
+The previous alpha hashed/string work references are replaced without aliases or automatic migration. Preserve an old instance and its immutable records, then initialize a fresh instance and reassess its obligations. Do not rewrite accepted historical results or their basis fingerprints. The workflow definition format is version 2; the instance, handoff and result formats are version 3.
 
 ## Automatic assurance targets
 
@@ -193,6 +194,18 @@ For a concrete definition, a completed result can include one additional support
 
 Inputs are `{kind, ref}` for workflow-local files, or `{kind, repository, ref}` for repository files. `ref` is always a normal relative file path. The local repository file supplies checkout locations; the instance directory supplies the location of workflow-local files. Missing inputs block the corresponding task, not the whole initial authoring graph. Handoffs materialize exact `{kind, repository, ref, fingerprint}` references. The published `inputs` list contains configured inputs followed by direct prerequisite artifact references, in declared order, with identical references deduplicated. Conflicting references to the same kind/repository/path fail closed. Prerequisite result envelopes, outcomes and author identities remain internal for dependency gates and independence validation; no `dependencies` field is published. Keep historical review/report files immutable; changed current artifacts make dependent results stale without erasing their history.
 
+## Work Provenance capture
+
+The workflow instance, handoff and result formats are version 3; the definition and template formats stay version 2. Work Provenance (`contracts/work-provenance.md`, `azimuth reference show work-provenance`) is recorded beside each result and never enters a result, attempt identity, `result_fingerprint`, task basis or dependency comparison.
+
+- `workflow next` (and `verify`) adds the tool-clock `captured_at_ms` (integer Unix milliseconds) to the outer handoff object. `update` rejects a version 2 handoff, which lacks it.
+- `workflow update` accepts an optional `--descriptor FILE` (`azimuth-agent-descriptor` version 1). Each history entry is exactly `{result, result_fingerprint, provenance}`, where `provenance` holds `handoff_captured_at_ms` from the captured handoff, the tool-clock `recorded_at_ms`, the agent descriptor (every field `unknown` without `--descriptor`), the handoff guidance in order with fingerprints of shipped skill and reference content (`null` for a `package` locator or guidance this CLI does not ship), and the descriptor's `trace`. The update receipt includes the entry's `provenance`; an idempotent replay returns the original entry and never rewrites it.
+- `--actor` names one execution instance — a session, a subagent run or a person — and remains the independence key. It encodes no role, attempt number or model.
+- `workflow init` assigns each instance a distinct id, `<definition id>-<creation Unix milliseconds>`, because generations of one change share a definition. Optional `--predecessor FILE` names the prior instance being replaced; it must be retained inside the new instance directory, and the instance records `predecessor: {id, ref, revision, fingerprint}` with `ref` relative to the instance directory and `fingerprint` the canonical fingerprint of the predecessor file's JSON. A version 2 predecessor is identified as `<recorded id>-<first 12 hex digits of that fingerprint>`, since every version 2 instance was named after its definition. Without the flag `predecessor` is `null`.
+- `workflow abandon --instance FILE --expected-revision N --reason TEXT` records `abandoned: {at_ms, reason}` under the instance lock; `abandoned` is otherwise `null`. An abandoned instance accepts no further updates, including replays.
+- A version 2 instance is read only by `azimuth provenance ledger` for historical export. Every other workflow command rejects it with a message naming that path; preserve it and initialize a fresh instance with `--predecessor`.
+- `change finalize` writes `<change>/provenance/ledger.json` when `<change>/.azimuth/workflow.json` exists. `change archive` fails when that committed ledger differs from a fresh export, and only validates its format when no local instance exists.
+
 ## Handoff and result
 
 A handoff includes `id`, `action` (the definition action ID), `task` (the semantic profile), `target`, `repositories`, `workflow_directory`, `basis`, `reason`, `guidance`, `inputs`, `corrections` and `required_output`. The outer response contains format/version, instance/revision, definition fingerprint, `eligible` and `required_inputs`. All eligible tasks have complete handoffs; their order does not express execution priority. Definitions describe only that configured graph, not every project obligation. Each eligible handoff carries validated `repositories` (repository IDs mapped to absolute checkout paths) and `workflow_directory` (the canonical instance directory). A worker receiving that handoff alone can resolve both kinds of reference. These are local execution locations, not portable metadata, additional permissions or semantic identity; they are excluded from task-basis fingerprints. The harness must regenerate a handoff on the execution machine rather than reuse another machine's paths.
@@ -220,7 +233,7 @@ azimuth workflow update --instance .azimuth/workflow.json --project azimuth/proj
   --result .azimuth/results/spec-review-1.json --expected-revision 3
 ```
 
-`--handoff` must retain the query captured before work began. It supplies the tool-owned exact basis; querying again after work is not a substitute for that capture. A newer coordination revision may be supplied after another independent task completes, but the original basis must still match. Preserve the captured handoff for each in-flight worker; overwrite or remove it after update succeeds. `--actor` is a harness assertion, not authenticated identity or permission.
+`--handoff` must retain the query captured before work began. It supplies the tool-owned exact basis; querying again after work is not a substitute for that capture. A newer coordination revision may be supplied after another independent task completes, but the original basis must still match. Preserve the captured handoff for each in-flight worker; overwrite or remove it after update succeeds. `--actor` is a harness assertion naming one execution instance, not authenticated identity or permission.
 
 Azimuth retains an internal result with generated attempt identity, exact basis, captured input references, actor, output fingerprints and the authored result reference. Authoring review and approval decisions are retained with their exact dependencies inside that internal result. Unchanged replay remains idempotent; modifying the same attempt or its supporting content fails. Historical results already committed to an instance retain their original schema, identities and fingerprints; they are not reauthored. The internal representation is not the authoring interface.
 
