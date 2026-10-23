@@ -81,14 +81,18 @@ export interface MonitorPolicy {
   interval_seconds: number;
   freshness_seconds: number;
 }
+export interface ContextDependency {
+  component: string;
+  leaves: string[];
+}
 export interface DeploymentCheckPolicy {
   verification_target: 'source' | 'artifact' | 'deployment';
   components: string[];
-  contexts: string[];
+  contexts: ContextDependency[];
   contribution: 'support' | 'counterexample' | 'both';
   configuration_sources?: string[];
   units?: string[];
-  controls?: { unit: string; contexts: string[] }[];
+  controls?: { unit: string; contexts: ContextDependency[] }[];
   monitor: MonitorPolicy | null;
 }
 export interface RequirementBindingStatus {
