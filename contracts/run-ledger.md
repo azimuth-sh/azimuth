@@ -35,7 +35,7 @@ Credentials are loaded from the private `ASSURANCE_RUN_TOKENS_FILE` as a project
 
 There is no accepted-authority pointer, owner selection or release acceptance. The default model of a project is the latest main-model publication (see "Main-model publication"); `GET /v1/projects/{project}/authority` returns that publication's authority with its `commit`, `main_sequence`, `publication_revision`, `sources` and `ratification_status`, or HTTP 404 when none exists. `POST /v1/projects/{project}/reviews` validates record structure, fingerprints and authenticated reviewer identity, and assesses its dependencies against the default model, stored reviews and correction heads. Invalid dependencies fail; stale or rejected records remain auditable. Identical content is an idempotent replay. `GET /v1/projects/{project}/reviews` returns immutable records.
 
-`GET /v1/projects/{project}/verification-targets/{verification_target}/state` joins the default model's authority, review records and latest valid Run corrections for the exact Verification Target. It exposes missing, rejected, stale, invalid or accepted review assessments and Requirement conclusions without generating reviews. Supported state requires a current accepted Requirement Review and complete current credible evidence as computed by the native assessor. Missing structural support and omitted evidence remain gaps; ambiguous review records remain unresolved. Routine Requirements report when review is not required without inventing a positive review.
+`GET /v1/projects/{project}/verification-targets/{verification_target}/state` joins the default model's authority, review records and latest valid Run corrections for the exact Verification Target. It exposes missing, rejected, stale, invalid or accepted review assessments and Requirement conclusions without generating reviews. It never concludes support: every Requirement is `unresolved` there, and deployment Requirement Status is computed from applicable evidence for a recorded deployment. Missing structural support and omitted evidence remain gaps; ambiguous review records remain unresolved. Routine Requirements report when review is not required without inventing a positive review.
 
 Run history and review history are not deleted when authority changes. No evidence is silently reused across Verification Targets. Decision Policies and challenge scheduling for this compact review lane remain deferred.
 
@@ -117,40 +117,17 @@ controller or authorized operator must publish the actual deployment record and
 explicitly designate it after rollout. Selection is not evidence of readiness,
 reachability or correctness; those remain Check and Requirement Status obligations.
 
-## Structured Requirement Status explanations
+## Structured Requirement explanations
 
-Each Requirement returned by exact-target state inspection includes `explanation`.
-The existing `status`, `review`, `requirement_status`, diagnostics and structural-gap semantics
-remain unchanged. The explanation is derived inside the native assessor from the
-same complete authority, review set and active Run correction heads:
+Each Requirement returned by exact-target state inspection includes `explanation`, derived inside the native assessor from the same complete authority, review set and active Run correction heads. Requirement Status is never authored, and a source or artifact Verification Target state concludes nothing: every Requirement reports `status: unresolved` with its Requirement Review assessment, and deployment Requirement Status is computed separately from applicable evidence (`deployments/{deployment}/status`). There is no `requirement_status` field.
 
-- `summary` and `status`: current accepted Requirement Status rationale, or an explanation of
-  why no current assessment establishes a conclusion.
-- `reasons`: typed `code`, `category` and `message`, with optional Check/Scenario IDs,
-  diagnostic details or structural-gap details. Codes include
-  `requirement-review-{assessment}`, `requirement-status-{assessment}`, `structural-gaps`,
-  `current-check-result-missing` and `requirement-status-assessed-{conclusion}`. Consumers do not
-  classify states by matching diagnostic English.
-- `review` and `requirement_status`: their assessment status, exact selected record fingerprint,
-  asserted reviewer, review time, authored rationale and diagnostics. No record or
-  ambiguous latest history exposes null record fields, not fabricated authorship.
-- `coverage`: one entry per declared current Check–Scenario binding, with exact matching
-  `check_results` and status `missing`, `unassessed`, `satisfied`, `violated` or
-  `inconclusive`. Only current Check fingerprints, the exact selected Verification Target and
-  active correction heads participate.
-- `evidence`: `supporting`, `violations` and `inconclusive` contain Check Results
-  explicitly referenced by the basis of the current accepted Requirement Status assessment.
-  Other matching Check Results remain `unassessed`. Every Check Result retains Run,
-  bundle and Check Result fingerprints, Check, Scenario, outcome, `observed_at_ms`,
-  `selected_in_basis` and `accepted_basis`.
-- `residual_risks`: authored residual risks from the selected Requirement Status record, if any.
+- `summary` and `status`: an account of the review state and missing evidence, and `unresolved`.
+- `reasons`: typed `code`, `category` and `message`, with optional Check/Scenario IDs, diagnostics or structural-gap details. Codes are `requirement-review-{assessment}`, `structural-gaps` and `current-check-result-missing`. Consumers do not classify states by matching diagnostic English.
+- `review`: its assessment status, exact selected record fingerprint, asserted reviewer, review time, authored rationale and diagnostics. No record or ambiguous latest history exposes null record fields, not fabricated authorship.
+- `coverage`: one entry per declared current Check–Scenario binding, with exact matching `check_results` and status `missing` or `unassessed`. Only current Check fingerprints, the exact selected Verification Target and active correction heads participate.
+- `evidence`: `supporting`, `violations` and `inconclusive` are empty; observed matching Check Results are listed in `unassessed` with Run, bundle and Check Result fingerprints, Check, Scenario, outcome, `observed_at_ms` and diagnostics.
 
-A violated Check Result can remain unassessed when no current accepted Requirement Status record
-covers it; this does not convert the Requirement's conclusion automatically. A stale
-assessment's formerly selected Check Results are not presented as accepted support.
-Missing coverage is inspectable information, not a newly authored assessment.
-There is no automatic expiry, alert interpretation, cross-system evidence transfer
-or Requirement Status transition event stream. Such policies remain separate framework work.
+A violated Check Result at this target does not convert the Requirement's conclusion automatically. Missing coverage is inspectable information, not a newly authored assessment. There is no automatic expiry, alert interpretation, cross-system evidence transfer or Requirement Status transition event stream.
 
 Deployments of an environment are listed with ordinary keyset pagination by deployment id and, separately, as history (see "Deployment history"). Version 9 storage replaces earlier migration history; see [deployment-requirement-status.md](deployment-requirement-status.md).
 

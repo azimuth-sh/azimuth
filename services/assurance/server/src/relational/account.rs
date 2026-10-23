@@ -98,7 +98,7 @@ mod tests {
             "requirement": "requirement", "requirement_fingerprint": DIGEST,
             "dependencies_fingerprint": DIGEST, "decision": "rejected",
             "reassesses": reassesses,
-            "challenge_basis": [{"run":"run","bundle_fingerprint":DIGEST,"result_fingerprint":DIGEST,"target_fingerprint":DIGEST}]
+            "challenge_basis": [{"run":DIGEST,"bundle_fingerprint":DIGEST,"result_fingerprint":DIGEST,"target_fingerprint":DIGEST}]
         }))
     }
 
@@ -154,7 +154,6 @@ mod tests {
         let successor = requirement_review(Some(original["fingerprint"].as_str().unwrap()));
         let mut empty = requirement_review(None);
         empty["challenge_basis"] = json!([]);
-        empty["artifacts"][0]["locator"] = Value::Null;
         let empty = fingerprint_record(empty);
         for value in [original, successor, empty] {
             let native = azimuth::json::parse(&value.to_string())?;
