@@ -28,7 +28,7 @@ def fixture(context=False):
     target = {"kind": "artifact", "artifacts": [{"id": "image", "digest": DIGEST}]}
     target_fp = fingerprint({"format": "azimuth-verification-target-fingerprint", "version": 2, "verification_target": target})
     value = {"contract_revision": DIGEST, "values": {"enabled": True}}
-    contexts = {"context/" + DIGEST + "/activity/" + activity_identity("behavior", "first", 0): fingerprint(value)} if context else {}
+    contexts = {"context/component/enabled/activity/" + activity_identity("behavior", "first", 0): fingerprint(True)} if context else {}
     check = {"id": "behavior", "fingerprint": DIGEST, "scenarios": ["works"],
              "implementations": [{"identity": "component|python-symbol|tests:behavior", "source_fingerprint": DIGEST}],
              "units": [{"id": "first", "parameters": {}}]}
@@ -42,15 +42,15 @@ def fixture(context=False):
     launch["adapters"] = [launch.pop("adapter")]
     snapshots = []
     if context:
-        report = {"format": "azimuth-execution-context", "version": 2, "contexts": {"settings": value}}
-        snapshots = [{"name": "settings", "before": {"captured_at_ms": 21, "instance": "process-1", "report": report},
+        report = {"format": "azimuth-execution-context", "version": 2, "contexts": {"component": value}}
+        snapshots = [{"name": "component", "before": {"captured_at_ms": 21, "instance": "process-1", "report": report},
                       "after": {"captured_at_ms": 29, "instance": "process-1", "report": deepcopy(report)}}]
     report = {"format": "azimuth-test-report", "version": 1, "framework": "xunit-v2", "execution": "execution-1",
               "started_at_ms": 20, "finished_at_ms": 30, "tests": [{"id": "explicit", "attempt": 0, "outcome": "passed",
                   "started_at_ms": 20, "finished_at_ms": 30, "contexts": snapshots, "diagnostics": []}]}
     mapping = {"format": "azimuth-test-mapping", "version": 2, "framework": "xunit-v2", "source_system": "synthetic",
                "tests": [{"id": "explicit", "native_id": "Tests.Behavior|Behavior", "check": "behavior", "unit": "first",
-                          "scenarios": ["works"], "components": ["component"], "contexts": [DIGEST] if context else [], "failed_outcome": "inconclusive"}]}
+                          "scenarios": ["works"], "components": ["component"], "contexts": [{"component": "component", "leaves": ["enabled"]}] if context else [], "failed_outcome": "inconclusive"}]}
     native = [{"native_id": "Tests.Behavior|Behavior", "attempt": 0, "outcome": "passed", "started_at_ms": 20, "finished_at_ms": 30}]
     arguments = {"native_results": native, "import_inputs": [{"id": "report", "digest": DIGEST, "size_bytes": 1}], "generated_at_ms": 40}
     return launch, report, mapping, arguments
@@ -242,7 +242,7 @@ class Normalization(unittest.TestCase):
         launch, report, mapping, args = fixture(context=True)
         report["tests"].append(dict(deepcopy(report["tests"][0]), attempt=1))
         args["native_results"].append(dict(deepcopy(args["native_results"][0]), attempt=1))
-        key = "context/" + DIGEST + "/activity/" + activity_identity("behavior", "first", 1)
+        key = "context/component/enabled/activity/" + activity_identity("behavior", "first", 1)
         launch["plan"]["required_execution_context"][key] = next(iter(launch["plan"]["required_execution_context"].values()))
         refresh_launch(launch)
         result = normalize_report(launch, report, mapping, **args)
@@ -260,7 +260,7 @@ class Normalization(unittest.TestCase):
         for key, time in (("before", 32), ("after", 38)):
             snapshot = second["contexts"][0][key]
             snapshot.update(captured_at_ms=time, instance="second-process")
-            snapshot["report"]["contexts"]["settings"]["values"]["enabled"] = False
+            snapshot["report"]["contexts"]["component"]["values"]["enabled"] = False
         report["tests"].append(second)
         report["finished_at_ms"] = 39
         mapped = deepcopy(mapping["tests"][0])
@@ -269,8 +269,8 @@ class Normalization(unittest.TestCase):
         args["native_results"].append(dict(native_id="Tests.Second|Second", attempt=0, outcome="passed", started_at_ms=31, finished_at_ms=39))
         launch["plan"]["checks"][0]["units"].append({"id": "second", "parameters": {}})
         activity = activity_identity("behavior", "second", 0)
-        value = second["contexts"][0]["before"]["report"]["contexts"]["settings"]
-        launch["plan"]["required_execution_context"]["context/" + DIGEST + "/activity/" + activity] = fingerprint(value)
+        value = second["contexts"][0]["before"]["report"]["contexts"]["component"]["values"]["enabled"]
+        launch["plan"]["required_execution_context"]["context/component/enabled/activity/" + activity] = fingerprint(value)
         refresh_launch(launch)
         result = normalize_report(launch, report, mapping, **args)
         self.assertEqual(len(result["context_captures"]), 2)
