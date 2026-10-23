@@ -3,6 +3,7 @@ import Link from "next/link";
 import { environmentView } from "@/lib/production";
 import { Disclosure } from "@/components/disclosure";
 import { Identifier } from "@/components/identifier";
+import { LocalTime } from "@/components/local-time";
 import { shortIdentifier } from "@/lib/identifier";
 
 export const dynamic = "force-dynamic";
@@ -23,8 +24,6 @@ const tone = (status: string) =>
         ? "neutral"
         : "warn";
 const STALE_STATUS_MS = 30 * 24 * 60 * 60 * 1000;
-const utc = (ms: number) =>
-  `${new Date(ms).toISOString().replace("T", " ").slice(0, 16)} UTC`;
 const differenceLabel = { added: "Added", changed: "Changed", removed: "Removed" } as const;
 
 export default async function ProjectPage({
@@ -191,7 +190,7 @@ export default async function ProjectPage({
       {freshness && freshness.state !== "ready" && <section className="dashboardPanel" role="status" aria-label="Assessment freshness">
         <h2>{freshness.state === "expired" ? "Assessment overdue" : "Assessment updating"}</h2>
         <p>Evidence is being reassessed. Previous conclusions are not shown as current.
-          {freshness.evaluated_at_ms ? ` Last evaluated ${new Date(freshness.evaluated_at_ms).toISOString().replace("T", " ").slice(0, 19)} UTC.` : ""}</p>
+          {freshness.evaluated_at_ms ? <> Last evaluated <LocalTime value={freshness.evaluated_at_ms} />.</> : null}</p>
       </section>}
       <div className="metricGrid">
         {(
@@ -401,9 +400,9 @@ export default async function ProjectPage({
                           {shortIdentifier(c.deployment_id)}
                         </Link>
                       </td>
-                      <td>{utc(c.last_observed_ms)}</td>
+                      <td><LocalTime value={c.last_observed_ms} /></td>
                       <td>
-                        <time dateTime={new Date(c.last_status_at_ms).toISOString()}>{utc(c.last_status_at_ms)}</time>{" "}
+                        <LocalTime value={c.last_status_at_ms} />{" "}
                         {stale && <span className="badge warn">Stale</span>}
                       </td>
                       <td>{c.non_routine_requirements}</td>
