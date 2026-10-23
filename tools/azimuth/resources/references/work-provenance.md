@@ -26,7 +26,7 @@ The tool stamps `captured_at_ms` when `workflow next` produces the handoff and `
 
 ## Restarting an instance
 
-Workflow instances, handoffs and results are version 3. A version 2 instance is read only by `azimuth provenance ledger`; the other workflow commands reject it. To replace an instance, keep the old file inside the change's `.azimuth/` directory and run:
+Workflow instances, handoffs and results are version 3. A version 1 or 2 instance is read only by `azimuth provenance ledger`; the other workflow commands reject it. To replace an instance, keep the old file inside the change's `.azimuth/` directory and run:
 
 ```text
 azimuth workflow abandon --instance <file> --expected-revision <n> --reason <text>

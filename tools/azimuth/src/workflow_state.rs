@@ -652,10 +652,11 @@ fn definition(v: &Json) -> Result<(), String> {
     Ok(())
 }
 fn instance(v: &Json) -> Result<(), String> {
-    if v.get("format").and_then(Json::as_str) == Some("azimuth-workflow-instance")
-        && v.get("version").and_then(Json::as_num) == Some(2.0)
-    {
-        return Err("workflow instance version 2 predates Work Provenance capture and is read only by `azimuth provenance ledger`; preserve it inside the change's .azimuth/ and run `workflow init --predecessor <it>` for a fresh version 3 instance".into());
+    if let (Some("azimuth-workflow-instance"), Some(version @ (1.0 | 2.0))) = (
+        v.get("format").and_then(Json::as_str),
+        v.get("version").and_then(Json::as_num),
+    ) {
+        return Err(format!("workflow instance version {version} predates Work Provenance capture and is read only by `azimuth provenance ledger`; preserve it inside the change's .azimuth/ and run `workflow init --predecessor <it>` for a fresh version 3 instance"));
     }
     obj(
         v,

@@ -443,18 +443,18 @@ pub fn validate_history_provenance(value: &Json) -> Result<(), String> {
     Ok(())
 }
 
-/// The ledger identity of an instance. Version 2 instances were all named after their definition,
-/// so historical generations of one change would collide; their content fingerprint disambiguates
-/// them deterministically.
+/// The ledger identity of an instance. Version 1 and 2 instances were all named after their
+/// definition, so historical generations of one change would collide; their content fingerprint
+/// disambiguates them deterministically.
 pub fn instance_identity(value: &Json) -> Result<String, String> {
     let id = nonempty(value, "id", "workflow instance")?;
     match value.get("version").and_then(safe_integer) {
         Some(3) => Ok(id.to_string()),
-        Some(2) => Ok(format!(
+        Some(1 | 2) => Ok(format!(
             "{id}-{}",
             &crate::fingerprint::canonical_sha256(value)[7..19]
         )),
-        _ => Err("expected workflow instance version 2 or 3".into()),
+        _ => Err("expected workflow instance version 1, 2 or 3".into()),
     }
 }
 
@@ -463,9 +463,9 @@ fn instance_header(value: &Json) -> Result<u64, String> {
         return Err("expected azimuth-workflow-instance".into());
     }
     let version = integer(value, "version", "workflow instance")?;
-    if version != 2 && version != 3 {
+    if !(1..=3).contains(&version) {
         return Err(format!(
-            "workflow instance version {version} is not readable; expected version 2 or 3"
+            "workflow instance version {version} is not readable; expected version 1, 2 or 3"
         ));
     }
     nonempty(value, "id", "workflow instance")?;

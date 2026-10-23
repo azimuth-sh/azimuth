@@ -788,6 +788,59 @@ fn historical_version_two_instances_export_with_unknown_provenance() {
     )));
 }
 
+#[test]
+fn historical_version_one_instances_export_beside_their_successor() {
+    let fixture = Fixture::new("sample-change");
+    fixture.init(None);
+    let recorded = fixture.record_scope(None);
+    let mut retired = version_two(&read(&fixture.instance()));
+    if let Json::Obj(fields) = &mut retired {
+        for (key, value) in fields.iter_mut() {
+            if key == "version" {
+                *value = Json::Num(1.0);
+            }
+        }
+    }
+    let historical = fixture.workflow.join("workflow-before-restart.json");
+    fs::write(&historical, retired.to_string_pretty()).unwrap();
+    fs::remove_file(fixture.instance()).unwrap();
+    fixture.init(None);
+
+    let ledger = fixture.ledger(&[&historical]);
+
+    let instances = array(at(&ledger, &["instances"]));
+    assert_eq!(instances.len(), 2);
+    assert_eq!(
+        at(&instances[0], &["id"]),
+        &Json::str(format!(
+            "change-development-{}",
+            &azimuth::fingerprint::canonical_sha256(&retired)[7..19]
+        ))
+    );
+    assert_eq!(
+        at(&instances[0], &["disposition"]),
+        &Json::str("superseded")
+    );
+    let attempt = &array(at(&instances[0], &["attempts"]))[0];
+    assert_eq!(at(attempt, &["id"]), at(&recorded, &["result", "id"]));
+    assert_eq!(at(attempt, &["agent"]), &unknown_agent());
+    assert_eq!(
+        at(attempt, &["report"]),
+        &Json::str("Scoped the change to the catalog module.")
+    );
+
+    let (code, stderr) = fail(&[
+        "workflow",
+        "next",
+        "--instance",
+        historical.to_str().unwrap(),
+        "--repositories",
+        fixture.repositories.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 2);
+    assert!(stderr.contains("workflow instance version 1 predates Work Provenance capture"));
+}
+
 fn write_accepted_change(change: &Path) {
     fs::write(
         change.join("proposal.md"),
