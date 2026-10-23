@@ -1211,7 +1211,7 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
     let mut acceptances = Vec::new();
     let mut ratified = Vec::new();
     if acceptance_boundary {
-        apply_native_assurance(&loaded.model, &options, &mut findings)?;
+        verify_assurance_snapshot(&loaded.model, &options)?;
         (acceptances, ratified) = change_acceptances(&root, &report, &loaded.model)?;
         azimuth::change::waive_accepted_requirements(&mut findings, &acceptances, &ratified);
     }
@@ -3053,7 +3053,7 @@ fn command_validate(options: Options) -> Result<ExitCode, String> {
     let loaded = load_validation_inputs(&options)?;
     report(&loaded.warnings, "warning");
     let mut findings = validation::validate(&loaded.model);
-    apply_native_assurance(&loaded.model, &options, &mut findings)?;
+    verify_assurance_snapshot(&loaded.model, &options)?;
     if options.project.is_none() {
         if let Some(changes) = options.model.parent().map(|root| root.join("changes")) {
             let acceptances =
@@ -3073,10 +3073,9 @@ fn command_validate(options: Options) -> Result<ExitCode, String> {
     )
 }
 
-fn apply_native_assurance(
+fn verify_assurance_snapshot(
     model: &azimuth::model::Model,
     options: &Options,
-    findings: &mut Vec<validation::Finding>,
 ) -> Result<(), String> {
     let Some(path) = &options.assurance_snapshot else {
         return Ok(());
@@ -3087,15 +3086,7 @@ fn apply_native_assurance(
     let content =
         fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
     let snapshot = azimuth::json::parse(&content).map_err(|error| error.to_string())?;
-    let supported = azimuth::assurance_publication::supported_requirements(model, &snapshot)?;
-    findings.retain(|finding| {
-        finding.kind != validation::FindingKind::MissingRequirementAssurance
-            || !finding
-                .requirement
-                .as_ref()
-                .is_some_and(|requirement| supported.contains(requirement))
-    });
-    Ok(())
+    azimuth::assurance_publication::verify_acceptance_snapshot(model, &snapshot)
 }
 
 fn change_acceptances(
@@ -3301,7 +3292,7 @@ fn command_change_validate(root: &std::path::Path, options: &Options) -> Result<
     };
     report(&prospective.warnings, "warning");
     let mut findings = validation::validate(&prospective.model);
-    apply_native_assurance(&prospective.model, options, &mut findings)?;
+    verify_assurance_snapshot(&prospective.model, options)?;
     for finding in &mut findings {
         if let Ok(relative) = std::path::Path::new(&finding.path).strip_prefix(&stage.0) {
             finding.path = original_roots

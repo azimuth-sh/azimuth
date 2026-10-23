@@ -85,7 +85,7 @@ One entry per Verification Challenge execution in the bundle, sorted by challeng
 }
 ```
 
-All eight keys are always present. `target_kind` is `requirement-review | requirement-status |
+All eight keys are always present. `target_kind` is `requirement-review |
 method-qualification | applicability-decision | requirement-judgment`. `outcome` is `clean | findings | inconclusive`. A `clean`
 outcome is only a negative search fact; it is not evidence that the target decision holds, and the
 inspection assigns it no aggregate score.

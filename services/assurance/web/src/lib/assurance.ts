@@ -30,6 +30,20 @@ export interface Review {
   submitted_by: string;
   submitted_at: string;
 }
+export interface RequirementReviewRecord {
+  kind: 'requirement-review';
+  reviewer: string;
+  reviewed_at_ms: number;
+  rationale: string;
+  artifacts: Array<{ id: string; digest: string; locator: string }>;
+  requirement: string;
+  requirement_fingerprint: string;
+  dependencies_fingerprint: string;
+  decision: string;
+  reassesses: string | null;
+  challenge_basis: unknown[];
+  fingerprint: string;
+}
 export interface ReviewPage {
   records: Review[];
   next: string | null;
@@ -39,7 +53,7 @@ export interface RequirementReviewState {
   authority_fingerprint: string;
   requirements: Array<{
     requirement: string;
-    record: Record<string, unknown> | null;
+    record: Partial<RequirementReviewRecord> | null;
     assessment: string;
     diagnostics: string[];
   }>;
@@ -63,7 +77,6 @@ export interface StatusExplanation {
   status: string;
   reasons: Array<{ code: string; category: string; message: string; check?: string; scenario?: string; diagnostics?: string[] }>;
   review: { status: string; fingerprint: string | null; reviewer: string | null; reviewed_at_ms: number | null; rationale: string | null };
-  requirement_status: { status: string; fingerprint: string | null; reviewer: string | null; reviewed_at_ms: number | null; rationale: string | null };
   coverage: Array<{ check: string; scenario: string; status: string; check_results: CheckResultReference[] }>;
   evidence: { supporting: CheckResultReference[]; violations: CheckResultReference[]; inconclusive: CheckResultReference[]; unassessed: CheckResultReference[] };
   residual_risks: unknown[];
@@ -125,7 +138,6 @@ export interface VerificationTargetState {
     status: string;
     explanation: StatusExplanation;
     review?: string;
-    requirement_status?: string;
     diagnostics: string[];
     gaps: unknown;
     bindings: RequirementBindingStatus[];
@@ -133,6 +145,70 @@ export interface VerificationTargetState {
     evaluated_at_ms?: number;
     challenges?: unknown;
   }>;
+}
+export type ProvenanceBasis = 'harness' | 'declared' | 'unknown';
+export interface DescriptorField {
+  value: string | null;
+  basis: ProvenanceBasis;
+}
+export interface AgentDescriptor {
+  kind: DescriptorField;
+  model: DescriptorField;
+  effort: DescriptorField;
+  harness: { name: string | null; version: string | null; basis: ProvenanceBasis };
+}
+export interface ProvenanceEntity {
+  kind: string;
+  repository: string | null;
+  ref: string;
+  fingerprint: string | null;
+  record?: string | null;
+  record_fingerprint?: string | null;
+}
+export interface ProvenanceAttempt {
+  id: string;
+  instance: string;
+  disposition: 'active' | 'completed' | 'superseded' | 'abandoned';
+  sequence: number;
+  action: string;
+  task: string;
+  scope: string;
+  target: Array<{ name: string; value: string }>;
+  actor: string;
+  outcome: string;
+  report: string | null;
+  handoff_captured_at_ms: number | null;
+  recorded_at_ms: number | null;
+  agent: AgentDescriptor;
+  guidance: Array<{ kind: string; id: string; fingerprint: string | null }>;
+  trace: string | null;
+  used: ProvenanceEntity[];
+  generated: ProvenanceEntity[];
+}
+export interface FailureAttribution {
+  id: string;
+  requirement: string;
+  adverse: { kind: string; ref: string };
+  investigator: string;
+  agent: AgentDescriptor;
+  recorded_at_ms: number;
+  confidence: 'low' | 'medium' | 'high';
+  attempts: Array<{ attempt: string; role: 'caused' | 'allowed-through' }>;
+  revises: string | null;
+  rationale: string;
+  fingerprint: string;
+}
+export interface RequirementWorkHistory {
+  requirement: string;
+  releases: Array<{
+    release: string;
+    label: string;
+    integration_sequence: number;
+    model_revision: string;
+    relation: 'intent' | 'dependency';
+    changes: Array<{ change: string; attempts: ProvenanceAttempt[] }>;
+  }>;
+  attributions: FailureAttribution[];
 }
 export interface ModelRevision {
   revision: string;

@@ -118,13 +118,7 @@ fn packet(v: &Json) -> Result<(), String> {
                 return Err("Requirement Review cannot contain execution evidence".into());
             }
         }
-        "requirement-status" | "requirement-judgment" => {
-            if text(target, "kind")? == "requirement-status" {
-                exact(
-                    target,
-                    &["kind", "requirement", "verification_target_fingerprint"],
-                )?;
-            }
+        "requirement-judgment" => {
             text(target, "requirement")?;
             text(target, "verification_target_fingerprint")?;
         }
@@ -146,7 +140,6 @@ fn label(kind: &str) -> Result<&'static str, String> {
         "applicability-decision" => Ok("Applicability decision"),
         "requirement-judgment" => Ok("Requirement judgment"),
         "requirement-review" => Ok("Requirement review"),
-        "requirement-status" => Ok("Requirement status"),
         _ => Err("unknown review kind".into()),
     }
 }
@@ -170,10 +163,11 @@ fn relative(root: &Path, name: &str) -> Result<std::path::PathBuf, String> {
 }
 pub fn skeleton(input: &Json, input_ref: &str, id: &str) -> Result<String, String> {
     packet(input)?;
-    if !["requirement-review", "requirement-status"]
-        .contains(&text(input.get("target").unwrap(), "kind")?)
-    {
-        return Err("new authored reviews require Requirement Review or Requirement Status; historical records remain inspectable".into());
+    if text(input.get("target").unwrap(), "kind")? != "requirement-review" {
+        return Err(
+            "new authored reviews require Requirement Review; historical records remain inspectable"
+                .into(),
+        );
     }
     crate::diag::validate_id(id, false)?;
     if input_ref.contains(['`', '\n', '\r']) {
@@ -192,7 +186,7 @@ pub fn skeleton(input: &Json, input_ref: &str, id: &str) -> Result<String, Strin
         }
     }
     s.push_str(&format!("- Input: `{input_ref}`\n- Input fingerprint: `{}`\n- Reviewer: <accountable reviewer>\n- Reviewed at: <UTC timestamp, YYYY-MM-DDTHH:MM:SSZ>\n", text(input, "fingerprint")?));
-    if ["requirement-judgment", "requirement-status"].contains(&kind) {
+    if kind == "requirement-judgment" {
         s.push_str("- Conclusion: <supported, violated or unresolved>\n- Residual risks:\n");
     } else {
         s.push_str("- Decision: <accepted or rejected>\n");
@@ -236,9 +230,9 @@ fn parse(source: &str) -> Result<Vec<Review>, String> {
             .split_once(": ")
             .ok_or_else(|| format!("line {}: expected review kind: ID", cursor + 1))?;
         let kind = match title {
-            "Method qualification" | "Applicability decision" | "Requirement judgment" => return Err(format!("line {}: historical review kind cannot be newly authored; use Requirement review or Requirement status", cursor + 1)),
+            "Method qualification" | "Applicability decision" | "Requirement judgment" => return Err(format!("line {}: historical review kind cannot be newly authored; use Requirement review", cursor + 1)),
             "Requirement review" => "requirement-review",
-            "Requirement status" => "requirement-status",
+            "Requirement status" => return Err(format!("line {}: Requirement status records are no longer authored; deployment Requirement Status is computed by the Assurance Service from applicable evidence", cursor + 1)),
             _ => return Err(format!("line {}: unknown review kind", cursor + 1)),
         };
         crate::diag::validate_id(id, false).map_err(|e| format!("line {}: {e}", cursor + 1))?;
@@ -302,14 +296,18 @@ fn parse(source: &str) -> Result<Vec<Review>, String> {
                     "Input fingerprint",
                     "Reviewer",
                     "Reviewed at",
-                    "Agent",
-                    "Model",
                     "Reassesses",
                     "Decision",
                     "Conclusion",
                     "Limitations",
                     "Residual risks",
                 ];
+                if ["Agent", "Model"].contains(&name) {
+                    return Err(format!(
+                        "line {}: {name} is not a review field; agent and model provenance is recorded in the change's Work Provenance ledger (provenance/ledger.json)",
+                        cursor + 1
+                    ));
+                }
                 if !allowed.contains(&name)
                     || review.fields.contains_key(name)
                     || review.lists.contains_key(name)
@@ -347,6 +345,17 @@ fn parse(source: &str) -> Result<Vec<Review>, String> {
         return Err("line 1: expected at least one review record".into());
     }
     Ok(records)
+}
+/// Parse errors carry `line N: …`; the command reports them as `file:N: …`.
+fn located(name: &str, error: &str) -> String {
+    match error
+        .strip_prefix("line ")
+        .and_then(|rest| rest.split_once(": "))
+        .filter(|(line, _)| line.parse::<usize>().is_ok())
+    {
+        Some((line, message)) => format!("{name}:{line}: {message}"),
+        None => format!("{name}: {error}"),
+    }
 }
 pub(crate) fn section_location(source: &str, id: &str, digest: &str) -> Result<usize, String> {
     let review = parse(source)?
@@ -453,7 +462,12 @@ fn current_review(packet: &Json, target: &Json) -> Result<Json, String> {
         .ok_or("review fingerprint absent")?
         .clone())
 }
-fn compile_record(r: &Review, packet: &Json, source_ref: &str) -> Result<Json, String> {
+fn compile_record(
+    r: &Review,
+    packet: &Json,
+    source_ref: &str,
+    reassesses: &Json,
+) -> Result<Json, String> {
     let target = packet.get("target").unwrap();
     if text(target, "kind")? != r.kind {
         return Err("input target kind differs from review heading".into());
@@ -463,8 +477,6 @@ fn compile_record(r: &Review, packet: &Json, source_ref: &str) -> Result<Json, S
         "Input fingerprint",
         "Reviewer",
         "Reviewed at",
-        "Agent",
-        "Model",
         "Reassesses",
     ];
     allowed.extend(match r.kind.as_str() {
@@ -478,7 +490,7 @@ fn compile_record(r: &Review, packet: &Json, source_ref: &str) -> Result<Json, S
     }
     let list_name = match r.kind.as_str() {
         "applicability-decision" => Some("Limitations"),
-        "requirement-judgment" | "requirement-status" => Some("Residual risks"),
+        "requirement-judgment" => Some("Residual risks"),
         _ => None,
     };
     if r.lists.keys().any(|k| Some(k.as_str()) != list_name) {
@@ -536,7 +548,7 @@ fn compile_record(r: &Review, packet: &Json, source_ref: &str) -> Result<Json, S
             put(&mut native, k, expected.clone());
         }
     }
-    if ["requirement-review", "requirement-status"].contains(&r.kind.as_str()) {
+    if r.kind == "requirement-review" {
         put(
             &mut native,
             "requirement_fingerprint",
@@ -547,8 +559,10 @@ fn compile_record(r: &Review, packet: &Json, source_ref: &str) -> Result<Json, S
         );
         put(
             &mut native,
-            "dependencies",
-            packet.get("dependencies").unwrap().clone(),
+            "dependencies_fingerprint",
+            Json::str(crate::fingerprint::canonical_sha256(
+                packet.get("dependencies").unwrap(),
+            )),
         );
         let basis = packet
             .get("definitions")
@@ -584,51 +598,7 @@ fn compile_record(r: &Review, packet: &Json, source_ref: &str) -> Result<Json, S
             })
             .collect::<Result<Vec<_>, String>>()?;
         put(&mut native, "challenge_basis", Json::Arr(basis));
-        if r.kind == "requirement-status" {
-            put(
-                &mut native,
-                "verification_target_fingerprint",
-                target
-                    .get("verification_target_fingerprint")
-                    .unwrap()
-                    .clone(),
-            );
-            put(
-                &mut native,
-                "requirement_review_fingerprint",
-                current_review(
-                    packet,
-                    &Json::obj(vec![
-                        ("kind", Json::str("requirement-review")),
-                        ("requirement", target.get("requirement").unwrap().clone()),
-                    ]),
-                )?,
-            );
-            let basis = array(packet, "check_results")?
-                .iter()
-                .map(|v| {
-                    Json::obj(vec![
-                        ("run", v.get("run").unwrap().clone()),
-                        (
-                            "bundle_fingerprint",
-                            v.get("bundle_fingerprint").unwrap().clone(),
-                        ),
-                        ("check_result", v.get("check_result").unwrap().clone()),
-                    ])
-                })
-                .collect();
-            put(&mut native, "basis", Json::Arr(basis));
-            put(
-                &mut native,
-                "residual_risks",
-                Json::Arr(
-                    r.lists
-                        .get("Residual risks")
-                        .ok_or("expected Residual risks list")?
-                        .clone(),
-                ),
-            );
-        }
+        put(&mut native, "reassesses", reassesses.clone());
     } else if r.kind == "method-qualification" {
         put(
             &mut native,
@@ -808,7 +778,7 @@ fn compile_record(r: &Review, packet: &Json, source_ref: &str) -> Result<Json, S
             ),
         );
     }
-    let decision = if ["requirement-judgment", "requirement-status"].contains(&r.kind.as_str()) {
+    let decision = if r.kind == "requirement-judgment" {
         ("conclusion", "Conclusion")
     } else {
         ("decision", "Decision")
@@ -831,7 +801,7 @@ pub fn compile(
     let mut ids = BTreeSet::new();
     for name in paths {
         let source = fs::read_to_string(relative(root, name)?).map_err(|e| e.to_string())?;
-        let parsed = parse(&source).map_err(|e| format!("{name}: {e}"))?;
+        let parsed = parse(&source).map_err(|e| located(name, &e))?;
         for r in parsed {
             let entry = (|| {
                 if !ids.insert(r.id.clone()) {
@@ -852,37 +822,18 @@ pub fn compile(
                     let expected = crate::assurance_review::review_input(model,project,input.get("target").unwrap(),array(&input,"existing_reviews")?,&packet_runs)?;
                     if expected.get("fingerprint") != input.get("fingerprint") { return Err("review-input does not match its complete candidate and retained evidence".into()); }
                 }
-                let mut record = compile_record(&r, &input, name)?;
-                let provenance = Json::obj(vec![
-                    (
-                        "agent",
-                        r.fields
-                            .get("Agent")
-                            .map(|_| field(&r, "Agent").map(Json::str))
-                            .transpose()?
-                            .unwrap_or(Json::Null),
-                    ),
-                    (
-                        "model",
-                        r.fields
-                            .get("Model")
-                            .map(|_| field(&r, "Model").map(Json::str))
-                            .transpose()?
-                            .unwrap_or(Json::Null),
-                    ),
-                ]);
-                if ["requirement-review", "requirement-status"].contains(&r.kind.as_str()) {
-                    let reassesses = if let Some(id) = r.fields.get("Reassesses") {
-                        let previous = entries.iter().find(|entry| entry.get("id").and_then(Json::as_str) == Some(id.as_str())).ok_or("Reassesses must name an earlier supplied review")?;
+                let reassesses = match r.fields.get("Reassesses") {
+                    Some(_) => {
+                        let id = field(&r, "Reassesses")?;
+                        let previous = entries
+                            .iter()
+                            .find(|entry| entry.get("id").and_then(Json::as_str) == Some(id))
+                            .ok_or("Reassesses must name an earlier supplied review")?;
                         previous.get("record").unwrap().get("fingerprint").unwrap().clone()
-                    } else { Json::Null };
-                    let mut native_provenance = provenance.clone();
-                    put(&mut native_provenance, "reassesses", reassesses);
-                    if let Json::Obj(fields) = &mut record { fields.retain(|(key, _)| key != "fingerprint"); }
-                    put(&mut record, "provenance", native_provenance);
-                    seal(&mut record)?;
-                    crate::assurance_review::validate_record(&record)?;
-                }
+                    }
+                    None => Json::Null,
+                };
+                let record = compile_record(&r, &input, name, &reassesses)?;
                 Ok(Json::obj(vec![
                     ("id", Json::str(&r.id)),
                     (
@@ -892,7 +843,6 @@ pub fn compile(
                             ("fingerprint", input.get("fingerprint").unwrap().clone()),
                         ]),
                     ),
-                    ("provenance", provenance),
                     (
                         "reassesses",
                         r.fields
@@ -1004,7 +954,7 @@ pub fn seal_records(
     let mut targets: Vec<(std::path::PathBuf, Json)> = Vec::new();
     for name in paths {
         let source = fs::read_to_string(relative(root, name)?).map_err(|e| e.to_string())?;
-        let parsed = parse(&source).map_err(|e| format!("{name}: {e}"))?;
+        let parsed = parse(&source).map_err(|e| located(name, &e))?;
         let stem = Path::new(name)
             .file_stem()
             .and_then(|stem| stem.to_str())
@@ -1022,7 +972,10 @@ pub fn seal_records(
             };
             let target = directory.join(file);
             if targets.iter().any(|(existing, _)| *existing == target) {
-                return Err(format!("{}: two reviews seal to the same file", target.display()));
+                return Err(format!(
+                    "{}: two reviews seal to the same file",
+                    target.display()
+                ));
             }
             targets.push((target, record.clone()));
         }
@@ -1092,17 +1045,7 @@ pub fn records(value: &Json) -> Result<Vec<Json>, String> {
         array(value, "records")?
             .iter()
             .map(|e| {
-                exact(
-                    e,
-                    &[
-                        "id",
-                        "input",
-                        "provenance",
-                        "reassesses",
-                        "record",
-                        "assessment",
-                    ],
-                )?;
+                exact(e, &["id", "input", "reassesses", "record", "assessment"])?;
                 let id = text(e, "id")?;
                 crate::diag::validate_id(id, false)?;
                 if !ids.insert(id) {
@@ -1111,13 +1054,6 @@ pub fn records(value: &Json) -> Result<Vec<Json>, String> {
                 exact(e.get("input").unwrap(), &["ref", "fingerprint"])?;
                 text(e.get("input").unwrap(), "ref")?;
                 text(e.get("input").unwrap(), "fingerprint")?;
-                let provenance = e.get("provenance").unwrap();
-                exact(provenance, &["agent", "model"])?;
-                for key in ["agent", "model"] {
-                    if provenance.get(key) != Some(&Json::Null) {
-                        text(provenance, key)?;
-                    }
-                }
                 if e.get("reassesses") != Some(&Json::Null) {
                     crate::diag::validate_id(text(e, "reassesses")?, false)?;
                 }
