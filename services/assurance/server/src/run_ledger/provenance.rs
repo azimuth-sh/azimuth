@@ -179,9 +179,22 @@ async fn write_ledger(
             instances_added += 1;
         }
         let template = &instance["template"];
-        sqlx::query("INSERT INTO provenance_instances(project,change,instance_id,position,predecessor_id,disposition,definition_fingerprint,template_id,template_revision) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(project,change,instance_id) DO UPDATE SET position=excluded.position,disposition=excluded.disposition")
+        let predecessor = &instance["predecessor"];
+        let (predecessor_id, predecessor_ref, predecessor_revision, predecessor_fingerprint) =
+            if predecessor.is_null() {
+                (None, None, None, None)
+            } else {
+                (
+                    Some(text(predecessor, "id")?),
+                    Some(text(predecessor, "ref")?),
+                    Some(integer(predecessor, "revision")?),
+                    Some(text(predecessor, "fingerprint")?),
+                )
+            };
+        sqlx::query("INSERT INTO provenance_instances(project,change,instance_id,position,predecessor_id,predecessor_ref,predecessor_revision,predecessor_fingerprint,disposition,definition_fingerprint,template_id,template_revision) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT(project,change,instance_id) DO UPDATE SET position=excluded.position,disposition=excluded.disposition")
             .bind(project).bind(change).bind(instance_id).bind(index(position)?)
-            .bind(optional_text(instance, "predecessor")?).bind(text(instance, "disposition")?)
+            .bind(predecessor_id).bind(predecessor_ref).bind(predecessor_revision).bind(predecessor_fingerprint)
+            .bind(text(instance, "disposition")?)
             .bind(text(instance, "definition_fingerprint")?).bind(text(template, "id")?)
             .bind(integer(template, "revision")?).execute(&mut *tx).await?;
         for attempt in attempts(instance)? {
@@ -239,11 +252,12 @@ async fn insert_attempt(
     }
     for role in ["used", "generated"] {
         for (position, entity) in list(attempt, role)?.iter().enumerate() {
-            sqlx::query("INSERT INTO provenance_attempt_entities(project,attempt_id,role,position,kind,repository,ref,fingerprint,record) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)")
+            sqlx::query("INSERT INTO provenance_attempt_entities(project,attempt_id,role,position,kind,repository,ref,fingerprint,record,record_fingerprint) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
                 .bind(project).bind(attempt_id).bind(role).bind(index(position)?)
                 .bind(text(entity, "kind")?).bind(optional_text(entity, "repository")?)
                 .bind(optional_text(entity, "ref")?).bind(optional_text(entity, "fingerprint")?)
-                .bind(optional_text(entity, "record")?).execute(&mut *tx).await?;
+                .bind(optional_text(entity, "record")?)
+                .bind(optional_text(entity, "record_fingerprint")?).execute(&mut *tx).await?;
         }
     }
     Ok(())
@@ -264,7 +278,7 @@ async fn reassemble_ledger(
     if !submitted {
         return Ok(None);
     }
-    let instance_rows = sqlx::query("SELECT instance_id,predecessor_id,disposition,definition_fingerprint,template_id,template_revision FROM provenance_instances WHERE project=$1 AND change=$2 ORDER BY position")
+    let instance_rows = sqlx::query("SELECT instance_id,predecessor_id,predecessor_ref,predecessor_revision,predecessor_fingerprint,disposition,definition_fingerprint,template_id,template_revision FROM provenance_instances WHERE project=$1 AND change=$2 ORDER BY position")
         .bind(project).bind(change).fetch_all(&mut *conn).await?;
     let attempt_rows = sqlx::query("SELECT * FROM provenance_attempts WHERE project=$1 AND change=$2 ORDER BY instance_id,sequence")
         .bind(project).bind(change).fetch_all(&mut *conn).await?;
@@ -284,7 +298,7 @@ async fn reassemble_ledger(
         }));
     }
     let mut entities: BTreeMap<(String, String), Vec<Value>> = BTreeMap::new();
-    for row in sqlx::query("SELECT e.attempt_id,e.role,e.kind,e.repository,e.ref,e.fingerprint,e.record FROM provenance_attempt_entities e JOIN provenance_attempts a USING(project,attempt_id) WHERE a.project=$1 AND a.change=$2 ORDER BY e.attempt_id,e.role,e.position")
+    for row in sqlx::query("SELECT e.attempt_id,e.role,e.kind,e.repository,e.ref,e.fingerprint,e.record,e.record_fingerprint FROM provenance_attempt_entities e JOIN provenance_attempts a USING(project,attempt_id) WHERE a.project=$1 AND a.change=$2 ORDER BY e.attempt_id,e.role,e.position")
         .bind(project).bind(change).fetch_all(&mut *conn).await? {
         let role: String = row.try_get("role")?;
         let mut entity = json!({
@@ -293,6 +307,8 @@ async fn reassemble_ledger(
         });
         if role == "generated" {
             entity["record"] = json!(row.try_get::<Option<String>, _>("record")?);
+            entity["record_fingerprint"] =
+                json!(row.try_get::<Option<String>, _>("record_fingerprint")?);
         }
         entities
             .entry((row.try_get("attempt_id")?, role))
@@ -330,7 +346,15 @@ async fn reassemble_ledger(
         let id: String = row.try_get("instance_id")?;
         instances.push(json!({
             "id": id,
-            "predecessor": row.try_get::<Option<String>,_>("predecessor_id")?,
+            "predecessor": match row.try_get::<Option<String>,_>("predecessor_id")? {
+                Some(predecessor) => json!({
+                    "id": predecessor,
+                    "ref": row.try_get::<String,_>("predecessor_ref")?,
+                    "revision": row.try_get::<i64,_>("predecessor_revision")?,
+                    "fingerprint": row.try_get::<String,_>("predecessor_fingerprint")?,
+                }),
+                None => Value::Null,
+            },
             "disposition": row.try_get::<String,_>("disposition")?,
             "definition_fingerprint": row.try_get::<String,_>("definition_fingerprint")?,
             "template": {"id": row.try_get::<String,_>("template_id")?, "revision": row.try_get::<i64,_>("template_revision")?},
@@ -456,9 +480,11 @@ pub(super) async fn requirement_history(
     let mut previous: Option<(String, Intent)> = None;
     let mut ledgers: BTreeMap<String, Value> = BTreeMap::new();
     let mut lineage = Vec::new();
+    let mut known = false;
     for release in releases {
         let authority: Value = release.try_get("authority")?;
         let current = requirement_state(&authority, &requirement)?;
+        known |= current.is_some();
         let Some((closure, intent)) = current else {
             previous = None;
             continue;
@@ -477,14 +503,11 @@ pub(super) async fn requirement_history(
         let mut changes = Vec::new();
         for change in change_ids {
             if !ledgers.contains_key(&change) {
-                let rows = match reassemble_ledger(&mut tx, &project, &change).await? {
-                    Some(ledger) => dataset_rows(&ledger)?
-                        .into_iter()
-                        .map(|(_, row)| row)
-                        .collect(),
+                let attempts = match reassemble_ledger(&mut tx, &project, &change).await? {
+                    Some(ledger) => history_attempts(&ledger)?,
                     None => Vec::new(),
                 };
-                ledgers.insert(change.clone(), Value::Array(rows));
+                ledgers.insert(change.clone(), Value::Array(attempts));
             }
             changes.push(json!({"change":change,"attempts":ledgers[&change]}));
         }
@@ -495,6 +518,9 @@ pub(super) async fn requirement_history(
             "relation": relation, "changes": changes,
         }));
         previous = Some((closure, intent));
+    }
+    if !known {
+        return Err(LedgerError::not_found());
     }
     let attribution_ids: Vec<String> = sqlx::query_scalar("SELECT attribution_id FROM provenance_failure_attributions WHERE project=$1 AND requirement=$2 ORDER BY recorded_at_ms,attribution_id")
         .bind(&project).bind(&requirement).fetch_all(&mut *tx).await?;
@@ -510,6 +536,20 @@ pub(super) async fn requirement_history(
     Ok(Json(
         json!({"requirement":requirement,"releases":lineage,"attributions":attributions}),
     ))
+}
+
+// Ledger order (instances as exported, predecessors first, then sequence) is the dataset row order.
+fn history_attempts(ledger: &Value) -> Result<Vec<Value>, LedgerError> {
+    let mut attempts = Vec::new();
+    for instance in instances(ledger)? {
+        for attempt in self::attempts(instance)? {
+            let mut attempt = attempt.clone();
+            attempt["instance"] = instance["id"].clone();
+            attempt["disposition"] = instance["disposition"].clone();
+            attempts.push(attempt);
+        }
+    }
+    Ok(attempts)
 }
 
 /// The authored intent of a Requirement: its `requirement_intents` digest and its Scenario fingerprints.
@@ -905,7 +945,7 @@ mod tests {
             "guidance": [{"kind":"skill","id":"azimuth-apply","fingerprint":digest('9')}],
             "trace": null,
             "used": [{"kind":"initial-request","repository":null,"ref":"inputs/request.md","fingerprint":digest('1')}],
-            "generated": [{"kind":"proposal","repository":"application","ref":format!("azimuth/changes/{change}/proposal.md"),"fingerprint":digest('2'),"record":null}],
+            "generated": [{"kind":"proposal","repository":"application","ref":format!("azimuth/changes/{change}/proposal.md"),"fingerprint":digest('2'),"record":null,"record_fingerprint":null}],
         })
     }
 
@@ -918,7 +958,9 @@ mod tests {
     ) -> Value {
         json!({
             "id": id,
-            "predecessor": predecessor,
+            "predecessor": predecessor.map(|id| json!({
+                "id": id, "ref": format!("../{id}/workflow.json"), "revision": 7, "fingerprint": digest('8'),
+            })),
             "disposition": disposition,
             "definition_fingerprint": digest('3'),
             "template": {"id":"change-development","revision":10},
@@ -1083,9 +1125,15 @@ mod tests {
         let rewritten = attribution("gap-1", "bounded", "A different account.", 10);
         let (status, error) = service.post("attributions", PUBLISHER, &rewritten).await?;
         assert_eq!(status, StatusCode::CONFLICT, "{error}");
-        let (status, history) = service.get("requirements/bounded", VIEWER).await?;
-        assert_eq!(status, StatusCode::OK, "{history}");
-        assert_eq!(history["attributions"], json!([original]));
+        let stored: String = sqlx::query_scalar("SELECT rationale FROM provenance_failure_attributions WHERE project='project' AND attribution_id='gap-1'")
+            .fetch_one(&service.pool)
+            .await?;
+        assert_eq!(stored, "The review accepted an untested path.");
+        let mut connection = service.pool.acquire().await?;
+        assert_eq!(
+            reassemble_attribution(&mut connection, "project", "gap-1").await?,
+            Some(original)
+        );
         Ok(())
     }
 
@@ -1189,16 +1237,23 @@ mod tests {
             &["c9"],
         )
         .await?;
-        let c1 = ledger(
+        let mut c1 = ledger(
             "c1",
-            vec![instance(
-                "c1",
-                "i1",
-                None,
-                "completed",
-                &["author-proposal", "implement"],
-            )],
+            vec![
+                instance("c1", "i1", None, "superseded", &["author-proposal"]),
+                instance(
+                    "c1",
+                    "i2",
+                    Some("i1"),
+                    "completed",
+                    &["implement", "review-requirement"],
+                ),
+            ],
         );
+        c1["instances"][1]["attempts"][1]["generated"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"kind":"requirement-review","repository":"application","ref":"azimuth/changes/c1/reviews/bundle.json","fingerprint":digest('7'),"record":"bounded","record_fingerprint":digest('6')}));
         assert_eq!(
             service.post("ledgers", PUBLISHER, &c1).await?.0,
             StatusCode::CREATED
@@ -1243,7 +1298,30 @@ mod tests {
         assert_eq!(releases[0]["integration_sequence"], 1);
         assert_eq!(releases[0]["label"], "Release r1");
         assert_eq!(releases[0]["model_revision"], base["fingerprint"]);
-        let c1_rows: Vec<Value> = dataset_rows(&c1)?.into_iter().map(|(_, row)| row).collect();
+        let c1_rows = history_attempts(&c1)?;
+        let order: Vec<(&str, i64)> = c1_rows
+            .iter()
+            .map(|a| {
+                (
+                    a["instance"].as_str().unwrap(),
+                    a["sequence"].as_i64().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            order,
+            [("i1", 1), ("i2", 1), ("i2", 2)],
+            "predecessors first, then sequence"
+        );
+        assert_eq!(c1_rows[2]["disposition"], "completed");
+        assert_eq!(
+            c1_rows[2]["generated"][1]["record_fingerprint"],
+            digest('6')
+        );
+        assert_eq!(
+            c1_rows[2]["agent"]["kind"]["basis"],
+            c1["instances"][1]["attempts"][1]["agent"]["kind"]["basis"]
+        );
         assert_eq!(
             releases[0]["changes"],
             json!([{"change":"c1","attempts":c1_rows}])
@@ -1255,11 +1333,15 @@ mod tests {
         );
         assert_eq!(releases[3]["changes"], json!([]));
         assert_eq!(history["attributions"], json!([gap]));
-        let (status, absent) = service.get("requirements/absent", VIEWER).await?;
-        assert_eq!(status, StatusCode::OK);
         assert_eq!(
-            absent,
-            json!({"requirement":"absent","releases":[],"attributions":[]})
+            service.get("requirements/absent", VIEWER).await?.0,
+            StatusCode::NOT_FOUND,
+            "a Requirement that no release authority contains has no history"
+        );
+        assert_eq!(
+            service.get("requirements/other", VIEWER).await?.0,
+            StatusCode::NOT_FOUND,
+            "an attribution alone does not place a Requirement in the lineage"
         );
         Ok(())
     }

@@ -18,7 +18,11 @@ CREATE TABLE provenance_instances (
     change text NOT NULL,
     instance_id text NOT NULL,
     position integer NOT NULL CHECK (position >= 0),
+    -- The replaced instance as recorded by `workflow init --predecessor`; all four are null together.
     predecessor_id text,
+    predecessor_ref text,
+    predecessor_revision bigint,
+    predecessor_fingerprint text,
     disposition text NOT NULL CHECK (disposition IN ('active', 'superseded', 'completed', 'abandoned')),
     definition_fingerprint text NOT NULL,
     template_id text NOT NULL,
@@ -26,7 +30,10 @@ CREATE TABLE provenance_instances (
     PRIMARY KEY(project, change, instance_id),
     -- A later export may insert a historical instance before existing ones, so positions are
     -- rewritten in one transaction and checked only at commit.
-    UNIQUE(project, change, position) DEFERRABLE INITIALLY DEFERRED
+    UNIQUE(project, change, position) DEFERRABLE INITIALLY DEFERRED,
+    CHECK ((predecessor_id IS NULL) = (predecessor_ref IS NULL)
+        AND (predecessor_id IS NULL) = (predecessor_revision IS NULL)
+        AND (predecessor_id IS NULL) = (predecessor_fingerprint IS NULL))
 );
 
 CREATE TABLE provenance_attempts (
@@ -95,10 +102,12 @@ CREATE TABLE provenance_attempt_entities (
     ref text,
     fingerprint text,
     record text,
+    -- Links a stored review to the attempt that produced it.
+    record_fingerprint text,
     PRIMARY KEY(project, attempt_id, role, position),
     FOREIGN KEY(project, attempt_id) REFERENCES provenance_attempts(project, attempt_id),
     -- Only a generated entity can name a selected review-bundle entry.
-    CHECK (role = 'generated' OR record IS NULL)
+    CHECK (role = 'generated' OR (record IS NULL AND record_fingerprint IS NULL))
 );
 
 CREATE TABLE provenance_failure_attributions (
