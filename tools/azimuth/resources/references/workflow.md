@@ -6,10 +6,11 @@ The CLI coordinates work; the harness assigns it, executes agents, obtains crede
 
 ```text
 azimuth workflow definition --workflow change-development [--out <file>]
-azimuth workflow init --workflow change-development --inputs <file> --instance <file> --repositories <file>
-azimuth workflow init --definition <file> [--inputs <file>] --instance <file> --repositories <file>
+azimuth workflow init --workflow change-development --inputs <file> --instance <file> --repositories <file> [--predecessor <file>]
+azimuth workflow init --definition <file> [--inputs <file>] --instance <file> --repositories <file> [--predecessor <file>]
 azimuth workflow next --instance <file> --repositories <file> [--out <file>]
-azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--out <file>]
+azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--descriptor <file>] [--out <file>]
+azimuth workflow abandon --instance <file> --expected-revision <number> --reason <text> [--out <file>]
 azimuth workflow verify --instance <file> --repositories <file> [--out <file>]
 ```
 
@@ -48,7 +49,7 @@ The engine resolves declarative reusable templates into explicit finite task gra
 
 ## Select the standard change workflow
 
-Ordinary coordination selects the shipped `change-development` definition. `workflow definition --workflow change-development` returns its exact reusable JSON. `init` embeds that template, its declared revision and canonical fingerprint, its portable parameters, and the resolved concrete tasks. The instance's definition fingerprint pins the entire expansion. Template/version identity and exact task definitions remain available offline; an upgrade of the CLI never silently changes an existing instance. The workflow definition, instance, template, handoff and result formats are version 2; obsolete intent-action spellings are replaced without aliases.
+Ordinary coordination selects the shipped `change-development` definition. `workflow definition --workflow change-development` returns its exact reusable JSON. `init` embeds that template, its declared revision and canonical fingerprint, its portable parameters, and the resolved concrete tasks. The instance's definition fingerprint pins the entire expansion. Template/version identity and exact task definitions remain available offline; an upgrade of the CLI never silently changes an existing instance. The workflow definition and template formats are version 2, and the instance, handoff and result formats are version 3 (see Work Provenance capture); obsolete intent-action spellings are replaced without aliases.
 
 Create the instance directory and its `inputs/request.md`. Supply `inputs.json`:
 
@@ -79,7 +80,7 @@ Pass the captured handoff with `--handoff` and the executing actor with `--actor
 
 Historical revision 6 stages were: establish scope → author/review proposal → author/review module spec, design and verification → engineering plan → real implementation approval → implementation → structural change-account validation → candidate preparation and automatic target derivation → Requirement Review → Check and Verification Challenge execution → exact-target Requirement Status → candidate registration/publication. Design and verification authoring can proceed independently after spec review. Verification authoring includes machine Verification Challenges; implementation includes their code/configuration. Independent readiness reviews remain distinct from post-implementation Requirement Review.
 
-Rejected Requirement Reviews expose correction and independent reassessment. Historical authored Requirement Status workflows also expose adverse/unresolved Requirement Status for correction. Check execution records actual violations and measurement failures rather than an invented passing result. Verification Challenges target an exact assessment; adverse findings affect reliance through native assessment rules. The harness selects eligible work, providers and concurrency. No `completed` result substitutes for an accepted review, supported Requirement Status or human permission.
+Rejected Requirement Reviews expose correction and independent reassessment. Instances pinned to the retired authored Requirement Status actions (`assess-requirement-status`, `judge-requirement`) are rejected; start a fresh instance from the shipped template. Check execution records actual violations and measurement failures rather than an invented passing result. Verification Challenges target an exact assessment; adverse findings affect reliance through native assessment rules. The harness selects eligible work, providers and concurrency. No `completed` result substitutes for an accepted review, supported Requirement Status or human permission.
 
 ## Change-account validation
 
@@ -183,6 +184,18 @@ For a concrete definition, a completed result can include one additional support
 
 Inputs are `{kind, ref}` for workflow-local files, or `{kind, repository, ref}` for repository files. `ref` is always a normal relative file path. The local repository file supplies checkout locations; the instance directory supplies the location of workflow-local files. Missing inputs block the corresponding task, not the whole initial authoring graph. Handoffs materialize exact `{kind, repository, ref, fingerprint}` references. The published `inputs` list contains configured inputs followed by direct prerequisite artifact references, in declared order, with identical references deduplicated. Conflicting references to the same kind/repository/path fail closed. Prerequisite result envelopes, outcomes and author identities remain internal for dependency gates and independence validation; no `dependencies` field is published. Keep historical review/report files immutable; changed current artifacts make dependent results stale without erasing their history.
 
+## Work Provenance capture
+
+The workflow instance, handoff and result formats are version 3; the definition and template formats stay version 2. Work Provenance (`contracts/work-provenance.md`, `azimuth reference show work-provenance`) is recorded beside each result and never enters a result, attempt identity, `result_fingerprint`, task basis or dependency comparison.
+
+- `workflow next` (and `verify`) adds the tool-clock `captured_at_ms` (integer Unix milliseconds) to the outer handoff object. `update` rejects a version 2 handoff, which lacks it.
+- `workflow update` accepts an optional `--descriptor FILE` (`azimuth-agent-descriptor` version 1). Each history entry is exactly `{result, result_fingerprint, provenance}`, where `provenance` holds `handoff_captured_at_ms` from the captured handoff, the tool-clock `recorded_at_ms`, the agent descriptor (every field `unknown` without `--descriptor`), the handoff guidance in order with fingerprints of shipped skill and reference content (`null` for a `package` locator or guidance this CLI does not ship), and the descriptor's `trace`. The update receipt includes the entry's `provenance`; an idempotent replay returns the original entry and never rewrites it.
+- `--actor` names one execution instance — a session, a subagent run or a person — and remains the independence key. It encodes no role, attempt number or model.
+- `workflow init` assigns each instance a distinct id, `<definition id>-<creation Unix milliseconds>`, because generations of one change share a definition. Optional `--predecessor FILE` names the prior instance being replaced; it must be retained inside the new instance directory, and the instance records `predecessor: {id, ref, revision, fingerprint}` with `ref` relative to the instance directory and `fingerprint` the canonical fingerprint of the predecessor file's JSON. A version 2 predecessor is identified as `<recorded id>-<first 12 hex digits of that fingerprint>`, since every version 2 instance was named after its definition. Without the flag `predecessor` is `null`.
+- `workflow abandon --instance FILE --expected-revision N --reason TEXT` records `abandoned: {at_ms, reason}` under the instance lock; `abandoned` is otherwise `null`. An abandoned instance accepts no further updates, including replays.
+- A version 2 instance is read only by `azimuth provenance ledger` for historical export. Every other workflow command rejects it with a message naming that path; preserve it and initialize a fresh instance with `--predecessor`.
+- `change finalize` writes `<change>/provenance/ledger.json` when `<change>/.azimuth/workflow.json` exists. `change archive` fails when that committed ledger differs from a fresh export, and only validates its format when no local instance exists.
+
 ## Handoff and result
 
 A handoff includes `id`, `action` (the definition action ID), `task` (the semantic profile), `target`, `repositories`, `workflow_directory`, `basis`, `reason`, `guidance`, `inputs`, `corrections` and `required_output`. The outer response contains format/version, instance/revision, definition fingerprint, `eligible` and `required_inputs`. All eligible tasks have complete handoffs; their order does not express execution priority. Definitions describe only that configured graph, not every project obligation. Each eligible handoff carries validated `repositories` (repository IDs mapped to absolute checkout paths) and `workflow_directory` (the canonical instance directory). A worker receiving that handoff alone can resolve both kinds of reference. These are local execution locations, not portable metadata, additional permissions or semantic identity; they are excluded from task-basis fingerprints. The harness must regenerate a handoff on the execution machine rather than reuse another machine's paths.
@@ -210,7 +223,7 @@ azimuth workflow update --instance .azimuth/workflow.json --project azimuth/proj
   --result .azimuth/results/spec-review-1.json --expected-revision 3
 ```
 
-`--handoff` must retain the query captured before work began. It supplies the tool-owned exact basis; querying again after work is not a substitute for that capture. A newer coordination revision may be supplied after another independent task completes, but the original basis must still match. Preserve the captured handoff for each in-flight worker; overwrite or remove it after update succeeds. `--actor` is a harness assertion, not authenticated identity or permission.
+`--handoff` must retain the query captured before work began. It supplies the tool-owned exact basis; querying again after work is not a substitute for that capture. A newer coordination revision may be supplied after another independent task completes, but the original basis must still match. Preserve the captured handoff for each in-flight worker; overwrite or remove it after update succeeds. `--actor` is a harness assertion naming one execution instance, not authenticated identity or permission.
 
 Azimuth retains an internal result with generated attempt identity, exact basis, captured input references, actor, output fingerprints and the authored result reference. Authoring review and approval decisions are retained with their exact dependencies inside that internal result. Unchanged replay remains idempotent; modifying the same attempt or its supporting content fails. Historical results already committed to an instance retain their original schema, identities and fingerprints; they are not reauthored. The internal representation is not the authoring interface.
 
@@ -220,7 +233,6 @@ The result itself serves as the report for implementation, failed work, independ
 | --- | --- |
 | Generic authoring/implementation/capture/validation/registration/execution | `completed`, `failed` |
 | Authoring review, Requirement Review | `accepted`, `rejected` |
-| Requirement Status | `supported`, `violated`, `unresolved` |
 | Implementation approval | `approved`, `denied`, `deferred` |
 
 Protocol-valid adverse results are recorded normally. Structural mismatch, invalid basis, conflicting revision or malformed record fails without a transition. Currentness rechecks actual supporting content and dependency semantics, not manually authored completion flags.
@@ -234,15 +246,15 @@ Implementation approval can use the compact result itself, with the actual human
 
 ## AAS integration and assurance assessments
 
-Local development prepares the candidate and conducts Requirement Reviews without AAS connectivity. Author aggregate Markdown records, prepare exact inputs and compile them against the complete candidate. Requirement Review requires definitions/source support; Historical authored Requirement Status additionally requires actual exact-target Runs and a current accepted Requirement Review. Current deployment Requirement Status is computed after rollout, as described below. The native schema and compilation commands are in `contracts/assurance-reviews.md`. Workflow assessment hydrates retained prerequisite Runs and reviews into the candidate snapshot; no manually rewritten snapshot per task is required.
+Local development prepares the candidate and conducts Requirement Reviews without AAS connectivity. Author aggregate Markdown records, prepare exact inputs and compile them against the complete candidate. Requirement Review requires definitions/source support. Authored Requirement Status records are no longer supported; deployment Requirement Status is computed by the Assurance Service after rollout, as described below. The native schema and compilation commands are in `contracts/assurance-reviews.md`. Workflow assessment hydrates retained prerequisite Runs and reviews into the candidate snapshot; no manually rewritten snapshot per task is required.
 
-Each assurance task supplies a snapshot with exactly `{project, model_revision, authority, reviews, bundles}`. Core validates schemas and currentness, matches the exact Requirement and (for Requirement Status) Verification Target, and assesses the submitted native record against actual evidence. Ambiguous latest records, stale dependencies and relevant Verification Challenge findings prevent unsupported reliance. Historical review kinds retain their original meaning and satisfy no current Review/Status gate.
+Each assurance task supplies a snapshot with exactly `{project, model_revision, authority, reviews, bundles}`. Core validates schemas and currentness, matches the exact Requirement, and assesses the submitted native record against actual evidence. Ambiguous latest records, stale dependencies and relevant Verification Challenge findings prevent unsupported reliance. Historical review kinds retain their original meaning and satisfy no current Requirement Review gate.
 
 AAS onboarding and credentials are publication prerequisites. CI transports the relied-on local reviews and relevant Runs; it need not spend model tokens conducting reviews. Preserve original reviewer/model provenance and adverse records. Each review submission still requires a credential authorized for its original reviewer; producer credentials cannot impersonate reviewers. Candidate registration never ratifies the model; ratification is the merge to main. Authorized hosted Runs and subsequent Requirement Status assessments follow deployment; source/artifact evidence is not implicitly transferred to a deployment.
 
 `azimuth assurance verify-snapshot --input snapshot.json --out validation.json` validates a publication packet without service mutation. A valid packet may contain rejected, stale or unresolved assessments; validation is not acceptance. `scripts/publish-assurance.py` transports the validated packet with separately authorized owner, producer and reviewer credentials and retains partial or complete submission receipts. Do not publish all local debugging history.
 
-At an explicit local acceptance boundary, use `azimuth change validate --scope acceptance --assurance-snapshot snapshot.json`. After authored facets are actually applied and completion obligations satisfied, `change finalize` and `change archive` accept the same explicit scope and snapshot. Each reassesses native Review/Status against the complete current model and actual retained Runs; snapshot presence is not approval. Missing or adverse assessments and unrelated findings remain blocking. These commands do not publish to AAS or extend the standard workflow with automatic archive/deployment work.
+At an explicit local acceptance boundary, `azimuth change validate --scope acceptance --assurance-snapshot snapshot.json` verifies that the snapshot is a valid publication packet whose authority matches the complete current model and source support. After authored facets are actually applied and completion obligations satisfied, `change finalize` and `change archive` accept the same explicit scope and snapshot and apply the same check. The snapshot waives no finding and is not approval: Requirement Review currentness and Requirement Status are assessed by the Assurance Service, not by these commands, and unrelated findings remain blocking. These commands do not publish to AAS or extend the standard workflow with automatic archive/deployment work.
 
 ## Retention and limits
 
@@ -252,7 +264,7 @@ No automatic source-directory inference, `.azimuth` exclusion, source capture, d
 
 ## Local review artifacts
 
-Keep Requirement Reviews in `reviews/requirement-reviews.md` and exact-target assessments in `reviews/requirement-status.md`. Generated inputs, compiled bundles and scope reports live under ignored `.azimuth/`. Select a compiled record with `record` in the compact result. Preserve exact dependencies and explicit reassessment relationships; appending an unrelated review does not invalidate an existing selected entry.
+Keep Requirement Reviews in `reviews/requirement-reviews.md` . Generated inputs, compiled bundles and scope reports live under ignored `.azimuth/`. Select a compiled record with `record` in the compact result. Preserve exact dependencies and explicit reassessment relationships; appending an unrelated review does not invalidate an existing selected entry.
 
 Existing instances retain their pinned definitions and immutable histories. Adopting revision 6 requires an explicit migration or a fresh instance; upgrading or querying never replays work. Change-wide work awaits the validated candidate inventory. Missing Verification Target selections remain visible and defer publication. An explicitly empty current collection can satisfy its `all` gate; missing inventory is not an empty collection.
 ## Local working storage

@@ -22,6 +22,7 @@
     "outcome",
     "migration",
     "workflow",
+    "work-provenance",
     "release-publication",
     "deployment-requirement-status"
   ],

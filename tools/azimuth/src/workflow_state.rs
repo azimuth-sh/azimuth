@@ -652,6 +652,11 @@ fn definition(v: &Json) -> Result<(), String> {
     Ok(())
 }
 fn instance(v: &Json) -> Result<(), String> {
+    if v.get("format").and_then(Json::as_str) == Some("azimuth-workflow-instance")
+        && v.get("version").and_then(Json::as_num) == Some(2.0)
+    {
+        return Err("workflow instance version 2 predates Work Provenance capture and is read only by `azimuth provenance ledger`; preserve it inside the change's .azimuth/ and run `workflow init --predecessor <it>` for a fresh version 3 instance".into());
+    }
     obj(
         v,
         &[
@@ -662,11 +667,15 @@ fn instance(v: &Json) -> Result<(), String> {
             "definition",
             "definition_fingerprint",
             "history",
+            "predecessor",
+            "abandoned",
         ],
     )?;
-    if text(v, "format")? != "azimuth-workflow-instance" || number(v, "version")? != 2 {
-        return Err("expected workflow instance version 2".into());
+    if text(v, "format")? != "azimuth-workflow-instance" || number(v, "version")? != 3 {
+        return Err("expected workflow instance version 3".into());
     }
+    crate::provenance::validate_predecessor(v.get("predecessor").unwrap())?;
+    crate::provenance::validate_abandonment(v.get("abandoned").unwrap())?;
     identifier(text(v, "id")?)?;
     number(v, "revision")?;
     definition(v.get("definition").unwrap())?;
@@ -679,9 +688,10 @@ fn instance(v: &Json) -> Result<(), String> {
     }
     let mut ids = BTreeSet::new();
     for item in history {
-        obj(item, &["result", "result_fingerprint"])?;
+        obj(item, &["result", "result_fingerprint", "provenance"])?;
         let result = item.get("result").unwrap();
         result_shape(result)?;
+        crate::provenance::validate_history_provenance(item.get("provenance").unwrap())?;
         let task = arr(v.get("definition").unwrap(), "tasks")?
             .iter()
             .find(|t| t.get("id") == result.get("task"))
@@ -749,8 +759,8 @@ fn result_shape(v: &Json) -> Result<(), String> {
             ref_shape(reference, true)?;
         }
     }
-    if text(v, "format")? != "azimuth-workflow-result" || number(v, "version")? != 2 {
-        return Err("expected workflow result version 2".into());
+    if text(v, "format")? != "azimuth-workflow-result" || number(v, "version")? != 3 {
+        return Err("expected workflow result version 3".into());
     }
     require_work(text(v, "task")?)?;
     for key in ["id", "actor"] {
@@ -2092,12 +2102,18 @@ fn authored_result(
     if source.get("report").is_some() {
         text(source, "report")?;
     }
+    if handoffs.get("format").and_then(Json::as_str) == Some("azimuth-workflow-handoff")
+        && handoffs.get("version").and_then(Json::as_num) == Some(2.0)
+    {
+        return Err("--handoff is a version 2 handoff without captured_at_ms; capture a fresh handoff with `workflow next` before performing the work".into());
+    }
     if handoffs.get("format").and_then(Json::as_str) != Some("azimuth-workflow-handoff")
-        || number(handoffs, "version")? != 2
+        || number(handoffs, "version")? != 3
         || handoffs.get("instance") != state.get("id")
     {
         return Err("--handoff requires this instance's workflow next output".into());
     }
+    number(handoffs, "captured_at_ms")?;
     let requested = source.get("target");
     if let Some(target) = requested {
         work_key(&Json::obj(vec![
@@ -2191,7 +2207,7 @@ fn authored_result(
     ]));
     let mut result = Json::obj(vec![
         ("format", Json::str("azimuth-workflow-result")),
-        ("version", Json::Num(2.0)),
+        ("version", Json::Num(3.0)),
         ("id", Json::str(format!("attempt-{}", &identity[7..]))),
         ("task", handoff.get("id").unwrap().clone()),
         ("basis", handoff.get("basis").unwrap().clone()),
@@ -2273,7 +2289,7 @@ pub fn command(args: &[String]) -> Result<Json, String> {
 fn command_internal(args: &[String]) -> Result<Json, String> {
     let operation = args
         .first()
-        .ok_or("workflow requires init, next, update or verify")?;
+        .ok_or("workflow requires init, next, update, verify or abandon")?;
     let allowed = match operation.as_str() {
         "init" => vec![
             "--definition",
@@ -2283,6 +2299,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             "--change",
             "--repositories",
             "--project",
+            "--predecessor",
         ],
         "assurance-targets" => vec![
             "--instance",
@@ -2302,7 +2319,9 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             "--expected-revision",
             "--repositories",
             "--project",
+            "--descriptor",
         ],
+        "abandon" => vec!["--instance", "--change", "--expected-revision", "--reason"],
         "definition" => vec!["--workflow"],
         _ => return Err("unknown workflow operation".into()),
     };
@@ -2362,14 +2381,25 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
         if path.exists() {
             return Err("workflow instance already exists".into());
         }
+        let predecessor = match get("--predecessor") {
+            Some(file) => {
+                crate::provenance::predecessor_record(Path::new(file), r.get("").unwrap())?
+            }
+            None => Json::Null,
+        };
+        // Generations of one change share a definition, so the instance id carries its creation
+        // time to stay distinct in the Work Provenance ledger and in predecessor links.
+        let id = format!("{}-{}", text(&def, "id")?, crate::provenance::now_ms());
         let state = Json::obj(vec![
             ("format", Json::str("azimuth-workflow-instance")),
-            ("version", Json::Num(2.0)),
-            ("id", Json::str(text(&def, "id")?)),
+            ("version", Json::Num(3.0)),
+            ("id", Json::Str(id)),
             ("revision", Json::Num(0.0)),
             ("definition_fingerprint", Json::str(digest(&def))),
             ("definition", def),
             ("history", Json::Arr(vec![])),
+            ("predecessor", predecessor),
+            ("abandoned", Json::Null),
         ]);
         write_atomic(&path, &state)?;
         return Ok(state);
@@ -2381,6 +2411,17 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
     };
     let mut state = read(&path)?;
     instance(&state).map_err(|e| format!("{}: line 1: {e}", path.display()))?;
+    if operation == "abandon" {
+        let _lock = lock(&path)?;
+        let state = read(&path)?;
+        instance(&state).map_err(|e| format!("{}: line 1: {e}", path.display()))?;
+        return abandon(
+            state,
+            &path,
+            get("--expected-revision").ok_or("abandon requires --expected-revision")?,
+            get("--reason").ok_or("abandon requires --reason TEXT")?,
+        );
+    }
     let r = runtime_locations(args, &path)?;
     if operation == "assurance-targets" {
         let snapshot =
@@ -2402,6 +2443,12 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
         return assurance_definition(&state, &snapshot, selection.as_ref(), &r);
     }
     if operation == "update" {
+        if state.get("abandoned") != Some(&Json::Null) {
+            return Err(format!(
+                "{}: the workflow instance is abandoned and accepts no further updates",
+                path.display()
+            ));
+        }
         let result_path = Path::new(get("--result").ok_or("update requires --result")?);
         let authored = read(result_path)?;
         let handoffs = read(Path::new(get("--handoff").ok_or(
@@ -2421,6 +2468,34 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             .ok_or("update requires --expected-revision")?
             .parse::<u64>()
             .map_err(|_| "invalid expected revision")?;
+        let descriptor = get("--descriptor")
+            .map(|file| {
+                let value = crate::provenance::read_json(Path::new(file))?;
+                crate::provenance::validate_descriptor(&value)
+                    .map_err(|e| format!("{file}: {e}"))?;
+                Ok::<_, String>(value)
+            })
+            .transpose()?;
+        let captured_guidance = arr(&handoffs, "eligible")?
+            .iter()
+            .find(|handoff| handoff.get("id") == result.get("task"))
+            .and_then(|handoff| handoff.get("guidance"))
+            .and_then(Json::as_array)
+            .unwrap_or(&[])
+            .to_vec();
+        let entry = Json::obj(vec![
+            ("result_fingerprint", Json::str(digest(&result))),
+            ("result", result.clone()),
+            (
+                "provenance",
+                crate::provenance::history_provenance(
+                    number(&handoffs, "captured_at_ms")?,
+                    crate::provenance::now_ms(),
+                    descriptor.as_ref(),
+                    &captured_guidance,
+                )?,
+            ),
+        ]);
         for (position, old) in arr(&state, "history")?.iter().enumerate() {
             if old.get("result").unwrap().get("id") == result.get("id") {
                 if old.get("result") != Some(&result) {
@@ -2429,6 +2504,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
                 return Ok(Json::obj(vec![
                     ("revision", state.get("revision").unwrap().clone()),
                     ("result", result),
+                    ("provenance", old.get("provenance").unwrap().clone()),
                     ("idempotent", Json::Bool(true)),
                     ("applied_revision", Json::Num((position + 1) as f64)),
                 ]));
@@ -2760,10 +2836,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
                 if let Some((_, Json::Arr(history))) =
                     fields.iter_mut().find(|(key, _)| key == "history")
                 {
-                    history.push(Json::obj(vec![
-                        ("result_fingerprint", Json::str(digest(&result))),
-                        ("result", result.clone()),
-                    ]));
+                    history.push(entry.clone());
                 }
             }
             Some(assurance_definition(&prepared, &snapshot, selection, &r)?)
@@ -2824,10 +2897,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
                 }
                 if k == "history" {
                     if let Json::Arr(values) = v {
-                        values.push(Json::obj(vec![
-                            ("result_fingerprint", Json::str(digest(&result))),
-                            ("result", result.clone()),
-                        ]));
+                        values.push(entry.clone());
                     }
                 }
             }
@@ -2836,6 +2906,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
         return Ok(Json::obj(vec![
             ("revision", state.get("revision").unwrap().clone()),
             ("result", result),
+            ("provenance", entry.get("provenance").unwrap().clone()),
             ("idempotent", Json::Bool(false)),
             ("applied_revision", Json::Num((expected + 1) as f64)),
         ]));
@@ -2843,7 +2914,11 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
     let evaluation = evaluate(&state, &r)?;
     Ok(Json::obj(vec![
         ("format", Json::str("azimuth-workflow-handoff")),
-        ("version", Json::Num(2.0)),
+        ("version", Json::Num(3.0)),
+        (
+            "captured_at_ms",
+            Json::Num(crate::provenance::now_ms() as f64),
+        ),
         ("workflow_revision", state.get("revision").unwrap().clone()),
         ("instance", Json::str(text(&state, "id")?)),
         ("required_inputs", assurance_requirements(&state)?),
@@ -2861,6 +2936,35 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
                     .collect::<Result<Vec<_>, _>>()?,
             ),
         ),
+    ]))
+}
+
+fn abandon(mut state: Json, path: &Path, expected: &str, reason: &str) -> Result<Json, String> {
+    let expected = expected
+        .parse::<u64>()
+        .map_err(|_| "invalid expected revision")?;
+    if expected != number(&state, "revision")? {
+        return Err("workflow revision conflict".into());
+    }
+    if state.get("abandoned") != Some(&Json::Null) {
+        return Err(format!(
+            "{}: the workflow instance is already abandoned",
+            path.display()
+        ));
+    }
+    if reason.trim().is_empty() {
+        return Err("abandon requires a nonempty --reason".into());
+    }
+    let abandoned = Json::obj(vec![
+        ("at_ms", Json::Num(crate::provenance::now_ms() as f64)),
+        ("reason", Json::str(reason)),
+    ]);
+    set(&mut state, "abandoned", abandoned.clone());
+    write_atomic(path, &state)?;
+    Ok(Json::obj(vec![
+        ("instance", state.get("id").unwrap().clone()),
+        ("revision", state.get("revision").unwrap().clone()),
+        ("abandoned", abandoned),
     ]))
 }
 
@@ -2896,7 +3000,20 @@ pub fn validate_output(args: &[String], output: &Path) -> Result<(), String> {
         Ok(resolved)
     };
     let output = canonical(output)?;
-    for flag in ["--handoff", "--result", "--definition", "--inputs"] {
+    if args.first().is_some_and(|operation| operation == "abandon") {
+        if canonical(&path)? == output {
+            return Err("output aliases workflow instance".into());
+        }
+        return Ok(());
+    }
+    for flag in [
+        "--handoff",
+        "--result",
+        "--definition",
+        "--inputs",
+        "--descriptor",
+        "--predecessor",
+    ] {
         if let Some(input) = value(flag) {
             if canonical(&input)? == output {
                 return Err(format!("output aliases {flag} input"));

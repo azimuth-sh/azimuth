@@ -134,7 +134,7 @@ pub const REFERENCES: &[ReferenceDescriptor] = &[
     },
     ReferenceDescriptor {
         id: "workflow",
-        format_version: 2,
+        format_version: 3,
         accepted: &[
             "pinned declarative definitions",
             "standard change-development workflow",
@@ -143,13 +143,35 @@ pub const REFERENCES: &[ReferenceDescriptor] = &[
             "read-only next",
             "conditional update",
             "independent reviews",
+            "provenance sibling of each result",
+            "predecessor-linked restarts",
         ],
         rejected: &[
             "implicit agent execution",
             "file-presence approval",
             "candidate registration publishes to AAS",
+            "version 2 instances outside provenance export",
         ],
         prose: include_str!("../resources/references/workflow.md"),
+    },
+    ReferenceDescriptor {
+        id: "work-provenance",
+        format_version: 1,
+        accepted: &[
+            "actor names one execution instance",
+            "agent descriptor with per-field basis",
+            "committed provenance/ledger.json generated at finalize",
+            "append-only Failure Attribution",
+            "JSONL dataset",
+        ],
+        rejected: &[
+            "provenance as an assessment input",
+            "guessed descriptor values",
+            "role or model encoded in actor",
+            "hand-edited ledger",
+            "telemetry in the ledger",
+        ],
+        prose: include_str!("../resources/references/work-provenance.md"),
     },
     ReferenceDescriptor {
         id: "exploration",
