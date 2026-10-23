@@ -32,11 +32,8 @@ pub fn verify_snapshot(value: &Json) -> Result<Json, String> {
         .ok_or("reviews must be an array")?;
     for review in reviews {
         crate::assurance_review::validate_record(review)?;
-        if !matches!(
-            review.get("kind").and_then(Json::as_str),
-            Some("requirement-review" | "requirement-status")
-        ) {
-            return Err("publication requires current Requirement Review/Status kinds; historical records remain in their existing ledger".into());
+        if review.get("kind").and_then(Json::as_str) != Some("requirement-review") {
+            return Err("publication requires Requirement Review records; historical records remain in their existing ledger".into());
         }
     }
     let raw_bundles = value
@@ -89,62 +86,21 @@ pub fn verify_snapshot(value: &Json) -> Result<Json, String> {
     ]))
 }
 
-pub fn supported_requirements(
+/// Validates an acceptance-boundary snapshot against the complete reviewed model. Requirement
+/// Status is never authored, so a snapshot establishes no Requirement's assurance by itself; only
+/// ratification (a committed accepted Requirement Review plus the change's acceptance) does.
+pub fn verify_acceptance_snapshot(
     model: &crate::model::Model,
     snapshot: &Json,
-) -> Result<std::collections::BTreeSet<String>, String> {
+) -> Result<(), String> {
     verify_snapshot(snapshot)?;
     let project = snapshot
         .get("project")
         .and_then(Json::as_str)
         .ok_or("snapshot project missing")?;
     let expected = crate::assurance_review::authority(model, project)?;
-    let authority = snapshot
-        .get("authority")
-        .ok_or("snapshot authority missing")?;
-    if expected.get("fingerprint") != authority.get("fingerprint") {
+    if expected.get("fingerprint") != snapshot.get("authority").and_then(|a| a.get("fingerprint")) {
         return Err("assurance snapshot authority does not match the complete reviewed model and source support".into());
     }
-    let reviews = snapshot
-        .get("reviews")
-        .and_then(Json::as_array)
-        .ok_or("snapshot reviews missing")?;
-    let bundles = snapshot
-        .get("bundles")
-        .and_then(Json::as_array)
-        .ok_or("snapshot Runs missing")?
-        .iter()
-        .map(|value| {
-            crate::run::parse("snapshot.bundles", &value.to_string_pretty())
-                .map_err(|errors| format!("invalid snapshot Run: {errors:?}"))
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    let mut reviewed = std::collections::BTreeSet::new();
-    let mut status_supported = std::collections::BTreeSet::new();
-    for record in reviews {
-        let assessment =
-            crate::assurance_review::assess_record(record, authority, reviews, &bundles);
-        if assessment.status != "accepted" {
-            continue;
-        }
-        let requirement = record
-            .get("requirement")
-            .and_then(Json::as_str)
-            .ok_or("review Requirement missing")?
-            .to_string();
-        match record.get("kind").and_then(Json::as_str) {
-            Some("requirement-review")
-                if record.get("decision").and_then(Json::as_str) == Some("accepted") =>
-            {
-                reviewed.insert(requirement);
-            }
-            Some("requirement-status")
-                if record.get("conclusion").and_then(Json::as_str) == Some("supported") =>
-            {
-                status_supported.insert(requirement);
-            }
-            _ => {}
-        }
-    }
-    Ok(reviewed.intersection(&status_supported).cloned().collect())
+    Ok(())
 }

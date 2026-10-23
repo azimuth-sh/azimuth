@@ -10,7 +10,7 @@ New Run requests use three Verification Target kinds: `source`, `artifact`, `dep
 
 Local/CI origin belongs to Run provenance, not a different source identity. Complete relevant tracked/staged/modified/untracked capture remains a producer obligation; a digest proves identity only, not capture completeness. Service/component selection and observation intervals are explicit examination scope carried in exact planned Execution Context and native evidence. They do not erase deployment differences or authorize cross-target evidence transfer. Existing `workspace`, `ci-candidate`, `service` and `monitoring-window` Run descriptors remain readable with their original meanings. Their descriptor hashes are not rewritten to new types. They are rejected for newly authored Run requests.
 
-Challenge target `kind` additionally accepts `requirement-review` and `requirement-status`. Its `id` identifies the assessed Requirement and `fingerprint` identifies the exact native assessment record. The execution Verification Target remains the Run Verification Target and is independent of that assessment target. Scope anchors additionally accept these assessment kinds; source-backed scope inputs retain exact selected source identities and fingerprints.
+Challenge target `kind` additionally accepts `requirement-review`. Its `id` identifies the assessed Requirement and `fingerprint` identifies the exact native Requirement Review record. `requirement-status` is not a target or scope kind: Requirement Status is computed, never authored, so there is no record to challenge. The execution Verification Target remains the Run Verification Target and is independent of that assessment target. Scope anchors additionally accept this assessment kind; source-backed scope inputs retain exact selected source identities and fingerprints.
 
 Machine Challenge Results remain `clean | findings | inconclusive` with native objections, artifacts, diagnostics and measured work-unit attempts. Findings may coexist with incomplete search; diagnostics must retain those gaps. Clean never establishes product satisfaction or a supported Requirement Status. Surviving mutations require equivalence/relevance assessment, while timeout/compile/discovery failures remain visible.
 
@@ -250,7 +250,7 @@ Challenges sort by their plan-local id, which is unique. `lane` is exactly `gate
 
 The semantic tuple of Verification Challenge fingerprint, target kind and target fingerprint is also unique
 within the plan. Target kind is exactly `method-qualification | applicability-decision |
-requirement-judgment`, plus the assessment kinds `requirement-review | requirement-status` described above. Method Qualification ids are project-global, Applicability Decision ids are exact
+requirement-judgment`, plus the assessment kind `requirement-review` described above. Method Qualification ids are project-global, Applicability Decision ids are exact
 Evidence Binding ids retain their declared identity; Requirement Judgment ids equal their stable Requirement ids. The
 fingerprint, not the display id, is the exact decision target.
 

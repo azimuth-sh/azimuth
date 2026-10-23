@@ -210,7 +210,6 @@ pub struct ChallengeScopeItem {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ChallengeScopeKind {
     RequirementReview,
-    RequirementStatus,
     ApplicabilityDecision,
     Scenario,
     Requirement,
@@ -236,7 +235,6 @@ impl ChallengeScopeKind {
     pub fn name(self) -> &'static str {
         match self {
             Self::RequirementReview => "requirement-review",
-            Self::RequirementStatus => "requirement-status",
             Self::ApplicabilityDecision => "applicability-decision",
             Self::Scenario => "scenario",
             Self::Requirement => "requirement",
@@ -276,7 +274,6 @@ pub struct ChallengeTarget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChallengeTargetKind {
     RequirementReview,
-    RequirementStatus,
     ApplicabilityDecision,
     RequirementJudgment,
     MethodQualification,
@@ -286,7 +283,6 @@ impl ChallengeTargetKind {
     pub fn name(self) -> &'static str {
         match self {
             Self::RequirementReview => "requirement-review",
-            Self::RequirementStatus => "requirement-status",
             Self::ApplicabilityDecision => "applicability-decision",
             Self::RequirementJudgment => "requirement-judgment",
             Self::MethodQualification => "method-qualification",
@@ -1494,7 +1490,6 @@ fn parse_challenge_scope_item(value: &Json, where_: &str) -> Result<ChallengeSco
     let object = object(value, where_, &["kind", "id", "fingerprint"])?;
     let kind = match string(object, "kind", where_)? {
         "requirement-review" => ChallengeScopeKind::RequirementReview,
-        "requirement-status" => ChallengeScopeKind::RequirementStatus,
         "applicability-decision" => ChallengeScopeKind::ApplicabilityDecision,
         "scenario" => ChallengeScopeKind::Scenario,
         "requirement" => ChallengeScopeKind::Requirement,
@@ -1545,7 +1540,6 @@ fn parse_target(value: &Json, where_: &str) -> Result<ChallengeTarget, String> {
     let object = object(value, where_, &["kind", "id", "fingerprint"])?;
     let kind = match string(object, "kind", where_)? {
         "requirement-review" => ChallengeTargetKind::RequirementReview,
-        "requirement-status" => ChallengeTargetKind::RequirementStatus,
         "applicability-decision" => ChallengeTargetKind::ApplicabilityDecision,
         "requirement-judgment" => ChallengeTargetKind::RequirementJudgment,
         "method-qualification" => ChallengeTargetKind::MethodQualification,
@@ -1556,10 +1550,10 @@ fn parse_target(value: &Json, where_: &str) -> Result<ChallengeTarget, String> {
         ChallengeTargetKind::ApplicabilityDecision | ChallengeTargetKind::MethodQualification => {
             validate_id(&target_id, true).map_err(|reason| format!("{where_}.id: {reason}"))?
         }
-        ChallengeTargetKind::RequirementReview
-        | ChallengeTargetKind::RequirementStatus
-        | ChallengeTargetKind::RequirementJudgment => validate_requirement_id(&target_id)
-            .map_err(|reason| format!("{where_}.id: {reason}"))?,
+        ChallengeTargetKind::RequirementReview | ChallengeTargetKind::RequirementJudgment => {
+            validate_requirement_id(&target_id)
+                .map_err(|reason| format!("{where_}.id: {reason}"))?
+        }
     }
     Ok(ChallengeTarget {
         kind,

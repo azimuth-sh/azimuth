@@ -2043,14 +2043,7 @@ fn resolve_assessment_challenge(
             ChallengeTargetKind::RequirementReview,
             ChallengeScopeKind::RequirementReview,
         ),
-        "requirement-status" => (
-            ChallengeTargetKind::RequirementStatus,
-            ChallengeScopeKind::RequirementStatus,
-        ),
-        _ => return Err(
-            "machine Verification Challenge targets only Requirement Review or Requirement Status"
-                .into(),
-        ),
+        _ => return Err("machine Verification Challenge targets only Requirement Review".into()),
     };
     let authority = crate::assurance_review::authority(model, "challenge-planning")?;
     let bundles = requested
@@ -2067,10 +2060,7 @@ fn resolve_assessment_challenge(
         &requested.assessment_history,
         &bundles,
     );
-    if !matches!(
-        state.status.as_str(),
-        "accepted" | "supported" | "violated" | "unresolved"
-    ) {
+    if state.status != "accepted" {
         return Err(format!(
             "assessment is not a current eligible target: {} {}",
             state.status,

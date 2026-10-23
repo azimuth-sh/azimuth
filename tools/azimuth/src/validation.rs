@@ -301,7 +301,7 @@ impl FindingKind {
             }
             Self::MissingRequirementJudgment => "Record the Requirement's total-composition Judgment.",
             Self::PendingRequirementReview => "Complete the pending historical Requirement review against implementation and evidence before judgment.",
-            Self::MissingRequirementAssurance => "Supply a matching native assurance snapshot with current accepted Requirement Review and supported exact-target Requirement Status, or ratify the Requirement with a committed accepted Requirement Review plus the change's acceptance.json.",
+            Self::MissingRequirementAssurance => "Ratify the Requirement with a committed current accepted Requirement Review plus the change's acceptance.json; deployment Requirement Status is computed after rollout and is never authored.",
             Self::InvalidRequirementReview => "Repair the Requirement review references before judgment.",
             Self::VerificationElementSupportUnresolved => "Provide source/configuration support for the required verification element.",
             Self::ScenarioCheckContributionUnresolved => "Declare a source-authored Check contribution to this Scenario.",
@@ -1544,7 +1544,7 @@ fn verification_findings(model: &Model) -> Vec<Finding> {
                 requirement.requirement.line,
                 Some(requirement.id()),
                 Some(crate::diag::EntityKind::Requirement),
-                "compact Requirement requires current accepted native Requirement Review and supported exact-target Requirement Status; definitions alone establish neither".into(),
+                "compact Requirement requires a ratified current accepted native Requirement Review; definitions alone do not establish one".into(),
             ));
             continue;
         }
