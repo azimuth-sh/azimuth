@@ -190,7 +190,7 @@ Work Provenance is stored in ordinary relational tables with typed columns and n
 | `GET /v1/projects/{project}/provenance/requirements/{requirement}` | The Requirement's work history and attributions; 404 when no release authority contains the Requirement. |
 | `GET /v1/projects/{project}/provenance/attempts?cursor=&limit=` | Paged dataset rows in the `report provenance` shape. |
 
-The Requirement history follows the release lineage. Releases are ordered by `integration_sequence`; for each release, its authority is compared with the previous release's authority. A Requirement's closure changed when the canonical fingerprint of its review dependency packet differs or the Requirement is new. The change is labelled `intent` when the Requirement's entry in `requirement_intents` or any of its Scenario fingerprints differs, otherwise `dependency`. Every change recorded for that release is listed with its stored attempts; a release change without a stored ledger is listed with no attempts. The response is:
+The Requirement history follows the release lineage. Releases are ordered by `integration_sequence`, and a release without one is not part of the lineage; for each release, its authority is compared with the previous release's authority. A Requirement's closure changed when the canonical fingerprint of its review dependency packet differs or the Requirement is new. The change is labelled `intent` when the Requirement's entry in `requirement_intents` or any of its Scenario fingerprints differs, otherwise `dependency`. Every change recorded for that release is listed with its stored attempts; a release change without a stored ledger is listed with no attempts. The response is:
 
 ```json
 {

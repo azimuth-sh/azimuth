@@ -49,7 +49,14 @@ Integration (lead): merge packages, `docs/` (glossary, intended architecture, ch
 
 The compiled bundle entry is `{id, input, reassesses, record, assessment}`. Markdown `Agent:` and `Model:` fields and `## Requirement status:` headings are rejected with a message naming Work Provenance.
 
+## Integration findings
+
+- The Rust core has two canonical forms: review records use the compact form (`run::canonical_fingerprint`), while ledger fingerprints and `requirement_closure_fingerprint` use the sorted pretty-printed form (`fingerprint::canonical_sha256`). Transport code that checks either must reproduce the right one.
+- drim-dev's `private-api-service-ingress` restarted several times under workflow version 1, so historical export reads version 1 instances as well. Snapshots that are wholly contained in a later instance are left out of a backfill, because attempt ids are unique within a ledger.
+- A real exported ledger (170 attempts) was ingested by a locally running service: replay added nothing, the stored ledger reassembled byte-equal, and the attempts route paged exactly the `report provenance` rows.
+
 ## Residual items
 
 - `release.rs` change-metadata `contributions[].agent/model` is a separate provenance site; it is left unchanged and recorded as a follow-up.
 - Codex harness capture is not implemented; descriptors from Codex sessions are `declared` or `unknown`.
+- The Claude Code hook that writes harness-basis descriptors (change map C7) is not installed: installing a persistent hook needs Dima's explicit approval. Until then descriptors are `declared` or `unknown`.
