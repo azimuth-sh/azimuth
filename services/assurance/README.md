@@ -11,6 +11,10 @@ This development-only read model does not seed PostgreSQL or validate native
 assurance records. Normal API-backed operation still requires the configured
 OAuth profile below.
 
+### Page design rule
+
+The first render of every page shows only what a reader can interpret and act on: names, statuses, counts and decisions. Fingerprints, deployment and Run identifiers, raw JSON and diagnostics sit one click away. Use the shared components in `web/src/components`: `Disclosure` for collapsed detail, `Identifier` for a shortened, copyable identifier, and `Markdown` for authored prose (Check methods, Scenarios, Statements, review rationales). Raw records go inside a `Disclosure`, never on the main view.
+
 ## Private hosted deployment
 
 The canonical API image starts `run-ledger` on port 8081; the Web image serves port 3000. Terraform in the consuming infrastructure repository provisions PostgreSQL, workloads, Tailscale connectivity and HTTP-01 certificates. Image references must name published immutable digests; building source does not publish or deploy images.

@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireViewer } from '@/lib/auth';
 import { cursor, readProject, routeFingerprint } from '@/lib/assurance';
+import { Disclosure } from '@/components/disclosure';
+import { Identifier } from '@/components/identifier';
 export const dynamic = 'force-dynamic';
 export default async function RunPage({
   params,
@@ -21,18 +23,19 @@ export default async function RunPage({
   );
   if (!history) notFound();
   return (
-    <div className="shell">
-      <Link href={`/projects/${encodeURIComponent(projectId)}`}>← Project</Link>
-      <h1>Run revision</h1>
-      <p>
-        Execution facts do not approve reviews or establish Requirement Status.
-      </p>
-      <pre>{JSON.stringify(history, null, 2)}</pre>
-      {typeof history.next === 'string' && (
-        <Link href={`?after=${encodeURIComponent(history.next)}`}>
-          Next revision →
-        </Link>
-      )}
+    <div className="dashboard">
+      <Link className="backLink" href={`/projects/${encodeURIComponent(projectId)}/records`}>← Records</Link>
+      <header className="dashboardHeading"><div><p className="overline">RUN</p><h1>Run revision</h1><p>Execution facts do not approve reviews or establish Requirement Status.</p></div><Identifier value={run} /></header>
+      <section className="dashboardPanel">
+        <Disclosure summary="Run record">
+          <pre className="rawRecord">{JSON.stringify(history, null, 2)}</pre>
+        </Disclosure>
+        {typeof history.next === 'string' && (
+          <Link className="textLink" href={`?after=${encodeURIComponent(history.next)}`}>
+            Next revision →
+          </Link>
+        )}
+      </section>
     </div>
   );
 }
