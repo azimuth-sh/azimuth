@@ -27,14 +27,28 @@ const KINDS: &[&str] = &[
     "prepare-publication-inputs",
     "review-requirement",
     "execute-check",
-    "assess-requirement-status",
     "run-verification-challenges",
     "run-verification-challenge",
     "qualify-method",
     "execute-qualified-check",
     "assess-applicability",
-    "judge-requirement",
 ];
+/// Action kinds whose outcome was an authored Verification-Target-specific Requirement assessment.
+/// Requirement Status is now computed from applicable evidence, so instances pinned to these
+/// templates are rejected rather than silently losing their assessment gates.
+const AUTHORED_REQUIREMENT_STATUS_KINDS: &[&str] =
+    &["assess-requirement-status", "judge-requirement"];
+fn registered_kind(kind: &str) -> Result<(), String> {
+    if AUTHORED_REQUIREMENT_STATUS_KINDS.contains(&kind) {
+        return Err(format!(
+            "workflow action kind `{kind}` authors a Requirement Status assessment, which is no longer supported; deployment Requirement Status is computed by the Assurance Service from applicable evidence. Start a new instance from the shipped change-development template"
+        ));
+    }
+    if !KINDS.contains(&kind) {
+        return Err(format!("unregistered workflow task kind `{kind}`"));
+    }
+    Ok(())
+}
 fn obj(value: &Json, names: &[&str]) -> Result<(), String> {
     let Json::Obj(fields) = value else {
         return Err("expected object".into());
@@ -406,8 +420,7 @@ fn supporting_review_history(
     let mut seen = BTreeSet::new();
     while let Some(previous) = history
         .last()
-        .and_then(|review| review.get("provenance"))
-        .and_then(|provenance| provenance.get("reassesses"))
+        .and_then(|review| review.get("reassesses"))
         .and_then(Json::as_str)
     {
         if !seen.insert(previous.to_string()) {
@@ -487,9 +500,7 @@ fn definition(v: &Json) -> Result<(), String> {
         if !seen.insert(text(task, "id")?) {
             return Err("duplicate task ID".into());
         }
-        if !KINDS.contains(&text(task, "kind")?) {
-            return Err("unregistered workflow task kind".into());
-        }
+        registered_kind(text(task, "kind")?)?;
         let Json::Obj(target) = task.get("target").unwrap() else {
             return Err("target requires object".into());
         };
@@ -523,9 +534,7 @@ fn definition(v: &Json) -> Result<(), String> {
             "qualify-method" | "execute-qualified-check" | "execute-check" => vec!["check"],
             "review-requirement" => vec!["requirement"],
             "run-verification-challenge" => vec!["verification_challenge"],
-            "assess-requirement-status" => vec!["requirement", "verification_target"],
             "assess-applicability" => vec!["check", "scenario", "verification_target"],
-            "judge-requirement" => vec!["requirement", "verification_target"],
             _ => vec![],
         } {
             text(task.get("target").unwrap(), required)?;
@@ -600,9 +609,7 @@ fn definition(v: &Json) -> Result<(), String> {
         if [
             "qualify-method",
             "assess-applicability",
-            "judge-requirement",
             "review-requirement",
-            "assess-requirement-status",
             "run-verification-challenge",
         ]
         .contains(&text(task, "kind")?)
@@ -1219,13 +1226,7 @@ fn evaluate(state: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Evaluation, S
             let mut basis_inputs = input_values.clone();
             let mut basis_dependencies = dep_results.clone();
             let normalization = (|| -> Result<(), String> {
-                if [
-                    "qualify-method",
-                    "assess-applicability",
-                    "judge-requirement",
-                ]
-                .contains(&text(task, "kind")?)
-                {
+                if ["qualify-method", "assess-applicability"].contains(&text(task, "kind")?) {
                     for input in &mut basis_inputs {
                         if input.get("kind").and_then(Json::as_str) == Some("assurance-snapshot") {
                             let snapshot = read(&resolve(input, r)?)?;
@@ -1861,18 +1862,14 @@ fn review_record(
     } else if [
         "qualify-method",
         "assess-applicability",
-        "judge-requirement",
         "review-requirement",
-        "assess-requirement-status",
     ]
     .contains(&kind)
     {
         let expected = match kind {
             "qualify-method" => "method-qualification",
             "assess-applicability" => "applicability-decision",
-            "review-requirement" => "requirement-review",
-            "assess-requirement-status" => "requirement-status",
-            _ => "requirement-judgment",
+            _ => "requirement-review",
         };
         let review = supporting_record(record_of(records, expected)?, r)?;
         crate::assurance_review::validate_record(&review)?;
@@ -1913,12 +1910,10 @@ fn review_record(
         let authority = snapshot.get("authority").unwrap();
         let mut local_reviews = arr(&snapshot, "reviews")?.to_vec();
         let mut runs = snapshot_runs(&snapshot)?;
-        if ["review-requirement", "assess-requirement-status"].contains(&kind) {
+        if kind == "review-requirement" {
             for dependency in arr(handoff, "dependencies")? {
                 for reference in arr(dependency, "records")? {
-                    if ["requirement-review", "requirement-status"]
-                        .contains(&text(reference, "kind")?)
-                    {
+                    if text(reference, "kind")? == "requirement-review" {
                         for prior in supporting_review_history(reference, r)? {
                             if !local_reviews.contains(&prior) {
                                 local_reviews.push(prior);
@@ -1960,12 +1955,7 @@ fn review_record(
             }
         }
         let assessment = crate::assurance_review::assess_record(&review, authority, prior, &runs);
-        let desired = text(result, "outcome")?;
-        let matches = assessment.status == desired
-            || (["judge-requirement", "assess-requirement-status"].contains(&kind)
-                && assessment.status == "accepted"
-                && review.get("conclusion").and_then(Json::as_str) == Some(desired));
-        if !matches {
+        if assessment.status != text(result, "outcome")? {
             return Err(format!(
                 "review does not establish submitted outcome: {} {:?}",
                 assessment.status, assessment.diagnostics
@@ -2555,8 +2545,6 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             .contains(&kind)
         {
             ["accepted", "rejected"].contains(&outcome)
-        } else if ["judge-requirement", "assess-requirement-status"].contains(&kind) {
-            ["supported", "violated", "unresolved"].contains(&outcome)
         } else {
             ["completed", "failed"].contains(&outcome)
         };
@@ -2692,9 +2680,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
                 let mut reviews = arr(&snapshot, "reviews")?.to_vec();
                 for dependency in arr(handoff, "dependencies")? {
                     for reference in arr(dependency, "records")? {
-                        if ["requirement-review", "requirement-status"]
-                            .contains(&text(reference, "kind")?)
-                        {
+                        if text(reference, "kind")? == "requirement-review" {
                             for review in supporting_review_history(reference, &r)? {
                                 if !reviews.contains(&review) {
                                     reviews.push(review);
@@ -2747,13 +2733,8 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
                     }) {
                         return Err("Challenge does not match the current declared Verification Challenge and Requirement scope".into());
                     }
-                    if !["requirement-review", "requirement-status"]
-                        .contains(&execution.target.kind.name())
-                    {
-                        return Err(
-                            "New workflow Challenges must target Requirement Review or Requirement Status"
-                                .into(),
-                        );
+                    if execution.target.kind != crate::run::ChallengeTargetKind::RequirementReview {
+                        return Err("New workflow Challenges must target Requirement Review".into());
                     }
                     let review = reviews
                         .iter()
@@ -3131,9 +3112,6 @@ fn permitted_outcomes(kind: &str) -> &'static [&'static str] {
         | "review-spec-delta"
         | "review-design"
         | "review-verification" => &["accepted", "rejected"],
-        "judge-requirement" | "assess-requirement-status" => {
-            &["supported", "violated", "unresolved"]
-        }
         _ => &["completed", "failed"],
     }
 }
@@ -3193,9 +3171,10 @@ fn template(v: &Json) -> Result<(), String> {
             ],
         )?;
         identifier(text(action, "id")?)?;
-        if !seen.insert(text(action, "id")?) || !KINDS.contains(&text(action, "kind")?) {
-            return Err("duplicate action ID or unknown action semantic kind".into());
+        if !seen.insert(text(action, "id")?) {
+            return Err("duplicate action ID".into());
         }
+        registered_kind(text(action, "kind")?)?;
         if ![
             "change",
             "modules",
@@ -3239,9 +3218,7 @@ fn template(v: &Json) -> Result<(), String> {
         if [
             "qualify-method",
             "assess-applicability",
-            "judge-requirement",
             "review-requirement",
-            "assess-requirement-status",
             "run-verification-challenge",
         ]
         .contains(&text(action, "kind")?)
@@ -3875,36 +3852,16 @@ fn assurance_requirements(state: &Json) -> Result<Json, String> {
     Ok(Json::Arr(pending.iter().map(|target| Json::obj(vec![
         ("kind", Json::str("assurance-verification-target-selection")),
         ("target", target.clone()),
-        ("reason", Json::str(if target.get("kind").and_then(Json::as_str) == Some("requirement") {
-            "Select an exact execution Verification Target for this historical authored Requirement Status target. Every declared contribution must apply to that same Verification Target."
-        } else {
-            "Select the exact source or artifact execution Verification Target for this Check. Deployment-only Checks execute after rollout; model equality alone does not transfer evidence."
-        })),
+        ("reason", Json::str("Select the exact source or artifact execution Verification Target for this Check. Deployment-only Checks execute after rollout; model equality alone does not transfer evidence.")),
     ])).collect()))
 }
 
-fn requires_authored_requirement_status(definition: &Json) -> bool {
-    definition
-        .get("template")
-        .and_then(|template| template.get("actions"))
-        .and_then(Json::as_array)
-        .is_some_and(|actions| {
-            actions.iter().any(|action| {
-                matches!(
-                    action.get("kind").and_then(Json::as_str),
-                    Some("assess-requirement-status" | "judge-requirement")
-                )
-            })
-        })
-}
-
-fn local_check(check: &Json, authored_requirement_status: bool) -> bool {
-    authored_requirement_status
-        || check
-            .get("deployment")
-            .and_then(|policy| policy.get("verification_target"))
-            .and_then(Json::as_str)
-            != Some("deployment")
+fn local_check(check: &Json) -> bool {
+    check
+        .get("deployment")
+        .and_then(|policy| policy.get("verification_target"))
+        .and_then(Json::as_str)
+        != Some("deployment")
 }
 
 fn portable_assurance_reference(
@@ -3947,7 +3904,6 @@ fn assurance_definition(
         }
     });
     let mut checks = Vec::new();
-    let mut selected_requirements = Vec::new();
     let mut verification_target_inputs = Vec::new();
     if let Some(reference) = selection_ref {
         portable_assurance_reference(reference, locations)?;
@@ -3978,22 +3934,19 @@ fn assurance_definition(
                 "Verification Target selection differs from candidate project/revision".into(),
             );
         }
-        for collection in ["checks", "requirements"] {
-            let field = if collection == "checks" {
-                "check"
-            } else {
-                "requirement"
-            };
+        if !arr(&selection, "requirements")?.is_empty() {
+            return Err("Requirement Verification Target selections are not supported: Requirement Status is never authored, and deployment Requirement Status is computed from applicable evidence; leave requirements empty".into());
+        }
+        {
             let mut seen = BTreeSet::new();
-            for target in arr(&selection, collection)? {
-                obj(target, &[field, "verification_target"])?;
-                identifier(text(target, field)?)?;
-                let entity = arr(authority, collection)?
+            for target in arr(&selection, "checks")? {
+                obj(target, &["check", "verification_target"])?;
+                identifier(text(target, "check")?)?;
+                if !arr(authority, "checks")?
                     .iter()
-                    .find(|entity| entity.get("id") == target.get(field))
-                    .ok_or("selected target absent from candidate authority")?;
-                if collection == "requirements" && text(entity, "criticality")? == "routine" {
-                    return Err("routine Requirement has no Judgment obligation".into());
+                    .any(|entity| entity.get("id") == target.get("check"))
+                {
+                    return Err("selected target absent from candidate authority".into());
                 }
                 let reference = target.get("verification_target").unwrap();
                 ref_shape(reference, false)?;
@@ -4025,7 +3978,7 @@ fn assurance_definition(
                     verification_target_inputs.push(input);
                 }
                 let target = Json::obj(vec![
-                    (field, target.get(field).unwrap().clone()),
+                    ("check", target.get("check").unwrap().clone()),
                     (
                         "verification_target",
                         Json::str(crate::run::verification_target_fingerprint(
@@ -4036,28 +3989,22 @@ fn assurance_definition(
                 if !seen.insert(digest(&target)) {
                     return Err("duplicate selected target/Verification Target".into());
                 }
-                if collection == "checks" {
-                    checks.push(target);
-                } else {
-                    selected_requirements.push(target);
-                }
+                checks.push(target);
             }
         }
     }
-    let authored_requirement_status = requires_authored_requirement_status(old);
     checks.retain(|target| {
-        arr(authority, "checks").unwrap().iter().any(|check| {
-            check.get("id") == target.get("check")
-                && local_check(check, authored_requirement_status)
-        })
+        arr(authority, "checks")
+            .unwrap()
+            .iter()
+            .any(|check| check.get("id") == target.get("check") && local_check(check))
     });
     let methods = arr(authority, "checks")?
         .iter()
-        .filter(|check| local_check(check, authored_requirement_status))
+        .filter(|check| local_check(check))
         .map(|check| Json::obj(vec![("check", check.get("id").unwrap().clone())]))
         .collect::<Vec<_>>();
     let mut contributions = Vec::new();
-    let mut requirements = Vec::new();
     let mut pending = Vec::new();
     for method in &methods {
         if !checks
@@ -4089,32 +4036,6 @@ fn assurance_definition(
                     ),
                 ]));
             }
-        }
-        if !authored_requirement_status {
-            continue;
-        }
-        let targets = selected_requirements
-            .iter()
-            .filter(|target| target.get("requirement") == requirement.get("id"))
-            .collect::<Vec<_>>();
-        let mut complete = !targets.is_empty();
-        for target in targets {
-            if arr(requirement, "bindings")?.iter().all(|binding| {
-                checks.iter().any(|check| {
-                    check.get("check") == binding.get("check")
-                        && check.get("verification_target") == target.get("verification_target")
-                })
-            }) {
-                requirements.push(target.clone());
-            } else {
-                complete = false;
-            }
-        }
-        if !complete {
-            pending.push(Json::obj(vec![
-                ("kind", Json::str("requirement")),
-                ("id", requirement.get("id").unwrap().clone()),
-            ]));
         }
     }
     let portable_ref = |reference: &Json| {
@@ -4151,7 +4072,7 @@ fn assurance_definition(
         ),
         ("checks", Json::Arr(checks)),
         ("contributions", Json::Arr(contributions)),
-        ("requirements", Json::Arr(requirements)),
+        ("requirements", Json::Arr(Vec::new())),
         ("pending_verification_targets", Json::Arr(pending)),
         (
             "verification_target_inputs",
@@ -4311,12 +4232,7 @@ fn validate_inventory(
     if let Some(methods) = v.get("methods").and_then(Json::as_array) {
         let expected = arr(authority, "checks")?
             .iter()
-            .filter(|check| {
-                local_check(
-                    check,
-                    requires_authored_requirement_status(state.get("definition").unwrap()),
-                )
-            })
+            .filter(|check| local_check(check))
             .map(|check| text(check, "id").map(str::to_owned))
             .collect::<Result<BTreeSet<_>, _>>()?;
         let actual = methods
@@ -4328,13 +4244,10 @@ fn validate_inventory(
         }
     }
     for check in arr(v, "checks")? {
-        if !arr(authority, "checks")?.iter().any(|c| {
-            c.get("id") == check.get("check")
-                && local_check(
-                    c,
-                    requires_authored_requirement_status(state.get("definition").unwrap()),
-                )
-        }) {
+        if !arr(authority, "checks")?
+            .iter()
+            .any(|c| c.get("id") == check.get("check") && local_check(c))
+        {
             return Err("inventory Check absent from local candidate execution scope".into());
         }
     }
@@ -4364,48 +4277,8 @@ fn validate_inventory(
             );
         }
     }
-    for requirement in arr(v, "requirements")? {
-        let candidate = arr(authority, "requirements")?
-            .iter()
-            .find(|c| c.get("id") == requirement.get("requirement"))
-            .ok_or("unknown inventory Requirement")?;
-        for binding in arr(candidate, "bindings")? {
-            if !arr(v, "contributions")?.iter().any(|c| {
-                c.get("requirement") == requirement.get("requirement")
-                    && c.get("verification_target") == requirement.get("verification_target")
-                    && c.get("check") == binding.get("check")
-                    && c.get("scenario") == binding.get("scenario")
-            }) {
-                return Err(
-                    "inventory omits a declared Requirement contribution for exact Verification Target".into(),
-                );
-            }
-        }
-        if !arr(authority, "requirements")?.iter().any(|c| {
-            c.get("id") == requirement.get("requirement")
-                && c.get("criticality").and_then(Json::as_str) != Some("routine")
-        }) {
-            return Err("Judgment inventory requires a non-routine candidate Requirement".into());
-        }
-    }
-    for requirement in arr(authority, "requirements")? {
-        if requires_authored_requirement_status(state.get("definition").unwrap())
-            && text(requirement, "criticality")? != "routine"
-            && !arr(v, "requirements")?
-                .iter()
-                .any(|c| c.get("requirement") == requirement.get("id"))
-            && !v
-                .get("pending_verification_targets")
-                .and_then(Json::as_array)
-                .is_some_and(|pending| {
-                    pending.iter().any(|p| {
-                        text(p, "kind").ok() == Some("requirement")
-                            && p.get("id") == requirement.get("id")
-                    })
-                })
-        {
-            return Err("inventory omits a non-routine candidate Requirement".into());
-        }
+    if !arr(v, "requirements")?.is_empty() {
+        return Err("assurance inventory Requirement targets are not supported: Requirement Status is never authored".into());
     }
     Ok(())
 }
@@ -4467,10 +4340,8 @@ fn output_contract(action: &Json) -> Result<(), String> {
         "execute-check" | "run-verification-challenges" | "run-verification-challenge" => {
             Some("run-bundle")
         }
-        "assess-requirement-status" => Some("requirement-status"),
         "execute-qualified-check" => Some("run-bundle"),
         "assess-applicability" => Some("applicability-decision"),
-        "judge-requirement" => Some("requirement-judgment"),
         _ => None,
     };
     if expected.is_some_and(|kind| {
@@ -4623,7 +4494,6 @@ mod deployment_status_workflow_tests {
     fn hosted_only_inventory_can_prepare_publication_without_authored_requirement_status() {
         let template = shipped_template("change-development").unwrap();
         let definition = expand_generation(&template, &bindings(false)).unwrap();
-        assert!(!requires_authored_requirement_status(&definition));
         assert!(arr(&definition, "tasks")
             .unwrap()
             .iter()
@@ -4645,7 +4515,7 @@ mod deployment_status_workflow_tests {
     }
 
     #[test]
-    fn execution_scope_preserves_historical_requirement_status_templates() {
+    fn local_execution_scope_excludes_deployment_only_checks() {
         let hosted = Json::obj(vec![(
             "deployment",
             Json::obj(vec![("verification_target", Json::str("deployment"))]),
@@ -4654,20 +4524,52 @@ mod deployment_status_workflow_tests {
             "deployment",
             Json::obj(vec![("verification_target", Json::str("source"))]),
         )]);
-        assert!(!local_check(&hosted, false));
-        assert!(local_check(&hosted, true));
-        assert!(local_check(&source, false));
-        let historical = Json::obj(vec![(
-            "template",
-            Json::obj(vec![(
-                "actions",
-                Json::Arr(vec![Json::obj(vec![(
-                    "kind",
-                    Json::str("assess-requirement-status"),
-                )])]),
-            )]),
-        )]);
-        assert!(requires_authored_requirement_status(&historical));
+        assert!(!local_check(&hosted));
+        assert!(local_check(&source));
+        assert!(local_check(&Json::obj(vec![])));
+    }
+
+    fn retire_review_action(value: &Json) -> Json {
+        match value {
+            Json::Obj(fields) => Json::Obj(
+                fields
+                    .iter()
+                    .map(|(key, item)| {
+                        let item = if key == "kind" && item.as_str() == Some("review-requirement") {
+                            Json::str("assess-requirement-status")
+                        } else {
+                            retire_review_action(item)
+                        };
+                        (key.clone(), item)
+                    })
+                    .collect(),
+            ),
+            Json::Arr(items) => Json::Arr(items.iter().map(retire_review_action).collect()),
+            other => other.clone(),
+        }
+    }
+
+    #[test]
+    fn authored_requirement_status_actions_are_rejected_with_their_replacement() {
+        for kind in ["assess-requirement-status", "judge-requirement"] {
+            let error = registered_kind(kind).unwrap_err();
+            assert!(error.contains(&format!("`{kind}`")), "{error}");
+            assert!(
+                error.contains("computed by the Assurance Service"),
+                "{error}"
+            );
+        }
+        assert!(registered_kind("review-requirement").is_ok());
+        assert_eq!(
+            registered_kind("invented").unwrap_err(),
+            "unregistered workflow task kind `invented`"
+        );
+        let shipped = shipped_template("change-development").unwrap();
+        let error = template(&retire_review_action(&shipped)).unwrap_err();
+        assert!(
+            error.contains("`assess-requirement-status` authors a Requirement Status assessment"),
+            "{error}"
+        );
     }
     #[test]
     fn candidate_reference_materialization_preserves_identity_and_rejects_changed_content() {

@@ -555,3 +555,28 @@ body:has(.moduleOverlay[open]) { overflow: hidden; }
 .dashboardPanel > p.modelDetailMuted { padding: 12px 22px 0; margin: 0; }
 .dashboardPanel > .textLink { display: inline-block; padding: 14px 22px; }
 .dashboard > .dashboardPanel + .dashboardPanel, .dashboard > .dashboardPanel + .disclosure { margin-top: 16px; }
+/* Work provenance is advisory; outlined basis markers keep it visually distinct from status badges. */
+.workCaption { font-style: italic; }
+.basisMarker { display: inline-block; padding: 0 6px; border: 1px solid currentColor; border-radius: 9px; font-size: 9px; line-height: 15px; font-weight: 550; white-space: nowrap; }
+.basis-harness { color: var(--green); }
+.basis-declared { color: var(--amber); }
+.basis-unknown { color: var(--neutral-ink); border-style: dashed; }
+.workRelease { margin-top: 14px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 6px; background: var(--subtle); }
+.workReleaseHeading { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.workReleaseHeading strong { font-size: 13px; }
+.workChange { margin-top: 12px; }
+.workChange h4, .workAttributions h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600; }
+.workAttempt { margin-top: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); scroll-margin-top: 20px; }
+.workAttempt:target { border-color: var(--blue); }
+.workAttempt > header { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-bottom: 10px; }
+.workAttemptSequence { color: var(--quiet); font-variant-numeric: tabular-nums; }
+.workAttemptActor { margin-left: auto; color: var(--muted); font-size: 11px; }
+.workAttempt .factGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.workEntities { margin: 0; padding-left: 18px; }
+.workEntities li > span:first-child { color: var(--quiet); }
+.workAttemptId { margin: 6px 0 0; color: var(--quiet); font-size: 10px; }
+.workAttributions { margin-top: 18px; }
+.workAttributionAttempts { margin: 0 0 10px; padding-left: 0; list-style: none; display: grid; gap: 6px; }
+.workReviewAttempt { margin: 8px 0; }
+.reviewArtifacts { margin: 0; padding-left: 0; list-style: none; }
+@media (max-width: 640px) { .workAttempt .factGrid { grid-template-columns: minmax(0, 1fr); } .workAttemptActor { margin-left: 0; } .workRelease { padding: 12px; } }

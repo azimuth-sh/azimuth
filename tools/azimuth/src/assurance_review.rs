@@ -1,6 +1,6 @@
 use crate::json::Json;
 use crate::model::Model;
-use crate::run::{CheckResultOutcome, RunBundle};
+use crate::run::{ChallengeTargetKind, CheckResultOutcome, RunBundle};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
@@ -119,8 +119,14 @@ pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
         bindings.push(Json::Obj(fields));
     }
     let mut requirements = Vec::new();
+    let mut requirement_intents = Vec::new();
     for view in model.requirements() {
         let id = &view.requirement.id;
+        let intent = model.requirement_digest(id).unwrap_or_default();
+        requirement_intents.push(Json::obj(vec![
+            ("id", Json::str(id)),
+            ("fingerprint", Json::str(&intent)),
+        ]));
         let mut gaps = Vec::new();
         let mut mechanisms = Vec::new();
         if let Some((_, declaration)) = model.account_design_for_requirement(&view.spec.id, id) {
@@ -212,10 +218,7 @@ pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
         gaps.dedup();
         mechanisms.sort_by_key(|mechanism| text(mechanism, "id").unwrap_or_default().to_string());
         let dependencies = Json::obj(vec![
-            (
-                "intent",
-                Json::str(model.requirement_digest(id).unwrap_or_default()),
-            ),
+            ("intent", Json::str(intent)),
             (
                 "design",
                 model
@@ -328,6 +331,9 @@ pub fn authority(model: &Model, project: &str) -> Result<Json, String> {
         ("scenarios", sorted(scenarios, "id")),
         ("bindings", sorted_pairs(bindings)),
         ("requirements", sorted(requirements, "id")),
+        // Outside every review dependency packet, so a Work Provenance reader can tell an intent
+        // change from a dependency change without that distinction ever staling a review.
+        ("requirement_intents", sorted(requirement_intents, "id")),
     ]);
     let mut result = result;
     let digest = record_fingerprint(&result)?;
@@ -482,6 +488,7 @@ pub fn validate_authority(value: &Json) -> Result<(), String> {
             "scenarios",
             "bindings",
             "requirements",
+            "requirement_intents",
         ],
     )?;
     id(value, "project")?;
@@ -602,6 +609,21 @@ pub fn validate_authority(value: &Json) -> Result<(), String> {
             }
         }
     }
+    let mut intents = Vec::new();
+    for intent in array(value, "requirement_intents")? {
+        object(intent, &["id", "fingerprint"])?;
+        id(intent, "id")?;
+        fingerprint(intent, "fingerprint")?;
+        intents.push(text(intent, "id")?);
+    }
+    if !intents.windows(2).all(|pair| pair[0] < pair[1])
+        || intents.iter().copied().collect::<BTreeSet<_>>() != requirements
+    {
+        return Err(
+            "requirement_intents requires exactly one entry per authority Requirement, sorted by id"
+                .into(),
+        );
+    }
     let mut scenarios = BTreeMap::new();
     for scenario in array(value, "scenarios")? {
         let mut scenario_fields = vec!["id", "requirement", "fingerprint"];
@@ -721,6 +743,9 @@ pub fn record_fingerprint(value: &Json) -> Result<String, String> {
 
 pub fn validate_record(value: &Json) -> Result<(), String> {
     let kind = text(value, "kind")?;
+    if kind == "requirement-status" {
+        return Err("requirement-status records are no longer authored; deployment Requirement Status is computed from applicable evidence".into());
+    }
     let mut fields = vec![
         "kind",
         "reviewer",
@@ -729,30 +754,27 @@ pub fn validate_record(value: &Json) -> Result<(), String> {
         "artifacts",
         "fingerprint",
     ];
-    if value.get("provenance").is_some() {
+    if kind == "requirement-review" {
+        if value.get("provenance").is_some() {
+            return Err("Requirement Review carries no provenance; agent and model provenance belongs to the change's Work Provenance ledger and reassesses is a top-level field".into());
+        }
+        if value.get("dependencies").is_some() {
+            return Err(
+                "Requirement Review pins dependencies_fingerprint, not a dependencies packet"
+                    .into(),
+            );
+        }
+    } else if value.get("provenance").is_some() {
         fields.push("provenance");
-    }
-    if ["requirement-review", "requirement-status"].contains(&kind)
-        && value.get("challenge_basis").is_some()
-    {
-        fields.push("challenge_basis");
     }
     fields.extend(match kind {
         "requirement-review" => vec![
             "requirement",
             "requirement_fingerprint",
-            "dependencies",
+            "dependencies_fingerprint",
             "decision",
-        ],
-        "requirement-status" => vec![
-            "requirement",
-            "requirement_fingerprint",
-            "dependencies",
-            "verification_target_fingerprint",
-            "requirement_review_fingerprint",
-            "basis",
-            "conclusion",
-            "residual_risks",
+            "reassesses",
+            "challenge_basis",
         ],
         "method-qualification" => vec!["check", "check_fingerprint", "decision"],
         "applicability-decision" => vec![
@@ -780,30 +802,8 @@ pub fn validate_record(value: &Json) -> Result<(), String> {
         _ => return Err("unknown review kind".into()),
     });
     object(value, &fields)?;
-    if value.get("challenge_basis").is_some() {
-        let mut seen = BTreeSet::new();
-        for item in array(value, "challenge_basis")? {
-            object(
-                item,
-                &[
-                    "run",
-                    "bundle_fingerprint",
-                    "result_fingerprint",
-                    "target_fingerprint",
-                ],
-            )?;
-            for field in [
-                "run",
-                "bundle_fingerprint",
-                "result_fingerprint",
-                "target_fingerprint",
-            ] {
-                fingerprint(item, field)?;
-            }
-            if !seen.insert(item.to_string_pretty()) {
-                return Err("duplicate Challenge basis".into());
-            }
-        }
+    if let Some(missing) = fields.iter().find(|field| value.get(field).is_none()) {
+        return Err(format!("{kind} requires {missing}"));
     }
     if let Some(provenance) = value.get("provenance") {
         object(provenance, &["agent", "model", "reassesses"])?;
@@ -835,7 +835,7 @@ pub fn validate_record(value: &Json) -> Result<(), String> {
         }
     }
     match kind {
-        "requirement-review" | "requirement-status" => validate_requirement_assessment(value)?,
+        "requirement-review" => validate_requirement_review(value)?,
         "method-qualification" => {
             id(value, "check")?;
             fingerprint(value, "check_fingerprint")?;
@@ -955,13 +955,6 @@ pub fn review_target(value: &Json) -> Result<Json, String> {
         }
         "requirement-review" => {
             result.push(("requirement", Json::str(text(value, "requirement")?)))
-        }
-        "requirement-status" => {
-            result.push(("requirement", Json::str(text(value, "requirement")?)));
-            result.push((
-                "verification_target_fingerprint",
-                Json::str(text(value, "verification_target_fingerprint")?),
-            ));
         }
         "requirement-judgment" => {
             result.push(("requirement", Json::str(text(value, "requirement")?)));
@@ -1125,8 +1118,8 @@ pub fn assess_record_in(
         return assessed("invalid", error);
     }
     let kind = text(record, "kind").unwrap();
-    if ["requirement-review", "requirement-status"].contains(&kind) {
-        return assess_requirement_assessment(record, authority, reviews, bundles);
+    if kind == "requirement-review" {
+        return assess_requirement_review(record, authority, reviews, bundles);
     }
     if kind == "method-qualification" {
         let Some(check) = authority_item(authority, "checks", "id", text(record, "check").unwrap())
@@ -1577,311 +1570,13 @@ pub fn review_input_in(
     reviews: &[Json],
     bundles: &Runs,
 ) -> Result<Json, String> {
-    let authority = authority(model, project)?;
     let kind = text(request, "kind")?;
-    if [
-        "method-qualification",
-        "applicability-decision",
-        "requirement-judgment",
-    ]
-    .contains(&kind)
-    {
-        return Err("new review input requires requirement-review or requirement-status; historical native records remain inspectable".into());
-    }
-    if ["requirement-review", "requirement-status"].contains(&kind) {
-        return requirement_assessment_input(model, project, request, reviews, bundles);
-    }
     match kind {
-        "method-qualification" => object(request, &["kind", "check"]),
-        "applicability-decision" => object(
-            request,
-            &[
-                "kind",
-                "check",
-                "scenario",
-                "verification_target_fingerprint",
-            ],
-        ),
-        "requirement-judgment" => object(
-            request,
-            &["kind", "requirement", "verification_target_fingerprint"],
-        ),
-        _ => {
-            return Err(
-                "review input kind requires requirement-review or requirement-status".into(),
-            )
-        }
-    }?;
-    for name in ["check", "scenario", "requirement"] {
-        if request.get(name).is_some() {
-            crate::diag::validate_id(text(request, name)?, false)?;
-        }
+        "requirement-review" => requirement_review_input(model, project, request, reviews, bundles),
+        "requirement-status" => Err("requirement-status records are no longer authored; deployment Requirement Status is computed from applicable evidence".into()),
+        "method-qualification" | "applicability-decision" | "requirement-judgment" => Err("new review input requires requirement-review; historical native records remain inspectable".into()),
+        _ => Err("review input kind requires requirement-review".into()),
     }
-    let verification_target = if kind == "method-qualification" {
-        None
-    } else {
-        fingerprint(request, "verification_target_fingerprint")?;
-        Some(text(request, "verification_target_fingerprint")?)
-    };
-    for review in reviews {
-        validate_record(review)?;
-    }
-    let findings = crate::run::verify_set(bundles);
-    if let Some(finding) = findings.first() {
-        return Err(format!(
-            "review input Run history is invalid: {}",
-            finding.detail
-        ));
-    }
-    let heads = bundles.active_heads()?;
-    let mut check_ids = BTreeSet::new();
-    let mut scenario_ids = BTreeSet::new();
-    let mut requirement_ids = BTreeSet::new();
-    let mut bindings = Vec::new();
-    if kind == "requirement-judgment" {
-        let id = text(request, "requirement")?;
-        let requirement = authority_item(&authority, "requirements", "id", id)
-            .ok_or_else(|| format!("unknown Requirement {id}"))?;
-        if text(requirement, "criticality")? == "routine" {
-            return Err(
-                "routine Requirements do not require independent Requirement Judgment".into(),
-            );
-        }
-        requirement_ids.insert(id.to_string());
-        for scenario in array(requirement, "scenarios")? {
-            scenario_ids.insert(scenario.as_str().unwrap().to_string());
-        }
-        for pair in array(requirement, "bindings")? {
-            let check = text(pair, "check")?;
-            let scenario = text(pair, "scenario")?;
-            check_ids.insert(check.to_string());
-            bindings.push(
-                authority_binding(&authority, check, scenario)
-                    .unwrap()
-                    .clone(),
-            );
-        }
-    } else {
-        let check = text(request, "check")?;
-        authority_item(&authority, "checks", "id", check)
-            .ok_or_else(|| format!("unknown Check {check}"))?;
-        check_ids.insert(check.to_string());
-        if kind == "applicability-decision" {
-            let scenario = text(request, "scenario")?;
-            let binding = authority_binding(&authority, check, scenario)
-                .ok_or_else(|| format!("unknown Check–Scenario binding {check}/{scenario}"))?;
-            scenario_ids.insert(scenario.to_string());
-            bindings.push(binding.clone());
-        }
-    }
-    let selected = |field: &str, ids: &BTreeSet<String>| -> Json {
-        Json::Arr(
-            array(&authority, field)
-                .unwrap()
-                .iter()
-                .filter(|value| ids.contains(text(value, "id").unwrap()))
-                .cloned()
-                .collect(),
-        )
-    };
-    let mut gaps = Vec::new();
-    let mut review_states = Vec::new();
-    let mut existing_reviews = Vec::new();
-    let mut targets = check_ids
-        .iter()
-        .map(|check| {
-            Json::obj(vec![
-                ("kind", Json::str("method-qualification")),
-                ("check", Json::str(check)),
-            ])
-        })
-        .collect::<Vec<_>>();
-    if let Some(verification_target) = verification_target {
-        for binding in &bindings {
-            targets.push(Json::obj(vec![
-                ("kind", Json::str("applicability-decision")),
-                ("check", binding.get("check").unwrap().clone()),
-                ("scenario", binding.get("scenario").unwrap().clone()),
-                (
-                    "verification_target_fingerprint",
-                    Json::str(verification_target),
-                ),
-            ]));
-        }
-        if kind == "requirement-judgment" {
-            targets.push(request.clone());
-        }
-    }
-    for target in targets {
-        let (record, state) = match latest_review(reviews, &target) {
-            Ok(Some(record)) => (
-                Some(record),
-                assess_record_in(record, &authority, reviews, bundles),
-            ),
-            Ok(None) => (None, assessed("missing", "Independent review is absent")),
-            Err(error) => (None, assessed("invalid", error)),
-        };
-        if let Some(record) = record {
-            existing_reviews.push(record.clone());
-        }
-        if state.status != "accepted" {
-            gaps.push(Json::obj(vec![
-                ("target", target.clone()),
-                ("status", Json::str(&state.status)),
-                (
-                    "diagnostics",
-                    Json::Arr(state.diagnostics.iter().map(Json::str).collect()),
-                ),
-            ]));
-        }
-        review_states.push(Json::obj(vec![
-            ("target", target),
-            ("record_status", Json::str(&state.status)),
-            (
-                "record_fingerprint",
-                record
-                    .and_then(|v| v.get("fingerprint"))
-                    .cloned()
-                    .unwrap_or(Json::Null),
-            ),
-            (
-                "diagnostics",
-                Json::Arr(state.diagnostics.iter().map(Json::str).collect()),
-            ),
-        ]));
-    }
-    let mut check_results = Vec::new();
-    let evidence_bundles = bundles.iter().map(crate::run::to_json).collect::<Vec<_>>();
-    let mut verification_targets = Vec::new();
-    if let Some(verification_target) = verification_target {
-        for bundle in heads {
-            if bundle.verification_target_fingerprint != verification_target {
-                continue;
-            }
-            let mut relevant = false;
-            for execution in &bundle.check_executions {
-                if !check_ids.contains(&execution.check.id) {
-                    continue;
-                }
-                let check =
-                    authority_item(&authority, "checks", "id", &execution.check.id).unwrap();
-                if text(check, "fingerprint")? != execution.check.fingerprint {
-                    continue;
-                }
-                for check_result in &execution.results {
-                    if !scenario_ids.contains(&check_result.scenario)
-                        || !bindings.iter().any(|binding| {
-                            text(binding, "check").ok() == Some(execution.check.id.as_str())
-                                && text(binding, "scenario").ok()
-                                    == Some(check_result.scenario.as_str())
-                        })
-                    {
-                        continue;
-                    }
-                    relevant = true;
-                    check_results.push(Json::obj(vec![
-                        ("check", Json::str(&execution.check.id)),
-                        ("scenario", Json::str(&check_result.scenario)),
-                        ("run", Json::str(&bundle.run_id)),
-                        ("bundle_fingerprint", Json::str(&bundle.bundle_fingerprint)),
-                        ("check_result", Json::str(&check_result.fingerprint)),
-                        ("outcome", Json::str(check_result.outcome.name())),
-                        (
-                            "observed_at_ms",
-                            Json::Num(check_result.observed_at_ms as f64),
-                        ),
-                    ]));
-                }
-            }
-            if relevant {
-                let descriptor =
-                    crate::run::verification_target_to_json(&bundle.verification_target);
-                if !verification_targets.contains(&descriptor) {
-                    verification_targets.push(descriptor);
-                }
-            }
-        }
-        for binding in &bindings {
-            if !check_results.iter().any(|check_result| {
-                check_result.get("check") == binding.get("check")
-                    && check_result.get("scenario") == binding.get("scenario")
-            }) {
-                gaps.push(Json::obj(vec![
-                    ("check", binding.get("check").unwrap().clone()),
-                    ("scenario", binding.get("scenario").unwrap().clone()),
-                    ("status", Json::str("missing")),
-                    (
-                        "diagnostics",
-                        Json::Arr(vec![Json::str(
-                            "No current exact-target Check Result exists",
-                        )]),
-                    ),
-                ]));
-            }
-        }
-    }
-    for requirement in array(&authority, "requirements")?
-        .iter()
-        .filter(|requirement| requirement_ids.contains(text(requirement, "id").unwrap()))
-    {
-        for gap in array(requirement, "gaps")? {
-            gaps.push(Json::obj(vec![
-                ("requirement", requirement.get("id").unwrap().clone()),
-                ("status", Json::str("structural-gap")),
-                ("diagnostics", Json::Arr(vec![gap.clone()])),
-            ]));
-        }
-    }
-    for check in &check_ids {
-        if !model.check_implementations.iter().any(|site| {
-            site.check == *check && site.source.is_some() && !site.source_fingerprint.is_empty()
-        }) {
-            gaps.push(Json::obj(vec![
-                ("check", Json::str(check)),
-                ("status", Json::str("structural-gap")),
-                (
-                    "diagnostics",
-                    Json::Arr(vec![Json::str("Check has no stable source implementation")]),
-                ),
-            ]));
-        }
-    }
-    let definitions = review_definitions(model, &check_ids, &scenario_ids, &requirement_ids);
-    let mut output = Json::obj(vec![
-        ("format", Json::str("azimuth-review-input")),
-        ("version", Json::Num(2.0)),
-        ("project", Json::str(project)),
-        ("target", request.clone()),
-        (
-            "authority_fingerprint",
-            authority.get("fingerprint").unwrap().clone(),
-        ),
-        (
-            "model_fingerprint",
-            authority.get("model_fingerprint").unwrap().clone(),
-        ),
-        (
-            "dependencies",
-            Json::obj(vec![
-                ("checks", selected("checks", &check_ids)),
-                ("scenarios", selected("scenarios", &scenario_ids)),
-                ("requirements", selected("requirements", &requirement_ids)),
-                ("bindings", Json::Arr(bindings)),
-            ]),
-        ),
-        ("definitions", definitions),
-        ("verification_targets", Json::Arr(verification_targets)),
-        ("check_results", Json::Arr(check_results)),
-        ("evidence_bundles", Json::Arr(evidence_bundles)),
-        ("review_states", Json::Arr(review_states)),
-        ("existing_reviews", Json::Arr(existing_reviews)),
-        ("gaps", Json::Arr(gaps)),
-    ]);
-    let fingerprint = record_fingerprint(&output)?;
-    if let Json::Obj(fields) = &mut output {
-        fields.push(("fingerprint".into(), Json::str(fingerprint)));
-    }
-    Ok(output)
 }
 
 fn review_definitions(
@@ -2183,60 +1878,44 @@ fn explanation_record(record: Option<&Json>, assessment: &Assessment) -> Json {
     ])
 }
 
-fn requirement_status_explanation(
+/// Requirement Status is never authored; a deployment's status is computed in
+/// `deployment_status`. This account therefore shows the Requirement Review and the observed exact-target
+/// evidence as unassessed facts and concludes nothing from them.
+fn verification_target_explanation(
     authority: &Json,
     requirement: &Json,
     reviews: &[Json],
     heads: &[&RunBundle],
     verification_target: &str,
     review: &Assessment,
-    requirement_status: &Assessment,
-    status: &str,
 ) -> Json {
     let id = text(requirement, "id").unwrap();
     let review_target = Json::obj(vec![
         ("kind", Json::str("requirement-review")),
         ("requirement", Json::str(id)),
     ]);
-    let requirement_status_target = Json::obj(vec![
-        ("kind", Json::str("requirement-status")),
-        ("requirement", Json::str(id)),
-        (
-            "verification_target_fingerprint",
-            Json::str(verification_target),
-        ),
-    ]);
     let review_record = latest_review(reviews, &review_target).ok().flatten();
-    let requirement_status_record = latest_review(reviews, &requirement_status_target)
-        .ok()
-        .flatten();
     let mut reasons = Vec::new();
-    for (kind, label, assessment) in [
-        ("requirement-review", "Requirement Review", review),
-        (
-            "requirement-status",
-            "Requirement Status",
-            requirement_status,
-        ),
-    ] {
-        if assessment.status != "accepted" {
-            reasons.push(Json::obj(vec![
-                ("code", Json::str(format!("{kind}-{}", assessment.status))),
-                ("category", Json::str(kind)),
-                ("status", Json::str(&assessment.status)),
-                (
-                    "message",
-                    Json::str(format!(
-                        "{label} is {} for this assessment.",
-                        assessment.status
-                    )),
-                ),
-                (
-                    "diagnostics",
-                    Json::Arr(assessment.diagnostics.iter().map(Json::str).collect()),
-                ),
-            ]));
-        }
+    if review.status != "accepted" {
+        reasons.push(Json::obj(vec![
+            (
+                "code",
+                Json::str(format!("requirement-review-{}", review.status)),
+            ),
+            ("category", Json::str("requirement-review")),
+            ("status", Json::str(&review.status)),
+            (
+                "message",
+                Json::str(format!(
+                    "Requirement Review is {} for this assessment.",
+                    review.status
+                )),
+            ),
+            (
+                "diagnostics",
+                Json::Arr(review.diagnostics.iter().map(Json::str).collect()),
+            ),
+        ]));
     }
     if !array(requirement, "gaps").unwrap().is_empty() {
         reasons.push(Json::obj(vec![
@@ -2249,10 +1928,7 @@ fn requirement_status_explanation(
             ("details", requirement.get("gaps").unwrap().clone()),
         ]));
     }
-    let mut supporting = Vec::new();
-    let mut violations = Vec::new();
-    let mut inconclusive = Vec::new();
-    let mut related = Vec::new();
+    let mut unassessed = Vec::new();
     let mut coverage = Vec::new();
     for binding in array(requirement, "bindings").unwrap() {
         let check_id = text(binding, "check").unwrap();
@@ -2261,7 +1937,6 @@ fn requirement_status_explanation(
             .and_then(|c| c.get("fingerprint"))
             .and_then(Json::as_str);
         let mut observed = Vec::new();
-        let mut accepted_outcomes = Vec::new();
         for bundle in heads
             .iter()
             .filter(|b| b.verification_target_fingerprint == verification_target)
@@ -2274,20 +1949,7 @@ fn requirement_status_explanation(
                     .iter()
                     .filter(|o| o.scenario == scenario_id)
                 {
-                    let selected = requirement_status_record
-                        .and_then(|r| r.get("basis"))
-                        .and_then(Json::as_array)
-                        .unwrap_or(&[])
-                        .iter()
-                        .any(|b| {
-                            b.get("run").and_then(Json::as_str) == Some(bundle.run_id.as_str())
-                                && b.get("bundle_fingerprint").and_then(Json::as_str)
-                                    == Some(bundle.bundle_fingerprint.as_str())
-                                && b.get("check_result").and_then(Json::as_str)
-                                    == Some(check_result.fingerprint.as_str())
-                        });
-                    let accepted = selected && requirement_status.status == "accepted";
-                    let value = Json::obj(vec![
+                    observed.push(Json::obj(vec![
                         ("check", Json::str(check_id)),
                         ("scenario", Json::str(scenario_id)),
                         ("run", Json::str(&bundle.run_id)),
@@ -2298,24 +1960,11 @@ fn requirement_status_explanation(
                             "observed_at_ms",
                             Json::Num(check_result.observed_at_ms as f64),
                         ),
-                        ("selected_in_basis", Json::Bool(selected)),
-                        ("accepted_basis", Json::Bool(accepted)),
                         (
                             "diagnostics",
                             Json::Arr(check_result.diagnostics.iter().map(Json::str).collect()),
                         ),
-                    ]);
-                    observed.push(value.clone());
-                    if accepted {
-                        accepted_outcomes.push(check_result.outcome);
-                        match check_result.outcome {
-                            CheckResultOutcome::Satisfied => supporting.push(value),
-                            CheckResultOutcome::Violated => violations.push(value),
-                            CheckResultOutcome::Inconclusive => inconclusive.push(value),
-                        }
-                    } else {
-                        related.push(value);
-                    }
+                    ]));
                 }
             }
         }
@@ -2327,15 +1976,10 @@ fn requirement_status_explanation(
                 ("message", Json::str(format!("No current matching Check Result is recorded for Check {check_id} and Scenario {scenario_id}."))),
             ]));
             "missing"
-        } else if accepted_outcomes.is_empty() {
-            "unassessed"
-        } else if accepted_outcomes.contains(&CheckResultOutcome::Violated) {
-            "violated"
-        } else if accepted_outcomes.contains(&CheckResultOutcome::Inconclusive) {
-            "inconclusive"
         } else {
-            "satisfied"
+            "unassessed"
         };
+        unassessed.extend(observed.iter().cloned());
         coverage.push(Json::obj(vec![
             ("check", Json::str(check_id)),
             ("scenario", Json::str(scenario_id)),
@@ -2343,62 +1987,25 @@ fn requirement_status_explanation(
             ("check_results", Json::Arr(observed)),
         ]));
     }
-    if requirement_status.status == "accepted" && status != "supported" {
-        reasons.push(Json::obj(vec![
-            (
-                "code",
-                Json::str(format!("requirement-status-assessed-{status}")),
-            ),
-            ("category", Json::str("requirement-status")),
-            (
-                "message",
-                requirement_status_record
-                    .and_then(|r| r.get("rationale"))
-                    .cloned()
-                    .unwrap_or(Json::str("Requirement Status remains unresolved.")),
-            ),
-        ]));
-    }
-    let summary = if requirement_status.status == "accepted" {
-        requirement_status_record
-            .and_then(|r| r.get("rationale"))
-            .and_then(Json::as_str)
-            .unwrap_or("Assessment rationale is unavailable.")
-            .to_string()
-    } else if reasons.is_empty() {
-        "No current Requirement Status assessment is available.".into()
-    } else {
-        reasons
-            .iter()
-            .filter_map(|r| r.get("message").and_then(Json::as_str))
-            .collect::<Vec<_>>()
-            .join(" ")
-    };
+    let mut summary = reasons
+        .iter()
+        .filter_map(|r| r.get("message").and_then(Json::as_str))
+        .collect::<Vec<_>>();
+    summary.push("Requirement Status is not computed for this Verification Target; deployment Requirement Status is computed from applicable evidence.");
     Json::obj(vec![
-        ("summary", Json::str(summary)),
-        ("status", Json::str(status)),
+        ("summary", Json::str(summary.join(" "))),
+        ("status", Json::str("unresolved")),
         ("reasons", Json::Arr(reasons)),
         ("review", explanation_record(review_record, review)),
-        (
-            "requirement_status",
-            explanation_record(requirement_status_record, requirement_status),
-        ),
         ("coverage", Json::Arr(coverage)),
         (
             "evidence",
             Json::obj(vec![
-                ("supporting", Json::Arr(supporting)),
-                ("violations", Json::Arr(violations)),
-                ("inconclusive", Json::Arr(inconclusive)),
-                ("unassessed", Json::Arr(related)),
+                ("supporting", Json::Arr(vec![])),
+                ("violations", Json::Arr(vec![])),
+                ("inconclusive", Json::Arr(vec![])),
+                ("unassessed", Json::Arr(unassessed)),
             ]),
-        ),
-        (
-            "residual_risks",
-            requirement_status_record
-                .and_then(|r| r.get("residual_risks"))
-                .cloned()
-                .unwrap_or(Json::Arr(vec![])),
         ),
     ])
 }
@@ -2452,35 +2059,11 @@ pub fn verification_target_state_in(
                 Ok(None) => assessed("missing", "Requirement Review absent"),
                 Err(error) => assessed("invalid", error),
             };
-            let target = Json::obj(vec![
-                ("kind", Json::str("requirement-status")),
-                ("requirement", Json::str(id)),
-                (
-                    "verification_target_fingerprint",
-                    Json::str(verification_target_fingerprint),
-                ),
-            ]);
-            let (requirement_status, status) = match latest_review(reviews, &target) {
-                Ok(Some(record)) => {
-                    let assessment = assess_record_in(record, authority, reviews, bundles);
-                    let status = if assessment.status == "accepted" {
-                        text(record, "conclusion").unwrap().to_string()
-                    } else {
-                        "unresolved".into()
-                    };
-                    (assessment, status)
-                }
-                Ok(None) => (
-                    assessed("missing", "Requirement Status absent"),
-                    "unresolved".into(),
-                ),
-                Err(error) => (assessed("invalid", error), "unresolved".into()),
-            };
-            let targets = [review_target, target];
-            let fingerprints = targets
-                .iter()
-                .filter_map(|target| latest_review(reviews, target).ok().flatten())
-                .filter_map(|record| record.get("fingerprint").and_then(Json::as_str))
+            let fingerprints = latest_review(reviews, &review_target)
+                .ok()
+                .flatten()
+                .and_then(|record| record.get("fingerprint").and_then(Json::as_str))
+                .into_iter()
                 .collect::<BTreeSet<_>>();
             let challenges = heads
                 .iter()
@@ -2490,8 +2073,7 @@ pub fn verification_target_state_in(
                         .iter()
                         .filter(|execution| {
                             execution.target.id == id
-                                && ["requirement-review", "requirement-status"]
-                                    .contains(&execution.target.kind.name())
+                                && execution.target.kind == ChallengeTargetKind::RequirementReview
                                 && fingerprints.contains(execution.target.fingerprint.as_str())
                         })
                         .map(|execution| {
@@ -2519,32 +2101,22 @@ pub fn verification_target_state_in(
                         })
                 })
                 .collect();
-            let explanation = requirement_status_explanation(
+            let explanation = verification_target_explanation(
                 authority,
                 requirement,
                 reviews,
                 &heads,
                 verification_target_fingerprint,
                 &review,
-                &requirement_status,
-                &status,
             );
             Json::obj(vec![
                 ("explanation", explanation),
                 ("requirement", Json::str(id)),
-                ("status", Json::str(status)),
+                ("status", Json::str("unresolved")),
                 ("review", Json::str(&review.status)),
-                ("requirement_status", Json::str(&requirement_status.status)),
                 (
                     "diagnostics",
-                    Json::Arr(
-                        review
-                            .diagnostics
-                            .iter()
-                            .chain(requirement_status.diagnostics.iter())
-                            .map(Json::str)
-                            .collect(),
-                    ),
+                    Json::Arr(review.diagnostics.iter().map(Json::str).collect()),
                 ),
                 ("gaps", requirement.get("gaps").unwrap().clone()),
                 ("bindings", Json::Arr(vec![])),
@@ -2663,8 +2235,13 @@ fn requirement_verification_challenges(model: &Model, requirement: &str) -> Json
 }
 
 /// The review dependency packet; its canonical fingerprint is a Requirement's closure identity.
-pub fn requirement_closure_fingerprint(authority: &Json, requirement_id: &str) -> Result<String, String> {
-    Ok(crate::fingerprint::canonical_sha256(&requirement_dependencies(authority, requirement_id)?))
+pub fn requirement_closure_fingerprint(
+    authority: &Json,
+    requirement_id: &str,
+) -> Result<String, String> {
+    Ok(crate::fingerprint::canonical_sha256(
+        &requirement_dependencies(authority, requirement_id)?,
+    ))
 }
 
 pub fn requirement_dependencies(authority: &Json, requirement_id: &str) -> Result<Json, String> {
@@ -2701,61 +2278,46 @@ pub fn requirement_dependencies(authority: &Json, requirement_id: &str) -> Resul
         ("bindings", Json::Arr(bindings)),
     ]))
 }
-fn validate_requirement_assessment(value: &Json) -> Result<(), String> {
+fn validate_requirement_review(value: &Json) -> Result<(), String> {
     id(value, "requirement")?;
     fingerprint(value, "requirement_fingerprint")?;
-    let deps = value.get("dependencies").ok_or("missing dependencies")?;
-    object(deps, &["checks", "scenarios", "requirements", "bindings"])?;
-    for group in ["checks", "scenarios", "requirements", "bindings"] {
-        let mut seen = BTreeSet::new();
-        for d in array(deps, group)? {
-            fingerprint(d, "fingerprint")?;
-            let key = if group == "bindings" {
-                format!("{}/{}", text(d, "check")?, text(d, "scenario")?)
-            } else {
-                text(d, "id")?.into()
-            };
-            if !seen.insert(key) {
-                return Err("duplicate assessment dependency".into());
-            }
-        }
+    fingerprint(value, "dependencies_fingerprint")?;
+    if value.get("reassesses") != Some(&Json::Null) {
+        fingerprint(value, "reassesses")?;
     }
-    if text(value, "kind")? == "requirement-review" {
-        return decision(value);
-    }
-    fingerprint(value, "verification_target_fingerprint")?;
-    fingerprint(value, "requirement_review_fingerprint")?;
-    if !["supported", "violated", "unresolved"].contains(&text(value, "conclusion")?) {
-        return Err("unknown Requirement Status conclusion".into());
-    }
-    string_array(value, "residual_risks")?;
     let mut seen = BTreeSet::new();
-    for b in array(value, "basis")? {
-        object(b, &["run", "bundle_fingerprint", "check_result"])?;
-        for key in ["run", "bundle_fingerprint", "check_result"] {
-            fingerprint(b, key)?;
+    for item in array(value, "challenge_basis")? {
+        object(
+            item,
+            &[
+                "run",
+                "bundle_fingerprint",
+                "result_fingerprint",
+                "target_fingerprint",
+            ],
+        )?;
+        for field in [
+            "run",
+            "bundle_fingerprint",
+            "result_fingerprint",
+            "target_fingerprint",
+        ] {
+            fingerprint(item, field)?;
         }
-        if !seen.insert(b.to_string_pretty()) {
-            return Err("duplicate Check Result basis".into());
+        if !seen.insert(item.to_string_pretty()) {
+            return Err("duplicate Challenge basis".into());
         }
     }
-    if text(value, "conclusion")? != "unresolved" && array(value, "basis")?.is_empty() {
-        return Err("conclusive Requirement Status requires Check Result basis".into());
-    }
-    Ok(())
+    decision(value)
 }
-fn assess_requirement_assessment(
+fn assess_requirement_review(
     record: &Json,
     authority: &Json,
     reviews: &[Json],
     bundles: &Runs,
 ) -> Assessment {
     let requirement = text(record, "requirement").unwrap();
-    if let Some(previous) = record
-        .get("provenance")
-        .and_then(|provenance| provenance.get("reassesses"))
-        .and_then(Json::as_str)
-    {
+    if let Some(previous) = record.get("reassesses").and_then(Json::as_str) {
         if let Some(before) = reviews
             .iter()
             .find(|review| review.get("fingerprint").and_then(Json::as_str) == Some(previous))
@@ -2773,14 +2335,14 @@ fn assess_requirement_assessment(
             return assessed("missing", "Reassessed review absent from retained history");
         }
     }
-    let deps = match requirement_dependencies(authority, requirement) {
+    let closure = match requirement_closure_fingerprint(authority, requirement) {
         Ok(v) => v,
         Err(e) => return assessed("stale", e),
     };
     if record
-        .get("dependencies")
-        .map(crate::fingerprint::canonical_sha256)
-        != Some(crate::fingerprint::canonical_sha256(&deps))
+        .get("dependencies_fingerprint")
+        .and_then(Json::as_str)
+        != Some(closure.as_str())
         || record.get("requirement_fingerprint")
             != authority_item(authority, "requirements", "id", requirement)
                 .and_then(|v| v.get("fingerprint"))
@@ -2794,11 +2356,7 @@ fn assess_requirement_assessment(
         Ok(heads) => heads,
         Err(error) => return assessed("invalid", error),
     };
-    for item in record
-        .get("challenge_basis")
-        .and_then(Json::as_array)
-        .unwrap_or(&[])
-    {
+    for item in array(record, "challenge_basis").unwrap() {
         let found = challenge_heads.iter().any(|bundle| {
             item.get("run").and_then(Json::as_str) == Some(bundle.run_id.as_str())
                 && item.get("bundle_fingerprint").and_then(Json::as_str)
@@ -2812,8 +2370,7 @@ fn assess_requirement_assessment(
                             && item.get("target_fingerprint").and_then(Json::as_str)
                                 == Some(execution.target.fingerprint.as_str())
                             && execution.target.id == requirement
-                            && ["requirement-review", "requirement-status"]
-                                .contains(&execution.target.kind.name())
+                            && execution.target.kind == ChallengeTargetKind::RequirementReview
                     })
         });
         if !found {
@@ -2827,7 +2384,7 @@ fn assess_requirement_assessment(
         .iter()
         .flat_map(|bundle| &bundle.verification_challenge_executions)
     {
-        if execution.target.kind.name() == text(record, "kind").unwrap()
+        if execution.target.kind == ChallengeTargetKind::RequirementReview
             && execution.target.id == requirement
             && Some(execution.target.fingerprint.as_str())
                 == record.get("fingerprint").and_then(Json::as_str)
@@ -2842,159 +2399,7 @@ fn assess_requirement_assessment(
             );
         }
     }
-    if text(record, "kind").unwrap() == "requirement-review" {
-        return assessed(text(record, "decision").unwrap(), "");
-    }
-    let target = Json::obj(vec![
-        ("kind", Json::str("requirement-review")),
-        ("requirement", Json::str(requirement)),
-    ]);
-    let review = match latest_review(reviews, &target) {
-        Ok(Some(v)) => v,
-        Ok(None) => return assessed("missing", "Requirement Review absent"),
-        Err(e) => return assessed("invalid", e),
-    };
-    if record.get("requirement_review_fingerprint") != review.get("fingerprint") {
-        return assessed("stale", "Requirement Review superseded");
-    }
-    if assess_record_in(review, authority, reviews, bundles).status != "accepted" {
-        return assessed("rejected", "Requirement Review not current and accepted");
-    }
-    let heads = match bundles.active_heads() {
-        Ok(v) => v,
-        Err(e) => return assessed("invalid", e),
-    };
-    let mut covered = BTreeSet::new();
-    let mut covered_bindings = BTreeSet::new();
-    let mut violated = false;
-    let mut inconclusive = false;
-    for bundle in &heads {
-        if Some(bundle.verification_target_fingerprint.as_str())
-            != record
-                .get("verification_target_fingerprint")
-                .and_then(Json::as_str)
-        {
-            continue;
-        }
-        for execution in &bundle.check_executions {
-            if !array(&deps, "checks").unwrap().iter().any(|check| {
-                check.get("id").and_then(Json::as_str) == Some(execution.check.id.as_str())
-                    && check.get("fingerprint").and_then(Json::as_str)
-                        == Some(execution.check.fingerprint.as_str())
-            }) {
-                continue;
-            }
-            for check_result in &execution.results {
-                if !array(&deps, "bindings").unwrap().iter().any(|binding| {
-                    binding.get("check").and_then(Json::as_str) == Some(execution.check.id.as_str())
-                        && binding.get("scenario").and_then(Json::as_str)
-                            == Some(check_result.scenario.as_str())
-                }) {
-                    continue;
-                }
-                if !array(record, "basis").unwrap().iter().any(|item| {
-                    item.get("run").and_then(Json::as_str) == Some(bundle.run_id.as_str())
-                        && item.get("bundle_fingerprint").and_then(Json::as_str)
-                            == Some(bundle.bundle_fingerprint.as_str())
-                        && item.get("check_result").and_then(Json::as_str)
-                            == Some(check_result.fingerprint.as_str())
-                }) {
-                    return assessed(
-                        "stale",
-                        "Requirement Status omits a current relevant Check Result",
-                    );
-                }
-            }
-        }
-    }
-    for item in array(record, "basis").unwrap() {
-        let Some(bundle) = heads.iter().find(|b| {
-            Some(b.run_id.as_str()) == item.get("run").and_then(Json::as_str)
-                && Some(b.bundle_fingerprint.as_str())
-                    == item.get("bundle_fingerprint").and_then(Json::as_str)
-        }) else {
-            return assessed("stale", "Check Result Run missing or corrected");
-        };
-        if Some(bundle.verification_target_fingerprint.as_str())
-            != record
-                .get("verification_target_fingerprint")
-                .and_then(Json::as_str)
-        {
-            return assessed(
-                "invalid",
-                "Check Result belongs to another Verification Target",
-            );
-        }
-        let mut found = false;
-        for execution in &bundle.check_executions {
-            for check_result in &execution.results {
-                if Some(check_result.fingerprint.as_str())
-                    != item.get("check_result").and_then(Json::as_str)
-                {
-                    continue;
-                }
-                found = true;
-                let binding =
-                    authority_binding(authority, &execution.check.id, &check_result.scenario);
-                if !array(&deps, "bindings")
-                    .unwrap()
-                    .iter()
-                    .any(|b| Some(b) == binding)
-                    || authority_item(authority, "checks", "id", &execution.check.id)
-                        .and_then(|v| v.get("fingerprint"))
-                        .and_then(Json::as_str)
-                        != Some(execution.check.fingerprint.as_str())
-                {
-                    return assessed(
-                        "stale",
-                        "Check Result no longer matches selected Requirement verification",
-                    );
-                }
-                let outcome = check_result.outcome.name();
-                if outcome == "violated" {
-                    violated = true;
-                }
-                if outcome == "satisfied" {
-                    covered.insert(check_result.scenario.clone());
-                    covered_bindings
-                        .insert((execution.check.id.clone(), check_result.scenario.clone()));
-                }
-                if outcome == "inconclusive" {
-                    inconclusive = true;
-                }
-            }
-        }
-        if !found {
-            return assessed("invalid", "Check Result basis not found");
-        }
-    }
-    let conclusion = text(record, "conclusion").unwrap();
-    if conclusion == "supported" {
-        let requirement = authority_item(authority, "requirements", "id", requirement).unwrap();
-        if violated
-            || inconclusive
-            || !array(requirement, "gaps").unwrap().is_empty()
-            || array(&deps, "bindings").unwrap().iter().any(|binding| {
-                !covered_bindings.contains(&(
-                    text(binding, "check").unwrap().to_string(),
-                    text(binding, "scenario").unwrap().to_string(),
-                ))
-            })
-            || array(requirement, "scenarios")
-                .unwrap()
-                .iter()
-                .any(|c| !covered.contains(c.as_str().unwrap()))
-        {
-            return assessed("unresolved","Supported Requirement Status lacks complete satisfied Scenarios or contains violations/structural gaps");
-        }
-    }
-    if conclusion == "violated" && !violated {
-        return assessed(
-            "unresolved",
-            "Violated Requirement Status has no violated Check Result",
-        );
-    }
-    assessed("accepted", "")
+    assessed(text(record, "decision").unwrap(), "")
 }
 fn reassessment_history(selected: Vec<Json>, reviews: &[Json]) -> Vec<Json> {
     let mut retained = BTreeMap::new();
@@ -3004,11 +2409,7 @@ fn reassessment_history(selected: Vec<Json>, reviews: &[Json]) -> Vec<Json> {
         if retained.contains_key(&fingerprint) {
             continue;
         }
-        if let Some(previous) = record
-            .get("provenance")
-            .and_then(|value| value.get("reassesses"))
-            .and_then(Json::as_str)
-        {
+        if let Some(previous) = record.get("reassesses").and_then(Json::as_str) {
             if let Some(ancestor) = reviews
                 .iter()
                 .find(|value| value.get("fingerprint").and_then(Json::as_str) == Some(previous))
@@ -3021,22 +2422,14 @@ fn reassessment_history(selected: Vec<Json>, reviews: &[Json]) -> Vec<Json> {
     retained.into_values().collect()
 }
 
-fn requirement_assessment_input(
+fn requirement_review_input(
     model: &Model,
     project: &str,
     request: &Json,
     reviews: &[Json],
     bundles: &Runs,
 ) -> Result<Json, String> {
-    let kind = text(request, "kind")?;
-    if kind == "requirement-review" {
-        object(request, &["kind", "requirement"])?;
-    } else {
-        object(
-            request,
-            &["kind", "requirement", "verification_target_fingerprint"],
-        )?;
-    }
+    object(request, &["kind", "requirement"])?;
     let requirement = text(request, "requirement")?;
     let authority = authority(model, project)?;
     let deps = requirement_dependencies(&authority, requirement)?;
@@ -3065,8 +2458,7 @@ fn requirement_assessment_input(
         {
             let target = execution.get("target").unwrap();
             if target.get("id").and_then(Json::as_str) != Some(requirement)
-                || !["requirement-review", "requirement-status"]
-                    .contains(&target.get("kind").and_then(Json::as_str).unwrap_or(""))
+                || target.get("kind").and_then(Json::as_str) != Some("requirement-review")
             {
                 continue;
             }
@@ -3087,96 +2479,36 @@ fn requirement_assessment_input(
             challenge_bundles.push(serialized);
         }
     }
-    let mut check_results = Vec::new();
-    let mut verification_targets = Vec::new();
-    let mut evidence = Vec::new();
-    if kind == "requirement-status" {
-        fingerprint(request, "verification_target_fingerprint")?;
-        for bundle in heads {
-            if Some(bundle.verification_target_fingerprint.as_str())
-                != request
-                    .get("verification_target_fingerprint")
-                    .and_then(Json::as_str)
-            {
-                continue;
-            }
-            evidence.push(crate::run::to_json(bundle));
-            let verification_target =
-                crate::run::verification_target_to_json(&bundle.verification_target);
-            if !verification_targets.contains(&verification_target) {
-                verification_targets.push(verification_target);
-            }
-            for execution in &bundle.check_executions {
-                if !array(&deps, "checks")?.iter().any(|c| {
-                    c.get("id").and_then(Json::as_str) == Some(execution.check.id.as_str())
-                        && c.get("fingerprint").and_then(Json::as_str)
-                            == Some(execution.check.fingerprint.as_str())
-                }) {
-                    continue;
-                }
-                for o in &execution.results {
-                    if !array(&deps, "bindings")?.iter().any(|b| {
-                        b.get("check").and_then(Json::as_str) == Some(execution.check.id.as_str())
-                            && b.get("scenario").and_then(Json::as_str) == Some(o.scenario.as_str())
-                    }) {
-                        continue;
-                    }
-                    check_results.push(Json::obj(vec![
-                        ("check", Json::str(&execution.check.id)),
-                        ("scenario", Json::str(&o.scenario)),
-                        ("run", Json::str(&bundle.run_id)),
-                        ("bundle_fingerprint", Json::str(&bundle.bundle_fingerprint)),
-                        ("check_result", Json::str(&o.fingerprint)),
-                        ("outcome", Json::str(o.outcome.name())),
-                        ("observed_at_ms", Json::Num(o.observed_at_ms as f64)),
-                    ]));
-                }
-            }
-        }
-    }
-    let mut targets = vec![request.clone()];
-    if kind == "requirement-status" {
-        targets.push(Json::obj(vec![
-            ("kind", Json::str("requirement-review")),
-            ("requirement", Json::str(requirement)),
-        ]));
-    }
-    let mut states = Vec::new();
-    let mut existing = Vec::new();
-    let mut gaps = Vec::new();
-    for target in targets {
-        let record = latest_review(reviews, &target)?;
-        let state = record
-            .map(|r| assess_record_in(r, &authority, reviews, bundles))
-            .unwrap_or_else(|| assessed("missing", "Review absent"));
-        if let Some(r) = record {
-            existing.push(r.clone());
-        }
-        let status = Json::obj(vec![
-            ("target", target),
-            ("record_status", Json::str(&state.status)),
-            (
-                "record_fingerprint",
-                record
-                    .and_then(|r| r.get("fingerprint"))
-                    .cloned()
-                    .unwrap_or(Json::Null),
-            ),
-            (
-                "diagnostics",
-                Json::Arr(state.diagnostics.iter().map(Json::str).collect()),
-            ),
-        ]);
-        if state.status != "accepted" {
-            gaps.push(status.clone());
-        }
-        states.push(status);
-    }
+    let record = latest_review(reviews, request)?;
+    let state = record
+        .map(|r| assess_record_in(r, &authority, reviews, bundles))
+        .unwrap_or_else(|| assessed("missing", "Review absent"));
+    let status = Json::obj(vec![
+        ("target", request.clone()),
+        ("record_status", Json::str(&state.status)),
+        (
+            "record_fingerprint",
+            record
+                .and_then(|r| r.get("fingerprint"))
+                .cloned()
+                .unwrap_or(Json::Null),
+        ),
+        (
+            "diagnostics",
+            Json::Arr(state.diagnostics.iter().map(Json::str).collect()),
+        ),
+    ]);
+    let gaps = if state.status == "accepted" {
+        Vec::new()
+    } else {
+        vec![status.clone()]
+    };
     let mut definitions = review_definitions(model, &check_ids, &scenario_ids, &requirement_ids);
     if let Json::Obj(fields) = &mut definitions {
         fields.push(("challenge_results".into(), Json::Arr(challenge_results)));
     }
-    challenge_bundles.retain(|bundle| !evidence.contains(bundle));
+    // The packet keeps the full dependency definitions for the reviewer; the authored record pins
+    // only their canonical fingerprint.
     let mut output = Json::obj(vec![
         ("format", Json::str("azimuth-review-input")),
         ("version", Json::Num(2.0)),
@@ -3192,14 +2524,17 @@ fn requirement_assessment_input(
         ),
         ("dependencies", deps),
         ("definitions", definitions),
-        ("verification_targets", Json::Arr(verification_targets)),
-        ("check_results", Json::Arr(check_results)),
-        ("evidence_bundles", Json::Arr(evidence)),
+        ("verification_targets", Json::Arr(Vec::new())),
+        ("check_results", Json::Arr(Vec::new())),
+        ("evidence_bundles", Json::Arr(Vec::new())),
         ("challenge_bundles", Json::Arr(challenge_bundles)),
-        ("review_states", Json::Arr(states)),
+        ("review_states", Json::Arr(vec![status])),
         (
             "existing_reviews",
-            Json::Arr(reassessment_history(existing, reviews)),
+            Json::Arr(reassessment_history(
+                record.into_iter().cloned().collect(),
+                reviews,
+            )),
         ),
         ("gaps", Json::Arr(gaps)),
     ]);

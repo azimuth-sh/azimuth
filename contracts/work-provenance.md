@@ -97,7 +97,7 @@ By default it reads `<change>/.azimuth/workflow.json` and follows `predecessor.r
           "guidance": [],
           "trace": null,
           "used": [{"kind": "initial-request", "repository": null, "ref": "inputs/request.md", "fingerprint": "sha256:…"}],
-          "generated": [{"kind": "proposal", "repository": "application", "ref": "azimuth/changes/x/proposal.md", "fingerprint": "sha256:…", "record": null}]
+          "generated": [{"kind": "proposal", "repository": "application", "ref": "azimuth/changes/x/proposal.md", "fingerprint": "sha256:…", "record": null, "record_fingerprint": null}]
         }
       ]
     }
@@ -105,11 +105,12 @@ By default it reads `<change>/.azimuth/workflow.json` and follows `predecessor.r
 }
 ```
 
+- Instance `id` is unique within a ledger. Version 3 `workflow init` assigns `<definition-id>-<init unix ms>`; a version 2 historical instance exports as `<recorded id>-<first 12 hex of its canonical file fingerprint>`, so restart snapshots stay distinct and deterministic. Predecessor links are matched by `predecessor.fingerprint`, not by id. The Assurance Service keys instances on `(project, change, id)`.
 - `disposition`: `abandoned` when recorded; `superseded` when another listed instance names it as predecessor or a later historical instance follows it; `completed` when the change has a `finalization.json` or is archived and the instance is the last; otherwise `active`.
 - `sequence` is the 1-based position in the instance history. `target` is the work target flattened to sorted `{name, value}` string pairs; nested values are rendered as canonical JSON.
 - `scope` is derived from the target: `requirement` when it names a Requirement, else `check`, `verification-challenge`, `module`, and finally `change`.
 - `report` is the authored result's `report`, or `null` when the authored file is absent or has none.
-- `used` are the attempt's recorded inputs; `generated` are its output records (`record` names a selected review-bundle entry).
+- `used` are the attempt's recorded inputs; `generated` are its output records. `record` names a selected review-bundle entry and `record_fingerprint` is that native record's own fingerprint (for a Requirement Review, its review fingerprint); both are `null` otherwise. This is how a stored review is linked to the attempt that produced it.
 - Version 2 history entries export with every descriptor field `unknown`, both times `null` and `guidance` `[]`.
 
 The ledger fingerprint is the canonical fingerprint of the ledger JSON. The ledger is append-only across exports: an attempt id, once exported, keeps identical content.
@@ -186,7 +187,7 @@ Work Provenance is stored in ordinary relational tables with typed columns and n
 | `POST /v1/projects/{project}/provenance/ledgers` | Submit one change ledger. Existing attempts must match exactly; new attempts and instances are appended; a changed attempt is a conflict. |
 | `POST /v1/projects/{project}/provenance/attributions` | Submit one compiled Failure Attribution. Immutable by id. |
 | `GET /v1/projects/{project}/provenance/changes/{change}` | The stored ledger, reassembled. |
-| `GET /v1/projects/{project}/provenance/requirements/{requirement}` | The Requirement's work history and attributions. |
+| `GET /v1/projects/{project}/provenance/requirements/{requirement}` | The Requirement's work history and attributions; 404 when no release authority contains the Requirement. |
 | `GET /v1/projects/{project}/provenance/attempts?cursor=&limit=` | Paged dataset rows in the `report provenance` shape. |
 
 The Requirement history follows the release lineage. Releases are ordered by `integration_sequence`; for each release, its authority is compared with the previous release's authority. A Requirement's closure changed when the canonical fingerprint of its review dependency packet differs or the Requirement is new. The change is labelled `intent` when the Requirement's entry in `requirement_intents` or any of its Scenario fingerprints differs, otherwise `dependency`. Every change recorded for that release is listed with its stored attempts; a release change without a stored ledger is listed with no attempts. The response is:
@@ -198,10 +199,10 @@ The Requirement history follows the release lineage. Releases are ordered by `in
     {
       "release": "sha256:…", "label": "…", "integration_sequence": 3, "model_revision": "sha256:…",
       "relation": "intent",
-      "changes": [{"change": "…", "attempts": [ …attempt rows… ]}]
+      "changes": [{"change": "…", "attempts": [ …attempts in the ledger attempt shape, each with "instance" and "disposition" added… ]}]
     }
   ],
-  "attributions": [ …compiled attributions for this Requirement… ]
+  "attributions": [ …compiled azimuth-failure-attribution records for this Requirement… ]
 }
 ```
 
