@@ -79,12 +79,10 @@ async fn refresh(
             .map(|value| value.as_str().unwrap())
             .collect();
         sqlx::query("INSERT INTO definition_requirements(project,revision,requirement,record_fingerprint,status,diagnostics) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(project,revision,requirement) DO UPDATE SET record_fingerprint=excluded.record_fingerprint,status=excluded.status,diagnostics=excluded.diagnostics").bind(project).bind(revision).bind(requirement["requirement"].as_str()).bind(requirement["record"]["fingerprint"].as_str()).bind(requirement["assessment"].as_str()).bind(diagnostics).execute(&mut *tx).await?;
-        for field in ["basis", "challenge_basis"] {
-            if let Some(basis) = requirement["record"][field].as_array() {
-                for item in basis {
-                    if let Some(run) = item["run"].as_str() {
-                        sqlx::query("INSERT INTO definition_run_dependencies(project,revision,run) VALUES($1,$2,$3) ON CONFLICT DO NOTHING").bind(project).bind(revision).bind(run).execute(&mut *tx).await?;
-                    }
+        if let Some(basis) = requirement["record"]["challenge_basis"].as_array() {
+            for item in basis {
+                if let Some(run) = item["run"].as_str() {
+                    sqlx::query("INSERT INTO definition_run_dependencies(project,revision,run) VALUES($1,$2,$3) ON CONFLICT DO NOTHING").bind(project).bind(revision).bind(run).execute(&mut *tx).await?;
                 }
             }
         }

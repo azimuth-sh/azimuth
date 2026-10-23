@@ -1,4 +1,4 @@
-use super::{object, Schema};
+use super::{list, object, Schema};
 
 pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
     vec![
@@ -15,79 +15,51 @@ fn authority() -> Schema {
         ("scenarios", Schema::Document),
         ("bindings", Schema::Document),
         ("requirements", Schema::Document),
+        (
+            "requirement_intents",
+            list(object(vec![
+                ("id", Schema::Text),
+                ("fingerprint", Schema::Text),
+            ])),
+        ),
         ("project", Schema::Text),
         ("model_fingerprint", Schema::Text),
         ("fingerprint", Schema::Text),
     ])
 }
 
+// Requirement Review is the only stored review kind; every field is a typed column or child row so
+// review storage holds no JSON text.
 fn review() -> Schema {
-    let common = vec![
+    object(vec![
         ("kind", Schema::Text),
         ("reviewer", Schema::Text),
         ("reviewed_at_ms", Schema::Number),
         ("rationale", Schema::Text),
+        (
+            "artifacts",
+            list(object(vec![
+                ("id", Schema::Text),
+                ("digest", Schema::Text),
+                ("locator", Schema::Text),
+            ])),
+        ),
+        ("requirement", Schema::Text),
+        ("requirement_fingerprint", Schema::Text),
+        ("dependencies_fingerprint", Schema::Text),
+        ("decision", Schema::Text),
+        ("reassesses", Schema::Text),
+        (
+            "challenge_basis",
+            list(object(vec![
+                ("run", Schema::Text),
+                ("bundle_fingerprint", Schema::Text),
+                ("result_fingerprint", Schema::Text),
+                ("target_fingerprint", Schema::Text),
+            ])),
+        ),
         ("fingerprint", Schema::Text),
-        ("artifacts", Schema::Document),
-        ("provenance", Schema::Document),
-    ];
-    let variants = vec![
-        vec![
-            ("requirement", Schema::Text),
-            ("requirement_fingerprint", Schema::Text),
-            ("dependencies", Schema::Document),
-            ("decision", Schema::Text),
-            ("challenge_basis", Schema::Document),
-        ],
-        vec![
-            ("requirement", Schema::Text),
-            ("requirement_fingerprint", Schema::Text),
-            ("dependencies", Schema::Document),
-            ("verification_target_fingerprint", Schema::Text),
-            ("requirement_review_fingerprint", Schema::Text),
-            ("basis", Schema::Document),
-            ("conclusion", Schema::Text),
-            ("residual_risks", Schema::Document),
-            ("challenge_basis", Schema::Document),
-        ],
-        vec![
-            ("check", Schema::Text),
-            ("check_fingerprint", Schema::Text),
-            ("decision", Schema::Text),
-        ],
-        vec![
-            ("check", Schema::Text),
-            ("scenario", Schema::Text),
-            ("check_fingerprint", Schema::Text),
-            ("scenario_fingerprint", Schema::Text),
-            ("binding_fingerprint", Schema::Text),
-            ("verification_target_fingerprint", Schema::Text),
-            ("method_qualification_fingerprint", Schema::Text),
-            ("basis", Schema::Document),
-            ("decision", Schema::Text),
-            ("limitations", Schema::Document),
-        ],
-        vec![
-            ("requirement", Schema::Text),
-            ("requirement_fingerprint", Schema::Text),
-            ("verification_target_fingerprint", Schema::Text),
-            ("scenarios", Schema::Document),
-            ("mechanisms", Schema::Document),
-            ("bindings", Schema::Document),
-            ("conclusion", Schema::Text),
-            ("residual_risks", Schema::Document),
-        ],
-    ];
-    Schema::OneOf(
-        variants
-            .into_iter()
-            .map(|fields| {
-                let mut result = common.clone();
-                result.extend(fields);
-                object(result)
-            })
-            .collect(),
-    )
+    ])
 }
 
 fn catalog() -> Schema {
@@ -118,40 +90,58 @@ mod tests {
         value
     }
 
-    fn review(kind: &str) -> Value {
-        let mut value = json!({
-            "kind": kind, "reviewer": "reviewer", "reviewed_at_ms": 100,
+    fn requirement_review(reassesses: Option<&str>) -> Value {
+        fingerprint_record(json!({
+            "kind": "requirement-review", "reviewer": "reviewer", "reviewed_at_ms": 100,
             "rationale": "Independent examination of the exact declared account.",
             "artifacts": [{"id":"notes","digest":DIGEST,"locator":"reviews/notes.md"}],
-            "provenance": {"agent":null,"model":"review-model","reassesses":null}
-        });
-        let fields = match kind {
-            "method-qualification" => {
-                json!({"check":"check","check_fingerprint":DIGEST,"decision":"accepted"})
-            }
-            "applicability-decision" => {
-                json!({"check":"check","scenario":"scenario","check_fingerprint":DIGEST,"scenario_fingerprint":DIGEST,"binding_fingerprint":DIGEST,"verification_target_fingerprint":DIGEST,"method_qualification_fingerprint":DIGEST,"basis":[{"run":DIGEST,"bundle_fingerprint":DIGEST,"check_result":DIGEST}],"decision":"rejected","limitations":["Limited execution context"]})
-            }
-            "requirement-judgment" => {
-                json!({"requirement":"requirement","requirement_fingerprint":DIGEST,"verification_target_fingerprint":DIGEST,"scenarios":[{"id":"scenario","fingerprint":DIGEST}],"mechanisms":[],"bindings":[{"check":"check","scenario":"scenario","fingerprint":DIGEST,"applicability_fingerprint":null}],"conclusion":"unresolved","residual_risks":["Missing applicability"]})
-            }
-            "requirement-review" => {
-                json!({"requirement":"requirement","requirement_fingerprint":DIGEST,"dependencies":{"checks":[],"scenarios":[],"requirements":[],"bindings":[]},"decision":"rejected","challenge_basis":[]})
-            }
-            "requirement-status" => {
-                json!({"requirement":"requirement","requirement_fingerprint":DIGEST,"dependencies":{"checks":[],"scenarios":[],"requirements":[],"bindings":[]},"verification_target_fingerprint":DIGEST,"requirement_review_fingerprint":DIGEST,"basis":[],"conclusion":"unresolved","residual_risks":[],"challenge_basis":[]})
-            }
-            _ => unreachable!(),
-        };
-        value
-            .as_object_mut()
-            .unwrap()
-            .extend(fields.as_object().unwrap().clone());
-        fingerprint_record(value)
+            "requirement": "requirement", "requirement_fingerprint": DIGEST,
+            "dependencies_fingerprint": DIGEST, "decision": "rejected",
+            "reassesses": reassesses,
+            "challenge_basis": [{"run":"run","bundle_fingerprint":DIGEST,"result_fingerprint":DIGEST,"target_fingerprint":DIGEST}]
+        }))
+    }
+
+    fn review_nodes() -> Vec<usize> {
+        let registry = crate::relational::registry();
+        let mut nodes = vec![registry.roots["review"]];
+        let mut index = 0;
+        while index < nodes.len() {
+            nodes.extend(registry.nodes[nodes[index]].children.iter().copied());
+            index += 1;
+        }
+        nodes
+    }
+
+    #[test]
+    fn requirement_review_storage_holds_no_json_text() {
+        let registry = crate::relational::registry();
+        for node in review_nodes() {
+            let node = &registry.nodes[node];
+            let documents: Vec<&str> = match &node.schema {
+                super::Schema::Document => vec!["(value)"],
+                super::Schema::Object(fields) => fields
+                    .iter()
+                    .filter(|(_, schema)| matches!(schema, super::Schema::Document))
+                    .map(|(field, _)| *field)
+                    .collect(),
+                _ => Vec::new(),
+            };
+            assert!(
+                documents.is_empty(),
+                "{} stores {documents:?} as JSON text",
+                node.name
+            );
+            assert!(
+                !matches!(node.schema, super::Schema::Ref(_)),
+                "{} is not a plain Requirement Review structure",
+                node.name
+            );
+        }
     }
 
     #[tokio::test]
-    async fn retained_review_kinds_round_trip_with_native_fingerprints(
+    async fn requirement_reviews_and_authorities_round_trip_with_native_fingerprints(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let postgres = Postgres::default().start().await?;
         let port = postgres.get_host_port_ipv4(5432).await?;
@@ -160,14 +150,13 @@ mod tests {
         ))
         .await?;
         crate::relational::initialize(&pool).await?;
-        for kind in [
-            "requirement-review",
-            "requirement-status",
-            "method-qualification",
-            "applicability-decision",
-            "requirement-judgment",
-        ] {
-            let value = review(kind);
+        let original = requirement_review(None);
+        let successor = requirement_review(Some(original["fingerprint"].as_str().unwrap()));
+        let mut empty = requirement_review(None);
+        empty["challenge_basis"] = json!([]);
+        empty["artifacts"][0]["locator"] = Value::Null;
+        let empty = fingerprint_record(empty);
+        for value in [original, successor, empty] {
             let native = azimuth::json::parse(&value.to_string())?;
             azimuth::assurance_review::validate_record(&native)?;
             let key = value["fingerprint"].as_str().unwrap();
@@ -177,11 +166,24 @@ mod tests {
             let restored = crate::relational::load(&pool, "review", "project", key)
                 .await?
                 .unwrap();
-            assert_eq!(restored, value, "{kind}");
+            assert_eq!(restored, value);
             azimuth::assurance_review::validate_record(&azimuth::json::parse(
                 &restored.to_string(),
             )?)?;
         }
+        let status = json!({
+            "kind":"requirement-status","reviewer":"reviewer","reviewed_at_ms":100,
+            "rationale":"Status.","artifacts":[],"requirement":"requirement",
+            "requirement_fingerprint":DIGEST,"verification_target_fingerprint":DIGEST,
+            "requirement_review_fingerprint":DIGEST,"basis":[],"conclusion":"unresolved",
+            "residual_risks":[],"challenge_basis":[],"fingerprint":DIGEST
+        });
+        let mut connection = pool.acquire().await?;
+        let error = crate::relational::store(&mut connection, "review", "project", DIGEST, &status)
+            .await
+            .expect_err("authored Requirement Status has no storage");
+        assert!(error.to_string().contains("undeclared field"), "{error}");
+        drop(connection);
         let model = azimuth::model::Model {
             specs: vec![azimuth::spec::parse_spec(
                 "spec.md",
@@ -191,6 +193,10 @@ mod tests {
         };
         let current = azimuth::assurance_review::authority(&model, "project")?;
         let current: Value = serde_json::from_str(&current.to_string_pretty())?;
+        assert!(
+            current["requirement_intents"].is_array(),
+            "the authority projection carries Requirement intent fingerprints: {current}"
+        );
         let mut historical = current.clone();
         historical["requirements"][0]
             .as_object_mut()
@@ -210,16 +216,6 @@ mod tests {
                 Some(value)
             );
         }
-        let mut unknown = review("requirement-review");
-        unknown["unknown"] = true.into();
-        let registry = crate::relational::registry();
-        let root = registry.roots["review"];
-        assert!(!crate::relational::fits(
-            registry,
-            &registry.nodes[root].schema,
-            &unknown,
-            0
-        ));
         Ok(())
     }
 }

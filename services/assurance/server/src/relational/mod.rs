@@ -21,7 +21,6 @@ pub(super) enum Schema {
     Object(Vec<(&'static str, Schema)>),
     List(Box<Schema>),
     Ref(&'static str),
-    OneOf(Vec<Schema>),
 }
 fn object(fields: Vec<(&'static str, Schema)>) -> Schema {
     Schema::Object(fields)
@@ -84,11 +83,6 @@ impl Registry {
                 .map(|(f, s)| ((*f).into(), s.clone()))
                 .collect(),
             Schema::List(item) => vec![("item".into(), (**item).clone())],
-            Schema::OneOf(variants) => variants
-                .iter()
-                .enumerate()
-                .map(|(i, s)| (format!("variant_{i}"), s.clone()))
-                .collect(),
             _ => Vec::new(),
         };
         for (field, child) in fields {
@@ -163,7 +157,7 @@ fn invalid(message: impl Into<String>) -> sqlx::Error {
     sqlx::Error::Protocol(message.into())
 }
 
-const SCHEMA_VERSION: i32 = 8;
+const SCHEMA_VERSION: i32 = 9;
 
 pub(crate) async fn initialize(pool: &PgPool) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
@@ -221,7 +215,6 @@ pub(crate) async fn initialize(pool: &PgPool) -> Result<(), sqlx::Error> {
                 columns.push("_ref_key text".into());
                 columns.push("FOREIGN KEY(_ref_kind,_ref_project,_ref_key) REFERENCES assurance_records(kind,project,record_key) DEFERRABLE INITIALLY DEFERRED".into());
             }
-            Schema::OneOf(_) => columns.push("_variant integer".into()),
             _ => (),
         }
         columns.push("PRIMARY KEY(_record_id,_node)".into());
@@ -348,15 +341,6 @@ fn read_expression(reg: &Registry, node: &Node) -> String {
             format!("COALESCE((SELECT jsonb_agg({}(rid,c._node) ORDER BY c._position) FROM {} c WHERE c._record_id=rid AND c._parent=t._node),'[]'::jsonb)",quote(&format!("read_{child}")),quote(child))
         }
         Schema::Ref(_) => "assurance_record(t._ref_kind,t._ref_project,t._ref_key)".into(),
-        Schema::OneOf(_) => format!(
-            "CASE t._variant {} ELSE NULL END",
-            node.children
-                .iter()
-                .enumerate()
-                .map(|(i, c)| format!("WHEN {i} THEN {}", child_read(reg, *c)))
-                .collect::<Vec<_>>()
-                .join(" ")
-        ),
         _ => unreachable!(),
     }
 }
@@ -402,7 +386,6 @@ struct StoredRow {
     present: Vec<String>,
     nulls: Vec<String>,
     values: Vec<Option<String>>,
-    variant: Option<i32>,
     reference: Option<(String, String, String)>,
 }
 struct Writer<'a> {
@@ -437,7 +420,6 @@ impl Writer<'_> {
             present: Vec::new(),
             nulls: Vec::new(),
             values: Vec::new(),
-            variant: None,
             reference: None,
         };
         if !value.is_null() {
@@ -525,23 +507,6 @@ impl Writer<'_> {
                         value: value.clone(),
                     });
                 }
-                Schema::OneOf(variants) => {
-                    let variant = variants
-                        .iter()
-                        .position(|s| fits(self.reg, s, value, depth + 1))
-                        .ok_or_else(|| {
-                            invalid(format!("{} matches no declared variant", node.name))
-                        })?;
-                    row.variant = Some(variant as i32);
-                    self.flatten(
-                        node.children[variant],
-                        value,
-                        Some(current),
-                        0,
-                        None,
-                        depth + 1,
-                    )?;
-                }
                 _ => unreachable!(),
             }
         } else {
@@ -570,35 +535,6 @@ fn scalar_value(schema: &Schema, value: &Value) -> Option<String> {
         _ => None,
     }
 }
-fn fits(reg: &Registry, schema: &Schema, value: &Value, depth: usize) -> bool {
-    if depth > 128 {
-        return false;
-    }
-    if value.is_null() {
-        return true;
-    }
-    match schema {
-        s if scalar(s) => scalar_value(s, value).is_some(),
-        Schema::Object(fields) => value.as_object().is_some_and(|v| {
-            v.iter().all(|(key, value)| {
-                fields
-                    .iter()
-                    .find(|(f, _)| *f == key)
-                    .is_some_and(|(_, s)| fits(reg, s, value, depth + 1))
-            })
-        }),
-        Schema::List(s) => value
-            .as_array()
-            .is_some_and(|a| a.iter().all(|v| fits(reg, s, v, depth + 1))),
-        Schema::Ref(kind) => reg
-            .roots
-            .get(kind)
-            .is_some_and(|root| fits(reg, &reg.nodes[*root].schema, value, depth + 1)),
-        Schema::OneOf(variants) => variants.iter().any(|s| fits(reg, s, value, depth + 1)),
-        _ => false,
-    }
-}
-
 pub(crate) async fn store(
     conn: &mut PgConnection,
     kind: &str,
@@ -678,7 +614,6 @@ pub(crate) async fn store(
                 Schema::Ref(_) => {
                     columns.extend(["_ref_kind".into(), "_ref_project".into(), "_ref_key".into()])
                 }
-                Schema::OneOf(_) => columns.push("_variant".into()),
                 _ => (),
             }
             for chunk in rows.chunks(250) {
@@ -713,9 +648,6 @@ pub(crate) async fn store(
                             q.push_bind(row.reference.as_ref().map(|r| &r.0));
                             q.push_bind(row.reference.as_ref().map(|r| &r.1));
                             q.push_bind(row.reference.as_ref().map(|r| &r.2));
-                        }
-                        Schema::OneOf(_) => {
-                            q.push_bind(row.variant);
                         }
                         _ => (),
                     }
@@ -781,9 +713,9 @@ mod schema_version_tests {
             sqlx::query_as("SELECT version,signature FROM assurance_storage_schema")
                 .fetch_one(&pool)
                 .await?;
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
         initialize(&pool).await?;
-        for (version, signature) in [(7, signature.clone()), (8, format!("{signature}-changed"))] {
+        for (version, signature) in [(8, signature.clone()), (9, format!("{signature}-changed"))] {
             sqlx::query("DELETE FROM assurance_storage_schema")
                 .execute(&pool)
                 .await?;
@@ -803,7 +735,7 @@ mod schema_version_tests {
     }
 
     #[tokio::test]
-    async fn fresh_database_reaches_schema_version_eight_and_restarts(
+    async fn fresh_database_reaches_schema_version_nine_and_restarts(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let postgres = Postgres::default().start().await?;
         let pool = crate::connect(&format!(
@@ -815,7 +747,7 @@ mod schema_version_tests {
         let version: i32 = sqlx::query_scalar("SELECT version FROM assurance_storage_schema")
             .fetch_one(&pool)
             .await?;
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
         let tables: Vec<String> = sqlx::query_scalar(
             "SELECT table_name FROM information_schema.tables WHERE table_schema='public'",
         )
@@ -827,6 +759,17 @@ mod schema_version_tests {
             "assurance_main_publication",
             "assurance_release",
             "model_revisions",
+            "assurance_review_artifacts_item",
+            "assurance_review_challenge_basis_item",
+            "assurance_authority_requirement_intents_item",
+            "provenance_ledgers",
+            "provenance_instances",
+            "provenance_attempts",
+            "provenance_attempt_targets",
+            "provenance_attempt_guidance",
+            "provenance_attempt_entities",
+            "provenance_failure_attributions",
+            "provenance_failure_attribution_attempts",
         ] {
             assert!(tables.iter().any(|t| t == expected), "missing {expected}");
         }
@@ -834,6 +777,7 @@ mod schema_version_tests {
             "current_authorities",
             "authority_selections",
             "release_acceptances",
+            "assurance_review_variant_0",
         ] {
             assert!(
                 !tables.iter().any(|t| t == removed),
@@ -859,15 +803,6 @@ mod schema_version_tests {
         }
         crate::migrate(&pool).await?;
         Ok(())
-    }
-
-    #[test]
-    fn only_queried_structure_is_normalized_into_tables() {
-        assert!(
-            registry().nodes.len() <= 60,
-            "{} generated tables: store fields that SQL never filters on as Schema::Document",
-            registry().nodes.len()
-        );
     }
 
     #[test]

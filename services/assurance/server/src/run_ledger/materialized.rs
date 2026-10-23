@@ -927,7 +927,7 @@ mod tests {
         let version: i32 = sqlx::query_scalar("SELECT max(version) FROM assurance_storage_schema")
             .fetch_one(&pool)
             .await?;
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
         sqlx::query("UPDATE deployment_assessments SET generation=2 WHERE project='project' AND deployment='monitor-deployment'").execute(&pool).await?;
         sqlx::query("UPDATE assessment_requirements SET generation=2 WHERE project='project' AND deployment='monitor-deployment'").execute(&pool).await?;
         let mut refreshed_request = request.clone();
@@ -1002,9 +1002,9 @@ mod tests {
         sqlx::query("INSERT INTO assurance_authorities(project,fingerprint,registered_by) VALUES('project',$1,'owner')").bind(revision).execute(&mut *registered).await?;
         sqlx::query("INSERT INTO model_revisions(project,fingerprint,registered_by) VALUES('project',$1,'owner')").bind(revision).execute(&mut *registered).await?;
         let mut review = json!({"kind":"requirement-review","requirement":"restricted","requirement_fingerprint":authority["requirements"][0]["fingerprint"],
-            "dependencies":{"checks":authority["checks"],"scenarios":authority["scenarios"],"requirements":authority["requirements"],"bindings":authority["bindings"]},
-            "decision":"accepted","challenge_basis":[],"reviewer":"reviewer","reviewed_at_ms":100,"rationale":"Reviewed the exact declared account.",
-            "artifacts":[{"id":"notes","digest":format!("sha256:{}","a".repeat(64)),"locator":"reviews/notes.md"}],"provenance":{"agent":null,"model":"review-model","reassesses":null}});
+            "dependencies_fingerprint":assurance_review::requirement_closure_fingerprint(&core_json(authority.to_string().as_bytes())?,"restricted")?,
+            "decision":"accepted","reassesses":null,"challenge_basis":[],"reviewer":"reviewer","reviewed_at_ms":100,"rationale":"Reviewed the exact declared account.",
+            "artifacts":[{"id":"notes","digest":format!("sha256:{}","a".repeat(64)),"locator":"reviews/notes.md"}]});
         review["fingerprint"] = json!(assurance_review::record_fingerprint(&core_json(
             review.to_string().as_bytes()
         )?)?);
@@ -1154,7 +1154,7 @@ mod tests {
         );
         let mut successor = review.clone();
         successor["reviewed_at_ms"] = json!(200);
-        successor["provenance"]["reassesses"] = json!(record_fp);
+        successor["reassesses"] = json!(record_fp);
         successor["challenge_basis"] = json!([{"run":corrected.run_id,"bundle_fingerprint":corrected.bundle_fingerprint,"result_fingerprint":corrected.verification_challenge_executions[0].result.fingerprint,"target_fingerprint":corrected.verification_challenge_executions[0].target.fingerprint}]);
         successor.as_object_mut().unwrap().remove("fingerprint");
         successor["fingerprint"] = json!(assurance_review::record_fingerprint(&core_json(

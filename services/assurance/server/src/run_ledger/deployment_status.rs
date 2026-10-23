@@ -416,7 +416,7 @@ pub(super) async fn compute_deployment(
         .await?;
     let review_runs: Vec<&str> = reviews
         .iter()
-        .flat_map(|review| review.basis_runs.iter().chain(&review.challenge_runs))
+        .flat_map(|review| &review.challenge_runs)
         .map(String::as_str)
         .collect();
     let review_load = stage.elapsed();
