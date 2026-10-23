@@ -95,8 +95,8 @@ class PrivateDeploymentQualificationTests(unittest.TestCase):
                     validate_configuration(copy.deepcopy(valid_configuration()), mutated)
 
     def test_migration_account_is_forward_only(self):
-        self.assertEqual(migration_account(), ["0001_storage.sql", "0002_target_observations.sql", "0003_assessments.sql", "0004_assessment_renewal.sql", "0005_observation_bracket.sql", "0006_resolution_backoff.sql", "0007_main_model_publication.sql"])
-        self.assertEqual(migration_versions(migration_account()), [1, 2, 3, 4, 5, 6, 7])
+        self.assertEqual(migration_account(), ["0001_storage.sql", "0002_target_observations.sql", "0003_assessments.sql", "0004_assessment_renewal.sql", "0005_observation_bracket.sql", "0006_resolution_backoff.sql", "0007_main_model_publication.sql", "0008_main_publication_revisions.sql"])
+        self.assertEqual(migration_versions(migration_account()), [1, 2, 3, 4, 5, 6, 7, 8])
 
     def test_nested_oci_index_reports_images_and_ignores_attestations(self):
         root = {

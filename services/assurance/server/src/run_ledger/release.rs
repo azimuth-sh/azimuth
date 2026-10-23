@@ -641,11 +641,13 @@ pub(super) async fn insert_deployment(
     Ok(())
 }
 
-const MAIN_PUBLICATION_FIELDS: [&str; 7] = [
+const MAIN_PUBLICATION_FIELDS: [&str; 9] = [
     "format",
     "version",
     "commit",
     "main_sequence",
+    "publication_revision",
+    "sources",
     "authority",
     "reviews",
     "ratification",
@@ -656,6 +658,8 @@ struct MainPublication {
     payload: Value,
     commit: String,
     main_sequence: i64,
+    publication_revision: i32,
+    sources: Value,
     ratification_status: String,
     verified_at_ms: i64,
     authority: CoreJson,
@@ -675,9 +679,9 @@ fn parse_main_publication(body: &[u8], project: &str) -> Result<MainPublication,
             "main model publication: undeclared field {key}"
         )));
     }
-    if payload["format"] != "azimuth-main-model-publication" || payload["version"] != 1 {
+    if payload["format"] != "azimuth-main-model-publication" || payload["version"] != 2 {
         return Err(LedgerError::invalid(
-            "azimuth-main-model-publication version 1 required",
+            "azimuth-main-model-publication version 2 required",
         ));
     }
     let commit = text(&payload, "commit")?;
@@ -690,6 +694,25 @@ fn parse_main_publication(body: &[u8], project: &str) -> Result<MainPublication,
         .as_i64()
         .filter(|sequence| *sequence >= 1)
         .ok_or_else(|| LedgerError::invalid("main_sequence requires a positive integer"))?;
+    let publication_revision = payload["publication_revision"]
+        .as_i64()
+        .filter(|revision| *revision >= 1)
+        .and_then(|revision| i32::try_from(revision).ok())
+        .ok_or_else(|| LedgerError::invalid("publication_revision requires a positive integer"))?;
+    let sources = payload["sources"]
+        .as_object()
+        .filter(|sources| {
+            !sources.is_empty()
+                && sources.iter().all(|(repository, commit)| {
+                    !repository.trim().is_empty() && commit.as_str().is_some_and(is_source_commit)
+                })
+        })
+        .ok_or_else(|| {
+            LedgerError::invalid(
+                "sources requires a nonempty object of repository to 40 lowercase hex digit commit",
+            )
+        })?;
+    let sources = Value::Object(sources.clone());
     let ratification = payload["ratification"]
         .as_object()
         .filter(|fields| {
@@ -747,12 +770,40 @@ fn parse_main_publication(body: &[u8], project: &str) -> Result<MainPublication,
     Ok(MainPublication {
         commit: commit.to_owned(),
         main_sequence,
+        publication_revision,
+        sources,
         ratification_status,
         verified_at_ms,
         authority,
         reviews,
         payload,
     })
+}
+
+fn is_source_commit(value: &str) -> bool {
+    value.len() == 40 && is_commit(value)
+}
+
+impl MainPublication {
+    // The relational record schema is pinned by an explicit storage version and cannot gain fields
+    // on a populated database, so the revision and sources live in main_publications and main_publication_sources and
+    // the record keeps only the fields that schema declares.
+    fn record(&self) -> Value {
+        let mut record = self.payload.clone();
+        if let Some(fields) = record.as_object_mut() {
+            fields.remove("publication_revision");
+            fields.remove("sources");
+        }
+        record
+    }
+
+    fn record_key(&self) -> String {
+        if self.publication_revision == 1 {
+            self.commit.clone()
+        } else {
+            format!("{}:{}", self.commit, self.publication_revision)
+        }
+    }
 }
 
 async fn run_heads_for_model(
@@ -776,9 +827,10 @@ async fn replayed_main_publication(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     project: &str,
     commit: &str,
+    publication_revision: i32,
 ) -> Result<Value, LedgerError> {
-    let assessments = sqlx::query("SELECT review_fingerprint,assessment,diagnostics FROM main_publication_reviews WHERE project=$1 AND commit_sha=$2 ORDER BY review_fingerprint")
-        .bind(project).bind(commit).fetch_all(&mut **tx).await?;
+    let assessments = sqlx::query("SELECT review_fingerprint,assessment,diagnostics FROM main_publication_reviews WHERE project=$1 AND commit_sha=$2 AND publication_revision=$3 ORDER BY review_fingerprint")
+        .bind(project).bind(commit).bind(publication_revision).fetch_all(&mut **tx).await?;
     let reviews = assessments
         .iter()
         .map(|row| {
@@ -831,33 +883,48 @@ pub(super) async fn publish_main(
         .execute(&mut *tx)
         .await?;
     let commit = publication.commit.as_str();
-    let existing: Option<Value> = sqlx::query_scalar(
-        "SELECT assurance_record('main_publication',project,commit_sha) FROM main_publications WHERE project=$1 AND commit_sha=$2",
-    )
-    .bind(&project)
-    .bind(commit)
-    .fetch_optional(&mut *tx)
-    .await?;
+    let existing = sqlx::query("SELECT assurance_record('main_publication',project,main_publication_record_key(commit_sha,publication_revision)) AS record,main_publication_sources(project,commit_sha,publication_revision) AS sources FROM main_publications WHERE project=$1 AND commit_sha=$2 AND publication_revision=$3")
+        .bind(&project).bind(commit).bind(publication.publication_revision).fetch_optional(&mut *tx).await?;
     if let Some(existing) = existing {
-        if existing != publication.payload {
+        if existing.try_get::<Option<Value>, _>("record")? != Some(publication.record())
+            || existing.try_get::<Value, _>("sources")? != publication.sources
+        {
             return Err(LedgerError::conflict(
-                "main model publication for this commit has different content",
+                "main model publication for this commit and publication_revision has different content",
             ));
         }
-        let reviews = replayed_main_publication(&mut tx, &project, commit).await?;
+        let reviews =
+            replayed_main_publication(&mut tx, &project, commit, publication.publication_revision)
+                .await?;
         tx.commit().await?;
         return Ok((
             StatusCode::OK,
             Json(
-                json!({"project":project,"commit":commit,"main_sequence":publication.main_sequence,"model_revision":revision,"ratification_status":publication.ratification_status,"review_assessments":reviews,"replayed":true}),
+                json!({"project":project,"commit":commit,"main_sequence":publication.main_sequence,"publication_revision":publication.publication_revision,"sources":publication.sources,"model_revision":revision,"ratification_status":publication.ratification_status,"review_assessments":reviews,"replayed":true}),
             ),
         ));
     }
+    let highest_revision: Option<i32> = sqlx::query_scalar(
+        "SELECT max(publication_revision) FROM main_publications WHERE project=$1 AND commit_sha=$2",
+    )
+    .bind(&project)
+    .bind(commit)
+    .fetch_one(&mut *tx)
+    .await?;
+    if let Some(highest) =
+        highest_revision.filter(|highest| *highest > publication.publication_revision)
+    {
+        return Err(LedgerError::conflict(format!(
+            "publication_revision {} is superseded by revision {highest} of this commit",
+            publication.publication_revision
+        )));
+    }
     let sequence_owner: Option<String> = sqlx::query_scalar(
-        "SELECT commit_sha FROM main_publications WHERE project=$1 AND main_sequence=$2",
+        "SELECT commit_sha FROM main_publications WHERE project=$1 AND main_sequence=$2 AND commit_sha<>$3 LIMIT 1",
     )
     .bind(&project)
     .bind(publication.main_sequence)
+    .bind(commit)
     .fetch_optional(&mut *tx)
     .await?;
     if sequence_owner.is_some() {
@@ -865,12 +932,24 @@ pub(super) async fn publish_main(
             "main_sequence is already published for a different commit",
         ));
     }
+    let commit_sequence: Option<i64> = sqlx::query_scalar(
+        "SELECT main_sequence FROM main_publications WHERE project=$1 AND commit_sha=$2 LIMIT 1",
+    )
+    .bind(&project)
+    .bind(commit)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if commit_sequence.is_some_and(|sequence| sequence != publication.main_sequence) {
+        return Err(LedgerError::conflict(
+            "main_sequence differs from the earlier publication of this commit",
+        ));
+    }
     crate::relational::store(
         &mut *tx,
         "main_publication",
         &project,
-        commit,
-        &publication.payload,
+        &publication.record_key(),
+        &publication.record(),
     )
     .await?;
     sqlx::query("INSERT INTO assurance_authorities(project,fingerprint,registered_by) VALUES($1,$2,$3) ON CONFLICT DO NOTHING")
@@ -888,8 +967,12 @@ pub(super) async fn publish_main(
         )
         .await?;
     }
-    sqlx::query("INSERT INTO main_publications(project,commit_sha,main_sequence,model_revision,ratification_status,ratification_verified_at_ms,published_by) VALUES($1,$2,$3,$4,$5,$6,$7)")
-        .bind(&project).bind(commit).bind(publication.main_sequence).bind(&revision).bind(&publication.ratification_status).bind(publication.verified_at_ms).bind(&submitter).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO main_publications(project,commit_sha,main_sequence,publication_revision,model_revision,ratification_status,ratification_verified_at_ms,published_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
+        .bind(&project).bind(commit).bind(publication.main_sequence).bind(publication.publication_revision).bind(&revision).bind(&publication.ratification_status).bind(publication.verified_at_ms).bind(&submitter).execute(&mut *tx).await?;
+    for (repository, source_commit) in publication.sources.as_object().into_iter().flatten() {
+        sqlx::query("INSERT INTO main_publication_sources(project,commit_sha,publication_revision,repository,source_commit) VALUES($1,$2,$3,$4,$5)")
+            .bind(&project).bind(commit).bind(publication.publication_revision).bind(repository).bind(source_commit.as_str()).execute(&mut *tx).await?;
+    }
     let mut review_assessments = Vec::new();
     for (record, assessment) in &assessments {
         let value = to_value(record)?;
@@ -899,22 +982,23 @@ pub(super) async fn publish_main(
             .bind(&project).bind(fingerprint).bind(run::canonical_fingerprint(&target).map_err(LedgerError::invalid)?).bind(&submitter).execute(&mut *tx).await?;
         sqlx::query("INSERT INTO model_revision_reviews(project,revision_fingerprint,review_fingerprint,submitted_by) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING")
             .bind(&project).bind(&revision).bind(fingerprint).bind(&submitter).execute(&mut *tx).await?;
-        sqlx::query("INSERT INTO main_publication_reviews(project,commit_sha,review_fingerprint,assessment,diagnostics) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING")
-            .bind(&project).bind(commit).bind(fingerprint).bind(&assessment.status).bind(&assessment.diagnostics).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO main_publication_reviews(project,commit_sha,publication_revision,review_fingerprint,assessment,diagnostics) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING")
+            .bind(&project).bind(commit).bind(publication.publication_revision).bind(fingerprint).bind(&assessment.status).bind(&assessment.diagnostics).execute(&mut *tx).await?;
         review_assessments.push(json!({"fingerprint":fingerprint,"assessment":assessment.status,"diagnostics":assessment.diagnostics}));
     }
     let is_default: bool = sqlx::query_scalar(
-        "SELECT NOT EXISTS(SELECT 1 FROM main_publications WHERE project=$1 AND main_sequence>$2)",
+        "SELECT NOT EXISTS(SELECT 1 FROM main_publications WHERE project=$1 AND (main_sequence,publication_revision)>($2,$3))",
     )
     .bind(&project)
     .bind(publication.main_sequence)
+    .bind(publication.publication_revision)
     .fetch_one(&mut *tx)
     .await?;
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
         Json(
-            json!({"project":project,"commit":commit,"main_sequence":publication.main_sequence,"model_revision":revision,"ratification_status":publication.ratification_status,"default":is_default,"review_assessments":review_assessments,"replayed":false,"review_provenance":"publisher-transported-assertion"}),
+            json!({"project":project,"commit":commit,"main_sequence":publication.main_sequence,"publication_revision":publication.publication_revision,"sources":publication.sources,"model_revision":revision,"ratification_status":publication.ratification_status,"default":is_default,"review_assessments":review_assessments,"replayed":false,"review_provenance":"publisher-transported-assertion"}),
         ),
     ))
 }

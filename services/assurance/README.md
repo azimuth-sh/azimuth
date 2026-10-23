@@ -82,8 +82,8 @@ All data routes below require a project bearer credential; `/health` is process 
 | `POST .../reviews` | Reviewer ingestion of a Requirement Review or a Requirement Status record; execution never fabricates an assessment. |
 | `GET .../requirement-reviews` | Current definition assessments, independent of Verification Targets. |
 | `GET .../reviews` | Immutable review records with current assessment and diagnostics. |
-| `POST .../main-models` | Publisher registration of the model on main with its commit, `main_sequence` and ratification status. |
-| `GET .../authority` | Complete authority of the highest `main_sequence` main-model publication, with its commit, sequence and `ratification_status`. |
+| `POST .../main-models` | Publisher registration of the model on main with its commit, `main_sequence`, `publication_revision`, `sources` and ratification status. |
+| `GET .../authority` | Complete authority of the highest `(main_sequence, publication_revision)` main-model publication, with its commit, sequence, `publication_revision`, `sources` and `ratification_status`. |
 | `POST .../model-revisions` | Owner registration of an immutable candidate projection. |
 | `GET .../model-revisions` | Bounded registration metadata; no projection payloads in lists. |
 | `GET .../model-revisions/{revision}` | Exact projection and original registration metadata. |
@@ -100,7 +100,7 @@ Browser-accessible `/inspection/{project}/...` routes are GET-only and allow onl
 
 ## Candidate model revisions
 
-The project is configured once through credentials; a change does not provision another project. Owner registration accepts the same strict authority projection as a main-model publication. Its content fingerprint is the revision ID. `POST /v1/projects/{project}/model-revisions` returns HTTP 201 on first registration and HTTP 200 on identical replay. Project mismatch or invalid projection returns HTTP 422. Registration metadata is append-only and retains `registration_status: candidate`, the original registering owner and timestamp. A candidate never becomes the default model by registration; the default model is the highest `main_sequence` main-model publication, and ratification is recorded in git. No automatic lifecycle promotion, rollout gate or archive operation is implemented.
+The project is configured once through credentials; a change does not provision another project. Owner registration accepts the same strict authority projection as a main-model publication. Its content fingerprint is the revision ID. `POST /v1/projects/{project}/model-revisions` returns HTTP 201 on first registration and HTTP 200 on identical replay. Project mismatch or invalid projection returns HTTP 422. Registration metadata is append-only and retains `registration_status: candidate`, the original registering owner and timestamp. A candidate never becomes the default model by registration; the default model is the highest `(main_sequence, publication_revision)` main-model publication, and ratification is recorded in git. No automatic lifecycle promotion, rollout gate or archive operation is implemented.
 
 Revision snapshot responses contain `project`, `model_revision`, `authority`, `reviews` and `bundles`. All are read in one bounded SQL snapshot. Reviews are only those explicitly linked to the revision; bundles are the latest correction heads of shared project Runs, including unjoined evidence for other definitions and Verification Targets. Their presence is not assignment or applicability approval. Exact dependency matching remains the core assessor's responsibility. A missing revision or Verification Target returns HTTP 404. Bounds include 5000 review/Run records, 32 MiB review/Run payloads and the authority projection; exceeding them fails rather than returning partial support.
 

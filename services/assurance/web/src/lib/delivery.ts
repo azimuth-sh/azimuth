@@ -15,6 +15,8 @@ export interface DeliveryGap {
   main_model_revision: string;
   main_commit: string;
   main_sequence: number;
+  publication_revision: number;
+  sources: Record<string, string>;
   requirements: DeliveryGapRequirement[];
 }
 export interface DeploymentHistoryEntry {

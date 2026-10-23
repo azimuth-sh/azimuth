@@ -158,6 +158,8 @@ export interface DeploymentReference {
 export interface DefaultAuthority {
   commit: string;
   main_sequence: number;
+  publication_revision: number;
+  sources: Record<string, string>;
   ratification_status: string;
   [key: string]: unknown;
 }
