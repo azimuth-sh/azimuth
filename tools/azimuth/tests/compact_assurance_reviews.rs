@@ -287,8 +287,8 @@ fn requirement_review_input_pins_definition_without_manufacturing_a_review() {
 }
 
 #[test]
-fn requirement_status_input_exposes_missing_exact_verification_target_evidence() {
-    let input = assurance_review::review_input(
+fn requirement_status_input_is_rejected_because_status_is_computed() {
+    let error = assurance_review::review_input(
         &model(),
         "sample-project",
         &json::parse(&format!(
@@ -298,38 +298,8 @@ fn requirement_status_input_exposes_missing_exact_verification_target_evidence()
         &[],
         &[],
     )
-    .unwrap();
-    assert!(input
-        .get("check_results")
-        .unwrap()
-        .as_array()
-        .unwrap()
-        .is_empty());
-    assert!(input
-        .get("gaps")
-        .unwrap()
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(
-            |gap| gap.get("record_status").and_then(Json::as_str) == Some("missing")
-                && gap
-                    .get("target")
-                    .unwrap()
-                    .get("kind")
-                    .and_then(Json::as_str)
-                    == Some("requirement-status")
-        ));
-    let binding = &input
-        .get("dependencies")
-        .unwrap()
-        .get("bindings")
-        .unwrap()
-        .as_array()
-        .unwrap()[0];
-    for field in ["check_fingerprint", "scenario_fingerprint", "fingerprint"] {
-        assert!(binding.get(field).is_some());
-    }
+    .unwrap_err();
+    assert!(error.contains("no longer authored"), "{error}");
 }
 
 #[test]
@@ -697,28 +667,17 @@ fn fresh_check_results_stale_only_relevant_applicability_not_qualified_methods()
     );
 }
 #[test]
-fn review_packet_keeps_exact_check_results_and_native_bundle_artifacts() {
+fn requirement_review_packet_carries_no_execution_evidence() {
     let model = model();
     let authority = assurance_review::authority(&model, "sample-project").unwrap();
     let bundle = observed_bundle(&authority, "rejects-access", "rejected-access", 10);
-    let request = json::parse(&format!(
-        r#"{{"kind":"requirement-status","requirement":"restricted-access","verification_target_fingerprint":"{}"}}"#,
-        bundle.verification_target_fingerprint
-    ))
-    .unwrap();
+    let request =
+        json::parse(r#"{"kind":"requirement-review","requirement":"restricted-access"}"#).unwrap();
     let packet =
-        assurance_review::review_input(&model, "sample-project", &request, &[], &[bundle.clone()])
-            .unwrap();
-    assert_eq!(
-        packet.get("evidence_bundles").unwrap().as_array().unwrap()[0],
-        azimuth::run::to_json(&bundle)
-    );
-    assert_eq!(
-        packet.get("check_results").unwrap().as_array().unwrap()[0]
-            .get("check_result")
-            .and_then(Json::as_str),
-        Some(bundle.check_executions[0].results[0].fingerprint.as_str())
-    );
+        assurance_review::review_input(&model, "sample-project", &request, &[], &[bundle]).unwrap();
+    for field in ["evidence_bundles", "check_results", "verification_targets"] {
+        assert!(packet.get(field).unwrap().as_array().unwrap().is_empty());
+    }
 }
 
 #[test]
@@ -793,9 +752,13 @@ fn review_input_retains_existing_review_without_rewriting_its_decision() {
                 requirement.get("fingerprint").unwrap().clone(),
             ),
             (
-                "dependencies".into(),
-                input.get("dependencies").unwrap().clone(),
+                "dependencies_fingerprint".into(),
+                Json::str(azimuth::fingerprint::canonical_sha256(
+                    input.get("dependencies").unwrap(),
+                )),
             ),
+            ("reassesses".into(), Json::Null),
+            ("challenge_basis".into(), Json::Arr(vec![])),
         ]);
     }
     let fingerprint = assurance_review::record_fingerprint(&review).unwrap();

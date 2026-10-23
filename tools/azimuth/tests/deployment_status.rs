@@ -912,15 +912,18 @@ fn accepted_review(request: &Json) -> Json {
             requirement.get("fingerprint").unwrap().clone(),
         ),
         (
-            "dependencies",
-            Json::obj(vec![
-                ("requirements", authority.get("requirements").unwrap().clone()),
-                ("checks", authority.get("checks").unwrap().clone()),
-                ("scenarios", authority.get("scenarios").unwrap().clone()),
-                ("bindings", authority.get("bindings").unwrap().clone()),
-            ]),
+            "dependencies_fingerprint",
+            Json::str(
+                azimuth::assurance_review::requirement_closure_fingerprint(
+                    authority,
+                    requirement.get("id").and_then(Json::as_str).unwrap(),
+                )
+                .unwrap(),
+            ),
         ),
         ("decision", Json::str("accepted")),
+        ("reassesses", Json::Null),
+        ("challenge_basis", Json::Arr(vec![])),
     ]);
     let fingerprint = azimuth::assurance_review::record_fingerprint(&record).unwrap();
     set(&mut record, "fingerprint", Json::str(fingerprint));
