@@ -108,7 +108,7 @@ form exactly once to `gate | scheduled`. The lane never changes repository decis
 
 **Verification Challenge** — an activity that tests whether verification detects defects or
 incorrect behavior: a method that searches for a reason to distrust an exact assessment. Current
-compact targets are Requirement Review and Requirement Status records; the older declaration lane
+compact targets are Requirement Review records; the older declaration lane
 targets a Method Qualification, Applicability Decision or Requirement Judgment.
 
 **Challenge Plan** — a repository declaration pairing one Verification Challenge with twelve
@@ -311,7 +311,7 @@ assessment fingerprint. A clean result records a negative search, not positive p
 
 A protocol-valid adapter-returned `timed-out` Run is an execution fact and exits zero only when its complete response arrives within that deadline. A host-enforced deadline is a transport timeout, exits one and publishes no bundle.
 
-**Azimuth Assurance Service (AAS)** — the current project-scoped `run-ledger` persists valid Run histories, main-model publications and independent compact reviews, then derives exact-Verification-Target state. Its producer, reviewer and owner roles authorize different actions. The earlier service API and version 2 project-snapshot wire stay isolated with no compatibility bridge. A bounded adapter is not this ledger or a long-running webhook host.
+**Azimuth Assurance Service (AAS)** — the current project-scoped `run-ledger` persists valid Run histories, main-model publications and independent compact reviews, then derives exact-Verification-Target state. It also holds the separate, non-assessment Work Provenance ledger. Its producer, reviewer and owner roles authorize different actions. The earlier service API and version 2 project-snapshot wire stay isolated with no compatibility bridge. A bounded adapter is not this ledger or a long-running webhook host.
 
 ## Current compact assessment vocabulary
 
@@ -327,14 +327,38 @@ a deployment. AAS computes it from reviewed definitions, release provenance, the
 and compatible Execution Context captures. Internal values `supported | violated | unresolved` are
 presented as **Satisfied**, **Not satisfied** and **Unresolved**. Missing, stale, conflicting or
 incomplete support remains unresolved. A passing Check or an accepted Requirement Review alone never
-implies a satisfied Requirement. A `requirement-status` record is the authored Requirement Status
-assessment for one exact Verification Target, based on current reviewed definitions and applicable
-Check Results.
+implies a satisfied Requirement. Requirement Status is always computed; there is no authored
+Requirement Status record.
 
 **Verification Challenge implementation** — tagged machine-executable code/configuration
-implementing a declared search for objections to a Requirement Review or recorded Requirement
-Status. Production targets use ordinary Requirement/Mechanism implementation tags, not separate
+implementing a declared search for objections to a Requirement Review. Production targets use ordinary Requirement/Mechanism implementation tags, not separate
 Verification-Challenge-specific target tags.
 
 Method Qualification, Applicability Decision and Requirement Judgment definitions above describe
 historical records; they are not mandatory steps in the current compact assessment lane.
+
+## Work Provenance vocabulary
+
+**Work Provenance** — the ledger of completed workflow attempts, kept as a separate domain that is
+never an input to Requirement Review currentness, Requirement Status or acceptance. It records
+activities, not their products: a review, design or implementation lives in its own domain and is
+referenced by fingerprint. See [`contracts/work-provenance.md`](../contracts/work-provenance.md).
+
+**Attempt** — one completed, submitted workflow result: action, outcome, actor, agent descriptor,
+times, guidance and the entities it used and generated. An attempt that never submitted a result is
+harness telemetry, not provenance.
+
+**Actor** — the execution instance that performed an attempt: one session, subagent run or person.
+It is the reviewer-independence key and encodes no role, attempt number or model.
+
+**Agent descriptor** — the closed description of what kind of agent performed an attempt: `kind`,
+provider-canonical `model`, provider-native `effort` and `harness` name and version. Each value
+carries its basis: `harness` (attested by the harness's own records), `declared` or `unknown`.
+
+**Requirement work history** — the changes whose release altered a Requirement's closure, labelled
+`intent` when the Requirement or its Scenarios changed and `dependency` otherwise, with their
+attempts.
+
+**Failure Attribution** — an optional, append-only record by which an investigator names the
+attempts believed to have caused an adverse fact or allowed it through, with rationale and
+confidence. It supports causal analysis and is never an assessment input.
