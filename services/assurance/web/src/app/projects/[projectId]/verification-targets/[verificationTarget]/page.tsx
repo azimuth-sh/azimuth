@@ -27,7 +27,7 @@ export default async function VerificationTargetPage({
   const tones = { supported: 'good', violated: 'bad', unresolved: 'warn', 'not-applicable': 'neutral' };
   return (
     <div className="dashboard">
-      <Link className="backLink" href={`/projects/${encodeURIComponent(projectId)}/records`}>← Records</Link>
+      <Link className="backLink" href={`/projects/${encodeURIComponent(projectId)}`}>← Overview</Link>
       <header className="dashboardHeading"><div><p className="overline">VERIFICATION TARGET</p><h1>Evidence inspection</h1><p>Exact Verification Target records. The environment overview shows computed deployment Requirement Status.</p></div><Identifier value={verificationTarget} /></header>
       {!state ? (
         <section className="dashboardPanel"><p className="tableEmpty">No main-model publication; conclusion unresolved.</p></section>

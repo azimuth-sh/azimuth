@@ -231,7 +231,7 @@ export function developmentRead(project: string, path: string): unknown {
   if (route === '/releases') return page([{ fingerprint: releaseId, release, submitted_by: 'development-publisher', submitted_at: at(90) }]);
   if (route === `/releases/${releaseId}` || route === `/releases/${releaseId}/summary`) return { publication: { release, catalog, evidence: [] }, submitted_by: 'development-publisher', submitted_at: at(90), deployments: [deployment, stagingDeployment] };
   if (route === '/changes') return page([{ id: 'payment-reminders', revisions: [{ status: onMain ? 'accepted' : 'under-assessment' }] }]);
-  if (route === '/deployments') return page([{ deployment, release_fingerprint: releaseId }, { deployment: stagingDeployment, release_fingerprint: releaseId }]);
+  if (route === '/deployments') return page([{ deployment, release_fingerprint: releaseId, submitted_at: at(60) }, { deployment: stagingDeployment, release_fingerprint: releaseId, submitted_at: at(20) }]);
   if (/^\/environments\/[^/]+\/(deployment|observations)$/.test(route)) return null;
   throw new Error(`Synthetic Assurance UI data does not implement ${route}`);
 }

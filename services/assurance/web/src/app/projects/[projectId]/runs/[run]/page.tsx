@@ -24,7 +24,7 @@ export default async function RunPage({
   if (!history) notFound();
   return (
     <div className="dashboard">
-      <Link className="backLink" href={`/projects/${encodeURIComponent(projectId)}/records`}>← Records</Link>
+      <Link className="backLink" href={`/projects/${encodeURIComponent(projectId)}`}>← Overview</Link>
       <header className="dashboardHeading"><div><p className="overline">RUN</p><h1>Run revision</h1><p>Execution facts do not approve reviews or establish Requirement Status.</p></div><Identifier value={run} /></header>
       <section className="dashboardPanel">
         <Disclosure summary="Run record">
