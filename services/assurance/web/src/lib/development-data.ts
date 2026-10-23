@@ -35,9 +35,11 @@ export function developmentRead(project: string, path: string): unknown {
     } })),
   };
   const reviews = requirements.map(c => ({
-    record: { kind: 'requirement-review', fingerprint: identity(`review:${c.id}`), requirement: c.id,
-      reviewer: 'development-reviewer', reviewed_at_ms: Date.now() - 120 * 60000, decision: c.gap === 'rejected-review' ? 'rejected' : 'accepted',
-      rationale: c.reason, provenance: { agent: 'synthetic-author', model: 'illustrative' } },
+    record: { kind: 'requirement-review', reviewer: 'development-reviewer', reviewed_at_ms: Date.now() - 120 * 60000, rationale: c.reason,
+      artifacts: [{ id: 'verification', digest: identity(`artifact:${c.id}`), locator: `model/${c.module}/verification.md` }],
+      requirement: c.id, requirement_fingerprint: identity(`requirement:${c.id}`), dependencies_fingerprint: identity(`review-dependencies:${c.id}`),
+      decision: c.gap === 'rejected-review' ? 'rejected' : 'accepted', reassesses: c.id === workedRequirement ? identity(`review:${c.id}:first`) : null,
+      challenge_basis: [], fingerprint: identity(`review:${c.id}`) },
     assessment: c.gap === 'stale-review' ? 'stale' : c.gap === 'rejected-review' ? 'rejected' : 'accepted',
     diagnostics: c.gap?.endsWith('review') ? [c.reason] : [], historical: false,
     submitted_by: 'development-publisher', submitted_at: at(120), provenance_basis: 'synthetic-ui-data',
@@ -49,7 +51,6 @@ export function developmentRead(project: string, path: string): unknown {
   const state = { assessment: freshness, format: 'azimuth-deployment-status', version: 2, deployment: 'payments-2026-10-18', verification_target_fingerprint: verificationTarget,
     evaluated_at_ms: Date.now(), authority_fingerprint: revision, model_fingerprint: authority.model_fingerprint,
     requirements: requirements.map((c, i) => {
-      const computedStatus = 'computed';
       const hasCheckResult = c.gap !== 'missing-execution';
       const acceptedBasis = !c.gap;
       const checkResult = {
@@ -73,7 +74,6 @@ export function developmentRead(project: string, path: string): unknown {
         explanation: {
           summary: c.reason, status: c.status, reasons,
           review: { status: reviews[i].assessment, fingerprint: reviews[i].record.fingerprint, reviewer: 'development-reviewer', reviewed_at_ms: Date.now() - 120 * 60000, rationale: c.reason },
-          requirement_status: { status: computedStatus, fingerprint: null, reviewer: null, reviewed_at_ms: null, rationale: null },
           dependencies: [{ kind: 'release', fingerprint: releaseId }, ...(acceptedBasis && c.context_required ? [{ kind: 'context-capture', fingerprint: identity(`capture:${c.id}`) }] : [])],
           coverage: [{ check: c.check, scenario: c.scenario, status: !hasCheckResult ? 'missing' : acceptedBasis ? checkResult.outcome : 'unassessed', check_results: checkResults }],
           evidence: {
@@ -132,6 +132,7 @@ export function developmentRead(project: string, path: string): unknown {
     if (route === '/authority') return null;
     if (route === '/requirement-reviews') return { authority_fingerprint: null, requirements: [] };
     if (route === '/reviews') return { records: [], next: null };
+    if (route.startsWith('/provenance/requirements/')) return null;
     if (['/runs', '/verification-targets', '/model-revisions', '/releases', '/changes', '/deployments', '/environments'].includes(route)) return page([]);
     return null;
   }
@@ -181,7 +182,6 @@ export function developmentRead(project: string, path: string): unknown {
       diagnostics: ['Required Check Results are missing for this staging deployment.'],
       bindings: requirement.bindings.map(binding => ({ ...binding, status: 'unresolved', reasons: ['No applicable Check Result for this staging deployment.'] })),
       explanation: { ...requirement.explanation, status: 'unresolved', summary: 'Required Check Results are missing for this staging deployment.',
-        requirement_status: { status: 'computed', fingerprint: null, reviewer: null, reviewed_at_ms: null, rationale: null },
         reasons: [{ code: 'evidence-missing', category: 'deployment-evidence', message: 'Staging has no applicable Check Results.' }],
         coverage: requirement.explanation.coverage.map(binding => ({ ...binding, status: 'missing', check_results: [] })),
         evidence: { supporting: [], violations: [], inconclusive: [], unassessed: [] },
@@ -220,7 +220,7 @@ export function developmentRead(project: string, path: string): unknown {
   const run = runs.find(r => route === `/runs/${r.run_id}`);
   if (run) return { items: [bundles.find(b => b.run_id === run.run_id)], next: null };
   if (route === `/model-revisions/${revision}`) return { authority, selected: onMain };
-  if (route === `/model-revisions/${revision}/snapshot`) return { authority, reviews: [...reviews.map(r => r.record), { kind: 'requirement-status', requirement: requirements[0]?.id, verification_target_fingerprint: verificationTarget, fingerprint: identity('historical-assessment'), conclusion: 'supported', reviewed_at_ms: Date.now()-86400000, rationale: 'Historical authored conclusion retained for inspection.' }], bundles };
+  if (route === `/model-revisions/${revision}/snapshot`) return { authority, reviews: [...reviews.map(r => r.record)], bundles };
   if (route === `/verification-targets/${verificationTarget}/state`) return onMain ? state : { ...state, authority_fingerprint: priorMain, requirements: [] };
   if (route === `/deployments/${deployment.id}/status/summary`) return { ...state, requirements: state.requirements.map(({ bindings, explanation, ...requirement }) => ({ ...requirement, status: freshness.state === 'ready' ? requirement.status : 'unresolved', explanation: { summary: freshness.state === 'ready' ? explanation.summary : 'Evidence is being reassessed.' } })) };
   if (route === `/deployments/${deployment.id}/status` || route === `/model-revisions/${revision}/verification-targets/${verificationTarget}/state`) return state;
@@ -228,10 +228,89 @@ export function developmentRead(project: string, path: string): unknown {
   if (route === `/model-revisions/${priorMain}/requirement-reviews`) return { assessment: { state: 'ready', generation: 1, published_generation: 1, evaluated_at_ms: Date.now(), valid_until_ms: null }, authority_fingerprint: priorMain, requirements: [] };
   if (route === `/model-revisions/${priorMain}/snapshot`) return { authority: priorMainAuthority, reviews: [], bundles: [] };
   if (route === `/model-revisions/${priorMain}/verification-targets/${verificationTarget}/state`) return { authority_fingerprint: priorMain, model_fingerprint: priorMainAuthority.model_fingerprint, requirements: [] };
+  const provenanceRoute = /^\/provenance\/requirements\/([^/]+)$/.exec(route);
+  if (provenanceRoute) return requirements.some(c => c.id === provenanceRoute[1]) ? workHistory(provenanceRoute[1], releaseId, revision) : null;
   if (route === '/releases') return page([{ fingerprint: releaseId, release, submitted_by: 'development-publisher', submitted_at: at(90) }]);
   if (route === `/releases/${releaseId}` || route === `/releases/${releaseId}/summary`) return { publication: { release, catalog, evidence: [] }, submitted_by: 'development-publisher', submitted_at: at(90), deployments: [deployment, stagingDeployment] };
   if (route === '/changes') return page([{ id: 'payment-reminders', revisions: [{ status: onMain ? 'accepted' : 'under-assessment' }] }]);
   if (route === '/deployments') return page([{ deployment, release_fingerprint: releaseId, submitted_at: at(60) }, { deployment: stagingDeployment, release_fingerprint: releaseId, submitted_at: at(20) }]);
   if (/^\/environments\/[^/]+\/(deployment|observations)$/.test(route)) return null;
   throw new Error(`Synthetic Assurance UI data does not implement ${route}`);
+}
+
+const workedRequirement = 'reminders-follow-current-payment';
+const day = 86400000;
+const harnessAgent = (model: string, effort: string) => ({
+  kind: { value: 'model', basis: 'harness' }, model: { value: model, basis: 'harness' }, effort: { value: effort, basis: 'harness' },
+  harness: { name: 'example-harness', version: '3.2.0', basis: 'harness' },
+});
+const declaredAgent = {
+  kind: { value: 'model', basis: 'declared' }, model: { value: 'example-model-medium', basis: 'declared' }, effort: { value: null, basis: 'unknown' },
+  harness: { name: 'example-orchestrator', version: null, basis: 'declared' },
+};
+const unknownAgent = {
+  kind: { value: null, basis: 'unknown' }, model: { value: null, basis: 'unknown' }, effort: { value: null, basis: 'unknown' },
+  harness: { name: null, version: null, basis: 'unknown' },
+};
+const attemptId = (label: string) => `attempt-${identity(`attempt:${label}`).slice(7)}`;
+
+// Synthetic ledger rows for one Requirement: an intent change with a rejected and a corrected review, then a dependency change.
+function workHistory(requirement: string, currentRelease: string, currentRevision: string) {
+  if (requirement !== workedRequirement) {
+    const introduced = requirement === 'delivery-recovers-after-outage';
+    return { requirement, attributions: [], releases: [{
+      release: introduced ? currentRelease : identity('release:1.7'), label: introduced ? 'Payments 1.8' : 'Payments 1.7',
+      integration_sequence: introduced ? 3 : 1, model_revision: introduced ? currentRevision : identity('model:1.7'), relation: 'intent',
+      changes: [{ change: introduced ? 'delivery-retry' : 'payment-reminders', attempts: [] }],
+    }] };
+  }
+  const start = Date.now() - 12 * day;
+  const intentChange = 'reminder-amount-refresh';
+  const dependencyChange = 'shared-payment-snapshot';
+  const target = (change: string) => [{ name: 'change', value: change }, { name: 'project', value: 'payments-demo' }, { name: 'requirement', value: requirement }];
+  // The intent change restarted its workflow after the rejected review, so its attempts span two instances.
+  const instances: Record<string, { id: string; disposition: string }> = {
+    [intentChange]: { id: `change-development-${start}`, disposition: 'superseded' },
+    [`${intentChange}:restart`]: { id: `change-development-${start + 2 * day}`, disposition: 'completed' },
+    [dependencyChange]: { id: `change-development-${start + 8 * day}`, disposition: 'completed' },
+  };
+  const attempt = (instance: string, sequence: number, action: string, actor: string, outcome: string, agent: unknown, captured: number | null, recorded: number | null, report: string | null, generated: unknown[] = []) => ({
+    id: attemptId(`${instance}:${sequence}`), instance: instances[instance].id, disposition: instances[instance].disposition, sequence, action, task: action, scope: 'requirement', target: target(instance.split(':')[0]), actor, outcome, report,
+    handoff_captured_at_ms: captured, recorded_at_ms: recorded, agent, guidance: action === 'review-requirement' ? [{ kind: 'skill', id: 'azimuth-review-requirement', fingerprint: identity('guidance:review') }] : [],
+    trace: null, used: [{ kind: 'requirement', repository: 'application', ref: 'model/reminders/planning/requirements.md', fingerprint: identity(`used:${instance}:${sequence}`), record: null }], generated,
+  });
+  // `fingerprint` identifies the review bundle file; `record_fingerprint` is the native review it selects.
+  const review = (recordFingerprint: string, local: string) => [{ kind: 'requirement-review', repository: 'application', ref: 'reviews/requirement-reviews.md', fingerprint: identity(`review-bundle:${local}:${recordFingerprint}`), record: local, record_fingerprint: recordFingerprint }];
+  const intentAttempts = [
+    attempt(intentChange, 1, 'author-proposal', 'session-author-1', 'completed', harnessAgent('example-model-large', 'high'), start, start + 14 * 60000, 'Proposed reading the amount at send time instead of at scheduling time.'),
+    attempt(intentChange, 2, 'implement', 'subagent-implementer-1', 'completed', declaredAgent, start + day, start + day + 52 * 60000, 'Reminder rendering reads the payment amount when the reminder is sent.'),
+    attempt(intentChange, 3, 'review-requirement', 'session-reviewer-1', 'rejected', harnessAgent('example-model-large', 'high'), start + day + 3 * 3600000, start + day + 3 * 3600000 + 21 * 60000,
+      'Rejected: the integration Check edits the payment before the reminder is queued, so an edit **during** sending is never exercised.', review(identity(`review:${requirement}:rejected`), 'review-1')),
+    attempt(`${intentChange}:restart`, 1, 'implement', 'subagent-implementer-2', 'completed', unknownAgent, null, start + 2 * day, 'Added an edit-during-send step to the integration Check.'),
+    attempt(`${intentChange}:restart`, 2, 'review-requirement', 'session-reviewer-2', 'accepted', harnessAgent('example-model-large', 'high'), start + 2 * day + 3600000, start + 2 * day + 3600000 + 18 * 60000,
+      'Accepted: the corrected Check covers an edit while the reminder is being sent.', review(identity(`review:${requirement}:first`), 'review-2')),
+  ];
+  const dependencyAttempts = [
+    attempt(dependencyChange, 1, 'implement', 'session-implementer-3', 'completed', harnessAgent('example-model-small', 'medium'), start + 8 * day, start + 8 * day + 37 * 60000, 'Reminders and receipts share one payment snapshot.'),
+    attempt(dependencyChange, 2, 'review-requirement', 'session-reviewer-3', 'accepted', declaredAgent, start + 9 * day, start + 9 * day + 26 * 60000,
+      'Accepted: the shared snapshot is refreshed on every payment update.', review(identity(`review:${requirement}`), 'review-1')),
+  ];
+  return {
+    requirement,
+    releases: [
+      { release: identity('release:1.7'), label: 'Payments 1.7', integration_sequence: 1, model_revision: identity('model:1.7'), relation: 'intent', changes: [{ change: intentChange, attempts: intentAttempts }] },
+      { release: currentRelease, label: 'Payments 1.8', integration_sequence: 3, model_revision: currentRevision, relation: 'dependency', changes: [
+        { change: dependencyChange, attempts: dependencyAttempts },
+        { change: 'receipt-layout', attempts: [] },
+      ] },
+    ],
+    attributions: [{
+      format: 'azimuth-failure-attribution', version: 1, id: 'stale-snapshot-amount-1', requirement,
+      adverse: { kind: 'check-result', ref: identity(`check-result:${requirement}`) }, investigator: 'example-investigator',
+      agent: { ...unknownAgent, kind: { value: 'human', basis: 'declared' } }, recorded_at_ms: Date.now() - day, confidence: 'medium',
+      attempts: [{ attempt: dependencyAttempts[0].id, role: 'caused' }, { attempt: dependencyAttempts[1].id, role: 'allowed-through' }],
+      revises: null, rationale: 'The shared snapshot is cached per batch, so an edit during sending still reaches the reminder with the previous amount. The review accepted the refresh path without the batch cache.',
+      fingerprint: identity('attribution:stale-snapshot-amount-1'),
+    }],
+  };
 }
