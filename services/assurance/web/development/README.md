@@ -25,8 +25,7 @@ bundles or assessor output. Never ingest them into AAS. They deliberately permit
 exploring proposed experiences before the API supports them. Deployment observation freshness is provided by an explicit synthetic observation.
 The read models mirror computed deployment Requirement Status: source evidence is linked through
 release provenance, Execution Context mismatches remain unresolved, and Monitor
-freshness is independent of deployment-observation freshness. Historical authored
-assessments remain inspectable without overriding computed Status.
+freshness is independent of deployment-observation freshness.
 Dates are relative to page reads so scenarios remain
 useful; they are not a real event history. Identities are deterministic synthetic
 link keys, not protocol content fingerprints.
@@ -78,7 +77,7 @@ Model and system-version selectors use published names and descriptor labels.
 Exact fingerprints and raw records live in Technical details; copy buttons use
 the browser clipboard, with manual selection available if clipboard access fails.
 A module view includes Requirements from its nested modules. A Requirement view separates
-Requirement Status, Scenarios and declared Checks, Requirement Review, and assessment history.
+Requirement Status, Scenarios and declared Checks, Requirement Review, work history and review history.
 Recorded Check Results must match the selected Verification Target fingerprint, current Check
 fingerprint and Scenario before appearing under that Check. Displaying a Check Result
 is not an applicability decision or a new Requirement Status assessment.
@@ -139,3 +138,21 @@ scope, Execution Context requirements and applicability reasons. Overdue monitor
 a product violation. Failed Check Results stay visible even when they cannot
 establish that the Requirement is not satisfied. `npm test` verifies the actual React view
 with mixed evidence, including definitions-only navigation.
+
+## Work history
+
+A Requirement view has a collapsed Work history section fed by
+`/provenance/requirements/{requirement}`. It lists releases newest first with an
+`intent` or `dependency` relation, each recorded change and its workflow attempts:
+action, actor, outcome, agent kind, model, effort and harness with a
+harness-attested, declared or unknown basis marker, handoff and record times with
+the derived duration, and a collapsed report. Failure Attributions link to the
+attempts they name. Work provenance is never evidence: it does not affect Requirement
+Review currentness or Requirement Status, and an unavailable provenance read leaves
+the rest of the page intact. The Requirement Review section shows the reviewing
+attempt's descriptor when an attempt in the history generated that review.
+
+The synthetic `reminders-follow-current-payment` history has an intent change with a
+rejected and a corrected review, a dependency change, a release change without a
+stored ledger, harness-attested, declared and unknown descriptors and one Failure
+Attribution. Other Requirements have one change without a stored ledger.

@@ -14,6 +14,8 @@ const sharedStubs = {
   './identifier': { Identifier: ({ value, label }) => React.createElement('code', { title: value }, label ?? value) },
 };
 const { RequirementVerification } = loadSource('../src/components/requirement-verification.tsx', sharedStubs);
+const identifierLibrary = loadSource('../src/lib/identifier.ts', {});
+const workHistoryComponents = loadSource('../src/components/work-history.tsx', { ...sharedStubs, '../lib/identifier': identifierLibrary });
 const at = 1792400000000;
 const context = { component: 'notifications', leaves: ['delivery.channel', 'delivery.retry'] };
 const sourcePolicy = { verification_target: 'source', components: ['notifications'], contexts: [context], contribution: 'both', monitor: null };
@@ -161,6 +163,8 @@ async function verifyModelAssessmentFreshness() {
     '@/components/disclosure': sharedStubs['./disclosure'],
     '@/components/local-time': localTime,
     '@/components/markdown': sharedStubs['./markdown'],
+    '@/components/work-history': workHistoryComponents,
+    '@/lib/identifier': identifierLibrary,
   }).default;
   for (const value of ['ready', 'pending', 'expired', 'missing', 'elapsed']) {
     freshness = value;
@@ -176,3 +180,75 @@ async function verifyModelAssessmentFreshness() {
   console.log('Model assessment freshness passed: current-only conclusions, evidence and on-demand history.');
 }
 verifyModelAssessmentFreshness().catch(error => { console.error(error); process.exitCode = 1; });
+
+function verifyWorkHistory() {
+  const { developmentRead } = loadSource('../src/lib/development-data.ts', { 'server-only': {}, './development': { developmentScenario: () => 'mixed' } });
+  const { WorkHistory } = workHistoryComponents;
+  const history = developmentRead('payments-demo', '/provenance/requirements/reminders-follow-current-payment');
+  const markup = renderToStaticMarkup(React.createElement(WorkHistory, { history }));
+  assert(markup.includes('Work provenance — not used for Requirement Status'), 'non-evidence caption');
+  assert(markup.includes('never affects Requirement Review currentness, Requirement Status or acceptance'));
+  assert(/<details class="disclosure"><summary><span class="disclosureTitle">Work history<\/span>/.test(markup), 'work history is collapsed by default');
+  assert(markup.includes('>intent</span>') && markup.includes('>dependency</span>'), 'relation badges');
+  assert(markup.indexOf('Payments 1.8') < markup.indexOf('Payments 1.7'), 'newest release first');
+  assert(markup.includes('basis-harness">harness-attested</span>'), 'harness basis marker');
+  assert(markup.includes('<span>example-model-medium</span> <span class="basisMarker basis-declared">declared</span>'), 'declared basis marker');
+  assert(markup.includes('basis-unknown" title="Not recorded; never inferred">unknown</span>'), 'unknown renders as unknown');
+  assert(markup.includes('example-orchestrator (version unknown)'), 'declared harness with unknown version');
+  assert(!/<dd>\s*<\/dd>/.test(markup), 'no descriptor or time value is blank');
+  assert(markup.includes('>rejected</span>') && markup.includes('>accepted</span>'), 'rejected review followed by a corrected one');
+  assert(markup.includes('14 min'), 'derived duration from handoff to record');
+  assert(markup.includes('>not recorded</time>'), 'missing handoff time is explicit');
+  assert(markup.includes('No stored ledger for this change.'));
+  assert(markup.includes('<summary><span class="disclosureTitle">Report</span>'), 'report is collapsed');
+  assert(markup.includes('stale-snapshot-amount-1') && markup.includes('medium confidence'), 'failure attribution');
+  const caused = history.attributions[0].attempts[0].attempt;
+  assert(markup.includes(`id="${caused}"`) && markup.includes(`href="#${caused}"`), 'attribution links to the attempt');
+  assert(markup.includes('>Caused</span>') && markup.includes('>Allowed through</span>'));
+  const unavailable = renderToStaticMarkup(React.createElement(WorkHistory, { history: undefined }));
+  assert(unavailable.includes('Work history is unavailable right now') && unavailable.includes('not used for Requirement Status'));
+  const empty = renderToStaticMarkup(React.createElement(WorkHistory, { history: null }));
+  assert(empty.includes('No work history recorded for this Requirement.'));
+  console.log('Work history rendering passed: non-evidence caption, collapsed section, relation badges, harness/declared/unknown descriptors, derived durations, collapsed reports and Failure Attribution links.');
+}
+verifyWorkHistory();
+
+async function verifyRequirementPageWorkHistory() {
+  const { developmentRead } = loadSource('../src/lib/development-data.ts', { 'server-only': {}, './development': { developmentScenario: () => 'healthy' } });
+  let failProvenance = false;
+  const Page = loadSource('../src/app/projects/[projectId]/model/page.tsx', {
+    '@/lib/environment': { selectedEnvironment: async () => 'production' },
+    '@/lib/auth': { requireViewer: async () => {} },
+    '@/lib/assurance': { routeFingerprint: value => value, readProject: async (project, route) => {
+      if (failProvenance && route.startsWith('/provenance/')) throw new Error('Assurance API unavailable (503); no conclusion inferred');
+      return structuredClone(developmentRead(project, route));
+    } },
+    '@/lib/production': { requirementStatus: value => ['supported', 'violated'].includes(value) ? value : 'unresolved' },
+    'next/headers': { cookies: async () => ({ get: () => undefined }) },
+    'next/navigation': { notFound: () => { throw Error('Unexpected missing fixture'); } },
+    'next/link': ({ children, prefetch, ...props }) => React.createElement('a', props, children),
+    '@/components/model-navigation': { ModelNavigation: () => null },
+    '@/components/model-workspace': { ModelWorkspace: ({ children }) => React.createElement('div', null, children) },
+    '@/components/copy-value': { CopyValue: () => null },
+    '@/components/requirement-verification': { RequirementVerification },
+    '@/components/disclosure': sharedStubs['./disclosure'],
+    '@/components/local-time': localTime,
+    '@/components/markdown': sharedStubs['./markdown'],
+    '@/components/work-history': workHistoryComponents,
+    '@/lib/identifier': identifierLibrary,
+  }).default;
+  const render = async requirement => renderToStaticMarkup(await Page({ params: Promise.resolve({ projectId: 'payments-demo' }), searchParams: Promise.resolve({ requirement }) }));
+  const markup = await render('reminders-follow-current-payment');
+  assert(markup.indexOf('id="requirement-review"') < markup.indexOf('id="requirement-work-history"'), 'work history follows the review');
+  assert(markup.includes('Reviewing attempt from Work Provenance: <a href="#attempt-'), 'review shows its generating attempt');
+  assert(markup.includes('<dt>Reviewed dependencies</dt>') && markup.includes('<dt>Challenge basis</dt><dd>none</dd>'), 'review record fields');
+  assert(markup.includes('verification</code> model/reminders/planning/verification.md'), 'reviewed artifacts');
+  assert(markup.includes('&quot;dependencies_fingerprint&quot;') && !markup.includes('&quot;provenance&quot;') && !markup.includes('Author provenance'), 'review record carries no authored provenance');
+  const other = await render('reminders-arrive-on-time');
+  assert(!other.includes('Reviewing attempt from Work Provenance'), 'no reviewer descriptor without a generating attempt');
+  failProvenance = true;
+  const degraded = await render('reminders-follow-current-payment');
+  assert(degraded.includes('>Satisfied</span>') && degraded.includes('Work history is unavailable right now'), 'unavailable provenance never hides Requirement Status');
+  console.log('Requirement page work history passed: placement after review, reviewing-attempt descriptor, review record fields and degraded provenance reads.');
+}
+verifyRequirementPageWorkHistory().catch(error => { console.error(error); process.exitCode = 1; });
