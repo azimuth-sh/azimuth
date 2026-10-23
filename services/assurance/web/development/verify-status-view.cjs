@@ -16,7 +16,7 @@ componentModule.paths = Module._nodeModulePaths(path.dirname(filename));
 componentModule._compile(source, filename);
 const { RequirementVerification } = componentModule.exports;
 const at = 1792400000000;
-const context = `sha256:${'c'.repeat(64)}`;
+const context = { component: 'notifications', leaves: ['delivery.channel', 'delivery.retry'] };
 const sourcePolicy = { verification_target: 'source', components: ['notifications'], contexts: [context], contribution: 'both', monitor: null };
 const monitor = { id: 'delivery-monitor', interval_seconds: 60, freshness_seconds: 300 };
 const checkResult = (check, outcome, applicable, time) => ({
@@ -49,6 +49,7 @@ assert(html.includes('Overdue'));
 assert(html.includes('Scenarios without contributing Checks'));
 assert(html.includes('uncovered'));
 assert(html.includes('Effective context differs on instance process-b.'));
+assert(html.includes('<code>notifications</code> · delivery.channel, delivery.retry'));
 assert(html.includes('Required Execution Context match not established'));
 assert(html.includes('Retained fact · not applicable to this deployment'));
 assert(html.includes('Failed Check Result'));

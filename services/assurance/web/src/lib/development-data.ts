@@ -31,7 +31,7 @@ export function developmentRead(project: string, path: string): unknown {
     fingerprint: revision, model_fingerprint: identity('source-model'),
     requirements: requirements.map(c => ({ id: c.id, scenarios: [c.scenario], bindings: [{ check: c.check, scenario: c.scenario }], gaps: [] })),
     checks: requirements.map(c => ({ id: c.check, fingerprint: identity(c.check), deployment: {
-      verification_target: c.verification_target, components: ['notifications'], contexts: c.context_required ? [identity('delivery-context-contract')] : [], contribution: 'both', monitor: c.monitor,
+      verification_target: c.verification_target, components: ['notifications'], contexts: c.context_required ? [{ component: 'notifications', leaves: ['delivery.channel'] }] : [], contribution: 'both', monitor: c.monitor,
     } })),
   };
   const reviews = requirements.map(c => ({

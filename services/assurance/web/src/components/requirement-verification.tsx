@@ -79,7 +79,7 @@ export function RequirementVerification(props: RequirementVerificationProps) {
           </div>)}
           {policy?.configuration_sources?.length ? <p className="modelDetailMuted">Configuration sources: {policy.configuration_sources.join(', ')}</p> : null}
           {policy?.units?.length ? <details className="verificationContracts"><summary>Execution coverage · {policy.units.length} required units{policy.controls?.length ? ` · ${policy.controls.length} control profiles` : ''}</summary><ul>{policy.units.map(unit => <li key={unit}><code>{unit}</code>{policy.controls?.some(control => control.unit === unit) ? ' · sensitivity control' : ''}</li>)}</ul></details> : null}
-          {policy?.contexts.length ? <details className="verificationContracts"><summary>Required Context Contracts</summary><ul>{policy.contexts.map(revision => <li key={revision}><code>{revision}</code></li>)}</ul></details> : null}
+          {policy?.contexts.length ? <details className="verificationContracts"><summary>Required Context Contracts</summary><ul>{policy.contexts.map(dependency => <li key={dependency.component}><code>{dependency.component}</code> · {dependency.leaves.join(', ')}</li>)}</ul></details> : null}
         </article>;
       })}
     </section>;
