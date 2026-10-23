@@ -68,7 +68,6 @@ pub(super) struct Run {
 pub(super) struct Review {
     pub record: CoreJson,
     pub fingerprint: String,
-    pub basis_runs: Vec<String>,
     pub challenge_runs: Vec<String>,
 }
 
@@ -133,7 +132,6 @@ fn review_from_value(value: &Value) -> Result<Review, LedgerError> {
             .as_str()
             .unwrap_or_default()
             .to_string(),
-        basis_runs: strings(value, "/basis", "run"),
         challenge_runs: strings(value, "/challenge_basis", "run"),
     })
 }

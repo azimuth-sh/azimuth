@@ -10,6 +10,14 @@ pub(super) async fn publish(
     // Native verification must not monopolize the async worker serving liveness requests.
     let (payload, mut bundles) = tokio::task::spawn_blocking(move || {
         let native = core_json(&body)?;
+        for review in native
+            .get("snapshot")
+            .and_then(|snapshot| snapshot.get("reviews"))
+            .and_then(CoreJson::as_array)
+            .unwrap_or_default()
+        {
+            require_requirement_review(review.get("kind"))?;
+        }
         azimuth::release::verify(&native).map_err(LedgerError::invalid)?;
         let payload = to_value(&native)?;
         let bundles = array(&payload["snapshot"], "bundles")?
@@ -756,15 +764,8 @@ fn parse_main_publication(body: &[u8], project: &str) -> Result<MainPublication,
     let mut reviews = Vec::new();
     for record in array(&payload, "reviews")? {
         let native = core_json(record.to_string().as_bytes())?;
+        require_requirement_review(native.get("kind"))?;
         assurance_review::validate_record(&native).map_err(LedgerError::invalid)?;
-        if !matches!(
-            record["kind"].as_str(),
-            Some("requirement-review" | "requirement-status")
-        ) {
-            return Err(LedgerError::invalid(
-                "main model publications carry requirement-review or requirement-status records only",
-            ));
-        }
         reviews.push(native);
     }
     Ok(MainPublication {
