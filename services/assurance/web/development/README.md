@@ -62,7 +62,7 @@ configuration is needed for themes. All screen colors use semantic CSS tokens in
 
 ## Model workspace
 
-Application navigation separates Overview, Model, Releases and Records. Inside
+Application navigation separates Overview, Model, Releases and Deployments. Inside
 Model, unpinned module navigation starts collapsed on every page, including after
 refresh. Only an explicit Pin preference reserves an inline column. The Modules button opens a compact overlay anchored to the button, without
 covering application navigation or changing the detail width; Pin keeps navigation beside the content on desktop. A one-year browser

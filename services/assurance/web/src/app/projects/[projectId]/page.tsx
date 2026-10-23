@@ -149,8 +149,8 @@ export default async function ProjectPage({
                 : "Default model"}
           </small>
         </div>
-        <Link className="outlineButton" href={`${root}/records`}>
-          View records ↗
+        <Link className="outlineButton" href={`${root}/deployments?environment=${encodeURIComponent(environment)}`}>
+          Deployment history ↗
         </Link>
       </section>
       {!selected && !observationFresh && (
@@ -182,8 +182,8 @@ export default async function ProjectPage({
           ))}
           {hasMore && (
             <p>
-              The first 100 records are shown; browse Records for the complete
-              deployment list.
+              The first 100 deployments are shown; the Deployments page lists the
+              complete history.
             </p>
           )}
         </section>
