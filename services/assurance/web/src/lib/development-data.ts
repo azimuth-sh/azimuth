@@ -125,7 +125,7 @@ export function developmentRead(project: string, path: string): unknown {
   const stagingTarget = identity('staging');
   const stagingDeployment = { id: 'payments-staging-2026-10-19', environment: 'staging', verification_target_fingerprint: stagingTarget, deployed_at: at(20) };
   const onMain = scenario === 'healthy';
-  const release = { fingerprint: releaseId, label: 'Payments 1.8', model_revision: revision, changes: [{ id: 'payment-reminders', label: 'Payment reminders' }],
+  const release = { fingerprint: releaseId, label: 'Payments 1.8', model_revision: revision,
     sources: [{ repository: 'example/payments', commit: 'synthetic-source' }],
     builds: [{ id: 'synthetic-build' }], artifacts: [{ label: 'payments:1.8 (illustrative)' }], deployments: [deployment, stagingDeployment] };
   if (scenario === 'empty') {
@@ -228,7 +228,7 @@ export function developmentRead(project: string, path: string): unknown {
   if (route === `/model-revisions/${priorMain}/requirement-reviews`) return { assessment: { state: 'ready', generation: 1, published_generation: 1, evaluated_at_ms: Date.now(), valid_until_ms: null }, authority_fingerprint: priorMain, requirements: [] };
   if (route === `/model-revisions/${priorMain}/snapshot`) return { authority: priorMainAuthority, reviews: [], bundles: [] };
   if (route === `/model-revisions/${priorMain}/verification-targets/${verificationTarget}/state`) return { authority_fingerprint: priorMain, model_fingerprint: priorMainAuthority.model_fingerprint, requirements: [] };
-  if (route === '/releases') return page([{ fingerprint: releaseId, release }]);
+  if (route === '/releases') return page([{ fingerprint: releaseId, release, submitted_by: 'development-publisher', submitted_at: at(90) }]);
   if (route === `/releases/${releaseId}` || route === `/releases/${releaseId}/summary`) return { publication: { release, catalog, evidence: [] }, submitted_by: 'development-publisher', submitted_at: at(90), deployments: [deployment, stagingDeployment] };
   if (route === '/changes') return page([{ id: 'payment-reminders', revisions: [{ status: onMain ? 'accepted' : 'under-assessment' }] }]);
   if (route === '/deployments') return page([{ deployment, release_fingerprint: releaseId }, { deployment: stagingDeployment, release_fingerprint: releaseId }]);

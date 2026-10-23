@@ -5,6 +5,7 @@ import { Disclosure } from '@/components/disclosure';
 import { Identifier } from '@/components/identifier';
 import { Markdown } from '@/components/markdown';
 import { shortIdentifier } from '@/lib/identifier';
+import { formatUtc } from '@/lib/time';
 export const dynamic = 'force-dynamic';
 export default async function RecordsPage({
   params,
@@ -21,7 +22,7 @@ export default async function RecordsPage({
     verificationTargets: cursor(query['verification-targets']),
     reviews: cursor(query.reviews),
   });
-  const releases = await readProject<Page<{ fingerprint: string; release: { label: string; model_revision: string; integration: { commit: string; main_sequence: number } | null } }>>(projectId, `/releases?after=${encodeURIComponent(cursor(query.releases))}`);
+  const releases = await readProject<Page<{ fingerprint: string; submitted_at: string; release: { label: string; model_revision: string; integration: { commit: string; main_sequence: number } | null } }>>(projectId, `/releases?after=${encodeURIComponent(cursor(query.releases))}`);
   const changes = await readProject<Page<{ id: string; revisions: unknown[] }>>(projectId, `/changes?after=${encodeURIComponent(cursor(query.changes))}`);
   const deployments = await readProject<Page<{ deployment: { id: string; environment: string }; release_fingerprint: string }>>(projectId, `/deployments?after=${encodeURIComponent(cursor(query.deployments))}`);
   const root = `/projects/${encodeURIComponent(projectId)}`;
@@ -31,7 +32,7 @@ export default async function RecordsPage({
       <Link className="backLink" href="/">← Projects</Link>
       <header className="dashboardHeading"><div><p className="overline">INSPECTION</p><h1>Records</h1><p>Everything {projectId} has recorded. Lists show at most 25 records; raw records open on demand.</p></div></header>
       <section className="dashboardPanel"><header className="panelHeading"><div><h2>Releases</h2></div><span className="panelCount">{releases?.items.length ?? 0}</span></header>
-        {releases?.items.map(r => <Link className="releaseListRow" key={r.fingerprint} href={`${root}/releases/${encodeURIComponent(r.fingerprint)}`}><strong>{r.release.label}</strong><span className={`badge ${r.release.integration ? 'good' : 'neutral'}`}>{r.release.integration ? `Integrated at ${r.release.integration.commit.slice(0, 8)}` : 'No integration commit'}</span></Link>)}
+        {releases?.items.map(r => <Link className="releaseListRow" key={r.fingerprint} href={`${root}/releases/${encodeURIComponent(r.fingerprint)}`}><strong>{r.release.label}</strong><time className="modelDetailMuted" dateTime={r.submitted_at}>{formatUtc(r.submitted_at)}</time><span className={`badge ${r.release.integration ? 'good' : 'neutral'}`}>{r.release.integration ? `Integrated at ${r.release.integration.commit.slice(0, 8)}` : 'No integration commit'}</span></Link>)}
         {!releases?.items.length && <p className="tableEmpty">No releases recorded.</p>}
         {releases?.next && <Link className="textLink" href={`${root}/records?releases=${encodeURIComponent(releases.next)}`}>Next releases →</Link>}
       </section>

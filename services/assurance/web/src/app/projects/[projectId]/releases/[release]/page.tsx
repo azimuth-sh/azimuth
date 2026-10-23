@@ -8,6 +8,7 @@ import { CopyValue } from "@/components/copy-value";
 import { Identifier } from "@/components/identifier";
 import { Disclosure } from "@/components/disclosure";
 import { shortIdentifier } from "@/lib/identifier";
+import { formatUtc } from "@/lib/time";
 import { DeploymentCheckRuns, ReleaseCheckRuns } from "@/components/check-runs";
 import { readDeploymentChecks, readReleaseChecks } from "@/lib/checks-run";
 
@@ -19,7 +20,7 @@ type Release = {
   label: string;
   integration: { commit: string; main_sequence: number; ratification: Ratification | null } | null;
   model_revision: string;
-  changes: Identity[];
+  changes?: Identity[];
   sources: Identity[];
   builds: Identity[];
   artifacts: Identity[];
@@ -30,12 +31,6 @@ function title(record: Identity, fallback: string) {
     if (typeof record[key] === "string") return record[key];
   }
   return fallback;
-}
-function receivedAt(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "Time unavailable" : new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium", timeStyle: "short", timeZone: "UTC",
-  }).format(date) + " UTC";
 }
 export default async function ReleasePage({ params, searchParams }: {
   params: Promise<{ projectId: string; release: string }>;
@@ -64,6 +59,7 @@ export default async function ReleasePage({ params, searchParams }: {
   const requirements = selectedRelease ? environmentState.state?.requirements ?? [] : [];
   const counts = { supported: 0, violated: 0, unresolved: 0, "not-applicable": 0 };
   for (const requirement of requirements) counts[requirementStatus(requirement.status)]++;
+  const changes = release.changes ?? [];
   const components = release.components ?? [];
   const selectedDeploymentId = selectedRelease ? environmentState.deployment?.deployment.id : undefined;
   const [releaseChecks, deploymentChecks] = await Promise.all([
@@ -74,7 +70,7 @@ export default async function ReleasePage({ params, searchParams }: {
   return <div className="dashboard releaseWorkspace">
     <nav className="pageBreadcrumb" aria-label="Breadcrumb"><Link href={`${root}/releases?environment=${encodeURIComponent(environment)}`}>Releases</Link><span>/</span><span>{release.label}</span></nav>
     <header className="dashboardHeading">
-      <div><p className="overline">RELEASE</p><h1>{release.label}</h1><p>Published {receivedAt(record.submitted_at)}</p></div>
+      <div><p className="overline">RELEASE</p><h1>{release.label}</h1><p>Published {formatUtc(record.submitted_at)}</p></div>
       <span className={`badge ${release.integration ? "good" : "neutral"}`}>{release.integration ? `Integrated at ${release.integration.commit.slice(0, 8)}` : "No integration commit"}</span>
     </header>
     <section className="deploymentBar" aria-label="Release summary">
@@ -84,9 +80,9 @@ export default async function ReleasePage({ params, searchParams }: {
     </section>
     <div className="releaseColumns">
       <div className="releaseSections">
-        {release.changes.length > 0 && <section className="dashboardPanel">
-          <header className="panelHeading"><div><h2>Included changes</h2><p>Changes recorded with this release.</p></div><span className="badge neutral">{release.changes.length}</span></header>
-          {release.changes.map((change, i) => <div className="releaseCompactRow" key={i}><strong>{title(change, `Change ${i + 1}`)}</strong>{typeof change.revision === "string" && <span className="modelDetailMuted">Pinned revision</span>}</div>)}
+        {changes.length > 0 && <section className="dashboardPanel">
+          <header className="panelHeading"><div><h2>Included changes</h2><p>Changes recorded with this release.</p></div><span className="badge neutral">{changes.length}</span></header>
+          {changes.map((change, i) => <div className="releaseCompactRow" key={i}><strong>{title(change, `Change ${i + 1}`)}</strong>{typeof change.revision === "string" && <span className="modelDetailMuted">Pinned revision</span>}</div>)}
         </section>}
         <section className="dashboardPanel">
           <header className="panelHeading"><div><h2>Source repositories</h2><p>Exact source versions used for this release.</p></div></header>
@@ -129,7 +125,7 @@ export default async function ReleasePage({ params, searchParams }: {
       <CopyValue label="Release fingerprint" value={release.fingerprint} />
       {release.integration && <CopyValue label="Integration commit" value={release.integration.commit} />}
       <CopyValue label="Release model" value={release.model_revision} />
-      <p className="modelDetailMuted">Published by {record.submitted_by} · {receivedAt(record.submitted_at)}</p>
+      <p className="modelDetailMuted">Published by {record.submitted_by} · {formatUtc(record.submitted_at)}</p>
       <Disclosure summary="Publication and provenance records"><pre className="rawRecord">{JSON.stringify(record.publication, null, 2)}</pre></Disclosure>
       <Disclosure summary="Deployment records"><pre className="rawRecord">{JSON.stringify(record.deployments, null, 2)}</pre></Disclosure>
     </details>
