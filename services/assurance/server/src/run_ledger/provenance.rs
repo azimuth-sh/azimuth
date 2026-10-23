@@ -195,8 +195,10 @@ async fn write_ledger(
             .bind(project).bind(change).bind(instance_id).bind(index(position)?)
             .bind(predecessor_id).bind(predecessor_ref).bind(predecessor_revision).bind(predecessor_fingerprint)
             .bind(text(instance, "disposition")?)
-            .bind(text(instance, "definition_fingerprint")?).bind(text(template, "id")?)
-            .bind(integer(template, "revision")?).execute(&mut *tx).await?;
+            .bind(text(instance, "definition_fingerprint")?)
+            .bind(if template.is_null() { None } else { Some(text(template, "id")?) })
+            .bind(if template.is_null() { None } else { Some(integer(template, "revision")?) })
+            .execute(&mut *tx).await?;
         for attempt in attempts(instance)? {
             let attempt_id = text(attempt, "id")?;
             if stored_attempts.contains(attempt_id) {
@@ -357,7 +359,10 @@ async fn reassemble_ledger(
             },
             "disposition": row.try_get::<String,_>("disposition")?,
             "definition_fingerprint": row.try_get::<String,_>("definition_fingerprint")?,
-            "template": {"id": row.try_get::<String,_>("template_id")?, "revision": row.try_get::<i64,_>("template_revision")?},
+            "template": match row.try_get::<Option<String>,_>("template_id")? {
+                Some(template) => json!({"id": template, "revision": row.try_get::<i64,_>("template_revision")?}),
+                None => Value::Null,
+            },
             "attempts": by_instance.remove(&id).unwrap_or_default(),
         }));
     }
@@ -959,7 +964,7 @@ mod tests {
         json!({
             "id": id,
             "predecessor": predecessor.map(|id| json!({
-                "id": id, "ref": format!("../{id}/workflow.json"), "revision": 7, "fingerprint": digest('8'),
+                "id": id, "ref": format!("predecessors/{id}.json"), "revision": 7, "fingerprint": digest('8'),
             })),
             "disposition": disposition,
             "definition_fingerprint": digest('3'),
@@ -1350,10 +1355,12 @@ mod tests {
     async fn attempts_page_dataset_rows_in_ledger_order() -> Result<(), Box<dyn std::error::Error>>
     {
         let service = Service::start().await?;
-        let second = ledger(
+        let mut second = ledger(
             "c2",
             vec![instance("c2", "k1", None, "active", &["author-proposal"])],
         );
+        // A historical instance can predate templates.
+        second["instances"][0]["template"] = Value::Null;
         let first = ledger(
             "c1",
             vec![

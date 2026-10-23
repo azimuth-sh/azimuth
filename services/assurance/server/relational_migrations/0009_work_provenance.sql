@@ -25,15 +25,17 @@ CREATE TABLE provenance_instances (
     predecessor_fingerprint text,
     disposition text NOT NULL CHECK (disposition IN ('active', 'superseded', 'completed', 'abandoned')),
     definition_fingerprint text NOT NULL,
-    template_id text NOT NULL,
-    template_revision bigint NOT NULL,
+    -- An instance without a template records neither column.
+    template_id text,
+    template_revision bigint CHECK (template_revision >= 1),
     PRIMARY KEY(project, change, instance_id),
     -- A later export may insert a historical instance before existing ones, so positions are
     -- rewritten in one transaction and checked only at commit.
     UNIQUE(project, change, position) DEFERRABLE INITIALLY DEFERRED,
     CHECK ((predecessor_id IS NULL) = (predecessor_ref IS NULL)
         AND (predecessor_id IS NULL) = (predecessor_revision IS NULL)
-        AND (predecessor_id IS NULL) = (predecessor_fingerprint IS NULL))
+        AND (predecessor_id IS NULL) = (predecessor_fingerprint IS NULL)),
+    CHECK ((template_id IS NULL) = (template_revision IS NULL))
 );
 
 CREATE TABLE provenance_attempts (
