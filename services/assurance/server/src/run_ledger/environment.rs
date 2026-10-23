@@ -194,7 +194,7 @@ pub(super) async fn delivery_gap(
     let current = sqlx::query("SELECT d.deployment_id,d.release_fingerprint,r.model_revision FROM environment_deployment_selections s JOIN release_deployments d ON d.project=s.project AND d.deployment_id=s.deployment_id JOIN assurance_releases r ON r.project=d.project AND r.fingerprint=d.release_fingerprint WHERE s.project=$1 AND s.environment=$2 ORDER BY s.revision DESC LIMIT 1")
         .bind(&project).bind(&environment).fetch_optional(&state.pool).await?
         .ok_or_else(LedgerError::not_found)?;
-    let main = sqlx::query("SELECT commit_sha,main_sequence,model_revision FROM main_publications WHERE project=$1 ORDER BY main_sequence DESC LIMIT 1")
+    let main = sqlx::query("SELECT commit_sha,main_sequence,publication_revision,main_publication_sources(project,commit_sha,publication_revision) AS sources,model_revision FROM main_publications WHERE project=$1 ORDER BY main_sequence DESC,publication_revision DESC LIMIT 1")
         .bind(&project).fetch_optional(&state.pool).await?
         .ok_or_else(LedgerError::not_found)?;
     let deployment_id: String = current.try_get("deployment_id")?;
@@ -247,6 +247,8 @@ pub(super) async fn delivery_gap(
         "main_model_revision":main_revision,
         "main_commit":main.try_get::<String,_>("commit_sha")?,
         "main_sequence":main.try_get::<i64,_>("main_sequence")?,
+        "publication_revision":main.try_get::<i32,_>("publication_revision")?,
+        "sources":main.try_get::<Value,_>("sources")?,
         "requirements":requirements,
     })))
 }

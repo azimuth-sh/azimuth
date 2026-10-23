@@ -47,7 +47,8 @@ def seed(base, tokens):
         "checks": [], "scenarios": [{"id": "recorded", "requirement": "history-is-retained", "fingerprint": fingerprint({"scenario": "recorded"})}], "bindings": [],
         "requirements": [{"id": "history-is-retained", "criticality": "routine", "fingerprint": fingerprint({"requirement": "history-is-retained"}), "scenarios": ["recorded"], "mechanisms": [], "bindings": [], "gaps": []}]}
     baseline["fingerprint"] = fingerprint(baseline)
-    publication = {"format": "azimuth-main-model-publication", "version": 1, "commit": "a" * 40, "main_sequence": 1,
+    publication = {"format": "azimuth-main-model-publication", "version": 2, "commit": "a" * 40, "main_sequence": 1,
+        "publication_revision": 1, "sources": {"qualification-fixture": "b" * 40},
         "authority": baseline, "reviews": [],
         "ratification": {"status": "unratified", "reason": "qualification fixture has no pull request", "pull_request": None, "verified_at_ms": 0}}
     request(base, "/v1/projects/checkout/main-models", tokens["publishers"], publication)

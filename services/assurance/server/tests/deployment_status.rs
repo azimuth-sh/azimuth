@@ -632,7 +632,7 @@ async fn a_context_leaf_that_changed_during_capture_leaves_the_condition_unresol
 
 fn main_publication(commit: &str, ratification: Value) -> Value {
     let package = publication();
-    json!({"format":"azimuth-main-model-publication","version":1,"commit":commit,"main_sequence":1,"authority":package["snapshot"]["authority"],"reviews":[],"ratification":ratification})
+    json!({"format":"azimuth-main-model-publication","version":2,"commit":commit,"main_sequence":1,"publication_revision":1,"sources":{"drim-dev":"c".repeat(40),"drim-dev-argocd":"d".repeat(40)},"authority":package["snapshot"]["authority"],"reviews":[],"ratification":ratification})
 }
 
 #[tokio::test]
@@ -676,6 +676,145 @@ async fn main_publication_accepts_exactly_the_contract_commit_and_ratification_s
     second["main_sequence"] = json!(2);
     let (status, body) = publish(second).await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
+    server.abort();
+    Ok(())
+}
+
+fn revised(commit: &str, sequence: i64, revision: i64, reason: &str) -> Value {
+    let mut body = main_publication(
+        commit,
+        json!({"status":"unratified","reason":reason,"pull_request":null,"verified_at_ms":0}),
+    );
+    body["main_sequence"] = json!(sequence);
+    body["publication_revision"] = json!(revision);
+    body
+}
+
+async fn post_main(client: &Client, base: &str, body: &Value) -> (StatusCode, Value) {
+    let response = client
+        .post(format!("{base}/main-models"))
+        .bearer_auth(PUBLISHER)
+        .json(body)
+        .send()
+        .await
+        .unwrap();
+    let status = response.status();
+    (status, response.json().await.unwrap_or(Value::Null))
+}
+
+async fn current_main(client: &Client, base: &str) -> Value {
+    client
+        .get(format!("{base}/authority"))
+        .bearer_auth(VIEWER)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn main_publication_revisions_supersede_in_place_and_order_by_sequence_then_revision(
+) -> Result<(), Box<dyn Error>> {
+    let Harness {
+        _postgres,
+        client,
+        base,
+        server,
+        ..
+    } = harness().await?;
+    let (a, b) = ("a".repeat(40), "b".repeat(40));
+
+    let first = revised(&a, 1, 1, "first");
+    let (status, body) = post_main(&client, &base, &first).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(body["publication_revision"], 1);
+    assert_eq!(body["sources"], first["sources"]);
+    assert_eq!(body["default"], true);
+
+    let (status, body) = post_main(&client, &base, &first).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["replayed"], true);
+
+    let mut other_sources = first.clone();
+    other_sources["sources"]["drim-dev-argocd"] = json!("e".repeat(40));
+    let (status, body) = post_main(&client, &base, &other_sources).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    let (status, _) = post_main(&client, &base, &revised(&a, 1, 1, "different")).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    let mut second = revised(&a, 1, 2, "argocd moved");
+    second["sources"]["drim-dev-argocd"] = json!("e".repeat(40));
+    let (status, body) = post_main(&client, &base, &second).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(body["default"], true);
+    let current = current_main(&client, &base).await;
+    assert_eq!(current["publication_revision"], 2);
+    assert_eq!(current["sources"], second["sources"]);
+    assert_eq!(current["commit"], json!(a));
+
+    let (status, body) = post_main(&client, &base, &first).await;
+    assert_eq!(status, StatusCode::OK, "an identical stored revision still replays: {body}");
+    let (status, body) = post_main(&client, &base, &revised(&a, 2, 3, "other sequence")).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+
+    let (status, body) = post_main(&client, &base, &revised(&b, 2, 1, "next commit")).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(current_main(&client, &base).await["commit"], json!(b));
+
+    let (status, body) = post_main(&client, &base, &revised(&a, 1, 3, "late revision of an older commit")).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(body["default"], false);
+    let current = current_main(&client, &base).await;
+    assert_eq!(current["commit"], json!(b));
+    assert_eq!(current["publication_revision"], 1);
+
+    let (status, body) = post_main(&client, &base, &revised(&b, 2, 3, "argocd moved again")).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(current_main(&client, &base).await["publication_revision"], 3);
+    let (status, body) = post_main(&client, &base, &revised(&b, 2, 2, "arrived late")).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert!(body.to_string().contains("superseded"), "{body}");
+    server.abort();
+    Ok(())
+}
+
+#[tokio::test]
+async fn main_publication_rejects_missing_or_invalid_revision_sources_and_version(
+) -> Result<(), Box<dyn Error>> {
+    let Harness {
+        _postgres,
+        client,
+        base,
+        server,
+        ..
+    } = harness().await?;
+    let valid = revised(&"a".repeat(40), 1, 1, "reason");
+    let mutations: Vec<(&str, Box<dyn Fn(&mut Value)>)> = vec![
+        ("version 1", Box::new(|v| v["version"] = json!(1))),
+        ("missing revision", Box::new(|v| { v.as_object_mut().unwrap().remove("publication_revision"); })),
+        ("zero revision", Box::new(|v| v["publication_revision"] = json!(0))),
+        ("negative revision", Box::new(|v| v["publication_revision"] = json!(-1))),
+        ("fractional revision", Box::new(|v| v["publication_revision"] = json!(1.5))),
+        ("text revision", Box::new(|v| v["publication_revision"] = json!("1"))),
+        ("missing sources", Box::new(|v| { v.as_object_mut().unwrap().remove("sources"); })),
+        ("empty sources", Box::new(|v| v["sources"] = json!({}))),
+        ("array sources", Box::new(|v| v["sources"] = json!(["a"]))),
+        ("empty repository", Box::new(|v| v["sources"] = json!({"":"a".repeat(40)}))),
+        ("short commit", Box::new(|v| v["sources"] = json!({"r":"a".repeat(39)}))),
+        ("64 hex commit", Box::new(|v| v["sources"] = json!({"r":"a".repeat(64)}))),
+        ("uppercase commit", Box::new(|v| v["sources"] = json!({"r":"A".repeat(40)}))),
+        ("non-text commit", Box::new(|v| v["sources"] = json!({"r":1}))),
+    ];
+    for (name, mutate) in mutations {
+        let mut body = valid.clone();
+        mutate(&mut body);
+        let (status, response) = post_main(&client, &base, &body).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{name}: {response}");
+    }
+    let (status, response) = post_main(&client, &base, &valid).await;
+    assert_eq!(status, StatusCode::CREATED, "{response}");
     server.abort();
     Ok(())
 }

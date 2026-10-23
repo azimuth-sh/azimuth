@@ -372,7 +372,7 @@ export default async function ProjectPage({
             <p className="modelDetailMuted">
               Main at commit{" "}
               <span className="mono">{deliveryGap.main_commit.slice(0, 7)}</span>{" "}
-              (sequence {deliveryGap.main_sequence}) against deployment{" "}
+              (sequence {deliveryGap.main_sequence}, publication revision {deliveryGap.publication_revision}) against deployment{" "}
               <span className="mono">{deliveryGap.deployment_id}</span>. The
               status shown is the one measured on the deployed release.
             </p>

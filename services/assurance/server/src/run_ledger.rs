@@ -25,9 +25,9 @@ mod target_normalizer;
 mod target_observation;
 
 // The default model is the one published for the highest main sequence, so a late publication of an older commit never replaces it.
-const DEFAULT_MODEL_REVISION: &str = "(SELECT main.model_revision FROM main_publications main WHERE main.project=$1 ORDER BY main.main_sequence DESC LIMIT 1)";
-const DEFAULT_MODEL_SELECT: &str = "SELECT model_revision AS fingerprint FROM main_publications WHERE project=$1 AND $2::text IS NULL ORDER BY main_sequence DESC LIMIT 1";
-const REVISION_IS_DEFAULT_MODEL: &str = "COALESCE(r.fingerprint=(SELECT main.model_revision FROM main_publications main WHERE main.project=r.project ORDER BY main.main_sequence DESC LIMIT 1),false)";
+const DEFAULT_MODEL_REVISION: &str = "(SELECT main.model_revision FROM main_publications main WHERE main.project=$1 ORDER BY main.main_sequence DESC,main.publication_revision DESC LIMIT 1)";
+const DEFAULT_MODEL_SELECT: &str = "SELECT model_revision AS fingerprint FROM main_publications WHERE project=$1 AND $2::text IS NULL ORDER BY main_sequence DESC,publication_revision DESC LIMIT 1";
+const REVISION_IS_DEFAULT_MODEL: &str = "COALESCE(r.fingerprint=(SELECT main.model_revision FROM main_publications main WHERE main.project=r.project ORDER BY main.main_sequence DESC,main.publication_revision DESC LIMIT 1),false)";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Role {
@@ -724,7 +724,7 @@ async fn current_authority(
     headers: HeaderMap,
 ) -> Result<Json<Value>, LedgerError> {
     state.authorize(&project, &headers, None)?;
-    let row = sqlx::query("SELECT assurance_record('authority',project,model_revision) AS authority,commit_sha,main_sequence,ratification_status FROM main_publications WHERE project=$1 ORDER BY main_sequence DESC LIMIT 1")
+    let row = sqlx::query("SELECT assurance_record('authority',project,model_revision) AS authority,commit_sha,main_sequence,publication_revision,main_publication_sources(project,commit_sha,publication_revision) AS sources,ratification_status FROM main_publications WHERE project=$1 ORDER BY main_sequence DESC,publication_revision DESC LIMIT 1")
         .bind(&project).fetch_optional(&state.pool).await?;
     let row = row.ok_or_else(LedgerError::not_found)?;
     let mut authority: Value = row.try_get("authority")?;
@@ -739,6 +739,11 @@ async fn current_authority(
         "main_sequence".into(),
         row.try_get::<i64, _>("main_sequence")?.into(),
     );
+    fields.insert(
+        "publication_revision".into(),
+        row.try_get::<i32, _>("publication_revision")?.into(),
+    );
+    fields.insert("sources".into(), row.try_get::<Value, _>("sources")?);
     fields.insert(
         "ratification_status".into(),
         row.try_get::<String, _>("ratification_status")?.into(),
