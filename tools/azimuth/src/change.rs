@@ -938,7 +938,7 @@ pub fn finalize_provenance(root: &Path) -> Result<Option<std::path::PathBuf>, St
     if !crate::provenance::default_instance(root).is_file() {
         return Ok(None);
     }
-    crate::provenance::write_ledger(root, &[], None).map(|(path, _)| Some(path))
+    crate::provenance::write_ledger(root, &[], None, None).map(|(path, _)| Some(path))
 }
 
 /// Archive refuses a committed ledger that a fresh export would not reproduce.

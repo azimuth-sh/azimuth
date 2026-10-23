@@ -25,7 +25,7 @@ USAGE
     azimuth workflow assurance-targets --instance <file> --repositories <file> --snapshot <relative-ref> [--verification-targets <relative-ref>] [--out <file>]
     azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--descriptor <file>] [--out <file>]
     azimuth workflow abandon --instance <file> --expected-revision <number> --reason <text> [--out <file>]
-    azimuth provenance ledger --change <dir> [--instance <file>...] [--out <file>]
+    azimuth provenance ledger --change <dir> [--instance <file>...] [--repositories <file>] [--out <file>]
     azimuth provenance attributions --input <failure-attributions.md> [--out <file>]
     azimuth release prepare|verify|inputs --input <file> [--out <file>]
         [--unit-rule <file>] [--checkout <dir>] [--repository <id>]   (prepare only)
@@ -304,6 +304,7 @@ fn command_provenance(args: &[String]) -> Result<ExitCode, String> {
     let mut change = None;
     let mut input = None;
     let mut instances = Vec::new();
+    let mut repositories = None;
     let mut out = None;
     let mut index = 1;
     while index < args.len() {
@@ -312,6 +313,9 @@ fn command_provenance(args: &[String]) -> Result<ExitCode, String> {
         match (operation.as_str(), flag) {
             ("ledger", "--change") if change.is_none() => change = Some(PathBuf::from(value)),
             ("ledger", "--instance") => instances.push(PathBuf::from(value)),
+            ("ledger", "--repositories") if repositories.is_none() => {
+                repositories = Some(PathBuf::from(value))
+            }
             ("attributions", "--input") if input.is_none() => input = Some(PathBuf::from(value)),
             ("ledger" | "attributions", "--out") if out.is_none() => {
                 out = Some(PathBuf::from(value))
@@ -327,8 +331,12 @@ fn command_provenance(args: &[String]) -> Result<ExitCode, String> {
     match operation.as_str() {
         "ledger" => {
             let change = change.ok_or("provenance ledger needs `--change <change-directory>`")?;
-            let (path, ledger) =
-                azimuth::provenance::write_ledger(&change, &instances, out.as_deref())?;
+            let (path, ledger) = azimuth::provenance::write_ledger(
+                &change,
+                &instances,
+                repositories.as_deref(),
+                out.as_deref(),
+            )?;
             println!(
                 "wrote Work Provenance ledger {} ({})",
                 path.display(),

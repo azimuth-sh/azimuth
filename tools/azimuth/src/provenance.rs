@@ -4,7 +4,7 @@
 //! Requirement Status, acceptance or any workflow basis or attempt identity.
 
 use crate::json::Json;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -646,7 +646,83 @@ fn scope_of(names: &BTreeSet<&str>) -> &'static str {
     }
 }
 
-fn entity(reference: &Json, with_record: bool) -> Result<Json, String> {
+/// Where recorded references resolve: workflow-local references beneath the instance directory,
+/// repository references through the local repository map.
+struct Roots<'a> {
+    workflow: &'a Path,
+    repositories: &'a BTreeMap<String, PathBuf>,
+}
+
+/// The selected review-bundle entry's native record fingerprint. The entry is accepted only while
+/// its content still hashes to the fingerprint recorded at update, which is the content `workflow
+/// update` validated; anything else would link the attempt to a review it never produced.
+fn record_fingerprint(reference: &Json, record: &str, roots: &Roots) -> Result<String, String> {
+    let reference_text = nonempty(reference, "ref", "recorded reference")?;
+    let base = match reference.get("repository").and_then(Json::as_str) {
+        None => roots.workflow.to_path_buf(),
+        Some(repository) => roots.repositories.get(repository).cloned().ok_or_else(|| {
+            format!(
+                "review bundle {reference_text} names repository `{repository}`, which no local repository map supplies; pass --repositories or provide azimuth/local-repositories.json"
+            )
+        })?,
+    };
+    if !portable(reference_text) {
+        return Err(format!(
+            "review bundle reference `{reference_text}` is not a normal relative path"
+        ));
+    }
+    let path = base.join(reference_text);
+    let bundle = read_json(&path)?;
+    let entry = bundle
+        .get("records")
+        .and_then(Json::as_array)
+        .unwrap_or(&[])
+        .iter()
+        .find(|entry| entry.get("id").and_then(Json::as_str) == Some(record))
+        .ok_or_else(|| {
+            format!(
+                "{}: selected review record `{record}` is absent",
+                path.display()
+            )
+        })?;
+    let Json::Obj(fields) = entry else {
+        return Err(format!(
+            "{}: review record `{record}` requires an object",
+            path.display()
+        ));
+    };
+    let selected = Json::Obj(
+        fields
+            .iter()
+            .filter(|(key, _)| key != "assessment")
+            .cloned()
+            .collect(),
+    );
+    let digest = format!(
+        "sha256:{}",
+        crate::fingerprint::sha256(crate::fingerprint::canonical_json(&selected).as_bytes())
+    );
+    if Some(digest.as_str()) != reference.get("fingerprint").and_then(Json::as_str) {
+        return Err(format!(
+            "{}: review record `{record}` differs from the entry the attempt recorded",
+            path.display()
+        ));
+    }
+    let native = entry
+        .get("record")
+        .and_then(|native| native.get("fingerprint"))
+        .and_then(Json::as_str)
+        .filter(|fingerprint| sha256_fingerprint(fingerprint))
+        .ok_or_else(|| {
+            format!(
+                "{}: review record `{record}` has no native record fingerprint",
+                path.display()
+            )
+        })?;
+    Ok(native.to_string())
+}
+
+fn entity(reference: &Json, roots: Option<&Roots>) -> Result<Json, String> {
     let what = "recorded reference";
     let mut fields = vec![
         ("kind", Json::str(nonempty(reference, "kind", what)?)),
@@ -660,10 +736,18 @@ fn entity(reference: &Json, with_record: bool) -> Result<Json, String> {
             Json::str(nonempty(reference, "fingerprint", what)?),
         ),
     ];
-    if with_record {
+    if let Some(roots) = roots {
+        let record = match reference.get("record") {
+            None => None,
+            Some(_) => Some(nonempty(reference, "record", what)?),
+        };
+        fields.push(("record", record.map(Json::str).unwrap_or(Json::Null)));
         fields.push((
-            "record",
-            reference.get("record").cloned().unwrap_or(Json::Null),
+            "record_fingerprint",
+            match record {
+                Some(record) => Json::str(record_fingerprint(reference, record, roots)?),
+                None => Json::Null,
+            },
         ));
     }
     Ok(Json::obj(fields))
@@ -704,7 +788,10 @@ fn authored_report(records: &[Json], workflow_directory: &Path) -> Json {
         .unwrap_or(Json::Null)
 }
 
-fn attempts(instance: &Instance) -> Result<Vec<Json>, String> {
+fn attempts(
+    instance: &Instance,
+    repositories: &BTreeMap<String, PathBuf>,
+) -> Result<Vec<Json>, String> {
     let fail = |error: String| format!("{}: {error}", instance.path.display());
     let directory = instance.path.parent().unwrap_or(Path::new("."));
     let tasks = instance
@@ -749,12 +836,20 @@ fn attempts(instance: &Instance) -> Result<Vec<Json>, String> {
         };
         let used = inputs
             .iter()
-            .map(|reference| entity(reference, false))
+            .map(|reference| entity(reference, None))
             .collect::<Result<Vec<_>, _>>()
             .map_err(&fail)?;
         let generated = records
             .iter()
-            .map(|reference| entity(reference, true))
+            .map(|reference| {
+                entity(
+                    reference,
+                    Some(&Roots {
+                        workflow: directory,
+                        repositories,
+                    }),
+                )
+            })
             .collect::<Result<Vec<_>, _>>()
             .map_err(&fail)?;
         attempts.push(Json::obj(vec![
@@ -872,7 +967,11 @@ fn predecessor_chain(current: &Path) -> Result<Vec<Instance>, String> {
     Ok(chain)
 }
 
-fn exported_instance(instance: &Instance, disposition: &str) -> Result<Json, String> {
+fn exported_instance(
+    instance: &Instance,
+    disposition: &str,
+    repositories: &BTreeMap<String, PathBuf>,
+) -> Result<Json, String> {
     let located = |error: String| format!("{}: {error}", instance.path.display());
     let definition = instance.value.get("definition").unwrap();
     let template = match definition.get("template") {
@@ -913,13 +1012,63 @@ fn exported_instance(instance: &Instance, disposition: &str) -> Result<Json, Str
             ),
         ),
         ("template", template),
-        ("attempts", Json::Arr(attempts(instance)?)),
+        ("attempts", Json::Arr(attempts(instance, repositories)?)),
     ]))
 }
 
 /// Exports the change's ledger from its current instance, its predecessor chain and any extra
 /// historical instances.
-pub fn export_ledger(change: &Path, extra: &[PathBuf]) -> Result<Json, String> {
+/// The conventional project-local map, `azimuth/local-repositories.json`, of the repository that
+/// holds the change.
+fn conventional_repositories(change: &Path) -> Option<PathBuf> {
+    let change = fs::canonicalize(change).ok()?;
+    let azimuth = change
+        .ancestors()
+        .find(|ancestor| {
+            ancestor.file_name().is_some_and(|name| name == "changes")
+                && ancestor
+                    .parent()
+                    .and_then(Path::file_name)
+                    .is_some_and(|name| name == "azimuth")
+        })?
+        .parent()?;
+    Some(azimuth.join("local-repositories.json")).filter(|path| path.is_file())
+}
+
+fn repository_map(
+    change: &Path,
+    repositories: Option<&Path>,
+) -> Result<BTreeMap<String, PathBuf>, String> {
+    let Some(path) = repositories
+        .map(Path::to_path_buf)
+        .or_else(|| conventional_repositories(change))
+    else {
+        return Ok(BTreeMap::new());
+    };
+    let value = read_json(&path)?;
+    let located = |error: String| format!("{}: {error}", path.display());
+    exact(&value, &["repositories"], "local repository map").map_err(&located)?;
+    let Some(Json::Obj(entries)) = value.get("repositories") else {
+        return Err(located("`repositories` requires an object".into()));
+    };
+    entries
+        .iter()
+        .map(|(id, location)| {
+            let location = location
+                .as_str()
+                .filter(|location| Path::new(location).is_absolute())
+                .ok_or_else(|| located(format!("repository `{id}` requires an absolute path")))?;
+            Ok((id.clone(), PathBuf::from(location)))
+        })
+        .collect()
+}
+
+pub fn export_ledger(
+    change: &Path,
+    extra: &[PathBuf],
+    repositories: Option<&Path>,
+) -> Result<Json, String> {
+    let repositories = repository_map(change, repositories)?;
     let current = default_instance(change);
     let chain = if current.is_file() {
         predecessor_chain(&current)?
@@ -985,7 +1134,7 @@ pub fn export_ledger(change: &Path, extra: &[PathBuf]) -> Result<Json, String> {
         } else {
             "active"
         };
-        exported.push(exported_instance(instance, disposition)?);
+        exported.push(exported_instance(instance, disposition, &repositories)?);
     }
     let ledger = Json::obj(vec![
         ("format", Json::str(LEDGER_FORMAT)),
@@ -1056,9 +1205,10 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
 pub fn write_ledger(
     change: &Path,
     extra: &[PathBuf],
+    repositories: Option<&Path>,
     out: Option<&Path>,
 ) -> Result<(PathBuf, Json), String> {
-    let ledger = export_ledger(change, extra)?;
+    let ledger = export_ledger(change, extra, repositories)?;
     let path = out
         .map(Path::to_path_buf)
         .unwrap_or_else(|| default_ledger(change));
@@ -1097,7 +1247,7 @@ pub fn committed_ledger_issues(change: &Path) -> Vec<String> {
             committed.display()
         )];
     };
-    match export_ledger(change, &[]) {
+    match export_ledger(change, &[], None) {
         Ok(fresh) if recorded == fresh.to_string_pretty() => vec![],
         Ok(_) => vec![format!(
             "{} differs from a fresh export; run `azimuth change finalize` again",
@@ -1112,7 +1262,7 @@ pub fn committed_ledger_issues(change: &Path) -> Vec<String> {
 fn entity_shape(value: &Json, with_record: bool, what: &str) -> Result<(), String> {
     let mut names = vec!["kind", "repository", "ref", "fingerprint"];
     if with_record {
-        names.push("record");
+        names.extend(["record", "record_fingerprint"]);
     }
     exact(value, &names, what)?;
     nonempty(value, "kind", what)?;
@@ -1122,7 +1272,16 @@ fn entity_shape(value: &Json, with_record: bool, what: &str) -> Result<(), Strin
     }
     fingerprint_field(value, "fingerprint", what)?;
     if with_record {
-        optional_text(value, "record", what)?;
+        let record = optional_text(value, "record", what)?;
+        match (record, value.get("record_fingerprint").unwrap()) {
+            (None, Json::Null) => {}
+            (None, _) => {
+                return Err(format!(
+                    "{what} `record_fingerprint` must be null when no record is selected"
+                ))
+            }
+            (Some(_), _) => fingerprint_field(value, "record_fingerprint", what)?,
+        }
     }
     Ok(())
 }

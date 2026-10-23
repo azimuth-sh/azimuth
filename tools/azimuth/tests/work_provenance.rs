@@ -763,7 +763,8 @@ fn historical_version_two_instances_export_with_unknown_provenance() {
     );
     assert!(generated
         .iter()
-        .all(|entity| at(entity, &["record"]) == &Json::Null));
+        .all(|entity| at(entity, &["record"]) == &Json::Null
+            && at(entity, &["record_fingerprint"]) == &Json::Null));
 
     fs::write(
         fixture.workflow.join("results/scope-result.json"),
@@ -1235,4 +1236,247 @@ fn attribution_errors_name_the_file_and_line() {
         input.display()
     )));
     fs::remove_dir_all(root).unwrap();
+}
+
+fn review_entry(id: &str, native: &str) -> Json {
+    Json::obj(vec![
+        ("id", Json::str(id)),
+        (
+            "input",
+            Json::obj(vec![("ref", Json::str("review-inputs/catalog.json"))]),
+        ),
+        ("reassesses", Json::Null),
+        (
+            "record",
+            Json::obj(vec![
+                ("kind", Json::str("requirement-review")),
+                ("decision", Json::str("accepted")),
+                ("fingerprint", Json::str(native)),
+            ]),
+        ),
+        (
+            "assessment",
+            Json::obj(vec![("status", Json::str("accepted"))]),
+        ),
+    ])
+}
+
+/// The fingerprint `workflow update` records for a selected bundle entry: its content without the
+/// derived assessment.
+fn selected_entry_fingerprint(entry: &Json) -> String {
+    let Json::Obj(fields) = entry else {
+        panic!("entry requires object")
+    };
+    let selected = Json::Obj(
+        fields
+            .iter()
+            .filter(|(key, _)| key != "assessment")
+            .cloned()
+            .collect(),
+    );
+    format!(
+        "sha256:{}",
+        azimuth::fingerprint::sha256(azimuth::fingerprint::canonical_json(&selected).as_bytes())
+    )
+}
+
+fn bundle(entries: Vec<Json>) -> String {
+    Json::obj(vec![
+        ("format", Json::str("azimuth-review-bundle")),
+        ("version", Json::Num(2.0)),
+        ("records", Json::Arr(entries)),
+    ])
+    .to_string_pretty()
+}
+
+#[test]
+fn a_review_attempt_links_its_generated_review_by_native_fingerprint() {
+    let fixture = Fixture::new("review-change");
+    let local_review = format!("sha256:{}", "a".repeat(64));
+    let repository_review = format!("sha256:{}", "b".repeat(64));
+    let local_entry = review_entry("catalog-review-1", &local_review);
+    let repository_entry = review_entry("catalog-review-2", &repository_review);
+    fs::create_dir_all(fixture.workflow.join("bundles")).unwrap();
+    fs::write(
+        fixture.workflow.join("bundles/reviews.json"),
+        bundle(vec![local_entry.clone()]),
+    )
+    .unwrap();
+    fs::create_dir_all(fixture.change.join("reviews")).unwrap();
+    let repository_bundle = fixture.change.join("reviews/bundle.json");
+    fs::write(
+        &repository_bundle,
+        bundle(vec![
+            review_entry("unrelated", &local_review),
+            repository_entry.clone(),
+        ]),
+    )
+    .unwrap();
+    fs::write(
+        fixture.root.join("azimuth/local-repositories.json"),
+        format!(
+            "{{\"repositories\":{{\"application\":\"{}\"}}}}",
+            fixture.root.display()
+        ),
+    )
+    .unwrap();
+
+    let target = Json::obj(vec![
+        ("project", Json::str(PROJECT)),
+        ("change", Json::str("review-change")),
+        ("requirement", Json::str("catalog-state-visible")),
+        (
+            "model_revision",
+            Json::str(format!("sha256:{}", "c".repeat(64))),
+        ),
+    ]);
+    let work = Json::obj(vec![
+        ("action", Json::str("review-requirement")),
+        ("target", target.clone()),
+    ]);
+    let digest = Json::str(format!("sha256:{}", "d".repeat(64)));
+    let record = |repository: Option<&str>, reference: &str, id: &str, entry: &Json| {
+        let mut fields = vec![
+            ("kind", Json::str("requirement-review")),
+            ("ref", Json::str(reference)),
+            ("record", Json::str(id)),
+            ("fingerprint", Json::str(selected_entry_fingerprint(entry))),
+        ];
+        if let Some(repository) = repository {
+            fields.push(("repository", Json::str(repository)));
+        }
+        Json::obj(fields)
+    };
+    let result = Json::obj(vec![
+        ("format", Json::str("azimuth-workflow-result")),
+        ("version", Json::Num(3.0)),
+        ("id", Json::str(format!("attempt-{}", "1".repeat(64)))),
+        ("task", work.clone()),
+        ("basis", digest.clone()),
+        ("actor", Json::str("independent-reviewer-run-1")),
+        ("outcome", Json::str("accepted")),
+        (
+            "records",
+            Json::Arr(vec![
+                record(
+                    None,
+                    "bundles/reviews.json",
+                    "catalog-review-1",
+                    &local_entry,
+                ),
+                record(
+                    Some("application"),
+                    "azimuth/changes/review-change/reviews/bundle.json",
+                    "catalog-review-2",
+                    &repository_entry,
+                ),
+            ]),
+        ),
+        ("inputs", Json::Arr(vec![])),
+    ]);
+    let instance = Json::obj(vec![
+        ("format", Json::str("azimuth-workflow-instance")),
+        ("version", Json::Num(3.0)),
+        ("id", Json::str("review-change-1792828800000")),
+        ("revision", Json::Num(1.0)),
+        (
+            "definition",
+            Json::obj(vec![
+                ("format", Json::str("azimuth-workflow-definition")),
+                ("version", Json::Num(2.0)),
+                ("id", Json::str("review-change")),
+                (
+                    "tasks",
+                    Json::Arr(vec![Json::obj(vec![
+                        ("id", work),
+                        ("kind", Json::str("review-requirement")),
+                        ("target", target),
+                        ("depends_on", Json::Arr(vec![])),
+                        ("inputs", Json::Arr(vec![])),
+                        ("guidance", Json::Arr(vec![])),
+                        (
+                            "required_output",
+                            Json::obj(vec![
+                                ("kind", Json::str("requirement-review")),
+                                ("description", Json::str("Review the Requirement.")),
+                            ]),
+                        ),
+                        ("correction", Json::Null),
+                    ])]),
+                ),
+            ]),
+        ),
+        ("definition_fingerprint", digest.clone()),
+        (
+            "history",
+            Json::Arr(vec![Json::obj(vec![
+                ("result", result),
+                ("result_fingerprint", digest),
+                (
+                    "provenance",
+                    azimuth::provenance::history_provenance(1, 2, None, &[]).unwrap(),
+                ),
+            ])]),
+        ),
+        ("predecessor", Json::Null),
+        ("abandoned", Json::Null),
+    ]);
+    fs::write(fixture.instance(), instance.to_string_pretty()).unwrap();
+
+    let ledger = fixture.ledger(&[]);
+
+    let attempt = &array(at(&array(at(&ledger, &["instances"]))[0], &["attempts"]))[0];
+    assert_eq!(at(attempt, &["scope"]), &Json::str("requirement"));
+    let generated = array(at(attempt, &["generated"]));
+    assert_eq!(
+        at(&generated[0], &["record"]),
+        &Json::str("catalog-review-1")
+    );
+    assert_eq!(
+        at(&generated[0], &["record_fingerprint"]),
+        &Json::str(&local_review)
+    );
+    assert_eq!(
+        at(&generated[1], &["repository"]),
+        &Json::str("application")
+    );
+    assert_eq!(
+        at(&generated[1], &["record_fingerprint"]),
+        &Json::str(&repository_review)
+    );
+    let rows = azimuth::provenance::dataset_rows(&ledger).unwrap();
+    assert_eq!(at(&rows[0], &["generated"]), at(attempt, &["generated"]));
+
+    let mut cleared = ledger.to_string_pretty();
+    cleared = cleared.replacen(
+        &format!("\"record_fingerprint\": \"{local_review}\""),
+        "\"record_fingerprint\": null",
+        1,
+    );
+    assert_eq!(
+        azimuth::provenance::validate_ledger(&parse(&cleared).unwrap()).unwrap_err(),
+        "ledger instance 1: attempt 1: attempt generated entity `record_fingerprint` requires a nonempty string"
+    );
+
+    fs::write(
+        &repository_bundle,
+        bundle(vec![review_entry("catalog-review-2", &local_review)]),
+    )
+    .unwrap();
+    fs::remove_file(fixture.change.join("provenance/ledger.json")).unwrap();
+    let (code, stderr) = fail(&[
+        "provenance",
+        "ledger",
+        "--change",
+        fixture.change.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 2);
+    assert_eq!(
+        stderr,
+        format!(
+            "azimuth: {}: {}: review record `catalog-review-2` differs from the entry the attempt recorded\n",
+            fixture.instance().display(),
+            repository_bundle.display()
+        )
+    );
 }
