@@ -7,7 +7,7 @@ import './globals.css';
 import { developmentScenario } from '@/lib/development';
 
 export const metadata: Metadata = {
-  title: 'Azimuth Assurance',
+  title: 'Azimuth Assurance Service',
   description:
     'Private inspection of Requirement Status for exact Verification Targets, independent reviews and Runs.',
 };
@@ -20,14 +20,11 @@ export default async function RootLayout({
     <html lang="en" data-theme={theme} data-scroll-behavior="smooth">
       <body>
         <header className="masthead">
-          <Link href="/" className="brand" aria-label="Azimuth Assurance home">
+          <Link href="/" className="brand" aria-label="Azimuth Assurance Service home">
             <span className="brandMark" aria-hidden="true">
               A
             </span>
-            <span>
-              <strong>Azimuth</strong>
-              <small>Assurance State</small>
-            </span>
+            <strong>Azimuth Assurance Service</strong>
           </Link>
           <div className="headerActions">
             <p className="boundary">
