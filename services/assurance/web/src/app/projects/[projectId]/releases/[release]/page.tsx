@@ -5,6 +5,9 @@ import { readProject, routeFingerprint } from "@/lib/assurance";
 import { requireViewer } from "@/lib/auth";
 import { environmentView, requirementStatus } from "@/lib/production";
 import { CopyValue } from "@/components/copy-value";
+import { Identifier } from "@/components/identifier";
+import { Disclosure } from "@/components/disclosure";
+import { shortIdentifier } from "@/lib/identifier";
 import { DeploymentCheckRuns, ReleaseCheckRuns } from "@/components/check-runs";
 import { readDeploymentChecks, readReleaseChecks } from "@/lib/checks-run";
 
@@ -75,7 +78,7 @@ export default async function ReleasePage({ params, searchParams }: {
       <span className={`badge ${release.integration ? "good" : "neutral"}`}>{release.integration ? `Integrated at ${release.integration.commit.slice(0, 8)}` : "No integration commit"}</span>
     </header>
     <section className="deploymentBar" aria-label="Release summary">
-      <div><span className="fieldLabel">{environment.toUpperCase()}</span><strong>{confirmedDeployment ? `Observed in ${environment}` : selectedRelease ? "Current state unconfirmed" : "Not confirmed as current"}</strong><small>{selectedRelease ? environmentState.deployment?.deployment.id : `No matching current ${environment} deployment`}</small></div>
+      <div><span className="fieldLabel">{environment.toUpperCase()}</span><strong>{confirmedDeployment ? `Observed in ${environment}` : selectedRelease ? "Current state unconfirmed" : "Not confirmed as current"}</strong><small>{selectedRelease && environmentState.deployment ? <Identifier value={environmentState.deployment.deployment.id} /> : `No matching current ${environment} deployment`}</small></div>
       <div><span className="fieldLabel">SOURCES</span><strong>{release.sources.length} {release.sources.length === 1 ? "repository" : "repositories"}</strong></div>
       <Link className="outlineButton" href={modelUrl}>Inspect Requirements ↗</Link>
     </section>
@@ -98,7 +101,7 @@ export default async function ReleasePage({ params, searchParams }: {
         </section>
         <section className="dashboardPanel">
           <header className="panelHeading"><div><h2>Deployment history</h2><p>Recorded deployments of this release.</p></div></header>
-          {record.deployments.map((deployment, i) => <div className="releaseCompactRow" key={i}><div><strong>{typeof deployment.environment === "string" ? deployment.environment : "Environment unavailable"}</strong><small>{title(deployment, `Deployment ${i + 1}`)}</small></div>{typeof deployment.verification_target_fingerprint === "string" && <Link className="textLink" href={`${root}/model?environment=${encodeURIComponent(String(deployment.environment))}&revision=${encodeURIComponent(release.model_revision)}&verification-target=${encodeURIComponent(deployment.verification_target_fingerprint)}`}>Inspect Requirements ↗</Link>}</div>)}
+          {record.deployments.map((deployment, i) => <div className="releaseCompactRow" key={i}><div><strong>{typeof deployment.environment === "string" ? deployment.environment : "Environment unavailable"}</strong><small>{shortIdentifier(title(deployment, `Deployment ${i + 1}`))}</small></div>{typeof deployment.verification_target_fingerprint === "string" && <Link className="textLink" href={`${root}/model?environment=${encodeURIComponent(String(deployment.environment))}&revision=${encodeURIComponent(release.model_revision)}&verification-target=${encodeURIComponent(deployment.verification_target_fingerprint)}`}>Inspect Requirements ↗</Link>}</div>)}
           {!record.deployments.length && <p className="releaseEmpty">No deployment recorded yet.</p>}
         </section>
       </div>
@@ -127,8 +130,8 @@ export default async function ReleasePage({ params, searchParams }: {
       {release.integration && <CopyValue label="Integration commit" value={release.integration.commit} />}
       <CopyValue label="Release model" value={release.model_revision} />
       <p className="modelDetailMuted">Published by {record.submitted_by} · {receivedAt(record.submitted_at)}</p>
-      <details><summary>Publication and provenance records</summary><pre>{JSON.stringify(record.publication, null, 2)}</pre></details>
-      <details><summary>Deployment records</summary><pre>{JSON.stringify(record.deployments, null, 2)}</pre></details>
+      <Disclosure summary="Publication and provenance records"><pre className="rawRecord">{JSON.stringify(record.publication, null, 2)}</pre></Disclosure>
+      <Disclosure summary="Deployment records"><pre className="rawRecord">{JSON.stringify(record.deployments, null, 2)}</pre></Disclosure>
     </details>
   </div>;
 }

@@ -6,15 +6,12 @@ const ts = require('typescript');
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 
-const filename = path.resolve(__dirname, '../src/components/requirement-verification.tsx');
-const source = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
-}).outputText;
-const componentModule = new Module(filename, module);
-componentModule.filename = filename;
-componentModule.paths = Module._nodeModulePaths(path.dirname(filename));
-componentModule._compile(source, filename);
-const { RequirementVerification } = componentModule.exports;
+const sharedStubs = {
+  './disclosure': loadSource('../src/components/disclosure.tsx', {}),
+  './markdown': loadSource('../src/components/markdown.tsx', {}),
+  './identifier': { Identifier: ({ value, label }) => React.createElement('code', { title: value }, label ?? value) },
+};
+const { RequirementVerification } = loadSource('../src/components/requirement-verification.tsx', sharedStubs);
 const at = 1792400000000;
 const context = { component: 'notifications', leaves: ['delivery.channel', 'delivery.retry'] };
 const sourcePolicy = { verification_target: 'source', components: ['notifications'], contexts: [context], contribution: 'both', monitor: null };
@@ -30,7 +27,7 @@ const props = {
     { id: 'monitor', fingerprint: 'monitor', deployment: { ...sourcePolicy, verification_target: 'deployment', contexts: [], monitor } },
     { id: 'deployment', fingerprint: 'deployment', deployment: { ...sourcePolicy, verification_target: 'deployment', contexts: [] } },
   ],
-  descriptions: [{ id: 'source', description: 'Caller permissions tests' }, { id: 'monitor', description: 'Network isolation probe' }, { id: 'deployment', description: 'Rollout smoke Check' }],
+  descriptions: [{ id: 'source', description: '**Caller** permissions `tests`\n\n- first\n- second' }, { id: 'monitor', description: 'Network isolation probe' }, { id: 'deployment', description: 'Rollout smoke Check' }],
   scenarios: [], scenarioIds: ['source','monitor','deployment','uncovered'], evaluatedAt: at, hasDeployment: true, projectRoot: '/projects/example',
   state: { bindings: [
     { check: 'source', scenario: 'source', status: 'unresolved', reasons: ['Effective context differs on instance process-b.'] },
@@ -92,6 +89,9 @@ async function verifyMaterializedOverview() {
   const Page = loadSource('../src/app/projects/[projectId]/page.tsx', {
     '@/lib/environment': { selectedEnvironment: async () => 'production' },
     '@/lib/production': { environmentView },
+    '@/components/disclosure': sharedStubs['./disclosure'],
+    '@/components/identifier': sharedStubs['./identifier'],
+    '@/lib/identifier': loadSource('../src/lib/identifier.ts', {}),
     'next/link': ({ children, prefetch, ...props }) => React.createElement('a', props, children),
   }).default;
   for (const value of ['healthy', 'pending', 'expired']) {
@@ -104,7 +104,7 @@ async function verifyMaterializedOverview() {
     assert(!routes.some(route => route.endsWith('/status')));
     const markup = renderToStaticMarkup(await Page({ params: Promise.resolve({ projectId: 'payments-demo' }), searchParams: Promise.resolve({}) }));
     if (value === 'healthy') {
-      assert(markup.includes('Assessment current'));
+      assert(!markup.includes('Assessment updating') && !markup.includes('Assessment overdue'));
       assert(markup.includes('All 7 applicable Requirements are satisfied'));
       assert(markup.includes('Modules organize Requirements. Scenarios describe expected behavior.'));
     } else {
@@ -116,6 +116,16 @@ async function verifyMaterializedOverview() {
     }
   }
   console.log('Materialized overview passed: compact reads, fresh counts, pending/expired suppression and preserved Requirement inventory.');
+}
+assert(html.includes('<strong>Caller</strong>') && html.includes('<code>tests</code>') && html.includes('<li>first</li>'), 'Check method renders as Markdown');
+{
+  const single = renderToStaticMarkup(React.createElement(RequirementVerification, { ...props, bindings: [{ check: 'source', scenario: 'source' }], scenarioIds: ['source'] }));
+  assert(single.includes('<strong>Production monitoring</strong> · no Monitors declared'), 'empty stages collapse to one line');
+  assert(single.includes('<strong>Deployment verification</strong> · no Checks declared'));
+  assert(!single.includes('Scenarios without contributing Checks'));
+  const grouped = renderToStaticMarkup(React.createElement(RequirementVerification, { ...props, bindings: [{ check: 'source', scenario: 'a' }, { check: 'source', scenario: 'b' }], scenarioIds: ['a', 'b'] }));
+  assert.equal(grouped.split('<strong>source</strong>').length - 1, 1, 'one row per Check regardless of Scenario count');
+  assert(grouped.includes('<code>a</code>') && grouped.includes('<code>b</code>'));
 }
 verifyMaterializedOverview().catch(error => { console.error(error); process.exitCode = 1; });
 
@@ -145,6 +155,8 @@ async function verifyModelAssessmentFreshness() {
     '@/components/model-workspace': { ModelWorkspace: ({ children }) => React.createElement('div', null, children) },
     '@/components/copy-value': { CopyValue: () => null },
     '@/components/requirement-verification': { RequirementVerification },
+    '@/components/disclosure': sharedStubs['./disclosure'],
+    '@/components/markdown': sharedStubs['./markdown'],
   }).default;
   for (const value of ['ready', 'pending', 'expired', 'missing', 'elapsed']) {
     freshness = value;

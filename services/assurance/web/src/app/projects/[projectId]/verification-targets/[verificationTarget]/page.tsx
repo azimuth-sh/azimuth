@@ -7,6 +7,8 @@ import {
   type VerificationTargetState,
 } from '@/lib/assurance';
 import { requirementStatus } from '@/lib/production';
+import { Disclosure } from '@/components/disclosure';
+import { Identifier } from '@/components/identifier';
 export const dynamic = 'force-dynamic';
 const statusLabels = { supported: 'Satisfied', violated: 'Not satisfied', unresolved: 'Unresolved', 'not-applicable': 'Not applicable here' };
 export default async function VerificationTargetPage({
@@ -22,49 +24,36 @@ export default async function VerificationTargetPage({
     projectId,
     `/verification-targets/${encodeURIComponent(verificationTarget)}/state`,
   );
+  const tones = { supported: 'good', violated: 'bad', unresolved: 'warn', 'not-applicable': 'neutral' };
   return (
-    <div className="shell">
-      <Link href={`/projects/${encodeURIComponent(projectId)}`}>← Project</Link>
-      <h1>Verification Target evidence inspection</h1>
-      <p>Inspect exact Verification Target records here. The environment overview shows computed deployment Requirement Status.</p><code>{verificationTarget}</code>
+    <div className="dashboard">
+      <Link className="backLink" href={`/projects/${encodeURIComponent(projectId)}/records`}>← Records</Link>
+      <header className="dashboardHeading"><div><p className="overline">VERIFICATION TARGET</p><h1>Evidence inspection</h1><p>Exact Verification Target records. The environment overview shows computed deployment Requirement Status.</p></div><Identifier value={verificationTarget} /></header>
       {!state ? (
-        <p>No main-model publication; conclusion unresolved.</p>
+        <section className="dashboardPanel"><p className="tableEmpty">No main-model publication; conclusion unresolved.</p></section>
       ) : (
-        <>
-          <p>
-            Authority: <code>{state.authority_fingerprint}</code>
-          </p>
-          {state.requirements.map((requirement) => (
-            <article className="section" key={requirement.requirement}>
-              <h2>{requirement.requirement}</h2>
-              <p>
-                Recorded conclusion: <strong>{statusLabels[requirementStatus(requirement.status)]}</strong> · Requirement Review:{' '}
-                <strong>{requirement.review ?? 'missing'}</strong> · Requirement Status record: <strong>{requirement.requirement_status ?? 'computed'}</strong>
-              </p>
-              <p>{requirement.diagnostics.join('; ')}</p>
-              <details>
-                <summary>Bindings and gaps</summary>
-                <pre>
-                  {JSON.stringify(
-                    {
-                      bindings: requirement.bindings,
-                      gaps: requirement.gaps,
-                      challenges: requirement.challenges,
-                    },
-                    null,
-                    2,
-                  )}
-                </pre>
-              </details>
-            </article>
-          ))}
-          <details>
-            <summary>
-              Complete assessment, dependencies and challenge results
-            </summary>
-            <pre>{JSON.stringify(state, null, 2)}</pre>
-          </details>
-        </>
+        <section className="dashboardPanel">
+          <header className="panelHeading"><div><h2>Requirements</h2><p>Authority <Identifier value={state.authority_fingerprint} /></p></div><span className="panelCount">{state.requirements.length}</span></header>
+          {state.requirements.map((requirement) => {
+            const status = requirementStatus(requirement.status);
+            return (
+              <Disclosure
+                key={requirement.requirement}
+                summary={requirement.requirement}
+                meta={<><span>Review: {requirement.review ?? 'missing'}</span><span className={`badge ${tones[status]}`}>{statusLabels[status]}</span></>}
+              >
+                {requirement.diagnostics.length > 0 && <ul className="verificationReasons">{requirement.diagnostics.map((d, i) => <li key={i}>{d}</li>)}</ul>}
+                <p className="modelDetailMuted">Requirement Status record: {requirement.requirement_status ?? 'computed'}</p>
+                <Disclosure summary="Bindings and gaps">
+                  <pre className="rawRecord">{JSON.stringify({ bindings: requirement.bindings, gaps: requirement.gaps, challenges: requirement.challenges }, null, 2)}</pre>
+                </Disclosure>
+              </Disclosure>
+            );
+          })}
+          <Disclosure summary="Complete assessment, dependencies and challenge results">
+            <pre className="rawRecord">{JSON.stringify(state, null, 2)}</pre>
+          </Disclosure>
+        </section>
       )}
     </div>
   );

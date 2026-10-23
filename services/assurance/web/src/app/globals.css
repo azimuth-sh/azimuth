@@ -511,3 +511,47 @@ body:has(.moduleOverlay[open]) { overflow: hidden; }
 .verificationContracts summary { cursor: pointer; }
 .verificationContracts code { overflow-wrap: anywhere; font-size: 10px; }
 @media (max-width: 640px) { .verificationFacts { grid-template-columns: minmax(0, 1fr); } .verificationCard { padding: 14px; } .verificationCard .requirementSectionHeading { flex-wrap: wrap; } }
+
+/* Progressive disclosure: first render carries only what a reader can act on. */
+.identifier { display: inline-flex; align-items: center; gap: 6px; }
+.identifier code { font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--secondary); background: var(--subtle); padding: 1px 6px; border-radius: 4px; }
+.identifier button { border: 0; background: none; color: var(--quiet); font-size: 10px; padding: 2px 4px; cursor: pointer; opacity: 0; border-radius: 3px; }
+.identifier:hover button, .identifier button:focus-visible { opacity: 1; }
+.identifier button:focus-visible { outline: 2px solid var(--blue); }
+.disclosure { margin: 0; border-top: 1px solid var(--line); }
+.disclosure > summary { display: flex; align-items: baseline; gap: 12px; padding: 12px 0; cursor: pointer; list-style: none; font-size: 13px; line-height: 1.6; }
+.disclosure > summary::-webkit-details-marker { display: none; }
+.disclosure > summary::before { content: '▸'; color: var(--quiet); font-size: 13px; flex: none; transition: transform .12s; }
+.disclosure[open] > summary::before { transform: rotate(90deg); }
+.disclosure > summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 4px; }
+.disclosureTitle { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.disclosureMeta { margin-left: auto; display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 11px; flex: none; }
+.disclosureBody { padding: 0 0 16px 23px; font-size: 12px; line-height: 1.8; }
+.disclosure .disclosure > summary { font-size: 12px; padding: 9px 0; }
+.prose { font-size: 13px; line-height: 1.75; max-width: 78ch; overflow-wrap: anywhere; }
+.prose > :first-child { margin-top: 0; } .prose > :last-child { margin-bottom: 0; }
+.prose p { margin: 0 0 10px; } .prose ul, .prose ol { margin: 0 0 10px; padding-left: 22px; } .prose li { margin: 3px 0; }
+.prose h1, .prose h2, .prose h3, .prose h4 { font-size: 13px; margin: 16px 0 6px; }
+.prose code { font: 11.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--subtle); padding: 1px 5px; border-radius: 4px; }
+.prose pre { margin: 0 0 10px; } .prose pre code { background: none; padding: 0; }
+.prose table { border-collapse: collapse; font-size: 12px; margin: 0 0 10px; } .prose th, .prose td { border: 1px solid var(--line); padding: 5px 9px; text-align: left; }
+.prose blockquote { margin: 0 0 10px; padding-left: 12px; border-left: 3px solid var(--line); color: var(--muted); }
+.stageEmpty { margin: 0; color: var(--muted); font-size: 12px; }
+.verificationSection.compact, .disclosureSection { padding: 14px 0; }
+.disclosureSection > .disclosure { border-top: 0; }
+.disclosureSection > .disclosure > summary { padding-top: 0; padding-bottom: 0; }
+.disclosureSection > .disclosure[open] > summary { padding-bottom: 10px; }
+.stageFacts { margin: 4px 0 8px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.checkRow > summary { align-items: center; }
+.checkRow .scenarioChips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
+.checkRow .scenarioChips code { font: 10.5px/1.5 ui-monospace, monospace; color: var(--muted); }
+.factGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 22px; margin: 0 0 12px; }
+.factGrid dt { color: var(--quiet); font-size: 10px; } .factGrid dd { margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+.statusLine { display: block; color: var(--muted); font-size: 12px; margin: 0 0 6px; }
+.rawRecord { max-height: 420px; }
+@media (max-width: 640px) { .factGrid { grid-template-columns: minmax(0, 1fr); } .disclosure > summary { flex-wrap: wrap; } .disclosureMeta { margin-left: 23px; flex-basis: 100%; } }
+.dashboardPanel > .disclosure { margin: 0 22px; }
+.dashboardPanel > .disclosure:first-of-type { border-top: 0; }
+.dashboardPanel > p.modelDetailMuted { padding: 12px 22px 0; margin: 0; }
+.dashboardPanel > .textLink { display: inline-block; padding: 14px 22px; }
+.dashboard > .dashboardPanel + .dashboardPanel, .dashboard > .dashboardPanel + .disclosure { margin-top: 16px; }
