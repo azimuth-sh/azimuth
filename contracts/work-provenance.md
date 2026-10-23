@@ -65,7 +65,7 @@ The workflow instance, handoff and result formats are version 3. Version 2 insta
 azimuth provenance ledger --change <change-directory> [--instance <file>...] [--out <file>]
 ```
 
-By default it reads `<change>/.azimuth/workflow.json` and follows `predecessor.ref` links. Extra `--instance` files are added for historical instances that predate predecessor links; they are ordered by their first recorded result. `change finalize` writes the ledger when `<change>/.azimuth/workflow.json` exists; `change archive` fails when the committed ledger differs from a fresh export.
+By default it reads `<change>/.azimuth/workflow.json` and follows `predecessor.ref` links; a predecessor file must live inside the successor's instance directory. Extra `--instance` files are added for historical instances that predate predecessor links. They precede the predecessor chain, ordered by their first `recorded_at_ms`; untimed version 2 instances keep command-line order. A ledger built with extra instances cannot be reproduced by `change finalize` or `change archive`, which follow only the default chain, so it suits an already archived backfill. When a change has no local `.azimuth/workflow.json`, `change archive` validates only the committed ledger's format. `change finalize` writes the ledger when `<change>/.azimuth/workflow.json` exists; `change archive` fails when the committed ledger differs from a fresh export.
 
 ```json
 {
@@ -109,7 +109,7 @@ By default it reads `<change>/.azimuth/workflow.json` and follows `predecessor.r
 - `disposition`: `abandoned` when recorded; `superseded` when another listed instance names it as predecessor or a later historical instance follows it; `completed` when the change has a `finalization.json` or is archived and the instance is the last; otherwise `active`.
 - `sequence` is the 1-based position in the instance history. `target` is the work target flattened to sorted `{name, value}` string pairs; nested values are rendered as canonical JSON.
 - `scope` is derived from the target: `requirement` when it names a Requirement, else `check`, `verification-challenge`, `module`, and finally `change`.
-- `report` is the authored result's `report`, or `null` when the authored file is absent or has none.
+- `report` is the authored result's `report`, or `null` when the authored file is absent, no longer matches its recorded fingerprint, or has none. The file resolves relative to its own instance file's directory, so retained snapshots must stay beside the instance they belong to.
 - `used` are the attempt's recorded inputs; `generated` are its output records. `record` names a selected review-bundle entry and `record_fingerprint` is that native record's own fingerprint (for a Requirement Review, its review fingerprint); both are `null` otherwise. This is how a stored review is linked to the attempt that produced it.
 - Version 2 history entries export with every descriptor field `unknown`, both times `null` and `guidance` `[]`.
 
