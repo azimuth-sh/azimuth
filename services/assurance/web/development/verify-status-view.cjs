@@ -6,7 +6,9 @@ const ts = require('typescript');
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 
+const localTime = loadSource('../src/components/local-time.tsx', { '../lib/time': loadSource('../src/lib/time.ts', {}) });
 const sharedStubs = {
+  './local-time': localTime,
   './disclosure': loadSource('../src/components/disclosure.tsx', {}),
   './markdown': loadSource('../src/components/markdown.tsx', {}),
   './identifier': { Identifier: ({ value, label }) => React.createElement('code', { title: value }, label ?? value) },
@@ -90,6 +92,7 @@ async function verifyMaterializedOverview() {
     '@/lib/environment': { selectedEnvironment: async () => 'production' },
     '@/lib/production': { environmentView },
     '@/components/disclosure': sharedStubs['./disclosure'],
+    '@/components/local-time': localTime,
     '@/components/identifier': sharedStubs['./identifier'],
     '@/lib/identifier': loadSource('../src/lib/identifier.ts', {}),
     'next/link': ({ children, prefetch, ...props }) => React.createElement('a', props, children),
@@ -156,6 +159,7 @@ async function verifyModelAssessmentFreshness() {
     '@/components/copy-value': { CopyValue: () => null },
     '@/components/requirement-verification': { RequirementVerification },
     '@/components/disclosure': sharedStubs['./disclosure'],
+    '@/components/local-time': localTime,
     '@/components/markdown': sharedStubs['./markdown'],
   }).default;
   for (const value of ['ready', 'pending', 'expired', 'missing', 'elapsed']) {

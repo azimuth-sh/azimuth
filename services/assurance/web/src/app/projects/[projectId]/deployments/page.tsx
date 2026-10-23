@@ -3,7 +3,7 @@ import { cursor, readProject, type Page } from '@/lib/assurance';
 import { requireViewer } from '@/lib/auth';
 import { selectedEnvironment } from '@/lib/environment';
 import { Identifier } from '@/components/identifier';
-import { formatUtc } from '@/lib/time';
+import { LocalTime } from '@/components/local-time';
 
 export const dynamic = 'force-dynamic';
 type Deployment = {
@@ -40,7 +40,7 @@ export default async function DeploymentsPage({ params, searchParams }: {
         return <div className="releaseCompactRow" key={item.deployment.id}>
           <div>
             <strong>{label ? <Link className="textLink" href={`${root}/releases/${encodeURIComponent(item.release_fingerprint)}?environment=${encodeURIComponent(environment)}`}>{label.label}</Link> : 'Release unavailable'}</strong>
-            <small><time dateTime={item.submitted_at}>{formatUtc(item.submitted_at)}</time> · <Identifier value={item.deployment.id} /></small>
+            <small><LocalTime value={item.submitted_at} /> · <Identifier value={item.deployment.id} /></small>
           </div>
           {isCurrent && <span className="badge good">Current</span>}
           {label && target && <Link className="textLink" href={`${root}/model?environment=${encodeURIComponent(environment)}&revision=${encodeURIComponent(label.model_revision)}&verification-target=${encodeURIComponent(target)}`}>Requirements ↗</Link>}

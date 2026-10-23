@@ -8,7 +8,7 @@ import { CopyValue } from "@/components/copy-value";
 import { Identifier } from "@/components/identifier";
 import { Disclosure } from "@/components/disclosure";
 import { shortIdentifier } from "@/lib/identifier";
-import { formatUtc } from "@/lib/time";
+import { LocalTime } from "@/components/local-time";
 import { DeploymentCheckRuns, ReleaseCheckRuns } from "@/components/check-runs";
 import { readDeploymentChecks, readReleaseChecks } from "@/lib/checks-run";
 
@@ -70,7 +70,7 @@ export default async function ReleasePage({ params, searchParams }: {
   return <div className="dashboard releaseWorkspace">
     <nav className="pageBreadcrumb" aria-label="Breadcrumb"><Link href={`${root}/releases?environment=${encodeURIComponent(environment)}`}>Releases</Link><span>/</span><span>{release.label}</span></nav>
     <header className="dashboardHeading">
-      <div><p className="overline">RELEASE</p><h1>{release.label}</h1><p>Published {formatUtc(record.submitted_at)}</p></div>
+      <div><p className="overline">RELEASE</p><h1>{release.label}</h1><p>Published <LocalTime value={record.submitted_at} /></p></div>
       <span className={`badge ${release.integration ? "good" : "neutral"}`}>{release.integration ? `Integrated at ${release.integration.commit.slice(0, 8)}` : "No integration commit"}</span>
     </header>
     <section className="deploymentBar" aria-label="Release summary">
@@ -125,7 +125,7 @@ export default async function ReleasePage({ params, searchParams }: {
       <CopyValue label="Release fingerprint" value={release.fingerprint} />
       {release.integration && <CopyValue label="Integration commit" value={release.integration.commit} />}
       <CopyValue label="Release model" value={release.model_revision} />
-      <p className="modelDetailMuted">Published by {record.submitted_by} · {formatUtc(record.submitted_at)}</p>
+      <p className="modelDetailMuted">Published by {record.submitted_by} · <LocalTime value={record.submitted_at} /></p>
       <Disclosure summary="Publication and provenance records"><pre className="rawRecord">{JSON.stringify(record.publication, null, 2)}</pre></Disclosure>
       <Disclosure summary="Deployment records"><pre className="rawRecord">{JSON.stringify(record.deployments, null, 2)}</pre></Disclosure>
     </details>

@@ -6,17 +6,15 @@ import type {
   RunSubject,
 } from "@/lib/checks-run";
 import { Identifier } from "./identifier";
+import { LocalTime } from "./local-time";
 
 function shortCommit(subject: RunSubject | null) {
   if (subject?.commit) return subject.commit.slice(0, 8);
   if (subject?.artifacts?.length) return subject.artifacts.map(a => a.id).join(", ");
   return "unknown subject";
 }
-function when(ms: number) {
-  return new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(ms)) + " UTC";
-}
 function RunLine({ run, label }: { run: { run_id: string; executed_at_ms: number }; label: string }) {
-  return <>{label} · Run <Identifier value={run.run_id} /> · {when(run.executed_at_ms)}</>;
+  return <>{label} · Run <Identifier value={run.run_id} /> · <LocalTime value={run.executed_at_ms} /></>;
 }
 
 export function ReleaseCheckRuns({ requirements }: { requirements: ReleaseRequirementChecks[] }) {

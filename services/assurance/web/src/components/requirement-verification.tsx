@@ -2,6 +2,7 @@ import Link from 'next/link';
 import type { CheckResultReference, DeploymentCheckPolicy, VerificationTargetState } from '../lib/assurance';
 import { Disclosure } from './disclosure';
 import { Markdown } from './markdown';
+import { LocalTime } from './local-time';
 
 type RequirementState = VerificationTargetState['requirements'][number];
 export interface VerificationCheck {
@@ -19,9 +20,6 @@ export interface RequirementVerificationProps {
   evaluatedAt?: number;
   hasDeployment: boolean;
   projectRoot: string;
-}
-function time(value: number) {
-  return new Date(value).toLocaleString('en-GB', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' }) + ' UTC';
 }
 function duration(seconds: number) {
   return seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds} sec`;
@@ -90,20 +88,20 @@ export function RequirementVerification(props: RequirementVerificationProps) {
           key={check.id}
           className="checkRow"
           summary={<><strong>{check.id}</strong><span className="scenarioChips">{check.entries.map(entry => <code key={entry.scenario}>{entry.scenario}</code>)}</span></>}
-          meta={<>{check.latest && <time dateTime={new Date(check.latest.observed_at_ms).toISOString()}>{time(check.latest.observed_at_ms)}</time>}<span className={`badge ${badge}`}>{check.label}</span></>}
+          meta={<>{check.latest && <LocalTime value={check.latest.observed_at_ms} />}<span className={`badge ${badge}`}>{check.label}</span></>}
         >
           {props.descriptions.find(item => item.id === check.id)?.description && <Markdown source={props.descriptions.find(item => item.id === check.id)!.description} />}
           <dl className="factGrid">
             {own.map(key => <div key={key}><dt>{key}</dt><dd>{check.facts[key]}</dd></div>)}
             {monitor && <><div><dt>Expected interval</dt><dd>{duration(monitor.interval_seconds)}</dd></div><div><dt>Freshness window</dt><dd>{duration(monitor.freshness_seconds)}</dd></div></>}
-            {overdue && check.latest && <div><dt>Latest Check Result</dt><dd>{time(check.latest.observed_at_ms)}</dd></div>}
+            {overdue && check.latest && <div><dt>Latest Check Result</dt><dd><LocalTime value={check.latest.observed_at_ms} /></dd></div>}
           </dl>
           {check.entries.map(entry => <Disclosure key={entry.scenario} summary={<code>{entry.scenario}</code>} meta={<span className={`badge ${!props.hasDeployment ? 'neutral' : entry.label === 'Failed Check Result' ? 'bad' : entry.label === 'Applicable evidence' ? 'good' : 'warn'}`}>{entry.label}</span>}>
             {scenarioText(entry.scenario) ? <Markdown source={scenarioText(entry.scenario)!} /> : <p className="modelDetailMuted">No Scenario description available.</p>}
             {!props.hasDeployment ? <p className="modelDetailMuted">Open a deployment context to inspect applicable evidence.</p> : !entry.results.length ? <p className="modelDetailMuted">No current Check Result is available for this Check and Scenario.</p> : entry.results.map((result, index) => <div className="recordedResult" key={`${result.run}:${result.check_result}:${index}`}>
               <span className={`badge ${result.outcome === 'satisfied' ? 'good' : result.outcome === 'violated' ? 'bad' : 'warn'}`}>{outcome(result)}</span>
               <small className="modelDetailMuted">{(result.applicable ?? result.accepted_basis) ? 'Applicable to this deployment' : 'Retained fact · not applicable to this deployment'}</small>
-              <time className="modelDetailMuted" dateTime={new Date(result.observed_at_ms).toISOString()}>{time(result.observed_at_ms)}</time>
+              <LocalTime className="modelDetailMuted" value={result.observed_at_ms} />
               <Link className="textLink" href={`${props.projectRoot}/runs/${encodeURIComponent(result.run)}`}>View Run ↗</Link>
             </div>)}
           </Disclosure>)}
