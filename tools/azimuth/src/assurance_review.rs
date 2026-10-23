@@ -2662,7 +2662,12 @@ fn requirement_verification_challenges(model: &Model, requirement: &str) -> Json
     Json::Arr(entries)
 }
 
-fn requirement_dependencies(authority: &Json, requirement_id: &str) -> Result<Json, String> {
+/// The review dependency packet; its canonical fingerprint is a Requirement's closure identity.
+pub fn requirement_closure_fingerprint(authority: &Json, requirement_id: &str) -> Result<String, String> {
+    Ok(crate::fingerprint::canonical_sha256(&requirement_dependencies(authority, requirement_id)?))
+}
+
+pub fn requirement_dependencies(authority: &Json, requirement_id: &str) -> Result<Json, String> {
     let requirement = authority_item(authority, "requirements", "id", requirement_id)
         .ok_or("unknown Requirement")?;
     let scenarios = array(requirement, "scenarios")?;
