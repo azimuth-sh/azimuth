@@ -105,6 +105,7 @@ By default it reads `<change>/.azimuth/workflow.json` and follows `predecessor.r
 }
 ```
 
+- Instance `id` is unique within a ledger. Version 3 `workflow init` assigns `<definition-id>-<init unix ms>`; a version 2 historical instance exports as `<recorded id>-<first 12 hex of its canonical file fingerprint>`, so restart snapshots stay distinct and deterministic. Predecessor links are matched by `predecessor.fingerprint`, not by id. The Assurance Service keys instances on `(project, change, id)`.
 - `disposition`: `abandoned` when recorded; `superseded` when another listed instance names it as predecessor or a later historical instance follows it; `completed` when the change has a `finalization.json` or is archived and the instance is the last; otherwise `active`.
 - `sequence` is the 1-based position in the instance history. `target` is the work target flattened to sorted `{name, value}` string pairs; nested values are rendered as canonical JSON.
 - `scope` is derived from the target: `requirement` when it names a Requirement, else `check`, `verification-challenge`, `module`, and finally `change`.
