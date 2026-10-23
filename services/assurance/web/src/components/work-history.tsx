@@ -58,7 +58,7 @@ function Attempt({ attempt }: { attempt: ProvenanceAttempt }) {
         {attempt.generated.map((entity, index) => <li key={`generated:${index}`}><span>generated</span> {entity.kind} <code title={entity.fingerprint ?? undefined}>{entity.record ?? entity.ref}</code></li>)}
       </ul>
     </Disclosure>}
-    <p className="workAttemptId">Attempt <code title={attempt.id}>{shortIdentifier(attempt.id)}</code></p>
+    <p className="workAttemptId">Attempt <code title={attempt.id}>{shortIdentifier(attempt.id)}</code> · workflow instance <code title={attempt.instance}>{shortIdentifier(attempt.instance)}</code> · {attempt.disposition}</p>
   </article>;
 }
 
@@ -88,7 +88,7 @@ function latestRecorded(changes: RequirementWorkHistory['releases'][number]['cha
 export function reviewAttempt(history: RequirementWorkHistory | null | undefined, reviewFingerprint: string | undefined) {
   if (!history || !reviewFingerprint) return undefined;
   return history.releases.flatMap(release => release.changes.flatMap(change => change.attempts))
-    .find(attempt => attempt.action === 'review-requirement' && attempt.generated.some(entity => entity.fingerprint === reviewFingerprint));
+    .find(attempt => attempt.action === 'review-requirement' && attempt.generated.some(entity => entity.record_fingerprint === reviewFingerprint));
 }
 export function ReviewAttempt({ attempt }: { attempt: ProvenanceAttempt }) {
   return <div className="workReviewAttempt">
@@ -110,7 +110,7 @@ export function WorkHistory({ history }: { history: RequirementWorkHistory | nul
           <div className="workReleaseHeading"><strong>{release.label}</strong><span className={`badge ${release.relation === 'intent' ? 'warn' : 'neutral'}`} title={release.relation === 'intent' ? 'The Requirement or its Scenarios changed' : 'Only a reviewed dependency changed'}>{release.relation}</span><span className="modelDetailMuted">Integration #{release.integration_sequence}</span>{latestRecorded(release.changes) !== null && <span className="modelDetailMuted">last work recorded <LocalTime value={latestRecorded(release.changes)} /></span>}</div>
           {release.changes.map(change => <div className="workChange" key={change.change}>
             <h4>Change <code>{change.change}</code></h4>
-            {change.attempts.length ? [...change.attempts].sort((a, b) => a.sequence - b.sequence).map(attempt => <Attempt attempt={attempt} key={attempt.id} />) : <p className="modelDetailMuted">No stored ledger for this change.</p>}
+            {change.attempts.length ? change.attempts.map(attempt => <Attempt attempt={attempt} key={attempt.id} />) : <p className="modelDetailMuted">No stored ledger for this change.</p>}
           </div>)}
         </div>)}
       {attributions.length > 0 && <div className="workAttributions"><h4>Failure Attributions</h4><p className="modelDetailMuted">An investigator&apos;s judgment of which attempts caused an adverse fact or allowed it through.</p>{attributions.map(attribution => <Attribution attribution={attribution} attempts={attempts} key={attribution.fingerprint} />)}</div>}

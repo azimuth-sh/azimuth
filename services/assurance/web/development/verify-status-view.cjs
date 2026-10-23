@@ -205,6 +205,13 @@ function verifyWorkHistory() {
   const caused = history.attributions[0].attempts[0].attempt;
   assert(markup.includes(`id="${caused}"`) && markup.includes(`href="#${caused}"`), 'attribution links to the attempt');
   assert(markup.includes('>Caused</span>') && markup.includes('>Allowed through</span>'));
+  assert(markup.includes('· superseded</p>') && markup.includes('· completed</p>'), 'attempt instance disposition');
+  const intentAttempts = history.releases.find(release => release.relation === 'intent').changes[0].attempts;
+  assert(markup.indexOf(`id="${intentAttempts[2].id}"`) < markup.indexOf(`id="${intentAttempts[3].id}"`), 'ledger order across instances is preserved');
+  const { reviewAttempt } = workHistoryComponents;
+  const accepted = intentAttempts[4];
+  assert.equal(reviewAttempt(history, accepted.generated[0].record_fingerprint), accepted, 'reviewing attempt matches the native review fingerprint');
+  assert.equal(reviewAttempt(history, accepted.generated[0].fingerprint), undefined, 'the review bundle file fingerprint never identifies a review');
   const unavailable = renderToStaticMarkup(React.createElement(WorkHistory, { history: undefined }));
   assert(unavailable.includes('Work history is unavailable right now') && unavailable.includes('not used for Requirement Status'));
   const empty = renderToStaticMarkup(React.createElement(WorkHistory, { history: null }));

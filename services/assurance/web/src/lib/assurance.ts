@@ -163,9 +163,12 @@ export interface ProvenanceEntity {
   ref: string;
   fingerprint: string | null;
   record?: string | null;
+  record_fingerprint?: string | null;
 }
 export interface ProvenanceAttempt {
   id: string;
+  instance: string;
+  disposition: 'active' | 'completed' | 'superseded' | 'abandoned';
   sequence: number;
   action: string;
   task: string;
