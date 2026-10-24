@@ -2,7 +2,7 @@
 
 Work Provenance is a ledger of completed workflow attempts: which action was performed with which outcome, by which execution instance and what kind of agent, when, and what it used and produced. It is a separate domain from assurance. **Nothing in it is ever an input to Requirement Review currentness, Requirement Status, acceptance or any other assessment.** Provenance never enters a model, Requirement, review, workflow result or attempt fingerprint.
 
-The ledger records activities, not their products. A Requirement Review, a design or an implementation is an entity that lives in its own domain; the ledger refers to it by fingerprint. Telemetry (tokens, cost, transcripts, tool calls) is out of scope; an attempt carries at most an opaque `trace` reference.
+The ledger records activities, not their products. A Requirement Review, a design or an implementation is an entity that lives in its own domain; the ledger refers to it by fingerprint. An attempt carries one summary of the model work it took (`usage`: token and call counts); everything finer, including per-call telemetry, transcripts, tool inputs and cost, is out of scope, and an attempt carries at most an opaque `trace` reference to it.
 
 Background and decisions: `azimuth/explorations/work-provenance/`.
 
@@ -19,19 +19,42 @@ Every attempt carries a descriptor with a closed field set. Each field states it
   "kind": {"value": "model", "basis": "harness"},
   "model": {"value": "claude-opus-5-5", "basis": "harness"},
   "effort": {"value": "high", "basis": "harness"},
+  "agent_type": {"value": "general-purpose", "basis": "harness"},
   "harness": {"name": "claude-code", "version": "2.1.309", "basis": "harness"}
 }
 ```
 
-`kind.value` is `model | human | null`. `model.value` is the provider's canonical model id. `effort.value` is the provider-native effort label, verbatim; no cross-provider scale is defined. `harness.name` and `harness.version` share one basis. With basis `unknown` every value is `null`; with any other basis the value is a nonempty string (for `harness`, `name` is required and `version` may be `null`).
+`kind.value` is `model | human | null`. `model.value` is the provider's canonical model id. `effort.value` is the provider-native effort label, verbatim; no cross-provider scale is defined. `agent_type.value` is the harness's own name for the agent configuration that ran the attempt (a Claude Code subagent type such as `Explore`, a Codex agent role); a top-level session the harness does not name is `unknown`. `harness.name` and `harness.version` share one basis. With basis `unknown` every value is `null`; with any other basis the value is a nonempty string (for `harness`, `name` is required and `version` may be `null`).
 
 The descriptor file accepted by `workflow update --descriptor` is:
 
 ```json
-{"format": "azimuth-agent-descriptor", "version": 1, "kind": {…}, "model": {…}, "effort": {…}, "harness": {…}, "trace": null}
+{"format": "azimuth-agent-descriptor", "version": 1, "kind": {…}, "model": {…}, "effort": {…}, "agent_type": {…}, "harness": {…}, "trace": null, "usage": null}
 ```
 
-`trace` is `null` or a nonempty opaque string. Unknown fields are rejected. Omitting `--descriptor` records every field as `unknown` and `trace` as `null`.
+`trace` is `null` or a nonempty opaque string. `usage` is `null` or a usage object (below). Unknown fields are rejected. Omitting `--descriptor` records every field as `unknown`, and `trace` and `usage` as `null`.
+
+## Usage
+
+`usage` summarizes the model work of one attempt: the calls made between the handoff (`handoff_captured_at_ms`) and the recorded result.
+
+```json
+{
+  "basis": "harness",
+  "model_calls": 14, "tool_calls": 31,
+  "input_tokens": 1820, "cache_read_input_tokens": 912000, "cache_write_input_tokens": 41000,
+  "output_tokens": 18400, "reasoning_output_tokens": 2100,
+  "overlapping": false,
+  "delegated": {"agents": 2, "model_calls": 40, "input_tokens": 310, "cache_read_input_tokens": 1400000,
+                "cache_write_input_tokens": 90000, "output_tokens": 22000, "reasoning_output_tokens": null}
+}
+```
+
+- `basis` is `harness` or `declared`; usage that is not known is `null`, never zeros.
+- Counts are the agent's own work: calls made by the execution instance named by `actor`, deduplicated by model call. `tool_calls` excludes the `workflow update` call that records the result.
+- Token fields keep the provider's semantics and are not normalized: an OpenAI `input_tokens` includes cached input while an Anthropic one excludes it, and an Anthropic `reasoning_output_tokens` (thinking) is part of `output_tokens`. A field the provider does not report is `null`; `input_tokens` and `output_tokens` are always present.
+- `delegated` sums every agent the instance launched during the window, transitively; their tokens are never added to the instance's own.
+- `overlapping` is `true` when the same instance recorded another workflow result inside the window, so the tokens are shared between attempts and cannot be split.
 
 `actor` is unchanged: it names one execution instance (a session, a subagent run or a person) and remains the reviewer-independence key. It encodes no role, attempt number or model; those are recorded by the action, the attempt id and the descriptor.
 
@@ -40,7 +63,7 @@ The descriptor file accepted by `workflow update --descriptor` is:
 The workflow instance, handoff and result formats are version 3. Version 1 and 2 instances are read only by `provenance ledger` for historical export; version 1 action and record names are exported verbatim.
 
 - `workflow next` adds `captured_at_ms` (tool clock, integer Unix milliseconds) to the outer handoff object. It is not part of any task basis.
-- `workflow update` accepts optional `--descriptor FILE`. Each appended history entry is `{result, result_fingerprint, provenance}` where `provenance` is:
+- `workflow update` accepts optional `--descriptor FILE`. Without it, `update` uses the descriptor a harness hook saved beside its handoff, at `<handoff file name>.agent-descriptor.json` in the handoff's directory, when that file was saved no earlier than the handoff's `captured_at_ms`; an older file belongs to an earlier attempt that reused the handoff path and is ignored. A saved descriptor that fails validation fails the update without a transition. Recording the attempt, or replaying it, removes the saved file. Each appended history entry is `{result, result_fingerprint, provenance}` where `provenance` is:
 
 ```json
 {
@@ -48,7 +71,8 @@ The workflow instance, handoff and result formats are version 3. Version 1 and 2
   "recorded_at_ms": 1761200400000,
   "agent": { …descriptor without format/version/trace… },
   "guidance": [{"kind": "skill", "id": "azimuth-review-requirement", "fingerprint": "sha256:…"}],
-  "trace": null
+  "trace": null,
+  "usage": null
 }
 ```
 
@@ -56,6 +80,25 @@ The workflow instance, handoff and result formats are version 3. Version 1 and 2
 
 - `workflow init` accepts optional `--predecessor FILE`, a prior instance being replaced by a fresh one. The new instance records `predecessor: {"id": "<instance id>", "ref": "<path relative to the new instance directory>", "revision": N, "fingerprint": "sha256:…"}`, where `fingerprint` is the canonical fingerprint of the predecessor file's JSON. The predecessor file must remain retained at `ref`.
 - `workflow abandon --instance FILE --expected-revision N --reason TEXT` records `abandoned: {"at_ms": …, "reason": "…"}` on the instance. An abandoned instance accepts no further updates.
+
+## Harness capture
+
+`azimuth provenance capture --harness <claude-code|codex>` is a PreToolUse hook. It reads the hook event on standard input. For a single plain `azimuth workflow update` command with `--handoff` and without `--descriptor` (no shell operators, redirections or substitutions), it saves a descriptor beside the handoff (see Workflow capture), resolving a relative handoff path against the event's `cwd`. It prints nothing, never alters the tool call and never decides permission; Codex applies a command rewrite only together with a permission grant, so the descriptor travels through the file instead. A hook failure is reported on standard error and the command proceeds without a descriptor.
+
+Values have `harness` basis only when read from the harness's own records; anything the records lack stays `unknown`:
+
+| Field | Claude Code | Codex |
+|---|---|---|
+| `model` | `message.model` of the transcript record that issued the tool call (the hook waits up to 5 s for it) | the event's `model` |
+| `effort` | the event's `effort.level` | `effort` of the rollout's `turn_context` for the event's `turn_id` |
+| `agent_type` | the event's `agent_type` (inside a subagent) | the event's `agent_type` (inside a subagent) |
+| `harness.version` | `version` of the issuing record | `session_meta.cli_version` |
+| `usage` | the agent's transcript (a subagent's own `subagents/agent-<id>.jsonl`) from the handoff on; delegated agents are found by the `toolUseId` of their `.meta.json` | the thread's rollout from the handoff on; delegated threads are rollouts whose `session_meta` names this thread as spawning parent |
+| `trace` | `claude-code:session/<id>[/agent/<id>]/tool/<id>` | `codex:session/<id>/thread/<id>/turn/<id>/tool/<id>` |
+
+`kind` is `model`. The usage window opens at the `captured_at_ms` of the handoff file the command names with `--handoff`; without a readable handoff, `usage` is `null`.
+
+`azimuth update` installs the hook as a managed resource of each agent integration: `.claude/settings.json` for `claude` and `.codex/hooks.json` for `codex`. Both invoke `azimuth` from `PATH`, which must be a release that ships this command. An unmanaged file at either path blocks installation. Codex runs project hooks only in a trusted project and only after the hook itself is trusted through `/hooks`; a changed hook must be trusted again.
 
 ## Committed ledger
 
@@ -93,9 +136,10 @@ By default it reads `<change>/.azimuth/workflow.json` and follows `predecessor.r
           "report": "…",
           "handoff_captured_at_ms": null,
           "recorded_at_ms": null,
-          "agent": {"kind": {"value": null, "basis": "unknown"}, "model": {"value": null, "basis": "unknown"}, "effort": {"value": null, "basis": "unknown"}, "harness": {"name": null, "version": null, "basis": "unknown"}},
+          "agent": {"kind": {"value": null, "basis": "unknown"}, "model": {"value": null, "basis": "unknown"}, "effort": {"value": null, "basis": "unknown"}, "agent_type": {"value": null, "basis": "unknown"}, "harness": {"name": null, "version": null, "basis": "unknown"}},
           "guidance": [],
           "trace": null,
+          "usage": null,
           "used": [{"kind": "initial-request", "repository": null, "ref": "inputs/request.md", "fingerprint": "sha256:…"}],
           "generated": [{"kind": "proposal", "repository": "application", "ref": "azimuth/changes/x/proposal.md", "fingerprint": "sha256:…", "record": null, "record_fingerprint": null}]
         }
@@ -111,7 +155,7 @@ By default it reads `<change>/.azimuth/workflow.json` and follows `predecessor.r
 - `scope` is derived from the target: `requirement` when it names a Requirement, else `check`, `verification-challenge`, `module`, and finally `change`.
 - `report` is the authored result's `report`, or `null` when the authored file is absent, no longer matches its recorded fingerprint, or has none. The file resolves relative to its own instance file's directory, so retained snapshots must stay beside the instance they belong to.
 - `used` are the attempt's recorded inputs; `generated` are its output records. `record` names a selected review-bundle entry and `record_fingerprint` is that native record's own fingerprint (for a Requirement Review, its review fingerprint); both are `null` otherwise. This is how a stored review is linked to the attempt that produced it.
-- Version 1 and 2 history entries export with every descriptor field `unknown`, both times `null` and `guidance` `[]`.
+- Version 1 and 2 history entries export with every descriptor field `unknown`, both times and `usage` `null`, and `guidance` `[]`.
 
 The ledger fingerprint is the canonical fingerprint of the ledger JSON. The ledger is append-only across exports: an attempt id, once exported, keeps identical content.
 
@@ -128,6 +172,7 @@ An optional, append-only record by which an investigator names the attempts beli
 - Agent kind: human
 - Model: none
 - Effort: none
+- Agent type: none
 - Harness: none
 - Recorded at: 2026-10-24T08:00:00Z
 - Confidence: medium
@@ -176,7 +221,7 @@ and writes `{"format": "azimuth-failure-attributions", "version": 1, "attributio
 azimuth report provenance [--root <repository>] [--change <id>] [--out <file>]
 ```
 
-reads every committed `azimuth/changes/**/provenance/ledger.json` (active and archived) and writes one JSON object per line (JSONL), one per attempt: the ledger's `project` and `change`, the instance `id` and `disposition`, and every attempt field with the descriptor flattened to `agent_kind`, `agent_kind_basis`, `model`, `model_basis`, `effort`, `effort_basis`, `harness_name`, `harness_version`, `harness_basis`. Lines are ordered by change, instance order and sequence.
+reads every committed `azimuth/changes/**/provenance/ledger.json` (active and archived) and writes one JSON object per line (JSONL), one per attempt: the ledger's `project` and `change`, the instance `id` and `disposition`, and every attempt field with the descriptor flattened to `agent_kind`, `agent_kind_basis`, `model`, `model_basis`, `effort`, `effort_basis`, `agent_type`, `agent_type_basis`, `harness_name`, `harness_version`, `harness_basis`, and `usage` flattened to `usage_basis`, `model_calls`, `tool_calls`, the five token fields, `usage_overlapping`, `delegated_agents`, `delegated_model_calls` and the five token fields prefixed `delegated_`; every usage column is `null` when usage is unknown. Lines are ordered by change, instance order and sequence.
 
 ## Assurance Service
 

@@ -65,8 +65,20 @@ const ATTEMPT_FIELDS: &[&str] = &[
     "agent",
     "guidance",
     "trace",
+    "usage",
     "used",
     "generated",
+];
+
+/// Token fields of a usage window, recorded with the provider's own semantics: an OpenAI
+/// `input_tokens` includes cached input, an Anthropic one excludes it. No cross-provider
+/// normalization is applied.
+pub const TOKEN_FIELDS: &[&str] = &[
+    "input_tokens",
+    "cache_read_input_tokens",
+    "cache_write_input_tokens",
+    "output_tokens",
+    "reasoning_output_tokens",
 ];
 
 // Strict-shape helpers
@@ -280,13 +292,90 @@ fn agent_fields(value: &Json) -> Result<(), String> {
     valued(value, "kind", Some(&["model", "human"]))?;
     valued(value, "model", None)?;
     valued(value, "effort", None)?;
+    valued(value, "agent_type", None)?;
     harness(value)
 }
 
+pub const AGENT_FIELDS: &[&str] = &["kind", "model", "effort", "agent_type", "harness"];
+
 /// The agent object carried by provenance entries, ledgers and attributions.
 pub fn validate_agent(value: &Json) -> Result<(), String> {
-    exact(value, &["kind", "model", "effort", "harness"], "agent")?;
+    exact(value, AGENT_FIELDS, "agent")?;
     agent_fields(value)
+}
+
+fn token_counts(value: &Json, extra: &[&str], what: &str) -> Result<(), String> {
+    let mut names: Vec<&str> = extra.to_vec();
+    names.extend_from_slice(TOKEN_FIELDS);
+    exact(value, &names, what)?;
+    for name in extra {
+        integer(value, name, what)?;
+    }
+    integer(value, "input_tokens", what)?;
+    integer(value, "output_tokens", what)?;
+    for name in ["cache_read_input_tokens", "cache_write_input_tokens", "reasoning_output_tokens"] {
+        optional_integer(value, name, what)?;
+    }
+    Ok(())
+}
+
+/// `null`, or the model work between the handoff and the recorded result.
+pub fn validate_usage(value: &Json) -> Result<(), String> {
+    if *value == Json::Null {
+        return Ok(());
+    }
+    let what = "usage";
+    let mut names = vec!["basis", "model_calls", "tool_calls", "overlapping", "delegated"];
+    names.extend_from_slice(TOKEN_FIELDS);
+    exact(value, &names, what)?;
+    if !matches!(nonempty(value, "basis", what)?, "harness" | "declared") {
+        return Err("usage basis must be harness or declared".into());
+    }
+    integer(value, "model_calls", what)?;
+    integer(value, "tool_calls", what)?;
+    if value.get("overlapping").and_then(Json::as_bool).is_none() {
+        return Err("usage `overlapping` requires a boolean".into());
+    }
+    let mut own = value.clone();
+    if let Json::Obj(fields) = &mut own {
+        fields.retain(|(key, _)| TOKEN_FIELDS.contains(&key.as_str()));
+    }
+    token_counts(&own, &[], what)?;
+    token_counts(
+        value.get("delegated").unwrap(),
+        &["agents", "model_calls"],
+        "usage `delegated`",
+    )
+}
+
+/// Where a harness hook saves the descriptor for the attempt that a handoff file was produced
+/// for. A hook may not rewrite the command (Codex applies a rewrite only together with a
+/// permission grant), so `workflow update` finds the descriptor beside its own `--handoff`.
+pub fn captured_descriptor_path(handoff: &Path) -> PathBuf {
+    let mut name = handoff.file_name().unwrap_or_default().to_os_string();
+    name.push(".agent-descriptor.json");
+    handoff.with_file_name(name)
+}
+
+/// The descriptor a hook saved for this handoff, if any. Agents reuse one handoff path across
+/// attempts, so a descriptor saved before the handoff was captured belongs to an earlier
+/// attempt and is ignored.
+pub fn captured_descriptor(handoff: &Path, captured_at_ms: u64) -> Result<Option<Json>, String> {
+    let path = captured_descriptor_path(handoff);
+    let Ok(metadata) = fs::metadata(&path) else {
+        return Ok(None);
+    };
+    let saved_ms = metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|elapsed| elapsed.as_millis() as u64);
+    if saved_ms.is_none_or(|saved| saved < captured_at_ms) {
+        return Ok(None);
+    }
+    let value = read_json(&path)?;
+    validate_descriptor(&value).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(Some(value))
 }
 
 /// The `azimuth-agent-descriptor` version 1 file accepted by `workflow update --descriptor`.
@@ -294,7 +383,15 @@ pub fn validate_descriptor(value: &Json) -> Result<(), String> {
     exact(
         value,
         &[
-            "format", "version", "kind", "model", "effort", "harness", "trace",
+            "format",
+            "version",
+            "kind",
+            "model",
+            "effort",
+            "agent_type",
+            "harness",
+            "trace",
+            "usage",
         ],
         "agent descriptor",
     )?;
@@ -305,7 +402,7 @@ pub fn validate_descriptor(value: &Json) -> Result<(), String> {
     }
     agent_fields(value)?;
     optional_text(value, "trace", "agent descriptor")?;
-    Ok(())
+    validate_usage(value.get("usage").unwrap())
 }
 
 pub fn unknown_agent() -> Json {
@@ -314,6 +411,7 @@ pub fn unknown_agent() -> Json {
         ("kind", unknown()),
         ("model", unknown()),
         ("effort", unknown()),
+        ("agent_type", unknown()),
         (
             "harness",
             Json::obj(vec![
@@ -327,8 +425,9 @@ pub fn unknown_agent() -> Json {
 
 fn descriptor_agent(descriptor: &Json) -> Json {
     Json::obj(
-        ["kind", "model", "effort", "harness"]
-            .into_iter()
+        AGENT_FIELDS
+            .iter()
+            .copied()
             .map(|key| (key, descriptor.get(key).unwrap().clone()))
             .collect(),
     )
@@ -386,15 +485,16 @@ pub fn history_provenance(
     descriptor: Option<&Json>,
     guidance: &[Json],
 ) -> Result<Json, String> {
-    let (agent, trace) = match descriptor {
+    let (agent, trace, usage) = match descriptor {
         Some(descriptor) => {
             validate_descriptor(descriptor)?;
             (
                 descriptor_agent(descriptor),
                 descriptor.get("trace").unwrap().clone(),
+                descriptor.get("usage").unwrap().clone(),
             )
         }
-        None => (unknown_agent(), Json::Null),
+        None => (unknown_agent(), Json::Null, Json::Null),
     };
     Ok(Json::obj(vec![
         (
@@ -405,6 +505,7 @@ pub fn history_provenance(
         ("agent", agent),
         ("guidance", Json::Arr(guidance_fingerprints(guidance)?)),
         ("trace", trace),
+        ("usage", usage),
     ]))
 }
 
@@ -432,6 +533,7 @@ pub fn validate_history_provenance(value: &Json) -> Result<(), String> {
             "agent",
             "guidance",
             "trace",
+            "usage",
         ],
         what,
     )?;
@@ -440,7 +542,7 @@ pub fn validate_history_provenance(value: &Json) -> Result<(), String> {
     validate_agent(value.get("agent").unwrap())?;
     guidance_entries(value, "guidance", what)?;
     optional_text(value, "trace", what)?;
-    Ok(())
+    validate_usage(value.get("usage").unwrap())
 }
 
 /// The ledger identity of an instance. Version 1 and 2 instances were all named after their
@@ -885,6 +987,7 @@ fn attempts(
             ("agent", recorded("agent", unknown_agent())),
             ("guidance", recorded("guidance", Json::Arr(vec![]))),
             ("trace", recorded("trace", Json::Null)),
+            ("usage", recorded("usage", Json::Null)),
             ("used", Json::Arr(used)),
             ("generated", Json::Arr(generated)),
         ]));
@@ -1330,6 +1433,7 @@ fn attempt_shape(attempt: &Json, sequence: usize) -> Result<(), String> {
     validate_agent(attempt.get("agent").unwrap())?;
     guidance_entries(attempt, "guidance", what)?;
     optional_text(attempt, "trace", what)?;
+    validate_usage(attempt.get("usage").unwrap())?;
     for used in items(attempt, "used", what)? {
         entity_shape(used, false, "attempt used entity")?;
     }
@@ -1451,10 +1555,14 @@ pub fn dataset_rows(ledger: &Json) -> Result<Vec<Json>, String> {
                         ("model_basis", part("model", "basis")),
                         ("effort", part("effort", "value")),
                         ("effort_basis", part("effort", "basis")),
+                        ("agent_type", part("agent_type", "value")),
+                        ("agent_type_basis", part("agent_type", "basis")),
                         ("harness_name", part("harness", "name")),
                         ("harness_version", part("harness", "version")),
                         ("harness_basis", part("harness", "basis")),
                     ]);
+                } else if *key == "usage" {
+                    row.extend(usage_columns(attempt.get("usage").unwrap()));
                 } else {
                     row.push((key, attempt.get(key).unwrap().clone()));
                 }
@@ -1463,6 +1571,36 @@ pub fn dataset_rows(ledger: &Json) -> Result<Vec<Json>, String> {
         }
     }
     Ok(rows)
+}
+
+/// The dataset's flat usage columns; every column is null when usage is unknown.
+pub fn usage_columns(usage: &Json) -> Vec<(&'static str, Json)> {
+    let own = |key: &str| usage.get(key).cloned().unwrap_or(Json::Null);
+    let delegated = |key: &str| {
+        usage
+            .get("delegated")
+            .and_then(|delegated| delegated.get(key))
+            .cloned()
+            .unwrap_or(Json::Null)
+    };
+    vec![
+        ("usage_basis", own("basis")),
+        ("model_calls", own("model_calls")),
+        ("tool_calls", own("tool_calls")),
+        ("input_tokens", own("input_tokens")),
+        ("cache_read_input_tokens", own("cache_read_input_tokens")),
+        ("cache_write_input_tokens", own("cache_write_input_tokens")),
+        ("output_tokens", own("output_tokens")),
+        ("reasoning_output_tokens", own("reasoning_output_tokens")),
+        ("usage_overlapping", own("overlapping")),
+        ("delegated_agents", delegated("agents")),
+        ("delegated_model_calls", delegated("model_calls")),
+        ("delegated_input_tokens", delegated("input_tokens")),
+        ("delegated_cache_read_input_tokens", delegated("cache_read_input_tokens")),
+        ("delegated_cache_write_input_tokens", delegated("cache_write_input_tokens")),
+        ("delegated_output_tokens", delegated("output_tokens")),
+        ("delegated_reasoning_output_tokens", delegated("reasoning_output_tokens")),
+    ]
 }
 
 /// JSONL dataset over every committed ledger of active and archived changes below `root`.
@@ -1765,6 +1903,7 @@ pub fn compile_attributions(file: &str, source: &str) -> Result<Json, String> {
         };
         let model = lines.optional("Model")?;
         let effort = lines.optional("Effort")?;
+        let agent_type = lines.optional("Agent type")?;
         let (line, harness) = lines.value("Harness")?;
         let harness = if harness == "none" {
             Json::obj(vec![
@@ -1874,6 +2013,7 @@ pub fn compile_attributions(file: &str, source: &str) -> Result<Json, String> {
                     ("kind", declared(agent_kind)),
                     ("model", declared(model)),
                     ("effort", declared(effort)),
+                    ("agent_type", declared(agent_type)),
                     ("harness", harness),
                 ]),
             ),
@@ -1993,6 +2133,7 @@ mod tests {
             ("kind", kind),
             ("model", declared(Some("claude-opus-5-5"))),
             ("effort", declared(None)),
+            ("agent_type", declared(None)),
             (
                 "harness",
                 Json::obj(vec![
@@ -2002,6 +2143,7 @@ mod tests {
                 ]),
             ),
             ("trace", Json::Null),
+            ("usage", Json::Null),
         ])
     }
 

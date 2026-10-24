@@ -250,16 +250,18 @@ pub fn agent_remove(root: &Path, agent: &str) -> Result<Vec<PathBuf>, String> {
     verify_aliases(root, &installation)?;
     let prefix = format!("skill:{agent}:");
     let metadata_prefix = format!("skill-metadata:{agent}:");
+    let hooks = format!("provenance-hooks:{agent}");
+    let owned = |item: &ManagedResource| {
+        item.id.starts_with(&prefix) || item.id.starts_with(&metadata_prefix) || item.id == hooks
+    };
     let repository = repository_root(root)?;
     let removed = installation
         .resources
         .iter()
-        .filter(|item| item.id.starts_with(&prefix) || item.id.starts_with(&metadata_prefix))
+        .filter(|item| owned(item))
         .map(|item| repository.join(&item.path))
         .collect::<Vec<_>>();
-    installation
-        .resources
-        .retain(|item| !item.id.starts_with(&prefix) && !item.id.starts_with(&metadata_prefix));
+    installation.resources.retain(|item| !owned(item));
     installation.agents.retain(|item| item != agent);
     installation
         .aliases
@@ -620,6 +622,17 @@ fn desired_resources(agents: &[String], aliases: &[AdoptedAlias]) -> Vec<Desired
         content: resources::PROJECT_README,
     }];
     for agent in agents {
+        // Hooks are per harness even when its skill directory is an alias of another's.
+        let (hooks_path, hooks) = match agent.as_str() {
+            "codex" => (".codex/hooks.json", resources::CODEX_HOOKS),
+            "claude" => (".claude/settings.json", resources::CLAUDE_CODE_HOOKS),
+            _ => continue,
+        };
+        desired.push(DesiredResource {
+            id: format!("provenance-hooks:{agent}"),
+            path: hooks_path.into(),
+            content: hooks,
+        });
         if aliases.iter().any(|item| item.integration == *agent) {
             continue;
         }

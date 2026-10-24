@@ -15,6 +15,8 @@ Select integrations explicitly and run `azimuth init --agents codex,claude` or `
 
 Use `azimuth agent add <id>` and `azimuth agent remove <id>`. Let the CLI own installed Azimuth skill files. Put project-specific policy in repository instructions or separate project-owned skills. Resolve any managed-file conflict before retrying; never merge a mixed workflow cohort.
 
+Each integration also installs a Work Provenance capture hook as a managed resource: `.claude/settings.json` for `claude` and `.codex/hooks.json` for `codex`. Keep project Claude Code settings in `.claude/settings.local.json` or user settings, never in the managed file. An existing unmanaged file at either path blocks installation; ask the owner how to move its content before retrying. The hooks run `azimuth` from `PATH`, so every contributor's CLI must be a release that ships `azimuth provenance capture`. Tell the owner that Codex runs the hook only after they trust the project and the hook itself through `/hooks`, and again after the hook changes.
+
 ## Manage components
 
 Use the repository's native package manager or tool manifest to install and pin the exact Azimuth release first. Then run `azimuth component add <id> --manifest <path>`. Component removal unregisters the component but does not edit the ecosystem manifest. Do not infer adoption from filesystem scanning.

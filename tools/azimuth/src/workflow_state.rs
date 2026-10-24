@@ -2452,9 +2452,10 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
         }
         let result_path = Path::new(get("--result").ok_or("update requires --result")?);
         let authored = read(result_path)?;
-        let handoffs = read(Path::new(get("--handoff").ok_or(
+        let handoff_path = Path::new(get("--handoff").ok_or(
             "update requires --handoff FILE captured before performing the work",
-        )?))?;
+        )?);
+        let handoffs = read(handoff_path)?;
         let result = authored_result(
             &authored,
             result_path,
@@ -2469,14 +2470,23 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             .ok_or("update requires --expected-revision")?
             .parse::<u64>()
             .map_err(|_| "invalid expected revision")?;
-        let descriptor = get("--descriptor")
-            .map(|file| {
+        let descriptor = match get("--descriptor") {
+            Some(file) => {
                 let value = crate::provenance::read_json(Path::new(file))?;
                 crate::provenance::validate_descriptor(&value)
                     .map_err(|e| format!("{file}: {e}"))?;
-                Ok::<_, String>(value)
-            })
-            .transpose()?;
+                Some(value)
+            }
+            None => crate::provenance::captured_descriptor(
+                handoff_path,
+                number(&handoffs, "captured_at_ms")?,
+            )?,
+        };
+        // Recording consumes a hook's descriptor. One left behind is ignored once a later
+        // handoff is captured, so a failed removal cannot misattribute another attempt.
+        let consume_captured = || {
+            let _ = fs::remove_file(crate::provenance::captured_descriptor_path(handoff_path));
+        };
         let captured_guidance = arr(&handoffs, "eligible")?
             .iter()
             .find(|handoff| handoff.get("id") == result.get("task"))
@@ -2502,6 +2512,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
                 if old.get("result") != Some(&result) {
                     return Err("result ID reused with different content".into());
                 }
+                consume_captured();
                 return Ok(Json::obj(vec![
                     ("revision", state.get("revision").unwrap().clone()),
                     ("result", result),
@@ -2904,6 +2915,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             }
         }
         write_atomic(&path, &state)?;
+        consume_captured();
         return Ok(Json::obj(vec![
             ("revision", state.get("revision").unwrap().clone()),
             ("result", result),

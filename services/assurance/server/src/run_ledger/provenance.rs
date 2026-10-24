@@ -232,15 +232,23 @@ async fn insert_attempt(
 ) -> Result<(), LedgerError> {
     let attempt_id = text(attempt, "id")?;
     let agent = Descriptor::from_value(&attempt["agent"])?;
-    sqlx::query("INSERT INTO provenance_attempts(project,attempt_id,change,instance_id,sequence,action,task,scope,actor,outcome,report,handoff_captured_at_ms,recorded_at_ms,agent_kind,agent_kind_basis,model,model_basis,effort,effort_basis,harness_name,harness_version,harness_basis,trace) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)")
+    let usage = Usage::from_value(&attempt["usage"])?;
+    sqlx::query("INSERT INTO provenance_attempts(project,attempt_id,change,instance_id,sequence,action,task,scope,actor,outcome,report,handoff_captured_at_ms,recorded_at_ms,agent_kind,agent_kind_basis,model,model_basis,effort,effort_basis,agent_type,agent_type_basis,harness_name,harness_version,harness_basis,trace,usage_basis,model_calls,tool_calls,input_tokens,cache_read_input_tokens,cache_write_input_tokens,output_tokens,reasoning_output_tokens,usage_overlapping,delegated_agents,delegated_model_calls,delegated_input_tokens,delegated_cache_read_input_tokens,delegated_cache_write_input_tokens,delegated_output_tokens,delegated_reasoning_output_tokens) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41)")
         .bind(project).bind(attempt_id).bind(change).bind(instance_id)
         .bind(i32::try_from(integer(attempt, "sequence")?).map_err(|_| LedgerError::invalid("attempt sequence is out of range"))?)
         .bind(text(attempt, "action")?).bind(text(attempt, "task")?).bind(text(attempt, "scope")?)
         .bind(text(attempt, "actor")?).bind(text(attempt, "outcome")?).bind(optional_text(attempt, "report")?)
         .bind(optional_integer(attempt, "handoff_captured_at_ms")?).bind(optional_integer(attempt, "recorded_at_ms")?)
         .bind(&agent.kind).bind(&agent.kind_basis).bind(&agent.model).bind(&agent.model_basis)
-        .bind(&agent.effort).bind(&agent.effort_basis).bind(&agent.harness_name)
-        .bind(&agent.harness_version).bind(&agent.harness_basis).bind(optional_text(attempt, "trace")?)
+        .bind(&agent.effort).bind(&agent.effort_basis).bind(&agent.agent_type).bind(&agent.agent_type_basis)
+        .bind(&agent.harness_name).bind(&agent.harness_version).bind(&agent.harness_basis)
+        .bind(optional_text(attempt, "trace")?)
+        .bind(&usage.basis).bind(usage.model_calls).bind(usage.tool_calls)
+        .bind(usage.own.input).bind(usage.own.cache_read_input).bind(usage.own.cache_write_input)
+        .bind(usage.own.output).bind(usage.own.reasoning_output).bind(usage.overlapping)
+        .bind(usage.delegated_agents).bind(usage.delegated_model_calls)
+        .bind(usage.delegated.input).bind(usage.delegated.cache_read_input).bind(usage.delegated.cache_write_input)
+        .bind(usage.delegated.output).bind(usage.delegated.reasoning_output)
         .execute(&mut *tx).await?;
     for (position, target) in list(attempt, "target")?.iter().enumerate() {
         sqlx::query("INSERT INTO provenance_attempt_targets(project,attempt_id,position,name,value) VALUES($1,$2,$3,$4,$5)")
@@ -335,6 +343,7 @@ async fn reassemble_ledger(
             "agent": Descriptor::from_row(&row)?.to_value(),
             "guidance": guidance.remove(&id).unwrap_or_default(),
             "trace": row.try_get::<Option<String>,_>("trace")?,
+            "usage": Usage::from_row(&row)?.to_value(),
             "used": entities.remove(&(id.clone(), "used".into())).unwrap_or_default(),
             "generated": entities.remove(&(id.clone(), "generated".into())).unwrap_or_default(),
         });
@@ -641,12 +650,12 @@ pub(super) async fn submit_attribution(
     }
     let adverse = &attribution["adverse"];
     let agent = Descriptor::from_value(&attribution["agent"])?;
-    sqlx::query("INSERT INTO provenance_failure_attributions(project,attribution_id,requirement,adverse_kind,adverse_ref,investigator,agent_kind,agent_kind_basis,model,model_basis,effort,effort_basis,harness_name,harness_version,harness_basis,recorded_at_ms,confidence,revises,rationale,fingerprint,submitted_by,provenance_basis) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)")
+    sqlx::query("INSERT INTO provenance_failure_attributions(project,attribution_id,requirement,adverse_kind,adverse_ref,investigator,agent_kind,agent_kind_basis,model,model_basis,effort,effort_basis,agent_type,agent_type_basis,harness_name,harness_version,harness_basis,recorded_at_ms,confidence,revises,rationale,fingerprint,submitted_by,provenance_basis) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)")
         .bind(&project).bind(&id).bind(text(&attribution, "requirement")?)
         .bind(text(adverse, "kind")?).bind(text(adverse, "ref")?).bind(text(&attribution, "investigator")?)
         .bind(&agent.kind).bind(&agent.kind_basis).bind(&agent.model).bind(&agent.model_basis)
-        .bind(&agent.effort).bind(&agent.effort_basis).bind(&agent.harness_name)
-        .bind(&agent.harness_version).bind(&agent.harness_basis)
+        .bind(&agent.effort).bind(&agent.effort_basis).bind(&agent.agent_type).bind(&agent.agent_type_basis)
+        .bind(&agent.harness_name).bind(&agent.harness_version).bind(&agent.harness_basis)
         .bind(integer(&attribution, "recorded_at_ms")?).bind(text(&attribution, "confidence")?)
         .bind(optional_text(&attribution, "revises")?).bind(text(&attribution, "rationale")?)
         .bind(&fingerprint).bind(&publisher).bind(PROVENANCE_BASIS).execute(&mut *tx).await?;
@@ -711,6 +720,8 @@ struct Descriptor {
     model_basis: String,
     effort: Option<String>,
     effort_basis: String,
+    agent_type: Option<String>,
+    agent_type_basis: String,
     harness_name: Option<String>,
     harness_version: Option<String>,
     harness_basis: String,
@@ -728,6 +739,7 @@ impl Descriptor {
         let (kind, kind_basis) = field("kind")?;
         let (model, model_basis) = field("model")?;
         let (effort, effort_basis) = field("effort")?;
+        let (agent_type, agent_type_basis) = field("agent_type")?;
         let harness = &agent["harness"];
         Ok(Self {
             kind,
@@ -736,6 +748,8 @@ impl Descriptor {
             model_basis,
             effort,
             effort_basis,
+            agent_type,
+            agent_type_basis,
             harness_name: optional_text(harness, "name")?.map(str::to_owned),
             harness_version: optional_text(harness, "version")?.map(str::to_owned),
             harness_basis: text(harness, "basis")?.to_owned(),
@@ -750,6 +764,8 @@ impl Descriptor {
             model_basis: row.try_get("model_basis")?,
             effort: row.try_get("effort")?,
             effort_basis: row.try_get("effort_basis")?,
+            agent_type: row.try_get("agent_type")?,
+            agent_type_basis: row.try_get("agent_type_basis")?,
             harness_name: row.try_get("harness_name")?,
             harness_version: row.try_get("harness_version")?,
             harness_basis: row.try_get("harness_basis")?,
@@ -761,8 +777,114 @@ impl Descriptor {
             "kind": {"value": self.kind, "basis": self.kind_basis},
             "model": {"value": self.model, "basis": self.model_basis},
             "effort": {"value": self.effort, "basis": self.effort_basis},
+            "agent_type": {"value": self.agent_type, "basis": self.agent_type_basis},
             "harness": {"name": self.harness_name, "version": self.harness_version, "basis": self.harness_basis},
         })
+    }
+}
+
+/// Token counts of one usage window as typed columns.
+#[derive(Default)]
+struct Tokens {
+    input: Option<i64>,
+    cache_read_input: Option<i64>,
+    cache_write_input: Option<i64>,
+    output: Option<i64>,
+    reasoning_output: Option<i64>,
+}
+
+impl Tokens {
+    fn from_value(tokens: &Value) -> Result<Self, LedgerError> {
+        Ok(Self {
+            input: Some(integer(tokens, "input_tokens")?),
+            cache_read_input: optional_integer(tokens, "cache_read_input_tokens")?,
+            cache_write_input: optional_integer(tokens, "cache_write_input_tokens")?,
+            output: Some(integer(tokens, "output_tokens")?),
+            reasoning_output: optional_integer(tokens, "reasoning_output_tokens")?,
+        })
+    }
+
+    fn from_row(row: &PgRow, prefix: &str) -> Result<Self, sqlx::Error> {
+        let column = |name: &str| row.try_get::<Option<i64>, _>(format!("{prefix}{name}").as_str());
+        Ok(Self {
+            input: column("input_tokens")?,
+            cache_read_input: column("cache_read_input_tokens")?,
+            cache_write_input: column("cache_write_input_tokens")?,
+            output: column("output_tokens")?,
+            reasoning_output: column("reasoning_output_tokens")?,
+        })
+    }
+
+    fn extend(&self, value: &mut Value) {
+        value["input_tokens"] = json!(self.input);
+        value["cache_read_input_tokens"] = json!(self.cache_read_input);
+        value["cache_write_input_tokens"] = json!(self.cache_write_input);
+        value["output_tokens"] = json!(self.output);
+        value["reasoning_output_tokens"] = json!(self.reasoning_output);
+    }
+}
+
+/// Attempt usage as typed columns; a null `basis` is usage that was not recorded.
+#[derive(Default)]
+struct Usage {
+    basis: Option<String>,
+    model_calls: Option<i64>,
+    tool_calls: Option<i64>,
+    own: Tokens,
+    overlapping: Option<bool>,
+    delegated_agents: Option<i64>,
+    delegated_model_calls: Option<i64>,
+    delegated: Tokens,
+}
+
+impl Usage {
+    fn from_value(usage: &Value) -> Result<Self, LedgerError> {
+        if usage.is_null() {
+            return Ok(Self::default());
+        }
+        let delegated = &usage["delegated"];
+        Ok(Self {
+            basis: Some(text(usage, "basis")?.to_owned()),
+            model_calls: Some(integer(usage, "model_calls")?),
+            tool_calls: Some(integer(usage, "tool_calls")?),
+            own: Tokens::from_value(usage)?,
+            overlapping: Some(
+                usage["overlapping"]
+                    .as_bool()
+                    .ok_or_else(|| LedgerError::invalid("overlapping requires a boolean"))?,
+            ),
+            delegated_agents: Some(integer(delegated, "agents")?),
+            delegated_model_calls: Some(integer(delegated, "model_calls")?),
+            delegated: Tokens::from_value(delegated)?,
+        })
+    }
+
+    fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
+        Ok(Self {
+            basis: row.try_get("usage_basis")?,
+            model_calls: row.try_get("model_calls")?,
+            tool_calls: row.try_get("tool_calls")?,
+            own: Tokens::from_row(row, "")?,
+            overlapping: row.try_get("usage_overlapping")?,
+            delegated_agents: row.try_get("delegated_agents")?,
+            delegated_model_calls: row.try_get("delegated_model_calls")?,
+            delegated: Tokens::from_row(row, "delegated_")?,
+        })
+    }
+
+    fn to_value(&self) -> Value {
+        let Some(basis) = &self.basis else {
+            return Value::Null;
+        };
+        let mut delegated =
+            json!({"agents": self.delegated_agents, "model_calls": self.delegated_model_calls});
+        self.delegated.extend(&mut delegated);
+        let mut usage = json!({
+            "basis": basis, "model_calls": self.model_calls, "tool_calls": self.tool_calls,
+            "overlapping": self.overlapping, "delegated": delegated,
+        });
+        self.own.extend(&mut usage);
+        usage
     }
 }
 
@@ -925,12 +1047,14 @@ mod tests {
 
     fn unknown_agent() -> Value {
         json!({"kind":{"value":null,"basis":"unknown"},"model":{"value":null,"basis":"unknown"},
-            "effort":{"value":null,"basis":"unknown"},"harness":{"name":null,"version":null,"basis":"unknown"}})
+            "effort":{"value":null,"basis":"unknown"},"agent_type":{"value":null,"basis":"unknown"},
+            "harness":{"name":null,"version":null,"basis":"unknown"}})
     }
 
     fn harness_agent() -> Value {
         json!({"kind":{"value":"model","basis":"harness"},"model":{"value":"claude-opus-5-5","basis":"harness"},
-            "effort":{"value":"high","basis":"harness"},"harness":{"name":"claude-code","version":"2.1.309","basis":"harness"}})
+            "effort":{"value":"high","basis":"harness"},"agent_type":{"value":"general-purpose","basis":"harness"},
+            "harness":{"name":"claude-code","version":"2.1.309","basis":"harness"}})
     }
 
     fn attempt(change: &str, instance: &str, sequence: usize, action: &str) -> Value {
@@ -949,6 +1073,7 @@ mod tests {
             "agent": if sequence % 2 == 0 { unknown_agent() } else { harness_agent() },
             "guidance": [{"kind":"skill","id":"azimuth-apply","fingerprint":digest('9')}],
             "trace": null,
+            "usage": null,
             "used": [{"kind":"initial-request","repository":null,"ref":"inputs/request.md","fingerprint":digest('1')}],
             "generated": [{"kind":"proposal","repository":"application","ref":format!("azimuth/changes/{change}/proposal.md"),"fingerprint":digest('2'),"record":null,"record_fingerprint":null}],
         })
@@ -983,7 +1108,8 @@ mod tests {
             "adverse": {"kind":"requirement-status","ref":digest('4')},
             "investigator": "dima",
             "agent": {"kind":{"value":"human","basis":"declared"},"model":{"value":null,"basis":"unknown"},
-                "effort":{"value":null,"basis":"unknown"},"harness":{"name":null,"version":null,"basis":"unknown"}},
+                "effort":{"value":null,"basis":"unknown"},"agent_type":{"value":"investigator","basis":"declared"},
+                "harness":{"name":null,"version":null,"basis":"unknown"}},
             "recorded_at_ms": recorded_at_ms, "confidence": "medium",
             "attempts": [{"attempt":"attempt-c1-i1-1","role":"caused"},{"attempt":"attempt-c1-i1-2","role":"allowed-through"}],
             "revises": null, "rationale": rationale,
@@ -1259,6 +1385,7 @@ mod tests {
             .as_array_mut()
             .unwrap()
             .push(json!({"kind":"requirement-review","repository":"application","ref":"azimuth/changes/c1/reviews/bundle.json","fingerprint":digest('7'),"record":"bounded","record_fingerprint":digest('6')}));
+        c1["instances"][1]["attempts"][1]["usage"] = harness_usage();
         assert_eq!(
             service.post("ledgers", PUBLISHER, &c1).await?.0,
             StatusCode::CREATED
@@ -1322,6 +1449,11 @@ mod tests {
         assert_eq!(
             c1_rows[2]["generated"][1]["record_fingerprint"],
             digest('6')
+        );
+        assert_eq!(c1_rows[2]["usage"], harness_usage());
+        assert_eq!(
+            c1_rows[1]["agent"]["agent_type"]["value"],
+            "general-purpose"
         );
         assert_eq!(
             c1_rows[2]["agent"]["kind"]["basis"],
@@ -1426,6 +1558,175 @@ mod tests {
         Ok(())
     }
 
+    fn harness_usage() -> Value {
+        json!({
+            "basis": "harness", "model_calls": 4, "tool_calls": 11,
+            "input_tokens": 120_000, "cache_read_input_tokens": 98_000, "cache_write_input_tokens": null,
+            "output_tokens": 2_400, "reasoning_output_tokens": null, "overlapping": true,
+            "delegated": {"agents": 2, "model_calls": 7, "input_tokens": 40_000,
+                "cache_read_input_tokens": null, "cache_write_input_tokens": 1_200,
+                "output_tokens": 900, "reasoning_output_tokens": 300},
+        })
+    }
+
+    fn usage_ledger() -> Value {
+        let mut value = ledger(
+            "c1",
+            vec![instance(
+                "c1",
+                "i1",
+                None,
+                "active",
+                &["implement", "verify"],
+            )],
+        );
+        value["instances"][0]["attempts"][0]["usage"] = harness_usage();
+        value
+    }
+
+    #[tokio::test]
+    async fn usage_and_agent_type_round_trip_exactly() -> Result<(), Box<dyn std::error::Error>> {
+        let service = Service::start().await?;
+        let submitted = usage_ledger();
+        let (status, receipt) = service.post("ledgers", PUBLISHER, &submitted).await?;
+        assert_eq!(status, StatusCode::CREATED, "{receipt}");
+        let response = service
+            .client
+            .get(format!("{}/changes/c1", service.base))
+            .bearer_auth(VIEWER)
+            .send()
+            .await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.text().await?, serde_json::to_string(&submitted)?);
+        let stored: (Option<String>, String, Option<String>, Option<i64>, Option<bool>) = sqlx::query_as("SELECT agent_type,agent_type_basis,usage_basis,delegated_cache_write_input_tokens,usage_overlapping FROM provenance_attempts WHERE attempt_id='attempt-c1-i1-1'")
+            .fetch_one(&service.pool)
+            .await?;
+        assert_eq!(
+            stored,
+            (
+                Some("general-purpose".into()),
+                "harness".into(),
+                Some("harness".into()),
+                Some(1_200),
+                Some(true)
+            ),
+            "usage is stored in typed columns"
+        );
+        let unrecorded: (String, Option<String>, Option<i64>) = sqlx::query_as("SELECT agent_type_basis,usage_basis,input_tokens FROM provenance_attempts WHERE attempt_id='attempt-c1-i1-2'")
+            .fetch_one(&service.pool)
+            .await?;
+        assert_eq!(unrecorded, ("unknown".into(), None, None));
+
+        let mut changed = submitted.clone();
+        changed["instances"][0]["attempts"][0]["usage"]["output_tokens"] = json!(2_401);
+        let (status, error) = service.post("ledgers", PUBLISHER, &changed).await?;
+        assert_eq!(status, StatusCode::CONFLICT, "{error}");
+        assert!(error["detail"]
+            .as_str()
+            .unwrap()
+            .contains("attempt attempt-c1-i1-1 differs from its stored content"));
+        let mut forgotten = submitted.clone();
+        forgotten["instances"][0]["attempts"][0]["usage"] = Value::Null;
+        assert_eq!(
+            service.post("ledgers", PUBLISHER, &forgotten).await?.0,
+            StatusCode::CONFLICT,
+            "recorded usage cannot be withdrawn"
+        );
+        let mut claimed = submitted.clone();
+        claimed["instances"][0]["attempts"][1]["usage"] = harness_usage();
+        assert_eq!(
+            service.post("ledgers", PUBLISHER, &claimed).await?.0,
+            StatusCode::CONFLICT,
+            "unrecorded usage cannot be added later"
+        );
+        assert_eq!(service.get("changes/c1", VIEWER).await?.1, submitted);
+
+        let (status, page) = service.get("attempts", VIEWER).await?;
+        assert_eq!(status, StatusCode::OK, "{page}");
+        let native = core_json(submitted.to_string().as_bytes())?;
+        let core: Vec<Value> = azimuth::provenance::dataset_rows(&native)?
+            .iter()
+            .map(to_value)
+            .collect::<Result<_, _>>()?;
+        assert_eq!(page["items"], json!(core));
+        let rows = page["items"].as_array().unwrap();
+        assert_eq!(
+            (
+                rows[0]["agent_type"].clone(),
+                rows[0]["input_tokens"].clone(),
+                rows[0]["delegated_agents"].clone(),
+                rows[0]["usage_overlapping"].clone(),
+            ),
+            (
+                json!("general-purpose"),
+                json!(120_000),
+                json!(2),
+                json!(true)
+            )
+        );
+        for column in [
+            "usage_basis",
+            "model_calls",
+            "input_tokens",
+            "usage_overlapping",
+            "delegated_agents",
+            "delegated_output_tokens",
+        ] {
+            assert_eq!(rows[1][column], Value::Null, "{column}");
+        }
+        assert_eq!(rows[1]["agent_type_basis"], "unknown");
+        Ok(())
+    }
+
+    // Attempts ingested before agent types and usage existed have no values in those columns.
+    #[tokio::test]
+    async fn attempts_stored_without_usage_read_back_as_unknown(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let service = Service::start().await?;
+        let mut tx = service.pool.begin().await?;
+        sqlx::query("INSERT INTO provenance_ledgers(project,change,ledger_fingerprint,submitted_by,provenance_basis) VALUES('project','c1',$1,'publisher',$2)")
+            .bind(digest('0')).bind(PROVENANCE_BASIS).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO provenance_instances(project,change,instance_id,position,disposition,definition_fingerprint) VALUES('project','c1','i1',0,'active',$1)")
+            .bind(digest('3')).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO provenance_attempts(project,attempt_id,change,instance_id,sequence,action,task,scope,actor,outcome,agent_kind,agent_kind_basis,model,model_basis,effort,effort_basis,harness_name,harness_version,harness_basis) VALUES('project','attempt-1','c1','i1',1,'implement','implement','change','implement-session','completed','model','harness','claude-opus-5-5','harness',NULL,'unknown','claude-code','2.1.309','harness')")
+            .execute(&mut *tx).await?;
+        tx.commit().await?;
+        let partial = sqlx::query(
+            "UPDATE provenance_attempts SET usage_basis='harness' WHERE attempt_id='attempt-1'",
+        )
+        .execute(&service.pool)
+        .await
+        .expect_err("usage columns are recorded together or not at all");
+        assert_eq!(
+            partial
+                .as_database_error()
+                .and_then(|e| e.code())
+                .as_deref(),
+            Some("23514")
+        );
+        let mut agent = harness_agent();
+        agent["effort"] = json!({"value":null,"basis":"unknown"});
+        agent["agent_type"] = json!({"value":null,"basis":"unknown"});
+        let exported = json!({"format":LEDGER_FORMAT,"version":1,"project":"project","change":"c1","instances":[{
+            "id":"i1","predecessor":null,"disposition":"active","definition_fingerprint":digest('3'),"template":null,
+            "attempts":[{"id":"attempt-1","sequence":1,"action":"implement","task":"implement","scope":"change",
+                "target":[],"actor":"implement-session","outcome":"completed","report":null,
+                "handoff_captured_at_ms":null,"recorded_at_ms":null,"agent":agent,"guidance":[],
+                "trace":null,"usage":null,"used":[],"generated":[]}],
+        }]});
+        let (status, stored) = service.get("changes/c1", VIEWER).await?;
+        assert_eq!(status, StatusCode::OK, "{stored}");
+        assert_eq!(stored, exported);
+        assert_eq!(stored["instances"][0]["attempts"][0]["usage"], Value::Null);
+        let (status, receipt) = service.post("ledgers", PUBLISHER, &exported).await?;
+        assert_eq!(status, StatusCode::CREATED, "{receipt}");
+        assert_eq!(
+            receipt["attempts_added"], 0,
+            "a re-export carrying the new fields matches the stored attempt"
+        );
+        Ok(())
+    }
+
     const PROVENANCE_TABLES: [&str; 8] = [
         "provenance_ledgers",
         "provenance_instances",
@@ -1503,7 +1804,7 @@ mod tests {
             .await?;
             assert_eq!(functions, Vec::<String>::new(), "{table}");
         }
-        let json_columns: Vec<String> = sqlx::query_scalar("SELECT table_name::text||'.'||column_name::text FROM information_schema.columns WHERE table_schema='public' AND table_name LIKE 'provenance%' AND udt_name NOT IN ('text','int4','int8','timestamptz')")
+        let json_columns: Vec<String> = sqlx::query_scalar("SELECT table_name::text||'.'||column_name::text FROM information_schema.columns WHERE table_schema='public' AND table_name LIKE 'provenance%' AND udt_name NOT IN ('text','int4','int8','bool','timestamptz')")
             .fetch_all(&service.pool).await?;
         assert_eq!(
             json_columns,

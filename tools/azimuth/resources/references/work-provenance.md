@@ -1,12 +1,14 @@
 # Work Provenance
 
-Work Provenance is a ledger of completed workflow attempts: which action ran, with which outcome, by which execution instance and what kind of agent, when, and what it used and produced. It is a separate domain from assurance. Nothing in it is an input to Requirement Review currentness, Requirement Status, acceptance or any other assessment, and it never enters a workflow result, attempt identity or task basis. Telemetry (tokens, cost, transcripts, tool calls) is out of scope; an attempt carries at most an opaque `trace` reference.
+Work Provenance is a ledger of completed workflow attempts: which action ran, with which outcome, by which execution instance and what kind of agent, when, and what it used and produced. It is a separate domain from assurance. Nothing in it is an input to Requirement Review currentness, Requirement Status, acceptance or any other assessment, and it never enters a workflow result, attempt identity or task basis. An attempt carries one summary of its model work (`usage`); per-call telemetry, transcripts and cost are out of scope, and an attempt carries at most an opaque `trace` reference.
 
 ## Actor and descriptor
 
 `--actor` names one execution instance: a session, a subagent run or a person. It stays the reviewer-independence key. Never encode a role, attempt number or model in it; the action, the attempt id and the descriptor already record those.
 
-`workflow update --descriptor FILE` records the executing agent:
+When the repository's agent integration is installed, its harness hook records the executing agent for you: it saves a harness-basis descriptor beside the handoff of every `azimuth workflow update` you run, and the update records it. Keep handoff files inside the change's ignored `.azimuth/` directory so the saved descriptor is never committed. Run `azimuth workflow update` as one plain command, never chained with `&&`, `;`, a pipe or a redirection, and do not pass `--descriptor` yourself; either one turns capture off for that attempt.
+
+Without a hook, `workflow update --descriptor FILE` records the executing agent:
 
 ```json
 {
@@ -15,12 +17,14 @@ Work Provenance is a ledger of completed workflow attempts: which action ran, wi
   "kind": {"value": "model", "basis": "harness"},
   "model": {"value": "claude-opus-5-5", "basis": "harness"},
   "effort": {"value": "high", "basis": "declared"},
+  "agent_type": {"value": null, "basis": "unknown"},
   "harness": {"name": "claude-code", "version": "2.1.309", "basis": "harness"},
-  "trace": null
+  "trace": null,
+  "usage": null
 }
 ```
 
-Every field states its basis. Use `harness` only for values read from the executing harness's own records, `declared` for values an agent, orchestrator or person supplies without attestation, and `unknown` with `null` values otherwise. `kind.value` is `model` or `human`. `model.value` is the provider's canonical model id and `effort.value` the provider-native label, verbatim. With basis `harness`, `harness.name` is required and `harness.version` may be `null`. Unknown fields are rejected. Never guess a value: omit `--descriptor` and every field is recorded as `unknown`.
+Every field states its basis. Use `harness` only for values read from the executing harness's own records, `declared` for values an agent, orchestrator or person supplies without attestation, and `unknown` with `null` values otherwise. `kind.value` is `model` or `human`. `model.value` is the provider's canonical model id, `effort.value` the provider-native label, verbatim, and `agent_type.value` the harness's name for the agent configuration, such as a subagent type. `usage` is `null` or the attempt's token and call counts; never estimate it. With basis `harness`, `harness.name` is required and `harness.version` may be `null`. Unknown fields are rejected. Never guess a value: omit `--descriptor` and every field is recorded as `unknown`.
 
 The tool stamps `captured_at_ms` when `workflow next` produces the handoff and `recorded_at_ms` when `update` appends the attempt, and fingerprints the shipped skills and references listed in the handoff's guidance (a `package` locator, or guidance this CLI does not ship, is recorded with a `null` fingerprint). Each history entry is `{result, result_fingerprint, provenance}`. Replaying an already recorded attempt returns the original entry; its provenance is never rewritten.
 
@@ -58,6 +62,7 @@ When someone actually investigates an adverse fact, they may append an attributi
 - Agent kind: human | model | none
 - Model: <canonical id> | none
 - Effort: <provider label> | none
+- Agent type: <harness agent type> | none
 - Harness: <name> [<version>] | none
 - Recorded at: YYYY-MM-DDTHH:MM:SSZ
 - Confidence: low | medium | high
@@ -75,4 +80,4 @@ Fields appear in this order. Name at least one `Caused` or `Allowed through` att
 
 ## Dataset
 
-`azimuth report provenance [--root <repository>] [--change <id>] [--out <file>]` writes one JSON object per attempt (JSONL) from every committed ledger of active and archived changes, with the descriptor flattened. It records facts; drawing conclusions about models or harnesses from it is an analysis responsibility.
+`azimuth report provenance [--root <repository>] [--change <id>] [--out <file>]` writes one JSON object per attempt (JSONL) from every committed ledger of active and archived changes, with the descriptor and usage flattened. It records facts; drawing conclusions about models or harnesses from it is an analysis responsibility.

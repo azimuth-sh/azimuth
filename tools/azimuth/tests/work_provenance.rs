@@ -273,8 +273,15 @@ fn harness_descriptor(root: &Path) -> PathBuf {
          \"kind\":{\"value\":\"model\",\"basis\":\"harness\"},\
          \"model\":{\"value\":\"claude-opus-5-5\",\"basis\":\"harness\"},\
          \"effort\":{\"value\":\"high\",\"basis\":\"declared\"},\
+         \"agent_type\":{\"value\":\"general-purpose\",\"basis\":\"harness\"},\
          \"harness\":{\"name\":\"claude-code\",\"version\":\"2.1.309\",\"basis\":\"harness\"},\
-         \"trace\":\"session-7f3a\"}",
+         \"trace\":\"session-7f3a\",\
+         \"usage\":{\"basis\":\"harness\",\"model_calls\":4,\"tool_calls\":6,\
+         \"input_tokens\":120,\"cache_read_input_tokens\":90000,\"cache_write_input_tokens\":3000,\
+         \"output_tokens\":2400,\"reasoning_output_tokens\":null,\"overlapping\":false,\
+         \"delegated\":{\"agents\":1,\"model_calls\":2,\"input_tokens\":10,\
+         \"cache_read_input_tokens\":5000,\"cache_write_input_tokens\":0,\"output_tokens\":300,\
+         \"reasoning_output_tokens\":null}}}",
     )
     .unwrap();
     path
@@ -288,8 +295,9 @@ fn human_descriptor(root: &Path) -> PathBuf {
          \"kind\":{\"value\":\"human\",\"basis\":\"declared\"},\
          \"model\":{\"value\":null,\"basis\":\"unknown\"},\
          \"effort\":{\"value\":null,\"basis\":\"unknown\"},\
+         \"agent_type\":{\"value\":null,\"basis\":\"unknown\"},\
          \"harness\":{\"name\":null,\"version\":null,\"basis\":\"unknown\"},\
-         \"trace\":null}",
+         \"trace\":null,\"usage\":null}",
     )
     .unwrap();
     path
@@ -417,6 +425,86 @@ fn replaying_a_recorded_attempt_returns_its_original_provenance_unchanged() {
     assert_eq!(at(&replay, &["result"]), at(&first, &["result"]));
     assert_eq!(at(&replay, &["provenance"]), at(&first, &["provenance"]));
     assert_eq!(fs::read(fixture.instance()).unwrap(), before);
+}
+
+#[test]
+fn update_records_a_hook_descriptor_saved_beside_its_handoff_and_consumes_it() {
+    let fixture = Fixture::new("sample-change");
+    fixture.init(None);
+    let handoff = fixture.next("handoff.json");
+    let saved = fixture.workflow.join("handoff.json.agent-descriptor.json");
+    fs::copy(harness_descriptor(&fixture.root), &saved).unwrap();
+
+    let recorded = fixture.update(
+        &handoff,
+        &fixture.workflow.join("results/scope-result.json"),
+        "claude-session-1",
+        "0",
+        None,
+    );
+
+    assert_eq!(
+        at(&recorded, &["provenance", "agent", "model", "value"]),
+        &Json::str("claude-opus-5-5")
+    );
+    assert_eq!(
+        at(&recorded, &["provenance", "trace"]),
+        &Json::str("session-7f3a")
+    );
+    assert_eq!(
+        at(&recorded, &["provenance", "usage", "model_calls"]),
+        &Json::Num(4.0)
+    );
+    assert!(!saved.exists());
+}
+
+#[test]
+fn a_hook_descriptor_saved_before_the_handoff_was_captured_is_ignored() {
+    let fixture = Fixture::new("sample-change");
+    fixture.init(None);
+    let handoff = fixture.next("handoff.json");
+    let saved = fixture.workflow.join("handoff.json.agent-descriptor.json");
+    fs::copy(harness_descriptor(&fixture.root), &saved).unwrap();
+    let earlier = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+    fs::File::options()
+        .write(true)
+        .open(&saved)
+        .unwrap()
+        .set_modified(earlier)
+        .unwrap();
+
+    let recorded = fixture.update(
+        &handoff,
+        &fixture.workflow.join("results/scope-result.json"),
+        "claude-session-1",
+        "0",
+        None,
+    );
+
+    assert_eq!(at(&recorded, &["provenance", "agent"]), &unknown_agent());
+    assert_eq!(at(&recorded, &["provenance", "usage"]), &Json::Null);
+    assert!(!saved.exists());
+}
+
+#[test]
+fn an_invalid_hook_descriptor_fails_the_update_without_a_transition() {
+    let fixture = Fixture::new("sample-change");
+    fixture.init(None);
+    let handoff = fixture.next("handoff.json");
+    let saved = fixture.workflow.join("handoff.json.agent-descriptor.json");
+    fs::write(&saved, "{\"format\":\"azimuth-agent-descriptor\",\"version\":1}").unwrap();
+    let before = fs::read(fixture.instance()).unwrap();
+
+    let stderr = fixture.update_failure(
+        &handoff,
+        &fixture.workflow.join("results/scope-result.json"),
+        "0",
+        None,
+    );
+
+    assert!(stderr.contains("handoff.json.agent-descriptor.json"), "{stderr}");
+    assert_eq!(fs::read(fixture.instance()).unwrap(), before);
+    assert!(saved.exists());
 }
 
 #[test]
@@ -991,11 +1079,29 @@ fn finalize_commits_the_ledger_and_archive_rejects_a_stale_one() {
             "model_basis",
             "effort",
             "effort_basis",
+            "agent_type",
+            "agent_type_basis",
             "harness_name",
             "harness_version",
             "harness_basis",
             "guidance",
             "trace",
+            "usage_basis",
+            "model_calls",
+            "tool_calls",
+            "input_tokens",
+            "cache_read_input_tokens",
+            "cache_write_input_tokens",
+            "output_tokens",
+            "reasoning_output_tokens",
+            "usage_overlapping",
+            "delegated_agents",
+            "delegated_model_calls",
+            "delegated_input_tokens",
+            "delegated_cache_read_input_tokens",
+            "delegated_cache_write_input_tokens",
+            "delegated_output_tokens",
+            "delegated_reasoning_output_tokens",
             "used",
             "generated",
         ]
@@ -1066,6 +1172,7 @@ Append-only investigations of adverse facts.
 - Agent kind: human
 - Model: none
 - Effort: none
+- Agent type: none
 - Harness: none
 - Recorded at: 2026-10-24T08:00:00Z
 - Confidence: medium
@@ -1090,6 +1197,7 @@ The review accepted it without exercising the denial path.
 - Agent kind: model
 - Model: claude-opus-5-5
 - Effort: high
+- Agent type: general-purpose
 - Harness: claude-code 2.1.309
 - Recorded at: 2026-10-24T09:30:00.250Z
 - Confidence: low
@@ -1244,7 +1352,7 @@ fn attribution_errors_name_the_file_and_line() {
     assert_eq!(
         stderr,
         format!(
-            "azimuth: {}:15: expected `- Confidence: …`\n",
+            "azimuth: {}:16: expected `- Confidence: …`\n",
             input.display()
         )
     );
@@ -1253,7 +1361,7 @@ fn attribution_errors_name_the_file_and_line() {
     assert_eq!(
         stderr,
         format!(
-            "azimuth: {}:20: expected an attempt id in backticks, such as `attempt-…`\n",
+            "azimuth: {}:21: expected an attempt id in backticks, such as `attempt-…`\n",
             input.display()
         )
     );
@@ -1265,7 +1373,7 @@ fn attribution_errors_name_the_file_and_line() {
     assert_eq!(
         stderr,
         format!(
-            "azimuth: {}:43: expected `none` or the id of an earlier attribution in backticks\n",
+            "azimuth: {}:45: expected `none` or the id of an earlier attribution in backticks\n",
             input.display()
         )
     );
@@ -1277,7 +1385,7 @@ fn attribution_errors_name_the_file_and_line() {
     assert_eq!(
         stderr,
         format!(
-            "azimuth: {}:29: expected at least one `Caused` or `Allowed through` attempt\n",
+            "azimuth: {}:30: expected at least one `Caused` or `Allowed through` attempt\n",
             input.display()
         )
     );

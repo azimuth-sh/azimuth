@@ -17,6 +17,7 @@ pub mod design;
 pub mod diag;
 pub mod federation;
 pub mod fingerprint;
+pub mod harness_capture;
 pub mod installation;
 pub mod intent;
 pub mod json;

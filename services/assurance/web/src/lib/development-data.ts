@@ -240,18 +240,26 @@ export function developmentRead(project: string, path: string): unknown {
 
 const workedRequirement = 'reminders-follow-current-payment';
 const day = 86400000;
-const harnessAgent = (model: string, effort: string) => ({
+const harnessAgent = (model: string, effort: string, agentType: string | null = null) => ({
   kind: { value: 'model', basis: 'harness' }, model: { value: model, basis: 'harness' }, effort: { value: effort, basis: 'harness' },
+  agent_type: agentType === null ? { value: null, basis: 'unknown' } : { value: agentType, basis: 'harness' },
   harness: { name: 'example-harness', version: '3.2.0', basis: 'harness' },
 });
 const declaredAgent = {
   kind: { value: 'model', basis: 'declared' }, model: { value: 'example-model-medium', basis: 'declared' }, effort: { value: null, basis: 'unknown' },
-  harness: { name: 'example-orchestrator', version: null, basis: 'declared' },
+  agent_type: { value: 'implementer', basis: 'declared' }, harness: { name: 'example-orchestrator', version: null, basis: 'declared' },
 };
 const unknownAgent = {
   kind: { value: null, basis: 'unknown' }, model: { value: null, basis: 'unknown' }, effort: { value: null, basis: 'unknown' },
-  harness: { name: null, version: null, basis: 'unknown' },
+  agent_type: { value: null, basis: 'unknown' }, harness: { name: null, version: null, basis: 'unknown' },
 };
+const tokenCounts = (input: number, cacheRead: number | null, output: number, reasoning: number | null) => ({
+  input_tokens: input, cache_read_input_tokens: cacheRead, cache_write_input_tokens: null, output_tokens: output, reasoning_output_tokens: reasoning,
+});
+const harnessUsage = (modelCalls: number, toolCalls: number, own: ReturnType<typeof tokenCounts>, delegatedAgents = 0, delegated = tokenCounts(0, null, 0, null), overlapping = false) => ({
+  basis: 'harness', model_calls: modelCalls, tool_calls: toolCalls, ...own, overlapping,
+  delegated: { agents: delegatedAgents, model_calls: delegatedAgents ? 9 * delegatedAgents : 0, ...delegated },
+});
 const attemptId = (label: string) => `attempt-${identity(`attempt:${label}`).slice(7)}`;
 
 // Synthetic ledger rows for one Requirement: an intent change with a rejected and a corrected review, then a dependency change.
@@ -274,21 +282,23 @@ function workHistory(requirement: string, currentRelease: string, currentRevisio
     [`${intentChange}:restart`]: { id: `change-development-${start + 2 * day}`, disposition: 'completed' },
     [dependencyChange]: { id: `change-development-${start + 8 * day}`, disposition: 'completed' },
   };
-  const attempt = (instance: string, sequence: number, action: string, actor: string, outcome: string, agent: unknown, captured: number | null, recorded: number | null, report: string | null, generated: unknown[] = []) => ({
+  const attempt = (instance: string, sequence: number, action: string, actor: string, outcome: string, agent: unknown, captured: number | null, recorded: number | null, report: string | null, generated: unknown[] = [], usage: unknown = null) => ({
     id: attemptId(`${instance}:${sequence}`), instance: instances[instance].id, disposition: instances[instance].disposition, sequence, action, task: action, scope: 'requirement', target: target(instance.split(':')[0]), actor, outcome, report,
     handoff_captured_at_ms: captured, recorded_at_ms: recorded, agent, guidance: action === 'review-requirement' ? [{ kind: 'skill', id: 'azimuth-review-requirement', fingerprint: identity('guidance:review') }] : [],
-    trace: null, used: [{ kind: 'requirement', repository: 'application', ref: 'model/reminders/planning/requirements.md', fingerprint: identity(`used:${instance}:${sequence}`), record: null }], generated,
+    trace: null, usage, used: [{ kind: 'requirement', repository: 'application', ref: 'model/reminders/planning/requirements.md', fingerprint: identity(`used:${instance}:${sequence}`), record: null }], generated,
   });
   // `fingerprint` identifies the review bundle file; `record_fingerprint` is the native review it selects.
   const review = (recordFingerprint: string, local: string) => [{ kind: 'requirement-review', repository: 'application', ref: 'reviews/requirement-reviews.md', fingerprint: identity(`review-bundle:${local}:${recordFingerprint}`), record: local, record_fingerprint: recordFingerprint }];
   const intentAttempts = [
-    attempt(intentChange, 1, 'author-proposal', 'session-author-1', 'completed', harnessAgent('example-model-large', 'high'), start, start + 14 * 60000, 'Proposed reading the amount at send time instead of at scheduling time.'),
+    attempt(intentChange, 1, 'author-proposal', 'session-author-1', 'completed', harnessAgent('example-model-large', 'high', 'general-purpose'), start, start + 14 * 60000, 'Proposed reading the amount at send time instead of at scheduling time.', [],
+      harnessUsage(4, 11, tokenCounts(120_000, 98_000, 2_400, null), 2, tokenCounts(40_000, null, 900, 300))),
     attempt(intentChange, 2, 'implement', 'subagent-implementer-1', 'completed', declaredAgent, start + day, start + day + 52 * 60000, 'Reminder rendering reads the payment amount when the reminder is sent.'),
     attempt(intentChange, 3, 'review-requirement', 'session-reviewer-1', 'rejected', harnessAgent('example-model-large', 'high'), start + day + 3 * 3600000, start + day + 3 * 3600000 + 21 * 60000,
       'Rejected: the integration Check edits the payment before the reminder is queued, so an edit **during** sending is never exercised.', review(identity(`review:${requirement}:rejected`), 'review-1')),
     attempt(`${intentChange}:restart`, 1, 'implement', 'subagent-implementer-2', 'completed', unknownAgent, null, start + 2 * day, 'Added an edit-during-send step to the integration Check.'),
-    attempt(`${intentChange}:restart`, 2, 'review-requirement', 'session-reviewer-2', 'accepted', harnessAgent('example-model-large', 'high'), start + 2 * day + 3600000, start + 2 * day + 3600000 + 18 * 60000,
-      'Accepted: the corrected Check covers an edit while the reminder is being sent.', review(identity(`review:${requirement}:first`), 'review-2')),
+    attempt(`${intentChange}:restart`, 2, 'review-requirement', 'session-reviewer-2', 'accepted', harnessAgent('example-model-large', 'high', 'requirement-reviewer'), start + 2 * day + 3600000, start + 2 * day + 3600000 + 18 * 60000,
+      'Accepted: the corrected Check covers an edit while the reminder is being sent.', review(identity(`review:${requirement}:first`), 'review-2'),
+      harnessUsage(6, 14, tokenCounts(1_820, 912_000, 18_400, 2_100), 0, undefined, true)),
   ];
   const dependencyAttempts = [
     attempt(dependencyChange, 1, 'implement', 'session-implementer-3', 'completed', harnessAgent('example-model-small', 'medium'), start + 8 * day, start + 8 * day + 37 * 60000, 'Reminders and receipts share one payment snapshot.'),

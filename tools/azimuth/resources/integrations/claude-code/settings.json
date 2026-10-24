@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(azimuth workflow update *)",
+            "command": "azimuth provenance capture --harness claude-code",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
