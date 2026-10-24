@@ -226,6 +226,10 @@ Established terms exist for each part: *independence* and *confirmation measure*
 
 No change is created and the frontier is deliberately undisposed. One experiment is identified: restore the verify pass as a skill under E2, run it against real bindings, and measure what it catches that the machine tier passes and how often owners accept a proposal unchanged. The second measurement decides F14 and therefore E10. This exploration finishes when that experiment reports.
 
+## Subsequent resolution
+
+2026-10-23: E10 is resolved by the `work-provenance` exploration, which records proposal and review provenance outside every fingerprint (respecting F15) and serves as the instrument for the E2 and E13 measurements. Open question 1 and the independence question in F6 remain here.
+
 ## What would falsify this
 
 - **F2 is wrong** if a Challenge Plan can reach a `missing-decision` candidate without weakening the rule that only current positive decisions execute.

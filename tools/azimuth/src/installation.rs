@@ -1008,9 +1008,11 @@ fn collect_markdown(root: &Path, files: &mut Vec<PathBuf>) -> Result<(), String>
             // like history; they are never rewritten, and validate does not parse them. `.azimuth`
             // holds local runtime artifacts (staged previews, drafts, inputs) that are regenerated,
             // never authored, and must not be rewritten under a newer vocabulary either.
+            // `provenance` holds exported ledgers and append-only Failure Attributions whose
+            // compiled fingerprints cover their original text.
             if !matches!(
                 entry.file_name().to_str(),
-                Some("history" | "reviews" | ".azimuth")
+                Some("history" | "reviews" | "provenance" | ".azimuth")
             ) {
                 collect_markdown(&path, files)?;
             }

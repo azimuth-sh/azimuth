@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { requireViewer } from '@/lib/auth';
-import { readProject, routeFingerprint, type Page, type RequirementReviewState, type VerificationTargetState, type DeploymentCheckPolicy, type ModelRevision, type ReleaseSummary, type ReleaseDetail, type DeploymentReference as Deployment } from '@/lib/assurance';
+import { readProject, routeFingerprint, type Page, type RequirementReviewState, type VerificationTargetState, type DeploymentCheckPolicy, type ModelRevision, type ReleaseSummary, type ReleaseDetail, type DeploymentReference as Deployment, type RequirementWorkHistory } from '@/lib/assurance';
 import { requirementStatus } from '@/lib/production';
 import { ModelNavigation } from '@/components/model-navigation';
 import { ModelWorkspace } from '@/components/model-workspace';
@@ -12,6 +12,8 @@ import { RequirementVerification } from '@/components/requirement-verification';
 import { Disclosure } from '@/components/disclosure';
 import { Markdown } from '@/components/markdown';
 import { LocalTime } from '@/components/local-time';
+import { WorkHistory, ReviewAttempt, reviewAttempt } from '@/components/work-history';
+import { shortIdentifier } from '@/lib/identifier';
 
 export const dynamic = 'force-dynamic';
 type Catalog = {
@@ -139,7 +141,11 @@ export default async function ModelPage({ params, searchParams }: {
   }
   const base = `${root}/model?${values}`;
   const historyRequested = query.history === '1';
-  const snapshot = requirement && revision && historyRequested ? await readProject<Snapshot>(projectId, `/model-revisions/${encodeURIComponent(revision)}/snapshot`) : null;
+  // Work history is advisory; an unavailable ledger must not hide Requirement Status, so read failures become `undefined`.
+  const [snapshot, workHistory] = requirement ? await Promise.all([
+    revision && historyRequested ? readProject<Snapshot>(projectId, `/model-revisions/${encodeURIComponent(revision)}/snapshot`) : Promise.resolve(null),
+    readProject<RequirementWorkHistory>(projectId, `/provenance/requirements/${encodeURIComponent(requirement.id)}`).catch(() => undefined),
+  ]) : [null, null];
   const assessmentFresh = deploymentStatus?.assessment?.state === 'ready' && deploymentStatus.assessment.valid_until_ms !== null && deploymentStatus.assessment.valid_until_ms > Date.now();
   const state = assessmentFresh ? deploymentStatus?.requirements.find(c => c.requirement === requirement?.id) : undefined;
   const reviewFresh = reviewState?.assessment?.state === 'ready';
@@ -154,7 +160,8 @@ export default async function ModelPage({ params, searchParams }: {
   }
   const visibleModules = module ? descendants(module.id) : modules.map(m => m.id);
   const visibleRequirements = definitions.filter(c => !module || modules.some(m => visibleModules.includes(m.id) && m.requirements.includes(c.id)));
-  const history = snapshot?.reviews.filter(r => r.requirement === requirement?.id && (r.kind !== 'requirement-status' || r.verification_target_fingerprint === verificationTarget)) ?? [];
+  const history = snapshot?.reviews.filter(r => r.requirement === requirement?.id) ?? [];
+  const reviewer = reviewAttempt(workHistory, review?.record?.fingerprint);
   const requirementRow = (id: string) => {
     const assessment = assessmentFresh ? deploymentStatus?.requirements.find(c => c.requirement === id) : undefined;
     const status = requirementStatus(assessment?.status ?? 'unresolved');
@@ -175,17 +182,26 @@ export default async function ModelPage({ params, searchParams }: {
         {requirementId && !requirement ? <div className="panelEmpty"><h2>Requirement not found in this model</h2><Link className="textLink" href={base}>Browse modules →</Link></div> : requirement ? <>
           <h2 className="requirementStatement">{title(requirement.id)}</h2>
           <section className="requirementStatusSummary" aria-label="Requirement Status"><div><span className={`badge ${verificationTarget ? tones[status] : 'neutral'}`}>{verificationTarget ? labels[status] : 'Definition'}</span><span className="modelDetailMuted">{systemName}</span></div><p>{state?.explanation.summary || (verificationTarget ? 'No Requirement Status is available for this deployment.' : 'Browsing definitions. Open a version running in this environment to inspect Requirement Status and evidence.')}</p><span className="statusLine">{plural(new Set(requirement.bindings.map(b => b.check)).size, 'Check')} · {plural(requirement.scenarios.length, 'Scenario')}</span><span className="reviewSummary">{state?.evaluated_at_ms ? <>Evaluated <LocalTime value={state.evaluated_at_ms} /> · </> : null}Requirement Review: <strong>{review?.assessment ?? reviewFallback}</strong></span></section>
-          <nav className="requirementSections" aria-label="Requirement sections"><a href="#requirement-monitors">Monitoring</a><a href="#requirement-deployment">Deployment</a><a href="#requirement-implementation">Implementation</a><a href="#requirement-statement">Statement</a><a href="#requirement-review">Review</a><Link prefetch={false} href={`${base}&requirement=${encodeURIComponent(requirement.id)}&history=1#requirement-history`}>History</Link></nav>
+          <nav className="requirementSections" aria-label="Requirement sections"><a href="#requirement-monitors">Monitoring</a><a href="#requirement-deployment">Deployment</a><a href="#requirement-implementation">Implementation</a><a href="#requirement-statement">Statement</a><a href="#requirement-review">Review</a><a href="#requirement-work-history">Work history</a><Link prefetch={false} href={`${base}&requirement=${encodeURIComponent(requirement.id)}&history=1#requirement-history`}>History</Link></nav>
           {state && state.explanation.reasons.length > 0 && <details className="statusReasons"><summary>Why this Requirement is {labels[status].toLowerCase()}</summary><ul>{state.explanation.reasons.map((reason,i) => <li key={`${reason.code}:${i}`}><span>{reason.message}</span>{reason.check && <small>Check: {reason.check}</small>}</li>)}</ul></details>}
           <RequirementVerification bindings={requirement.bindings} checks={model?.authority.checks ?? []} descriptions={catalog?.checks ?? []} scenarios={catalog?.scenarios ?? []} scenarioIds={requirement.scenarios} state={state} evaluatedAt={state?.evaluated_at_ms ?? deploymentStatus?.evaluated_at_ms} hasDeployment={!!verificationTarget} projectRoot={root} />
           <section id="requirement-statement" className="requirementDetailSection disclosureSection"><Disclosure open summary="Statement">{catalog?.requirements.find(c => c.id === requirement.id)?.statement ? <Markdown source={catalog.requirements.find(c => c.id === requirement.id)!.statement} /> : <p className="modelDetailMuted">No statement available for this Requirement.</p>}</Disclosure></section>
           <section id="requirement-review" className="requirementDetailSection disclosureSection"><Disclosure summary="Requirement Review" meta={<><span className="badge neutral">{review?.assessment ?? reviewFallback}</span>{typeof review?.record?.reviewer === 'string' && <span>{review.record.reviewer}</span>}{review?.record?.reviewed_at_ms !== undefined && <LocalTime value={typeof review.record.reviewed_at_ms === 'number' ? review.record.reviewed_at_ms : undefined} fallback="Date not recorded" />}</>}>
             {typeof review?.record?.rationale === 'string' ? <Markdown source={review.record.rationale} /> : <p className="modelDetailMuted">No review rationale is available.</p>}
             {review?.diagnostics.map((d,i) => <p className="reviewDiagnostic" key={i}>{d}</p>)}
+            {review?.record && <dl className="factGrid">
+              <div><dt>Decision</dt><dd>{review.record.decision ?? 'not recorded'}</dd></div>
+              <div><dt>Reassesses</dt><dd>{review.record.reassesses ? <code title={review.record.reassesses}>{shortIdentifier(review.record.reassesses)}</code> : 'none'}</dd></div>
+              <div><dt>Reviewed dependencies</dt><dd>{review.record.dependencies_fingerprint ? <code title={review.record.dependencies_fingerprint}>{shortIdentifier(review.record.dependencies_fingerprint)}</code> : 'not recorded'}</dd></div>
+              <div><dt>Challenge basis</dt><dd>{review.record.challenge_basis?.length ? `${review.record.challenge_basis.length} Verification Challenge ${review.record.challenge_basis.length === 1 ? 'Result' : 'Results'}` : 'none'}</dd></div>
+              <div><dt>Reviewed artifacts</dt><dd>{review.record.artifacts?.length ? <ul className="reviewArtifacts">{review.record.artifacts.map(artifact => <li key={`${artifact.id}:${artifact.digest}`}><code title={artifact.digest}>{artifact.id}</code> {artifact.locator}</li>)}</ul> : 'none'}</dd></div>
+            </dl>}
+            {reviewer && <ReviewAttempt attempt={reviewer} />}
             <p className="modelDetailMuted">Review assesses the Requirement, implementation and verification. Requirement Status is computed from applicable evidence for the selected deployment.</p>
-            {review?.record && <Disclosure summary="Review record & provenance"><pre className="rawRecord">{JSON.stringify(review.record,null,2)}</pre><p className="modelDetailMuted">Author provenance may be a publisher-transported assertion.</p></Disclosure>}
+            {review?.record && <Disclosure summary="Review record"><pre className="rawRecord">{JSON.stringify(review.record,null,2)}</pre></Disclosure>}
           </Disclosure></section>
-          <section id="requirement-history" className="requirementDetailSection"><h3>Review & authored assessment history</h3><p className="modelDetailMuted">Historical authored assessments are retained records. They do not override computed deployment Requirement Status.</p>{history.length ? history.map((r,i) => <Disclosure key={String(r.fingerprint ?? i)} summary={r.kind === 'requirement-review' ? 'Requirement Review' : 'Historical authored assessment'} meta={<><span>{String(r.decision ?? r.conclusion ?? 'Recorded')}</span><LocalTime value={typeof r.reviewed_at_ms === 'number' ? r.reviewed_at_ms : undefined} fallback="Date not recorded" /></>}><pre className="rawRecord">{JSON.stringify(r,null,2)}</pre></Disclosure>) : historyRequested ? <p className="modelDetailMuted">No assessment history recorded for this selection.</p> : <Link className="textLink" prefetch={false} href={`${base}&requirement=${encodeURIComponent(requirement.id)}&history=1#requirement-history`}>Load review history →</Link>}</section>
+          <WorkHistory history={workHistory} />
+          <section id="requirement-history" className="requirementDetailSection"><h3>Review history</h3><p className="modelDetailMuted">Retained Requirement Reviews for this model. They do not override computed deployment Requirement Status.</p>{history.length ? history.map((r,i) => <Disclosure key={String(r.fingerprint ?? i)} summary="Requirement Review" meta={<><span>{String(r.decision ?? 'Recorded')}</span><LocalTime value={typeof r.reviewed_at_ms === 'number' ? r.reviewed_at_ms : undefined} fallback="Date not recorded" /></>}><pre className="rawRecord">{JSON.stringify(r,null,2)}</pre></Disclosure>) : historyRequested ? <p className="modelDetailMuted">No review history recorded for this selection.</p> : <Link className="textLink" prefetch={false} href={`${base}&requirement=${encodeURIComponent(requirement.id)}&history=1#requirement-history`}>Load review history →</Link>}</section>
         </> : <>
           <p className="overline">{module ? 'MODULE' : 'MODEL STRUCTURE'}</p><h2 className="moduleDetailTitle">{module ? module.title : 'Modules & Requirements'}</h2><p className="modelDetailMuted">{module ? 'Requirements owned by this module and its nested modules.' : 'Select a module to explore its Requirements, reviews and evidence.'}</p>
           {!module && <div className="moduleOverview">{modules.filter(m => !m.parent || !modules.some(parent => parent.id === m.parent)).map(m => <Link href={`${base}&module=${encodeURIComponent(m.id)}`} key={m.id}><span className="moduleIcon">◇</span><strong>{m.title}</strong><span>{definitions.filter(c => modules.some(n => descendants(m.id).includes(n.id) && n.requirements.includes(c.id))).length} Requirements</span><span aria-hidden="true">›</span></Link>)}</div>}

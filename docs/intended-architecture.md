@@ -133,7 +133,7 @@ AAS preserves completed, deliberately submitted assurance decisions, including r
 
 Immutable submitted documents can coexist with typed relational projections for querying Verification Targets, Check Results, Observations, dependencies, decisions and resolutions. Storage projections should follow concrete use cases; package-specific payloads need not all become relational entities.
 
-Harness telemetry supplies model and instruction provenance, duration, cost, retries and human effort where available. Link it to assurance records when useful without making AAS the repository of every agent trace.
+Work provenance and telemetry are different data. **Work Provenance** records each completed workflow attempt: its action and outcome, the execution instance that performed it, what kind of agent that was (model, effort, harness and supplied guidance, each with the basis of the value), when, and which entities it used and generated. It is low-volume, durable lineage read long after the fact, so AAS keeps it as a separate domain beside assurance records ([`contracts/work-provenance.md`](../contracts/work-provenance.md)). **Nothing in it is ever an input to assessment**: a strong model or a first-pass acceptance never makes a Requirement more credible. Harness telemetry — token usage, cost, transcripts, tool calls and traces — stays outside AAS; an attempt carries at most an opaque trace reference to it.
 
 Keep assurance conclusions, process health and business value separate. Missing execution, decision backlog, repeated failures and correction latency describe process health. Baselines and comparable outcomes are needed to evaluate value. Accepted reviews or rejection counts alone do not measure agent quality.
 
@@ -168,6 +168,7 @@ transition inference.
 | Repository accounts, source linkage, validation, bounded Run execution and package-specific verification | Existing tooling; exact behavior follows current contracts. |
 | Target-specific review input, compact independent review records, immutable Run and review histories, main-model publication and exact-Verification-Target Assurance State | Existing tooling and service capabilities. |
 | Harness-neutral eligible-work interface and correction routing | Implemented for explicit finite task graphs through `workflow next` and conditional `workflow update`; automatic scope discovery, deployment and archive handoff remain outside this increment. |
+| Work Provenance ledger, Requirement work history and Failure Attribution | Implemented as a separate, non-assessment AAS domain ([`contracts/work-provenance.md`](../contracts/work-provenance.md)). |
 | AAS human decision situations and accountable disposition records | Intended; no new decision schema or API is defined here. |
 | Finding-to-correction resolution records and closure evaluation | Intended; identity and closure rules remain open. |
 | Durable production-trigger integration and bounded autonomous maintenance | Intended integration; requires permissions, deployed provenance and recovery contracts. |

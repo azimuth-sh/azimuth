@@ -43,7 +43,6 @@ export default async function VerificationTargetPage({
                 meta={<><span>Review: {requirement.review ?? 'missing'}</span><span className={`badge ${tones[status]}`}>{statusLabels[status]}</span></>}
               >
                 {requirement.diagnostics.length > 0 && <ul className="verificationReasons">{requirement.diagnostics.map((d, i) => <li key={i}>{d}</li>)}</ul>}
-                <p className="modelDetailMuted">Requirement Status record: {requirement.requirement_status ?? 'computed'}</p>
                 <Disclosure summary="Bindings and gaps">
                   <pre className="rawRecord">{JSON.stringify({ bindings: requirement.bindings, gaps: requirement.gaps, challenges: requirement.challenges }, null, 2)}</pre>
                 </Disclosure>

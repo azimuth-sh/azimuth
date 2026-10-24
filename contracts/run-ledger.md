@@ -29,13 +29,13 @@ The earlier service executable and database records remain isolated. They are no
 
 ## Independent review and current authority
 
-The ledger uses the compact independent-review contract in `contracts/assurance-reviews.md`. Executions, Method Qualifications, Applicability Decisions and Requirement Judgments remain distinct records. A satisfied Check Result alone cannot establish a supported Requirement.
+The ledger uses the compact independent-review contract in `contracts/assurance-reviews.md`. The service stores only `requirement-review` records. `requirement-status`, `method-qualification`, `applicability-decision` and `requirement-judgment` records are rejected with HTTP 422 on review submission, main-model publication and release publication, and have no storage; deployment Requirement Status is computed from applicable evidence. A satisfied Check Result alone cannot establish a supported Requirement.
 
 Credentials are loaded from the private `ASSURANCE_RUN_TOKENS_FILE` as a project map. Each project supplies nonempty `producers`, `reviewers` and `owners` maps from identity to token. Duplicate JSON object keys in the credential file fail startup. Tokens contain at least 32 non-whitespace bytes and are distinct across all projects and roles. Producers submit Runs, reviewers submit review records, publishers publish main models, releases and deployments, and owners register candidate model revisions. Any role can read its own project's records. The authenticated reviewer identity must equal the review record's `reviewer` field. Identity and role assignment are operator-controlled; credentials do not prove human independence or review quality.
 
 There is no accepted-authority pointer, owner selection or release acceptance. The default model of a project is the latest main-model publication (see "Main-model publication"); `GET /v1/projects/{project}/authority` returns that publication's authority with its `commit`, `main_sequence`, `publication_revision`, `sources` and `ratification_status`, or HTTP 404 when none exists. `POST /v1/projects/{project}/reviews` validates record structure, fingerprints and authenticated reviewer identity, and assesses its dependencies against the default model, stored reviews and correction heads. Invalid dependencies fail; stale or rejected records remain auditable. Identical content is an idempotent replay. `GET /v1/projects/{project}/reviews` returns immutable records.
 
-`GET /v1/projects/{project}/verification-targets/{verification_target}/state` joins the default model's authority, review records and latest valid Run corrections for the exact Verification Target. It exposes missing, rejected, stale, invalid or accepted review assessments and Requirement conclusions without generating reviews. Complete current credible evidence plus an independent supported Requirement Judgment is required for supported state. Missing structural support and omitted evidence remain gaps; ambiguous review records remain unresolved. Routine Requirements report when review is not required without inventing a positive Judgment.
+`GET /v1/projects/{project}/verification-targets/{verification_target}/state` joins the default model's authority, review records and latest valid Run corrections for the exact Verification Target. It exposes missing, rejected, stale, invalid or accepted review assessments and Requirement conclusions without generating reviews. It never concludes support: every Requirement is `unresolved` there, and deployment Requirement Status is computed from applicable evidence for a recorded deployment. Missing structural support and omitted evidence remain gaps; ambiguous review records remain unresolved. Routine Requirements report when review is not required without inventing a positive review.
 
 Run history and review history are not deleted when authority changes. No evidence is silently reused across Verification Targets. Decision Policies and challenge scheduling for this compact review lane remain deferred.
 
@@ -117,42 +117,19 @@ controller or authorized operator must publish the actual deployment record and
 explicitly designate it after rollout. Selection is not evidence of readiness,
 reachability or correctness; those remain Check and Requirement Status obligations.
 
-## Structured Requirement Status explanations
+## Structured Requirement explanations
 
-Each Requirement returned by exact-target state inspection includes `explanation`.
-The existing `status`, `review`, `requirement_status`, diagnostics and structural-gap semantics
-remain unchanged. The explanation is derived inside the native assessor from the
-same complete authority, review set and active Run correction heads:
+Each Requirement returned by exact-target state inspection includes `explanation`, derived inside the native assessor from the same complete authority, review set and active Run correction heads. Requirement Status is never authored, and a source or artifact Verification Target state concludes nothing: every Requirement reports `status: unresolved` with its Requirement Review assessment, and deployment Requirement Status is computed separately from applicable evidence (`deployments/{deployment}/status`). There is no `requirement_status` field.
 
-- `summary` and `status`: current accepted Requirement Status rationale, or an explanation of
-  why no current assessment establishes a conclusion.
-- `reasons`: typed `code`, `category` and `message`, with optional Check/Scenario IDs,
-  diagnostic details or structural-gap details. Codes include
-  `requirement-review-{assessment}`, `requirement-status-{assessment}`, `structural-gaps`,
-  `current-check-result-missing` and `requirement-status-assessed-{conclusion}`. Consumers do not
-  classify states by matching diagnostic English.
-- `review` and `requirement_status`: their assessment status, exact selected record fingerprint,
-  asserted reviewer, review time, authored rationale and diagnostics. No record or
-  ambiguous latest history exposes null record fields, not fabricated authorship.
-- `coverage`: one entry per declared current Check–Scenario binding, with exact matching
-  `check_results` and status `missing`, `unassessed`, `satisfied`, `violated` or
-  `inconclusive`. Only current Check fingerprints, the exact selected Verification Target and
-  active correction heads participate.
-- `evidence`: `supporting`, `violations` and `inconclusive` contain Check Results
-  explicitly referenced by the basis of the current accepted Requirement Status assessment.
-  Other matching Check Results remain `unassessed`. Every Check Result retains Run,
-  bundle and Check Result fingerprints, Check, Scenario, outcome, `observed_at_ms`,
-  `selected_in_basis` and `accepted_basis`.
-- `residual_risks`: authored residual risks from the selected Requirement Status record, if any.
+- `summary` and `status`: an account of the review state and missing evidence, and `unresolved`.
+- `reasons`: typed `code`, `category` and `message`, with optional Check/Scenario IDs, diagnostics or structural-gap details. Codes are `requirement-review-{assessment}`, `structural-gaps` and `current-check-result-missing`. Consumers do not classify states by matching diagnostic English.
+- `review`: its assessment status, exact selected record fingerprint, asserted reviewer, review time, authored rationale and diagnostics. No record or ambiguous latest history exposes null record fields, not fabricated authorship.
+- `coverage`: one entry per declared current Check–Scenario binding, with exact matching `check_results` and status `missing` or `unassessed`. Only current Check fingerprints, the exact selected Verification Target and active correction heads participate.
+- `evidence`: `supporting`, `violations` and `inconclusive` are empty; observed matching Check Results are listed in `unassessed` with Run, bundle and Check Result fingerprints, Check, Scenario, outcome, `observed_at_ms` and diagnostics.
 
-A violated Check Result can remain unassessed when no current accepted Requirement Status record
-covers it; this does not convert the Requirement's conclusion automatically. A stale
-assessment's formerly selected Check Results are not presented as accepted support.
-Missing coverage is inspectable information, not a newly authored assessment.
-There is no automatic expiry, alert interpretation, cross-system evidence transfer
-or Requirement Status transition event stream. Such policies remain separate framework work.
+A violated Check Result at this target does not convert the Requirement's conclusion automatically. Missing coverage is inspectable information, not a newly authored assessment. There is no automatic expiry, alert interpretation, cross-system evidence transfer or Requirement Status transition event stream.
 
-Deployments of an environment are listed with ordinary keyset pagination by deployment id and, separately, as history (see "Deployment history"). Version 8 storage replaces earlier migration history; see [deployment-requirement-status.md](deployment-requirement-status.md).
+Deployments of an environment are listed with ordinary keyset pagination by deployment id and, separately, as history (see "Deployment history"). Version 9 storage replaces earlier migration history; see [deployment-requirement-status.md](deployment-requirement-status.md).
 
 ## Reconciled deployment observations
 
@@ -175,7 +152,7 @@ See `contracts/deployment-observation.md` for exact CAS, replay, freshness, runt
    "verified_at_ms": 0}}
 ```
 
-`authority` is the native full-model authority projection, `reviews` the sealed native Requirement Review records committed in git, `catalog` an optional navigation catalog as in release publication, and `ratification.status` is `ratified | unratified`; an `unratified` verdict requires a nonempty `reason`, and `verified_at_ms` is a non-negative integer. `commit` is 40 or 64 lowercase hex digits, here and in a release's `integration` and Change repository commits. `main_sequence` is the first-parent commit count of `commit` on main, computed and attested by CI. `publication_revision` is a positive integer and `sources` a nonempty object mapping each repository identity to the full 40-lowercase-hex commit the model was computed from: the model depends on more than `commit` (for example a deployment-configuration repository that moves independently), so a new `publication_revision` of the same commit republishes the model after such a source moved. Version 1 is rejected.
+`authority` is the native full-model authority projection, `reviews` the sealed native Requirement Review records committed in git (any other record kind is rejected with HTTP 422), `catalog` an optional navigation catalog as in release publication, and `ratification.status` is `ratified | unratified`; an `unratified` verdict requires a nonempty `reason`, and `verified_at_ms` is a non-negative integer. `commit` is 40 or 64 lowercase hex digits, here and in a release's `integration` and Change repository commits. `main_sequence` is the first-parent commit count of `commit` on main, computed and attested by CI. `publication_revision` is a positive integer and `sources` a nonempty object mapping each repository identity to the full 40-lowercase-hex commit the model was computed from: the model depends on more than `commit` (for example a deployment-configuration repository that moves independently), so a new `publication_revision` of the same commit republishes the model after such a source moved. Version 1 is rejected.
 
 The service validates the authority, registers its model revision as for candidate revisions, stores each review with provenance basis `publisher-transported-assertion` and re-assesses every review against the posted authority, recording the result. It stores an immutable publication keyed by `(project, commit, publication_revision)`; one `main_sequence` belongs to one commit. First publication returns HTTP 201 and an identical replay of a stored `(commit, publication_revision)` HTTP 200. HTTP 422 reports an invalid payload, authority or review failure; HTTP 403 a wrong role; HTTP 409 the same `(commit, publication_revision)` with different content (including different `sources`), a `publication_revision` lower than the highest stored for that commit (superseded), a `main_sequence` differing from the commit's earlier publications, or a different commit with an already used `main_sequence`. A higher revision of a stored commit is accepted. Every publication is stored. The latest model is the one with the highest `(main_sequence, publication_revision)` pair, never arrival order, and the default model never regresses to a lower pair. The ratification verdict belongs to each stored revision. `ratification` is a publisher assertion: the service stores it as submitted and cannot call the hosting API.
 
@@ -186,3 +163,21 @@ All routes below are read-only and accept any role.
 - `GET .../environments/{environment}/delivery-gap` returns `{environment, deployment_id, release_fingerprint, release_model_revision, main_model_revision, main_sequence, publication_revision, sources, requirements: [{id, difference, criticality, release_status}]}`. `difference` is `added | changed | removed`, computed between the model of the environment's selected deployment's release and the latest main model by the Requirement fingerprint (which covers text, criticality and conditions); the response also carries `main_commit`, and the route returns HTTP 404 when the environment has no selected deployment or no main-model publication exists; `release_status` is the deployed release's Status for the Requirement, or null when it is added. A deployment is never assessed against main's model; the gap report is the only place main's model meets an environment.
 - `GET .../environments/{environment}/deployment-history?limit=&page_token=` returns `{deployments: [{deployment_id, release_fingerprint, label, first_observed_ms, last_observed_ms, rollout_id, current}], next_page_token}`, newest first with token-based pagination. `current` marks the deployment currently selected for the environment (the latest `POST .../environments/{environment}/deployment` selection), not the latest observed deployment. It replaces the capped, id-ordered deployment list for history display.
 - `GET .../environments/{environment}/rollback-candidates?limit=` returns earlier deployments of the environment whose last stored per-deployment status summary had every non-routine Requirement Satisfied, each with `deployment_id`, `release_fingerprint`, `label`, `first_observed_ms`, `last_observed_ms`, `rollout_id`, `last_status_at_ms` and a `non_routine_requirements` count (the non-routine Requirements of that deployment's model revision that are not `not-applicable`). The criterion is evaluated on the summary stored by the latest assessment of that deployment; no history table exists, so a candidate's status may be old and is never presented as current. A not-applicable Requirement is neither satisfied nor failing: it does not disqualify a candidate and is not counted in `non_routine_requirements`, so a deployment whose non-routine Requirements are all not-applicable qualifies with a count of 0. Azimuth performs no rollback.
+
+## Storage schema
+
+Storage schema version 9 is initialized only on a fresh database; startup rejects a database recorded at another version or signature, and there is no in-place upgrade. A stored Requirement Review holds `kind`, `reviewer`, `reviewed_at_ms`, `rationale`, `artifacts`, `requirement`, `requirement_fingerprint`, `dependencies_fingerprint`, `decision`, `reassesses`, `challenge_basis` and `fingerprint` as typed columns and ordered child rows, with no JSON text. The authority projection additionally stores its top-level `requirement_intents: [{id, fingerprint}]`.
+
+## Work Provenance
+
+Work Provenance (`contracts/work-provenance.md`) is stored in its own relational tables with typed columns and no JSON, written by the publisher with `provenance_basis: publisher-transported-assertion` and readable by every project role. It is never an assessment input: no review currentness, Requirement Status, deployment assessment, assessment trigger or event reads these tables.
+
+| Endpoint | Meaning |
+| --- | --- |
+| `POST /v1/projects/{project}/provenance/ledgers` | Submit one change ledger. 201 on acceptance with `instances_added` and `attempts_added`; 200 when that ledger fingerprint was already accepted; 409 when a stored attempt or instance identity changes or is omitted, a non-active instance changes its disposition, or an attempt id is recorded for another change; 422 for an invalid ledger or a route/project mismatch. |
+| `POST /v1/projects/{project}/provenance/attributions` | Submit one compiled Failure Attribution. 201, 200 for an identical replay, 409 for the same id with a different fingerprint. |
+| `GET /v1/projects/{project}/provenance/changes/{change}` | The ledger as last accepted, reassembled exactly in the contract shape; 404 when none was submitted. |
+| `GET /v1/projects/{project}/provenance/requirements/{requirement}` | `{requirement, releases, attributions}` as specified in the Work Provenance contract; 404 when no release authority in the lineage contains the Requirement. |
+| `GET /v1/projects/{project}/provenance/attempts?cursor=&limit=` | `{project, items, next}`: dataset rows in the `azimuth report provenance` shape, ordered by change, instance and sequence. `limit` is 1..100 (default 25); `cursor` is the `next` attempt id of the previous page, and an unknown cursor returns 422. |
+
+The Requirement history considers only releases with an `integration_sequence`, ordered by it (then by submission time and fingerprint). A release is listed when the canonical fingerprint of the Requirement's review dependency packet differs from the previous release in that order or the Requirement is new or reappears there; `relation` is `intent` when its `requirement_intents` entry or any of its Scenario fingerprints differs, otherwise `dependency`. Each change of a listed release carries every stored attempt of that change in the ledger attempt shape with `instance` and `disposition` added, ordered by the ledger's instance order (predecessors first) and then `sequence`, or `[]` without a stored ledger. A stored review is linked to the attempt that produced it through `generated[].record_fingerprint`. Attributions are the compiled `azimuth-failure-attribution` records naming the Requirement, ordered by `recorded_at_ms` and id.

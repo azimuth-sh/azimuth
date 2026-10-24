@@ -23,6 +23,7 @@ pub mod json;
 pub mod labels;
 pub mod manifest;
 pub mod model;
+pub mod provenance;
 pub mod release;
 pub mod resources;
 pub mod review_authoring;

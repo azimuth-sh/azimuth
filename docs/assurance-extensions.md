@@ -36,7 +36,7 @@ The compact account keeps distinct ownership:
 - `verification.md` declares Checks, inline contributions, package concepts and machine-executed Verification Challenges;
 - source tags identify Check/Verification Challenge implementations and meaningful Requirement or Mechanism realization scope;
 - ecosystem extractors emit semantic sites, accountable locations and fingerprints, not reviewer decisions;
-- exact Requirement Reviews and Requirement Status records are authored separately and compiled against pinned packets; and
+- exact Requirement Reviews are authored separately and compiled against pinned packets, while deployment Requirement Status is computed; and
 - Runs retain actual execution Verification Targets, Check Results, Challenge Results and provenance.
 
 The older repository declaration lane retains its separately documented Decision Policies and Challenge Plans. It is historical guidance for that grammar, not a mandatory compact review layer. See [the historical review contract](../contracts/history/assurance-reviews-before-claim-health.md).

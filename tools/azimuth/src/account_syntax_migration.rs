@@ -52,7 +52,6 @@ const KINDS: &[(&str, &str)] = &[
     ("claim", "requirement"),
     ("case", "scenario"),
     ("claim-review", "requirement-review"),
-    ("claim-health", "requirement-status"),
     ("claim-judgment", "requirement-judgment"),
 ];
 
@@ -407,7 +406,7 @@ mod tests {
                       - Claims: claim-review\n  - Subjects: artifact\nRequired scope: [\"claim\",\"case\",\"mechanism\"]\n\
                       Select: claim-judgment from claim claim\nSelect: applicability-decision from case case-id\n\
                       Remove cases: a, b\n";
-        let expected = "### Verification Challenge: mutation/search\n- Form: mutation\n- Targets: requirement-review, requirement-status\n- Targets: `requirement-review`\n\
+        let expected = "### Verification Challenge: mutation/search\n- Form: mutation\n- Targets: requirement-review, claim-health\n- Targets: `requirement-review`\n\
                         - Requirements: claim-review\n  - Verification Targets: artifact\nRequired scope: [\"requirement\",\"scenario\",\"mechanism\"]\n\
                         Select: requirement-judgment from requirement claim\nSelect: applicability-decision from scenario case-id\n\
                         Remove scenarios: a, b\n";

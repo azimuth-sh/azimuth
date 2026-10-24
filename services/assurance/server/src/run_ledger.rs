@@ -20,6 +20,7 @@ mod evidence_cache;
 mod materialized;
 mod materialized_reviews;
 mod model_catalog;
+mod provenance;
 mod release;
 mod target_normalizer;
 mod target_observation;
@@ -284,6 +285,26 @@ pub fn app(state: LedgerState) -> Router {
             get(release::summary),
         )
         .route("/v1/projects/{project}/changes", get(release::changes))
+        .route(
+            "/v1/projects/{project}/provenance/ledgers",
+            post(provenance::submit_ledger),
+        )
+        .route(
+            "/v1/projects/{project}/provenance/attributions",
+            post(provenance::submit_attribution),
+        )
+        .route(
+            "/v1/projects/{project}/provenance/changes/{change}",
+            get(provenance::show_change),
+        )
+        .route(
+            "/v1/projects/{project}/provenance/requirements/{requirement}",
+            get(provenance::requirement_history),
+        )
+        .route(
+            "/v1/projects/{project}/provenance/attempts",
+            get(provenance::list_attempts),
+        )
         .route(
             "/v1/projects/{project}/deployments",
             post(release::deploy).get(release::deployments),
@@ -778,14 +799,9 @@ async fn submit_review(
 ) -> Result<(StatusCode, Json<Value>), LedgerError> {
     let reviewer = state.authorize(project, headers, Some(Role::Reviewer))?;
     let record = core_json(body)?;
+    require_requirement_review(record.get("kind"))?;
     assurance_review::validate_record(&record).map_err(LedgerError::invalid)?;
     let payload = to_value(&record)?;
-    if !matches!(
-        payload.get("kind").and_then(Value::as_str),
-        Some("requirement-review" | "requirement-status")
-    ) {
-        return Err(LedgerError::invalid("new review submissions require requirement-review or requirement-status; earlier review kinds remain readable history"));
-    }
     if payload.get("reviewer").and_then(Value::as_str) != Some(&reviewer) {
         return Err(LedgerError::forbidden());
     }
@@ -845,11 +861,23 @@ async fn review_history(
         let payload: Value = row.try_get("payload")?;
         let record = core_json(payload.to_string().as_bytes())?;
         let assessment = assurance_review::assess_record(&record, &authority, &reviews, &bundles);
-        records.push(json!({"historical": !matches!(payload.get("kind").and_then(Value::as_str), Some("requirement-review" | "requirement-status")), "record":payload,"assessment":assessment.status,"diagnostics":assessment.diagnostics,"provenance_basis":row.try_get::<String, _>("provenance_basis")?,"submitted_by":row.try_get::<String, _>("submitted_by")?,"submitted_at":row.try_get::<String, _>("submitted_at")?}));
+        records.push(json!({"record":payload,"assessment":assessment.status,"diagnostics":assessment.diagnostics,"provenance_basis":row.try_get::<String, _>("provenance_basis")?,"submitted_by":row.try_get::<String, _>("submitted_by")?,"submitted_at":row.try_get::<String, _>("submitted_at")?}));
     }
     Ok(Json(
         json!({"project":project,"records":records,"next":next}),
     ))
+}
+
+// Deployment Requirement Status is computed from evidence, and the earlier assessment kinds no
+// longer have storage, so a record of any other kind is refused before validation.
+fn require_requirement_review(kind: Option<&CoreJson>) -> Result<(), LedgerError> {
+    match kind.and_then(CoreJson::as_str) {
+        Some("requirement-review") => Ok(()),
+        Some(kind @ ("requirement-status" | "method-qualification" | "applicability-decision" | "requirement-judgment")) => Err(LedgerError::invalid(format!(
+            "{kind} records are not accepted: the Assurance Service stores only requirement-review records, and deployment Requirement Status is computed from evidence"
+        ))),
+        _ => Err(LedgerError::invalid("review records require kind requirement-review")),
+    }
 }
 
 fn require_bounded_payloads(rows: &[sqlx::postgres::PgRow]) -> Result<(), LedgerError> {
