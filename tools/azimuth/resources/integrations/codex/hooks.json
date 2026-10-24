@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "azimuth provenance capture --harness codex",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

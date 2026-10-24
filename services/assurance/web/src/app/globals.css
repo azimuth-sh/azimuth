@@ -561,6 +561,7 @@ body:has(.moduleOverlay[open]) { overflow: hidden; }
 .basis-harness { color: var(--green); }
 .basis-declared { color: var(--amber); }
 .basis-unknown { color: var(--neutral-ink); border-style: dashed; }
+.usageOverlapping { color: var(--muted); }
 .workRelease { margin-top: 14px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 6px; background: var(--subtle); }
 .workReleaseHeading { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .workReleaseHeading strong { font-size: 13px; }
@@ -572,6 +573,7 @@ body:has(.moduleOverlay[open]) { overflow: hidden; }
 .workAttemptSequence { color: var(--quiet); font-variant-numeric: tabular-nums; }
 .workAttemptActor { margin-left: auto; color: var(--muted); font-size: 11px; }
 .workAttempt .factGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.workAttempt .workUsage { grid-column: 1 / -1; }
 .workEntities { margin: 0; padding-left: 18px; }
 .workEntities li > span:first-child { color: var(--quiet); }
 .workAttemptId { margin: 6px 0 0; color: var(--quiet); font-size: 10px; }

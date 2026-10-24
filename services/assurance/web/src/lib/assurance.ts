@@ -155,7 +155,23 @@ export interface AgentDescriptor {
   kind: DescriptorField;
   model: DescriptorField;
   effort: DescriptorField;
+  agent_type: DescriptorField;
   harness: { name: string | null; version: string | null; basis: ProvenanceBasis };
+}
+// Token fields keep the provider's own semantics, so input totals are not comparable across providers.
+export interface TokenCounts {
+  input_tokens: number;
+  cache_read_input_tokens: number | null;
+  cache_write_input_tokens: number | null;
+  output_tokens: number;
+  reasoning_output_tokens: number | null;
+}
+export interface AttemptUsage extends TokenCounts {
+  basis: Exclude<ProvenanceBasis, 'unknown'>;
+  model_calls: number;
+  tool_calls: number;
+  overlapping: boolean;
+  delegated: TokenCounts & { agents: number; model_calls: number };
 }
 export interface ProvenanceEntity {
   kind: string;
@@ -182,6 +198,7 @@ export interface ProvenanceAttempt {
   agent: AgentDescriptor;
   guidance: Array<{ kind: string; id: string; fingerprint: string | null }>;
   trace: string | null;
+  usage: AttemptUsage | null;
   used: ProvenanceEntity[];
   generated: ProvenanceEntity[];
 }

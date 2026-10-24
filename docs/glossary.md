@@ -345,8 +345,12 @@ activities, not their products: a review, design or implementation lives in its 
 referenced by fingerprint. See [`contracts/work-provenance.md`](../contracts/work-provenance.md).
 
 **Attempt** — one completed, submitted workflow result: action, outcome, actor, agent descriptor,
-times, guidance and the entities it used and generated. An attempt that never submitted a result is
+times, guidance, usage and the entities it used and generated. An attempt that never submitted a result is
 harness telemetry, not provenance.
+
+**Usage** — the summary of an attempt's model work between its handoff and its recorded result:
+model and tool call counts and provider-native token counts, with delegated agents' work kept
+separate. It is the only telemetry-derived value in Work Provenance; per-call telemetry is not.
 
 **Actor** — the execution instance that performed an attempt: one session, subagent run or person.
 It is the reviewer-independence key and encodes no role, attempt number or model.

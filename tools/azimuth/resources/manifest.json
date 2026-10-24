@@ -43,5 +43,9 @@
   ],
   "workflows": [
     "change-development"
+  ],
+  "integrations": [
+    "claude-code/settings.json",
+    "codex/hooks.json"
   ]
 }

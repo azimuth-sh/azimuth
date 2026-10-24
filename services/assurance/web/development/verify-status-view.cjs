@@ -196,6 +196,13 @@ function verifyWorkHistory() {
   assert(markup.includes('basis-unknown" title="Not recorded; never inferred">unknown</span>'), 'unknown renders as unknown');
   assert(markup.includes('example-orchestrator (version unknown)'), 'declared harness with unknown version');
   assert(!/<dd>\s*<\/dd>/.test(markup), 'no descriptor or time value is blank');
+  assert(markup.includes('<dt>Agent type</dt><dd><span>general-purpose</span> <span class="basisMarker basis-harness">harness-attested</span></dd>'), 'harness agent type');
+  assert(markup.includes('<span>implementer</span> <span class="basisMarker basis-declared">declared</span>'), 'declared agent type');
+  assert(markup.includes('>4 calls · 120k in (+98k cached) / 2.4k out</span>'), 'compact own token usage');
+  assert(markup.includes('> · 2 delegated agents: 40k in / 900 out</span>'), 'delegated token usage when agents were launched');
+  assert(markup.includes('>6 calls · 1.8k in (+912k cached) / 18.4k out</span>') && !markup.includes('0 delegated agents'), 'no delegated usage without delegated agents');
+  assert.equal((markup.match(/class="basisMarker usageOverlapping"/g) ?? []).length, 1, 'only overlapping usage is marked');
+  assert(/<dt>Token usage<\/dt><dd><span class="basisMarker basis-unknown" title="Not recorded; never inferred">unknown<\/span><\/dd>/.test(markup), 'unrecorded usage is unknown, never zero');
   assert(markup.includes('>rejected</span>') && markup.includes('>accepted</span>'), 'rejected review followed by a corrected one');
   assert(markup.includes('14 min'), 'derived duration from handoff to record');
   assert(markup.includes('>not recorded</time>'), 'missing handoff time is explicit');
@@ -216,7 +223,7 @@ function verifyWorkHistory() {
   assert(unavailable.includes('Work history is unavailable right now') && unavailable.includes('not used for Requirement Status'));
   const empty = renderToStaticMarkup(React.createElement(WorkHistory, { history: null }));
   assert(empty.includes('No work history recorded for this Requirement.'));
-  console.log('Work history rendering passed: non-evidence caption, collapsed section, relation badges, harness/declared/unknown descriptors, derived durations, collapsed reports and Failure Attribution links.');
+  console.log('Work history rendering passed: non-evidence caption, collapsed section, relation badges, harness/declared/unknown descriptors and agent types, token usage, derived durations, collapsed reports and Failure Attribution links.');
 }
 verifyWorkHistory();
 

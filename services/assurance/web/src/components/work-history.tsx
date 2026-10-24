@@ -1,4 +1,4 @@
-import type { AgentDescriptor, FailureAttribution, ProvenanceAttempt, ProvenanceBasis, RequirementWorkHistory } from '../lib/assurance';
+import type { AgentDescriptor, AttemptUsage, FailureAttribution, ProvenanceAttempt, ProvenanceBasis, RequirementWorkHistory, TokenCounts } from '../lib/assurance';
 import { shortIdentifier } from '../lib/identifier';
 import { Disclosure } from './disclosure';
 import { Markdown } from './markdown';
@@ -38,7 +38,36 @@ export function DescriptorFacts({ agent }: { agent: AgentDescriptor }) {
     <div><dt>Agent kind</dt><dd><DescriptorValue value={agent.kind.value} basis={agent.kind.basis} /></dd></div>
     <div><dt>Model</dt><dd><DescriptorValue value={agent.model.value} basis={agent.model.basis} /></dd></div>
     <div><dt>Effort</dt><dd><DescriptorValue value={agent.effort.value} basis={agent.effort.basis} /></dd></div>
+    <div><dt>Agent type</dt><dd><DescriptorValue value={agent.agent_type.value} basis={agent.agent_type.basis} /></dd></div>
     <div><dt>Harness</dt><dd><DescriptorValue value={harnessValue(agent.harness)} basis={agent.harness.basis} /></dd></div>
+  </>;
+}
+
+function tokens(count: number) {
+  if (count < 1000) return `${count}`;
+  const [value, unit] = count < 1_000_000 ? [count / 1000, 'k'] : [count / 1_000_000, 'M'];
+  return `${value < 100 ? Number(value.toFixed(1)) : Math.round(value)}${unit}`;
+}
+function plural(count: number, noun: string) {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+// Cached input is shown beside, never added to, input: providers disagree on whether input includes it.
+function tokenSummary(counts: TokenCounts) {
+  const cached = counts.cache_read_input_tokens ? ` (+${tokens(counts.cache_read_input_tokens)} cached)` : '';
+  return `${tokens(counts.input_tokens)} in${cached} / ${tokens(counts.output_tokens)} out`;
+}
+function tokenDetail(counts: TokenCounts) {
+  const known = (count: number | null) => count === null ? 'not reported' : count.toLocaleString('en-US');
+  return `input ${known(counts.input_tokens)}, cache read ${known(counts.cache_read_input_tokens)}, cache write ${known(counts.cache_write_input_tokens)}, output ${known(counts.output_tokens)}, reasoning ${known(counts.reasoning_output_tokens)}`;
+}
+function UsageValue({ usage }: { usage: AttemptUsage | null }) {
+  if (usage === null) return <span className="basisMarker basis-unknown" title="Not recorded; never inferred">unknown</span>;
+  const delegated = usage.delegated;
+  return <>
+    <span title={`${plural(usage.tool_calls, 'tool call')}; ${tokenDetail(usage)}`}>{plural(usage.model_calls, 'call')} · {tokenSummary(usage)}</span>
+    {delegated.agents > 0 && <span title={`${plural(delegated.model_calls, 'call')}; ${tokenDetail(delegated)}`}> · {plural(delegated.agents, 'delegated agent')}: {tokenSummary(delegated)}</span>}
+    {' '}<span className={`basisMarker basis-${usage.basis}`}>{basisLabels[usage.basis]}</span>
+    {usage.overlapping && <> <span className="basisMarker usageOverlapping" title="Another workflow result was recorded inside this window, so these tokens are shared with it and cannot be split">overlapping</span></>}
   </>;
 }
 
@@ -50,6 +79,7 @@ function Attempt({ attempt }: { attempt: ProvenanceAttempt }) {
       <DescriptorFacts agent={attempt.agent} />
       <div><dt>Handoff captured</dt><dd><LocalTime value={attempt.handoff_captured_at_ms} fallback="not recorded" /></dd></div>
       <div><dt>Recorded</dt><dd><LocalTime value={attempt.recorded_at_ms} fallback="not recorded" />{duration && <> · {duration}</>}</dd></div>
+      <div className="workUsage"><dt>Token usage</dt><dd><UsageValue usage={attempt.usage} /></dd></div>
     </dl>
     {attempt.report ? <Disclosure summary="Report"><Markdown source={attempt.report} /></Disclosure> : <p className="modelDetailMuted">No report recorded.</p>}
     {(attempt.used.length > 0 || attempt.generated.length > 0) && <Disclosure summary="Used and generated" meta={`${attempt.used.length} used · ${attempt.generated.length} generated`}>

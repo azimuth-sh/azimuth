@@ -27,6 +27,7 @@ USAGE
     azimuth workflow abandon --instance <file> --expected-revision <number> --reason <text> [--out <file>]
     azimuth provenance ledger --change <dir> [--instance <file>...] [--repositories <file>] [--out <file>]
     azimuth provenance attributions --input <failure-attributions.md> [--out <file>]
+    azimuth provenance capture --harness <claude-code|codex>
     azimuth release prepare|verify|inputs --input <file> [--out <file>]
         [--unit-rule <file>] [--checkout <dir>] [--repository <id>]   (prepare only)
     azimuth assurance deployment-status --input <file> [--out <file>]
@@ -299,8 +300,11 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
 
 fn command_provenance(args: &[String]) -> Result<ExitCode, String> {
     let Some(operation) = args.first() else {
-        return Err("provenance needs ledger or attributions".into());
+        return Err("provenance needs ledger, attributions or capture".into());
     };
+    if operation == "capture" {
+        return command_provenance_capture(&args[1..]);
+    }
     let mut change = None;
     let mut input = None;
     let mut instances = Vec::new();
@@ -355,6 +359,30 @@ fn command_provenance(args: &[String]) -> Result<ExitCode, String> {
         }
         other => Err(format!("unknown provenance operation `{other}`")),
     }
+}
+
+/// A PreToolUse hook. It never fails the tool call: any problem is reported on stderr and the
+/// call proceeds unchanged, so a missing descriptor can only make provenance `unknown`.
+fn command_provenance_capture(args: &[String]) -> Result<ExitCode, String> {
+    let harness = match args {
+        [flag, name] if flag == "--harness" => azimuth::harness_capture::Harness::parse(name)?,
+        _ => return Err("provenance capture needs `--harness <claude-code|codex>`".into()),
+    };
+    let mut input = String::new();
+    let captured = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input)
+        .map_err(|error| format!("hook event: {error}"))
+        .and_then(|_| azimuth::json::parse(&input))
+        .and_then(|event| {
+            azimuth::harness_capture::capture(
+                harness,
+                &event,
+                azimuth::harness_capture::TRANSCRIPT_WAIT,
+            )
+        });
+    if let Err(error) = captured {
+        eprintln!("azimuth provenance capture: {error}");
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 fn command_report_provenance(args: &[String]) -> Result<ExitCode, String> {

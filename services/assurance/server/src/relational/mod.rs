@@ -785,7 +785,7 @@ mod schema_version_tests {
             );
         }
         let columns: Vec<(String, String)> = sqlx::query_as(
-            "SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND (table_name,column_name) IN (('assurance_releases','baseline_model_revision'),('assurance_releases','integration_commit'),('assurance_releases','integration_sequence'),('assessment_requirements','supported_since_ms'))",
+            "SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND (table_name,column_name) IN (('assurance_releases','baseline_model_revision'),('assurance_releases','integration_commit'),('assurance_releases','integration_sequence'),('assessment_requirements','supported_since_ms'),('provenance_attempts','agent_type'),('provenance_attempts','usage_basis'),('provenance_failure_attributions','agent_type'))",
         )
         .fetch_all(&pool)
         .await?;
@@ -798,6 +798,9 @@ mod schema_version_tests {
             "assurance_releases.integration_commit",
             "assurance_releases.integration_sequence",
             "assessment_requirements.supported_since_ms",
+            "provenance_attempts.agent_type",
+            "provenance_attempts.usage_basis",
+            "provenance_failure_attributions.agent_type",
         ] {
             assert!(columns.iter().any(|c| c == expected), "missing {expected}");
         }

@@ -58,5 +58,16 @@ The compiled bundle entry is `{id, input, reassesses, record, assessment}`. Mark
 ## Residual items
 
 - `release.rs` change-metadata `contributions[].agent/model` is a separate provenance site; it is left unchanged and recorded as a follow-up.
-- Codex harness capture is not implemented; descriptors from Codex sessions are `declared` or `unknown`.
-- The Claude Code hook that writes harness-basis descriptors (change map C7) is not installed: installing a persistent hook needs Dima's explicit approval. Until then descriptors are `declared` or `unknown`.
+- Requirement history attaches changes from `release_changes`, which merge-first releases never carry, so a release lists no changes in drim-dev. Attributing a ledger to the main commit that archived its change would fix this; it is undecided.
+
+## Harness capture (C7, experiment X1)
+
+Dima approved C7 for Claude Code and Codex on 2026-10-24, and widened D3 with `agent_type` and an attempt-level `usage` summary. Tokens per attempt reverse the "not telemetry" boundary for that one aggregate only; per-call telemetry stays out.
+
+X1 findings, from probes against Claude Code 2.1.310 and the records of Codex 0.163.0 sessions:
+
+- Claude Code's PreToolUse event carries `effort.level`, plus `agent_id` and `agent_type` inside a subagent; it carries no model. The assistant record that issued the call reaches the transcript 0.1–1.1 s after the hook fires, so the hook waits up to 5 s for it. That record names the actual model per call: a Haiku subagent of an Opus session records `claude-haiku-5-5`. R2 does not hold for Claude Code.
+- A rewrite through `updatedInput` without a `permissionDecision` is applied, and permission rules are evaluated against the rewritten command, so the hook never grants permission. A leading `export …;` makes the command compound and needs approval. Inserting `--descriptor` after `workflow update` keeps existing rules matching. The `if` filter `Bash(azimuth workflow update *)` limits the hook to those calls.
+- Codex events carry `model` and `turn_id`. In the rollout, `turn_context` holds the turn's `effort`, `session_meta` the CLI version and subagent parentage, and `token_usage_record` the per-call tokens.
+- A live Codex 0.163.0 probe answered the open questions. Shell commands run through the code-mode `exec` tool reach PreToolUse as `Bash`. A subagent's event names its own rollout and carries `agent_id` and `agent_type`; `session_meta.agent_role` was empty. A rewrite through `updatedInput` without `permissionDecision: "allow"` is rejected: Codex reports the hook as failed and runs the original command.
+- Dima chose not to have the hook grant permission. Both hooks therefore save the descriptor beside the command's `--handoff`, and `workflow update` without `--descriptor` uses it when it was saved no earlier than the handoff was captured, then removes it. Neither harness's command is altered.

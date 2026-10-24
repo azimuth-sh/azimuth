@@ -19,6 +19,9 @@ pub const WORKFLOWS: &[WorkflowDescriptor] = &[WorkflowDescriptor {
 
 pub const RESOURCE_MANIFEST: &str = include_str!("../resources/manifest.json");
 pub const PROJECT_README: &str = include_str!("../resources/templates/init/README.md");
+/// PreToolUse hooks that attach a harness-basis descriptor to `azimuth workflow update`.
+pub const CLAUDE_CODE_HOOKS: &str = include_str!("../resources/integrations/claude-code/settings.json");
+pub const CODEX_HOOKS: &str = include_str!("../resources/integrations/codex/hooks.json");
 pub const DEFAULT_STANDARDS: &str =
     include_str!("../resources/templates/init/standards-verification.md");
 pub const DEFAULT_WORKSPACE: &str = include_str!("../resources/templates/init/workspace.json");
