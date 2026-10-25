@@ -1,8 +1,8 @@
 # Candidate execution verification
 
-`azimuth run verify-candidate --authority <file> --bundle <file> --out <file>` evaluates one native Run against a supplied complete current authority. It creates no Requirement Review, Check Result, Challenge finding disposition, deployment applicability or Requirement Status. The caller selects the exact candidate and independently compares the Run Verification Target with its required source/artifact vector.
+`azimuth run verify-candidate --authority <file> --bundle <file> [--unit-rule <file>] --out <file>` evaluates one native Run against a supplied complete current authority. It creates no Requirement Review, Check Result, Challenge finding disposition, deployment applicability or Requirement Status. The caller selects the exact candidate and independently compares the Run Verification Target with its required source/artifact vector.
 
-The evaluator returns exactly:
+The evaluator returns the following fields, plus `unit_rule_fingerprint` when a unit rule is supplied:
 
 ```json
 {
@@ -19,7 +19,7 @@ Status is `passed | failed | incomplete`. Observed violated Checks, failed nativ
 
 A Check row has exactly `{id, status, scenarios, units, diagnostics}`. The evaluator requires its current authority fingerprint, exact bound Scenario set, complete Run/activities and native execution-context equality. Each unit needs measured attempts with the required Scenario outcomes. Skipped or not-executed native test records are incomplete, failed tests are adverse, and inconclusive Check outcomes are incomplete. Native protocol validation remains responsible for identity, reduction and fingerprint consistency. The evaluator rejects skipped or missing outcomes explicitly recorded by the native provider. It cannot infer an omitted test case from a generic source-scan Check: launchers must compare any expected native test inventory against the emitted records before accepting coverage.
 
-When `Deployment.units` explicitly declares units, execution must cover that exact set. A `whole` unit cannot erase explicit fixture/control obligations. Without an authored finite unit inventory, the default certifiable scope is `whole`; a narrow unit set needs an explicit complete unit manifest and is otherwise reported incomplete. Project integrations may separately establish unit partition coverage; this API does not invent a reuse proof or join earlier results.
+When `Deployment.units` explicitly declares units, execution must cover that exact set. A `whole` unit cannot erase explicit fixture/control obligations. Otherwise `--unit-rule` supplies a complete canonical `azimuth-unit-rule` inventory: every rule unit whose Check set is empty or includes this Check is required. If none applies, the default certifiable scope is `whole`. The report pins the parsed rule fingerprint. Nonhermetic units remain valid execution obligations; hermeticity only governs separate reuse decisions. Without either inventory, narrow execution is incomplete. Supplying a rule does not establish source currentness or a reuse proof, and the evaluator never joins earlier results.
 
 A Challenge row has exactly `{id, status, outcome, target_fingerprint, issues, diagnostics}`. New candidate examination must target `implementation`, and the implementation fingerprint must recompute against the current authority, source scope and exact Run Verification Target. Historical assessment-targeted Runs remain inspectable but cannot satisfy this pre-review gate. Inconclusive attempts, non-completed activities, and non-informational execution/normalization diagnostics remain gaps. A clean complete search can pass this execution gate; findings retain stable issue IDs and require independent disposition. An equivalence proposal never changes native findings to clean.
 

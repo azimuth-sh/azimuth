@@ -53,7 +53,7 @@ USAGE
     azimuth adapter verify [--config <file>]
     azimuth retained capture --root <dir> --input <draft> --out <package-dir>
     azimuth retained verify --input <manifest> [--out <report>]
-    azimuth run verify-candidate --authority <file> --bundle <file> [--out <file>]
+    azimuth run verify-candidate --authority <file> --bundle <file> [--unit-rule <file>] [--out <file>]
     azimuth run affected --input <file> [--out <file>]
     azimuth run snapshot --project-id <id> --verification-target <file> [model options] [--out <file>]
     azimuth run select --policy <file> [model options] [--config <file>] [--out <file>]
@@ -135,7 +135,7 @@ USAGE
         [--predecessor <bundle>...] [--config <file>] [--out <file>]
     azimuth run verify --bundle <file>...
     azimuth run inspect --bundle <file>... [--format text|json] [--out <file>]
-    azimuth run verify-candidate --authority <file> --bundle <file> [--out <file>]
+    azimuth run verify-candidate --authority <file> --bundle <file> [--unit-rule <file>] [--out <file>]
     azimuth run affected --input <file> [--out <file>]
     azimuth run snapshot --project-id <id> --verification-target <file>
         [model options] [--context <file>] [--shared-inputs <file>]
@@ -2223,6 +2223,7 @@ fn command_run_verify_candidate(args: &[String]) -> Result<ExitCode, String> {
     let mut authority = None;
     let mut bundle = None;
     let mut out = None;
+    let mut unit_rule = None;
     let mut index = 0;
     while index < args.len() {
         let flag = args[index].as_str();
@@ -2230,6 +2231,7 @@ fn command_run_verify_candidate(args: &[String]) -> Result<ExitCode, String> {
         match flag {
             "--authority" => set_once_path(&mut authority, value, flag)?,
             "--bundle" => set_once_path(&mut bundle, value, flag)?,
+            "--unit-rule" => set_once_path(&mut unit_rule, value, flag)?,
             "--out" => set_once_path(&mut out, value, flag)?,
             _ => return Err(format!("unknown verify-candidate option `{flag}`")),
         }
@@ -2239,13 +2241,18 @@ fn command_run_verify_candidate(args: &[String]) -> Result<ExitCode, String> {
     let bundle = bundle.ok_or("run verify-candidate requires --bundle FILE")?;
     reject_output_input_equality(
         out.as_ref(),
-        [&authority, &bundle].into_iter(),
+        [&authority, &bundle].into_iter().chain(unit_rule.iter()),
         "run verify-candidate",
     )?;
     let authority = azimuth::provenance::read_json(&authority)?;
     let bundle = azimuth::run::load(&bundle)
         .map_err(|errors| format!("invalid native candidate Run: {errors:?}"))?;
-    let report = azimuth::candidate_execution::verify(&authority, &bundle)?;
+    let rule = unit_rule
+        .as_deref()
+        .map(azimuth::unit_inputs::load_rule)
+        .transpose()?;
+    let report =
+        azimuth::candidate_execution::verify_with_unit_rule(&authority, &bundle, rule.as_ref())?;
     publish_output(report.to_string_pretty().as_bytes(), out.as_ref())?;
     Ok(
         if report.get("status").and_then(Json::as_str) == Some("passed") {

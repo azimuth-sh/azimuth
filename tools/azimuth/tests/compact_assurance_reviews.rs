@@ -667,17 +667,55 @@ fn fresh_check_results_stale_only_relevant_applicability_not_qualified_methods()
     );
 }
 #[test]
-fn requirement_review_packet_carries_no_execution_evidence() {
-    let model = model();
+fn requirement_review_packet_retains_relevant_native_execution_evidence() {
+    let mut model = model();
+    model.specs.push(parse_spec("other/spec.md", "# Spec: other\n\n## Requirement: other-restriction\nCriticality: routine\n\nOther access is restricted.\n\n### Scenario: other-rejected\nOther rejection occurs.\n").unwrap());
+    model.account_verifications.push(parse_account_verification("other/verification.md", "# Verification: other\n\n## Requirement verification: other-restriction\n\n### Check: rejects-other\n- Evidence bindings:\n  - Scenario: `other-rejected`\n    - Contribution: Establishes other rejection.\n\nExercise other rejection.\n").unwrap());
     let authority = assurance_review::authority(&model, "sample-project").unwrap();
     let bundle = observed_bundle(&authority, "rejects-access", "rejected-access", 10);
     let request =
         json::parse(r#"{"kind":"requirement-review","requirement":"restricted-access"}"#).unwrap();
-    let packet =
-        assurance_review::review_input(&model, "sample-project", &request, &[], &[bundle]).unwrap();
-    for field in ["evidence_bundles", "check_results", "verification_targets"] {
-        assert!(packet.get(field).unwrap().as_array().unwrap().is_empty());
-    }
+    let unrelated = observed_bundle(&authority, "rejects-other", "other-rejected", 20);
+    let packet = assurance_review::review_input(
+        &model,
+        "sample-project",
+        &request,
+        &[],
+        &[bundle.clone(), unrelated],
+    )
+    .unwrap();
+    assert_eq!(
+        packet.get("evidence_bundles").unwrap().as_array().unwrap(),
+        &[azimuth::run::to_json(&bundle)]
+    );
+    assert_eq!(
+        packet
+            .get("verification_targets")
+            .unwrap()
+            .as_array()
+            .unwrap(),
+        &[azimuth::run::to_json(&bundle)
+            .get("verification_target")
+            .unwrap()
+            .clone()]
+    );
+    let results = packet.get("check_results").unwrap().as_array().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].get("run"), Some(&Json::str(&bundle.run_id)));
+    assert_eq!(
+        results[0].get("bundle_fingerprint"),
+        Some(&Json::str(&bundle.bundle_fingerprint))
+    );
+    assert_eq!(
+        results[0].get("execution"),
+        azimuth::run::to_json(&bundle)
+            .get("check_executions")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .first()
+    );
+    assert!(packet.get("decision").is_none());
 }
 
 #[test]

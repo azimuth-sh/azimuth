@@ -2233,14 +2233,14 @@ mod tests {
             Json::obj(vec![("kind", Json::str(kind)), ("id", Json::str(id))])
         };
         let guidance = guidance_fingerprints(&[
-            entry("skill", "azimuth-apply"),
+            entry("skill", "azimuth-implement-change"),
             entry("reference", "workflow"),
             entry("package", "example"),
         ])
         .unwrap();
         let skill = crate::resources::SKILLS
             .iter()
-            .find(|skill| skill.id == "azimuth-apply")
+            .find(|skill| skill.id == "azimuth-implement-change")
             .unwrap();
         let expected = format!(
             "sha256:{}",

@@ -1523,8 +1523,15 @@ mod tests {
         let model = Model::default();
         let (fingerprint, receipt) = finalization(&model, &[], &[], &[]);
         let expected = Json::obj(vec![
-            ("version", Json::Num(2.0)),
+            ("version", Json::Num(3.0)),
             ("model_fingerprint", Json::str(&fingerprint)),
+            (
+                "authority_model_fingerprint",
+                Json::str(format!(
+                    "sha256:{}",
+                    crate::fingerprint::authority_model_digest(&model)
+                )),
+            ),
             ("requirements", Json::Num(0.0)),
             ("specs", Json::Num(0.0)),
             ("errors", Json::Num(0.0)),

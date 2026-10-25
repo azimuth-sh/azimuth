@@ -6,6 +6,14 @@ use crate::run::{
 use std::collections::BTreeSet;
 
 pub fn verify(authority: &Json, bundle: &RunBundle) -> Result<Json, String> {
+    verify_with_unit_rule(authority, bundle, None)
+}
+
+pub fn verify_with_unit_rule(
+    authority: &Json,
+    bundle: &RunBundle,
+    unit_rule: Option<&crate::unit_inputs::UnitRule>,
+) -> Result<Json, String> {
     crate::assurance_review::validate_authority(authority)?;
     let mut diagnostics = crate::run::verify(bundle)
         .into_iter()
@@ -79,10 +87,19 @@ pub fn verify(authority: &Json, bundle: &RunBundle) -> Result<Json, String> {
             .iter()
             .filter_map(Json::as_str)
             .collect::<BTreeSet<_>>();
-        let expected_units = if declared_units.is_empty() {
-            ["whole"].into_iter().collect::<BTreeSet<_>>()
-        } else {
+        let expected_units = if !declared_units.is_empty() {
             declared_units
+        } else {
+            let mut applicable = unit_rule
+                .into_iter()
+                .flat_map(|rule| &rule.units)
+                .filter(|unit| unit.checks.is_empty() || unit.checks.contains(&execution.check.id))
+                .map(|unit| unit.id.as_str())
+                .collect::<BTreeSet<_>>();
+            if applicable.is_empty() {
+                applicable.insert("whole");
+            }
+            applicable
         };
         let observed_units = execution
             .units
@@ -245,7 +262,7 @@ pub fn verify(authority: &Json, bundle: &RunBundle) -> Result<Json, String> {
     });
     diagnostics.sort();
     diagnostics.dedup();
-    Ok(Json::obj(vec![
+    let mut fields = vec![
         ("format", Json::str("azimuth-candidate-execution")),
         ("version", Json::Num(1.0)),
         ("status", Json::str(status(failed, incomplete))),
@@ -255,7 +272,11 @@ pub fn verify(authority: &Json, bundle: &RunBundle) -> Result<Json, String> {
             "diagnostics",
             Json::Arr(diagnostics.into_iter().map(Json::str).collect()),
         ),
-    ]))
+    ];
+    if let Some(rule) = unit_rule {
+        fields.push(("unit_rule_fingerprint", Json::str(&rule.fingerprint)));
+    }
+    Ok(Json::obj(fields))
 }
 
 fn status(failed: bool, incomplete: bool) -> &'static str {

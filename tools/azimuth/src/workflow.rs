@@ -718,7 +718,7 @@ mod tests {
 
         assert!(change.join("proposal.md").is_file());
         assert!(change.join("plan.md").is_file());
-        assert!(change.join("specs").is_dir());
+        assert!(change.join("deltas").is_dir());
         assert!(!change.join("design.md").exists());
         assert!(!change.join("verification.md").exists());
         fs::remove_dir_all(root).unwrap();

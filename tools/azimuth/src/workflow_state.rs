@@ -5510,27 +5510,118 @@ mod deployment_status_workflow_tests {
     }
 
     #[test]
-    fn hosted_only_inventory_can_prepare_publication_without_authored_requirement_status() {
+    fn hosted_only_inventory_has_local_completion_without_authored_requirement_status() {
         let template = shipped_template("change-development").unwrap();
         let definition = expand_generation(&template, &bindings(false)).unwrap();
-        assert!(arr(&definition, "tasks")
-            .unwrap()
+        let tasks = arr(&definition, "tasks").unwrap();
+        for kind in [
+            "review-requirement",
+            "author-change-outcome",
+            "request-change-acceptance",
+            "finalize-change",
+        ] {
+            assert!(
+                tasks.iter().any(|task| text(task, "kind").unwrap() == kind),
+                "missing {kind}"
+            );
+        }
+        assert!(!tasks
             .iter()
-            .any(|task| text(task, "kind").unwrap() == "prepare-publication-inputs"));
-        assert!(arr(&definition, "tasks")
-            .unwrap()
+            .any(|task| text(task, "kind").unwrap() == "assess-requirement-status"));
+        let acceptance = tasks
             .iter()
-            .any(|task| text(task, "kind").unwrap() == "review-requirement"));
+            .find(|task| text(task, "kind").unwrap() == "request-change-acceptance")
+            .unwrap();
+        let finalize = tasks
+            .iter()
+            .find(|task| text(task, "kind").unwrap() == "finalize-change")
+            .unwrap();
+        assert!(arr(finalize, "depends_on")
+            .unwrap()
+            .contains(acceptance.get("id").unwrap()));
     }
 
     #[test]
-    fn missing_local_verification_target_blocks_publication_expansion() {
+    fn missing_local_verification_target_defers_review_and_completion_until_selection() {
         let template = shipped_template("change-development").unwrap();
-        let definition = expand_generation(&template, &bindings(true)).unwrap();
-        assert!(!arr(&definition, "tasks")
-            .unwrap()
+        let mut parameters = bindings(true);
+        let definition = expand_generation(&template, &parameters).unwrap();
+        let tasks = arr(&definition, "tasks").unwrap();
+        for kind in [
+            "author-proposal",
+            "author-spec-delta",
+            "implement-change",
+            "prepare-candidate-model-revision",
+        ] {
+            assert!(
+                tasks.iter().any(|task| text(task, "kind").unwrap() == kind),
+                "pending target suppressed {kind}"
+            );
+        }
+        for kind in [
+            "execute-check",
+            "run-verification-challenge",
+            "review-requirement",
+            "author-change-outcome",
+            "request-change-acceptance",
+            "finalize-change",
+        ] {
+            assert!(
+                !tasks.iter().any(|task| text(task, "kind").unwrap() == kind),
+                "pending target allowed {kind}"
+            );
+        }
+        let mut inventory = parameters.get("assurance").unwrap().clone();
+        set(
+            &mut inventory,
+            "pending_verification_targets",
+            Json::Arr(vec![]),
+        );
+        set(
+            &mut inventory,
+            "checks",
+            Json::Arr(vec![Json::obj(vec![
+                ("check", Json::str("source-check")),
+                (
+                    "verification_target",
+                    Json::str(format!("sha256:{}", "b".repeat(64))),
+                ),
+            ])]),
+        );
+        set(&mut parameters, "assurance", inventory);
+        let selected = expand_generation(&template, &parameters).unwrap();
+        let selected_tasks = arr(&selected, "tasks").unwrap();
+        for kind in [
+            "execute-check",
+            "review-requirement",
+            "author-change-outcome",
+            "request-change-acceptance",
+            "finalize-change",
+        ] {
+            assert!(
+                selected_tasks
+                    .iter()
+                    .any(|task| text(task, "kind").unwrap() == kind),
+                "selected target omitted {kind}"
+            );
+        }
+        let check = selected_tasks
             .iter()
-            .any(|task| text(task, "kind").unwrap() == "prepare-publication-inputs"));
+            .find(|task| text(task, "kind").unwrap() == "execute-check")
+            .unwrap();
+        let review = selected_tasks
+            .iter()
+            .find(|task| text(task, "kind").unwrap() == "review-requirement")
+            .unwrap();
+        assert!(arr(review, "depends_on")
+            .unwrap()
+            .contains(check.get("id").unwrap()));
+        for task in tasks {
+            assert!(
+                selected_tasks.contains(task),
+                "selecting the pending target rewrote authoring work"
+            );
+        }
     }
 
     #[test]
