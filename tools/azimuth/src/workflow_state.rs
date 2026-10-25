@@ -4407,6 +4407,12 @@ fn expand_generation(source: &Json, bindings: &Json) -> Result<Json, String> {
     parameters(bindings)?;
     let mut tasks: Vec<Json> = Vec::new();
     let mut by_action: BTreeMap<String, Vec<Json>> = BTreeMap::new();
+    let mut deferred_actions = BTreeSet::new();
+    let pending_execution_targets = bindings
+        .get("assurance")
+        .and_then(|inventory| inventory.get("pending_verification_targets"))
+        .and_then(Json::as_array)
+        .is_some_and(|targets| !targets.is_empty());
     let base = Json::obj(vec![
         ("project", bindings.get("project").unwrap().clone()),
         ("change", bindings.get("change").unwrap().clone()),
@@ -4423,19 +4429,18 @@ fn expand_generation(source: &Json, bindings: &Json) -> Result<Json, String> {
             by_action.insert(text(action, "id")?.into(), Vec::new());
             continue;
         }
-        if collection == "change"
-            && bindings
-                .get("assurance")
-                .and_then(|v| v.get("pending_verification_targets"))
-                .and_then(Json::as_array)
-                .is_some_and(|v| !v.is_empty())
-            && arr(action, "depends_on")?.iter().any(|dep| {
-                arr(source, "actions").unwrap().iter().any(|a| {
-                    a.get("id") == dep.get("action")
-                        && matches!(text(a, "collection").ok(), Some("requirements" | "checks"))
-                })
-            })
-        {
+        if arr(action, "depends_on")?.iter().any(|dependency| {
+            deferred_actions.contains(text(dependency, "action").unwrap())
+                || (pending_execution_targets
+                    && arr(source, "actions").unwrap().iter().any(|prerequisite| {
+                        prerequisite.get("id") == dependency.get("action")
+                            && matches!(
+                                text(prerequisite, "collection").ok(),
+                                Some("requirements" | "checks")
+                            )
+                    }))
+        }) {
+            deferred_actions.insert(text(action, "id")?.to_string());
             by_action.insert(text(action, "id")?.into(), Vec::new());
             continue;
         }
