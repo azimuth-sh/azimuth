@@ -13,7 +13,7 @@ composition, and needs no Change.
 azimuth assurance catalog --project <id> --model <model> [model options] --out catalog.json
 azimuth release prepare --input release-request.json --out publication.json
 azimuth release verify --input publication.json --out publication-report.json
-azimuth release inputs --input publication-inputs.json --out publication-inputs.json
+azimuth release inputs --input publication-inputs-draft.json --out publication-inputs.json
 ```
 
 There is no `release project` or `release compose`: releases are not composed from Change deltas.
@@ -107,5 +107,27 @@ provenance. It is not owned by one Change. Append a new deployment for changed c
 artifacts. Runs and Requirement Status still name their exact native Verification Target; matching model revisions do
 not authorize cross-target reuse.
 
-There is no release acceptance. Archival occurs later through repository finalization, not publication.
+There is no release acceptance. Change archival belongs to repository finalization and is not a publication side effect.
 CI never invokes a model to author missing evidence or resolve merge conflicts.
+
+
+## CI input assembly
+
+The local agent workflow ends with the finalized archived change. CI assembles
+publication inputs deterministically from exact source revisions, sealed reviews,
+validated retained inputs and native Runs. Select the latest assessment before
+checking its decision/currentness; a newer adverse or stale review never permits
+an older accepted fallback. Validate the resulting native envelope with
+`azimuth release inputs` before publication. Do not rewrite reviewer records or
+manufacture execution facts. Missing closure or required verification is a visible
+failure, not an empty successful package.
+
+The trusted delivery integration can accept a version 2
+`azimuth-git-release-request` containing exactly `format`, `version`, `name`,
+`environment` and `sources` (repository ids mapped to exact full commits). It has
+no authored `inputs` envelope; CI derives one after validating the current PR,
+source ancestry, trusted allowlists and exact checkouts. Version 1 historical
+requests retain their explicit digest-pinned input path. Consult
+`contracts/release-publication.md` for the exact modes and responsibility boundary.
+CI retains failures for manual owner response; it creates no work packages,
+assignments or agent calls.

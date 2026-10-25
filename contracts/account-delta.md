@@ -52,3 +52,7 @@ Ordinary verification captions carry no Add declaration or identity. Projection 
 ## Unified validation: 2026-10-06
 
 `change validate` replaces the separate change check and account-check commands in the current alpha interface. There are no compatibility aliases. It validates prospective intent and account relationships together, defaults to structural scope, with evidence gaps and acceptance blockers reported only by explicit `--scope acceptance`, and does not apply facets or approve independent reviews. Pending reviews do not make otherwise valid account syntax invalid. See [validation.md](validation.md).
+
+## Corrections after completion
+
+A correction requested after CI/PR feedback is an explicitly related new change against the current model, which already includes any applied original delta. The `correction.json` scope/basis contract is defined in [validation.md](validation.md#explicit-correction-scope). It preserves the original archived change unchanged. Reconcile any changed accepted-block guards, author the correction's own transition and retain successor assessments for affected definitions/inputs. Do not reapply or silently mutate the original delta. Current semantic reviews, native execution and actual human acceptance still gate completion.

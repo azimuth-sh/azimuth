@@ -2,7 +2,7 @@
   "format": "azimuth-workflow-template",
   "version": 2,
   "id": "change-development",
-  "revision": 10,
+  "revision": 11,
   "actions": [
     {
       "id": "establish-change-scope",
@@ -14,6 +14,10 @@
         "instructions"
       ],
       "guidance": [
+        {
+          "kind": "skill",
+          "id": "azimuth-workflow"
+        },
         {
           "kind": "reference",
           "id": "workflow"
@@ -49,13 +53,17 @@
       ],
       "guidance": [
         {
+          "kind": "skill",
+          "id": "azimuth-author-proposal"
+        },
+        {
           "kind": "reference",
           "id": "workflow"
         }
       ],
       "required_output": {
-        "kind": "proposal",
-        "description": "Retain the actual proposal and exact input basis; follow the workflow reference."
+        "kind": "proposal-content",
+        "description": "Retain proposal.md with a proposal-content reference. Its workflow-owned header Status is excluded from this content identity; substantive proposal content and separate actual approval remain pinned."
       },
       "correction": null,
       "outcomes": [
@@ -87,6 +95,10 @@
         "instructions"
       ],
       "guidance": [
+        {
+          "kind": "skill",
+          "id": "azimuth-review-proposal"
+        },
         {
           "kind": "reference",
           "id": "workflow"
@@ -131,6 +143,10 @@
       ],
       "guidance": [
         {
+          "kind": "skill",
+          "id": "azimuth-author-spec-delta"
+        },
+        {
           "kind": "reference",
           "id": "workflow"
         }
@@ -165,6 +181,10 @@
       ],
       "guidance": [
         {
+          "kind": "skill",
+          "id": "azimuth-review-spec-delta"
+        },
+        {
           "kind": "reference",
           "id": "workflow"
         }
@@ -183,8 +203,8 @@
       ]
     },
     {
-      "id": "author-design",
-      "kind": "author-design",
+      "id": "author-design-delta",
+      "kind": "author-design-delta",
       "collection": "modules",
       "depends_on": [
         {
@@ -199,13 +219,17 @@
       ],
       "guidance": [
         {
+          "kind": "skill",
+          "id": "azimuth-author-design-delta"
+        },
+        {
           "kind": "reference",
           "id": "workflow"
         }
       ],
       "required_output": {
-        "kind": "requirement-design",
-        "description": "Retain the actual requirement-design and exact input basis; follow the workflow reference."
+        "kind": "design-delta",
+        "description": "Author a guarded design delta and review its projected account against the reviewed spec delta."
       },
       "correction": null,
       "outcomes": [
@@ -217,12 +241,12 @@
       ]
     },
     {
-      "id": "review-design",
-      "kind": "review-design",
+      "id": "review-design-delta",
+      "kind": "review-design-delta",
       "collection": "modules",
       "depends_on": [
         {
-          "action": "author-design",
+          "action": "author-design-delta",
           "match": "same-module",
           "condition": "current-success"
         },
@@ -238,6 +262,10 @@
       ],
       "guidance": [
         {
+          "kind": "skill",
+          "id": "azimuth-review-design-delta"
+        },
+        {
           "kind": "reference",
           "id": "workflow"
         }
@@ -246,7 +274,7 @@
         "kind": "authoring-review",
         "description": "Retain the actual authoring-review and exact input basis; follow the workflow reference."
       },
-      "correction": "author-design",
+      "correction": "author-design-delta",
       "outcomes": [
         "accepted",
         "rejected"
@@ -256,12 +284,17 @@
       ]
     },
     {
-      "id": "author-verification",
-      "kind": "author-verification",
+      "id": "author-verification-delta",
+      "kind": "author-verification-delta",
       "collection": "modules",
       "depends_on": [
         {
           "action": "review-spec-delta",
+          "match": "same-module",
+          "condition": "current-success"
+        },
+        {
+          "action": "review-design-delta",
           "match": "same-module",
           "condition": "current-success"
         }
@@ -272,13 +305,17 @@
       ],
       "guidance": [
         {
+          "kind": "skill",
+          "id": "azimuth-author-verification-delta"
+        },
+        {
           "kind": "reference",
           "id": "workflow"
         }
       ],
       "required_output": {
-        "kind": "verification-account",
-        "description": "Retain the actual verification-account and exact input basis; follow the workflow reference."
+        "kind": "verification-delta",
+        "description": "Author a guarded verification delta against the reviewed spec and design deltas; retain its exact projected account."
       },
       "correction": null,
       "outcomes": [
@@ -290,17 +327,17 @@
       ]
     },
     {
-      "id": "review-verification",
-      "kind": "review-verification",
+      "id": "review-verification-delta",
+      "kind": "review-verification-delta",
       "collection": "modules",
       "depends_on": [
         {
-          "action": "author-verification",
+          "action": "author-verification-delta",
           "match": "same-module",
           "condition": "current-success"
         },
         {
-          "action": "review-spec-delta",
+          "action": "review-design-delta",
           "match": "same-module",
           "condition": "current-success"
         }
@@ -311,6 +348,10 @@
       ],
       "guidance": [
         {
+          "kind": "skill",
+          "id": "azimuth-review-verification-delta"
+        },
+        {
           "kind": "reference",
           "id": "workflow"
         }
@@ -319,7 +360,7 @@
         "kind": "authoring-review",
         "description": "Retain the actual authoring-review and exact input basis; follow the workflow reference."
       },
-      "correction": "author-verification",
+      "correction": "author-verification-delta",
       "outcomes": [
         "accepted",
         "rejected"
@@ -334,12 +375,12 @@
       "collection": "change",
       "depends_on": [
         {
-          "action": "review-design",
+          "action": "review-design-delta",
           "match": "all",
           "condition": "current-success"
         },
         {
-          "action": "review-verification",
+          "action": "review-verification-delta",
           "match": "all",
           "condition": "current-success"
         }
@@ -349,6 +390,10 @@
         "instructions"
       ],
       "guidance": [
+        {
+          "kind": "skill",
+          "id": "azimuth-author-engineering-plan"
+        },
         {
           "kind": "reference",
           "id": "workflow"
@@ -383,12 +428,12 @@
           "condition": "current-success"
         },
         {
-          "action": "review-design",
+          "action": "review-design-delta",
           "match": "all",
           "condition": "current-success"
         },
         {
-          "action": "review-verification",
+          "action": "review-verification-delta",
           "match": "all",
           "condition": "current-success"
         },
@@ -409,6 +454,10 @@
       ],
       "guidance": [
         {
+          "kind": "skill",
+          "id": "azimuth-workflow"
+        },
+        {
           "kind": "reference",
           "id": "workflow"
         }
@@ -417,7 +466,7 @@
         "kind": "implementation-approval",
         "description": "Retain the actual implementation-approval and exact input basis; follow the workflow reference."
       },
-      "correction": "author-engineering-plan",
+      "correction": null,
       "outcomes": [
         "approved",
         "denied",
@@ -443,6 +492,10 @@
         "instructions"
       ],
       "guidance": [
+        {
+          "kind": "skill",
+          "id": "azimuth-implement-change"
+        },
         {
           "kind": "reference",
           "id": "workflow"
@@ -478,6 +531,10 @@
       ],
       "guidance": [
         {
+          "kind": "skill",
+          "id": "azimuth-workflow"
+        },
+        {
           "kind": "reference",
           "id": "workflow"
         }
@@ -512,6 +569,10 @@
       ],
       "guidance": [
         {
+          "kind": "skill",
+          "id": "azimuth-workflow"
+        },
+        {
           "kind": "reference",
           "id": "workflow"
         },
@@ -534,6 +595,99 @@
       ]
     },
     {
+      "id": "execute-check",
+      "kind": "execute-check",
+      "collection": "checks",
+      "depends_on": [
+        {
+          "action": "prepare-candidate-model-revision",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "implement-change",
+          "match": "all",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions",
+        "snapshot"
+      ],
+      "guidance": [
+        {
+          "kind": "skill",
+          "id": "azimuth-workflow"
+        },
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "run-bundle",
+        "description": "Retain the actual run-bundle and exact input basis; follow the workflow reference."
+      },
+      "correction": "implement-change",
+      "outcomes": [
+        "completed",
+        "failed"
+      ],
+      "satisfies": [
+        "completed"
+      ]
+    },
+    {
+      "id": "run-verification-challenge",
+      "kind": "run-verification-challenge",
+      "collection": "verification-challenges",
+      "depends_on": [
+        {
+          "action": "execute-check",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "prepare-candidate-model-revision",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "implement-change",
+          "match": "all",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions",
+        "snapshot"
+      ],
+      "guidance": [
+        {
+          "kind": "skill",
+          "id": "azimuth-workflow"
+        },
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "run-bundle",
+        "description": "Execute this declared Challenge against its exact implementation, Check definitions, source scope and Verification Target before Requirement Review. Retain native Run and readable report. Execution gaps and confirmed defects block review; every equivalence or irrelevance proposal must identify the exact objection and rationale for independent review."
+      },
+      "correction": "implement-change",
+      "outcomes": [
+        "completed",
+        "failed"
+      ],
+      "satisfies": [
+        "completed"
+      ]
+    },
+    {
       "id": "review-requirement",
       "kind": "review-requirement",
       "collection": "requirement-definitions",
@@ -545,6 +699,16 @@
         },
         {
           "action": "implement-change",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "execute-check",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "run-verification-challenge",
           "match": "all",
           "condition": "current-success"
         }
@@ -570,7 +734,7 @@
       ],
       "required_output": {
         "kind": "requirement-review",
-        "description": "Independently assess the exact Requirement, Scenarios, design and realization. Accept only when the verification approach is adequate and its implementation can fulfil declared obligations, including required observations and controls. Execution may remain pending. Retain findings, rejected reviews and reassessments."
+        "description": "Independently assess the composed Requirement, design, implementation and verification with current Check and Challenge results. Adjudicate each proposed Challenge disposition. Retain exact proof dependencies and predecessor history; acceptance establishes credibility, not deployment status."
       },
       "correction": "implement-change",
       "outcomes": [
@@ -582,22 +746,27 @@
       ]
     },
     {
-      "id": "run-verification-challenge",
-      "kind": "run-verification-challenge",
-      "collection": "verification-challenges",
+      "id": "author-change-outcome",
+      "kind": "author-change-outcome",
+      "collection": "change",
       "depends_on": [
         {
           "action": "review-requirement",
-          "match": "verification-challenge-requirements",
-          "condition": "current-success"
-        },
-        {
-          "action": "prepare-candidate-model-revision",
           "match": "all",
           "condition": "current-success"
         },
         {
-          "action": "implement-change",
+          "action": "execute-check",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "run-verification-challenge",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "prepare-candidate-model-revision",
           "match": "all",
           "condition": "current-success"
         }
@@ -609,47 +778,17 @@
       ],
       "guidance": [
         {
-          "kind": "reference",
-          "id": "workflow"
-        }
-      ],
-      "required_output": {
-        "kind": "run-bundle",
-        "description": "Execute this declared machine Verification Challenge against its current accepted Requirement Reviews and reviewed resolved source scope. Retain a readable verification-challenge-report and native run-bundle, including findings, gaps and limitations. Execution completion does not imply acceptance. Investigate surviving mutants for relevance, equivalence and coverage. No findings never establishes Requirement Status."
-      },
-      "correction": "implement-change",
-      "outcomes": [
-        "completed",
-        "failed"
-      ],
-      "satisfies": [
-        "completed"
-      ]
-    },
-    {
-      "id": "execute-check",
-      "kind": "execute-check",
-      "collection": "checks",
-      "depends_on": [
-        {
-          "action": "review-requirement",
-          "match": "all",
-          "condition": "current-success"
-        }
-      ],
-      "inputs": [
-        "request",
-        "instructions"
-      ],
-      "guidance": [
+          "kind": "skill",
+          "id": "azimuth-author-change-outcome"
+        },
         {
           "kind": "reference",
           "id": "workflow"
         }
       ],
       "required_output": {
-        "kind": "run-bundle",
-        "description": "Retain the actual run-bundle and exact input basis; follow the workflow reference."
+        "kind": "change-outcome",
+        "description": "Record actual delivered behavior, departures, verification, residuals and hosted obligations after all local reviews and execution converge."
       },
       "correction": null,
       "outcomes": [
@@ -661,12 +800,12 @@
       ]
     },
     {
-      "id": "prepare-publication-inputs",
-      "kind": "prepare-publication-inputs",
+      "id": "request-change-acceptance",
+      "kind": "request-change-acceptance",
       "collection": "change",
       "depends_on": [
         {
-          "action": "execute-check",
+          "action": "author-change-outcome",
           "match": "all",
           "condition": "current-success"
         },
@@ -676,7 +815,7 @@
           "condition": "current-success"
         },
         {
-          "action": "prepare-candidate-model-revision",
+          "action": "execute-check",
           "match": "all",
           "condition": "current-success"
         },
@@ -688,17 +827,87 @@
       ],
       "inputs": [
         "request",
-        "instructions"
+        "instructions",
+        "snapshot"
       ],
       "guidance": [
+        {
+          "kind": "skill",
+          "id": "azimuth-workflow"
+        },
         {
           "kind": "reference",
           "id": "workflow"
         }
       ],
       "required_output": {
-        "kind": "publication-inputs",
-        "description": "Prepare compact Git-trackable azimuth-publication-inputs version 1 containing the complete native release request; Validate the envelope with azimuth release inputs --input <draft> --out <Git-tracked-file>. No AAS connection, registration receipt or local upload is required. CI publishes unchanged native reviews and Runs with recorded transport provenance. Deployment Requirement Status is computed after observed rollout; publication does not require an authored positive Requirement Status assessment. Deployment-only Checks and Monitors execute in their hosted environment."
+        "kind": "change-acceptance",
+        "description": "Retain the actual accountable human decision against this exact completed package; no inferred approval."
+      },
+      "correction": null,
+      "outcomes": [
+        "approved",
+        "denied",
+        "deferred"
+      ],
+      "satisfies": [
+        "approved"
+      ]
+    },
+    {
+      "id": "finalize-change",
+      "kind": "finalize-change",
+      "collection": "change",
+      "depends_on": [
+        {
+          "action": "request-change-acceptance",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "author-change-outcome",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "prepare-candidate-model-revision",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "execute-check",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "run-verification-challenge",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "review-requirement",
+          "match": "all",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions",
+        "snapshot"
+      ],
+      "guidance": [
+        {
+          "kind": "skill",
+          "id": "azimuth-archive"
+        },
+        {
+          "kind": "reference",
+          "id": "workflow"
+        }
+      ],
+      "required_output": {
+        "kind": "change-finalization",
+        "description": "Validate portable retained inputs and accepted proof closure, apply reviewed deltas, generate finalization/provenance, and archive the unchanged completed record. Preserve stable record references and report the actual destination."
       },
       "correction": null,
       "outcomes": [

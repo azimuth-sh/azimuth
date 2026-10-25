@@ -24,6 +24,10 @@ fn seal(v: &mut Json) -> Result<(), String> {
     put(v, "fingerprint", Json::str(fp));
     Ok(())
 }
+pub fn validate_input_packet(value: &Json) -> Result<(), String> {
+    packet(value)
+}
+
 fn packet(v: &Json) -> Result<(), String> {
     let mut fields = vec![
         "format",
@@ -111,12 +115,6 @@ fn packet(v: &Json) -> Result<(), String> {
         "requirement-review" => {
             exact(target, &["kind", "requirement"])?;
             text(target, "requirement")?;
-            if !array(v, "verification_targets")?.is_empty()
-                || !array(v, "check_results")?.is_empty()
-                || !array(v, "evidence_bundles")?.is_empty()
-            {
-                return Err("Requirement Review cannot contain execution evidence".into());
-            }
         }
         "requirement-judgment" => {
             text(target, "requirement")?;
@@ -152,10 +150,13 @@ fn relative(root: &Path, name: &str) -> Result<std::path::PathBuf, String> {
         return Err("expected portable change-relative path without traversal or fragment".into());
     }
     let root = root.canonicalize().map_err(|e| e.to_string())?;
-    let resolved = root
-        .join(p)
-        .canonicalize()
-        .map_err(|e| format!("{name}: {e}"))?;
+    let resolved = match root.join(p).canonicalize() {
+        Ok(path) => path,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            crate::retained_inputs::resolve(&root, name)?
+        }
+        Err(error) => return Err(format!("{name}: {error}")),
+    };
     if !resolved.starts_with(root) {
         return Err("reference resolves outside change root".into());
     }
@@ -190,6 +191,9 @@ pub fn skeleton(input: &Json, input_ref: &str, id: &str) -> Result<String, Strin
         s.push_str("- Conclusion: <supported, violated or unresolved>\n- Residual risks:\n");
     } else {
         s.push_str("- Decision: <accepted or rejected>\n");
+        if kind == "requirement-review" {
+            s.push_str("- Issues: []\n- Dispositions: []\n");
+        }
         if kind == "applicability-decision" {
             s.push_str("- Limitations:\n");
         }
@@ -301,6 +305,8 @@ fn parse(source: &str) -> Result<Vec<Review>, String> {
                     "Conclusion",
                     "Limitations",
                     "Residual risks",
+                    "Issues",
+                    "Dispositions",
                 ];
                 if ["Agent", "Model"].contains(&name) {
                     return Err(format!(
@@ -480,7 +486,7 @@ fn compile_record(
         "Reassesses",
     ];
     allowed.extend(match r.kind.as_str() {
-        "requirement-review" => vec!["Requirement", "Decision"],
+        "requirement-review" => vec!["Requirement", "Decision", "Issues", "Dispositions"],
         "method-qualification" => vec!["Check", "Decision"],
         "applicability-decision" => vec!["Check", "Scenario", "Decision"],
         _ => vec!["Requirement", "Conclusion"],
@@ -597,6 +603,16 @@ fn compile_record(
                 ]))
             })
             .collect::<Result<Vec<_>, String>>()?;
+        for (title, key) in [("Issues", "issues"), ("Dispositions", "dispositions")] {
+            if let Some(value) = r.fields.get(title) {
+                let parsed =
+                    crate::json::parse(value).map_err(|error| format!("{title}: {error}"))?;
+                parsed
+                    .as_array()
+                    .ok_or_else(|| format!("{title} requires a JSON array"))?;
+                put(&mut native, key, parsed);
+            }
+        }
         put(&mut native, "challenge_basis", Json::Arr(basis));
         put(&mut native, "reassesses", reassesses.clone());
     } else if r.kind == "method-qualification" {
@@ -784,6 +800,37 @@ fn compile_record(
         ("decision", "Decision")
     };
     put(&mut native, decision.0, Json::str(field(r, decision.1)?));
+    if r.kind == "requirement-review" {
+        let definitions = packet
+            .get("definitions")
+            .ok_or("review definitions absent")?;
+        let known_issues = definitions
+            .get("challenge_issues")
+            .and_then(Json::as_array)
+            .unwrap_or(&[])
+            .iter()
+            .filter_map(|issue| issue.get("id").and_then(Json::as_str))
+            .chain(
+                definitions
+                    .get("review_issues")
+                    .and_then(Json::as_array)
+                    .unwrap_or(&[])
+                    .iter()
+                    .filter_map(|issue| issue.get("reference").and_then(Json::as_str)),
+            )
+            .collect::<BTreeSet<_>>();
+        for disposition in native
+            .get("dispositions")
+            .and_then(Json::as_array)
+            .unwrap_or(&[])
+        {
+            if !known_issues.contains(text(disposition, "issue")?) {
+                return Err(
+                    "disposition refers to an issue absent from the exact review input".into(),
+                );
+            }
+        }
+    }
     seal(&mut native)?;
     crate::assurance_review::validate_record(&native)?;
     Ok(native)
@@ -893,6 +940,29 @@ pub fn compile(
             }
         }
     }
+    let mut retained_runs = bundles.to_vec();
+    for entry in &entries {
+        let input = entry.get("input").ok_or("compiled review input absent")?;
+        let packet_source = fs::read_to_string(relative(root, text(input, "ref")?)?)
+            .map_err(|error| error.to_string())?;
+        let packet = crate::json::parse(&packet_source).map_err(|error| error.to_string())?;
+        for value in array(&packet, "evidence_bundles")?.iter().chain(
+            packet
+                .get("challenge_bundles")
+                .and_then(Json::as_array)
+                .unwrap_or(&[]),
+        ) {
+            let run = crate::run::parse("review packet Run", &value.to_string_pretty())
+                .map_err(|errors| format!("invalid retained Run: {errors:?}"))?;
+            if !retained_runs
+                .iter()
+                .any(|previous| previous.bundle_fingerprint == run.bundle_fingerprint)
+            {
+                retained_runs.push(run);
+            }
+        }
+    }
+    let bundles = retained_runs.as_slice();
     let mut reviews = prior.to_vec();
     for e in &entries {
         let v = e.get("record").unwrap();

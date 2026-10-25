@@ -72,3 +72,24 @@ Adapters report every executed test of a unit with its defining source file. Eac
 A source Check normally applies to a release or deployment only when the Run's repository, commit and content fingerprint equal the release's. A Check whose every unit is declared `hermetic` applies instead when, for every manifest unit that partitions the Check, a passing unit result exists whose `input_fingerprint` equals the manifest entry with the same unit id, and the Check fingerprint, adapter configuration and the Check's leaf values ([deployment-requirement-status.md](deployment-requirement-status.md)) are equal. The passing results may come from different Runs of the Check (typically a narrow Run of the units whose inputs changed plus an earlier Run for the rest); a Run is reusable for its unchanged units only when all units it executed passed. Whole-source equality does not exempt a Run from this: a Run that executed only some units covers only those, and the Check applies only when the union covers every unit that partitions it (a `whole` execution covers all). Deployment-level and artifact-level Checks, including end-to-end tests, never use this rule; they run once per release and do not take part in reuse.
 
 The evidence record gains `reused`, true when the Run's Subject commit differs from the release's, and `executed_for_release`. A reused result is displayed as reused and names the Run that produced it. Reuse is never inferred across Verification Targets of different kinds and does not change what a Run records.
+
+
+## Affected execution snapshots
+
+The affected execution planner in [run-selection.md](run-selection.md) reuses the
+existing computed `UnitInputs`; it introduces no second partition or result cache.
+`execution_impact::snapshot_from_model_with_units` can narrow a single-repository
+source Check only when a nonempty set of units partitions that Check and every
+applicable unit is hermetic. It records the existing canonical
+`unit:<repository>:<unit-id>` input fingerprints as that Check's source dependencies.
+The whole-source input remains for non-hermetic/unpartitioned Checks and Challenges.
+A partition-rule change affects every existing unit fingerprint. Overlapping private
+paths remain shared inputs through the existing widening computation.
+
+Planning an unaffected Check is not an evidence applicability decision. Prior Runs
+retain their exact Verification Targets, and the complete unit-union, input equality,
+execution-context and outcome rules above still govern any result reuse. Pending
+failed or missing execution obligations remain selected even when unit inputs did
+not change. The snapshot builder rejects multi-repository unit inference; a caller
+must provide an explicit validated scope instead of treating one checkout's unit
+fingerprint as a complete federated input inventory.

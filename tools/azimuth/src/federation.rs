@@ -334,6 +334,8 @@ impl Assembly {
         let mut findings = crate::validation::validate(&loaded.model);
         let mut acceptances = Vec::new();
         let mut reviews = Vec::new();
+        let mut bundles = Vec::new();
+        let mut proof_roots = std::collections::BTreeSet::new();
         for change in &self.changes {
             let Some(repository) = self
                 .repositories
@@ -342,6 +344,17 @@ impl Assembly {
             else {
                 continue;
             };
+            let change_root = repository.root.join(&change.path);
+            let parent = change_root.parent().ok_or("change has no parent")?;
+            let changes_root =
+                if parent.file_name().and_then(|name| name.to_str()) == Some("archive") {
+                    parent.parent().ok_or("archive has no changes root")?
+                } else {
+                    parent
+                };
+            if proof_roots.insert(changes_root.to_path_buf()) {
+                bundles.extend(crate::retained_inputs::retained_runs(changes_root)?);
+            }
             if let Some(acceptance) =
                 crate::change::read_acceptance(&repository.root.join(&change.path))
                     .map_err(|errors| errors.join("\n"))?
@@ -353,7 +366,8 @@ impl Assembly {
                     .map_err(|errors| errors.join("\n"))?,
             );
         }
-        let ratified = crate::change::ratifications(&loaded.model, &acceptances, &reviews)?;
+        let ratified =
+            crate::change::ratifications(&loaded.model, &acceptances, &reviews, &bundles)?;
         crate::change::waive_accepted_requirements(&mut findings, &acceptances, &ratified);
         let summary = crate::validation::summarize(&loaded.model, &findings);
         if summary.errors > 0 || summary.warnings > 0 {
@@ -362,7 +376,8 @@ impl Assembly {
                 summary.errors, summary.warnings
             ));
         }
-        let (model_fingerprint, _) = crate::change::finalization(&loaded.model, &findings, &[], &[]);
+        let (model_fingerprint, _) =
+            crate::change::finalization(&loaded.model, &findings, &[], &[]);
         let repositories = self
             .repositories
             .iter()

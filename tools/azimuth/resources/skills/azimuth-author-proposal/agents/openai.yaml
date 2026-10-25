@@ -1,0 +1,4 @@
+interface:
+  display_name: "Author an Azimuth proposal"
+  short_description: "Author an Azimuth proposal"
+  default_prompt: "Use $azimuth-author-proposal for the assigned Azimuth work and retain its exact result."

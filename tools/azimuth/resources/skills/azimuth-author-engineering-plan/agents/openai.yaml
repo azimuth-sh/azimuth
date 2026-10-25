@@ -1,0 +1,4 @@
+interface:
+  display_name: "Plan an Azimuth implementation"
+  short_description: "Plan an Azimuth implementation"
+  default_prompt: "Use $azimuth-author-engineering-plan for the assigned Azimuth work and retain its exact result."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review an Azimuth proposal"
+  short_description: "Review an Azimuth proposal"
+  default_prompt: "Use $azimuth-review-proposal for the assigned Azimuth work and retain its exact result."

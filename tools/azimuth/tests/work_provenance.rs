@@ -386,17 +386,37 @@ fn a_descriptor_is_a_provenance_sibling_that_never_changes_attempt_identity() {
     let workflow_reference = azimuth::resources::reference("workflow").unwrap();
     assert_eq!(
         at(provenance, &["guidance"]),
-        &Json::Arr(vec![Json::obj(vec![
-            ("kind", Json::str("reference")),
-            ("id", Json::str("workflow")),
-            (
-                "fingerprint",
-                Json::str(format!(
-                    "sha256:{}",
-                    azimuth::fingerprint::sha256(workflow_reference.prose.as_bytes())
-                )),
-            ),
-        ])])
+        &Json::Arr(vec![
+            Json::obj(vec![
+                ("kind", Json::str("skill")),
+                ("id", Json::str("azimuth-workflow")),
+                (
+                    "fingerprint",
+                    Json::str(format!(
+                        "sha256:{}",
+                        azimuth::fingerprint::sha256(
+                            azimuth::resources::SKILLS
+                                .iter()
+                                .find(|skill| skill.id == "azimuth-workflow")
+                                .unwrap()
+                                .source
+                                .as_bytes()
+                        )
+                    ))
+                ),
+            ]),
+            Json::obj(vec![
+                ("kind", Json::str("reference")),
+                ("id", Json::str("workflow")),
+                (
+                    "fingerprint",
+                    Json::str(format!(
+                        "sha256:{}",
+                        azimuth::fingerprint::sha256(workflow_reference.prose.as_bytes())
+                    )),
+                ),
+            ])
+        ])
     );
 
     let unknown = at(without_entry, &["provenance"]);
@@ -492,7 +512,11 @@ fn an_invalid_hook_descriptor_fails_the_update_without_a_transition() {
     fixture.init(None);
     let handoff = fixture.next("handoff.json");
     let saved = fixture.workflow.join("handoff.json.agent-descriptor.json");
-    fs::write(&saved, "{\"format\":\"azimuth-agent-descriptor\",\"version\":1}").unwrap();
+    fs::write(
+        &saved,
+        "{\"format\":\"azimuth-agent-descriptor\",\"version\":1}",
+    )
+    .unwrap();
     let before = fs::read(fixture.instance()).unwrap();
 
     let stderr = fixture.update_failure(
@@ -502,7 +526,10 @@ fn an_invalid_hook_descriptor_fails_the_update_without_a_transition() {
         None,
     );
 
-    assert!(stderr.contains("handoff.json.agent-descriptor.json"), "{stderr}");
+    assert!(
+        stderr.contains("handoff.json.agent-descriptor.json"),
+        "{stderr}"
+    );
     assert_eq!(fs::read(fixture.instance()).unwrap(), before);
     assert!(saved.exists());
 }
@@ -787,7 +814,7 @@ fn historical_version_two_instances_export_with_unknown_provenance() {
         at(&instances[1], &["template"]),
         &Json::obj(vec![
             ("id", Json::str("change-development")),
-            ("revision", Json::Num(10.0)),
+            ("revision", Json::Num(11.0)),
         ])
     );
 
@@ -938,7 +965,7 @@ fn write_accepted_change(change: &Path) {
     fs::write(change.join("plan.md"), "- [x] Complete.\n").unwrap();
     fs::write(
         change.join("outcome.md"),
-        "# Outcome: framework-only\n\nStatus: accepted\n\n## Departures\n\nNone.\n\n## Residual decisions\n\nNone.\n",
+        "# Outcome: framework-only\n\nStatus: complete\n\n## Departures\n\nNone.\n\n## Residual decisions\n\nNone.\n",
     )
     .unwrap();
 }
@@ -951,6 +978,28 @@ fn finalize_commits_the_ledger_and_archive_rejects_a_stale_one() {
     fs::create_dir_all(&model).unwrap();
     fixture.init(None);
     fixture.record_scope(Some(&harness_descriptor(&fixture.root)));
+    let draft = fixture.root.join("retained-draft.json");
+    fs::write(&draft, r#"{"format":"azimuth-retained-inputs-draft","version":1,"roots":["outcome"],"inputs":[{"id":"outcome","kind":"file","path":"outcome.md","dependencies":[]}]}"#).unwrap();
+    azimuth::retained_inputs::capture(&fixture.change, &draft, &fixture.change.join("retained"))
+        .unwrap();
+    let candidate = format!(
+        "sha256:{}",
+        azimuth::fingerprint::authority_model_digest(&azimuth::model::Model::default())
+    );
+    let acceptance = azimuth::change::change_acceptance_record(
+        &fixture.change,
+        &candidate,
+        "fixture-human",
+        "approved",
+        1_750_000_000_000,
+        "Synthetic test acceptance of the pinned factual outcome and retained inputs.",
+    )
+    .unwrap();
+    fs::write(
+        fixture.change.join("change-acceptance.json"),
+        acceptance.to_string_pretty(),
+    )
+    .unwrap();
     let change = fixture.change.to_str().unwrap();
     let model = model.to_str().unwrap();
 
@@ -972,7 +1021,7 @@ fn finalize_commits_the_ledger_and_archive_rejects_a_stale_one() {
     fs::write(
         fixture.workflow.join("results/proposal-result.json"),
         "{\"work\":\"author-proposal\",\"outcome\":\"completed\",\"report\":\"Proposed.\",\
-         \"outputs\":[{\"kind\":\"proposal\",\"repository\":\"application\",\
+         \"outputs\":[{\"kind\":\"proposal-content\",\"repository\":\"application\",\
          \"ref\":\"azimuth/changes/framework-only/proposal.md\"}]}",
     )
     .unwrap();

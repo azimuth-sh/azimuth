@@ -49,6 +49,8 @@ pub struct Report {
     pub mutations: usize,
     pub unapplied_mutations: usize,
     pub unchanged_intent_reason: Option<String>,
+    pub correction_requirements: Vec<String>,
+    pub authority_model_fingerprint: String,
     pub incomplete_plan_items: usize,
     pub current_requirements: usize,
     pub target_requirements: usize,
@@ -133,6 +135,27 @@ pub fn inspect(root: &Path, model: &Model) -> Result<Report, Vec<String>> {
     } else {
         0
     };
+    let correction_requirements = match read_correction(root) {
+        Ok(Some(correction)) => correction.requirements,
+        Ok(None) => Vec::new(),
+        Err(mut diagnostics) => {
+            errors.append(&mut diagnostics);
+            Vec::new()
+        }
+    };
+    for requirement in &correction_requirements {
+        if !model
+            .requirements()
+            .any(|view| view.requirement.id == *requirement)
+            && !additions
+                .iter()
+                .any(|addition| addition.requirement == *requirement)
+        {
+            errors.push(format!(
+                "correction scope names unknown Requirement {requirement}"
+            ));
+        }
+    }
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -147,6 +170,11 @@ pub fn inspect(root: &Path, model: &Model) -> Result<Report, Vec<String>> {
         mutations,
         unapplied_mutations,
         unchanged_intent_reason,
+        correction_requirements,
+        authority_model_fingerprint: format!(
+            "sha256:{}",
+            crate::fingerprint::authority_model_digest(model)
+        ),
         incomplete_plan_items,
         current_requirements: model.requirement_count(),
         target_requirements: model.requirement_count() + unapplied_requirements,
@@ -504,6 +532,30 @@ fn parse_criticality_change(
 
 pub fn completion_issues(root: &Path, report: &Report) -> Vec<String> {
     let mut issues = Vec::new();
+    let retained = root.join("retained/manifest.json");
+    if retained.exists() {
+        if let Err(error) = crate::retained_inputs::verify_change(root) {
+            issues.push(error);
+        }
+    }
+    let workflow_finalization = fs::read_to_string(crate::provenance::default_instance(root))
+        .ok()
+        .and_then(|source| crate::json::parse(&source).ok())
+        .and_then(|value| value.get("definition").cloned())
+        .and_then(|definition| {
+            definition
+                .get("tasks")
+                .and_then(Json::as_array)
+                .map(|tasks| tasks.to_vec())
+        })
+        .is_some_and(|tasks| {
+            tasks
+                .iter()
+                .any(|task| task.get("kind").and_then(Json::as_str) == Some("finalize-change"))
+        });
+    if !retained.exists() && workflow_finalization {
+        issues.push("retained/manifest.json is required for workflow finalization; capture the relied-on input closure".into());
+    }
     if report.additions.is_empty()
         && report.criticality_changes.is_empty()
         && report.mutations == 0
@@ -561,11 +613,20 @@ pub fn completion_issues(root: &Path, report: &Report) -> Vec<String> {
                 issues.push(format!("outcome.md is missing `{heading}`"));
             }
         }
-        if !outcome
+        let complete = outcome
             .lines()
-            .any(|line| line.trim() == "Status: accepted")
-        {
-            issues.push("outcome status is not `accepted`".into());
+            .any(|line| line.trim() == "Status: complete");
+        let historically_accepted = outcome
+            .lines()
+            .any(|line| line.trim() == "Status: accepted");
+        if !complete && !historically_accepted {
+            issues.push("outcome status is not `complete`".into());
+        }
+        if complete || workflow_finalization {
+            if let Err(error) = verify_change_acceptance(root, &report.authority_model_fingerprint)
+            {
+                issues.push(error);
+            }
         }
     }
     issues
@@ -704,7 +765,43 @@ pub fn acceptances(changes_dir: &Path) -> Result<Vec<Acceptance>, Vec<String>> {
     let mut errors = Vec::new();
     for root in change_roots(changes_dir) {
         match read_acceptance(&root) {
-            Ok(Some(acceptance)) => found.push(acceptance),
+            Ok(Some(acceptance)) => {
+                let scoped = (|| -> Result<(), Vec<String>> {
+                    let mut allowed = std::collections::BTreeSet::new();
+                    for path in crate::intent::delta_paths(&root)? {
+                        let source = fs::read_to_string(&path)
+                            .map_err(|e| vec![format!("{}: {e}", path.display())])?;
+                        let mut fence = false;
+                        for line in source.lines() {
+                            if line.trim_start().starts_with("```") {
+                                fence = !fence;
+                                continue;
+                            }
+                            if !fence {
+                                if let Some(id) = line.strip_prefix("## Add requirement: ") {
+                                    allowed.insert(id.trim().to_string());
+                                }
+                            }
+                        }
+                    }
+                    if let Some(correction) = read_correction(&root)? {
+                        allowed.extend(correction.requirements);
+                    }
+                    for requirement in &acceptance.requirements {
+                        if !allowed.contains(requirement) {
+                            return Err(vec![format!(
+                                "{}/acceptance.json accepts {requirement} outside its added or verified correction scope",
+                                root.display()
+                            )]);
+                        }
+                    }
+                    Ok(())
+                })();
+                match scoped {
+                    Ok(()) => found.push(acceptance),
+                    Err(mut diagnostics) => errors.append(&mut diagnostics),
+                }
+            }
             Ok(None) => {}
             Err(mut issues) => errors.append(&mut issues),
         }
@@ -714,6 +811,460 @@ pub fn acceptances(changes_dir: &Path) -> Result<Vec<Acceptance>, Vec<String>> {
     } else {
         Err(errors)
     }
+}
+
+fn acceptance_fingerprint(value: &str) -> Result<(), String> {
+    let Some(hex) = value.strip_prefix("sha256:") else {
+        return Err("acceptance basis requires a SHA-256 fingerprint".into());
+    };
+    if hex.len() != 64
+        || !hex
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return Err("acceptance basis requires a lowercase SHA-256 fingerprint".into());
+    }
+    Ok(())
+}
+
+pub fn verify_change_acceptance(
+    root: &Path,
+    candidate_model_fingerprint: &str,
+) -> Result<Json, String> {
+    acceptance_fingerprint(candidate_model_fingerprint)?;
+    let path = root.join("change-acceptance.json");
+    let metadata = fs::symlink_metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err("change-acceptance.json must be a regular retained file".into());
+    }
+    let value = crate::provenance::read_json(&path)?;
+    correction_object(
+        &value,
+        &[
+            "format",
+            "version",
+            "actor",
+            "decision",
+            "reviewed_at_ms",
+            "candidate_model_fingerprint",
+            "outcome_fingerprint",
+            "retained_inputs_fingerprint",
+            "report",
+        ],
+    )?;
+    if correction_text(&value, "format")? != "azimuth-change-acceptance-decision"
+        || value.get("version").and_then(Json::as_num) != Some(1.0)
+    {
+        return Err("expected azimuth-change-acceptance-decision version 1".into());
+    }
+    correction_text(&value, "actor")?;
+    correction_text(&value, "report")?;
+    if correction_text(&value, "decision")? != "approved" {
+        return Err("change acceptance is not an actual approved decision".into());
+    }
+    let time = value
+        .get("reviewed_at_ms")
+        .and_then(Json::as_num)
+        .filter(|time| *time > 0.0 && time.fract() == 0.0 && *time <= 9_007_199_254_740_991.0)
+        .ok_or("reviewed_at_ms requires an actual positive safe UTC millisecond time")?;
+    let _ = time;
+    if correction_text(&value, "candidate_model_fingerprint")? != candidate_model_fingerprint {
+        return Err("change acceptance is stale for the current candidate authority".into());
+    }
+    let outcome = fs::read(root.join("outcome.md")).map_err(|e| format!("outcome.md: {e}"))?;
+    let outcome_fingerprint = format!("sha256:{}", crate::fingerprint::sha256(&outcome));
+    if correction_text(&value, "outcome_fingerprint")? != outcome_fingerprint {
+        return Err("change acceptance is stale for the authored outcome".into());
+    }
+    let retained = crate::retained_inputs::verify_change(root)?;
+    if value.get("retained_inputs_fingerprint") != retained.get("fingerprint") {
+        return Err("change acceptance is stale for the retained evidence/input closure".into());
+    }
+    Ok(value)
+}
+
+pub fn change_acceptance_record(
+    root: &Path,
+    candidate_model_fingerprint: &str,
+    actor: &str,
+    decision: &str,
+    reviewed_at_ms: u64,
+    report: &str,
+) -> Result<Json, String> {
+    acceptance_fingerprint(candidate_model_fingerprint)?;
+    if actor.trim().is_empty()
+        || report.trim().is_empty()
+        || !["approved", "denied", "deferred"].contains(&decision)
+        || reviewed_at_ms == 0
+        || reviewed_at_ms > 9_007_199_254_740_991
+    {
+        return Err("change acceptance requires the actual actor, decision, positive UTC time and substantive report".into());
+    }
+    let outcome = fs::read(root.join("outcome.md")).map_err(|e| format!("outcome.md: {e}"))?;
+    let retained = crate::retained_inputs::verify_change(root)?;
+    Ok(Json::obj(vec![
+        ("format", Json::str("azimuth-change-acceptance-decision")),
+        ("version", Json::Num(1.0)),
+        ("actor", Json::str(actor)),
+        ("decision", Json::str(decision)),
+        ("reviewed_at_ms", Json::Num(reviewed_at_ms as f64)),
+        (
+            "candidate_model_fingerprint",
+            Json::str(candidate_model_fingerprint),
+        ),
+        (
+            "outcome_fingerprint",
+            Json::str(format!("sha256:{}", crate::fingerprint::sha256(&outcome))),
+        ),
+        (
+            "retained_inputs_fingerprint",
+            retained.get("fingerprint").unwrap().clone(),
+        ),
+        ("report", Json::str(report)),
+    ]))
+}
+
+#[derive(Debug, Clone)]
+pub struct Correction {
+    pub source_path: String,
+    pub source_fingerprint: String,
+    pub requirements: Vec<String>,
+    pub failed_revision: Option<String>,
+    pub issues: Vec<String>,
+}
+
+fn correction_object(value: &Json, keys: &[&str]) -> Result<(), String> {
+    let Json::Obj(fields) = value else {
+        return Err("expected an object".into());
+    };
+    if fields.len() != keys.len()
+        || fields.iter().any(|(key, _)| !keys.contains(&key.as_str()))
+        || keys.iter().any(|key| value.get(key).is_none())
+    {
+        return Err(format!(
+            "expected exact correction fields: {}",
+            keys.join(", ")
+        ));
+    }
+    Ok(())
+}
+fn correction_text<'a>(value: &'a Json, key: &str) -> Result<&'a str, String> {
+    value
+        .get(key)
+        .and_then(Json::as_str)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| format!("{key} requires a nonempty string"))
+}
+fn correction_ids(value: &Json, key: &str, required: bool) -> Result<Vec<String>, String> {
+    let values = value
+        .get(key)
+        .and_then(Json::as_array)
+        .ok_or_else(|| format!("{key} requires an array"))?;
+    let mut result = std::collections::BTreeSet::new();
+    for value in values {
+        let text = value
+            .as_str()
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| format!("{key} requires nonempty strings"))?;
+        if key == "requirements" {
+            crate::diag::validate_id(text, false)?;
+        }
+        if !result.insert(text.to_string()) {
+            return Err(format!("duplicate correction {key}: {text}"));
+        }
+    }
+    if required && result.is_empty() {
+        return Err(format!("{key} must not be empty"));
+    }
+    Ok(result.into_iter().collect())
+}
+fn correction_source(root: &Path, relative: &str) -> Result<std::path::PathBuf, String> {
+    use std::path::Component;
+    let parts = Path::new(relative).components().collect::<Vec<_>>();
+    if relative.contains(['\\', '\0'])
+        || parts.len() != 2
+        || parts.iter().any(|c| !matches!(c, Component::Normal(_)))
+        || parts[0].as_os_str() != "archive"
+    {
+        return Err(
+            "correction source requires archive/<dated-change-id> below the same changes directory"
+                .into(),
+        );
+    }
+    let parent = root
+        .parent()
+        .ok_or("correction change has no changes directory")?;
+    let changes = if parent.file_name().is_some_and(|name| name == "archive") {
+        parent.parent().ok_or("archive has no changes directory")?
+    } else {
+        parent
+    };
+    let mut path = changes.canonicalize().map_err(|e| e.to_string())?;
+    for part in parts {
+        path.push(part.as_os_str());
+        let m = fs::symlink_metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        if m.file_type().is_symlink() || !m.is_dir() {
+            return Err(format!(
+                "correction source is not a normal directory: {}",
+                path.display()
+            ));
+        }
+    }
+    if !path.join("proposal.md").is_file() || !path.join("finalization.json").is_file() {
+        return Err("correction source must be a finalized archived change".into());
+    }
+    Ok(path)
+}
+
+pub fn archive_fingerprint(root: &Path) -> Result<String, String> {
+    fn visit(root: &Path, relative: &Path, files: &mut Vec<Json>) -> Result<(), String> {
+        let directory = root.join(relative);
+        let mut entries = fs::read_dir(&directory)
+            .map_err(|e| format!("{}: {e}", directory.display()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            if entry.file_name() == ".azimuth" {
+                continue;
+            }
+            let path = relative.join(entry.file_name());
+            let kind = entry.file_type().map_err(|e| e.to_string())?;
+            if kind.is_symlink() {
+                return Err(format!(
+                    "symlink in archived correction basis: {}",
+                    root.join(&path).display()
+                ));
+            }
+            if kind.is_dir() {
+                visit(root, &path, files)?;
+            } else if kind.is_file() {
+                let bytes = fs::read(root.join(&path)).map_err(|e| e.to_string())?;
+                files.push(Json::obj(vec![
+                    (
+                        "path",
+                        Json::str(path.to_str().ok_or("archive path must be UTF-8")?),
+                    ),
+                    (
+                        "fingerprint",
+                        Json::str(format!("sha256:{}", crate::fingerprint::sha256(&bytes))),
+                    ),
+                ]));
+            } else {
+                return Err(format!(
+                    "non-regular archived input: {}",
+                    root.join(&path).display()
+                ));
+            }
+        }
+        Ok(())
+    }
+    let mut files = Vec::new();
+    visit(root, Path::new(""), &mut files)?;
+    Ok(crate::fingerprint::canonical_sha256(&Json::obj(vec![
+        ("format", Json::str("azimuth-archived-change-basis")),
+        ("version", Json::Num(1.0)),
+        ("files", Json::Arr(files)),
+    ])))
+}
+fn archived_requirement_scope(root: &Path) -> Result<std::collections::BTreeSet<String>, String> {
+    let mut result = std::collections::BTreeSet::new();
+    for path in crate::intent::delta_paths(root).map_err(|e| e.join("\n"))? {
+        let source = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        let mut fence = false;
+        for line in source.lines() {
+            if line.trim_start().starts_with("```") {
+                fence = !fence;
+                continue;
+            }
+            if fence {
+                continue;
+            }
+            for prefix in [
+                "## Add requirement: ",
+                "## Replace requirement: ",
+                "## Remove requirement: ",
+                "## Change criticality: ",
+            ] {
+                if let Some(id) = line.strip_prefix(prefix) {
+                    crate::diag::validate_id(id.trim(), false)?;
+                    result.insert(id.trim().into());
+                }
+            }
+        }
+    }
+    for review in read_reviews(root).map_err(|e| e.join("\n"))? {
+        if let Some(id) = review.get("requirement").and_then(Json::as_str) {
+            result.insert(id.into());
+        }
+    }
+    if let Some(acceptance) = read_acceptance(root).map_err(|e| e.join("\n"))? {
+        result.extend(acceptance.requirements);
+    }
+    Ok(result)
+}
+fn correction_from_json(root: &Path, value: &Json) -> Result<Correction, String> {
+    correction_object(
+        value,
+        &[
+            "format",
+            "version",
+            "source",
+            "requirements",
+            "failed_revision",
+            "issues",
+        ],
+    )?;
+    if correction_text(value, "format")? != "azimuth-change-correction"
+        || value.get("version").and_then(Json::as_num) != Some(1.0)
+    {
+        return Err("expected azimuth-change-correction version 1".into());
+    }
+    let source = value.get("source").ok_or("missing correction source")?;
+    correction_object(source, &["path", "fingerprint"])?;
+    let source_path = correction_text(source, "path")?;
+    let source_root = correction_source(root, source_path)?;
+    let source_fingerprint = correction_text(source, "fingerprint")?;
+    if source_fingerprint != archive_fingerprint(&source_root)? {
+        return Err("archived correction source differs from its pinned durable content".into());
+    }
+    let requirements = correction_ids(value, "requirements", true)?;
+    let scope = archived_requirement_scope(&source_root)?;
+    for requirement in &requirements {
+        if !scope.contains(requirement) {
+            return Err(format!(
+                "correction Requirement {requirement} is outside the archived change's declared/reviewed scope"
+            ));
+        }
+    }
+    let failed_revision = match value.get("failed_revision") {
+        Some(Json::Null) => None,
+        Some(Json::Str(s))
+            if matches!(s.len(), 40 | 64)
+                && s.bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) =>
+        {
+            Some(s.clone())
+        }
+        _ => return Err("failed_revision requires null or a full lowercase Git revision".into()),
+    };
+    Ok(Correction {
+        source_path: source_path.into(),
+        source_fingerprint: source_fingerprint.into(),
+        requirements,
+        failed_revision,
+        issues: correction_ids(value, "issues", false)?,
+    })
+}
+
+pub fn read_correction(root: &Path) -> Result<Option<Correction>, Vec<String>> {
+    let path = root.join("correction.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let value = crate::provenance::read_json(&path).map_err(|e| vec![e])?;
+    correction_from_json(root, &value)
+        .map(Some)
+        .map_err(|e| vec![format!("{}: {e}", path.display())])
+}
+
+pub fn correction_record(
+    root: &Path,
+    source: &Path,
+    requirements: &[String],
+    failed_revision: Option<&str>,
+    issues: &[String],
+) -> Result<Json, String> {
+    let changes = root
+        .parent()
+        .ok_or("correction change has no parent")?
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let source = source
+        .canonicalize()
+        .map_err(|e| format!("{}: {e}", source.display()))?;
+    let relative = source
+        .strip_prefix(&changes)
+        .map_err(|_| "correction source must be below this changes directory")?
+        .to_str()
+        .ok_or("source path must be UTF-8")?;
+    let value = Json::obj(vec![
+        ("format", Json::str("azimuth-change-correction")),
+        ("version", Json::Num(1.0)),
+        (
+            "source",
+            Json::obj(vec![
+                ("path", Json::str(relative)),
+                ("fingerprint", Json::str(archive_fingerprint(&source)?)),
+            ]),
+        ),
+        (
+            "requirements",
+            Json::Arr(requirements.iter().map(Json::str).collect()),
+        ),
+        (
+            "failed_revision",
+            failed_revision.map(Json::str).unwrap_or(Json::Null),
+        ),
+        ("issues", Json::Arr(issues.iter().map(Json::str).collect())),
+    ]);
+    correction_from_json(root, &value)?;
+    Ok(value)
+}
+
+pub fn write_correction(
+    root: &Path,
+    source: &Path,
+    requirements: &[String],
+    failed_revision: Option<&str>,
+    issues: &[String],
+) -> Result<Json, String> {
+    if root
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|name| name == "archive")
+    {
+        return Err("an archived correction record is immutable".into());
+    }
+    let value = correction_record(root, source, requirements, failed_revision, issues)?;
+    let path = root.join("correction.json");
+    if path.exists() {
+        let previous = crate::provenance::read_json(&path)?;
+        return if previous == value {
+            Ok(previous)
+        } else {
+            Err("correction.json already records a different immutable source/scope".into())
+        };
+    }
+    use std::io::Write;
+    let temporary = root.join(format!(
+        ".correction-{}-{}.tmp",
+        std::process::id(),
+        crate::provenance::now_ms()
+    ));
+    let result = (|| {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .map_err(|e| format!("{}: {e}", temporary.display()))?;
+        file.write_all(value.to_string_pretty().as_bytes())
+            .map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| e.to_string())?;
+        drop(file);
+        fs::hard_link(&temporary, &path).map_err(|e| {
+            format!(
+                "cannot publish immutable correction record {}: {e}",
+                path.display()
+            )
+        })?;
+        fs::File::open(root)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|e| e.to_string())?;
+        Ok(value)
+    })();
+    let _ = fs::remove_file(&temporary);
+    result
 }
 
 const REVIEWS_DIRECTORY: &str = "reviews";
@@ -730,7 +1281,10 @@ pub fn read_reviews(change_root: &Path) -> Result<Vec<Json>, Vec<String>> {
     let mut paths = entries
         .flatten()
         .map(|entry| entry.path())
-        .filter(|path| path.extension().is_some_and(|extension| extension == "json"))
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "json")
+        })
         .collect::<Vec<_>>();
     paths.sort();
     let mut records = Vec::new();
@@ -783,6 +1337,7 @@ pub fn ratifications(
     model: &Model,
     acceptances: &[Acceptance],
     reviews: &[Json],
+    bundles: &[crate::run::RunBundle],
 ) -> Result<Vec<Ratification>, String> {
     if acceptances.is_empty() {
         return Ok(Vec::new());
@@ -800,7 +1355,7 @@ pub fn ratifications(
         let Some(review) = crate::assurance_review::latest_review(reviews, &target)? else {
             continue;
         };
-        if crate::assurance_review::assess_record(review, &authority, reviews, &[]).status
+        if crate::assurance_review::assess_record(review, &authority, reviews, bundles).status
             != "accepted"
         {
             continue;
@@ -838,7 +1393,7 @@ pub fn ratification_issues(
     issues
 }
 
-/// An active change may accept only Requirements it adds; archived records are immutable.
+/// A correction may accept existing Requirements only within its verified archived-source scope.
 pub fn acceptance_issues(acceptances: &[Acceptance], report: &Report) -> Vec<String> {
     let mut issues = Vec::new();
     for acceptance in acceptances.iter().filter(|value| value.change == report.id) {
@@ -847,9 +1402,10 @@ pub fn acceptance_issues(acceptances: &[Acceptance], report: &Report) -> Vec<Str
                 .additions
                 .iter()
                 .any(|addition| &addition.requirement == requirement)
+                && !report.correction_requirements.contains(requirement)
             {
                 issues.push(format!(
-                    "{ACCEPTANCE_FILE} accepts `{requirement}`, which this change does not add"
+                    "{ACCEPTANCE_FILE} accepts `{requirement}`, which this change neither adds nor names in a verified correction scope"
                 ));
             }
         }
@@ -884,8 +1440,15 @@ pub fn finalization(
     let fingerprint = crate::fingerprint::model_digest(model, findings);
     let summary = validation::summarize(model, findings);
     let mut pairs = vec![
-        ("version", Json::Num(2.0)),
+        ("version", Json::Num(3.0)),
         ("model_fingerprint", Json::str(&fingerprint)),
+        (
+            "authority_model_fingerprint",
+            Json::str(format!(
+                "sha256:{}",
+                crate::fingerprint::authority_model_digest(model)
+            )),
+        ),
         ("requirements", Json::Num(summary.requirements as f64)),
         ("specs", Json::Num(model.specs.len() as f64)),
         ("errors", Json::Num(summary.errors as f64)),
@@ -902,6 +1465,7 @@ pub fn finalization(
                             ("change", Json::str(&acceptance.change)),
                             ("accepted_by", Json::str(&acceptance.accepted_by)),
                             ("accepted_on", Json::str(&acceptance.accepted_on)),
+                            ("basis", Json::str(&acceptance.basis)),
                             (
                                 "requirements",
                                 Json::Arr(acceptance.requirements.iter().map(Json::str).collect()),
@@ -959,8 +1523,15 @@ mod tests {
         let model = Model::default();
         let (fingerprint, receipt) = finalization(&model, &[], &[], &[]);
         let expected = Json::obj(vec![
-            ("version", Json::Num(2.0)),
+            ("version", Json::Num(3.0)),
             ("model_fingerprint", Json::str(&fingerprint)),
+            (
+                "authority_model_fingerprint",
+                Json::str(format!(
+                    "sha256:{}",
+                    crate::fingerprint::authority_model_digest(&model)
+                )),
+            ),
             ("requirements", Json::Num(0.0)),
             ("specs", Json::Num(0.0)),
             ("errors", Json::Num(0.0)),

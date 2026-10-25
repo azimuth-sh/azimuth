@@ -1,195 +1,48 @@
 # Requirement Review
 
-Requirement Review assesses definitions. Requirement Status is never authored: deployment Requirement
-Status is computed by the Azimuth Assurance Service from applicable evidence.
-Neither execution, structural validation nor an implementation tag authors an independent review.
-Check Review, Method Qualification, Applicability Decision and Requirement Judgment are not mandatory
-steps in the current compact account. Their earlier records remain historical facts with their
-original meanings; see [the claim-health contract](https://github.com/azimuth-sh/azimuth/blob/main/contracts/history/assurance-reviews-before-claim-health.md).
-The authored `requirement-status` record kind, review `provenance` and the review `dependencies`
-packet are removed without a compatibility reader; [the previous contract](https://github.com/azimuth-sh/azimuth/blob/main/contracts/history/assurance-reviews-before-work-provenance.md)
-records their former shape. Who performed a review (agent, model, effort, harness) is recorded in the
-change's Work Provenance ledger ([work-provenance.md](https://github.com/azimuth-sh/azimuth/blob/main/contracts/work-provenance.md)), not in the review record.
+Requirement Review independently assesses the complete Requirement account: its definition and Scenarios, design, production/Check realization, independently established expectations, controls, observations, scope, implementation-directed Challenges and their dispositions. AAS computes deployment Requirement Status separately; agents never author a positive status record.
 
-## Authority and dependencies
+The native schema and command-specific packet grammar are defined by the installed release and `contracts/assurance-reviews.md` in the Azimuth repository. Use generated draft/input records instead of inventing metadata. Earlier Method Qualification, Applicability Decision, Requirement Judgment and assessment-targeted Challenge records retain historical meaning; they do not become current approval through reinterpretation.
 
-`azimuth assurance authority` exports the complete unselected model projection with stable Requirement,
-Scenario, Check and Mechanism identities, inline Check–Scenario contributions and source support.
-Candidate registration does not select the default model or authorize deployment; the default model is the latest main-model publication.
-The projection also carries top-level `requirement_intents: [{"id", "fingerprint"}]`, sorted by `id`,
-with exactly one entry per Requirement. `fingerprint` is the Requirement intent digest. It sits
-outside every review dependency packet, so it identifies intent changes without ever staling a
-Requirement Review.
-Review currentness follows relevant definitions and implementation/input fingerprints, rather
-than unrelated changes to the whole model. Changing a relevant dependency requires reassessment.
-The latest unambiguous assessment of a typed target is current; never fall back to an earlier
-positive record when a newer record is rejected, stale or invalid.
+## Basis and currentness
 
-## Requirement Review
+Export complete authority with `azimuth assurance authority` and prepare the exact selected Requirement input through `azimuth assurance review-input`. Read the original request, full dependency packet, exact candidate and source/expectation/configuration inputs, prior reviews, current applicable execution records and Challenge reports directly. A coordinator's correction summary is navigation, not proof.
 
-Native kind: `requirement-review`. The independent reviewer examines Requirement/Scenario completeness, design,
-realizations, Check implementations, input and expectation independence, oracles, coverage,
-Verification Challenge definitions and resolved source scopes, assumptions and limitations.
+The compact selector is a Requirement definition target; review does not itself execute a Check or create a product Verification Target. Exact execution targets remain in native Runs. Review inputs must retain the result/proof dependencies relied on by the reviewer without pretending those Runs examined a different target. Missing or changed material review inputs prevent acceptance; unavailable hosted execution environments alone do not establish an implementation defect.
 
-A record has exactly these fields, all required:
+Currentness follows the Requirement and relevant definition/implementation/input dependencies and any exact relied-on proof dependencies. Unrelated whole-model edits do not automatically stale every assessment. Newer adverse, stale, invalid or ambiguous assessments cannot be bypassed by selecting an earlier positive review. Fingerprints and record compilation validate consistency, not semantic correctness.
 
-```json
-{
-  "kind": "requirement-review",
-  "reviewer": "…",
-  "reviewed_at_ms": 0,
-  "rationale": "…",
-  "artifacts": [{"id": "…", "digest": "sha256:…", "locator": "…"}],
-  "requirement": "…",
-  "requirement_fingerprint": "sha256:…",
-  "dependencies_fingerprint": "sha256:…",
-  "decision": "accepted",
-  "reassesses": null,
-  "challenge_basis": [],
-  "fingerprint": "sha256:…"
-}
-```
+## Acceptance criteria
 
-`decision` is `accepted | rejected`. The record requires no execution Verification Target or Check
-Result basis. `reviewer` is the accountable reviewer, `reviewed_at_ms` the actual review time,
-`rationale` substantive, `artifacts` nonempty with unique ids, and `fingerprint` the canonical
-fingerprint of every other field.
-Acceptance expresses credibility of the reviewed account, not an observed Requirement Status.
-Acceptance requires both an adequate verification approach and an implementation capable of
-fulfilling its declared obligations, including required measurements, independent controls and
-native reporting. Known material implementation gaps block acceptance even when documented.
-Justified scope boundaries remain reviewable, but cannot omit a required proposition without
-adequate alternative coverage. Execution may remain pending; unavailable execution environments
-alone do not establish an implementation defect. The shipped `azimuth-review-requirement` skill guides
-this semantic assessment; record compilation does not decide these criteria.
+Acceptance requires both:
 
-`dependencies_fingerprint` is the canonical SHA-256 of the exact review dependency packet
-`{checks, scenarios, requirements, bindings}` selected for this Requirement from the authority
-(`requirement_dependencies`). The packet's definitions include realization sites and fingerprints,
-mechanisms, Check implementations, Verification Challenge declarations and implementation/configuration
-support. The record stores only the fingerprint; the packet itself is in the review input and is
-recoverable from the stored authority of the reviewed model revision. Source paths are locators, not
-entity identities. A review is current only while both `requirement_fingerprint` and
-`dependencies_fingerprint` equal the current authority's; a matching reviewer label or unchanged
-prose alone cannot establish currentness.
+1. Adequate verification of a complete, unambiguous and falsifiable obligation, including justified combined coverage, independent oracles, meaningful controls, boundary observations and explicit limits.
+2. Faithful production and verification implementation capable of performing the declared examination and retaining its required measurements, selection, correlations and native reporting.
 
-## Reassessment
+Documented incomplete implementation is still incomplete. A narrow Check need not prove the whole Requirement, but acknowledged limitations cannot excuse missing required coverage. Source tags, compilation, passing ordinary tests and clean bounded Challenges cannot replace the required oracle or independent assessment.
 
-`reassesses` is null or the canonical fingerprint of an earlier retained Requirement Review. The
-predecessor must have the same typed target (the same Requirement) and a strictly earlier
-`reviewed_at_ms`; otherwise the successor is invalid. A predecessor missing from the retained history
-leaves the successor `missing`, not an implicit approval.
+In the ordinary change workflow, required local Checks and implementation/Check-directed Challenges run before Requirement Review. Failed Checks, execution gaps and confirmed defects short-circuit to correction. Explicit equivalence/irrelevance justifications may reach review; the reviewer assesses them independently and retains their exact evidence basis. Do not fabricate a clean Challenge to avoid that judgment. Deployment-only execution remains a separate later obligation where applicable.
 
-## Challenge proof dependencies
+## Issues and reassessment
 
-Every Requirement Review carries `challenge_basis`, an array (possibly empty) of exact references:
+Complete the assigned review even after the first blocker. Use stable authored issue identities, exact assessed basis and concrete source locations, the failed proposition, consequence and bounded correction. Follow the installed issue/disposition schema; these authored issues are distinct from deterministic validation Findings.
 
-```json
-[
-  {
-    "run": "sha256:<run-id>",
-    "bundle_fingerprint": "sha256:<bundle-fingerprint>",
-    "result_fingerprint": "sha256:<challenge-result-fingerprint>",
-    "target_fingerprint": "sha256:<challenged-assessment-fingerprint>"
-  }
-]
-```
+Reviewers do not fix source or weaken intent during assessment. Implementers report every issue's disposition with actual corrections/verification, a justified disagreement or an unresolved limit. Reassessment independently inspects current artifacts, links its predecessor and explains those dispositions. Preserve rejected and superseded records and retained ancestor chains. Missing predecessors remain gaps, not implicit approval.
 
-Each value is a canonical SHA-256 fingerprint. Exact reference tuples must be unique; authored
-array order has no separate semantic requirement. Preparation emits them deterministically from
-current Run correction heads and recorded execution order. A missing or corrected Run head,
-changed result or changed target makes the dependent assessment stale. Prior assessment targets
-may supply explicit objection context; their presence never converts historical conclusions into
-positive current assurance.
+New authored Markdown metadata includes inline JSON `- Issues: []` and `- Dispositions: []`. An issue is `{id, proposition, location, reason, correction, blocking}` with a stable local ID and Boolean blocking flag. A disposition is `{issue, outcome, rationale}`; outcomes are `corrected`, `equivalent`, `irrelevant`, `confirmed-defect` or `unresolved`. Prior review issue references use `<review-fingerprint>#<local-id>`; native Challenge issue IDs are supplied by tooling. Keep these distinct from model Findings and do not invent an alternative schema.
 
-A matching adverse Challenge Result attacking the assessment's own exact fingerprint leaves it
-unresolved pending reassessment. An independently authored successor can assess the prior-target
-objection in its rationale and retain these exact proof dependencies. A clean result remains a
-negative search fact. These references do not give Requirement Review an execution Verification Target or product
-Check Result basis: the Verification Challenge Run retains its execution Verification Target separately.
+## Authoring and retention
 
-## Authored records and preparation
+Use `azimuth assurance review-draft` and complete the generated Markdown, then `review-compile` against exact prepared inputs and retained history. Record actual reviewer, UTC review time, input fingerprint, accepted/rejected decision and substantive rationale. Compilation rejects `Agent` and `Model` fields; execution provenance belongs in Work Provenance. Never fabricate identity, independence, timestamps or observations.
 
-Keep aggregate files such as `reviews/requirement-reviews.md` in the change. Names are conventions,
-not identities. Headings use `## Requirement review: <record-id>`. Metadata pins an `Input` packet,
-`Input fingerprint`, `Requirement`, `Reviewer`, actual UTC `Reviewed at` and `Decision`; rationale is
-substantive Markdown. Optional `Reassesses` names an earlier record ID in the aggregate bundle;
-compilation resolves that ID to its native fingerprint. Compilation rejects a `- Agent:` or `- Model:`
-field and a `## Requirement status:` heading with a `<file>:<line>:` error: agent and model provenance
-belongs to the Work Provenance ledger, and Requirement Status is computed rather than authored.
+`Reassesses` names an earlier supplied review of the same Requirement and the successor must be strictly later. Use separate records/files where needed to preserve predecessors. Compilation seals native JSON beside the reviewer-authored Markdown under the change's `reviews/` directory. Identical recompilation leaves the sealed file untouched; changing an earlier sealed record is not a successor assessment.
 
-The compiled `azimuth-review-bundle` (version 2) holds `{format, version, project,
-authority_fingerprint, records, fingerprint}`. Each `records` entry is exactly
-`{id, input: {ref, fingerprint}, reassesses, record, assessment: {status, latest, diagnostics}}`, where
-entry `reassesses` is the Markdown record ID or null and `record` is the native record above.
+Load `azimuth reference show retained-inputs` for capture and portable closure. Retain Markdown, sealed native records, exact prepared inputs, relied-on Runs/Challenge proofs, scopes, captures, expectation/configuration inputs and required reassessment history under the installed durable retention contract. Generated scratch files may live in ignored `.azimuth/`, but required inputs cannot be accessible only on the author's machine. Inspect compilation assessment status/diagnostics before reporting current acceptance. Tooling and CI verify dependency closure without inventing a review decision.
 
-`azimuth assurance review-input` retains the selected assessments and their transitive reassessment predecessors in deterministic fingerprint order. This retained history reproduces review states during compilation; a genuinely absent predecessor remains an explicit gap. Unrelated review histories are not added.
+Return the selected compiled `record` through the handoff's native requirement-review output and compact accepted/rejected result. The coordinator records shared workflow progression unless the reviewer was explicitly assigned it. Stop after retaining the assessment; review work alone authorizes no fixes, new execution, publication, deployment, commit or archive.
 
-`azimuth assurance review-input` accepts only `{"kind": "requirement-review", "requirement": "<id>"}`
-and prepares exact definitions, the full dependency packet, existing assessments and visible gaps.
-Its `verification_targets`, `check_results` and `evidence_bundles` arrays are always empty for a
-definition review. Packets may also include optional
-`challenge_bundles`: scoped native Run proofs for the selected assessment objections, not a
-dump of all project execution history. Compilation validates those bundles and pins the
-corresponding `challenge_basis` references. It creates no reviewer, time,
-decision or positive conclusion. `azimuth assurance review-compile` compiles aggregate Markdown
-against those exact packets and the current account. Placeholders and changed inputs fail.
-Generated packets and execution reports belong in ignored change `.azimuth/`. The compiled bundle
-is printed (or written with `--out`) and is not committed. `review-compile` also seals each compiled
-native review record into the change's `reviews/` directory beside the Markdown, as the committed JSON
-the ratification gate reads: a Markdown file holding one review seals to `reviews/<stem>.json`; one
-holding several seals each to `reviews/<stem>.<review-id>.json`. The record is created at review time
-against the reviewed model by the reviewer's own step, and the author commits Markdown and sealed JSON
-together. Recompiling an identical record leaves the file untouched; a different record at the same name
-fails unless `--replace-sealed` is passed, and two reviews never seal to one file.
+## Publication and deployment
 
-## Challenging an assessment
+CI assembles the delivery package deterministically, transports unchanged relied-on records, retains adverse history and uses an authorized reviewer credential matching the recorded identity. Producer permission alone cannot submit a review. Runs precede dependent review records and reassessment predecessors precede successors in publication.
 
-A machine-executed Verification Challenge targets an exact Requirement Review selected at planning
-time; `requirement-review` is the only assessment target kind. Its execution Verification Target is separate from the assessment target. The current
-Stryker integration pins the exact source input for an isolated mutation batch and retains native
-mutation statuses and locations. It does not materialize exact per-mutant Verification Targets or mutant-specific
-product Check Results. Such captures would require distinct Verification Targets before those Check Results
-could be used as product evidence; a batch result is not evidence of the Requirement Status of the unmodified deployment.
-Results are `clean | findings | inconclusive`. Clean only means the bounded search found no
-objection. Findings require disposition and correction/reassessment where relevant, and cannot
-be silently ignored when relying on the attacked assessment. No mutation score or clean search
-establishes a supported Requirement Status.
-
-## Publication and service authority
-
-Local drafts, correction attempts and exploratory Runs remain local by default. CI publishes the
-current package relied on for delivery, including exact Verification Targets, unchanged local reviewer
-records, relevant adverse/unresolved evidence and provenance. Subsequent hosted evidence is published
-after authorized deployment, and the service computes deployment Requirement Status from it.
-CI transport does not change the author of a review. Submission still requires an authorized
-reviewer credential matching the recorded reviewer; producer permission alone cannot submit one.
-Publish relied-on Runs before their dependent review records, and predecessors before
-reassessments, so the service can validate exact proof dependencies. Submission assesses against
-the revision-linked review history and existing latest Run correction heads; the record is retained
-unchanged and immutable.
-The service preserves immutable histories and exposes currentness and dependency gaps against
-the default model's authority. Source, artifact and deployed evidence cannot be joined solely because
-their model revision matches. Any cross-target reliance requires an explicit applicability and
-provenance contract; unsupported composition remains a visible gap.
-
-## Service inspection and migration
-
-The service stores reviews with explicit model-revision links without rewriting them; its storage is
-described in [run-ledger.md](https://github.com/azimuth-sh/azimuth/blob/main/contracts/run-ledger.md). Review submissions accept Requirement Review records only.
-Definition assessments are exposed independently of Verification Targets through selected and candidate
-`requirement-reviews` resources. Exact-target state for a source or artifact Verification Target
-exposes Review currentness and the observed Check Results as unassessed facts with status
-`unresolved`; only a deployment's Requirement Status is computed. Authenticated submitter and receive
-time are transport facts; who performed a review is Work Provenance. Missing, stale, rejected and
-ambiguous records cannot infer a supported Requirement Status.
-
-There is no authority selection, release acceptance or reassessment from execution. Core's
-historical parsers for Method Qualification, Applicability Decision and Requirement Judgment retain
-their original meanings for inspection; they do not convert old qualifications or judgments into new
-reviews. The removal of `requirement-status`, review `provenance` and the `dependencies` packet has no
-compatibility reader: the Assurance Service database is reset and current reviews are re-encoded.
-
-## Deployment Requirement Status
-
-The standard change-development revision 10 requires independent Requirement Reviews and machine execution facts before publication; there is no authored Requirement Status record. AAS computes deployment Requirement Status after deployment reconciliation, using reviewed definitions, exact Run Verification Targets, release provenance and compatible effective-context captures. Who performed each review is recorded in the change's Work Provenance ledger; see `azimuth reference show work-provenance`.
+AAS preserves exact history and assesses review currentness independently of deployment evidence. Source, artifact and deployment evidence have explicit applicability relationships; matching model revision alone does not join them. Missing measurements, stale reviews, unresolved scopes and incompatible context remain visible. Neither candidate registration nor publication selects accepted intent or authorizes deployment. Merge to main ratifies the repository transition.

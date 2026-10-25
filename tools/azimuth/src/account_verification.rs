@@ -321,8 +321,8 @@ pub fn parse_account_verification(
                     errors.push(Diag::at(path, heading.line, "machine Verification Challenge Form must be mutation or source-analysis"));
                 }
                 let targets = fields[1].clone();
-                if targets.is_empty() || targets.iter().any(|target| target != "requirement-review") {
-                    errors.push(Diag::at(path, heading.line, "Targets must select requirement-review; Requirement Status is computed, never authored, so it cannot be challenged"));
+                if targets.is_empty() || targets.iter().any(|target| !matches!(target.as_str(), "implementation" | "requirement-review")) {
+                    errors.push(Diag::at(path, heading.line, "Targets must select implementation or an explicitly historical requirement-review; Requirement Status is computed, never authored"));
                 }
                 let mut selected_requirements = fields[2].clone();
                 if selected_requirements.is_empty() {

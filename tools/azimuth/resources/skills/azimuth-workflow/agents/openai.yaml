@@ -1,0 +1,4 @@
+interface:
+  display_name: "Run an Azimuth change workflow"
+  short_description: "Run an Azimuth change workflow"
+  default_prompt: "Use $azimuth-workflow for the assigned Azimuth work and retain its exact result."

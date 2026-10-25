@@ -20,7 +20,8 @@ pub const WORKFLOWS: &[WorkflowDescriptor] = &[WorkflowDescriptor {
 pub const RESOURCE_MANIFEST: &str = include_str!("../resources/manifest.json");
 pub const PROJECT_README: &str = include_str!("../resources/templates/init/README.md");
 /// PreToolUse hooks that attach a harness-basis descriptor to `azimuth workflow update`.
-pub const CLAUDE_CODE_HOOKS: &str = include_str!("../resources/integrations/claude-code/settings.json");
+pub const CLAUDE_CODE_HOOKS: &str =
+    include_str!("../resources/integrations/claude-code/settings.json");
 pub const CODEX_HOOKS: &str = include_str!("../resources/integrations/codex/hooks.json");
 pub const DEFAULT_STANDARDS: &str =
     include_str!("../resources/templates/init/standards-verification.md");
@@ -43,14 +44,65 @@ pub const SKILLS: &[SkillResource] = &[
         openai: include_str!("../resources/skills/azimuth-explore/agents/openai.yaml"),
     },
     SkillResource {
-        id: "azimuth-propose",
-        source: include_str!("../resources/skills/azimuth-propose/SKILL.md"),
-        openai: include_str!("../resources/skills/azimuth-propose/agents/openai.yaml"),
+        id: "azimuth-workflow",
+        source: include_str!("../resources/skills/azimuth-workflow/SKILL.md"),
+        openai: include_str!("../resources/skills/azimuth-workflow/agents/openai.yaml"),
     },
     SkillResource {
-        id: "azimuth-apply",
-        source: include_str!("../resources/skills/azimuth-apply/SKILL.md"),
-        openai: include_str!("../resources/skills/azimuth-apply/agents/openai.yaml"),
+        id: "azimuth-author-proposal",
+        source: include_str!("../resources/skills/azimuth-author-proposal/SKILL.md"),
+        openai: include_str!("../resources/skills/azimuth-author-proposal/agents/openai.yaml"),
+    },
+    SkillResource {
+        id: "azimuth-review-proposal",
+        source: include_str!("../resources/skills/azimuth-review-proposal/SKILL.md"),
+        openai: include_str!("../resources/skills/azimuth-review-proposal/agents/openai.yaml"),
+    },
+    SkillResource {
+        id: "azimuth-author-spec-delta",
+        source: include_str!("../resources/skills/azimuth-author-spec-delta/SKILL.md"),
+        openai: include_str!("../resources/skills/azimuth-author-spec-delta/agents/openai.yaml"),
+    },
+    SkillResource {
+        id: "azimuth-review-spec-delta",
+        source: include_str!("../resources/skills/azimuth-review-spec-delta/SKILL.md"),
+        openai: include_str!("../resources/skills/azimuth-review-spec-delta/agents/openai.yaml"),
+    },
+    SkillResource {
+        id: "azimuth-author-design-delta",
+        source: include_str!("../resources/skills/azimuth-author-design-delta/SKILL.md"),
+        openai: include_str!("../resources/skills/azimuth-author-design-delta/agents/openai.yaml"),
+    },
+    SkillResource {
+        id: "azimuth-review-design-delta",
+        source: include_str!("../resources/skills/azimuth-review-design-delta/SKILL.md"),
+        openai: include_str!("../resources/skills/azimuth-review-design-delta/agents/openai.yaml"),
+    },
+    SkillResource {
+        id: "azimuth-author-verification-delta",
+        source: include_str!("../resources/skills/azimuth-author-verification-delta/SKILL.md"),
+        openai: include_str!(
+            "../resources/skills/azimuth-author-verification-delta/agents/openai.yaml"
+        ),
+    },
+    SkillResource {
+        id: "azimuth-review-verification-delta",
+        source: include_str!("../resources/skills/azimuth-review-verification-delta/SKILL.md"),
+        openai: include_str!(
+            "../resources/skills/azimuth-review-verification-delta/agents/openai.yaml"
+        ),
+    },
+    SkillResource {
+        id: "azimuth-author-engineering-plan",
+        source: include_str!("../resources/skills/azimuth-author-engineering-plan/SKILL.md"),
+        openai: include_str!(
+            "../resources/skills/azimuth-author-engineering-plan/agents/openai.yaml"
+        ),
+    },
+    SkillResource {
+        id: "azimuth-implement-change",
+        source: include_str!("../resources/skills/azimuth-implement-change/SKILL.md"),
+        openai: include_str!("../resources/skills/azimuth-implement-change/agents/openai.yaml"),
     },
     SkillResource {
         id: "azimuth-review-requirement",
@@ -58,14 +110,16 @@ pub const SKILLS: &[SkillResource] = &[
         openai: include_str!("../resources/skills/azimuth-review-requirement/agents/openai.yaml"),
     },
     SkillResource {
+        id: "azimuth-author-change-outcome",
+        source: include_str!("../resources/skills/azimuth-author-change-outcome/SKILL.md"),
+        openai: include_str!(
+            "../resources/skills/azimuth-author-change-outcome/agents/openai.yaml"
+        ),
+    },
+    SkillResource {
         id: "azimuth-archive",
         source: include_str!("../resources/skills/azimuth-archive/SKILL.md"),
         openai: include_str!("../resources/skills/azimuth-archive/agents/openai.yaml"),
-    },
-    SkillResource {
-        id: "azimuth-coordinate",
-        source: include_str!("../resources/skills/azimuth-coordinate/SKILL.md"),
-        openai: include_str!("../resources/skills/azimuth-coordinate/agents/openai.yaml"),
     },
     SkillResource {
         id: "azimuth-maintain",
@@ -83,6 +137,27 @@ pub struct ReferenceDescriptor {
 }
 
 pub const REFERENCES: &[ReferenceDescriptor] = &[
+    ReferenceDescriptor {
+        id: "facet-decisions",
+        format_version: 1,
+        accepted: &["independently reviewed unchanged facets"],
+        rejected: &["arbitrary absent baseline paths"],
+        prose: include_str!("../resources/references/facet-decisions.md"),
+    },
+    ReferenceDescriptor {
+        id: "retained-inputs",
+        format_version: 1,
+        accepted: &["portable native dependency closure"],
+        rejected: &["ignored local scratch as durable evidence"],
+        prose: include_str!("../resources/references/retained-inputs.md"),
+    },
+    ReferenceDescriptor {
+        id: "authoring-reviews",
+        format_version: 1,
+        accepted: &["stable authored issues and independent decisions"],
+        rejected: &["parsing grants semantic acceptance"],
+        prose: include_str!("../resources/references/authoring-reviews.md"),
+    },
     ReferenceDescriptor {
         id: "deployment-requirement-status",
         format_version: 2,
