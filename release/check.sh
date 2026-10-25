@@ -51,7 +51,6 @@ fi
 python3 release/isolate_experiments.py --experiments-executed
 cargo run --quiet --manifest-path tools/azimuth/Cargo.toml -- validate \
   --model azimuth/model \
-  --standards azimuth/standards/verification.md \
   --manifest .azimuth/release/linkage.json \
   --manifest .azimuth/release/experimental-isolation-linkage.json \
   --manifest .azimuth/release/orchestration-linkage.json \

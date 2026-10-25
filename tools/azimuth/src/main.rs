@@ -48,6 +48,8 @@ USAGE
     azimuth assurance review-draft --input <packet> --input-ref <change-relative ref> --id <id> [--out <file>]
     azimuth assurance review-compile --project <id> --change-root <dir> --input <relative Markdown>...
         [--review <file>...] [--bundle <file>...] [--replace-sealed] [options] [--out <file>]
+    azimuth assurance review-heads --project <id> [--review <file>...] [--bundle <file>...] [options]
+        [--catalog <file> --workset <file>]   (writes the ratified reviews into the model's review heads)
     azimuth assurance review-export --input <compiled bundle> --id <id> [--out <file>]
         [--catalog <project.json> --workset <workset.json>]
     azimuth adapter verify [--config <file>]
@@ -4182,6 +4184,7 @@ fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
             | "snapshot"
             | "prepare-candidate"
             | "catalog"
+            | "review-heads"
     ) {
         return Err("expected assurance authority --project <id> [model options] [--catalog <file> --workset <file>]".into());
     }
@@ -4339,6 +4342,32 @@ fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
             bundle
         }
         "catalog" => azimuth::release::catalog(&loaded.model),
+        "review-heads" => {
+            if request.is_some() {
+                return Err("review-heads does not accept --request".into());
+            }
+            let ratified =
+                azimuth::change::ratifications(&loaded.model, &native_reviews, &bundles)?;
+            let updates = azimuth::change::head_updates(&loaded.model, &ratified);
+            let written = azimuth::review_heads::write(
+                &options.model,
+                &loaded.model.review_heads,
+                &updates,
+                &|_| true,
+            )?;
+            azimuth::json::Json::obj(vec![
+                ("project", azimuth::json::Json::str(&project)),
+                (
+                    "written",
+                    azimuth::json::Json::Arr(
+                        written
+                            .iter()
+                            .map(|path| azimuth::json::Json::str(path.display().to_string()))
+                            .collect(),
+                    ),
+                ),
+            ])
+        }
         "prepare-candidate" => {
             if request.is_some() || !native_reviews.is_empty() || !bundles.is_empty() {
                 return Err("prepare-candidate accepts model options only".into());
