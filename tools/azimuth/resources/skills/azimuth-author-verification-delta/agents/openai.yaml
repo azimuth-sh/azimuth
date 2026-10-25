@@ -1,0 +1,4 @@
+interface:
+  display_name: "Author an Azimuth verification delta"
+  short_description: "Author an Azimuth verification delta"
+  default_prompt: "Use $azimuth-author-verification-delta for the assigned Azimuth work and retain its exact result."

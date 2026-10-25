@@ -1,0 +1,4 @@
+interface:
+  display_name: "Record an Azimuth change outcome"
+  short_description: "Record an Azimuth change outcome"
+  default_prompt: "Use $azimuth-author-change-outcome for the assigned Azimuth work and retain its exact result."

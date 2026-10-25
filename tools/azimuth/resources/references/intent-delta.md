@@ -29,4 +29,15 @@ To remove a Requirement or one Scenario, use `## Remove requirement: <requiremen
 
 `From:` fingerprints the exact accepted Markdown block, excluding trailing whitespace. Run `azimuth change intent-capture <id>` to insert accepted fingerprints for replacement or removal. It refuses to overwrite a different existing `From:`. Capture does not apply the delta.
 
-Run `azimuth change intent-preview <id> --out <reviewed-preview-file>` during proposal review. It displays the target spec and full before/after diff. After implementation and acceptance, run `azimuth change intent-apply <id> --preview <reviewed-preview-file>`. Apply recomputes the projection and refuses a stale preview or stale `From:`. It never runs automatically from finalize or archive. Run `azimuth change validate` and normal `azimuth validate` afterward. Do not treat proposed intent as accepted before implemented behavior is ready for acceptance.
+Run `azimuth change intent-preview <id> --out <reviewed-preview-file>` during proposal review. It displays the target spec and full before/after diff. At the authorized finalization boundary after implementation and acceptance, run `azimuth change intent-apply <id> --preview <reviewed-preview-file>`. Apply recomputes the projection and refuses a stale preview or stale `From:`. It never runs automatically from finalize or archive. Run `azimuth change validate` and normal `azimuth validate` afterward. Do not treat proposed intent as accepted before implemented behavior is ready for acceptance.
+
+## Symmetric change facets
+
+Prefer `deltas/<module-id>/spec.md` when authoring spec, design and verification together. The spec projector remains the only writer of accepted specs; design/verification use their account projector. Author and independently review spec first, then design, then verification. Every review examines the exact delta and its composed result against the captured baseline. Preserve unrelated blocks and stable typed identities.
+
+A manually requested correction is a new related change against the current model, including any already applied original change. It does not rewrite the archived original or reapply its delta. CI retains diagnostics; it never generates correction work packages or agent assignments.
+
+
+## Unchanged spec facet
+
+When the requested implementation correction needs no spec transition, retain the explicit `facet-unchanged` decision described by `azimuth reference show facet-decisions`. Pin the actual accepted facet or verified absence. Do not create empty or artificial delta operations. The independent spec review still evaluates the decision and complete composed account.

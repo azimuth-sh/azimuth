@@ -91,7 +91,7 @@ pub fn create_change(changes: &Path, id: &str, title: &str) -> Result<PathBuf, S
             root.display()
         ));
     }
-    fs::create_dir_all(root.join("specs"))
+    fs::create_dir_all(root.join("deltas"))
         .map_err(|error| format!("cannot create {}: {error}", root.display()))?;
     fs::write(
         root.join("proposal.md"),
@@ -103,6 +103,30 @@ pub fn create_change(changes: &Path, id: &str, title: &str) -> Result<PathBuf, S
         render_template(crate::resources::PLAN_TEMPLATE, id, title),
     )
     .map_err(|error| format!("cannot write plan.md: {error}"))?;
+    Ok(root)
+}
+
+pub fn create_correction(
+    changes: &Path,
+    id: &str,
+    title: &str,
+    source: &Path,
+    requirements: &[String],
+    failed_revision: Option<&str>,
+    issues: &[String],
+) -> Result<PathBuf, String> {
+    validate_id(id)?;
+    let root = changes.join(id);
+    crate::change::correction_record(&root, source, requirements, failed_revision, issues)?;
+    let root = create_change(changes, id, title)?;
+    crate::change::write_correction(&root, source, requirements, failed_revision, issues).map_err(
+        |error| {
+            format!(
+                "{error}; the new scaffold at {} remains for inspection",
+                root.display()
+            )
+        },
+    )?;
     Ok(root)
 }
 
@@ -163,14 +187,14 @@ pub fn archive_exploration(explorations: &Path, id: &str, date: &str) -> Result<
             return Err(format!(
                 "exploration archive destination {} already exists",
                 destination.display()
-            ))
+            ));
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => {
             return Err(format!(
                 "cannot inspect exploration archive destination {}: {error}",
                 destination.display()
-            ))
+            ));
         }
     }
     fs::create_dir_all(&archive)
@@ -592,10 +616,16 @@ pub fn package_brief(root: &Path, package: &WorkPackage) -> String {
     format!(
         "Implement Azimuth work package `{}` for change `{}`.\n\nObjective: {}\nOwned paths: {}\nEvidence: {}\n\nRead proposal.md, design.md, verification.md and plan.md when present. Do not edit outside the owned paths. Run the package evidence and report changed files, commands and residuals to the coordinator. Do not finalize or archive the change.\n",
         package.id,
-        root.file_name().and_then(|value| value.to_str()).unwrap_or("unknown"),
+        root.file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("unknown"),
         package.objective,
         display_list(&package.owns),
-        if package.evidence.is_empty() { "declared in the change verification plan" } else { &package.evidence },
+        if package.evidence.is_empty() {
+            "declared in the change verification plan"
+        } else {
+            &package.evidence
+        },
     )
 }
 

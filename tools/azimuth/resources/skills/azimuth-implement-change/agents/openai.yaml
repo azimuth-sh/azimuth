@@ -1,0 +1,4 @@
+interface:
+  display_name: "Implement an Azimuth change"
+  short_description: "Implement an Azimuth change"
+  default_prompt: "Use $azimuth-implement-change for the assigned Azimuth work and retain its exact result."

@@ -11,10 +11,13 @@ pub mod adapter_host;
 pub mod assurance;
 pub mod assurance_publication;
 pub mod assurance_review;
+pub mod authoring_review;
+pub mod candidate_execution;
 pub mod change;
 pub mod deployment_status;
 pub mod design;
 pub mod diag;
+pub mod execution_impact;
 pub mod federation;
 pub mod fingerprint;
 pub mod harness_capture;
@@ -27,6 +30,7 @@ pub mod model;
 pub mod provenance;
 pub mod release;
 pub mod resources;
+pub mod retained_inputs;
 pub mod review_authoring;
 pub mod run;
 pub mod run_plan;
@@ -38,6 +42,7 @@ pub mod validation;
 pub mod verification;
 pub mod verification_packages;
 pub mod workflow;
+pub mod workflow_references;
 pub mod workflow_state;
 pub mod workspace;
 
@@ -729,7 +734,10 @@ fn apply_selection(model: &mut Model, only: &[String]) {
     }
     let mut selected_requirements = model
         .scenarios()
-        .filter(|requirement| only.iter().any(|pattern| selects(pattern, &requirement.spec.id)))
+        .filter(|requirement| {
+            only.iter()
+                .any(|pattern| selects(pattern, &requirement.spec.id))
+        })
         .map(|requirement| requirement.id())
         .collect::<BTreeSet<_>>();
     let initial_bindings = model
@@ -790,13 +798,19 @@ fn apply_selection(model: &mut Model, only: &[String]) {
     }
     let selected_parent_requirements = selected_requirements
         .iter()
-        .filter_map(|scenario| model.find_scenario(scenario).map(|view| view.requirement.id.clone()))
+        .filter_map(|scenario| {
+            model
+                .find_scenario(scenario)
+                .map(|view| view.requirement.id.clone())
+        })
         .collect::<BTreeSet<_>>();
     // Retaining the parent composition prevents partial selection from inventing a narrower assurance account.
     selected_requirements.extend(
         model
             .scenarios()
-            .filter(|scenario| selected_parent_requirements.contains(&scenario.requirement.id.clone()))
+            .filter(|scenario| {
+                selected_parent_requirements.contains(&scenario.requirement.id.clone())
+            })
             .map(|scenario| scenario.id()),
     );
     let selected_bindings = model
@@ -977,7 +991,9 @@ fn apply_selection(model: &mut Model, only: &[String]) {
     model
         .workspace
         .realization_obligations
-        .retain(|obligation| selected_parent_requirements.contains(&obligation.requirement.clone()));
+        .retain(|obligation| {
+            selected_parent_requirements.contains(&obligation.requirement.clone())
+        });
     model
         .check_implementations
         .retain(|implementation| selected_checks.contains(&implementation.check));
@@ -1020,7 +1036,9 @@ fn apply_selection(model: &mut Model, only: &[String]) {
         file.requirement_judgments
             .retain(|judgment| selected_parent_requirements.contains(&judgment.id));
         file.verification_challenges
-            .retain(|verification_challenge| selected_verification_challenges.contains(&verification_challenge.id));
+            .retain(|verification_challenge| {
+                selected_verification_challenges.contains(&verification_challenge.id)
+            });
         file.challenge_plans
             .retain(|plan| selected_plan_ids.contains(&plan.id));
     }
@@ -1069,7 +1087,11 @@ fn selector_requirements(model: &Model, selector: &Selector) -> BTreeSet<String>
                     .find_requirement(&site.requirement)
                     .into_iter()
                     .flat_map(move |requirement| {
-                        requirement.requirement.scenarios.iter().map(move |scenario| scenario.id.clone())
+                        requirement
+                            .requirement
+                            .scenarios
+                            .iter()
+                            .map(move |scenario| scenario.id.clone())
                     })
             })
             .collect(),
@@ -1119,7 +1141,8 @@ fn selected_mechanism_requirements(model: &Model, identity: &str) -> BTreeSet<St
                 .any(|entry| {
                     entry.mechanisms.iter().any(|item| {
                         item.id == mechanism_id
-                            && (item.scenarios.is_empty() || item.scenarios.contains(&requirement.scenario.id))
+                            && (item.scenarios.is_empty()
+                                || item.scenarios.contains(&requirement.scenario.id))
                     })
                 })
         })

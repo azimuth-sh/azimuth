@@ -313,7 +313,11 @@ fn token_counts(value: &Json, extra: &[&str], what: &str) -> Result<(), String> 
     }
     integer(value, "input_tokens", what)?;
     integer(value, "output_tokens", what)?;
-    for name in ["cache_read_input_tokens", "cache_write_input_tokens", "reasoning_output_tokens"] {
+    for name in [
+        "cache_read_input_tokens",
+        "cache_write_input_tokens",
+        "reasoning_output_tokens",
+    ] {
         optional_integer(value, name, what)?;
     }
     Ok(())
@@ -325,7 +329,13 @@ pub fn validate_usage(value: &Json) -> Result<(), String> {
         return Ok(());
     }
     let what = "usage";
-    let mut names = vec!["basis", "model_calls", "tool_calls", "overlapping", "delegated"];
+    let mut names = vec![
+        "basis",
+        "model_calls",
+        "tool_calls",
+        "overlapping",
+        "delegated",
+    ];
     names.extend_from_slice(TOKEN_FIELDS);
     exact(value, &names, what)?;
     if !matches!(nonempty(value, "basis", what)?, "harness" | "declared") {
@@ -773,7 +783,28 @@ fn record_fingerprint(reference: &Json, record: &str, roots: &Roots) -> Result<S
             "review bundle reference `{reference_text}` is not a normal relative path"
         ));
     }
-    let path = base.join(reference_text);
+    let original = base.join(reference_text);
+    let path = match fs::symlink_metadata(&original) {
+        Ok(metadata) => {
+            let canonical = fs::canonicalize(&original).map_err(|error| error.to_string())?;
+            if metadata.file_type().is_symlink()
+                || !metadata.is_file()
+                || canonical != original
+                || !canonical.starts_with(&base)
+            {
+                return Err(
+                    "recorded review reference must be a regular file without symlink/root escape"
+                        .into(),
+                );
+            }
+            original
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            crate::workflow_references::relocated(roots.workflow, &base, reference_text)?
+                .ok_or_else(|| format!("{}: {error}", original.display()))?
+        }
+        Err(error) => return Err(format!("{}: {error}", original.display())),
+    };
     let bundle = read_json(&path)?;
     let entry = bundle
         .get("records")
@@ -921,6 +952,13 @@ fn attempts(
                     .is_some_and(|id| crate::fingerprint::canonical_json(id) == work_key)
             })
             .ok_or_else(|| fail(format!("{what} names a task absent from the definition")))?;
+        // Finalization consumes this ledger; its own receipt is retained separately to avoid a
+        // completion record changing the very input it certifies.
+        if task.get("kind").and_then(Json::as_str) == Some("finalize-change")
+            || work.get("action").and_then(Json::as_str) == Some("finalize-change")
+        {
+            continue;
+        }
         let target = flattened_target(
             work.get("target")
                 .ok_or_else(|| fail(format!("{what} result task has no target")))?,
@@ -959,7 +997,7 @@ fn attempts(
                 "id",
                 Json::str(nonempty(result, "id", &what).map_err(&fail)?),
             ),
-            ("sequence", Json::Num((index + 1) as f64)),
+            ("sequence", Json::Num((attempts.len() + 1) as f64)),
             (
                 "action",
                 Json::str(nonempty(work, "action", &what).map_err(&fail)?),
@@ -1278,12 +1316,12 @@ fn append_only(previous: &Json, next: &Json) -> Result<(), String> {
             None => {
                 return Err(format!(
                     "previously exported attempt {id} is missing from the new export; pass its historical instance with --instance"
-                ))
+                ));
             }
             Some(candidate) if candidate != &attempt => {
                 return Err(format!(
                     "previously exported attempt {id} would change; exported attempts are immutable"
-                ))
+                ));
             }
             _ => {}
         }
@@ -1381,7 +1419,7 @@ fn entity_shape(value: &Json, with_record: bool, what: &str) -> Result<(), Strin
             (None, _) => {
                 return Err(format!(
                     "{what} `record_fingerprint` must be null when no record is selected"
-                ))
+                ));
             }
             (Some(_), _) => fingerprint_field(value, "record_fingerprint", what)?,
         }
@@ -1596,10 +1634,19 @@ pub fn usage_columns(usage: &Json) -> Vec<(&'static str, Json)> {
         ("delegated_agents", delegated("agents")),
         ("delegated_model_calls", delegated("model_calls")),
         ("delegated_input_tokens", delegated("input_tokens")),
-        ("delegated_cache_read_input_tokens", delegated("cache_read_input_tokens")),
-        ("delegated_cache_write_input_tokens", delegated("cache_write_input_tokens")),
+        (
+            "delegated_cache_read_input_tokens",
+            delegated("cache_read_input_tokens"),
+        ),
+        (
+            "delegated_cache_write_input_tokens",
+            delegated("cache_write_input_tokens"),
+        ),
         ("delegated_output_tokens", delegated("output_tokens")),
-        ("delegated_reasoning_output_tokens", delegated("reasoning_output_tokens")),
+        (
+            "delegated_reasoning_output_tokens",
+            delegated("reasoning_output_tokens"),
+        ),
     ]
 }
 

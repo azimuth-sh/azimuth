@@ -1,6 +1,6 @@
 # Machine Verification Challenge package
 
-Enable `azimuth.challenge` explicitly. Declarations in `verification.md` select Requirement Review or Requirement Status conclusions; `Realizes` and `ImplementsMechanism` select production targets. `ImplementsVerificationChallenge` links implementation code, never target code.
+Enable `azimuth.challenge` explicitly. Declarations in `verification.md` select the exact implementation and Check basis with `Targets: implementation`; `Realizes` and `ImplementsMechanism` select production targets. `ImplementsVerificationChallenge` links implementation code, never target code.
 
 ## Source links
 
@@ -24,7 +24,7 @@ PYTHONPATH=packages/python python3 -m azimuth_challenge scope \
 
 `--manifest` and `--root` repeat. Repository identities remain portable; bindings locate checkouts. A plain manifest path belongs to the request's repository. Prefer explicit manifest repository bindings in federated accounts.
 
-Strict request: `format: azimuth-challenge-scope-request`, `version: 2`, `verification_challenge`, `repository`, `tool: stryker-net|semgrep`, `requirements`, `mechanisms`, `checks`, optional `areas`, `project`, `test_project`, `test_filter`, `rules`. Requirements select assessed Requirements. Nonempty Mechanisms narrow production targeting to their implementations; otherwise Requirement realizations are targets. The resulting `azimuth-challenge-source-scope` report is version 2 and names its `verification_challenge`. Areas narrow the selected source identities. Excluded repositories/Areas are reported. Missing mappings leave the report incomplete; never fall back to all files.
+Strict request: `format: azimuth-challenge-scope-request`, `version: 2`, `verification_challenge`, `repository`, `tool: stryker-net|semgrep`, `requirements`, `mechanisms`, `checks`, optional `areas`, `project`, `test_project`, `test_filter`, `rules`. Requirements select the obligations whose implementation and verification are examined. Nonempty Mechanisms narrow production targeting to their implementations; otherwise Requirement realizations are targets. The resulting `azimuth-challenge-source-scope` report is version 2 and names its `verification_challenge`. Areas narrow the selected source identities. Excluded repositories/Areas are reported. Missing mappings leave the report incomplete; never fall back to all files.
 
 Current emitters locate sites but do not supply exact mutation regions. Scope preparation therefore explicitly reports whole-file expansion. Stryker's `mutate` entries are exact file patterns relative to the target project directory. An empty `test_filter` derives a disjunction of exact `FullyQualifiedName` predicates from selected .NET Check method sites. An authored filter must equal that resolved selection; otherwise the report is incomplete because omissions and expansions are unproven. The execution runner must support this filter (Microsoft Testing Platform runners such as xUnit v3 do not support the VSTest filter contract).
 
@@ -60,7 +60,7 @@ Tool-specific docs: [Stryker.NET configuration](https://stryker-mutator.io/docs/
 
 ## Native Run import
 
-The package includes a digest-pinned `adapter.py` (`azimuth-challenge/native`, `challenge.import`, forms `mutation` and `source-analysis`) and native normalization resource `native.py`. Configure both the normalizer and `azimuth_run/protocol.py` as exact resources. Adapter environment is empty; limits are 30 seconds, 16 MiB stdout and 1 MiB stderr. It imports an `azimuth-challenge-native-account` carrying raw reports and measured activities, independently normalizes tool statuses and validates all planned scope fingerprints. It never promotes an exit code or aggregate mutation score into Requirement Status. Exact assessment pinning belongs to native Run planning.
+The package includes a digest-pinned `adapter.py` (`azimuth-challenge/native`, `challenge.import`, forms `mutation` and `source-analysis`) and native normalization resource `native.py`. Configure both the normalizer and `azimuth_run/protocol.py` as exact resources. Adapter environment is empty; limits are 30 seconds, 16 MiB stdout and 1 MiB stderr. It imports an `azimuth-challenge-native-account` carrying raw reports and measured activities, independently normalizes tool statuses and validates all planned scope fingerprints. It never promotes an exit code or aggregate mutation score into Requirement Status. Exact implementation target pinning belongs to native Run planning; native protocols copy that derived target without inventing an assessment.
 
 Build the import account after planning and actual tool execution:
 

@@ -801,6 +801,13 @@ pub fn validate_record(value: &Json) -> Result<(), String> {
         ],
         _ => return Err("unknown review kind".into()),
     });
+    if kind == "requirement-review" {
+        for optional in ["issues", "dispositions"] {
+            if value.get(optional).is_some() {
+                fields.push(optional);
+            }
+        }
+    }
     object(value, &fields)?;
     if let Some(missing) = fields.iter().find(|field| value.get(field).is_none()) {
         return Err(format!("{kind} requires {missing}"));
@@ -2278,7 +2285,214 @@ pub fn requirement_dependencies(authority: &Json, requirement_id: &str) -> Resul
         ("bindings", Json::Arr(bindings)),
     ]))
 }
+pub fn implementation_challenge_fingerprint(
+    authority: &Json,
+    challenge_id: &str,
+    source_scope_fingerprint: &str,
+    verification_target_fingerprint: &str,
+) -> Result<String, String> {
+    let mut declaration = None;
+    for requirement in array(authority, "requirements")? {
+        for challenge in requirement
+            .get("verification_challenges")
+            .and_then(Json::as_array)
+            .unwrap_or(&[])
+        {
+            if challenge.get("id").and_then(Json::as_str) == Some(challenge_id) {
+                if declaration
+                    .as_ref()
+                    .is_some_and(|previous| previous != challenge)
+                {
+                    return Err("inconsistent Verification Challenge declarations".into());
+                }
+                declaration = Some(challenge.clone());
+            }
+        }
+    }
+    let declaration = declaration.ok_or("Verification Challenge absent from authority")?;
+    let mut closures = Vec::new();
+    for requirement in array(&declaration, "requirements")? {
+        let id = requirement
+            .as_str()
+            .ok_or("Challenge Requirement must be an id")?;
+        closures.push(Json::obj(vec![
+            ("requirement", Json::str(id)),
+            (
+                "fingerprint",
+                Json::str(requirement_closure_fingerprint(authority, id)?),
+            ),
+        ]));
+    }
+    let mut checks = Vec::new();
+    for check in array(&declaration, "checks")? {
+        let id = check.as_str().ok_or("Challenge Check must be an id")?;
+        checks.push(
+            authority_item(authority, "checks", "id", id)
+                .ok_or("Challenge Check absent from authority")?
+                .clone(),
+        );
+    }
+    Ok(crate::run::canonical_fingerprint(&Json::obj(vec![
+        (
+            "format",
+            Json::str("azimuth-challenge-implementation-basis"),
+        ),
+        ("version", Json::Num(1.0)),
+        ("verification_challenge", declaration),
+        ("requirements", Json::Arr(closures)),
+        ("checks", Json::Arr(checks)),
+        (
+            "source_scope_fingerprint",
+            Json::str(source_scope_fingerprint),
+        ),
+        (
+            "verification_target_fingerprint",
+            Json::str(verification_target_fingerprint),
+        ),
+    ]))?)
+}
+
+pub fn implementation_challenge_current(
+    authority: &Json,
+    bundle: &RunBundle,
+    execution: &crate::run::VerificationChallengeExecution,
+) -> Result<bool, String> {
+    if execution.target.kind != ChallengeTargetKind::Implementation
+        || execution.target.id != execution.verification_challenge.id
+    {
+        return Ok(false);
+    }
+    let declaration = array(authority, "requirements")?
+        .iter()
+        .flat_map(|item| {
+            item.get("verification_challenges")
+                .and_then(Json::as_array)
+                .unwrap_or(&[])
+        })
+        .find(|challenge| {
+            challenge.get("id").and_then(Json::as_str)
+                == Some(execution.verification_challenge.id.as_str())
+        })
+        .ok_or("Verification Challenge absent from current authority")?;
+    if declaration.get("fingerprint").and_then(Json::as_str)
+        != Some(execution.verification_challenge.fingerprint.as_str())
+    {
+        return Ok(false);
+    }
+    let selection = bundle
+        .plan
+        .challenges
+        .iter()
+        .find(|selection| selection.id == execution.challenge)
+        .ok_or("Challenge selection absent from Run plan")?;
+    let scopes = selection
+        .units
+        .iter()
+        .map(|unit| {
+            unit.parameters
+                .get("scope_fingerprint")
+                .cloned()
+                .ok_or_else(|| {
+                    "implementation Challenge unit has no source scope fingerprint".to_string()
+                })
+        })
+        .collect::<Result<BTreeSet<_>, String>>()?;
+    if scopes.len() != 1 {
+        return Err("implementation Challenge requires one exact source scope".into());
+    }
+    let expected = implementation_challenge_fingerprint(
+        authority,
+        &execution.verification_challenge.id,
+        scopes.iter().next().unwrap(),
+        &bundle.verification_target_fingerprint,
+    )?;
+    Ok(expected == execution.target.fingerprint)
+}
+
+pub fn challenge_issue_id(
+    execution: &crate::run::VerificationChallengeExecution,
+    objection: &str,
+) -> String {
+    format!(
+        "challenge-issue-{}",
+        crate::fingerprint::canonical_sha256(&Json::obj(vec![
+            (
+                "verification_challenge",
+                Json::str(&execution.verification_challenge.id)
+            ),
+            ("target", Json::str(&execution.target.fingerprint)),
+            ("objection", Json::str(objection)),
+        ]))
+        .trim_start_matches("sha256:")
+    )
+}
+
+fn validate_review_issues(value: &Json) -> Result<(), String> {
+    let mut identities = BTreeSet::new();
+    if value.get("issues").is_some() {
+        for issue in array(value, "issues")? {
+            object(
+                issue,
+                &[
+                    "id",
+                    "proposition",
+                    "location",
+                    "reason",
+                    "correction",
+                    "blocking",
+                ],
+            )?;
+            id(issue, "id")?;
+            for field in ["proposition", "location", "reason", "correction"] {
+                text(issue, field)?;
+            }
+            issue
+                .get("blocking")
+                .and_then(Json::as_bool)
+                .ok_or("issue blocking requires boolean")?;
+            if !identities.insert(text(issue, "id")?) {
+                return Err("duplicate review issue id".into());
+            }
+            if text(value, "decision")? == "accepted"
+                && issue.get("blocking").and_then(Json::as_bool) == Some(true)
+            {
+                return Err("accepted review cannot retain a blocking issue".into());
+            }
+        }
+        if text(value, "decision")? == "rejected" && identities.is_empty() {
+            return Err("rejected review requires at least one stable issue".into());
+        }
+    }
+    let mut disposed = BTreeSet::new();
+    if value.get("dispositions").is_some() {
+        for disposition in array(value, "dispositions")? {
+            object(disposition, &["issue", "outcome", "rationale"])?;
+            text(disposition, "issue")?;
+            text(disposition, "rationale")?;
+            let outcome = text(disposition, "outcome")?;
+            if !matches!(
+                outcome,
+                "corrected" | "equivalent" | "irrelevant" | "confirmed-defect" | "unresolved"
+            ) {
+                return Err("unsupported issue disposition".into());
+            }
+            if !disposed.insert(text(disposition, "issue")?) {
+                return Err("duplicate issue disposition".into());
+            }
+            if text(value, "decision")? == "accepted"
+                && matches!(outcome, "confirmed-defect" | "unresolved")
+            {
+                return Err(
+                    "accepted review cannot retain an unresolved or confirmed defect".into(),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 fn validate_requirement_review(value: &Json) -> Result<(), String> {
+    validate_review_issues(value)?;
     id(value, "requirement")?;
     fingerprint(value, "requirement_fingerprint")?;
     fingerprint(value, "dependencies_fingerprint")?;
@@ -2322,6 +2536,32 @@ fn assess_requirement_review(
             .iter()
             .find(|review| review.get("fingerprint").and_then(Json::as_str) == Some(previous))
         {
+            for issue in before.get("issues").and_then(Json::as_array).unwrap_or(&[]) {
+                if issue.get("blocking").and_then(Json::as_bool) != Some(true) {
+                    continue;
+                }
+                let reference = format!("{}#{}", previous, text(issue, "id").unwrap_or_default());
+                let disposition = record
+                    .get("dispositions")
+                    .and_then(Json::as_array)
+                    .unwrap_or(&[])
+                    .iter()
+                    .find(|item| {
+                        item.get("issue").and_then(Json::as_str) == Some(reference.as_str())
+                    });
+                if disposition.is_none_or(|item| {
+                    !matches!(
+                        item.get("outcome").and_then(Json::as_str),
+                        Some("corrected" | "equivalent" | "irrelevant")
+                    )
+                }) && record.get("decision").and_then(Json::as_str) == Some("accepted")
+                {
+                    return assessed(
+                        "unresolved",
+                        format!("Predecessor issue {reference} requires independent disposition"),
+                    );
+                }
+            }
             if review_target(before).ok() != review_target(record).ok()
                 || before.get("reviewed_at_ms").and_then(Json::as_num)
                     >= record.get("reviewed_at_ms").and_then(Json::as_num)
@@ -2369,8 +2609,27 @@ fn assess_requirement_review(
                             == Some(execution.result.fingerprint.as_str())
                             && item.get("target_fingerprint").and_then(Json::as_str)
                                 == Some(execution.target.fingerprint.as_str())
-                            && execution.target.id == requirement
-                            && execution.target.kind == ChallengeTargetKind::RequirementReview
+                            && ((execution.target.id == requirement
+                                && execution.target.kind == ChallengeTargetKind::RequirementReview)
+                                || (execution.target.kind == ChallengeTargetKind::Implementation
+                                    && implementation_challenge_current(
+                                        authority, bundle, execution,
+                                    )
+                                    .unwrap_or(false)
+                                    && authority_item(
+                                        authority,
+                                        "requirements",
+                                        "id",
+                                        requirement,
+                                    )
+                                    .and_then(|item| item.get("verification_challenges"))
+                                    .and_then(Json::as_array)
+                                    .unwrap_or(&[])
+                                    .iter()
+                                    .any(|challenge| {
+                                        challenge.get("id").and_then(Json::as_str)
+                                            == Some(execution.verification_challenge.id.as_str())
+                                    })))
                     })
         });
         if !found {
@@ -2378,6 +2637,59 @@ fn assess_requirement_review(
                 "stale",
                 "Relied-on Challenge Result is missing or corrected",
             );
+        }
+    }
+    if record.get("decision").and_then(Json::as_str) == Some("rejected") {
+        return assessed("rejected", "");
+    }
+    for item in array(record, "challenge_basis").unwrap() {
+        for bundle in &challenge_heads {
+            if item.get("bundle_fingerprint").and_then(Json::as_str)
+                != Some(bundle.bundle_fingerprint.as_str())
+            {
+                continue;
+            }
+            for execution in &bundle.verification_challenge_executions {
+                if item.get("result_fingerprint").and_then(Json::as_str)
+                    != Some(execution.result.fingerprint.as_str())
+                    || execution.target.kind != ChallengeTargetKind::Implementation
+                {
+                    continue;
+                }
+                if bundle.status != crate::run::RunStatus::Complete
+                    || execution.result.diagnostics.iter().any(|id| {
+                        bundle.diagnostics.iter().any(|diagnostic| {
+                            diagnostic.id == *id
+                                && diagnostic.class != crate::run::DiagnosticClass::Objection
+                        })
+                    })
+                    || execution.result.outcome == crate::run::ChallengeOutcome::Inconclusive
+                {
+                    return assessed(
+                        "unresolved",
+                        "Relied-on implementation Challenge execution is inconclusive",
+                    );
+                }
+                for objection in &execution.result.objections {
+                    let issue = challenge_issue_id(execution, objection);
+                    let disposition = record
+                        .get("dispositions")
+                        .and_then(Json::as_array)
+                        .unwrap_or(&[])
+                        .iter()
+                        .find(|disposition| {
+                            disposition.get("issue").and_then(Json::as_str) == Some(issue.as_str())
+                        });
+                    if disposition.is_none_or(|disposition| {
+                        !matches!(
+                            disposition.get("outcome").and_then(Json::as_str),
+                            Some("equivalent" | "irrelevant")
+                        )
+                    }) {
+                        return assessed("unresolved", format!("Implementation Challenge issue {issue} requires independent equivalence or irrelevance disposition"));
+                    }
+                }
+            }
         }
     }
     for execution in challenge_heads
@@ -2447,22 +2759,46 @@ fn requirement_review_input(
     }
     let heads = bundles.active_heads()?;
     let mut challenge_results = Vec::new();
+    let mut challenge_issues = Vec::new();
     let mut challenge_bundles = Vec::new();
+    let mut evidence_bundles = Vec::new();
+    let mut check_results = Vec::new();
+    let mut verification_targets = Vec::new();
     for bundle in &heads {
         let serialized = crate::run::to_json(bundle);
-        let mut relevant = false;
-        for execution in serialized
-            .get("verification_challenge_executions")
-            .and_then(Json::as_array)
-            .unwrap_or(&[])
-        {
-            let target = execution.get("target").unwrap();
-            if target.get("id").and_then(Json::as_str) != Some(requirement)
-                || target.get("kind").and_then(Json::as_str) != Some("requirement-review")
-            {
+        let mut relevant_challenge = false;
+        for execution in &bundle.verification_challenge_executions {
+            let relevant = if execution.target.kind == ChallengeTargetKind::Implementation {
+                array(&deps, "requirements")?
+                    .iter()
+                    .flat_map(|item| {
+                        item.get("verification_challenges")
+                            .and_then(Json::as_array)
+                            .unwrap_or(&[])
+                    })
+                    .any(|challenge| {
+                        challenge.get("id").and_then(Json::as_str)
+                            == Some(execution.verification_challenge.id.as_str())
+                    })
+                    && implementation_challenge_current(&authority, bundle, execution)?
+            } else {
+                execution.target.id == requirement
+                    && execution.target.kind == ChallengeTargetKind::RequirementReview
+            };
+            if !relevant {
                 continue;
             }
-            relevant = true;
+            relevant_challenge = true;
+            let wire = serialized
+                .get("verification_challenge_executions")
+                .and_then(Json::as_array)
+                .unwrap()
+                .iter()
+                .find(|wire| {
+                    wire.get("challenge").and_then(Json::as_str)
+                        == Some(execution.challenge.as_str())
+                })
+                .unwrap();
             challenge_results.push(Json::obj(vec![
                 ("run", Json::str(&bundle.run_id)),
                 ("bundle_fingerprint", Json::str(&bundle.bundle_fingerprint)),
@@ -2470,13 +2806,76 @@ fn requirement_review_input(
                     "execution_verification_target_fingerprint",
                     Json::str(&bundle.verification_target_fingerprint),
                 ),
-                ("execution", execution.clone()),
+                ("execution", wire.clone()),
                 ("plan", serialized.get("plan").unwrap().clone()),
                 ("artifacts", serialized.get("artifacts").unwrap().clone()),
             ]));
+            for objection in &execution.result.objections {
+                challenge_issues.push(Json::obj(vec![
+                    ("id", Json::str(challenge_issue_id(execution, objection))),
+                    (
+                        "verification_challenge",
+                        Json::str(&execution.verification_challenge.id),
+                    ),
+                    (
+                        "target_fingerprint",
+                        Json::str(&execution.target.fingerprint),
+                    ),
+                    (
+                        "result_fingerprint",
+                        Json::str(&execution.result.fingerprint),
+                    ),
+                    ("objection", Json::str(objection)),
+                ]));
+            }
         }
-        if relevant {
-            challenge_bundles.push(serialized);
+        let mut relevant_check = false;
+        for execution in serialized
+            .get("check_executions")
+            .and_then(Json::as_array)
+            .unwrap_or(&[])
+        {
+            let check = execution
+                .get("check")
+                .ok_or("Check execution requires Check reference")?;
+            if !array(&deps, "checks")?.iter().any(|definition| {
+                definition.get("id") == check.get("id")
+                    && definition.get("fingerprint") == check.get("fingerprint")
+            }) {
+                continue;
+            }
+            relevant_check = true;
+            check_results.push(Json::obj(vec![
+                ("run", Json::str(&bundle.run_id)),
+                ("bundle_fingerprint", Json::str(&bundle.bundle_fingerprint)),
+                (
+                    "verification_target_fingerprint",
+                    Json::str(&bundle.verification_target_fingerprint),
+                ),
+                ("execution", execution.clone()),
+            ]));
+        }
+        if relevant_check || relevant_challenge {
+            let target = serialized.get("verification_target").unwrap().clone();
+            if !verification_targets.contains(&target) {
+                verification_targets.push(target);
+            }
+            let closure = bundles
+                .bundles
+                .iter()
+                .filter(|item| item.run_id == bundle.run_id)
+                .map(|item| crate::run::to_json(item))
+                .collect::<Vec<_>>();
+            for retained in closure {
+                let destination = if relevant_challenge {
+                    &mut challenge_bundles
+                } else {
+                    &mut evidence_bundles
+                };
+                if !destination.contains(&retained) {
+                    destination.push(retained);
+                }
+            }
         }
     }
     let record = latest_review(reviews, request)?;
@@ -2503,9 +2902,36 @@ fn requirement_review_input(
     } else {
         vec![status.clone()]
     };
+    let history = reassessment_history(record.into_iter().cloned().collect(), reviews);
+    let review_issues = history
+        .iter()
+        .flat_map(|previous| {
+            previous
+                .get("issues")
+                .and_then(Json::as_array)
+                .unwrap_or(&[])
+                .iter()
+                .map(|issue| {
+                    Json::obj(vec![
+                        (
+                            "reference",
+                            Json::str(format!(
+                                "{}#{}",
+                                text(previous, "fingerprint").unwrap(),
+                                text(issue, "id").unwrap()
+                            )),
+                        ),
+                        ("review", previous.get("fingerprint").unwrap().clone()),
+                        ("issue", issue.clone()),
+                    ])
+                })
+        })
+        .collect();
     let mut definitions = review_definitions(model, &check_ids, &scenario_ids, &requirement_ids);
     if let Json::Obj(fields) = &mut definitions {
         fields.push(("challenge_results".into(), Json::Arr(challenge_results)));
+        fields.push(("challenge_issues".into(), Json::Arr(challenge_issues)));
+        fields.push(("review_issues".into(), Json::Arr(review_issues)));
     }
     // The packet keeps the full dependency definitions for the reviewer; the authored record pins
     // only their canonical fingerprint.
@@ -2524,18 +2950,12 @@ fn requirement_review_input(
         ),
         ("dependencies", deps),
         ("definitions", definitions),
-        ("verification_targets", Json::Arr(Vec::new())),
-        ("check_results", Json::Arr(Vec::new())),
-        ("evidence_bundles", Json::Arr(Vec::new())),
+        ("verification_targets", Json::Arr(verification_targets)),
+        ("check_results", Json::Arr(check_results)),
+        ("evidence_bundles", Json::Arr(evidence_bundles)),
         ("challenge_bundles", Json::Arr(challenge_bundles)),
         ("review_states", Json::Arr(vec![status])),
-        (
-            "existing_reviews",
-            Json::Arr(reassessment_history(
-                record.into_iter().cloned().collect(),
-                reviews,
-            )),
-        ),
+        ("existing_reviews", Json::Arr(history)),
         ("gaps", Json::Arr(gaps)),
     ]);
     let fp = record_fingerprint(&output)?;

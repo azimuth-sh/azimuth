@@ -138,7 +138,7 @@ There is no release acceptance: `POST .../releases/{fingerprint}/acceptance`, th
 
 ## Git-driven handoff
 
-The standard local workflow ends at `prepare-publication-inputs`. `azimuth release inputs` validates a strict `{format:"azimuth-publication-inputs",version:1,request}` envelope. The native request must name a label, include explicit required review coverage and contain no builds/artifacts/deployments. The CLI preserves immutable native records, validates portability and size, and requires no AAS connection. Commit the compact envelope in the release repository; no local draft Release upload or fabricated registration receipt is required. CI later publishes candidate and release together.
+The standard local workflow completes the finalized archived change; publication input assembly is deterministic CI work, not an agent task. `azimuth release inputs` remains the low-level validator for a strict `{format:"azimuth-publication-inputs",version:1,request}` envelope. CI derives the native request from exact selected source revisions, current complete authority, sealed independent reviews and validated retained input/Run closure. It selects the latest review before checking decision and native dependency/proof currentness; a newer rejected, stale or ambiguous assessment never permits fallback to an older positive record. The native request names a label, includes explicit required review coverage and contains no fabricated builds/artifacts/deployments. The CLI preserves immutable native records and validates portability and size without AAS connectivity. Publication transports actual records later; no local publication task or draft Release upload is required.
 
 Optional request/release `components: [{id,digest}]` binds unique explicit runtime component identities to declared build artifacts. When the project catalog declares `components` ([project-catalog.md](project-catalog.md)), preparation that receives that catalog requires every release component id to be a registered component id; without a catalog this check is not made. Unused build artifacts need not be deployed. Components are fingerprinted with the release and never inferred by ordering. Native runtime deployment observation requires these explicit bindings.
 
@@ -147,3 +147,48 @@ A Git release request is `{format:"azimuth-git-release-request",version:1,name,e
 Unprivileged PR validation handles data only. A successful validation can trigger trusted-main coordination; protected publication jobs re-read exact current same-repository PR identity and enforce allowlists. Never run PR scripts under publication credentials. Generated outputs carry request content identity; matching result files suppress recursive builds. Moving request/base fails closed. Deployment merge gates independently verify published artifacts, receipt, generated values and rendered configuration.
 
 Environment selection may reference retained immutable release records and generate Helm values without rebuilding artifacts. Rollback is performed by the deployment system and only observed here: it creates a new observed deployment, cannot restore data, and never rewinds main's model; the rolled-back deployment is again measured against its own release's model. The consumer must review schema/configuration compatibility and maintain deployment adapters per environment. Existing evidence/receipt retention limits rollback eligibility.
+
+
+## CI-assembled Git release requests
+
+The consumer Git carrier has two explicitly versioned modes; it is parsed by the
+trusted delivery integration, not inferred by the core model parser.
+
+Version 1 retains its exact existing fields and digest-pinned `inputs` reference
+for already-authored publication packages. It is not silently converted or read
+through an alias. Version 2 is exactly:
+
+```json
+{
+  "format": "azimuth-git-release-request",
+  "version": 2,
+  "name": "release-label",
+  "environment": "production",
+  "sources": {
+    "application": "0123456789012345678901234567890123456789",
+    "deployment": "1234567890123456789012345678901234567890"
+  }
+}
+```
+
+There is no `inputs` field in version 2. Source ids must equal the trusted project
+policy's repository inventory, revisions are exact full Git commits, and the
+consumer validates allowed environment, bounded name, current same-repository
+non-draft PR identity, implementation membership in main, and selected deployment
+configuration ancestry. Metadata-only commits after the selected configuration
+are validated against the existing allowlist. Moving the release PR or base
+invalidates publication/finish checks as before.
+
+After the exact checkouts and pinned CLI are available, trusted-main orchestration
+runs deterministic publication assembly from those checkouts. It verifies the
+assembled source vector equals the Git request and validates the resulting native
+envelope with `release inputs`. Sources, context captures, retained proof closure
+and native assessment currentness must be established; absent retained inputs do
+not become an empty successful package. Assembly does not author reviews, approve
+intent, grant deployment permission, dispatch agents or create CI work packages.
+Actual CI failures retain diagnostics for the owner to address manually.
+
+The drim-dev consumer supports this mode through `scripts/git_release.py` and
+`scripts/prepare_release_inputs.py`; its provider-specific policy is not a core
+fixture or dependency. New requests should use version 2. Existing version 1
+requests continue only through their explicit historical-package path.

@@ -1,0 +1,13 @@
+# Authoring reviews reference
+
+Proposal, spec-delta, design-delta and verification-delta reviews independently assess the authored transition and complete composed account against the original request and captured handoff. They precede implementation; post-implementation Requirement Review uses its own native assurance contract.
+
+Return the compact workflow result with actual reviewer actor, `outcome: accepted` or `rejected`, a substantive `report`, stable `issues` and `outputs: []` when the result itself contains the assessment. Core derives the exact dependency basis from the captured handoff. Follow its published result shape; do not invent another wrapper or generator command. A separate native record is optional: `{format:"azimuth-authoring-review",version:1,task,reviewer,outcome,dependencies,findings,rationale}`. Its task, actor, decision and dependencies must match the handoff/result exactly.
+
+An issue has exactly `{id,proposition,location,reason,correction,blocking}`. Use a unique lower-kebab local ID, nonempty concrete text and Boolean `blocking`. A rejected assessment needs issues; accepted assessments cannot retain blocking issues. These authored issues are distinct from deterministic model Findings.
+
+A prior issue reference is `<review-fingerprint>#<local-id>`. Correction dispositions have exactly `{issue,outcome,rationale}` with outcome `corrected`, `equivalent`, `irrelevant`, `confirmed-defect` or `unresolved`. Cover every issue required by the captured correction basis once; omit no unresolved issue and add no unrelated issue. Only corrected/equivalent/irrelevant are resolved dispositions. Reassessment independently inspects the actual correction and its justification; preserve rejected history.
+
+Review all material issues in one pass and state positive acceptance reasoning. A `facet-unchanged` output still needs independent review under `azimuth reference show facet-decisions`. Proposal reviews use `proposal-content` identity as described by the proposal reference; only the workflow-owned header status is normalized. Preserve exact remaining content and retained review dependencies.
+
+Reviewer identity is a local harness assertion. Tooling rejects the prerequisite author's actor as reviewer but does not authenticate human identity. Do not fix source during review, manufacture approval or treat parsing as semantic acceptance. Authoring acceptance permits only the next workflow step; implementation authorization and final human acceptance remain separate actual decisions.

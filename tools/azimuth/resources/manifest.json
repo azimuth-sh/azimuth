@@ -5,11 +5,20 @@
   "migrationLine": "alpha-requirement-scenario",
   "skills": [
     "azimuth-explore",
-    "azimuth-propose",
-    "azimuth-apply",
+    "azimuth-workflow",
+    "azimuth-author-proposal",
+    "azimuth-review-proposal",
+    "azimuth-author-spec-delta",
+    "azimuth-review-spec-delta",
+    "azimuth-author-design-delta",
+    "azimuth-review-design-delta",
+    "azimuth-author-verification-delta",
+    "azimuth-review-verification-delta",
+    "azimuth-author-engineering-plan",
+    "azimuth-implement-change",
     "azimuth-review-requirement",
+    "azimuth-author-change-outcome",
     "azimuth-archive",
-    "azimuth-coordinate",
     "azimuth-maintain"
   ],
   "references": [

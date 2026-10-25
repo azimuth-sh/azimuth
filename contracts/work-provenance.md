@@ -1,6 +1,6 @@
 # Work Provenance
 
-Work Provenance is a ledger of completed workflow attempts: which action was performed with which outcome, by which execution instance and what kind of agent, when, and what it used and produced. It is a separate domain from assurance. **Nothing in it is ever an input to Requirement Review currentness, Requirement Status, acceptance or any other assessment.** Provenance never enters a model, Requirement, review, workflow result or attempt fingerprint.
+Work Provenance is a ledger of completed model-shaping workflow attempts: which action was performed with which outcome, by which execution instance and what kind of agent, when, and what it used and produced. It is a separate domain from assurance. **Nothing in it is ever an input to Requirement Review currentness, Requirement Status, acceptance or any other assessment.** Provenance never enters a model, Requirement, review, workflow result or attempt fingerprint.
 
 The ledger records activities, not their products. A Requirement Review, a design or an implementation is an entity that lives in its own domain; the ledger refers to it by fingerprint. An attempt carries one summary of the model work it took (`usage`: token and call counts); everything finer, including per-call telemetry, transcripts, tool inputs and cost, is out of scope, and an attempt carries at most an opaque `trace` reference to it.
 
@@ -252,3 +252,11 @@ The Requirement history follows the release lineage. Releases are ordered by `in
 ```
 
 The authority projection carries a top-level `requirement_intents: [{"id", "fingerprint"}]`, the Requirement intent digest, outside every review dependency packet, so adding it never stales a Requirement Review.
+
+## Finalization closure boundary
+
+The `finalize-change` workflow action consumes the committed shaping ledger, writes the finalization/provenance artifacts and moves the change to its archive. Its own attempts are excluded from that ledger projection. Otherwise recording completion would change the input certified by the same completion and make a fresh export differ immediately. Remaining projected sequence numbers are contiguous. The native workflow history retains actual attempts unchanged.
+
+The authored actual completion result is retained separately as `provenance/finalization-result.json` outside ignored runtime storage, with references to the real finalized artifacts. It is not synthesized as an earlier shaping attempt, inserted into an existing immutable ledger, or fed back into a retained semantic-input manifest. Exporting before and after recording the final action therefore produces the same shaping ledger. Earlier authoring, implementation, review and execution attempts remain append-only and fully attributable.
+
+This boundary changes neither review independence nor assurance currentness. A new correction is a related active change with its own provenance; the original archived ledger and completion record remain unchanged.

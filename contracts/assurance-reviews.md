@@ -31,7 +31,7 @@ Native kind: `requirement-review`. The independent reviewer examines Requirement
 realizations, Check implementations, input and expectation independence, oracles, coverage,
 Verification Challenge definitions and resolved source scopes, assumptions and limitations.
 
-A record has exactly these fields, all required:
+A record has the following required fields. Optional `issues` and `dispositions` add structured review findings and their independent disposition without rewriting historical records:
 
 ```json
 {
@@ -50,8 +50,7 @@ A record has exactly these fields, all required:
 }
 ```
 
-`decision` is `accepted | rejected`. The record requires no execution Verification Target or Check
-Result basis. `reviewer` is the accountable reviewer, `reviewed_at_ms` the actual review time,
+`decision` is `accepted | rejected`. The review's typed target remains a Requirement, not an execution Verification Target. Retained Check and implementation-Challenge executions can inform the assessment; they do not establish deployment Requirement Status. `reviewer` is the accountable reviewer, `reviewed_at_ms` the actual review time,
 `rationale` substantive, `artifacts` nonempty with unique ids, and `fingerprint` the canonical
 fingerprint of every other field.
 Acceptance expresses credibility of the reviewed account, not an observed Requirement Status.
@@ -70,8 +69,16 @@ mechanisms, Check implementations, Verification Challenge declarations and imple
 support. The record stores only the fingerprint; the packet itself is in the review input and is
 recoverable from the stored authority of the reviewed model revision. Source paths are locators, not
 entity identities. A review is current only while both `requirement_fingerprint` and
-`dependencies_fingerprint` equal the current authority's; a matching reviewer label or unchanged
+`dependencies_fingerprint` equal the current authority's, and its explicitly relied-on Challenge proofs remain current. Implementation proof currentness recomputes the target basis from current authority, prepared scope and exact Run Verification Target; a matching reviewer label or unchanged
 prose alone cannot establish currentness.
+
+## Stable review issues and dispositions
+
+New review drafts scaffold `- Issues: []` and `- Dispositions: []` as inline JSON arrays in Markdown metadata. New authoring requires both fields; compilation retains them as native arrays. Older sealed native records without these arrays remain readable without rewriting history. An issue has exactly `{id, proposition, location, reason, correction, blocking}`: the id is a lower-kebab identifier, the four explanatory fields are nonempty strings, and `blocking` is boolean. IDs are unique inside the review. A rejection carrying this field requires at least one issue; an acceptance cannot retain a blocking issue.
+
+A disposition has exactly `{issue, outcome, rationale}` with nonempty strings, one entry per issue reference. Outcomes are `corrected | equivalent | irrelevant | confirmed-defect | unresolved`. Acceptance cannot retain a `confirmed-defect` or `unresolved` disposition. A predecessor review issue reference is `<native-review-fingerprint>#<local-issue-id>`; a successor accepting the same Requirement must explicitly disposition every blocking predecessor issue. The independent reviewer inspects source rather than treating the author's correction report as proof.
+
+Implementation Challenge objections receive deterministic IDs `challenge-issue-<sha256>`, from canonical `{verification_challenge, target, objection}` where the values are the Challenge ID, exact implementation target fingerprint and native objection diagnostic ID. Repeating the same objection against the same basis keeps its identity; changed bases remain distinguishable. Packet `definitions.challenge_issues` retains these IDs and their exact result/target references. An accepted Requirement Review must independently disposition every relied-on current implementation objection as `equivalent` or `irrelevant`. A confirmed defect needs correction and affected execution; describing it does not close it. These authored issues are distinct from deterministic model Findings in `contracts/findings.md`.
 
 ## Reassessment
 
@@ -82,7 +89,7 @@ leaves the successor `missing`, not an implicit approval.
 
 ## Challenge proof dependencies
 
-Every Requirement Review carries `challenge_basis`, an array (possibly empty) of exact references:
+Every Requirement Review carries `challenge_basis`, an array (possibly empty) of exact references. For implementation-directed execution, target fingerprints identify implementation bases; for historical assessment-directed execution they identify assessments:
 
 ```json
 [
@@ -90,7 +97,7 @@ Every Requirement Review carries `challenge_basis`, an array (possibly empty) of
     "run": "sha256:<run-id>",
     "bundle_fingerprint": "sha256:<bundle-fingerprint>",
     "result_fingerprint": "sha256:<challenge-result-fingerprint>",
-    "target_fingerprint": "sha256:<challenged-assessment-fingerprint>"
+    "target_fingerprint": "sha256:<challenged-basis-fingerprint>"
   }
 ]
 ```
@@ -102,7 +109,7 @@ changed result or changed target makes the dependent assessment stale. Prior ass
 may supply explicit objection context; their presence never converts historical conclusions into
 positive current assurance.
 
-A matching adverse Challenge Result attacking the assessment's own exact fingerprint leaves it
+For historical assessment-directed Challenges, a matching adverse Challenge Result attacking the assessment's own exact fingerprint leaves it
 unresolved pending reassessment. An independently authored successor can assess the prior-target
 objection in its rationale and retain these exact proof dependencies. A clean result remains a
 negative search fact. These references do not give Requirement Review an execution Verification Target or product
@@ -127,15 +134,12 @@ entry `reassesses` is the Markdown record ID or null and `record` is the native 
 
 `azimuth assurance review-input` accepts only `{"kind": "requirement-review", "requirement": "<id>"}`
 and prepares exact definitions, the full dependency packet, existing assessments and visible gaps.
-Its `verification_targets`, `check_results` and `evidence_bundles` arrays are always empty for a
-definition review. Packets may also include optional
-`challenge_bundles`: scoped native Run proofs for the selected assessment objections, not a
-dump of all project execution history. Compilation validates those bundles and pins the
-corresponding `challenge_basis` references. It creates no reviewer, time,
+Its `verification_targets`, `check_results` and `evidence_bundles` arrays retain relevant native Check execution context when supplied. This is review input, not a product-evidence applicability decision or a deployment conclusion. `definitions.review_issues` includes exact predecessor issue references. Relevant implementation-Challenge results and stable objection IDs are retained under `definitions.challenge_results` and `definitions.challenge_issues`; complete correction history for each selected Run is retained in `challenge_bundles` or `evidence_bundles`. Packets may also include optional
+`challenge_bundles`: scoped native Run proofs for the selected implementation examinations or historical assessment objections, not a
+dump of all project execution history. Compilation validates those bundles, pins the corresponding `challenge_basis` references, and assesses the compiled record with the packet's retained Runs even when no duplicate `--bundle` history is supplied. Inconclusive relied-on implementation examination blocks acceptance; unresolved objections require independent dispositions. It creates no reviewer, time,
 decision or positive conclusion. `azimuth assurance review-compile` compiles aggregate Markdown
 against those exact packets and the current account. Placeholders and changed inputs fail.
-Generated packets and execution reports belong in ignored change `.azimuth/`. The compiled bundle
-is printed (or written with `--out`) and is not committed. `review-compile` also seals each compiled
+Draft packets and execution reports may initially live in ignored change `.azimuth/`. Before delivery, the required immutable review inputs, native proof Runs and referenced supporting files must be retained in the change's verified retained-input closure. Original relative references may resolve through its `source_path` mapping after a fresh checkout or archival relocation; bytes and fingerprints are not rewritten. The generated aggregate compiled bundle need not be committed when its selected sealed native records and required proof closure are retained. `review-compile` also seals each compiled
 native review record into the change's `reviews/` directory beside the Markdown, as the committed JSON
 the ratification gate reads: a Markdown file holding one review seals to `reviews/<stem>.json`; one
 holding several seals each to `reviews/<stem>.<review-id>.json`. The record is created at review time
@@ -143,10 +147,9 @@ against the reviewed model by the reviewer's own step, and the author commits Ma
 together. Recompiling an identical record leaves the file untouched; a different record at the same name
 fails unless `--replace-sealed` is passed, and two reviews never seal to one file.
 
-## Challenging an assessment
+## Challenging implementation and verification
 
-A machine-executed Verification Challenge targets an exact Requirement Review selected at planning
-time; `requirement-review` is the only assessment target kind. Its execution Verification Target is separate from the assessment target. The current
+A new machine-executed Verification Challenge targets the exact implementation and Check basis selected at planning time, before Requirement Review. Historical assessment-directed execution still identifies an exact Requirement Review; no Requirement Status record can be challenged. Its execution Verification Target is separate from the assessment target. The current
 Stryker integration pins the exact source input for an isolated mutation batch and retains native
 mutation statuses and locations. It does not materialize exact per-mutant Verification Targets or mutant-specific
 product Check Results. Such captures would require distinct Verification Targets before those Check Results

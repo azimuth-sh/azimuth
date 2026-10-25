@@ -484,7 +484,7 @@ fn resolve_requested_challenges(
     let mut direct_routes = Vec::new();
     let mut selected_forms = BTreeMap::<(DecisionKind, String), (String, BTreeSet<String>)>::new();
     for requested in &request.challenges {
-        if requested.assessment.is_some() {
+        if requested.assessment.is_some() || requested.scope_report.is_some() {
             match resolve_assessment_challenge(model, configuration, request, requested) {
                 Ok((selection, route, adapter)) => {
                     adapter_id = Some(adapter);
@@ -2032,79 +2032,110 @@ fn resolve_assessment_challenge(
     request: &PlanRequest,
     requested: &RequestedChallenge,
 ) -> Result<(ChallengeSelection, LaunchRoute, String), String> {
-    let record = requested.assessment.as_ref().ok_or("missing assessment")?;
-    crate::assurance_review::validate_record(record)?;
-    let kind_name = record
-        .get("kind")
-        .and_then(Json::as_str)
-        .ok_or("assessment kind missing")?;
-    let (kind, scope_kind) = match kind_name {
-        "requirement-review" => (
-            ChallengeTargetKind::RequirementReview,
-            ChallengeScopeKind::RequirementReview,
-        ),
-        _ => return Err("machine Verification Challenge targets only Requirement Review".into()),
-    };
-    let authority = crate::assurance_review::authority(model, "challenge-planning")?;
-    let bundles = requested
-        .run_history
-        .iter()
-        .map(|value| {
-            run::parse("challenge.run_history", &value.to_string_pretty())
-                .map_err(|errors| format!("invalid assessment Run history: {errors:?}"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let state = crate::assurance_review::assess_record(
-        record,
-        &authority,
-        &requested.assessment_history,
-        &bundles,
-    );
-    if state.status != "accepted" {
-        return Err(format!(
-            "assessment is not a current eligible target: {} {}",
-            state.status,
-            state.diagnostics.join("; ")
-        ));
-    }
-    let requirement = record
-        .get("requirement")
-        .and_then(Json::as_str)
-        .ok_or("assessment Requirement missing")?;
-    let reviewed_at = record
-        .get("reviewed_at_ms")
-        .and_then(Json::as_num)
-        .unwrap_or_default();
-    for previous in &requested.assessment_history {
-        crate::assurance_review::validate_record(previous)?;
-        if previous.get("kind") == record.get("kind")
-            && previous.get("requirement") == record.get("requirement")
-            && previous.get("verification_target_fingerprint")
-                == record.get("verification_target_fingerprint")
-            && previous
-                .get("reviewed_at_ms")
-                .and_then(Json::as_num)
-                .unwrap_or_default()
-                > reviewed_at
-        {
-            return Err("assessment was superseded by a newer record for the same target".into());
-        }
-    }
     let verification_challenge = model
         .verification_challenges()
         .find(|item| item.id == requested.id && !item.targets.is_empty())
         .ok_or("request does not select one compact machine Verification Challenge")?;
-    if !verification_challenge
-        .targets
-        .iter()
-        .any(|target| target == kind_name)
-        || !verification_challenge
-            .requirements
+    let (kind, scope_kind, target_id) = if requested.assessment.is_some() {
+        let record = requested.assessment.as_ref().unwrap();
+        crate::assurance_review::validate_record(record)?;
+        let kind_name = record
+            .get("kind")
+            .and_then(Json::as_str)
+            .ok_or("assessment kind missing")?;
+        let _ = match kind_name {
+            "requirement-review" => (
+                ChallengeTargetKind::RequirementReview,
+                ChallengeScopeKind::RequirementReview,
+            ),
+            _ => {
+                return Err("machine Verification Challenge targets only Requirement Review".into())
+            }
+        };
+        let authority = crate::assurance_review::authority(model, "challenge-planning")?;
+        let bundles = requested
+            .run_history
             .iter()
-            .any(|id| id == requirement)
-    {
-        return Err("assessment falls outside declared Verification Challenge target scope".into());
-    }
+            .map(|value| {
+                run::parse("challenge.run_history", &value.to_string_pretty())
+                    .map_err(|errors| format!("invalid assessment Run history: {errors:?}"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let state = crate::assurance_review::assess_record(
+            record,
+            &authority,
+            &requested.assessment_history,
+            &bundles,
+        );
+        if state.status != "accepted" {
+            return Err(format!(
+                "assessment is not a current eligible target: {} {}",
+                state.status,
+                state.diagnostics.join("; ")
+            ));
+        }
+        let requirement = record
+            .get("requirement")
+            .and_then(Json::as_str)
+            .ok_or("assessment Requirement missing")?;
+        let reviewed_at = record
+            .get("reviewed_at_ms")
+            .and_then(Json::as_num)
+            .unwrap_or_default();
+        for previous in &requested.assessment_history {
+            crate::assurance_review::validate_record(previous)?;
+            if previous.get("kind") == record.get("kind")
+                && previous.get("requirement") == record.get("requirement")
+                && previous.get("verification_target_fingerprint")
+                    == record.get("verification_target_fingerprint")
+                && previous
+                    .get("reviewed_at_ms")
+                    .and_then(Json::as_num)
+                    .unwrap_or_default()
+                    > reviewed_at
+            {
+                return Err(
+                    "assessment was superseded by a newer record for the same target".into(),
+                );
+            }
+        }
+        if !verification_challenge
+            .targets
+            .iter()
+            .any(|target| target == kind_name)
+            || !verification_challenge
+                .requirements
+                .iter()
+                .any(|id| id == requirement)
+        {
+            return Err(
+                "assessment falls outside declared Verification Challenge target scope".into(),
+            );
+        }
+        (
+            ChallengeTargetKind::RequirementReview,
+            ChallengeScopeKind::RequirementReview,
+            requirement.to_string(),
+        )
+    } else {
+        if !verification_challenge
+            .targets
+            .iter()
+            .any(|target| target == "implementation")
+        {
+            return Err(
+                "pre-review Verification Challenge must declare Targets: implementation".into(),
+            );
+        }
+        if !requested.assessment_history.is_empty() {
+            return Err("implementation Challenge cannot carry assessment history".into());
+        }
+        (
+            ChallengeTargetKind::Implementation,
+            ChallengeScopeKind::Implementation,
+            verification_challenge.id.clone(),
+        )
+    };
     let scope = requested
         .scope_report
         .as_ref()
@@ -2179,7 +2210,15 @@ fn resolve_assessment_challenge(
                 .into(),
         );
     }
-    let record_fingerprint = crate::assurance_review::record_fingerprint(record)?;
+    let record_fingerprint = match &requested.assessment {
+        Some(record) => crate::assurance_review::record_fingerprint(record)?,
+        None => crate::assurance_review::implementation_challenge_fingerprint(
+            &crate::assurance_review::authority(model, "challenge-planning")?,
+            &verification_challenge.id,
+            &scope_fingerprint,
+            &run::verification_target_fingerprint(&request.verification_target),
+        )?,
+    };
     let verification_challenge_fingerprint =
         crate::fingerprint::verification_challenge_fingerprint(verification_challenge);
     let id = run::challenge_selection_id(
@@ -2283,7 +2322,7 @@ fn resolve_assessment_challenge(
     scope_inputs.dedup();
     let anchors = vec![ChallengeScopeItem {
         kind: scope_kind,
-        id: requirement.into(),
+        id: target_id.clone(),
         fingerprint: record_fingerprint.clone(),
     }];
     let native_scope = run::construct_challenge_scope(anchors, scope_inputs)
@@ -2303,7 +2342,7 @@ fn resolve_assessment_challenge(
         },
         target: ChallengeTarget {
             kind,
-            id: requirement.into(),
+            id: target_id,
             fingerprint: record_fingerprint,
         },
         lane: run::ChallengeLane::Gate,

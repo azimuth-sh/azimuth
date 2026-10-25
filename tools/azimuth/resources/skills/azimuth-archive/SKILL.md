@@ -1,17 +1,24 @@
 ---
 name: azimuth-archive
-description: Finalize and archive a completed Azimuth change after current facets, permitted engineering checks, outcomes and rollout-dependent conditions are satisfied. Use only at the explicit acceptance boundary; never manufacture facts or commit implicitly.
+description: Apply reviewed facets, validate actual acceptance and retained evidence, finalize and archive one completed Azimuth change. Use for finalize-change at an explicitly authorized completion boundary.
 ---
 
 # Finalize and archive a change
 
-1. Read the target repository's instructions, complete change, current account and implementation diff.
-2. Require explicit finalization or archival authorization. In a federated project, require the complete project account rather than local-only output.
-3. Confirm every completion condition has an honest disposition, current facets describe what exists, plan work is complete, required permitted checks have results and unresolved rollout conditions are recorded without being promoted to facts.
-4. Run `azimuth reference show outcome`, write or revise `outcome.md` with delivered behavior, departures, verification performed, residuals and operational conditions.
-5. Confirm the reviewed intent delta was applied with `azimuth change intent-apply <id> --preview <file>` at acceptance, or that intent is explicitly unchanged. Run the repository's normal `azimuth validate`, relevant change inspection and `azimuth change finalize <id>`. When `<change>/.azimuth/workflow.json` exists, finalize also writes the generated Work Provenance ledger `<change>/provenance/ledger.json`; commit it with the change and never hand-edit it. Historical instances without predecessor links are added with `azimuth provenance ledger --change <dir> --instance <file>`.
-6. Inspect the exact finalized account and ask for archival approval if it was not already explicit.
-7. Run `azimuth change archive <id> --date <YYYY-MM-DD>` or the applicable project acceptance command. Archive fails when the committed ledger differs from a fresh export; finalize again rather than editing it.
-8. Report the archive destination and remaining external conditions. Do not deploy, push, publish or commit unless separately authorized.
+Load `azimuth reference show retained-inputs` before assembling or relying on the final durable evidence package.
 
-Never archive incomplete work to clear an active directory, treat a passing command as product evidence, or fabricate production exposure.
+Read repository instructions, captured handoff, complete implemented change, reviewed spec/design/verification deltas and previews, current account, outcome, execution/review dispositions and actual human acceptance. Load `azimuth reference show outcome` and installed workflow/retention guidance. Finalization and archival are one workflow task with separate recoverable CLI operations.
+
+Confirm completion conditions, exact required review/execution basis, durable dependency closure and remaining hosted obligations. A full federated account cannot be substituted by local-only output. Missing or stale inputs, unresolved blockers and invented rollout facts prevent completion.
+
+Apply still-pending reviewed spec and account deltas through `intent-apply` and `account-apply` with their exact previews, never manual transcription. Recompute and re-review material drift instead of forcing stale guards. Do not apply the original delta twice when finalizing an explicitly related correction change.
+
+Use the installed acceptance record grammar to retain the human's actual decision for supported affected obligations. Never author approval on your own initiative. Current sealed reviews and relied-on Runs/proofs must remain accessible at finalization; acceptance alone waives no missing review or unrelated finding.
+
+Run the repository's permitted `azimuth validate`, relevant change validation and `change finalize`. Retain generated Work Provenance/finalization records without hand editing. The installed closure contract determines the ledger's boundary; a generated completion artifact must not recursively invalidate its semantic basis.
+
+Inspect the exact finalized account and use `change archive` only within the actual authorization. Archive relocation preserves content and portable dependency references. Validate resulting artifacts and any finalization-currentness diagnostics. If archival fails, retain progress, reconcile the basis and retry; do not manufacture a new review merely because a command receipt was lost.
+
+Keep original archived records unchanged. A later Dima-requested CI/PR correction uses an explicitly related correction change against the current model, carries successor assessments/acceptance where necessary, and can join the existing PR before merge. CI only reports diagnostics; it does not create work packages or assign corrections automatically.
+
+Report the archived destination and unperformed external conditions. Local completion does not establish deployment Requirement Status and never implicitly commits, merges, publishes or deploys. CI assembles publication inputs deterministically; there is no agent publication-inputs task.

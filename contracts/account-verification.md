@@ -8,7 +8,7 @@ A compact account declares a shared or Requirement-owned `Verification Challenge
 ### Verification Challenge: admission-mutation
 
 - Form: `mutation`
-- Targets: `requirement-review`
+- Targets: `implementation`
 - Mechanisms:
   - `service-admission`
 - Checks:
@@ -18,7 +18,7 @@ Search for weakened admission that the selected Checks fail to detect.
 Describe relevant exclusions and limitations of this objection search.
 ```
 
-`Form` is one machine form, `mutation` or `source-analysis`. `Targets` is a scalar or nonempty list selecting `requirement-review`; `requirement-status` is rejected because Requirement Status is computed, never authored. `Requirements` is optional under a Requirement and defaults to that enclosing Requirement; shared declarations require explicit Requirements. `Mechanisms` and `Checks` are optional stable-ID lists. Every selected identity must exist. Nonempty Mechanisms narrow production targets; otherwise the selected Requirements' realization sites are production targets. Checks select existing executable verification support. Purpose/search prose is mandatory. Scope filters, tool switches, rule files and native execution budgets belong to tagged implementation configuration, not duplicated Markdown file lists.
+`Form` is one machine form, `mutation` or `source-analysis`. `Targets` is a scalar or nonempty list selecting `implementation` for pre-review execution. Explicit historical `requirement-review` declarations retain their assessment-directed meaning; `requirement-status` is rejected because Requirement Status is computed, never authored. `Requirements` is optional under a Requirement and defaults to that enclosing Requirement; shared declarations require explicit Requirements. `Mechanisms` and `Checks` are optional stable-ID lists. Every selected identity must exist. Nonempty Mechanisms narrow production targets; otherwise the selected Requirements' realization sites are production targets. Checks select existing executable verification support. Purpose/search prose is mandatory. Scope filters, tool switches, rule files and native execution budgets belong to tagged implementation configuration, not duplicated Markdown file lists.
 
 Enable `azimuth.challenge` explicitly in the workspace/project. The declaration must resolve exactly one qualified `verification-challenge-implementation` package producer; missing/ambiguous support is a structural Finding. Package tags identify implementation only. Production selection continues to use ordinary `Realizes` and `ImplementsMechanism` relations. Tags create no accepted review or Requirement Status conclusion.
 

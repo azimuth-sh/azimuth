@@ -4,6 +4,7 @@
 //! gates, exploration discovery, and federated assembly.
 
 use azimuth::diag::Diag;
+use azimuth::json::Json;
 use azimuth::validation;
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -50,6 +51,11 @@ USAGE
     azimuth assurance review-export --input <compiled bundle> --id <id> [--out <file>]
         [--catalog <project.json> --workset <workset.json>]
     azimuth adapter verify [--config <file>]
+    azimuth retained capture --root <dir> --input <draft> --out <package-dir>
+    azimuth retained verify --input <manifest> [--out <report>]
+    azimuth run verify-candidate --authority <file> --bundle <file> [--out <file>]
+    azimuth run affected --input <file> [--out <file>]
+    azimuth run snapshot --project-id <id> --verification-target <file> [model options] [--out <file>]
     azimuth run select --policy <file> [model options] [--config <file>] [--out <file>]
     azimuth run plan --request <file>|--selection <file> [--model <dir>] [--standards <file>]
         [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
@@ -88,6 +94,7 @@ USAGE
     azimuth change account-preview <id-or-dir> [--model <dir>] [--out <file>]
     azimuth change account-apply <id-or-dir> --preview <file> [--model <dir>]
         [--workspace <file>] [--manifest <file>...] [--support <file>...]
+    azimuth change correction <id-or-dir> --source <archived-change> --requirement <id>... [--failed-revision <sha>] [--issue <ref>...]
     azimuth change create <id> [--title <text>] [--changes <dir>]
     azimuth change list [--changes <dir>]
     azimuth change show|status <id-or-dir> [--changes <dir>] [options]
@@ -128,6 +135,11 @@ USAGE
         [--predecessor <bundle>...] [--config <file>] [--out <file>]
     azimuth run verify --bundle <file>...
     azimuth run inspect --bundle <file>... [--format text|json] [--out <file>]
+    azimuth run verify-candidate --authority <file> --bundle <file> [--out <file>]
+    azimuth run affected --input <file> [--out <file>]
+    azimuth run snapshot --project-id <id> --verification-target <file>
+        [model options] [--context <file>] [--shared-inputs <file>]
+        [--unit-rule <file> --checkout <dir>] [--out <file>]
 
 PLAN REQUESTS
     The strict request file may select Checks, Challenges, or both. See
@@ -250,6 +262,9 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
     }
     if command == "init" {
         return command_init(&args[1..]);
+    }
+    if command == "retained" {
+        return command_retained(&args[1..]);
     }
     if command == "reference" {
         return command_reference(&args[1..]);
@@ -1089,10 +1104,68 @@ fn command_project_observe(args: &[String]) -> Result<ExitCode, String> {
     Ok(ExitCode::SUCCESS)
 }
 
+fn command_change_correction(args: &[String]) -> Result<ExitCode, String> {
+    let mut change = None;
+    let mut source = None;
+    let mut changes = PathBuf::from("azimuth/changes");
+    let mut requirements = Vec::new();
+    let mut issues = Vec::new();
+    let mut revision = None;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--source" => {
+                source = Some(PathBuf::from(argument_value(args, index, "--source")?));
+                index += 2;
+            }
+            "--changes" => {
+                changes = PathBuf::from(argument_value(args, index, "--changes")?);
+                index += 2;
+            }
+            "--requirement" => {
+                requirements.push(argument_value(args, index, "--requirement")?);
+                index += 2;
+            }
+            "--issue" => {
+                issues.push(argument_value(args, index, "--issue")?);
+                index += 2;
+            }
+            "--failed-revision" => {
+                revision = Some(argument_value(args, index, "--failed-revision")?);
+                index += 2;
+            }
+            value if !value.starts_with('-') && change.is_none() => {
+                change = Some(PathBuf::from(value));
+                index += 1;
+            }
+            flag => return Err(format!("unexpected change correction argument `{flag}`")),
+        }
+    }
+    let change = change.ok_or("change correction requires an existing active change")?;
+    let change = if change.is_dir() {
+        change
+    } else {
+        changes.join(change)
+    };
+    let source = source.ok_or("change correction requires --source ARCHIVED_CHANGE")?;
+    let record = azimuth::change::write_correction(
+        &change,
+        &source,
+        &requirements,
+        revision.as_deref(),
+        &issues,
+    )?;
+    println!("{}", record.to_string_pretty());
+    Ok(ExitCode::SUCCESS)
+}
+
 fn command_change(args: &[String]) -> Result<ExitCode, String> {
     let Some(operation) = args.first() else {
         return Err(format!("change needs an operation\n\n{USAGE}"));
     };
+    if operation == "correction" {
+        return command_change_correction(&args[1..]);
+    }
     let mut changes = PathBuf::from("azimuth/changes");
     let mut title = None;
     let mut package = None;
@@ -1963,6 +2036,9 @@ struct RunOptions {
 }
 
 struct RunPlanOptions {
+    project: Option<PathBuf>,
+    workset: Option<PathBuf>,
+    supports: Vec<PathBuf>,
     selection: bool,
     request: PathBuf,
     model: PathBuf,
@@ -2047,7 +2123,7 @@ fn command_adapter(args: &[String]) -> Result<ExitCode, String> {
 fn command_run(args: &[String]) -> Result<ExitCode, String> {
     let Some(operation) = args.first() else {
         return Err(format!(
-            "run needs plan, execute, import, verify or inspect\n\n{RUN_USAGE}"
+            "run needs select, plan, execute, import, verify, inspect, verify-candidate, affected or snapshot\n\n{RUN_USAGE}"
         ));
     };
     if operation == "-h" || operation == "--help" {
@@ -2060,7 +2136,14 @@ fn command_run(args: &[String]) -> Result<ExitCode, String> {
     {
         if matches!(
             operation.as_str(),
-            "select" | "plan" | "execute" | "import" | "verify" | "inspect"
+            "affected"
+                | "snapshot"
+                | "select"
+                | "plan"
+                | "execute"
+                | "import"
+                | "verify"
+                | "inspect"
         ) && args.len() == 2
         {
             print!("{RUN_USAGE}");
@@ -2068,6 +2151,9 @@ fn command_run(args: &[String]) -> Result<ExitCode, String> {
         }
     }
     match operation.as_str() {
+        "affected" => command_run_affected(&args[1..]),
+        "verify-candidate" => command_run_verify_candidate(&args[1..]),
+        "snapshot" => command_run_snapshot(&args[1..]),
         "select" => {
             if args[1..]
                 .iter()
@@ -2097,7 +2183,199 @@ fn command_run(args: &[String]) -> Result<ExitCode, String> {
     }
 }
 
+fn command_retained(args: &[String]) -> Result<ExitCode, String> {
+    let operation = args.first().ok_or("retained requires capture or verify")?;
+    let mut root = None;
+    let mut input = None;
+    let mut out = None;
+    let mut index = 1;
+    while index < args.len() {
+        let value = argument_value(args, index, &args[index])?;
+        match args[index].as_str() {
+            "--root" => root = Some(PathBuf::from(value)),
+            "--input" => input = Some(PathBuf::from(value)),
+            "--out" => out = Some(PathBuf::from(value)),
+            flag => return Err(format!("unknown retained option `{flag}`")),
+        }
+        index += 2;
+    }
+    let input = input.ok_or("retained requires --input FILE")?;
+    match operation.as_str() {
+        "capture" => {
+            let root = root.ok_or("retained capture requires --root DIR")?;
+            let out = out.ok_or("retained capture requires --out DIR")?;
+            let manifest = azimuth::retained_inputs::capture(&root, &input, &out)?;
+            println!("{}", manifest.to_string_pretty());
+        }
+        "verify" => {
+            if root.is_some() {
+                return Err("retained verify resolves relative to its manifest, not --root".into());
+            }
+            let manifest = azimuth::retained_inputs::verify(&input)?;
+            publish_output(manifest.to_string_pretty().as_bytes(), out.as_ref())?;
+        }
+        _ => return Err("retained requires capture or verify".into()),
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn command_run_verify_candidate(args: &[String]) -> Result<ExitCode, String> {
+    let mut authority = None;
+    let mut bundle = None;
+    let mut out = None;
+    let mut index = 0;
+    while index < args.len() {
+        let flag = args[index].as_str();
+        let value = PathBuf::from(argument_value(args, index, flag)?);
+        match flag {
+            "--authority" => set_once_path(&mut authority, value, flag)?,
+            "--bundle" => set_once_path(&mut bundle, value, flag)?,
+            "--out" => set_once_path(&mut out, value, flag)?,
+            _ => return Err(format!("unknown verify-candidate option `{flag}`")),
+        }
+        index += 2;
+    }
+    let authority = authority.ok_or("run verify-candidate requires --authority FILE")?;
+    let bundle = bundle.ok_or("run verify-candidate requires --bundle FILE")?;
+    reject_output_input_equality(
+        out.as_ref(),
+        [&authority, &bundle].into_iter(),
+        "run verify-candidate",
+    )?;
+    let authority = azimuth::provenance::read_json(&authority)?;
+    let bundle = azimuth::run::load(&bundle)
+        .map_err(|errors| format!("invalid native candidate Run: {errors:?}"))?;
+    let report = azimuth::candidate_execution::verify(&authority, &bundle)?;
+    publish_output(report.to_string_pretty().as_bytes(), out.as_ref())?;
+    Ok(
+        if report.get("status").and_then(Json::as_str) == Some("passed") {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::from(1)
+        },
+    )
+}
+
+fn command_run_affected(args: &[String]) -> Result<ExitCode, String> {
+    let mut input = None;
+    let mut out = None;
+    let mut index = 0;
+    while index < args.len() {
+        let value = argument_value(args, index, &args[index])?;
+        match args[index].as_str() {
+            "--input" => input = Some(PathBuf::from(value)),
+            "--out" => out = Some(PathBuf::from(value)),
+            flag => return Err(format!("unknown affected option `{flag}`")),
+        }
+        index += 2;
+    }
+    let path = input.ok_or("run affected requires --input FILE")?;
+    let source =
+        fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let input =
+        azimuth::json::parse(&source).map_err(|error| format!("{}: {error}", path.display()))?;
+    let report = azimuth::execution_impact::plan_affected(&input)?;
+    publish_output(report.to_string_pretty().as_bytes(), out.as_ref())?;
+    Ok(
+        if report.get("status").and_then(Json::as_str) == Some("complete") {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::from(1)
+        },
+    )
+}
+
+fn command_run_snapshot(args: &[String]) -> Result<ExitCode, String> {
+    let mut target = None;
+    let mut project = None;
+    let mut context = None;
+    let mut shared = None;
+    let mut unit_rule = None;
+    let mut checkout = None;
+    let mut model_args = Vec::new();
+    let mut index = 0;
+    while index < args.len() {
+        let flag = args[index].as_str();
+        if [
+            "--verification-target",
+            "--project-id",
+            "--context",
+            "--shared-inputs",
+            "--unit-rule",
+            "--checkout",
+        ]
+        .contains(&flag)
+        {
+            let value = argument_value(args, index, flag)?;
+            match flag {
+                "--verification-target" => target = Some(PathBuf::from(value)),
+                "--project-id" => project = Some(value),
+                "--context" => context = Some(PathBuf::from(value)),
+                "--shared-inputs" => shared = Some(PathBuf::from(value)),
+                "--unit-rule" => unit_rule = Some(PathBuf::from(value)),
+                "--checkout" => checkout = Some(PathBuf::from(value)),
+                _ => unreachable!(),
+            }
+            index += 2;
+        } else {
+            model_args.push(args[index].clone());
+            index += 1;
+        }
+    }
+    let options = parse_options(&model_args, false)?;
+    let read = |path: &PathBuf| -> Result<Json, String> {
+        azimuth::json::parse(
+            &fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?,
+        )
+        .map_err(|error| format!("{}: {error}", path.display()))
+    };
+    let target = read(&target.ok_or("run snapshot requires --verification-target FILE")?)?;
+    let project = project.ok_or("run snapshot requires --project-id ID")?;
+    let context = context
+        .as_ref()
+        .map(&read)
+        .transpose()?
+        .unwrap_or_else(|| Json::obj(vec![]));
+    let shared = shared
+        .as_ref()
+        .map(&read)
+        .transpose()?
+        .unwrap_or_else(|| Json::Arr(vec![]));
+    let loaded = load_validation_inputs(&options)?;
+    report(&loaded.warnings, "warning");
+    let snapshot = if let Some(rule) = unit_rule {
+        let checkout = checkout.ok_or("--unit-rule requires --checkout")?;
+        let rule = azimuth::unit_inputs::load_rule(&rule)?;
+        let files = azimuth::unit_inputs::read_checkout(&checkout)?;
+        let units = azimuth::unit_inputs::compute_inputs(&rule, &files);
+        azimuth::execution_impact::snapshot_from_model_with_units(
+            &loaded.model,
+            &project,
+            &target,
+            &context,
+            &shared,
+            &units,
+        )?
+    } else {
+        if checkout.is_some() {
+            return Err("--checkout requires --unit-rule".into());
+        }
+        azimuth::execution_impact::snapshot_from_model(
+            &loaded.model,
+            &project,
+            &target,
+            &context,
+            &shared,
+        )?
+    };
+    publish_output(snapshot.to_string_pretty().as_bytes(), options.out.as_ref())?;
+    Ok(ExitCode::SUCCESS)
+}
+
 fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
+    let mut project = None;
+    let mut workset = None;
+    let mut supports = Vec::new();
     let mut request = None;
     let mut selection = false;
     let mut model = None;
@@ -2113,6 +2391,17 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
     while index < args.len() {
         let option = args[index].as_str();
         match option {
+            "--project" => set_once_path(
+                &mut project,
+                PathBuf::from(argument_value(args, index, option)?),
+                option,
+            )?,
+            "--workset" => set_once_path(
+                &mut workset,
+                PathBuf::from(argument_value(args, index, option)?),
+                option,
+            )?,
+            "--support" => supports.push(PathBuf::from(argument_value(args, index, option)?)),
             "--unit-rule" => set_once_path(
                 &mut unit_rule,
                 PathBuf::from(argument_value(args, index, option)?),
@@ -2169,6 +2458,9 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
         }
         index += 2;
     }
+    if project.is_some() != workset.is_some() {
+        return Err("run planning requires --project and --workset together".into());
+    }
     let request = request.ok_or("run plan needs `--request <file>`")?;
     let model = model.unwrap_or_else(|| PathBuf::from("azimuth/model"));
     let standards = standards.unwrap_or_else(|| PathBuf::from("azimuth/standards/verification.md"));
@@ -2184,6 +2476,9 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
         .chain(std::iter::once(&standards))
         .chain(std::iter::once(&workspace))
         .chain(manifests.iter())
+        .chain(supports.iter())
+        .chain(project.iter())
+        .chain(workset.iter())
         .chain(std::iter::once(&config))
         .chain(unit_rule.iter());
     reject_output_input_equality(out.as_ref(), input_paths, "run plan")?;
@@ -2193,6 +2488,9 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
         default.is_file().then_some(default)
     });
     Ok(RunPlanOptions {
+        project,
+        workset,
+        supports,
         unit_rule,
         checkout: checkout.unwrap_or_else(|| PathBuf::from(".")),
         unit_explanation,
@@ -2284,6 +2582,30 @@ fn parse_run_invoke_options(args: &[String], import: bool) -> Result<RunInvokeOp
     })
 }
 
+fn load_run_model(options: &RunPlanOptions) -> Result<azimuth::Loaded, String> {
+    if let (Some(project), Some(workset)) = (&options.project, &options.workset) {
+        let assembly =
+            azimuth::federation::assemble(project, workset, None).map_err(render_diagnostics)?;
+        if !assembly.complete {
+            return Err(format!(
+                "incomplete run workset: {}",
+                assembly.missing_inputs.join(", ")
+            ));
+        }
+        azimuth::load_assembly(&assembly, &[]).map_err(render_diagnostics)
+    } else {
+        azimuth::load_with_support(
+            &options.model,
+            &options.standards,
+            &options.workspace,
+            &options.manifests,
+            &options.supports,
+            &[],
+        )
+        .map_err(render_diagnostics)
+    }
+}
+
 fn command_run_select(options: RunPlanOptions) -> Result<ExitCode, String> {
     let source = fs::read_to_string(&options.request)
         .map_err(|error| format!("{}: {error}", options.request.display()))?;
@@ -2297,14 +2619,7 @@ fn command_run_select(options: RunPlanOptions) -> Result<ExitCode, String> {
         Ok(configuration) => configuration,
         Err(errors) => return Ok(report_schema_errors(&errors)),
     };
-    let loaded = azimuth::load(
-        &options.model,
-        &options.standards,
-        &options.workspace,
-        &options.manifests,
-        &[],
-    )
-    .map_err(render_diagnostics)?;
+    let loaded = load_run_model(&options)?;
     report(&loaded.warnings, "warning");
     let selection = azimuth::run_selection::select(&loaded.model, &configuration, &policy);
     publish_output(
@@ -2327,19 +2642,7 @@ fn command_run_plan(options: RunPlanOptions) -> Result<ExitCode, String> {
         Ok(configuration) => configuration,
         Err(errors) => return Ok(report_schema_errors(&errors)),
     };
-    let loaded = match azimuth::load(
-        &options.model,
-        &options.standards,
-        &options.workspace,
-        &options.manifests,
-        &[],
-    ) {
-        Ok(loaded) => loaded,
-        Err(diags) => {
-            report(&diags, "error");
-            return Ok(ExitCode::from(2));
-        }
-    };
+    let loaded = load_run_model(&options)?;
     report(&loaded.warnings, "warning");
     let mut request = if options.selection {
         let source = fs::read_to_string(&options.request)
@@ -3184,9 +3487,10 @@ fn command_validate(options: Options) -> Result<ExitCode, String> {
         if let Some(changes) = options.model.parent().map(|root| root.join("changes")) {
             let acceptances =
                 azimuth::change::acceptances(&changes).map_err(|errors| errors.join("\n"))?;
-            let reviews =
-                azimuth::change::reviews(&changes).map_err(|errors| errors.join("\n"))?;
-            let ratified = azimuth::change::ratifications(&loaded.model, &acceptances, &reviews)?;
+            let reviews = azimuth::change::reviews(&changes).map_err(|errors| errors.join("\n"))?;
+            let bundles = azimuth::retained_inputs::retained_runs(&changes)?;
+            let ratified =
+                azimuth::change::ratifications(&loaded.model, &acceptances, &reviews, &bundles)?;
             azimuth::change::waive_accepted_requirements(&mut findings, &acceptances, &ratified);
         }
     }
@@ -3226,13 +3530,19 @@ fn change_acceptances(
     ),
     String,
 > {
-    let Some(changes) = root.parent() else {
+    let Some(parent) = root.parent() else {
         return Ok((Vec::new(), Vec::new()));
+    };
+    let changes = if parent.file_name().and_then(|name| name.to_str()) == Some("archive") {
+        parent.parent().ok_or("archive has no changes root")?
+    } else {
+        parent
     };
     let acceptances = azimuth::change::acceptances(changes).map_err(|errors| errors.join("\n"))?;
     let mut issues = azimuth::change::acceptance_issues(&acceptances, report);
     let reviews = azimuth::change::reviews(changes).map_err(|errors| errors.join("\n"))?;
-    let ratified = azimuth::change::ratifications(model, &acceptances, &reviews)?;
+    let bundles = azimuth::retained_inputs::retained_runs(changes)?;
+    let ratified = azimuth::change::ratifications(model, &acceptances, &reviews, &bundles)?;
     issues.extend(azimuth::change::ratification_issues(
         &acceptances,
         &ratified,
@@ -4144,10 +4454,11 @@ fn command_release(args: &[String]) -> Result<ExitCode, String> {
         cursor += 2;
     }
     let input = input.ok_or("release requires --input")?;
-    if operation != "prepare"
-        && (unit_rule.is_some() || checkout.is_some() || repository.is_some())
+    if operation != "prepare" && (unit_rule.is_some() || checkout.is_some() || repository.is_some())
     {
-        return Err("--unit-rule, --checkout and --repository apply only to release prepare".into());
+        return Err(
+            "--unit-rule, --checkout and --repository apply only to release prepare".into(),
+        );
     }
     reject_output_input_equality(out.as_ref(), std::iter::once(&input), "release")?;
     let source =
