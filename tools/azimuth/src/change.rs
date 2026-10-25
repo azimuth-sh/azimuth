@@ -1184,9 +1184,13 @@ pub fn ratifications(
             let Some(review) = crate::assurance_review::latest_review(&all, &target)? else {
                 continue;
             };
-            if crate::assurance_review::assess_record(review, &authority, &all, bundles).status
-                != "accepted"
-            {
+            let is_head = model.review_heads.iter().any(|head| &head.record == review);
+            let assessment = if is_head {
+                crate::assurance_review::assess_head(review, &authority, &all, bundles)
+            } else {
+                crate::assurance_review::assess_record(review, &authority, &all, bundles)
+            };
+            if assessment.status != "accepted" {
                 continue;
             }
             let fingerprint = review

@@ -890,3 +890,23 @@ fn ratifications_weigh_model_heads_against_change_reviews_by_review_time() {
     undeclared.review_heads = vec![head(HeadKind::Verification, &verification)];
     assert!(ratifications(&undeclared, &[], &[]).unwrap().is_empty());
 }
+
+#[test]
+fn a_head_that_reassesses_an_absent_predecessor_still_ratifies() {
+    use azimuth::change::ratifications;
+    use azimuth::review_heads::HeadKind;
+    let mut model = realized_model();
+    let authority = authority(&model);
+    let predecessor = realization_review(&authority, 100, "rejected", Json::Null, vec![]);
+    let reassessment = realization_review(
+        &authority,
+        200,
+        "accepted",
+        predecessor.get("fingerprint").unwrap().clone(),
+        vec![],
+    );
+    model.review_heads = vec![head(HeadKind::Realization, &reassessment)];
+    let ratified = ratifications(&model, &[], &[]).unwrap();
+    assert_eq!(ratified.len(), 1);
+    assert_eq!(ratified[0].kind, HeadKind::Realization);
+}

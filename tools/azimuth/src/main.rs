@@ -3474,6 +3474,9 @@ fn command_validate(options: Options) -> Result<ExitCode, String> {
             let ratified = azimuth::change::ratifications(&loaded.model, &reviews, &bundles)?;
             azimuth::change::waive_accepted_requirements(&mut findings, &ratified);
         }
+    } else {
+        let ratified = azimuth::change::ratifications(&loaded.model, &[], &[])?;
+        azimuth::change::waive_accepted_requirements(&mut findings, &ratified);
     }
     render_validation(
         &loaded.model,

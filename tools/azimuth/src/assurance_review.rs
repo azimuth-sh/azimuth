@@ -1032,6 +1032,27 @@ pub fn assess_record_in(
     reviews: &[Json],
     bundles: &Runs,
 ) -> Assessment {
+    assess(record, authority, reviews, bundles, true)
+}
+
+/// A model head was adjudicated against its predecessor when it ratified, and the model carries
+/// only the ratifying record, so an absent predecessor is not a defect of the head.
+pub fn assess_head(
+    record: &Json,
+    authority: &Json,
+    reviews: &[Json],
+    bundles: &[RunBundle],
+) -> Assessment {
+    assess(record, authority, reviews, &Runs::new(bundles), false)
+}
+
+fn assess(
+    record: &Json,
+    authority: &Json,
+    reviews: &[Json],
+    bundles: &Runs,
+    history: bool,
+) -> Assessment {
     if let Err(error) = validate_authority(authority) {
         return assessed("invalid", format!("invalid model authority: {error}"));
     }
@@ -1039,8 +1060,10 @@ pub fn assess_record_in(
         return assessed("invalid", error);
     }
     match text(record, "kind").unwrap() {
-        "verification-review" => assess_requirement_review(record, authority, reviews, bundles),
-        "realization-review" => assess_realization_review(record, authority, reviews),
+        "verification-review" => {
+            assess_requirement_review(record, authority, reviews, bundles, history)
+        }
+        "realization-review" => assess_realization_review(record, authority, reviews, history),
         _ => assessed("invalid", "unknown review kind"),
     }
 }
@@ -2014,9 +2037,10 @@ fn assess_requirement_review(
     authority: &Json,
     reviews: &[Json],
     bundles: &Runs,
+    history: bool,
 ) -> Assessment {
     let requirement = text(record, "requirement").unwrap();
-    if let Some(refusal) = reassessment_gate(record, reviews) {
+    if let Some(refusal) = reassessment_gate(record, reviews, history) {
         return refusal;
     }
     let closure = match requirement_closure_fingerprint(authority, requirement) {
@@ -2157,7 +2181,7 @@ fn assess_requirement_review(
     }
     assessed(text(record, "decision").unwrap(), "")
 }
-fn reassessment_gate(record: &Json, reviews: &[Json]) -> Option<Assessment> {
+fn reassessment_gate(record: &Json, reviews: &[Json], history: bool) -> Option<Assessment> {
     if let Some(previous) = record.get("reassesses").and_then(Json::as_str) {
         if let Some(before) = reviews
             .iter()
@@ -2198,7 +2222,7 @@ fn reassessment_gate(record: &Json, reviews: &[Json]) -> Option<Assessment> {
                     "Reassessment must have the same target and later review time",
                 ));
             }
-        } else {
+        } else if history {
             return Some(assessed(
                 "missing",
                 "Reassessed review absent from retained history",
@@ -2221,9 +2245,14 @@ fn validate_realization_review(value: &Json) -> Result<(), String> {
     decision(value)
 }
 
-fn assess_realization_review(record: &Json, authority: &Json, reviews: &[Json]) -> Assessment {
+fn assess_realization_review(
+    record: &Json,
+    authority: &Json,
+    reviews: &[Json],
+    history: bool,
+) -> Assessment {
     let requirement = text(record, "requirement").unwrap();
-    if let Some(refusal) = reassessment_gate(record, reviews) {
+    if let Some(refusal) = reassessment_gate(record, reviews, history) {
         return refusal;
     }
     let Ok(dependencies) = realization_dependencies(authority, requirement) else {

@@ -106,19 +106,7 @@ pub fn load_with_support(
         Ok(accounts) => model.account_verifications = accounts,
         Err(mut diagnostics) => errors.append(&mut diagnostics),
     }
-    for kind in review_heads::HeadKind::ALL {
-        match named_paths(model_dir, kind.file_name()) {
-            Ok(paths) => {
-                for path in paths {
-                    match review_heads::load(&path, kind) {
-                        Ok(mut heads) => model.review_heads.append(&mut heads),
-                        Err(mut diagnostics) => errors.append(&mut diagnostics),
-                    }
-                }
-            }
-            Err(mut diagnostics) => errors.append(&mut diagnostics),
-        }
-    }
+    load_review_heads(model_dir, &mut model, &mut errors);
 
     for path in manifests {
         match manifest::load(path) {
@@ -250,6 +238,7 @@ pub fn load_assembly(
             ),
             Err(mut diagnostics) => errors.append(&mut diagnostics),
         }
+        load_review_heads(root, &mut model, &mut errors);
     }
     for manifest in &assembly.manifests {
         append_manifest(&mut model, manifest);
@@ -305,6 +294,22 @@ pub fn load_assembly(
     warnings.extend(package_location_warnings(&model));
     apply_selection(&mut model, only);
     Ok(Loaded { model, warnings })
+}
+
+fn load_review_heads(root: &Path, model: &mut Model, errors: &mut Vec<Diag>) {
+    for kind in review_heads::HeadKind::ALL {
+        match named_paths(root, kind.file_name()) {
+            Ok(paths) => {
+                for path in paths {
+                    match review_heads::load(&path, kind) {
+                        Ok(mut heads) => model.review_heads.append(&mut heads),
+                        Err(mut diagnostics) => errors.append(&mut diagnostics),
+                    }
+                }
+            }
+            Err(mut diagnostics) => errors.append(&mut diagnostics),
+        }
+    }
 }
 
 fn check_facet_owners<'a>(
