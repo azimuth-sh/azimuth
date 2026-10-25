@@ -1769,6 +1769,27 @@ fn review_status_has_two_dimensions_and_only_verification_gates_support() {
         )
     );
 
+    let mut reassessment = realization_review_for(&verified, None);
+    set(&mut reassessment, "reviewed_at_ms", Json::Num(60.0));
+    set(&mut reassessment, "reassesses", Json::str(fp('8')));
+    let fingerprint = azimuth::assurance_review::record_fingerprint(&reassessment).unwrap();
+    set(&mut reassessment, "fingerprint", Json::str(fingerprint));
+    set(
+        &mut verified,
+        "reviews",
+        Json::Arr(vec![verification.clone(), reassessment]),
+    );
+    assert_eq!(
+        review_dimensions(&verified),
+        (
+            "supported".into(),
+            "accepted".into(),
+            "accepted".into(),
+            Json::Bool(false)
+        ),
+        "a published reassessment is judged without its unpublished predecessor"
+    );
+
     let drifted = realization_review_for(&verified, Some(Json::str(fp('9'))));
     set(
         &mut verified,

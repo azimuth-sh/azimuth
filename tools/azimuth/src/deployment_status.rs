@@ -1457,7 +1457,7 @@ fn evaluate(
         } else {
             match latest {
                 Ok(Some(r)) => (
-                    crate::assurance_review::assess_record_in(r, authority, reviews, &runs).status,
+                    crate::assurance_review::assess_head_in(r, authority, reviews, &runs).status,
                     Some(r),
                 ),
                 Ok(None) => ("missing".into(), None),
@@ -1476,7 +1476,7 @@ fn evaluate(
         } else {
             match crate::assurance_review::latest_review(reviews, &realization_target) {
                 Ok(Some(r)) => (
-                    crate::assurance_review::assess_record_in(r, authority, reviews, &runs).status,
+                    crate::assurance_review::assess_head_in(r, authority, reviews, &runs).status,
                     Some(r),
                 ),
                 Ok(None) => ("missing".into(), None),

@@ -1043,7 +1043,16 @@ pub fn assess_head(
     reviews: &[Json],
     bundles: &[RunBundle],
 ) -> Assessment {
-    assess(record, authority, reviews, &Runs::new(bundles), false)
+    assess_head_in(record, authority, reviews, &Runs::new(bundles))
+}
+
+pub fn assess_head_in(
+    record: &Json,
+    authority: &Json,
+    reviews: &[Json],
+    bundles: &Runs,
+) -> Assessment {
+    assess(record, authority, reviews, bundles, false)
 }
 
 fn assess(
