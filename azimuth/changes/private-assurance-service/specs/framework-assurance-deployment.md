@@ -3,7 +3,6 @@
 ## Replace requirement: private-network-containment
 From: sha256:26ee38790b47e787ab1aad92ee0aba4e0130e5f4bba87d7100b4a9b678d23eae
 Because: The current inspection-only service adds explicit application authentication while retaining the local profile's loopback containment and the separately configured hosted private-access boundary.
-Criticality: routine
 
 The private assurance profile SHALL expose its processes only through an explicit
 operator-controlled network boundary.

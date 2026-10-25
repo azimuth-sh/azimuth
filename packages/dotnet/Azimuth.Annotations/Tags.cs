@@ -37,7 +37,7 @@ namespace Azimuth.Annotations
         public string Requirement { get; }
     }
 
-    /// <summary>Declares that a production artifact implements a named design mechanism.</summary>
+    /// <summary>Declares that a production artifact implements a named realization-owned mechanism.</summary>
     /// <remarks>
     /// The design owns the mechanism's identity, enforcement kind and rationale. The compiler
     /// extractor derives the concrete symbol binding from the attributed type or method, so a code
@@ -53,7 +53,7 @@ namespace Azimuth.Annotations
         AllowMultiple = true)]
     public sealed class ImplementsMechanismAttribute : Attribute
     {
-        /// <summary>Links the attributed symbol to a design mechanism.</summary>
+        /// <summary>Links the attributed symbol to a realization-owned mechanism.</summary>
         public ImplementsMechanismAttribute(string mechanism)
         {
             Mechanism = mechanism;

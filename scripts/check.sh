@@ -61,7 +61,6 @@ check_source() {
   ./experiments/assurance-service/check.sh
   ./experiments/run-bundles/check.sh
   ./experiments/adapter-capabilities/check.sh
-  ./experiments/challenge-planning/check.sh
   ./experiments/mechanism-identities/check.sh
 }
 

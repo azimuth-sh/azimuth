@@ -12,7 +12,7 @@ The team should be able to reconstruct what it can justify believing about an ex
 
 | Component | Responsibility |
 | --- | --- |
-| Repository Azimuth account | Authoritative product intent, design, verification methods and Check–Scenario relationships; accepted changes to those definitions. |
+| Repository Azimuth account | Authoritative product intent, realization, verification methods, Check–Scenario relationships and review heads; accepted changes to those definitions. |
 | Azimuth tooling | Assemble pinned context, validate structure and dependencies, plan bounded verification execution, and expose assurance obligations. Intended workflow interfaces also identify eligible work and progression conditions. |
 | Azimuth Assurance Service (AAS) | Preserve submitted execution facts, independent assessments and authority history; compute exact-Verification-Target Assurance State. Intended extensions preserve assurance-related decisions and resolution history. |
 | Development harness | Execute engineering and review tasks using agents, models, tools and repository context; enforce execution permissions, manage delegation, retries and recovery. |
@@ -37,7 +37,7 @@ The intended interface has three parts. Their wire formats and command syntax re
 
 ### Bounded work request
 
-Azimuth prepares a task objective with project and change context, exact target identity and relevant fingerprints, repository and evidence inputs, constraints, required output contract and execution guarantees. Requests distinguish implementation, method review, applicability review, Requirement Judgment and corrective work.
+Azimuth prepares a task objective with project and change context, exact target identity and relevant fingerprints, repository and evidence inputs, constraints, required output contract and execution guarantees. Requests distinguish implementation, delta review, Verification Review, Realization Review and corrective work.
 
 Pinned context is a starting packet. The worker may inspect additional repository or deployment information, but must report missing or contradictory dependencies. AAS supplies recorded facts and assessments; repository context remains necessary for engineering and review.
 
@@ -57,23 +57,21 @@ Readiness and permission are separate. Evidence can establish that a task is rea
 
 ## Development and correction loop
 
-1. Read approved intent, design and verification obligations from repositories.
+1. Read approved intent, realization and verification obligations from repositories.
 2. Implement and capture realization and verification sites.
 3. Validate the prospective account against complete relevant source observations.
-4. Qualify applicable Check methods through independent review, potentially before execution.
-5. Execute Checks against exact Verification Targets and retain satisfied, violated and inconclusive Check Results and measurement failures.
-6. Review the applicability of particular Check Results to Check–Scenario contributions.
-7. Perform required independent Requirement Judgments over current dependencies and visible gaps.
-8. Correct targeted deficiencies and reassess affected dependencies.
-9. Validate readiness and cross the explicit acceptance boundary.
+4. Execute Checks and declared Verification Challenges against exact Verification Targets and retain satisfied, violated and inconclusive Check Results and measurement failures.
+5. Perform the independent Verification Review and Realization Review each Requirement declares, over current blocking dependencies and visible gaps.
+6. Correct targeted deficiencies and reassess affected dependencies.
+7. Validate readiness, store the review heads at finalization and cross the explicit acceptance boundary.
 
-Routine Requirements retain their current exemption from independent evidence reviews. The loop does not create universal review obligations merely by describing available activities.
+A Requirement that declares neither review owes none. The loop does not create universal review obligations merely by describing available activities.
 
 | Result | Expected response |
 | --- | --- |
-| Rejected Method Qualification | Correct the method, oracle, inputs or instrumentation; prepare refreshed context and obtain independent reassessment. |
-| Rejected Applicability Decision | Correct the binding or obtain appropriate evidence; reassess applicability without unnecessarily requalifying an unchanged method. |
-| Violated or unresolved Requirement Judgment | Address implementation defects, missing evidence or review gaps; bring intent problems to a responsible intent decision. |
+| Rejected Verification Review | Correct the Checks, bindings, oracle, inputs, instrumentation or Challenges; prepare refreshed context and obtain independent reassessment. |
+| Rejected Realization Review | Correct the code at the realization sites or the realization; obtain independent reassessment. Bring intent problems to a responsible intent decision. |
+| Violated or unresolved Requirement Status | Address implementation defects, missing evidence or review gaps. |
 | Invalid review output | Repair the review submission or repeat the review task; do not treat it as a substantive rejection. |
 | Execution failure | Diagnose, retry or escalate under bounded harness execution policy. |
 
@@ -172,7 +170,6 @@ transition inference.
 | AAS human decision situations and accountable disposition records | Intended; no new decision schema or API is defined here. |
 | Finding-to-correction resolution records and closure evaluation | Intended; identity and closure rules remain open. |
 | Durable production-trigger integration and bounded autonomous maintenance | Intended integration; requires permissions, deployed provenance and recovery contracts. |
-| Compact-account Decision Policies and challenge scheduling | Deferred in the current contract; this direction does not implement or finalize them. |
 
 The first practical proof should be one complete Check loop, including an adverse method review and correction, followed by one bounded production maintenance loop. Measure correction effort, review usefulness, missed defects, escalation quality and end-to-end cost before generalizing execution infrastructure.
 

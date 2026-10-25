@@ -1,6 +1,6 @@
 # Authoring review issues and correction dispositions
 
-Authoring reviews independently assess a proposal or a spec, design or verification delta. Their issues are authored judgments, not deterministic model Findings from `findings.md`. Existing sealed historical records containing prose finding strings remain readable with their original meaning; newly authored rejected reviews retain stable structured issue objects.
+Authoring reviews are the local delta reviews of the change workflow: they independently assess a proposal or a spec, realization or verification delta and are retained in the change's decision record, never in the model. Their issues are authored judgments, not deterministic model Findings from `findings.md`. Existing sealed historical records containing prose finding strings remain readable with their original meaning; newly authored rejected reviews retain stable structured issue objects.
 
 ## Issue account
 

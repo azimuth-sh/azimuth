@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review an Azimuth Requirement's verification"
+  short_description: "Assess the credibility of a Requirement's verification independently"
+  default_prompt: "Use $azimuth-review-verification to independently perform the Verification Review of the selected Requirement against its exact candidate and retain the decision and findings."

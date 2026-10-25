@@ -11,13 +11,13 @@ const KINDS: &[&str] = &[
     "review-proposal",
     "produce-artifact",
     "author-spec-delta",
-    "author-design",
-    "author-design-delta",
+    "author-realization",
+    "author-realization-delta",
     "author-verification",
     "author-verification-delta",
     "review-spec-delta",
-    "review-design",
-    "review-design-delta",
+    "review-realization",
+    "review-realization-delta",
     "review-verification",
     "review-verification-delta",
     "author-engineering-plan",
@@ -36,9 +36,6 @@ const KINDS: &[&str] = &[
     "execute-check",
     "run-verification-challenges",
     "run-verification-challenge",
-    "qualify-method",
-    "execute-qualified-check",
-    "assess-applicability",
 ];
 /// Action kinds whose outcome was an authored Verification-Target-specific Requirement assessment.
 /// Requirement Status is now computed from applicable evidence, so instances pinned to these
@@ -569,10 +566,9 @@ fn definition(v: &Json) -> Result<(), String> {
             }
         }
         for required in match text(task, "kind")? {
-            "qualify-method" | "execute-qualified-check" | "execute-check" => vec!["check"],
+            "execute-check" => vec!["check"],
             "review-requirement" => vec!["requirement"],
             "run-verification-challenge" => vec!["verification_challenge"],
-            "assess-applicability" => vec!["check", "scenario", "verification_target"],
             _ => vec![],
         } {
             text(task.get("target").unwrap(), required)?;
@@ -644,13 +640,7 @@ fn definition(v: &Json) -> Result<(), String> {
                 return Err("authoring review correction must reopen its author".into());
             }
         }
-        if [
-            "qualify-method",
-            "assess-applicability",
-            "review-requirement",
-            "run-verification-challenge",
-        ]
-        .contains(&text(task, "kind")?)
+        if ["review-requirement", "run-verification-challenge"].contains(&text(task, "kind")?)
             && arr(task, "inputs")?
                 .iter()
                 .filter(|i| i.get("kind").and_then(Json::as_str) == Some("assurance-snapshot"))
@@ -1064,7 +1054,7 @@ fn challenge_disposition(
             continue;
         }
         for reference in arr(dependency, "records")? {
-            if reference.get("kind").and_then(Json::as_str) == Some("requirement-review") {
+            if reference.get("kind").and_then(Json::as_str) == Some("verification-review") {
                 reviews.push(supporting_record(reference, roots)?);
             }
         }
@@ -1362,9 +1352,9 @@ fn review_kind(kind: &str) -> bool {
         kind,
         "review-proposal"
             | "review-spec-delta"
-            | "review-design"
+            | "review-realization"
             | "review-verification"
-            | "review-design-delta"
+            | "review-realization-delta"
             | "review-verification-delta"
     )
 }
@@ -1372,8 +1362,8 @@ fn author_for(kind: &str) -> Option<&'static str> {
     match kind {
         "review-proposal" => Some("author-proposal"),
         "review-spec-delta" => Some("author-spec-delta"),
-        "review-design" => Some("author-design"),
-        "review-design-delta" => Some("author-design-delta"),
+        "review-realization" => Some("author-realization"),
+        "review-realization-delta" => Some("author-realization-delta"),
         "review-verification" => Some("author-verification"),
         "review-verification-delta" => Some("author-verification-delta"),
         _ => None,
@@ -1566,78 +1556,8 @@ fn evaluate(state: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Evaluation, S
                     }
                 }
             }
-            let mut basis_inputs = input_values.clone();
-            let mut basis_dependencies = dep_results.clone();
-            let normalization = (|| -> Result<(), String> {
-                if ["qualify-method", "assess-applicability"].contains(&text(task, "kind")?) {
-                    for input in &mut basis_inputs {
-                        if input.get("kind").and_then(Json::as_str) == Some("assurance-snapshot") {
-                            let snapshot = read(&resolve(input, r)?)?;
-                            validate_snapshot(&snapshot)?;
-                            snapshot_target(&snapshot, task.get("target").unwrap())?;
-                            let identity = if text(task, "kind")? == "qualify-method" {
-                                let check = task
-                                    .get("target")
-                                    .and_then(|v| v.get("check"))
-                                    .ok_or("qualification target requires check")?;
-                                arr(snapshot.get("authority").unwrap(), "checks")?
-                                    .iter()
-                                    .find(|v| v.get("id") == Some(check))
-                                    .ok_or("Check missing from snapshot")?
-                                    .clone()
-                            } else {
-                                Json::obj(vec![(
-                                    "project",
-                                    snapshot.get("project").unwrap().clone(),
-                                )])
-                            };
-                            if let Json::Obj(fields) = input {
-                                for (key, v) in fields {
-                                    if key == "fingerprint" {
-                                        *v = Json::str(digest(&identity));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if text(task, "kind")? == "qualify-method" {
-                    basis_inputs.retain(|v| {
-                        !["review-history", "run-bundle"]
-                            .contains(&v.get("kind").and_then(Json::as_str).unwrap_or(""))
-                    });
-                    for input in &mut basis_inputs {
-                        if input.get("kind").and_then(Json::as_str) == Some("model-authority") {
-                            let authority = read(&resolve(input, r)?)?;
-                            crate::assurance_review::validate_authority(&authority)?;
-                            let check = task
-                                .get("target")
-                                .and_then(|v| v.get("check"))
-                                .ok_or("qualification target requires check")?;
-                            let selected = arr(&authority, "checks")?
-                                .iter()
-                                .find(|v| v.get("id") == Some(check))
-                                .ok_or("qualification Check absent from authority")?;
-                            if let Json::Obj(fields) = input {
-                                for (key, v) in fields {
-                                    if key == "fingerprint" {
-                                        *v = Json::str(digest(selected));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    basis_dependencies = deps
-                        .iter()
-                        .map(|dep| Json::obj(vec![("task", dep.clone())]))
-                        .collect();
-                }
-                Ok(())
-            })();
-            if let Err(reason) = normalization {
-                reasons.push(reason);
-            }
+            let basis_inputs = input_values.clone();
+            let basis_dependencies = dep_results.clone();
             if let Some(previous) = latest(state, id) {
                 if !successful(previous)
                     && (text(task, "kind")? != "run-verification-challenge"
@@ -1967,7 +1887,7 @@ fn public_correction(result: &Json, roots: &BTreeMap<String, PathBuf>) -> Result
             ("diagnostics", Json::Arr(diagnostics)),
         ])),
         ("reviews", Json::Arr(feedback)),
-        ("reviewed_artifacts", Json::Arr(inputs.iter().filter(|input| matches!(input.get("kind").and_then(Json::as_str), Some("candidate-facet" | "intent-delta" | "requirement-design" | "verification-account" | "source-scope-report"))).cloned().collect())),
+        ("reviewed_artifacts", Json::Arr(inputs.iter().filter(|input| matches!(input.get("kind").and_then(Json::as_str), Some("candidate-facet" | "intent-delta" | "requirement-realization" | "verification-account" | "source-scope-report"))).cloned().collect())),
     ]))
 }
 fn public_handoff(handoff: &Json, roots: &BTreeMap<String, PathBuf>) -> Result<Json, String> {
@@ -2051,7 +1971,7 @@ fn verification_challenge_handoff(
     let mut reviews = Vec::new();
     for dependency in arr(handoff, "dependencies")? {
         for reference in arr(dependency, "records")? {
-            if reference.get("kind").and_then(Json::as_str) != Some("requirement-review") {
+            if reference.get("kind").and_then(Json::as_str) != Some("verification-review") {
                 continue;
             }
             let native = supporting_record(reference, roots)?;
@@ -2099,7 +2019,7 @@ fn verification_challenge_handoff(
         ("reviews", Json::Arr(reviews)),
         ("scope_inputs", Json::Arr(scope_inputs)),
         ("instructions", Json::Arr(vec![
-            Json::str("Read the declaration and authored Requirement Reviews. Resolve its implementation configuration files and current source scope; retain selected sites, exclusions, unresolved mappings and tool expansions. Missing or stale scope is not permission for a repository-wide fallback."),
+            Json::str("Read the declaration and authored Verification Reviews. Resolve its implementation configuration files and current source scope; retain selected sites, exclusions, unresolved mappings and tool expansions. Missing or stale scope is not permission for a repository-wide fallback."),
             Json::str("Use explicit isolated tool/environment configuration and an exact source capture. Execute only this Verification Challenge and its selected Checks. Preserve native reports, a readable verification-challenge-report and the imported run-bundle in a fresh attempt directory."),
             Json::str("Record execution as completed or failed. Azimuth derives assessment no-findings, findings or inconclusive from the Run (native clean means no-findings). Preserve findings together with execution gaps; no findings never establishes Requirement Status."),
             Json::str("For execution failure or inconclusive search, diagnose configuration, prerequisites, scope and tool limitations and retry this work. Do not classify an execution problem as a product defect. Surviving mutations require relevance/equivalence/coverage disposition and independent reassessment."),
@@ -2269,7 +2189,7 @@ fn retain_change_acceptance(
 fn delta_facet(kind: &str) -> Option<&'static str> {
     match kind {
         "author-spec-delta" => Some("spec"),
-        "author-design-delta" => Some("design"),
+        "author-realization-delta" => Some("realization"),
         "author-verification-delta" => Some("verification"),
         _ => None,
     }
@@ -2385,7 +2305,7 @@ fn validate_unchanged_facet(
             "# {}: {}",
             match facet {
                 "spec" => "Spec",
-                "design" => "Design",
+                "realization" => "Realization",
                 _ => "Verification",
             },
             text(&value, "module")?
@@ -2533,7 +2453,7 @@ fn validate_completion_output(
     let mut runs = snapshot_runs(&snapshot)?;
     for reference in handoff_inputs(handoff)? {
         match text(&reference, "kind")? {
-            "requirement-review" => {
+            "verification-review" => {
                 for review in supporting_review_history(&reference, roots)? {
                     if !reviews.contains(&review) {
                         reviews.push(review);
@@ -2553,19 +2473,19 @@ fn validate_completion_output(
     for requirement in arr(authority, "requirements")?
         .iter()
         .filter(|requirement| {
-            requirement.get("criticality").and_then(Json::as_str) != Some("routine")
+            requirement.get("verification").and_then(Json::as_str) != Some("none")
         })
     {
         let target = Json::obj(vec![
-            ("kind", Json::str("requirement-review")),
+            ("kind", Json::str("verification-review")),
             ("requirement", requirement.get("id").unwrap().clone()),
         ]);
         let review = crate::assurance_review::latest_review(&reviews, &target)?
-            .ok_or("completion Requirement Review missing")?;
+            .ok_or("completion Verification Review missing")?;
         if crate::assurance_review::assess_record(review, authority, &reviews, &runs).status
             != "accepted"
         {
-            return Err("completion Requirement Review is not current and accepted".into());
+            return Err("completion Verification Review is not current and accepted".into());
         }
     }
     let issues = crate::change::provenance_archive_issues(archived);
@@ -2670,8 +2590,8 @@ fn review_record(
                             == Some(match kind {
                                 "review-proposal" => "proposal",
                                 "review-spec-delta" => "intent-delta",
-                                "review-design" => "requirement-design",
-                                "review-design-delta" => "design-delta",
+                                "review-realization" => "requirement-realization",
+                                "review-realization-delta" => "realization-delta",
                                 "review-verification-delta" => "verification-delta",
                                 _ => "verification-account",
                             })
@@ -2683,31 +2603,13 @@ fn review_record(
         if v.get("dependencies") != Some(&Json::Arr(expected)) {
             return Err("review dependencies must equal exact published handoff inputs".into());
         }
-    } else if [
-        "qualify-method",
-        "assess-applicability",
-        "review-requirement",
-    ]
-    .contains(&kind)
-    {
-        let expected = match kind {
-            "qualify-method" => "method-qualification",
-            "assess-applicability" => "applicability-decision",
-            _ => "requirement-review",
-        };
+    } else if kind == "review-requirement" {
+        let expected = "verification-review";
         let review = supporting_record(record_of(records, expected)?, r)?;
         crate::assurance_review::validate_record(&review)?;
-        for key in if kind == "qualify-method" {
-            vec!["check"]
-        } else if kind == "assess-applicability" {
-            vec!["check", "scenario"]
-        } else {
-            vec!["requirement"]
-        } {
-            if let Some(expected) = handoff.get("target").and_then(|t| t.get(key)) {
-                if review.get(key) != Some(expected) {
-                    return Err(format!("assurance review {key} differs from task target"));
-                }
+        if let Some(expected) = handoff.get("target").and_then(|t| t.get("requirement")) {
+            if review.get("requirement") != Some(expected) {
+                return Err("assurance review requirement differs from task target".into());
             }
         }
         if review.get("kind").and_then(Json::as_str) != Some(expected)
@@ -2715,16 +2617,16 @@ fn review_record(
         {
             return Err("assurance review kind or reviewer mismatch".into());
         }
-        if ["qualify-method", "review-requirement"].contains(&kind) {
-            for dependency in arr(handoff, "dependencies")? {
-                if dependency.get("actor") == result.get("actor")
-                    && arr(dependency, "records")?.iter().any(|record| {
-                        ["implementation-result", "check-implementation"]
-                            .contains(&record.get("kind").and_then(Json::as_str).unwrap_or(""))
-                    })
-                {
-                    return Err("method reviewer must differ from prerequisite author actor (local assertion)".into());
-                }
+        for dependency in arr(handoff, "dependencies")? {
+            if dependency.get("actor") == result.get("actor")
+                && arr(dependency, "records")?.iter().any(|record| {
+                    ["implementation-result", "check-implementation"]
+                        .contains(&record.get("kind").and_then(Json::as_str).unwrap_or(""))
+                })
+            {
+                return Err(
+                    "reviewer must differ from prerequisite author actor (local assertion)".into(),
+                );
             }
         }
         let inputs = arr(handoff, "inputs")?;
@@ -2737,7 +2639,7 @@ fn review_record(
         if kind == "review-requirement" {
             for dependency in arr(handoff, "dependencies")? {
                 for reference in arr(dependency, "records")? {
-                    if text(reference, "kind")? == "requirement-review" {
+                    if text(reference, "kind")? == "verification-review" {
                         for prior in supporting_review_history(reference, r)? {
                             if !local_reviews.contains(&prior) {
                                 local_reviews.push(prior);
@@ -3424,14 +3326,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             "request-implementation-approval" | "request-change-acceptance"
         ) {
             ["approved", "denied", "deferred"].contains(&outcome)
-        } else if review_kind(kind)
-            || [
-                "qualify-method",
-                "assess-applicability",
-                "review-requirement",
-            ]
-            .contains(&kind)
-        {
+        } else if review_kind(kind) || kind == "review-requirement" {
             ["accepted", "rejected"].contains(&outcome)
         } else {
             ["completed", "failed"].contains(&outcome)
@@ -3535,7 +3430,6 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             }
         }
         if [
-            "execute-qualified-check",
             "execute-check",
             "run-verification-challenges",
             "run-verification-challenge",
@@ -3569,7 +3463,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
                 let mut reviews = arr(&snapshot, "reviews")?.to_vec();
                 for dependency in arr(handoff, "dependencies")? {
                     for reference in arr(dependency, "records")? {
-                        if text(reference, "kind")? == "requirement-review" {
+                        if text(reference, "kind")? == "verification-review" {
                             for review in supporting_review_history(reference, &r)? {
                                 if !reviews.contains(&review) {
                                     reviews.push(review);
@@ -3634,7 +3528,9 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
                         continue;
                     }
                     if execution.target.kind != crate::run::ChallengeTargetKind::RequirementReview {
-                        return Err("New workflow Challenges must target Requirement Review".into());
+                        return Err(
+                            "New workflow Challenges must target Verification Review".into()
+                        );
                     }
                     let review = reviews
                         .iter()
@@ -4015,13 +3911,11 @@ fn permitted_outcomes(kind: &str) -> &'static [&'static str] {
             &["approved", "denied", "deferred"]
         }
         "review-requirement"
-        | "qualify-method"
-        | "assess-applicability"
         | "review-proposal"
         | "review-spec-delta"
-        | "review-design"
+        | "review-realization"
         | "review-verification"
-        | "review-design-delta"
+        | "review-realization-delta"
         | "review-verification-delta" => &["accepted", "rejected"],
         _ => &["completed", "failed"],
     }
@@ -4126,13 +4020,7 @@ fn template(v: &Json) -> Result<(), String> {
                 return Err("unknown required input binding".into());
             }
         }
-        if [
-            "qualify-method",
-            "assess-applicability",
-            "review-requirement",
-            "run-verification-challenge",
-        ]
-        .contains(&text(action, "kind")?)
+        if ["review-requirement", "run-verification-challenge"].contains(&text(action, "kind")?)
             && !input_bindings.contains("snapshot")
         {
             return Err("assurance action requires snapshot binding".into());
@@ -5018,7 +4906,7 @@ fn assurance_definition(
         }
     }
     for requirement in arr(authority, "requirements")? {
-        if text(requirement, "criticality")? == "routine" {
+        if text(requirement, "verification")? == "none" {
             continue;
         }
         for binding in arr(requirement, "bindings")? {
@@ -5060,7 +4948,7 @@ fn assurance_definition(
             Json::Arr(
                 arr(authority, "requirements")?
                     .iter()
-                    .filter(|requirement| text(requirement, "criticality").ok() != Some("routine"))
+                    .filter(|requirement| text(requirement, "verification").ok() != Some("none"))
                     .map(|requirement| {
                         Json::obj(vec![(
                             "requirement",
@@ -5193,7 +5081,7 @@ fn validate_inventory(
         let expected = Json::Arr(
             arr(authority, "requirements")?
                 .iter()
-                .filter(|requirement| text(requirement, "criticality").ok() != Some("routine"))
+                .filter(|requirement| text(requirement, "verification").ok() != Some("none"))
                 .map(|requirement| {
                     Json::obj(vec![(
                         "requirement",
@@ -5335,15 +5223,15 @@ fn registration(v: &Json, target: &Json) -> Result<(), String> {
 fn output_contract(action: &Json) -> Result<(), String> {
     let expected = match text(action, "kind")? {
         "author-spec-delta" => Some("intent-delta"),
-        "author-design" => Some("requirement-design"),
-        "author-design-delta" => Some("design-delta"),
+        "author-realization" => Some("requirement-realization"),
+        "author-realization-delta" => Some("realization-delta"),
         "author-verification" => Some("verification-account"),
         "author-verification-delta" => Some("verification-delta"),
         "review-proposal"
         | "review-spec-delta"
-        | "review-design"
+        | "review-realization"
         | "review-verification"
-        | "review-design-delta"
+        | "review-realization-delta"
         | "review-verification-delta" => Some("authoring-review"),
         "author-change-outcome" => Some("change-outcome"),
         "request-change-acceptance" => Some("change-acceptance"),
@@ -5354,13 +5242,10 @@ fn output_contract(action: &Json) -> Result<(), String> {
         "prepare-candidate-model-revision" => Some("candidate-preparation"),
         "register-candidate-model-revision" => Some("candidate-registration"),
         "prepare-publication-inputs" => Some("publication-inputs"),
-        "qualify-method" => Some("method-qualification"),
-        "review-requirement" => Some("requirement-review"),
+        "review-requirement" => Some("verification-review"),
         "execute-check" | "run-verification-challenges" | "run-verification-challenge" => {
             Some("run-bundle")
         }
-        "execute-qualified-check" => Some("run-bundle"),
-        "assess-applicability" => Some("applicability-decision"),
         _ => None,
     };
     if expected.is_some_and(|kind| {

@@ -22,14 +22,15 @@ fn authority() -> Schema {
                 ("fingerprint", Schema::Text),
             ])),
         ),
+        ("requirement_realizations", Schema::Document),
         ("project", Schema::Text),
         ("model_fingerprint", Schema::Text),
         ("fingerprint", Schema::Text),
     ])
 }
 
-// Requirement Review is the only stored review kind; every field is a typed column or child row so
-// review storage holds no JSON text.
+// Verification and Realization Reviews share one table because they share their target identity
+// and history; every field is a typed column or child row so review storage holds no JSON text.
 fn review() -> Schema {
     object(vec![
         ("kind", Schema::Text),
@@ -47,6 +48,8 @@ fn review() -> Schema {
         ("requirement", Schema::Text),
         ("requirement_fingerprint", Schema::Text),
         ("dependencies_fingerprint", Schema::Text),
+        ("sites_fingerprint", Schema::Text),
+        ("reviewed_commit", Schema::Text),
         ("decision", Schema::Text),
         ("reassesses", Schema::Text),
         (
@@ -56,6 +59,25 @@ fn review() -> Schema {
                 ("bundle_fingerprint", Schema::Text),
                 ("result_fingerprint", Schema::Text),
                 ("target_fingerprint", Schema::Text),
+            ])),
+        ),
+        (
+            "issues",
+            list(object(vec![
+                ("id", Schema::Text),
+                ("proposition", Schema::Text),
+                ("location", Schema::Text),
+                ("reason", Schema::Text),
+                ("correction", Schema::Text),
+                ("blocking", Schema::Boolean),
+            ])),
+        ),
+        (
+            "dispositions",
+            list(object(vec![
+                ("issue", Schema::Text),
+                ("outcome", Schema::Text),
+                ("rationale", Schema::Text),
             ])),
         ),
         ("fingerprint", Schema::Text),
@@ -90,15 +112,29 @@ mod tests {
         value
     }
 
-    fn requirement_review(reassesses: Option<&str>) -> Value {
+    fn verification_review(reassesses: Option<&str>) -> Value {
         fingerprint_record(json!({
-            "kind": "requirement-review", "reviewer": "reviewer", "reviewed_at_ms": 100,
+            "kind": "verification-review", "reviewer": "reviewer", "reviewed_at_ms": 100,
             "rationale": "Independent examination of the exact declared account.",
             "artifacts": [{"id":"notes","digest":DIGEST,"locator":"reviews/notes.md"}],
             "requirement": "requirement", "requirement_fingerprint": DIGEST,
             "dependencies_fingerprint": DIGEST, "decision": "rejected",
             "reassesses": reassesses,
-            "challenge_basis": [{"run":DIGEST,"bundle_fingerprint":DIGEST,"result_fingerprint":DIGEST,"target_fingerprint":DIGEST}]
+            "challenge_basis": [{"run":DIGEST,"bundle_fingerprint":DIGEST,"result_fingerprint":DIGEST,"target_fingerprint":DIGEST}],
+            "issues": [{"id":"weak-oracle","proposition":"The oracle is independent.","location":"verification.md","reason":"It reuses the implementation.","correction":"Derive the expectation independently.","blocking":true}]
+        }))
+    }
+
+    fn realization_review(reassesses: Option<&str>) -> Value {
+        fingerprint_record(json!({
+            "kind": "realization-review", "reviewer": "reviewer", "reviewed_at_ms": 100,
+            "rationale": "The realization sites do what the Scenarios say.",
+            "artifacts": [{"id":"notes","digest":DIGEST,"locator":"reviews/notes.md"}],
+            "requirement": "requirement", "requirement_fingerprint": DIGEST,
+            "dependencies_fingerprint": DIGEST, "sites_fingerprint": DIGEST,
+            "reviewed_commit": "0123456789abcdef0123456789abcdef01234567",
+            "decision": "accepted", "reassesses": reassesses,
+            "dispositions": [{"issue":"weak-oracle","outcome":"corrected","rationale":"Expectation now derived from the Scenario."}]
         }))
     }
 
@@ -114,7 +150,7 @@ mod tests {
     }
 
     #[test]
-    fn requirement_review_storage_holds_no_json_text() {
+    fn review_storage_holds_no_json_text() {
         let registry = crate::relational::registry();
         for node in review_nodes() {
             let node = &registry.nodes[node];
@@ -134,14 +170,14 @@ mod tests {
             );
             assert!(
                 !matches!(node.schema, super::Schema::Ref(_)),
-                "{} is not a plain Requirement Review structure",
+                "{} is not a plain review structure",
                 node.name
             );
         }
     }
 
     #[tokio::test]
-    async fn requirement_reviews_and_authorities_round_trip_with_native_fingerprints(
+    async fn reviews_and_authorities_round_trip_with_native_fingerprints(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let postgres = Postgres::default().start().await?;
         let port = postgres.get_host_port_ipv4(5432).await?;
@@ -150,12 +186,22 @@ mod tests {
         ))
         .await?;
         crate::relational::initialize(&pool).await?;
-        let original = requirement_review(None);
-        let successor = requirement_review(Some(original["fingerprint"].as_str().unwrap()));
-        let mut empty = requirement_review(None);
+        let original = verification_review(None);
+        let successor = verification_review(Some(original["fingerprint"].as_str().unwrap()));
+        let mut empty = verification_review(None);
         empty["challenge_basis"] = json!([]);
+        empty.as_object_mut().unwrap().remove("issues");
         let empty = fingerprint_record(empty);
-        for value in [original, successor, empty] {
+        let realization = realization_review(None);
+        let realization_successor =
+            realization_review(Some(realization["fingerprint"].as_str().unwrap()));
+        for value in [
+            original,
+            successor,
+            empty,
+            realization,
+            realization_successor,
+        ] {
             let native = azimuth::json::parse(&value.to_string())?;
             azimuth::assurance_review::validate_record(&native)?;
             let key = value["fingerprint"].as_str().unwrap();
@@ -186,7 +232,7 @@ mod tests {
         let model = azimuth::model::Model {
             specs: vec![azimuth::spec::parse_spec(
                 "spec.md",
-                "# Spec: module\n\n## Requirement: bounded\nCriticality: routine\n\nThe operation SHALL complete.\n\n### Scenario: completes\nGiven ordinary input, when invoked, then complete.\n",
+                "# Spec: module\n\n## Requirement: bounded\nRealization: reviewed\nVerification: reviewed\n\nThe operation SHALL complete.\n\n### Scenario: completes\nGiven ordinary input, when invoked, then complete.\n",
             ).unwrap()],
             ..azimuth::model::Model::default()
         };
@@ -195,6 +241,10 @@ mod tests {
         assert!(
             current["requirement_intents"].is_array(),
             "the authority projection carries Requirement intent fingerprints: {current}"
+        );
+        assert_eq!(
+            current["requirement_realizations"][0]["realization"], "reviewed",
+            "the authority projection carries each Requirement's realization account: {current}"
         );
         let mut historical = current.clone();
         historical["requirements"][0]

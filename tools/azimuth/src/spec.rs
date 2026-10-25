@@ -7,14 +7,14 @@
 //! Two failure modes are kept apart on purpose:
 //!
 //! - an unrecognized **construct** fails the parse (fail loudly);
-//! - a missing **declaration** becomes a Finding (a requirement without `Criticality:` parses
-//!   and is reported as `unclassified`).
+//! - a missing **declaration** is valid (a requirement without `Verification:` parses and owes
+//!   no verification).
 //!
 //! Conflating them would either let syntax errors through as findings, or turn a semantic gap
 //! into something a reviewer never sees in the matrix.
 
 use crate::diag::{validate_id, Diag};
-use crate::model::{Condition, Criticality, Domain, Requirement, Scenario, Spec, Term};
+use crate::model::{Condition, Domain, Requirement, Rigor, Scenario, Spec, Term};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -283,7 +283,8 @@ impl<'a> SpecParser<'a> {
         }
 
         let mut i = start + 1;
-        let mut criticality = None;
+        let mut realization = None;
+        let mut verification = None;
         let mut title = None;
         let mut over = None;
         let mut conditions = Vec::new();
@@ -309,16 +310,10 @@ impl<'a> SpecParser<'a> {
                     ));
                 }
                 title = Some(value.to_string());
-            } else if let Some(value) = trimmed.strip_prefix("Criticality:") {
-                match Criticality::parse(value.trim()) {
-                    Some(c) => criticality = Some(c),
-                    None => self.errors.push(Diag::expecting(
-                        self.path,
-                        ln,
-                        format!("unknown criticality `{}`", value.trim()),
-                        "critical, standard or routine",
-                    )),
-                }
+            } else if let Some(value) = trimmed.strip_prefix("Realization:") {
+                self.rigor("Realization", value, ln, &mut realization);
+            } else if let Some(value) = trimmed.strip_prefix("Verification:") {
+                self.rigor("Verification", value, ln, &mut verification);
             } else if let Some(value) = trimmed.strip_prefix(Condition::LABEL) {
                 self.condition(value, ln, &mut conditions);
             } else if let Some(value) = trimmed.strip_prefix("Over:") {
@@ -337,7 +332,7 @@ impl<'a> SpecParser<'a> {
                     self.path,
                     ln,
                     format!("unknown label `{label}:` on an invariant"),
-                    "Title:, Criticality:, Context: or Over:",
+                    "Title:, Realization:, Verification:, Context: or Over:",
                 ));
             } else {
                 self.errors.push(Diag::expecting(
@@ -364,7 +359,8 @@ impl<'a> SpecParser<'a> {
         self.requirements.push(Requirement {
             id: id.clone(),
             title,
-            criticality,
+            realization,
+            verification,
             conditions,
             statement,
             scenarios: vec![Scenario {
@@ -409,9 +405,9 @@ impl<'a> SpecParser<'a> {
         }
 
         let mut i = start + 1;
-        let mut criticality = None;
+        let mut realization = None;
+        let mut verification = None;
         let mut title = None;
-        let mut saw_criticality = false;
         let mut conditions = Vec::new();
 
         // Labelled lines sit directly under the heading and end at the first blank line.
@@ -438,22 +434,11 @@ impl<'a> SpecParser<'a> {
                 }
                 title = Some(value.to_string());
                 i += 1;
-            } else if let Some(value) = trimmed.strip_prefix("Criticality:") {
-                let value = value.trim();
-                if saw_criticality {
-                    self.errors
-                        .push(Diag::at(self.path, ln, "`Criticality:` is declared twice"));
-                }
-                saw_criticality = true;
-                match Criticality::parse(value) {
-                    Some(c) => criticality = Some(c),
-                    None => self.errors.push(Diag::expecting(
-                        self.path,
-                        ln,
-                        format!("unknown criticality `{value}`"),
-                        "critical, standard or routine",
-                    )),
-                }
+            } else if let Some(value) = trimmed.strip_prefix("Realization:") {
+                self.rigor("Realization", value, ln, &mut realization);
+                i += 1;
+            } else if let Some(value) = trimmed.strip_prefix("Verification:") {
+                self.rigor("Verification", value, ln, &mut verification);
                 i += 1;
             } else if let Some(value) = trimmed.strip_prefix(Condition::LABEL) {
                 self.condition(value, ln, &mut conditions);
@@ -463,7 +448,7 @@ impl<'a> SpecParser<'a> {
                     self.path,
                     ln,
                     format!("unknown label `{label}:` on a requirement"),
-                    "Title:, Criticality: or Context:",
+                    "Title:, Realization:, Verification: or Context:",
                 ));
                 i += 1;
             } else {
@@ -526,7 +511,8 @@ impl<'a> SpecParser<'a> {
         self.requirements.push(Requirement {
             id,
             title,
-            criticality,
+            realization,
+            verification,
             conditions,
             statement,
             scenarios,
@@ -592,6 +578,25 @@ impl<'a> SpecParser<'a> {
             }),
             i,
         )
+    }
+
+    fn rigor(&mut self, label: &str, value: &str, line: usize, slot: &mut Option<Rigor>) {
+        if slot.is_some() {
+            self.errors.push(Diag::at(
+                self.path,
+                line,
+                format!("`{label}:` is declared twice"),
+            ));
+        }
+        match Rigor::parse(value.trim()) {
+            Some(rigor) => *slot = Some(rigor),
+            None => self.errors.push(Diag::expecting(
+                self.path,
+                line,
+                format!("unknown {} rigor `{}`", label.to_lowercase(), value.trim()),
+                "reviewed",
+            )),
+        }
     }
 
     fn condition(&mut self, text: &str, line: usize, conditions: &mut Vec<Condition>) {

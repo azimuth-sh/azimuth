@@ -14,7 +14,7 @@ Azimuth Work Service and its assignment/API/DB/checkpoint protocol are deferred.
 | --- | --- | --- |
 | A: affected execution | `tools/azimuth/src/run_selection.rs`, `unit_inputs.rs`, new `execution_impact.rs`; `contracts/run-selection.md`, `unit-inputs.md` | Strict deterministic baseline/candidate/pending selection, conservative widening, explanations and exact targets; no agent and no blanket evidence reuse |
 | B: Challenge/review records | `tools/azimuth/src/run.rs`, `run_plan.rs`, `assurance_review.rs`, `review_authoring.rs`, `verification.rs`, `account_verification.rs`; relevant Python/TypeScript Challenge producers; matching Run/review contracts | Implementation/Check-directed Challenge targets executable before first review; retained Check/Challenge input basis; stable review issues/dispositions |
-| C: focused skills | `tools/azimuth/resources/skills/` and the assigned proposal/delta/design/verification/workflow/review/outcome references | Cohesive canonical task skills and metadata; no registry or consumer edits |
+| C: focused skills | `tools/azimuth/resources/skills/` and the assigned proposal/delta/realization/verification/workflow/review/outcome references | Cohesive canonical task skills and metadata; no registry or consumer edits |
 | Coordinator | Shared CLI/module wiring, workflow engine/template, resource registries/installer, candidate/finalization/retention/correction integration, AAS integration, remaining contracts, consumer CI/publication and managed skill synchronization | Integrated graph, complete native outcome gates, durable closure, correction lineage, consumer rollout |
 
 Workers do not edit another lane's files, shared registries, current model facets, or Git state. Changes to public interfaces are communicated before dependent edits. No worker commits, finalizes, archives or publishes this implementation. Additional paths require explicit reassignment by the coordinator. Reviewer independence is preserved; parallel implementation is not independent review.
@@ -24,7 +24,7 @@ Workers do not edit another lane's files, shared registries, current model facet
 1. Freeze strict affected-planner and implementation-Challenge interfaces. Preserve existing symmetric intent/account projectors; do not replace them with a competing delta grammar. Keep model Findings distinct from authored review issues.
 2. Run A, B and C concurrently. Coordinator integrates the outer graph and completion contracts against the agreed interfaces. Incomplete intermediate work is not shipped to consumer agents.
 3. Integrate Challenge/review outcomes with workflow eligibility. Failed/violated/inconclusive required Checks block Challenges and review; Challenge execution gaps and confirmed defects block review. Candidate equivalence/irrelevance dispositions remain independently reviewable rather than requiring a fabricated clean Run.
-4. Compose spec, design and verification deltas against an explicit baseline; preserve guards and exact previews. Serialize authoring/review: proposal, spec delta, design delta, verification delta, engineering plan and real implementation approval. Design/verification review inspects the composed account.
+4. Compose spec, realization and verification deltas against an explicit baseline; preserve guards and exact previews. Serialize authoring and delta review: proposal, spec delta, realization delta, verification delta, engineering plan and real implementation approval. Realization and verification delta reviews inspect the composed account.
 5. Retain the exact inputs required by review/Run records at their producing task. Validate the portable closure before successful completion and again in finalization/CI. Finalization consumes actual Challenge proofs; no ignored-local-only required dependency or stale-positive fallback.
 6. Add outcome authoring, human change acceptance and one finalization task including archival. Resolve provenance closure without including a result recursively in its own digest. Remove `verify-change` and agent-authored publication preparation from the standard graph.
 7. Support explicit correction changes linked to an earlier archived change, including corrections to existing Requirements. Preserve immutable earlier records and refresh affected reviews/acceptance. A pre-merge correction joins the existing PR; a post-merge correction uses a new PR. No automatic CI work creation.
@@ -36,9 +36,9 @@ Workers do not edit another lane's files, shared registries, current model facet
 
 ## Intended local workflow
 
-Scope → proposal/review → spec delta/review → design delta/review → verification delta/review → engineering plan → implementation approval → implementation → capture/validate/prepare candidate → Checks → Challenges → Requirement Review → outcome → change acceptance → finalize and archive.
+Scope → proposal/review → spec delta/review → realization delta/review → verification delta/review → engineering plan → implementation approval → implementation → capture/validate/prepare candidate → Checks → Challenges → Verification and Realization Reviews → outcome → change acceptance → finalize (writing review heads) and archive.
 
-Corrections repeat affected work only. Native outcomes, required unit coverage and current dependencies determine gates; successful command execution is insufficient. Routine Requirements retain their existing independent-review exemption. Hosted-only Checks remain explicit later obligations. An empty eligible set is not completion when required inputs or obligations remain missing.
+Corrections repeat affected work only. Native outcomes, required unit coverage and current dependencies determine gates; successful command execution is insufficient. A Requirement that declares neither review owes no independent review. Hosted-only Checks remain explicit later obligations. An empty eligible set is not completion when required inputs or obligations remain missing.
 
 ## Completion evidence
 

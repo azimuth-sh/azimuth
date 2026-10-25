@@ -2,7 +2,6 @@
 
 ## Requirement: private-network-containment
 Title: Private network containment
-Criticality: routine
 
 The private assurance profile SHALL expose its unauthenticated processes only through an explicit
 operator-controlled network boundary.
@@ -24,7 +23,6 @@ operator-controlled network boundary.
 
 ## Requirement: assurance-ledger-durability
 Title: Assurance ledger durability
-Criticality: routine
 
 The private assurance profile SHALL preserve accepted ledger history through its documented
 service lifecycle.
@@ -42,7 +40,6 @@ service lifecycle.
 
 ## Requirement: selected-image-platforms-build
 Title: Selected image platforms build
-Criticality: routine
 
 Every assurance image and platform selected by the release contract SHALL produce a buildable OCI
 candidate before publication orchestration begins.

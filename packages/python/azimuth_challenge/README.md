@@ -28,7 +28,7 @@ Strict request: `format: azimuth-challenge-scope-request`, `version: 2`, `verifi
 
 Current emitters locate sites but do not supply exact mutation regions. Scope preparation therefore explicitly reports whole-file expansion. Stryker's `mutate` entries are exact file patterns relative to the target project directory. An empty `test_filter` derives a disjunction of exact `FullyQualifiedName` predicates from selected .NET Check method sites. An authored filter must equal that resolved selection; otherwise the report is incomplete because omissions and expansions are unproven. The execution runner must support this filter (Microsoft Testing Platform runners such as xUnit v3 do not support the VSTest filter contract).
 
-Build project inputs, analysis files and Check sites remain separate. The scope report fingerprints every selected file and the emitted site; execution rejects changed files. Independent Requirement Review must examine completeness and the scope/configuration inputs. Selecting tags never proves all relevant helpers have been included.
+Build project inputs, analysis files and Check sites remain separate. The scope report fingerprints every selected file and the emitted site; execution rejects changed files. Independent Verification Review must examine completeness and the scope/configuration inputs. Selecting tags never proves all relevant helpers have been included.
 
 ## Execution
 

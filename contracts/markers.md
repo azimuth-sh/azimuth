@@ -2,11 +2,11 @@
 
 Three core identity markers put source on the map. Package-owned source relations are declared separately in `contracts/verification-packages.md`. `Realizes` names a parent Requirement,
 `ImplementsCheck` names a project-global Check identity and `ImplementsMechanism` names a
-design-owned mechanism identity. Every language package spells the same three in its own idiom,
+realization-owned mechanism identity. Every language package spells the same three in its own idiom,
 and every extractor turns them into the records described in `contracts/manifest.md`.
 
 A marker carries only the identities listed here. It carries no Scenario, verification form, scope,
-oracle, Method Qualification, Applicability Decision or evidence relationship. Authored binding meaning lives in `verification.md`; compact independent reviews live in separate strict records. An extra argument is an extraction failure, not an extension point.
+oracle or evidence relationship. Authored binding meaning lives in `verification.md`; independent reviews live in separate strict records. An extra argument is an extraction failure, not an extension point.
 
 Anything not described here is a parse error in the ecosystem that reads it.
 
@@ -22,12 +22,12 @@ Every argument is a string literal. A computed value, a constant reference, a ke
 
 `Realizes` takes one project-global Requirement ID. It deliberately carries no Scenario id: production sites
 realize the independently governed proposition, while exact Scenario relevance remains in the
-repository evidence and design facets.
+repository verification and realization facets.
 
 `ImplementsCheck` takes one Check id and nothing else. The marker says which Check the site
 implements. Every Check-to-Scenario edge and its applicability account are declared in
 `verification.md`. An unmarked test emits nothing, which is the normal state for ordinary
-engineering tests and for every test of a routine Requirement.
+engineering tests and for every test of a Requirement that does not declare `Verification:`.
 
 `ImplementsMechanism` takes one project-global Mechanism ID. The qualified site, binding and companion Artifact are derived, never extra annotation arguments.
 

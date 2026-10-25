@@ -17,14 +17,14 @@ The strict draft is `azimuth-retained-inputs-draft` version 1:
   "version": 1,
   "roots": ["accepted-review"],
   "inputs": [
-    {"id":"accepted-review","kind":"requirement-review","path":"reviews/requirement.json","dependencies":["review-markdown","review-packet"]},
-    {"id":"review-markdown","kind":"file","path":"reviews/requirement.md","dependencies":["review-packet"]},
+    {"id":"accepted-review","kind":"verification-review","path":"reviews/verification-reviews.json","dependencies":["review-markdown","review-packet"]},
+    {"id":"review-markdown","kind":"file","path":"reviews/verification-reviews.md","dependencies":["review-packet"]},
     {"id":"review-packet","kind":"review-input","path":".azimuth/review-input.json","dependencies":[]}
   ]
 }
 ```
 
-Inputs use unique lower-kebab IDs. Kinds are exactly `file`, `review-input`, `requirement-review` or `run-bundle`. Source paths resolve strictly below the explicit root without symlinks. Normal relative paths have no absolute prefix, empty components, traversal, backslash, fragment or NUL. Roots are nonempty; dependencies are explicit IDs, exist, are acyclic and reach every retained input. Required native proof/source dependencies must be supplied; unexplained unused files are rejected instead of silently retained.
+Inputs use unique lower-kebab IDs. Kinds are exactly `file`, `review-input`, `verification-review`, `realization-review` or `run-bundle`. Source paths resolve strictly below the explicit root without symlinks. Normal relative paths have no absolute prefix, empty components, traversal, backslash, fragment or NUL. Roots are nonempty; dependencies are explicit IDs, exist, are acyclic and reach every retained input. Required native proof/source dependencies must be supplied; unexplained unused files are rejected instead of silently retained.
 
 Capture reads and fingerprints the exact opened source bytes, validates the complete package before publication, writes and syncs a staging directory, and publishes by directory rename. An existing identical verified package is an idempotent replay; a different package at the same destination is rejected. It does not overwrite records or edit their content. The output parent must exist. Packages cannot live in `.azimuth`, `.azimuth-ci` or `.git`; required retention is distinct from scratch storage.
 
@@ -38,7 +38,7 @@ This is a machine-checkable declared/native dependency closure. It does not infe
 
 ## Conventional change package
 
-The final relied-on package is `<change>/retained/manifest.json` and its `files/` directory. Finalization of a workflow with a `finalize-change` action requires this package; every sealed JSON review under the change's `reviews/` must be mapped as a native requirement-review input with matching bytes and complete dependencies. Actual original Markdown/sealed outputs remain at their owning locations as well; the package preserves exact prior packet/proof bytes.
+The final relied-on package is `<change>/retained/manifest.json` and its `files/` directory. Finalization of a workflow with a `finalize-change` action requires this package; every sealed JSON review under the change's `reviews/` must be mapped as a native `verification-review` or `realization-review` input of its own kind with matching bytes and complete dependencies. Actual original Markdown/sealed outputs remain at their owning locations as well; the package preserves exact prior packet/proof bytes.
 
 Review compilation resolves an unavailable original Input path through this verified `source_path` map. Thus an immutable Markdown review can retain its original `.azimuth/...` locator without depending on that ignored local file remaining present. The fallback does not rewrite the review or its input fingerprint. Archive relocation preserves the package's internal paths.
 

@@ -1,6 +1,6 @@
 # Work Provenance
 
-Work Provenance is a ledger of completed workflow attempts: which action ran, with which outcome, by which execution instance and what kind of agent, when, and what it used and produced. It is a separate domain from assurance. Nothing in it is an input to Requirement Review currentness, Requirement Status, acceptance or any other assessment, and it never enters a workflow result, attempt identity or task basis. An attempt carries one summary of its model work (`usage`); per-call telemetry, transcripts and cost are out of scope, and an attempt carries at most an opaque `trace` reference.
+Work Provenance is a ledger of completed workflow attempts: which action ran, with which outcome, by which execution instance and what kind of agent, when, and what it used and produced. It is a separate domain from assurance. Nothing in it is an input to Verification or Realization Review currency, Requirement Status, acceptance or any other assessment, and it never enters a workflow result, attempt identity or task basis. An attempt carries one summary of its model work (`usage`); per-call telemetry, transcripts and cost are out of scope, and an attempt carries at most an opaque `trace` reference.
 
 ## Actor and descriptor
 
@@ -57,7 +57,7 @@ When someone actually investigates an adverse fact, they may append an attributi
 ## Failure attribution: <id>
 
 - Requirement: `<requirement-id>`
-- Adverse fact: requirement-status | check-result | verification-challenge-result | requirement-review `<exact reference>`
+- Adverse fact: requirement-status | check-result | verification-challenge-result | verification-review | realization-review `<exact reference>`
 - Investigator: <name>
 - Agent kind: human | model | none
 - Model: <canonical id> | none

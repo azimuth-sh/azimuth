@@ -22,7 +22,7 @@ fn azimuth(arguments: &[&str]) -> Output {
         .unwrap()
 }
 
-fn write_model(root: &std::path::Path, criticality: &str) -> PathBuf {
+fn write_model(root: &std::path::Path, labels: &str) -> PathBuf {
     let model = root.join("model");
     fs::create_dir_all(model.join("sample")).unwrap();
     fs::write(
@@ -30,7 +30,7 @@ fn write_model(root: &std::path::Path, criticality: &str) -> PathBuf {
         format!(
             "# Spec: sample\n\n\
              ## Requirement: visible\n\
-             Criticality: {criticality}\n\n\
+             {labels}\n\
              The system SHALL expose its state.\n\n\
              ### Scenario: state-is-visible\n\
              Event: the state is requested\n\
@@ -79,7 +79,7 @@ fn removed_commands_and_positional_validator_ids_fail_closed() {
 #[test]
 fn export_preserves_current_shape_without_retired_evidence_keys() {
     let root = root();
-    let model = write_model(&root, "routine");
+    let model = write_model(&root, "");
     let output = azimuth(&["export", "--model", model.to_str().unwrap()]);
     assert!(output.status.success());
     let rendered = String::from_utf8(output.stdout).unwrap();
@@ -102,15 +102,15 @@ fn only_export_is_a_populated_two_spec_graph_closure() {
         fs::write(
             package.join("spec.md"),
             format!(
-                "# Spec: {name}\n\n## Invariant: {name}-holds\nCriticality: routine\n\
+                "# Spec: {name}\n\n## Invariant: {name}-holds\n\
                  Over: {name}/surface\n\nThe {name} surface SHALL hold.\n"
             ),
         )
         .unwrap();
         fs::write(
-            package.join("design.md"),
+            package.join("realization.md"),
             format!(
-                "# Design: {name}\n\n## Requirement: {name}-holds\n\
+                "# Realization: {name}\n\n## Requirement: {name}-holds\n\
                  Mechanism: {name}-mechanism\nEnforcement: schema\nBinding: {name}-artifact\n\n\
                  The artifact makes the invariant structural.\n"
             ),
@@ -192,7 +192,7 @@ fn only_export_is_a_populated_two_spec_graph_closure() {
 #[test]
 fn strict_manifest_ingestion_accepts_check_linkage_and_rejects_alpha_one_keys() {
     let root = root();
-    let model = write_model(&root, "routine");
+    let model = write_model(&root, "");
     let manifest = root.join("manifest.json");
     fs::write(root.join("workspace.json"), r#"{"format":"azimuth-workspace","version":2,"areas":[{"id":"tests","mounts":[{"id":"source","path":"tests"}]}],"surfaces":[],"realization_obligations":[]}"#).unwrap();
     fs::write(
@@ -240,9 +240,9 @@ fn strict_manifest_ingestion_accepts_check_linkage_and_rejects_alpha_one_keys() 
 }
 
 #[test]
-fn retired_verification_and_judgment_facets_fail_explicitly() {
+fn verification_without_the_account_format_fails_explicitly() {
     let root = root();
-    let model = write_model(&root, "routine");
+    let model = write_model(&root, "");
     let package = model.join("sample");
     fs::write(
         package.join("verification.md"),
@@ -251,21 +251,11 @@ fn retired_verification_and_judgment_facets_fail_explicitly() {
     .unwrap();
     let old_verification = azimuth(&["validate", "--model", model.to_str().unwrap()]);
     assert_eq!(old_verification.status.code(), Some(2));
-    assert!(String::from_utf8(old_verification.stderr)
-        .unwrap()
-        .contains("unrecognized heading `## Requirement:"));
-
-    fs::remove_file(package.join("verification.md")).unwrap();
-    fs::write(
-        package.join("judgments.md"),
-        "# Judgments: sample\n\n## Requirement: state-is-visible\nVerdict: toothy\n",
-    )
-    .unwrap();
-    let old_judgment = azimuth(&["validate", "--model", model.to_str().unwrap()]);
-    assert_eq!(old_judgment.status.code(), Some(2));
-    assert!(String::from_utf8(old_judgment.stderr)
-        .unwrap()
-        .contains("unknown review declaration"));
+    let stderr = String::from_utf8(old_verification.stderr).unwrap();
+    assert!(
+        stderr.contains("expected: at least one `## Requirement verification:`"),
+        "{stderr}"
+    );
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -300,7 +290,7 @@ fn assert_no_retired_keys(value: &azimuth::json::Json) {
 #[test]
 fn validate_reports_clean_and_finding_exit_classes() {
     let root = root();
-    let model = write_model(&root, "routine");
+    let model = write_model(&root, "");
     let clean = azimuth(&["validate", "--model", model.to_str().unwrap()]);
 
     assert!(clean.status.success());
@@ -308,7 +298,7 @@ fn validate_reports_clean_and_finding_exit_classes() {
         .unwrap()
         .contains("no findings"));
 
-    write_model(&root, "standard");
+    write_model(&root, "Verification: reviewed\n");
     let finding = azimuth(&["validate", "--model", model.to_str().unwrap()]);
     let stdout = String::from_utf8(finding.stdout).unwrap();
     assert_eq!(finding.status.code(), Some(1));
@@ -324,7 +314,7 @@ fn validate_reports_clean_and_finding_exit_classes() {
 #[test]
 fn traceability_report_writes_only_when_out_is_supplied() {
     let root = root();
-    let model = write_model(&root, "routine");
+    let model = write_model(&root, "");
     let stdout_report = azimuth(&["report", "traceability", "--model", model.to_str().unwrap()]);
     assert!(stdout_report.status.success());
     assert!(!stdout_report.stdout.is_empty());
@@ -362,19 +352,13 @@ fn init_scaffolds_a_model_that_the_printed_next_command_validates() {
     let hint = String::from_utf8(initialized.stdout).unwrap();
     assert!(hint.contains("next: azimuth validate"));
 
-    // The scaffold must satisfy the current Decision Standards grammar, not a retired one.
-    let standards = azimuth_root.join("standards/verification.md");
-    let scaffolded = fs::read_to_string(&standards).unwrap();
-    assert!(scaffolded.starts_with("# Decision policies and Challenge schedule\n"));
-    assert!(scaffolded.contains("## Challenge Schedule: current"));
+    assert!(!azimuth_root.join("standards").exists());
 
     // Running exactly what init told the operator to run must succeed on the untouched scaffold.
     let validated = azimuth(&[
         "validate",
         "--model",
         azimuth_root.join("model").to_str().unwrap(),
-        "--standards",
-        standards.to_str().unwrap(),
         "--workspace",
         azimuth_root.join("workspace.json").to_str().unwrap(),
     ]);

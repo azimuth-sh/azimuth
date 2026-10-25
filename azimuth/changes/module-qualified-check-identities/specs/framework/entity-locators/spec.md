@@ -1,7 +1,6 @@
 # Intent delta: framework/entity-locators
 
 ## Add requirement: entity-identity-is-independent-of-organization
-Criticality: routine
 
 Within one complete project account, every Claim, Case, Mechanism and Check has a declared stable identity in its explicit typed namespace. Current module membership and Case parent relationships are separate from identity; moving or regrouping an entity changes organization without renaming the entity or its source references. Cross-project resolution requires explicit project context, and historical revision context is explicit when needed.
 

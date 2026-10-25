@@ -1,8 +1,8 @@
 # Work Provenance
 
-Work Provenance is a ledger of completed model-shaping workflow attempts: which action was performed with which outcome, by which execution instance and what kind of agent, when, and what it used and produced. It is a separate domain from assurance. **Nothing in it is ever an input to Requirement Review currentness, Requirement Status, acceptance or any other assessment.** Provenance never enters a model, Requirement, review, workflow result or attempt fingerprint.
+Work Provenance is a ledger of completed model-shaping workflow attempts: which action was performed with which outcome, by which execution instance and what kind of agent, when, and what it used and produced. It is a separate domain from assurance. **Nothing in it is ever an input to review currentness, Requirement Status, acceptance or any other assessment.** Provenance never enters a model, Requirement, review, workflow result or attempt fingerprint.
 
-The ledger records activities, not their products. A Requirement Review, a design or an implementation is an entity that lives in its own domain; the ledger refers to it by fingerprint. An attempt carries one summary of the model work it took (`usage`: token and call counts); everything finer, including per-call telemetry, transcripts, tool inputs and cost, is out of scope, and an attempt carries at most an opaque `trace` reference to it.
+The ledger records activities, not their products. A review, a realization or an implementation is an entity that lives in its own domain; the ledger refers to it by fingerprint. An attempt carries one summary of the model work it took (`usage`: token and call counts); everything finer, including per-call telemetry, transcripts, tool inputs and cost, is out of scope, and an attempt carries at most an opaque `trace` reference to it.
 
 Background and decisions: `azimuth/explorations/work-provenance/`.
 
@@ -70,7 +70,7 @@ The workflow instance, handoff and result formats are version 3. Version 1 and 2
   "handoff_captured_at_ms": 1761200000000,
   "recorded_at_ms": 1761200400000,
   "agent": { …descriptor without format/version/trace… },
-  "guidance": [{"kind": "skill", "id": "azimuth-review-requirement", "fingerprint": "sha256:…"}],
+  "guidance": [{"kind": "skill", "id": "azimuth-review-verification", "fingerprint": "sha256:…"}],
   "trace": null,
   "usage": null
 }
@@ -154,7 +154,7 @@ By default it reads `<change>/.azimuth/workflow.json` and follows `predecessor.r
 - `sequence` is the 1-based position in the instance history. `target` is the work target flattened to sorted `{name, value}` string pairs; nested values are rendered as canonical JSON.
 - `scope` is derived from the target: `requirement` when it names a Requirement, else `check`, `verification-challenge`, `module`, and finally `change`.
 - `report` is the authored result's `report`, or `null` when the authored file is absent, no longer matches its recorded fingerprint, or has none. The file resolves relative to its own instance file's directory, so retained snapshots must stay beside the instance they belong to.
-- `used` are the attempt's recorded inputs; `generated` are its output records. `record` names a selected review-bundle entry and `record_fingerprint` is that native record's own fingerprint (for a Requirement Review, its review fingerprint); both are `null` otherwise. This is how a stored review is linked to the attempt that produced it.
+- `used` are the attempt's recorded inputs; `generated` are its output records. `record` names a selected review-bundle entry and `record_fingerprint` is that native record's own fingerprint (for a Verification or Realization Review, its review fingerprint); both are `null` otherwise. This is how a stored review is linked to the attempt that produced it.
 - Version 1 and 2 history entries export with every descriptor field `unknown`, both times and `usage` `null`, and `guidance` `[]`.
 
 The ledger fingerprint is the canonical fingerprint of the ledger JSON. The ledger is append-only across exports: an attempt id, once exported, keeps identical content.
@@ -187,7 +187,7 @@ An optional, append-only record by which an investigator names the attempts beli
 Substantive Markdown.
 ```
 
-Adverse fact kinds: `requirement-status | check-result | verification-challenge-result | requirement-review`, with an exact reference string. `Confidence` is `low | medium | high`. At least one `Caused` or `Allowed through` attempt is required. `Revises` names an earlier attribution id. Descriptor lines are recorded with basis `declared`, or `unknown` when `none`.
+Adverse fact kinds: `requirement-status | check-result | verification-challenge-result | verification-review | realization-review`, with an exact reference string. `Confidence` is `low | medium | high`. At least one `Caused` or `Allowed through` attempt is required. `Revises` names an earlier attribution id. Descriptor lines are recorded with basis `declared`, or `unknown` when `none`.
 
 ```text
 azimuth provenance attributions --input azimuth/provenance/failure-attributions.md [--out <file>]
@@ -251,7 +251,7 @@ The Requirement history follows the release lineage. Releases are ordered by `in
 }
 ```
 
-The authority projection carries a top-level `requirement_intents: [{"id", "fingerprint"}]`, the Requirement intent digest, outside every review dependency packet, so adding it never stales a Requirement Review.
+The authority projection carries a top-level `requirement_intents: [{"id", "fingerprint"}]`, the Requirement intent digest, outside every review dependency packet, so adding it never stales a review.
 
 ## Finalization closure boundary
 

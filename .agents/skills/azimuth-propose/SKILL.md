@@ -53,7 +53,6 @@ Add an intent delta only for an observable obligation that will become accepted 
 # Intent delta: <spec-id>
 
 ## Add requirement: <falsifiable-requirement-id>
-Criticality: routine
 
 Non-empty free-form normative Markdown stating this Requirement.
 
@@ -64,14 +63,14 @@ Non-empty free-form normative Markdown stating this Scenario.
 Follow these rules:
 
 - Use `## Add requirement:` and `### Add scenario:` exactly. The retired `Claim`/`Case` syntax (`## Claim:`, `### Case:`, `## Add claim:`, `### Add case:`) is rejected in active artifacts; migrate any remaining occurrence with `azimuth migrate plan` and `azimuth migrate apply` instead of authoring it.
-- Give every added Requirement `Criticality: routine` during the current fast-moving alpha.
-- Give each Requirement one or more Scenarios. A Requirement owns governance and criticality; Scenarios express distinct normative conditions within its predicate.
+- Declare no `Realization:` or `Verification:` line on an added framework Requirement during the current fast-moving alpha unless the change deliberately raises its rigor; when it does, place `Realization: reviewed` and/or `Verification: reviewed` directly under the Requirement heading.
+- Give each Requirement one or more Scenarios. A Requirement owns governance and its review declarations; Scenarios express distinct normative conditions within its predicate.
 - Write one independently governable, falsifiable proposition per Requirement. Split conjunctions that carry different consequences, owners or acceptance decisions.
 - Make Requirement and Scenario ids lower-kebab, proposition-like and visibly distinct. Scenarios must stand alone in traceability output.
 - Put universal meaning in the Requirement and materially distinct normative conditions in Scenarios. Scenarios describe behavior, never test mechanics, source paths or implementation structure.
 - Requirement and Scenario bodies are non-empty free-form normative Markdown in any human language. Core preserves and fingerprints their prose, tables, diagrams and code fences without interpreting natural-language keywords, translations or notation. Reserve `# Spec:`, `## Requirement:` or `## Invariant:` and `### Scenario:` for structure; use level-four headings or fenced content inside a body. Keep orientation, rationale and generated duplicate views outside normative bodies.
-- Do not add package `verification.md`, Checks, Evidence Bindings, Qualifications or Requirement Judgments for routine Requirements. Ordinary engineering checks remain outside the Azimuth evidence graph.
-- The current delta parser machine-projects whole Requirement additions and criticality changes. Do not invent modify, remove, rename or add-Scenario-to-existing-Requirement operations. If the transition requires one, surface the parser/model limitation and resolve it explicitly before proceeding.
+- Do not add package `verification.md`, Checks or Evidence Bindings for a Requirement that does not declare `Verification:`. Ordinary engineering checks remain outside the Azimuth evidence graph.
+- The delta parser machine-projects only the operations in `azimuth reference show intent-delta`; a rigor change is an ordinary `## Replace requirement:` whose labels include `Realization:` or `Verification:`. Do not invent other operations. If the transition requires one, surface the parser/model limitation and resolve it explicitly before proceeding.
 
 When accepted intent truly does not change, add this metadata directly after `Status: proposed` and before the first section instead of creating an empty or cosmetic delta:
 
@@ -113,7 +112,7 @@ Replace the generated placeholders in `plan.md` with dependency-ordered, checkab
 4. application behavior, interfaces and integrations;
 5. ordinary engineering checks permitted by repository instructions;
 6. emitted manifests and `azimuth validate` for the resulting current account;
-7. current `spec.md` and `design.md` facet updates;
+7. current `spec.md` and `realization.md` facet updates;
 8. documentation, operational notes and removal of temporary compatibility paths owned by this change;
 9. outcome recording and readiness for finalization, without finalizing or archiving.
 

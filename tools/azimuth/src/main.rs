@@ -57,7 +57,7 @@ USAGE
     azimuth run affected --input <file> [--out <file>]
     azimuth run snapshot --project-id <id> --verification-target <file> [model options] [--out <file>]
     azimuth run select --policy <file> [model options] [--config <file>] [--out <file>]
-    azimuth run plan --request <file>|--selection <file> [--model <dir>] [--standards <file>]
+    azimuth run plan --request <file>|--selection <file> [--model <dir>]
         [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
         [--unit-rule <file>] [--checkout <dir>] [--unit-explanation <file>]
     azimuth run unit-inputs --rule <file> [--checkout <dir>] [--out <file>]
@@ -106,11 +106,9 @@ USAGE
 OPTIONS
     --project <file>      project catalog; requires --workset
     --workset <file>      exact federated assessment inputs
-    --assurance-snapshot <file>  native Requirement Review/Status records for acceptance validation
+    --assurance-snapshot <file>  native Verification Review/Status records for acceptance validation
     --scope <scope>       structure (default) or acceptance; validation and finalization boundaries
     --model <dir>          current model packages (default: azimuth/model)
-    --standards <file>     decision policies and Challenge schedule
-                           (default: azimuth/standards/verification.md)
     --workspace <file>     areas, surfaces and obligations (default: workspace.json beside model/)
     --manifest <file>      a linkage manifest; repeatable
     --support <file>       an account support manifest; repeatable for validate/export/report
@@ -127,7 +125,7 @@ RUN PLAN REQUESTS
 const RUN_USAGE: &str = "\
 USAGE
     azimuth run select --policy <file> [model options] [--config <file>] [--out <file>]
-    azimuth run plan --request <file>|--selection <file> [--model <dir>] [--standards <file>]
+    azimuth run plan --request <file>|--selection <file> [--model <dir>]
         [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
     azimuth run execute --plan <file> [--predecessor <bundle>...]
         [--config <file>] [--out <file>]
@@ -230,7 +228,6 @@ struct Options {
     project: Option<PathBuf>,
     workset: Option<PathBuf>,
     model: PathBuf,
-    standards: PathBuf,
     workspace: PathBuf,
     manifests: Vec<PathBuf>,
     supports: Vec<PathBuf>,
@@ -455,9 +452,8 @@ fn command_init(args: &[String]) -> Result<ExitCode, String> {
         println!("  {}", path.display());
     }
     println!(
-        "next: azimuth validate --model {} --standards {} --workspace {}",
+        "next: azimuth validate --model {} --workspace {}",
         root.join("model").display(),
-        root.join("standards/verification.md").display(),
         root.join("workspace.json").display()
     );
     Ok(ExitCode::SUCCESS)
@@ -1202,7 +1198,6 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
                     "--project",
                     "--workset",
                     "--model",
-                    "--standards",
                     "--workspace",
                     "--manifest",
                     "--support",
@@ -1352,7 +1347,6 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
     }
     let loaded = match azimuth::load(
         &options.model,
-        &options.standards,
         &options.workspace,
         &options.manifests,
         &options.only,
@@ -1402,7 +1396,7 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
     if acceptance_boundary {
         verify_assurance_snapshot(&loaded.model, &options)?;
         (acceptances, ratified) = change_acceptances(&root, &report, &loaded.model)?;
-        azimuth::change::waive_accepted_requirements(&mut findings, &acceptances, &ratified);
+        azimuth::change::waive_accepted_requirements(&mut findings, &ratified);
     }
     let projection = match azimuth::intent::project(&root, &options.model, &loaded.model) {
         Ok(projection) => projection,
@@ -1527,27 +1521,15 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
                     "planned"
                 };
                 println!(
-                    "  add {}#{} · {} · {} Scenario(s) · {state} · {}",
+                    "  add {}#{} · {} · {} Scenario(s) · {state}",
                     addition.spec,
                     addition.requirement,
-                    addition.criticality.name(),
-                    addition.scenarios.len(),
-                    change_obligations(addition.criticality)
-                );
-            }
-            for change in &report.criticality_changes {
-                let state = if change.applied { "applied" } else { "planned" };
-                println!(
-                    "  criticality {}#{} · {} → {} · {state} · {}",
-                    change.spec,
-                    change.requirement,
-                    change.from.name(),
-                    change.to.name(),
-                    change_obligations(change.to)
+                    change_obligations(addition.realization, addition.verification),
+                    addition.scenarios.len()
                 );
             }
             for (operation, applied) in &projection.operations {
-                if !operation.starts_with("add ") && !operation.starts_with("criticality ") {
+                if !operation.starts_with("add ") {
                     println!(
                         "  {operation} · {}",
                         if *applied { "applied" } else { "planned" }
@@ -1603,6 +1585,15 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
             }
             let (fingerprint, finalization) =
                 azimuth::change::finalization(&loaded.model, &findings, &acceptances, &ratified);
+            let updates = azimuth::change::head_updates(&loaded.model, &ratified);
+            for path in azimuth::review_heads::write(
+                &options.model,
+                &loaded.model.review_heads,
+                &updates,
+                &|_| true,
+            )? {
+                println!("wrote review head {}", path.display());
+            }
             std::fs::write(root.join("finalization.json"), finalization).map_err(|error| {
                 format!("cannot write {}/finalization.json: {error}", root.display())
             })?;
@@ -1751,7 +1742,7 @@ fn command_account_change(
             }
         };
     if projection.files.is_empty() {
-        return Err("change has no design, verification or judgments account deltas".into());
+        return Err("change has no realization or verification account deltas".into());
     }
     let preview = projection.preview();
     if operation == "account-preview" {
@@ -2005,11 +1996,15 @@ fn one_position<'a>(values: &'a [String], error: &str) -> Result<&'a str, String
     }
 }
 
-fn change_obligations(criticality: azimuth::model::Criticality) -> &'static str {
-    match criticality {
-        azimuth::model::Criticality::Routine => "intent only",
-        azimuth::model::Criticality::Standard => "realization + qualified verification",
-        azimuth::model::Criticality::Critical => "realization + design + qualified verification",
+fn change_obligations(
+    realization: Option<azimuth::model::Rigor>,
+    verification: Option<azimuth::model::Rigor>,
+) -> &'static str {
+    match (realization, verification) {
+        (None, None) => "intent only",
+        (Some(_), None) => "realization review",
+        (None, Some(_)) => "verification review",
+        (Some(_), Some(_)) => "realization and verification reviews",
     }
 }
 
@@ -2042,7 +2037,6 @@ struct RunPlanOptions {
     selection: bool,
     request: PathBuf,
     model: PathBuf,
-    standards: PathBuf,
     workspace: PathBuf,
     manifests: Vec<PathBuf>,
     config: PathBuf,
@@ -2386,7 +2380,6 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
     let mut request = None;
     let mut selection = false;
     let mut model = None;
-    let mut standards = None;
     let mut workspace = None;
     let mut manifests = Vec::new();
     let mut config = None;
@@ -2437,11 +2430,6 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
                 PathBuf::from(argument_value(args, index, option)?),
                 option,
             )?,
-            "--standards" => set_once_path(
-                &mut standards,
-                PathBuf::from(argument_value(args, index, option)?),
-                option,
-            )?,
             "--workspace" => set_once_path(
                 &mut workspace,
                 PathBuf::from(argument_value(args, index, option)?),
@@ -2470,7 +2458,6 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
     }
     let request = request.ok_or("run plan needs `--request <file>`")?;
     let model = model.unwrap_or_else(|| PathBuf::from("azimuth/model"));
-    let standards = standards.unwrap_or_else(|| PathBuf::from("azimuth/standards/verification.md"));
     let workspace = workspace.unwrap_or_else(|| {
         model
             .parent()
@@ -2480,7 +2467,6 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
     let config = config.unwrap_or_else(default_adapter_configuration);
     let input_paths = std::iter::once(&request)
         .chain(std::iter::once(&model))
-        .chain(std::iter::once(&standards))
         .chain(std::iter::once(&workspace))
         .chain(manifests.iter())
         .chain(supports.iter())
@@ -2504,7 +2490,6 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
         selection,
         request,
         model,
-        standards,
         workspace,
         manifests,
         config,
@@ -2603,7 +2588,6 @@ fn load_run_model(options: &RunPlanOptions) -> Result<azimuth::Loaded, String> {
     } else {
         azimuth::load_with_support(
             &options.model,
-            &options.standards,
             &options.workspace,
             &options.manifests,
             &options.supports,
@@ -3319,7 +3303,6 @@ fn parse_options(args: &[String], allow_scope: bool) -> Result<Options, String> 
         project: None,
         workset: None,
         model: PathBuf::from("azimuth/model"),
-        standards: PathBuf::from("azimuth/standards/verification.md"),
         workspace: PathBuf::new(),
         manifests: Vec::new(),
         supports: Vec::new(),
@@ -3356,10 +3339,6 @@ fn parse_options(args: &[String], allow_scope: bool) -> Result<Options, String> 
             }
             "--model" => {
                 o.model = PathBuf::from(value("--model")?);
-                i += 2;
-            }
-            "--standards" => {
-                o.standards = PathBuf::from(value("--standards")?);
                 i += 2;
             }
             "--workspace" => {
@@ -3419,11 +3398,11 @@ fn parse_options(args: &[String], allow_scope: bool) -> Result<Options, String> 
         && args.iter().any(|arg| {
             matches!(
                 arg.as_str(),
-                "--model" | "--workspace" | "--standards" | "--manifest" | "--support" | "--only"
+                "--model" | "--workspace" | "--manifest" | "--support" | "--only"
             )
         })
     {
-        return Err("project validation derives complete model, standards, mounts and support from the workset; omit local model options".into());
+        return Err("project validation derives complete model, mounts and support from the workset; omit local model options".into());
     }
     if o.workspace.as_os_str().is_empty() {
         o.workspace = o
@@ -3449,12 +3428,8 @@ fn report_findings(model: &azimuth::model::Model, findings: &[validation::Findin
             finding.path.clone()
         };
         let requirement = finding.requirement.clone().unwrap_or_else(|| "-".into());
-        let level = finding
-            .criticality
-            .map(|criticality| format!(" ({})", criticality.name()))
-            .unwrap_or_default();
         println!(
-            "{where_}: {} {} {} {requirement}{level}\n    {}\n    help: {}",
+            "{where_}: {} {} {} {requirement}\n    {}\n    help: {}",
             finding.severity.name(),
             finding.kind.category().name(),
             finding.kind.name(),
@@ -3492,13 +3467,10 @@ fn command_validate(options: Options) -> Result<ExitCode, String> {
     verify_assurance_snapshot(&loaded.model, &options)?;
     if options.project.is_none() {
         if let Some(changes) = options.model.parent().map(|root| root.join("changes")) {
-            let acceptances =
-                azimuth::change::acceptances(&changes).map_err(|errors| errors.join("\n"))?;
             let reviews = azimuth::change::reviews(&changes).map_err(|errors| errors.join("\n"))?;
             let bundles = azimuth::retained_inputs::retained_runs(&changes)?;
-            let ratified =
-                azimuth::change::ratifications(&loaded.model, &acceptances, &reviews, &bundles)?;
-            azimuth::change::waive_accepted_requirements(&mut findings, &acceptances, &ratified);
+            let ratified = azimuth::change::ratifications(&loaded.model, &reviews, &bundles)?;
+            azimuth::change::waive_accepted_requirements(&mut findings, &ratified);
         }
     }
     render_validation(
@@ -3549,8 +3521,9 @@ fn change_acceptances(
     let mut issues = azimuth::change::acceptance_issues(&acceptances, report);
     let reviews = azimuth::change::reviews(changes).map_err(|errors| errors.join("\n"))?;
     let bundles = azimuth::retained_inputs::retained_runs(changes)?;
-    let ratified = azimuth::change::ratifications(model, &acceptances, &reviews, &bundles)?;
+    let ratified = azimuth::change::ratifications(model, &reviews, &bundles)?;
     issues.extend(azimuth::change::ratification_issues(
+        model,
         &acceptances,
         &ratified,
         report,
@@ -3573,8 +3546,7 @@ fn reject_validation_output(
         .chain(options.project.iter())
         .chain(options.workset.iter())
         .chain(options.assurance_snapshot.iter())
-        .chain(std::iter::once(&options.workspace))
-        .chain(std::iter::once(&options.standards));
+        .chain(std::iter::once(&options.workspace));
     reject_output_input_equality(options.out.as_ref(), inputs, "validation")?;
     if let (Some(project), Some(workset)) = (&options.project, &options.workset) {
         let assembly =
@@ -3620,7 +3592,6 @@ fn load_validation_inputs(options: &Options) -> Result<azimuth::Loaded, String> 
     } else {
         azimuth::load_with_support(
             &options.model,
-            &options.standards,
             &options.workspace,
             &options.manifests,
             &options.supports,
@@ -3684,7 +3655,6 @@ fn command_change_validate(root: &std::path::Path, options: &Options) -> Result<
         project: None,
         workset: None,
         model: stage.0.clone(),
-        standards: options.standards.clone(),
         workspace: options.workspace.clone(),
         manifests: options.manifests.clone(),
         supports: options.supports.clone(),
@@ -3951,7 +3921,6 @@ fn command_report(args: &[String]) -> Result<ExitCode, String> {
     let options = parse_options(&args[1..], false)?;
     let loaded = match azimuth::load_with_support(
         &options.model,
-        &options.standards,
         &options.workspace,
         &options.manifests,
         &options.supports,
@@ -3978,7 +3947,6 @@ fn command_report(args: &[String]) -> Result<ExitCode, String> {
 fn command_export(options: Options) -> Result<ExitCode, String> {
     let loaded = match azimuth::load_with_support(
         &options.model,
-        &options.standards,
         &options.workspace,
         &options.manifests,
         &options.supports,
@@ -4303,7 +4271,6 @@ fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
         }
         azimuth::load_with_support(
             &options.model,
-            &options.standards,
             &options.workspace,
             &options.manifests,
             &options.supports,

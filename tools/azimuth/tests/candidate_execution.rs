@@ -6,7 +6,7 @@ use azimuth::{
 const SHA: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 fn model() -> Model {
     Model {
-        specs: vec![parse_spec("spec.md", "# Spec: catalog\n\n## Requirement: restricted-access\nCriticality: critical\n\nAccess SHALL be restricted.\n\n### Scenario: rejected-access\nEvent: rejected caller requests data\nRequired: no data is returned\n").unwrap()],
+        specs: vec![parse_spec("spec.md", "# Spec: catalog\n\n## Requirement: restricted-access\nVerification: reviewed\n\nAccess SHALL be restricted.\n\n### Scenario: rejected-access\nEvent: rejected caller requests data\nRequired: no data is returned\n").unwrap()],
         account_verifications: vec![parse_account_verification("verification.md", "# Verification: catalog\n\n## Requirement verification: restricted-access\n\n### Check: rejects-access\n- Evidence bindings:\n  - Scenario: `rejected-access`\n    - Contribution: Establishes rejection.\n\nExercise rejection and a successful control.\n").unwrap()],
         ..Model::default()
     }

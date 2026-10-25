@@ -3,7 +3,6 @@
 ## Replace requirement: claims-own-governance-and-cases-own-addressability
 From: sha256:d5af7f75d39c4791dd3640b2fe98282384f59e6053f637cfb499de35dab7b675
 Because: Claim-level review and Subject-specific health replace total Judgment without moving governance to Cases.
-Criticality: routine
 
 Azimuth SHALL govern one product proposition as a Claim while retaining each normative condition/outcome clause as an addressable Case within that Claim.
 
@@ -14,7 +13,6 @@ Given a Claim with several materially different conditions, when its account is 
 ## Replace requirement: credibility-separates-method-from-applicability
 From: sha256:7eb8f1eb57fb1a4f7900102015468098cf355757022d7d27a5c840d8bc75cef2
 Because: Method credibility and Case contribution remain review concerns without requiring separate Check review records.
-Criticality: routine
 
 Azimuth SHALL retain Check-method credibility and each Check-to-Case contribution as distinct concerns within one Claim Review. Their separation SHALL NOT require Method Qualification, Applicability Decision or Check Review records.
 
@@ -37,7 +35,6 @@ Given retained Method Qualification, Applicability Decision or Claim Judgment re
 ## Replace requirement: challenges-target-semantic-decisions
 From: sha256:8a98eebfc9dcfd22e3ab2460a61a4a98b092f9c398d0af8b17f1c0aa1f61a06d
 Because: Machine Challengers target exact Claim Review or Claim Health records rather than removed decision kinds.
-Criticality: routine
 
 Azimuth SHALL target each machine Challenge Result at one exact Claim Review or Claim Health fingerprint. It SHALL retain the execution Subject separately from the assessment target and expose objections without manufacturing additional Challenge Results or positive evidence.
 

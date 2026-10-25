@@ -40,7 +40,7 @@ The tool accepts only version 2 and reports any other version as `unsupported-ve
 
 An area is a stable architectural ownership namespace, not a spec domain or evidence scope. Its mounts are normalized workspace-relative source locators. Local checks derive a relation's area from its file and the longest containing mount; tags do not repeat the area. The shape deliberately matches project-catalog areas except that a local workspace has no repository field.
 
-Areas may exist without participating in a surface or obligation. Routine Requirements do not acquire area declarations or linkage obligations.
+Areas may exist without participating in a surface or obligation. A Requirement that does not declare `Realization:` acquires no area declarations or linkage obligations.
 
 ## Surfaces
 
@@ -50,9 +50,9 @@ A site-domain Requirement's `Over:` value names a surface id. Every contribution
 
 ## Realization obligations
 
-For an adopted Requirement-first design account, `Areas:` under a Requirement design is the authoritative realization obligation. The workspace still declares Areas and mounts, but must not repeat that Requirement's obligation in `realization_obligations`; duplicate authoring is an error. The derived obligation appears in model export and participates in missing-realization validation and Requirement Judgment freshness.
+For a Requirement-first realization account, `Areas:` under a Requirement realization is the authoritative realization obligation. The workspace still declares Areas and mounts, but must not repeat that Requirement's obligation in `realization_obligations`; duplicate authoring is an error. The derived obligation appears in model export and participates in missing-realization validation.
 
-The workspace `realization_obligations` list remains available for modules that have not migrated to Requirement-first design. An optional realization obligation applies to one non-routine parent Requirement. Every named area must
+The workspace `realization_obligations` list serves modules without a Requirement-first realization. An optional realization obligation applies to one parent Requirement that declares `Realization:`. Every named area must
 contain at least one `Realizes` site for the Requirement. The site's area is derived from its source
 locator. The declaration has no role vocabulary and does not assign Scenario or evidentiary meaning.
 

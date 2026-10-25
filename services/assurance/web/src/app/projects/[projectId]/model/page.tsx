@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { requireViewer } from '@/lib/auth';
-import { readProject, routeFingerprint, type Page, type RequirementReviewState, type VerificationTargetState, type DeploymentCheckPolicy, type ModelRevision, type ReleaseSummary, type ReleaseDetail, type DeploymentReference as Deployment, type RequirementWorkHistory } from '@/lib/assurance';
+import { readProject, routeFingerprint, type Page, type RequirementReviewEntry, type RequirementReviewState, type VerificationTargetState, type DeploymentCheckPolicy, type ModelRevision, type ReleaseSummary, type ReleaseDetail, type DeploymentReference as Deployment, type RequirementWorkHistory } from '@/lib/assurance';
 import { requirementStatus } from '@/lib/production';
 import { ModelNavigation } from '@/components/model-navigation';
 import { ModelWorkspace } from '@/components/model-workspace';
@@ -14,6 +14,7 @@ import { Markdown } from '@/components/markdown';
 import { LocalTime } from '@/components/local-time';
 import { WorkHistory, ReviewAttempt, reviewAttempt } from '@/components/work-history';
 import { shortIdentifier } from '@/lib/identifier';
+import { CodeDrift, ReviewChips, reviewKindNames, reviewLabel, reviewTone, type ReviewKind } from '@/components/review-dimensions';
 
 export const dynamic = 'force-dynamic';
 type Catalog = {
@@ -149,8 +150,10 @@ export default async function ModelPage({ params, searchParams }: {
   const assessmentFresh = deploymentStatus?.assessment?.state === 'ready' && deploymentStatus.assessment.valid_until_ms !== null && deploymentStatus.assessment.valid_until_ms > Date.now();
   const state = assessmentFresh ? deploymentStatus?.requirements.find(c => c.requirement === requirement?.id) : undefined;
   const reviewFresh = reviewState?.assessment?.state === 'ready';
-  const reviewFallback = reviewFresh ? 'missing' : 'Updating';
-  const review = reviewFresh ? reviewState?.requirements.find(c => c.requirement === requirement?.id) : undefined;
+  const reviewFallback = reviewFresh ? 'missing' : undefined;
+  const reviewEntry = (id: string | undefined, kind: ReviewKind) => reviewFresh ? reviewState?.requirements.find(c => c.requirement === id && c.kind === kind) : undefined;
+  const verificationReview = reviewEntry(requirement?.id, 'verification-review');
+  const realizationReview = reviewEntry(requirement?.id, 'realization-review');
   const status = requirementStatus(state?.status ?? 'unresolved');
   const systemName = deployment ? deployment.deployment.environment : release ? `Not deployed in ${environment} · definitions only` : `No ${environment} deployment · definitions only`;
   const modelName = version.label;
@@ -161,12 +164,35 @@ export default async function ModelPage({ params, searchParams }: {
   const visibleModules = module ? descendants(module.id) : modules.map(m => m.id);
   const visibleRequirements = definitions.filter(c => !module || modules.some(m => visibleModules.includes(m.id) && m.requirements.includes(c.id)));
   const history = snapshot?.reviews.filter(r => r.requirement === requirement?.id) ?? [];
-  const reviewer = reviewAttempt(workHistory, review?.record?.fingerprint);
+  const reviewSection = (kind: ReviewKind, review: RequirementReviewEntry | undefined) => {
+    const status = review?.assessment ?? reviewFallback;
+    const reviewer = reviewAttempt(workHistory, review?.record?.fingerprint);
+    const record = review?.record;
+    return <section id={kind} className="requirementDetailSection disclosureSection"><Disclosure summary={reviewKindNames[kind]} meta={<><span className={`badge ${reviewTone(status)}`}>{reviewLabel(status)}</span>{typeof record?.reviewer === 'string' && <span>{record.reviewer}</span>}{record?.reviewed_at_ms !== undefined && <LocalTime value={typeof record.reviewed_at_ms === 'number' ? record.reviewed_at_ms : undefined} fallback="Date not recorded" />}</>}>
+      {status === 'not-declared' ? <p className="modelDetailMuted">This Requirement does not declare <code>{kind === 'verification-review' ? 'Verification:' : 'Realization:'}</code>, so no {reviewKindNames[kind].toLowerCase()} is owed.</p> : typeof record?.rationale === 'string' ? <Markdown source={record.rationale} /> : <p className="modelDetailMuted">No review rationale is available.</p>}
+      {kind === 'realization-review' && <CodeDrift drift={review?.code_drift} commit={record?.reviewed_commit} />}
+      {review?.diagnostics.map((d,i) => <p className="reviewDiagnostic" key={i}>{d}</p>)}
+      {record && <dl className="factGrid">
+        <div><dt>Decision</dt><dd>{record.decision ?? 'not recorded'}</dd></div>
+        <div><dt>Reassesses</dt><dd>{record.reassesses ? <code title={record.reassesses}>{shortIdentifier(record.reassesses)}</code> : 'none'}</dd></div>
+        <div><dt>Reviewed dependencies</dt><dd>{record.dependencies_fingerprint ? <code title={record.dependencies_fingerprint}>{shortIdentifier(record.dependencies_fingerprint)}</code> : 'not recorded'}</dd></div>
+        {kind === 'verification-review' ? <div><dt>Challenge basis</dt><dd>{record.challenge_basis?.length ? `${record.challenge_basis.length} Verification Challenge ${record.challenge_basis.length === 1 ? 'Result' : 'Results'}` : 'none'}</dd></div>
+          : <div><dt>Reviewed commit</dt><dd>{record.reviewed_commit ? <code title={record.reviewed_commit}>{shortIdentifier(record.reviewed_commit)}</code> : 'not recorded'}</dd></div>}
+        <div><dt>Issues</dt><dd>{record.issues?.length ? <ul className="reviewArtifacts">{record.issues.map(issue => <li key={issue.id}><code>{issue.id}</code> {issue.blocking ? 'blocking · ' : ''}{issue.reason}</li>)}</ul> : 'none'}</dd></div>
+        {record.dispositions?.length ? <div><dt>Dispositions</dt><dd><ul className="reviewArtifacts">{record.dispositions.map(disposition => <li key={disposition.issue}><code title={disposition.issue}>{shortIdentifier(disposition.issue)}</code> {disposition.outcome}</li>)}</ul></dd></div> : null}
+        <div><dt>Reviewed artifacts</dt><dd>{record.artifacts?.length ? <ul className="reviewArtifacts">{record.artifacts.map(artifact => <li key={`${artifact.id}:${artifact.digest}`}><code title={artifact.digest}>{artifact.id}</code> {artifact.locator}</li>)}</ul> : 'none'}</dd></div>
+      </dl>}
+      {reviewer && <ReviewAttempt attempt={reviewer} />}
+      <p className="modelDetailMuted">{kind === 'verification-review' ? 'A Verification Review assesses whether the Checks credibly verify the Scenarios. Requirement Status is computed from applicable evidence for the selected deployment and requires an accepted current Verification Review.' : 'A Realization Review assesses whether the code at the realization sites does what the Scenarios say. It is an opinion about a code snapshot: it never makes a Requirement satisfied, and code changed since the reviewed commit is information, not staleness.'}</p>
+      {record && <Disclosure summary="Review record"><pre className="rawRecord">{JSON.stringify(record,null,2)}</pre></Disclosure>}
+    </Disclosure></section>;
+  };
   const requirementRow = (id: string) => {
     const assessment = assessmentFresh ? deploymentStatus?.requirements.find(c => c.requirement === id) : undefined;
     const status = requirementStatus(assessment?.status ?? 'unresolved');
-    const review = reviewFresh ? reviewState?.requirements.find(c => c.requirement === id) : undefined;
-    return <Link className="modelRequirementRow" href={`${base}&requirement=${encodeURIComponent(id)}`} key={id} scroll={false}><span className={`modelStatusDot ${verificationTarget ? tones[status] : 'neutral'}`} /><div><h3>{title(id)}</h3><p>{assessment?.explanation.summary || (verificationTarget ? 'No assessment available for this system version.' : 'Requirement definition · open a version running in an environment to inspect evidence.')}</p></div><div className="modelRowStatuses"><span className={`badge ${verificationTarget ? tones[status] : 'neutral'}`}>{verificationTarget ? labels[status] : 'Definition'}</span><small>Review: {review?.assessment ?? reviewFallback}</small></div><span aria-hidden="true">›</span></Link>;
+    const verification = reviewEntry(id, 'verification-review')?.assessment ?? reviewFallback;
+    const realization = reviewEntry(id, 'realization-review')?.assessment ?? reviewFallback;
+    return <Link className="modelRequirementRow" href={`${base}&requirement=${encodeURIComponent(id)}`} key={id} scroll={false}><span className={`modelStatusDot ${verificationTarget ? tones[status] : 'neutral'}`} /><div><h3>{title(id)}</h3><p>{assessment?.explanation.summary || (verificationTarget ? 'No assessment available for this system version.' : 'Requirement definition · open a version running in an environment to inspect evidence.')}</p></div><div className="modelRowStatuses"><span className={`badge ${verificationTarget ? tones[status] : 'neutral'}`}>{verificationTarget ? labels[status] : 'Definition'}</span><ReviewChips verification={verification} realization={realization} /></div><span aria-hidden="true">›</span></Link>;
   };
   return <div className="modelPage">
     <header className="modelPageHeading"><div><p className="overline">MODEL WORKSPACE</p><h1>Model</h1></div><Link className="textLink" href={`${root}?environment=${encodeURIComponent(environment)}`}>← Environment overview</Link></header>
@@ -181,27 +207,15 @@ export default async function ModelPage({ params, searchParams }: {
       <section className="modelDetail" aria-label="Selected module or Requirement">
         {requirementId && !requirement ? <div className="panelEmpty"><h2>Requirement not found in this model</h2><Link className="textLink" href={base}>Browse modules →</Link></div> : requirement ? <>
           <h2 className="requirementStatement">{title(requirement.id)}</h2>
-          <section className="requirementStatusSummary" aria-label="Requirement Status"><div><span className={`badge ${verificationTarget ? tones[status] : 'neutral'}`}>{verificationTarget ? labels[status] : 'Definition'}</span><span className="modelDetailMuted">{systemName}</span></div><p>{state?.explanation.summary || (verificationTarget ? 'No Requirement Status is available for this deployment.' : 'Browsing definitions. Open a version running in this environment to inspect Requirement Status and evidence.')}</p><span className="statusLine">{plural(new Set(requirement.bindings.map(b => b.check)).size, 'Check')} · {plural(requirement.scenarios.length, 'Scenario')}</span><span className="reviewSummary">{state?.evaluated_at_ms ? <>Evaluated <LocalTime value={state.evaluated_at_ms} /> · </> : null}Requirement Review: <strong>{review?.assessment ?? reviewFallback}</strong></span></section>
-          <nav className="requirementSections" aria-label="Requirement sections"><a href="#requirement-monitors">Monitoring</a><a href="#requirement-deployment">Deployment</a><a href="#requirement-implementation">Implementation</a><a href="#requirement-statement">Statement</a><a href="#requirement-review">Review</a><a href="#requirement-work-history">Work history</a><Link prefetch={false} href={`${base}&requirement=${encodeURIComponent(requirement.id)}&history=1#requirement-history`}>History</Link></nav>
+          <section className="requirementStatusSummary" aria-label="Requirement Status"><div><span className={`badge ${verificationTarget ? tones[status] : 'neutral'}`}>{verificationTarget ? labels[status] : 'Definition'}</span><span className="modelDetailMuted">{systemName}</span></div><p>{state?.explanation.summary || (verificationTarget ? 'No Requirement Status is available for this deployment.' : 'Browsing definitions. Open a version running in this environment to inspect Requirement Status and evidence.')}</p><span className="statusLine">{plural(new Set(requirement.bindings.map(b => b.check)).size, 'Check')} · {plural(requirement.scenarios.length, 'Scenario')}</span><span className="reviewSummary">{state?.evaluated_at_ms ? <>Evaluated <LocalTime value={state.evaluated_at_ms} /> · </> : null}Verification review: <strong>{reviewLabel(verificationReview?.assessment ?? reviewFallback)}</strong> · Realization review: <strong>{reviewLabel(realizationReview?.assessment ?? reviewFallback)}</strong></span></section>
+          <nav className="requirementSections" aria-label="Requirement sections"><a href="#requirement-monitors">Monitoring</a><a href="#requirement-deployment">Deployment</a><a href="#requirement-implementation">Implementation</a><a href="#requirement-statement">Statement</a><a href="#verification-review">Reviews</a><a href="#requirement-work-history">Work history</a><Link prefetch={false} href={`${base}&requirement=${encodeURIComponent(requirement.id)}&history=1#requirement-history`}>History</Link></nav>
           {state && state.explanation.reasons.length > 0 && <details className="statusReasons"><summary>Why this Requirement is {labels[status].toLowerCase()}</summary><ul>{state.explanation.reasons.map((reason,i) => <li key={`${reason.code}:${i}`}><span>{reason.message}</span>{reason.check && <small>Check: {reason.check}</small>}</li>)}</ul></details>}
           <RequirementVerification bindings={requirement.bindings} checks={model?.authority.checks ?? []} descriptions={catalog?.checks ?? []} scenarios={catalog?.scenarios ?? []} scenarioIds={requirement.scenarios} state={state} evaluatedAt={state?.evaluated_at_ms ?? deploymentStatus?.evaluated_at_ms} hasDeployment={!!verificationTarget} projectRoot={root} />
           <section id="requirement-statement" className="requirementDetailSection disclosureSection"><Disclosure open summary="Statement">{catalog?.requirements.find(c => c.id === requirement.id)?.statement ? <Markdown source={catalog.requirements.find(c => c.id === requirement.id)!.statement} /> : <p className="modelDetailMuted">No statement available for this Requirement.</p>}</Disclosure></section>
-          <section id="requirement-review" className="requirementDetailSection disclosureSection"><Disclosure summary="Requirement Review" meta={<><span className="badge neutral">{review?.assessment ?? reviewFallback}</span>{typeof review?.record?.reviewer === 'string' && <span>{review.record.reviewer}</span>}{review?.record?.reviewed_at_ms !== undefined && <LocalTime value={typeof review.record.reviewed_at_ms === 'number' ? review.record.reviewed_at_ms : undefined} fallback="Date not recorded" />}</>}>
-            {typeof review?.record?.rationale === 'string' ? <Markdown source={review.record.rationale} /> : <p className="modelDetailMuted">No review rationale is available.</p>}
-            {review?.diagnostics.map((d,i) => <p className="reviewDiagnostic" key={i}>{d}</p>)}
-            {review?.record && <dl className="factGrid">
-              <div><dt>Decision</dt><dd>{review.record.decision ?? 'not recorded'}</dd></div>
-              <div><dt>Reassesses</dt><dd>{review.record.reassesses ? <code title={review.record.reassesses}>{shortIdentifier(review.record.reassesses)}</code> : 'none'}</dd></div>
-              <div><dt>Reviewed dependencies</dt><dd>{review.record.dependencies_fingerprint ? <code title={review.record.dependencies_fingerprint}>{shortIdentifier(review.record.dependencies_fingerprint)}</code> : 'not recorded'}</dd></div>
-              <div><dt>Challenge basis</dt><dd>{review.record.challenge_basis?.length ? `${review.record.challenge_basis.length} Verification Challenge ${review.record.challenge_basis.length === 1 ? 'Result' : 'Results'}` : 'none'}</dd></div>
-              <div><dt>Reviewed artifacts</dt><dd>{review.record.artifacts?.length ? <ul className="reviewArtifacts">{review.record.artifacts.map(artifact => <li key={`${artifact.id}:${artifact.digest}`}><code title={artifact.digest}>{artifact.id}</code> {artifact.locator}</li>)}</ul> : 'none'}</dd></div>
-            </dl>}
-            {reviewer && <ReviewAttempt attempt={reviewer} />}
-            <p className="modelDetailMuted">Review assesses the Requirement, implementation and verification. Requirement Status is computed from applicable evidence for the selected deployment.</p>
-            {review?.record && <Disclosure summary="Review record"><pre className="rawRecord">{JSON.stringify(review.record,null,2)}</pre></Disclosure>}
-          </Disclosure></section>
+          {reviewSection('verification-review', verificationReview)}
+          {reviewSection('realization-review', realizationReview)}
           <WorkHistory history={workHistory} />
-          <section id="requirement-history" className="requirementDetailSection"><h3>Review history</h3><p className="modelDetailMuted">Retained Requirement Reviews for this model. They do not override computed deployment Requirement Status.</p>{history.length ? history.map((r,i) => <Disclosure key={String(r.fingerprint ?? i)} summary="Requirement Review" meta={<><span>{String(r.decision ?? 'Recorded')}</span><LocalTime value={typeof r.reviewed_at_ms === 'number' ? r.reviewed_at_ms : undefined} fallback="Date not recorded" /></>}><pre className="rawRecord">{JSON.stringify(r,null,2)}</pre></Disclosure>) : historyRequested ? <p className="modelDetailMuted">No review history recorded for this selection.</p> : <Link className="textLink" prefetch={false} href={`${base}&requirement=${encodeURIComponent(requirement.id)}&history=1#requirement-history`}>Load review history →</Link>}</section>
+          <section id="requirement-history" className="requirementDetailSection"><h3>Review history</h3><p className="modelDetailMuted">Retained Verification and Realization Reviews for this model. They do not override computed deployment Requirement Status.</p>{history.length ? history.map((r,i) => <Disclosure key={String(r.fingerprint ?? i)} summary={reviewKindNames[r.kind as ReviewKind] ?? 'Review'} meta={<><span>{String(r.decision ?? 'Recorded')}</span><LocalTime value={typeof r.reviewed_at_ms === 'number' ? r.reviewed_at_ms : undefined} fallback="Date not recorded" /></>}><pre className="rawRecord">{JSON.stringify(r,null,2)}</pre></Disclosure>) : historyRequested ? <p className="modelDetailMuted">No review history recorded for this selection.</p> : <Link className="textLink" prefetch={false} href={`${base}&requirement=${encodeURIComponent(requirement.id)}&history=1#requirement-history`}>Load review history →</Link>}</section>
         </> : <>
           <p className="overline">{module ? 'MODULE' : 'MODEL STRUCTURE'}</p><h2 className="moduleDetailTitle">{module ? module.title : 'Modules & Requirements'}</h2><p className="modelDetailMuted">{module ? 'Requirements owned by this module and its nested modules.' : 'Select a module to explore its Requirements, reviews and evidence.'}</p>
           {!module && <div className="moduleOverview">{modules.filter(m => !m.parent || !modules.some(parent => parent.id === m.parent)).map(m => <Link href={`${base}&module=${encodeURIComponent(m.id)}`} key={m.id}><span className="moduleIcon">◇</span><strong>{m.title}</strong><span>{definitions.filter(c => modules.some(n => descendants(m.id).includes(n.id) && n.requirements.includes(c.id))).length} Requirements</span><span aria-hidden="true">›</span></Link>)}</div>}

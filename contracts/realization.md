@@ -1,0 +1,79 @@
+# Realization format
+
+The realization facet states which current mechanisms make Requirements true. It records falsifiable, non-derivable assertions about named artifacts rather than a structural tour of the code.
+
+`realization.md` describes accepted current mechanisms for its sibling spec. Proposed architecture, alternatives and implementation order live in a change's root `design.md`, which is never applied to the model. Archiving distils only what was built into the current model. A realization may fan out verification obligations; it never fans out evidence. Evidence exists once a Check, constraint or observation supplies it, so a planned mechanism must never read as an achieved one.
+
+The file is optional for every Requirement; no review declaration requires one. When it has entries for a Requirement that declares `Realization: reviewed`, the Realization Review checks that the code at the realization sites is consistent with them ([assurance-reviews.md](assurance-reviews.md)), and its entries are a blocking dependency of that review.
+
+This contract covers the entry format. A `realization.md` that contains a `## Requirement realization:` heading is parsed with the Requirement-first format in [account-realization.md](account-realization.md) instead.
+
+## File
+
+```markdown
+# Realization: <spec-id>
+```
+
+At most one `realization.md` sits beside a package's `spec.md` and declares the same spec id. Declared id is authority; path is convention.
+
+## Entries
+
+```markdown
+## Requirement: <requirement-id>
+Mechanism: <stable-mechanism-id>
+Enforcement: <kind>
+Scenarios: ["<scenario-id>", "<scenario-id>"]  (optional)
+Binding: <optional machine-addressable artifact id>
+Expect: <optional derived properties>
+
+Required prose explaining why this mechanism matters and what fails if it changes.
+```
+
+Every entry attaches to a Requirement. A mechanism with no `Scenarios:` label bears on the complete Requirement. A
+mechanism that bears only on some Scenarios names their stable project-wide ids in a sorted, non-empty, duplicate-free
+JSON string array. This precision stays in the repository model; implementation markers still name
+only the Mechanism.
+
+A Requirement may have several ordered mechanisms. Each mechanism id is stable and unique across the complete project. Reusable controls belong in concern-oriented specs instead of being copied into every
+consumer package.
+
+## Enforcement kinds
+
+| Rung | Kind | Violation is |
+|---|---|---|
+| 1 | `type` | unrepresentable in the type system |
+| 1 | `schema` | unrepresentable in the data schema |
+| 2 | `constraint` | rejected by storage |
+| 2 | `choke-point` | possible only through one place |
+| 3 | `middleware` | prevented wherever the middleware is applied |
+| 4 | `guard` | checked independently at each site |
+
+Strength is derived from the kind and is never authored. Type, schema and constraint artifacts may support structural proof that the Realization Review weighs. They are mechanisms, not executable Checks; inventing an execution result for them would confuse proof with sampled behavior.
+
+## Identity and binding
+
+`Mechanism:` is the conceptual anchor. Production code refers to it with `ImplementsMechanism(mechanism)`, and extractors derive a semantic source binding. `Binding:` remains available for non-code artifacts such as an emitted database index.
+
+One explicit `Binding:` resolves one ordinary Artifact, or multiple distinct marker sites may jointly support the same Mechanism. The two routes cannot be mixed. Every marker site must have a unique semantic SourceIdentity and exact companion Artifact; zero support produces `unresolved-realization-binding`. Linkage alone does not prove that the collection is complete or implements the prose.
+
+`Expect:` compares properties an extractor can derive exactly. Current database-index support may compare uniqueness, ordered columns and predicates:
+
+```markdown
+Mechanism: unique-quote-consumption
+Enforcement: constraint
+Binding: postgres-index:trips.ux_trip_quote
+Expect: unique=true; columns=quote_id
+```
+
+A symbol binding establishes existence and category, not semantic claims such as “only caller” or “every route.” A purpose-built analyzer or later reviewed composition format must establish those stronger propositions.
+
+Mechanism implementation linkage is structurally separate from Check implementation linkage. Tests of mechanism behavior are ordinary engineering tests unless a Requirement that declares `Verification:` has a deliberate Check and Evidence Binding. No source marker assigns evidentiary meaning to a mechanism.
+
+## Residue
+
+```markdown
+## Residue
+Free prose. Never parsed or derived.
+```
+
+Residue holds durable orientation, danger zones and deliberately accepted absences. It attaches to no Requirement and participates in no fingerprint. Anything that is either derivable structure or an unaccepted proposal does not belong here.

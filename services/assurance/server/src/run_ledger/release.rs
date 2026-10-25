@@ -16,7 +16,7 @@ pub(super) async fn publish(
             .and_then(CoreJson::as_array)
             .unwrap_or_default()
         {
-            require_requirement_review(review.get("kind"))?;
+            require_global_review(review.get("kind"))?;
         }
         azimuth::release::verify(&native).map_err(LedgerError::invalid)?;
         let payload = to_value(&native)?;
@@ -458,7 +458,8 @@ fn requirement_check_account(
         .collect();
     json!({
         "requirement":requirement["id"],
-        "criticality":requirement["criticality"],
+        "realization":requirement["realization"],
+        "verification":requirement["verification"],
         "checks":checks,
     })
 }
@@ -764,7 +765,7 @@ fn parse_main_publication(body: &[u8], project: &str) -> Result<MainPublication,
     let mut reviews = Vec::new();
     for record in array(&payload, "reviews")? {
         let native = core_json(record.to_string().as_bytes())?;
-        require_requirement_review(native.get("kind"))?;
+        require_global_review(native.get("kind"))?;
         assurance_review::validate_record(&native).map_err(LedgerError::invalid)?;
         reviews.push(native);
     }

@@ -9,6 +9,7 @@ import {
 import { requirementStatus } from '@/lib/production';
 import { Disclosure } from '@/components/disclosure';
 import { Identifier } from '@/components/identifier';
+import { CodeDrift, ReviewChips } from '@/components/review-dimensions';
 export const dynamic = 'force-dynamic';
 const statusLabels = { supported: 'Satisfied', violated: 'Not satisfied', unresolved: 'Unresolved', 'not-applicable': 'Not applicable here' };
 export default async function VerificationTargetPage({
@@ -40,8 +41,9 @@ export default async function VerificationTargetPage({
               <Disclosure
                 key={requirement.requirement}
                 summary={requirement.requirement}
-                meta={<><span>Review: {requirement.review ?? 'missing'}</span><span className={`badge ${tones[status]}`}>{statusLabels[status]}</span></>}
+                meta={<><ReviewChips verification={requirement.verification_review} realization={requirement.realization_review} /><span className={`badge ${tones[status]}`}>{statusLabels[status]}</span></>}
               >
+                <CodeDrift drift={requirement.realization_code_drift} commit={requirement.explanation?.realization_review?.reviewed_commit} />
                 {requirement.diagnostics.length > 0 && <ul className="verificationReasons">{requirement.diagnostics.map((d, i) => <li key={i}>{d}</li>)}</ul>}
                 <Disclosure summary="Bindings and gaps">
                   <pre className="rawRecord">{JSON.stringify({ bindings: requirement.bindings, gaps: requirement.gaps, challenges: requirement.challenges }, null, 2)}</pre>

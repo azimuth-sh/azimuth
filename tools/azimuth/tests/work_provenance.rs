@@ -1257,7 +1257,7 @@ The review accepted it without exercising the denial path.
 
 ### Rationale
 
-Only the review let it through; the implementation followed the accepted design.
+Only the review let it through; the implementation followed the accepted realization.
 ";
 
 fn attributions_file(root: &Path, source: &str) -> PathBuf {
@@ -1459,7 +1459,7 @@ fn review_entry(id: &str, native: &str) -> Json {
         (
             "record",
             Json::obj(vec![
-                ("kind", Json::str("requirement-review")),
+                ("kind", Json::str("verification-review")),
                 ("decision", Json::str("accepted")),
                 ("fingerprint", Json::str(native)),
             ]),
@@ -1547,7 +1547,7 @@ fn a_review_attempt_links_its_generated_review_by_native_fingerprint() {
     let digest = Json::str(format!("sha256:{}", "d".repeat(64)));
     let record = |repository: Option<&str>, reference: &str, id: &str, entry: &Json| {
         let mut fields = vec![
-            ("kind", Json::str("requirement-review")),
+            ("kind", Json::str("verification-review")),
             ("ref", Json::str(reference)),
             ("record", Json::str(id)),
             ("fingerprint", Json::str(selected_entry_fingerprint(entry))),
@@ -1607,7 +1607,7 @@ fn a_review_attempt_links_its_generated_review_by_native_fingerprint() {
                         (
                             "required_output",
                             Json::obj(vec![
-                                ("kind", Json::str("requirement-review")),
+                                ("kind", Json::str("verification-review")),
                                 ("description", Json::str("Review the Requirement.")),
                             ]),
                         ),

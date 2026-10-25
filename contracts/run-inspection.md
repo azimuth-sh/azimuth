@@ -22,7 +22,7 @@ These are the only root keys, in exactly this order, and all are always present.
 
 `protocol_consistent` is `true` when and only when `findings` is empty.
 
-`model_authority` and `assurance_state` are the constant string `unresolved`. Inspection does not load a model, a Decision Standards file or a workspace, so it cannot say which Requirements a bundle's Check Results bear on, whether the Checks it names are still current, or what Assurance State follows. A consumer must not read a consistent inspection as an assurance verdict. The text format carries the same two labels as `Current model: unresolved` and `Assurance State: unresolved`.
+`model_authority` and `assurance_state` are the constant string `unresolved`. Inspection does not load a model or a workspace, so it cannot say which Requirements a bundle's Check Results bear on, whether the Checks it names are still current, or what Assurance State follows. A consumer must not read a consistent inspection as an assurance verdict. The text format carries the same two labels as `Current model: unresolved` and `Assurance State: unresolved`.
 
 ## Bundle set
 
@@ -77,16 +77,15 @@ One entry per Verification Challenge execution in the bundle, sorted by challeng
   "challenge": "challenge/<plan-local-id>",
   "verification_challenge": "billing/mutation-search",
   "verification_challenge_fingerprint": "sha256:<64-lowercase-hex>",
-  "target_kind": "applicability-decision",
-  "target": "billing/invoice-total-binding",
+  "target_kind": "implementation",
+  "target": "billing/mutation-search",
   "target_fingerprint": "sha256:<64-lowercase-hex>",
   "outcome": "clean",
   "fingerprint": "sha256:<64-lowercase-hex>"
 }
 ```
 
-All eight keys are always present. `target_kind` is `requirement-review |
-method-qualification | applicability-decision | requirement-judgment`. `outcome` is `clean | findings | inconclusive`. A `clean`
+All eight keys are always present. `target_kind` is the Challenge target kind of the bundle's selection ([run-bundle.md](run-bundle.md)); a compact machine Verification Challenge records `implementation`. `outcome` is `clean | findings | inconclusive`. A `clean`
 outcome is only a negative search fact; it is not evidence that the target decision holds, and the
 inspection assigns it no aggregate score.
 

@@ -959,8 +959,8 @@ fn residual_retired_syntax(edits: &[AccountEdit]) -> Vec<String> {
     findings
 }
 
-/// Active authored Markdown and workspace documents: the root workspace, the model, standards and
-/// unarchived changes. Archived changes,
+/// Active authored Markdown and workspace documents: the root workspace, the model and unarchived
+/// changes. Archived changes,
 /// `history` directories and retained `reviews` are immutable records and `.azimuth` holds local
 /// runtime artifacts; none of them is rewritten or rejected.
 fn active_account_files(root: &Path) -> Result<Vec<PathBuf>, String> {
@@ -970,7 +970,6 @@ fn active_account_files(root: &Path) -> Result<Vec<PathBuf>, String> {
         files.push(workspace);
     }
     collect_markdown(&root.join("model"), &mut files)?;
-    collect_markdown(&root.join("standards"), &mut files)?;
     collect_active_change_markdown(&root.join("changes"), &mut files)?;
     files.sort();
     Ok(files)

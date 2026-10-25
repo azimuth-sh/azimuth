@@ -4,7 +4,7 @@
 
 When accepted intent does not change, declare `Intent delta: none` and a non-empty `Because:` reason after status. Do not combine that declaration with intent delta files. Proposal review permits subsequent delta authoring; exploration approval, implementation authorization and actual change acceptance are distinct decisions.
 
-A proposal is one bounded transition, not the aggregate contents of every facet. Spec, design and verification deltas own their proposed transitions; exact previews show their composed targets. Preserve the original request and baseline so reviewers assess intended effects and preserved account content directly.
+A proposal is one bounded transition, not the aggregate contents of every facet. Spec, realization and verification deltas own their proposed transitions; exact previews show their composed targets. Preserve the original request and baseline so reviewers assess intended effects and preserved account content directly.
 
 A manually requested correction identifies its original change, failed candidate or execution, and relevant issues. It authors a new bounded transition against the current model; it does not rewrite an archived record or apply the original delta a second time. CI reports diagnostics and does not create correction proposals or work packages.
 

@@ -561,24 +561,6 @@ def legacy_profiles(root: pathlib.Path) -> None:
     write_json(root / "outputs/pre-d48-mismatched-companion.json", mismatched)
 
 
-def decision_policy(root: pathlib.Path) -> None:
-    write(
-        root / "standards.md",
-        """# Decision policies and Challenge schedule
-
-## Decision Policy: relocation
-Required challenge: mutation
-
-Relocation must not change semantic decision identity.
-
-## Challenge Schedule: current
-Gate challenge: mutation
-
-The gate lane is total over the one required form.
-""",
-    )
-
-
 def configured_adapter(root: pathlib.Path) -> dict[str, object]:
     executable = root / "adapter/adapter.py"
     runtime = root / "adapter/runtime.py"
@@ -645,8 +627,8 @@ def model(root: pathlib.Path, phase: str) -> None:
     model_root.mkdir(parents=True)
     areas = []
     challenge_requests = []
-    placeholder_by_spec = {}
-    for index, family in enumerate(FAMILIES):
+    producers = []
+    for family in FAMILIES:
         spec = f"identity-{family}"
         manifest = load(root / f"outputs/{phase}/{family}.json")
         mechanisms = sorted({item["mechanism"] for item in manifest["mechanism_implementations"]})
@@ -654,16 +636,16 @@ def model(root: pathlib.Path, phase: str) -> None:
         package.mkdir()
         write(
             package / "spec.md",
-            f"# Spec: {spec}\n\n## Requirement: {spec}-stable\nCriticality: standard\n\n"
+            f"# Spec: {spec}\n\n## Requirement: {spec}-stable\nVerification: reviewed\n\n"
             f"The {family} implementation SHALL retain its semantic mechanism identity.\n\n"
             f"### Scenario: {spec}-relocation\nMoving the declared project root preserves semantic identity.\n\n"
-            f"## Requirement: {spec}-profiles\nCriticality: routine\n\n"
+            f"## Requirement: {spec}-profiles\n\n"
             "The language fixture SHALL expose its additional semantic identity profiles.\n\n"
             f"### Scenario: {spec}-language-profiles\nExtraction preserves exact overload, nesting, receiver, trait, generic, or module identity.\n",
         )
         primary = PRIMARY_MECHANISMS[family]
-        design = (
-            f"# Design: {spec}\n\n## Requirement: {spec}-stable\n"
+        realization = (
+            f"# Realization: {spec}\n\n## Requirement: {spec}-stable\n"
             f"Mechanism: {primary}\nEnforcement: guard\n\n"
             "The selected marker anchors the relocation Requirement's complete composition.\n\n"
             f"## Requirement: {spec}-profiles\n"
@@ -671,67 +653,57 @@ def model(root: pathlib.Path, phase: str) -> None:
         for mechanism in mechanisms:
             if mechanism == primary:
                 continue
-            design += f"Mechanism: {mechanism}\nEnforcement: guard\n"
-        design += (
+            realization += f"Mechanism: {mechanism}\nEnforcement: guard\n"
+        realization += (
             "\nThe ordered markers make every implementation in this language fixture "
             "addressable.\n"
         )
-        write(package / "design.md", design)
-        judgment_placeholder = "sha256:" + "1" * 64
-        qualification_placeholder = "sha256:" + "2" * 64
-        applicability_placeholder = "sha256:" + "3" * 64
-        placeholder_by_spec[spec] = {
-            "judgment": judgment_placeholder,
-            "qualification": qualification_placeholder,
-            "applicability": applicability_placeholder,
-        }
-        verification_challenge = ""
-        if index == 0:
-            verification_challenge = (
-                "## Verification Challenge: identity/mutation\nForm: mutation\n"
-                "Searches for: semantic identity changes hidden as locator movement\n"
-                "Required scope: [\"policy\"]\n\n"
-                "The bounded Verification Challenge inspects the complete mechanism composition.\n\n"
-            )
+        write(package / "realization.md", realization)
+        check = f"{spec}-relocation"
+        challenge = f"{spec}-mutation"
         write(
             package / "verification.md",
             f"# Verification: {spec}\n\n"
-            f"## Check: {spec}-relocation\n"
-            "Method: compare the semantic mechanism account across two project roots\n"
-            "Terminal: every semantic field remains equal while its locator moves\n\n"
-            "The synthetic Check has one exact implementation in the language fixture.\n\n"
-            f"## Evidence Binding: {spec}/relocation\nCheck: {spec}-relocation\n"
-            f"Scenario: {spec}-relocation\n"
-            f"Method qualification: {spec}/relocation-method\n"
-            "Proposition: semantic identity is relocation-stable\nExecution Context: {}\n"
-            "Challenge domain: [\"mechanism\"]\nPolicy: relocation\n\n"
-            "The binding connects only this synthetic conformance Check.\n\n"
-            f"## Method Qualification: {spec}/relocation-method\n"
-            f"Check: {spec}-relocation\nScope: component\nQuantification: example\n"
-            "Oracle: direct\nExecution Context: {}\nChallenge domain: [\"mechanism\"]\n"
-            "Policy: relocation\nVerdict: qualified\n"
-            f"Fingerprint: {qualification_placeholder}\nQualified: 2026-08-22\n"
-            "Qualifier: conformance-owner\n\n"
-            "The method qualification is sealed from the public export.\n\n"
-            f"## Applicability Decision: {spec}/relocation\nVerdict: applicable\n"
-            f"Fingerprint: {applicability_placeholder}\nDecided: 2026-08-22\n"
-            "Decider: conformance-owner\n\n"
-            "The qualified comparison applies to the relocation Scenario.\n\n"
-            f"## Requirement Judgment: {spec}-stable\nVerdict: accepted\nPolicy: relocation\n"
-            f"Fingerprint: {judgment_placeholder}\nJudged: 2026-08-22\n"
-            "Judge: conformance-owner\n"
-            "Basis: all semantic mechanism accounts are exact\n"
-            "Residual risk: unsupported compiler profiles remain fail-closed\n\n"
-            "The synthetic judgment exists only to compare canonical identities.\n\n"
-            + verification_challenge
-            + f"## Challenge Plan: {spec}/relocation\nVerification Challenge: identity/mutation\n"
-            f"Select: requirement-judgment from requirement {spec}-stable\n\n"
-            "The selector addresses one exact synthetic Judgment.\n\n"
-            f"## Challenge Plan: {spec}/qualification\nVerification Challenge: identity/mutation\n"
-            f"Select: method-qualification from check {spec}-relocation\n"
-            f"Select: applicability-decision from binding {spec}/relocation\n\n"
-            "The selectors address the shared method and exact applicability decision.\n",
+            f"## Requirement verification: {spec}-stable\n\n"
+            f"### Verification Challenge: {challenge}\n"
+            "- Form: `mutation`\n"
+            "- Targets: `implementation`\n"
+            f"- Mechanisms:\n  - `{primary}`\n"
+            f"- Checks:\n  - `{check}`\n\n"
+            "Search for semantic identity changes hidden as locator movement that the "
+            "relocation Check cannot detect.\n\n"
+            f"### Scenario verification: {spec}-relocation\n\n"
+            f"#### Check: {check}\n"
+            "- Evidence bindings:\n"
+            "  - Contribution: Establishes that semantic identity is relocation-stable.\n\n"
+            "Compare the semantic mechanism account across two project roots: every semantic "
+            "field remains equal while its locator moves. The synthetic Check has one exact "
+            "implementation in the language fixture.\n",
         )
+        sites = [
+            {"relationship": "mechanism", "entity": item["mechanism"], "site": item["site"],
+             "file": item["file"], "source_fingerprint": item["source_fingerprint"]}
+            for item in manifest["mechanism_implementations"] if item["mechanism"] == primary
+        ] + [
+            {"relationship": "check", "entity": item["check"], "site": item["site"],
+             "file": item["file"], "source_fingerprint": item["source_fingerprint"]}
+            for item in manifest["check_implementations"] if item["check"] == check
+        ]
+        assert len(sites) == 2, (family, sites)
+        scope = {
+            "format": "azimuth-challenge-source-scope", "version": 2, "status": "complete",
+            "verification_challenge": challenge,
+            "request": {"requirements": [f"{spec}-stable"], "mechanisms": [primary],
+                        "checks": [check]},
+            "sites": sites,
+        }
+        scope["fingerprint"] = fingerprint(scope)
+        producers.append({
+            "package": "azimuth.challenge", "contract": "verification-challenge-implementation",
+            "entity": challenge, "site": f"challenges::{family}",
+            "file": f"{phase}/challenges/identity.rs", "lang": "rust-symbol",
+            "source_fingerprint": fingerprint({"producer": challenge}),
+        })
         file = manifest["mechanism_implementations"][0]["file"]
         prefix = file.split("/", 1)[0]
         if family == "python":
@@ -742,18 +714,21 @@ def model(root: pathlib.Path, phase: str) -> None:
                 mount_path = mount_path.split("/src", 1)[0] + "/src"
         areas.append({"id": family, "mounts": [{"id": "code", "path": mount_path}]})
         challenge_requests.append({
-            "id": f"{spec}/relocation", "execution-capability": "identity/challenge",
-            "max_candidates": 1, "units": [{"id": "whole", "parameters": {}}],
+            "id": challenge, "execution-capability": "identity/challenge",
+            "max_candidates": 1, "scope_report": scope,
+            "units": [{"id": "whole",
+                       "parameters": {"scope_fingerprint": scope["fingerprint"]}}],
         })
-        challenge_requests.append({
-            "id": f"{spec}/qualification", "execution-capability": "identity/challenge",
-            "max_candidates": 2, "units": [{"id": "whole", "parameters": {}}],
-        })
+    areas.append({"id": "challenges",
+                  "mounts": [{"id": "code", "path": f"{phase}/challenges"}]})
     write_json(destination / "workspace.json", {
         "format": "azimuth-workspace", "version": 2,
         "areas": areas, "surfaces": [], "realization_obligations": [],
+        "packages": ["azimuth.challenge"],
     })
-    decision_policy(destination)
+    write_json(destination / "challenges.json", {
+        "extensions": producers, "artifacts": [], "class_members": [], "enumerations": [],
+    })
     write_json(destination / "adapters.json", configured_adapter(root))
     write_json(destination / "request.json", {
         "format": "azimuth-run-plan-request", "version": 2, "operation": "execute",
@@ -762,46 +737,6 @@ def model(root: pathlib.Path, phase: str) -> None:
         "required_execution_context": {}, "checks": [],
         "challenges": sorted(challenge_requests, key=lambda item: item["id"]),
     })
-    write_json(destination / "placeholders.json", placeholder_by_spec)
-
-
-def seal(root: pathlib.Path, phase: str) -> None:
-    destination = root / f"core/{phase}"
-    exported = load(destination / "initial-export.json")
-    expected = {
-        item["id"]: item["expected_fingerprint"]
-        for collection in (
-            "method_qualifications",
-            "applicability_decisions",
-            "requirement_judgments",
-        )
-        for item in exported[collection]
-    }
-    placeholders = load(destination / "placeholders.json")
-    for spec, placeholders_for_spec in placeholders.items():
-        path = destination / f"model/{spec}/verification.md"
-        source = path.read_text(encoding="utf-8")
-        requirement = f"{spec}-stable"
-        if requirement not in expected:
-            related = [
-                item for item in exported["challenge_resolutions"]
-                if item["plan"] == f"{spec}/relocation"
-            ]
-            raise AssertionError(
-                f"initial export omitted expected Judgment {requirement}: {related}"
-            )
-        qualification = f"{spec}/relocation-method"
-        if qualification not in expected:
-            raise AssertionError(
-                f"initial export omitted expected Qualification {qualification}"
-            )
-        source = source.replace(
-            placeholders_for_spec["qualification"], expected[qualification]
-        )
-        source = source.replace(
-            placeholders_for_spec["applicability"], expected[f"{spec}/relocation"]
-        )
-        write(path, source.replace(placeholders_for_spec["judgment"], expected[requirement]))
 
 
 def collision_model(root: pathlib.Path) -> None:
@@ -814,13 +749,13 @@ def collision_model(root: pathlib.Path) -> None:
         package.mkdir(exist_ok=True)
         write(
             package / "spec.md",
-            f"# Spec: {spec}\n\n## Requirement: {spec}-stable\nCriticality: routine\n\n"
+            f"# Spec: {spec}\n\n## Requirement: {spec}-stable\n\n"
             "The synthetic collision site SHALL remain distinguishable by area.\n\n"
             f"### Scenario: {spec}-assembled-identity\nEqual raw sites retain distinct area-qualified SourceIdentity keys after assembly.\n",
         )
         write(
-            package / "design.md",
-            f"# Design: {spec}\n\n## Requirement: {spec}-stable\nMechanism: {spec}-guard\n"
+            package / "realization.md",
+            f"# Realization: {spec}\n\n## Requirement: {spec}-stable\nMechanism: {spec}-guard\n"
             "Enforcement: guard\n\nThe marker is deliberately shared across repositories.\n",
         )
     write_json(destination / "cross-area.json", {
@@ -842,7 +777,6 @@ def collision_model(root: pathlib.Path) -> None:
         }],
         "surfaces": [], "realization_obligations": [],
     })
-    decision_policy(destination)
 
 
 def scope_item(item: dict[str, object]) -> tuple[str, str, str]:
@@ -850,15 +784,16 @@ def scope_item(item: dict[str, object]) -> tuple[str, str, str]:
 
 
 def selection_account(challenges: list[dict[str, object]]) -> dict[str, object]:
+    # The target fingerprint and the unit's scope_fingerprint bind the prepared source
+    # scope, which names file locators, so only the semantic parts are compared.
     return {
-        item["id"]: {
+        item["verification_challenge"]["id"]: {
             "verification_challenge": item["verification_challenge"],
-            "target": item["target"],
+            "target": (item["target"]["kind"], item["target"]["id"]),
             "lane": item["lane"],
-            "anchors": tuple(scope_item(value) for value in item["scope"]["anchors"]),
+            "anchors": tuple((value["kind"], value["id"]) for value in item["scope"]["anchors"]),
             "inputs": tuple(scope_item(value) for value in item["scope"]["inputs"]),
-            "scope_fingerprint": item["scope"]["fingerprint"],
-            "units": item["units"],
+            "units": [unit["id"] for unit in item["units"]],
         }
         for item in challenges
     }
@@ -867,7 +802,6 @@ def selection_account(challenges: list[dict[str, object]]) -> dict[str, object]:
 def core_account(exported: dict[str, object], launch: dict[str, object]) -> dict[str, object]:
     mechanisms = exported["mechanism_implementations"]
     artifacts = exported["artifacts"]
-    judgments = exported["requirement_judgments"]
     challenges = launch["plan"]["challenges"]
     return {
         "sources": sorted((item["area"], item["address_kind"], item["address"])
@@ -875,61 +809,47 @@ def core_account(exported: dict[str, object], launch: dict[str, object]) -> dict
         "mechanisms": sorted((item["mechanism"], item["binding"])
                              for item in mechanisms),
         "artifacts": sorted((item["id"], item["kind"]) for item in artifacts),
-        "judgments": sorted((item["id"], item["fingerprint"]) for item in judgments),
+        "checks": sorted((item["id"], item["fingerprint"]) for item in exported["checks"]),
+        "check_implementations": sorted(
+            (item["check"], item["area"], item["address_kind"], item["address"],
+             item["source_fingerprint"])
+            for item in exported["check_implementations"]
+        ),
+        "verification_challenges": sorted(
+            (item["id"], item["fingerprint"]) for item in exported["verification_challenges"]
+        ),
         "selections": selection_account(challenges),
     }
 
 
 def assert_selection_shapes(challenges: list[dict[str, object]]) -> None:
-    assert len(challenges) == 21
-    by_target = {(item["target"]["kind"], item["target"]["id"]): item
-                 for item in challenges}
-    assert len(by_target) == 21
-    method_kinds = {
-        "check", "check-implementation", "context", "method-qualification", "policy",
-    }
-    applicability_kinds = method_kinds | {
-        "applicability-decision", "binding", "scenario", "requirement",
-    }
-    judgment_kinds = applicability_kinds | {
-        "requirement-judgment", "realization", "mechanism", "mechanism-implementation", "artifact",
-    }
+    assert len(challenges) == len(FAMILIES)
+    by_challenge = {item["verification_challenge"]["id"]: item for item in challenges}
+    assert len(by_challenge) == len(FAMILIES)
     for family in FAMILIES:
         spec = f"identity-{family}"
-        binding = f"{spec}/relocation"
-        method = f"{spec}/relocation-method"
-        requirement = f"{spec}-stable"
-        for target_kind, target_id, anchor_kind, expected_kinds in (
-            ("method-qualification", method, "check", method_kinds),
-            ("applicability-decision", binding, "binding", applicability_kinds),
-            ("requirement-judgment", requirement, "requirement", judgment_kinds),
-        ):
-            selection = by_target[(target_kind, target_id)]
-            prefix, identity_hash = selection["id"].split("/", 1)
-            assert prefix == "challenge" and len(identity_hash) == 64
-            assert all(character in "0123456789abcdef" for character in identity_hash)
-            assert selection["lane"] == "gate"
-            assert selection["units"] == [{"id": "whole", "parameters": {}}]
-            anchors = selection["scope"]["anchors"]
-            assert len(anchors) == 1
-            anchor_id = f"{spec}-relocation" if anchor_kind == "check" else target_id
-            assert (anchors[0]["kind"], anchors[0]["id"]) == (anchor_kind, anchor_id)
-            inputs = selection["scope"]["inputs"]
-            actual_kinds = {item["kind"] for item in inputs}
-            assert expected_kinds <= actual_kinds, (target_kind, actual_kinds)
-            by_kind = {}
-            for item in inputs:
-                by_kind.setdefault(item["kind"], []).append(item["id"])
-            assert by_kind["check"] == [f"{spec}-relocation"]
-            assert by_kind["method-qualification"] == [method]
-            assert by_kind["policy"] == ["relocation"]
-            if target_kind != "method-qualification":
-                assert by_kind["requirement"] == [requirement]
-                assert by_kind["binding"] == [binding]
-                assert by_kind["applicability-decision"] == [binding]
-            if target_kind == "requirement-judgment":
-                assert by_kind["requirement-judgment"] == [requirement]
-                assert by_kind["mechanism"] == [PRIMARY_MECHANISMS[family]]
+        challenge = f"{spec}-mutation"
+        selection = by_challenge[challenge]
+        prefix, identity_hash = selection["id"].split("/", 1)
+        assert prefix == "challenge" and len(identity_hash) == 64
+        assert all(character in "0123456789abcdef" for character in identity_hash)
+        assert selection["lane"] == "gate"
+        assert (selection["target"]["kind"], selection["target"]["id"]) == (
+            "implementation", challenge,
+        )
+        [unit] = selection["units"]
+        assert unit["id"] == "whole" and list(unit["parameters"]) == ["scope_fingerprint"]
+        anchors = selection["scope"]["anchors"]
+        assert [(item["kind"], item["id"], item["fingerprint"]) for item in anchors] == [
+            ("implementation", challenge, selection["target"]["fingerprint"])
+        ]
+        inputs = selection["scope"]["inputs"]
+        assert sorted(item["kind"] for item in inputs) == [
+            "check-implementation", "mechanism-implementation",
+        ], (family, inputs)
+        for item in inputs:
+            area, kind, _ = item["id"].split("|", 2)
+            assert area == family and kind.endswith("-symbol"), item
 
 
 def verify_core(root: pathlib.Path) -> None:
@@ -945,27 +865,38 @@ def verify_core(root: pathlib.Path) -> None:
     assert fingerprint(before_export) != fingerprint(after_export)
     assert before_launch["plan"]["model_fingerprint"] != after_launch["plan"]["model_fingerprint"]
     assert before_launch["fingerprint"] != after_launch["fingerprint"]
-    before_routes = {route["selection"]["id"]: route for route in before_launch["routes"]}
-    after_routes = {route["selection"]["id"]: route for route in after_launch["routes"]}
-    selected_ids = selection_account(before_challenges).keys()
-    assert before_routes.keys() == after_routes.keys() == selected_ids
     projectable = {
         "check-implementation", "realization", "mechanism-implementation", "artifact",
         "surface-member", "enumeration",
     }
-    before_selections = {item["id"]: item for item in before_challenges}
-    for selection_id, before_route in before_routes.items():
-        after_route = after_routes[selection_id]
-        assert before_route["selection"] == after_route["selection"] == {
-            "kind": "challenge", "id": selection_id,
-        }
+
+    def routes_by_challenge(launch: dict[str, object]) -> dict[str, tuple]:
+        selections = {item["id"]: item for item in launch["plan"]["challenges"]}
+        routes = {}
+        for route in launch["routes"]:
+            assert route["selection"]["kind"] == "challenge"
+            selection = selections[route["selection"]["id"]]
+            routes[selection["verification_challenge"]["id"]] = (route, selection)
+        assert len(routes) == len(selections) == len(launch["routes"])
+        return routes
+
+    before_routes = routes_by_challenge(before_launch)
+    after_routes = routes_by_challenge(after_launch)
+    assert before_routes.keys() == after_routes.keys() == selection_account(before_challenges).keys()
+    for challenge, (before_route, before_selection) in before_routes.items():
+        after_route, after_selection = after_routes[challenge]
         assert before_route["capability"] == after_route["capability"]
-        selection = before_selections[selection_id]
         projected = [
             scope_item(item)
-            for item in selection["scope"]["anchors"] + selection["scope"]["inputs"]
+            for item in before_selection["scope"]["anchors"] + before_selection["scope"]["inputs"]
             if item["kind"] in projectable
         ]
+        after_projected = [
+            scope_item(item)
+            for item in after_selection["scope"]["anchors"] + after_selection["scope"]["inputs"]
+            if item["kind"] in projectable
+        ]
+        assert projected == after_projected
         before_inputs = before_route["inputs"]
         after_inputs = after_route["inputs"]
         assert [scope_item(item) for item in before_inputs] == projected
@@ -985,7 +916,7 @@ def verify_core(root: pathlib.Path) -> None:
 def usage() -> None:
     raise SystemExit(
         "usage: generate.py init <root> <repository> | verify-extractors <root> | "
-        "legacy-profiles <root> | model <root> <before|after> | seal <root> <before|after> | "
+        "legacy-profiles <root> | model <root> <before|after> | "
         "collision-model <root> | verify-core <root>"
     )
 
@@ -1002,8 +933,6 @@ elif command == "legacy-profiles" and len(sys.argv) == 3:
     legacy_profiles(fixture)
 elif command == "model" and len(sys.argv) == 4 and sys.argv[3] in {"before", "after"}:
     model(fixture, sys.argv[3])
-elif command == "seal" and len(sys.argv) == 4 and sys.argv[3] in {"before", "after"}:
-    seal(fixture, sys.argv[3])
 elif command == "collision-model" and len(sys.argv) == 3:
     collision_model(fixture)
 elif command == "verify-core" and len(sys.argv) == 3:

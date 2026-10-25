@@ -15,11 +15,11 @@ When assigned a package, edit only its declared paths. Report integration change
 
 Read every supplied review issue and failed Check/Challenge report, its exact assessed basis and currentness diagnostics. Inspect the current source directly; the coordinator's summary and your own prior report are not proof. For each stable issue record changed locations and actual verification, a justified disagreement, or an explicit unresolved limitation. Address the complete available issue set rather than fixing only the first rejection.
 
-Return material intent/design/verification changes to their owning deltas, decisions and independent reviews. Do not weaken the required behavior, fabricate a clean Challenge, hide adverse history, or mark unfinished capture as a legitimate scope boundary.
+Return material intent/realization/verification changes to their owning deltas, decisions and independent reviews. Do not weaken the required behavior, fabricate a clean Challenge, hide adverse history, or mark unfinished capture as a legitimate scope boundary.
 
 ## Retain and hand off
 
-Prepare fresh source support and exact execution inputs required by candidate preparation. Required engineering execution must use capture that produces its declared observations and native records; a passing process without required capture is incomplete. Checks run before implementation/Check-directed Challenges, followed by independent Requirement Review. Tooling selects affected work deterministically; do not guess which obligations to skip or rerun the entire project without the required policy basis.
+Prepare fresh source support and exact execution inputs required by candidate preparation. Required engineering execution must use capture that produces its declared observations and native records; a passing process without required capture is incomplete. Checks run before implementation/Check-directed Challenges, followed by independent Verification Review; Realization Review judges the code at the realization sites. Tooling selects affected work deterministically; do not guess which obligations to skip or rerun the entire project without the required policy basis.
 
 Retain the implementation result, per-issue dispositions and necessary output/dependency closure outside scratch-only storage. Report missing prerequisites honestly. Return the compact result; neither implementation completion nor CI success is human acceptance, deployment confirmation or permission to publish.
 

@@ -6,7 +6,9 @@ pub(super) fn schemas() -> Vec<(&'static str, Schema)> {
         object(vec![
             ("requirement", Schema::Text),
             ("status", Schema::Text),
-            ("review", Schema::Text),
+            ("verification_review", Schema::Text),
+            ("realization_review", Schema::Text),
+            ("realization_code_drift", Schema::Boolean),
             ("diagnostics", Schema::Document),
             ("gaps", Schema::Document),
             ("bindings", Schema::Document),

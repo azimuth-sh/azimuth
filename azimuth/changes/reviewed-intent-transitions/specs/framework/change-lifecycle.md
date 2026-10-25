@@ -1,7 +1,6 @@
 # Intent delta: framework/change-lifecycle
 
 ## Add requirement: proposed-intent-has-an-inspectable-target
-Criticality: routine
 
 A proposed intent delta has a reviewable target spec and before/after account without changing accepted intent.
 
@@ -12,7 +11,6 @@ When a change adds a Claim to a previously absent spec, preview shows the comple
 When a change updates an existing spec, preview shows the resulting spec with unaffected Claims and non-normative text preserved.
 
 ## Add requirement: accepted-intent-changes-only-through-reviewed-application
-Criticality: routine
 
 Accepted intent changes only when the explicit application command installs the target approved for that change; finalization and archival never perform that edit.
 
@@ -23,7 +21,6 @@ When implementation supports an approved delta and application receives its curr
 When a change is proposed or implementation remains unfinished, preview and change inspection leave the accepted spec unchanged.
 
 ## Add requirement: intent-removal-is-explicit-and-reference-safe
-Criticality: routine
 
 Removing a Claim or Case requires a named decision and does not leave current references to the removed identity.
 
@@ -37,7 +34,6 @@ When a current realization, design, verification or challenge-plan declaration s
 When an explicitly removed Claim is the spec's last Claim and has no current references, the target retires that spec file.
 
 ## Add requirement: stale-intent-decisions-are-rejected
-Criticality: routine
 
 Application refuses a reviewed intent decision when its accepted source or target preview has changed since review.
 

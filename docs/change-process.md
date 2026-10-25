@@ -2,15 +2,15 @@
 
 Status: **operating guidance**. The implementation, its tests and the parser contracts under `contracts/` remain authoritative.
 
-Azimuth separates repository-owned intent and reviewed meaning from execution facts. During the fast-moving alpha every current framework Requirement is routine. Changes therefore use ordinary engineering tests and release gates without enrolling those tests as Azimuth evidence.
+Azimuth separates repository-owned intent and reviewed meaning from execution facts. During the fast-moving alpha no current framework Requirement declares `Realization:` or `Verification:`. Changes therefore use ordinary engineering tests and release gates without enrolling those tests as Azimuth evidence.
 
 ## Accountabilities
 
 | Accountability | Decides |
 |---|---|
-| Intent owner | what must be true and its consequence |
-| Mechanism owner | what makes it true and which boundaries matter |
-| Evidence owner | what would justify belief if the Requirement later becomes non-routine |
+| Intent owner | what must be true and which reviews it owes |
+| Realization owner | what makes it true in the code and which boundaries matter |
+| Verification owner | what would justify belief when the Requirement declares `Verification:` |
 
 These are accountabilities, not job titles. An agent is an authoring and review instrument; the person accepting its output remains accountable for the result.
 
@@ -28,7 +28,7 @@ Approval and archival are separate actions. After the actual exploration files a
 
 Create one change id with singular authority. State the problem, outcome, in-scope and out-of-scope work, affected Requirement ids and completion conditions. Carry explicit exploration decisions when applicable.
 
-All new or changed framework Requirements remain routine until a later accepted change deliberately raises criticality after the codebase stabilizes. Criticality follows consequence rather than implementation size, but this repository currently chooses the routine boundary to avoid manufacturing immature assurance decisions.
+New or changed framework Requirements declare no review until a later accepted change deliberately adds `Realization: reviewed` or `Verification: reviewed` after the codebase stabilizes. Review declarations follow consequence rather than implementation size, but this repository currently declares none to avoid manufacturing immature assurance decisions.
 
 Add a change `design.md` only when alternatives, failure modes, migration order or boundaries need review. Add `work-packages.md` when work can be delegated safely. `plan.md` remains an implementation sequence for the change; it is not a verification artifact or test inventory. `azimuth change brief <change> --package <package>` renders one contextual delegation handoff; authoring grammar comes from `azimuth reference`, not from that brief.
 
@@ -40,7 +40,7 @@ Before parallel work, freeze public formats, identities and ownership boundaries
 
 Implement product behavior, structural mechanisms, telemetry and testability seams inside the
 approved boundary. Add Realizes only where a production site genuinely establishes part of a
-non-routine parent Requirement. Routine Requirements do not require source linkage.
+parent Requirement that declares `Realization:`. Other Requirements do not require source linkage.
 
 Ordinary unit, component, integration and release tests remain normal software. A passing test is useful engineering feedback, but it is not an Azimuth Check merely because it executes in CI.
 
@@ -52,18 +52,18 @@ Keep intent deltas proposed while implementation is unfinished. During proposal 
 refresh the preview and review any drift. When implemented behavior satisfies the reviewed intent,
 run `azimuth change intent-apply --preview <file>` to update package `spec.md` mechanically.
 `finalize` and `archive` only verify that application occurred; they do not apply intent.
-Distil only mechanisms that now exist into current `design.md`. Because every current Requirement is routine, do not create package `verification.md`
-files or assurance decisions for this alpha transition.
+Distil only mechanisms that now exist into the module's `realization.md` when it helps the Realization Review; it is optional. Because no current Requirement declares `Verification:`, do not create package `verification.md`
+files or reviews for this alpha transition.
 
-A compact non-routine change authors Checks and inline Check–Scenario contributions in `verification.md`, and enables any required packages explicitly. Surface field declarations, independent Expectation Sets and Probe origins describe module-specific verification without duplicating package mechanics. Source tags identify actual implementations. Emitters produce typed descriptors; `azimuth surface verify` checks runtime enumeration/expectation completeness and schema against those exact producers.
+A change that adds or keeps a Requirement declaring `Verification:` authors Checks and inline Check–Scenario contributions in `verification.md`, and enables any required packages explicitly. Surface field declarations, independent Expectation Sets and Probe origins describe module-specific verification without duplicating package mechanics. Source tags identify actual implementations. Emitters produce typed descriptors; `azimuth surface verify` checks runtime enumeration/expectation completeness and schema against those exact producers.
 
-Review the full candidate account before relying on its verification. Prepare exact packets with `azimuth assurance review-input`; independently author and compile a Requirement Review assessing Scenarios, design, implementation, oracle independence, coverage and Verification Challenge scope. This definition assessment requires no execution Verification Target. Rejected or stale reviews return work to correction and independent reassessment.
+Review the full candidate account before relying on it. Prepare exact packets with `azimuth assurance review-input`; independently author and compile a Verification Review for each Requirement that declares `Verification:` (Checks, bindings, oracle independence, coverage, controls and the adequacy of declared or absent Verification Challenges) and a Realization Review for each that declares `Realization:` (whether the code at the realization sites does what the Scenarios say, consistent with `realization.md` where present). Neither requires an execution Verification Target. Rejected or stale reviews return work to correction and independent reassessment.
 
-Execute Checks and machine-executed Verification Challenges against exact source, artifact or deployment Verification Targets. Preserve actual measurement timestamps; importing an old report does not renew its freshness. A Verification Challenge targets an exact Requirement Review while retaining its own execution Verification Target. Current mutation integration captures exact batch source input and native results, not materialized per-mutant Verification Targets or product Check Results. Report `clean | findings | inconclusive` and resolve relevant objections; clean is not positive assurance.
+Execute Checks and machine-executed Verification Challenges against exact source, artifact or deployment Verification Targets. Preserve actual measurement timestamps; importing an old report does not renew its freshness. A Verification Challenge targets the exact implementation and Check basis while retaining its own execution Verification Target. Current mutation integration captures exact batch source input and native results, not materialized per-mutant Verification Targets or product Check Results. Report `clean | findings | inconclusive` and resolve relevant objections; clean is not positive assurance.
 
-Deployment Requirement Status is computed in AAS from applicable evidence for an observed deployment; there is no authored Requirement Status record. Its `supported | violated | unresolved` conclusion retains missing coverage and failed controls. Neither structural validation nor a successful execution writes an independent assessment. Do not add mandatory Method Qualification, Applicability Decision, Requirement Judgment or Check Review stages to this account. Earlier records retain their historical meanings without positive conversion.
+Deployment Requirement Status is computed in AAS from applicable evidence for an observed deployment; there is no authored Requirement Status record. Its `supported | violated | unresolved` conclusion retains missing coverage and failed controls. Neither structural validation nor a successful execution writes an independent assessment, and Satisfied requires an accepted current Verification Review.
 
-Export authority with `azimuth assurance authority`; register a candidate revision in the existing project without replacing accepted authority. Explicit owner selection and change acceptance follow required assessments, rollout and human decision conditions. Candidate registration and CI publication grant no deployment authorization.
+Export authority with `azimuth assurance authority`; register a candidate revision in the existing project without replacing the default model. Change acceptance follows required reviews and the human decision. Candidate registration and CI publication grant no deployment authorization.
 
 ### 6. Validate the repository account
 
@@ -91,7 +91,7 @@ Under the merge-first lifecycle the change is finalized and archived on its pull
 
 Conflicts between concurrent changes surface where Git surfaces them: when the branch is rebased onto `main`, the intent deltas and current facets are re-applied and the complete merged model is re-validated by finalization. The facet-level rejection in `azimuth release compose` is not the conflict detector.
 
-A non-routine Requirement that has no locally authored Requirement Status is ratified by records committed in the change. Each accepted Requirement needs a sealed native Requirement Review under `reviews/` (with the packets required to recompile it) and a human decision in `acceptance.json` (see `contracts/validation.md`). Finalization assesses every committed review against the merged model with the same assessment the Azimuth Assurance Service applies. A review made stale by a rebase or by another change's edit to a dependency ratifies nothing: re-review it, recommit it and finalize again. The acceptance alone waives nothing. The finalization receipt lists the ratifying review of each accepted Requirement, and the archive moves `reviews/` and `acceptance.json` with the change, so the ratification is part of the decision record. The change record states what the decider relied on, and Azimuth never contacts the Azimuth Assurance Service itself.
+A Requirement that declares a review is ratified by records committed in the change. Each owed review needs a sealed native `verification-review` or `realization-review` record under `reviews/` (with the packets required to recompile it), and each added Requirement that declares a review needs a human decision in `acceptance.json` (see `contracts/validation.md`). Finalization recomputes ratifications for every Requirement that declares a review: the latest record of each kind among the change reviews and the model's review heads is assessed against the merged model, and only an accepted current one ratifies. A Requirement left without a ratifying review keeps its `missing-requirement-assurance` or `missing-realization-review` Finding and fails finalization — so a review or head made stale by a rebase or by another change's edit to a blocking dependency needs re-review, recommit and finalization again. Finalization then writes each new ratifying review as the Requirement's review head in `verification-review.md` or `realization-review.md` beside the spec. The acceptance alone waives nothing. The finalization receipt lists the ratifying reviews as `ratifying_reviews` `{requirement, kind, review}` entries, and the archive moves `reviews/` and `acceptance.json` with the change, so the ratification is part of the decision record. The change record states what the decider relied on, and Azimuth never contacts the Azimuth Assurance Service itself.
 
 For federation, retain complete accepted-active and tested-archive worksets. The singular authority repository owns the content-preserving archive move. `azimuth project accept-change` verifies the two complete accounts, applies the same ratification rule to every committed review and acceptance, and emits a snapshot; a local account cannot substitute for project acceptance.
 
@@ -100,7 +100,7 @@ For federation, retain complete accepted-active and tested-archive worksets. The
 Azimuth implements a standalone [`azimuth-run-bundle` version 2](../contracts/run-bundle.md)
 exchange. A Run binds one exact Verification Target and may contain Check executions, Verification
 Challenge executions or both. One Check execution may serve several selected Scenarios and reduces
-independently to one Check Result per Scenario. Verification Challenges search for objections to exact Requirement Review or Requirement Status assessments; a clean
+independently to one Check Result per Scenario. Verification Challenges search the exact implementation and Check basis for weaknesses the Checks miss; a clean
 result is not positive product evidence.
 
 Use the service-free protocol commands to verify or inspect an already normalized bundle or correction set:
@@ -112,13 +112,13 @@ azimuth run inspect --bundle <file> [--bundle <file> ...] [--format text|json] [
 
 These commands validate the protocol account only. They do not establish that repository fingerprints remain current, apply execution results to Assurance State, call a provider or ingest the bundle. A protocol-consistent violated Check Result, Challenge findings or partial Run remains a valid execution account rather than a command failure.
 
-Compact Verification Challenge declarations select Requirements and Mechanisms through stable semantic identities. Planning pins the exact current assessment and resolves tagged implementation locations into accountable scope. Mutation targets, analysis/build dependencies and exercised Checks are separate. Missing mappings or ambiguous scope must not silently expand to the entire repository. Historical repository Challenge Plans retain their separate native rules.
+Compact Verification Challenge declarations select Requirements and Mechanisms through stable semantic identities. Planning pins the exact implementation target and resolves tagged implementation locations into accountable scope. Mutation targets, analysis/build dependencies and exercised Checks are separate. Missing mappings or ambiguous scope must not silently expand to the entire repository.
 
 Configure provider work explicitly in strict `azimuth/adapters.json`, then use:
 
 ```text
 azimuth adapter verify [--config <file>]
-azimuth run plan --request <file> [--model <dir>] [--standards <file>] \
+azimuth run plan --request <file> [--model <dir>] \
   [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
 azimuth run execute --plan <file> [--predecessor <bundle>...] \
   [--config <file>] [--out <file>]
@@ -126,9 +126,9 @@ azimuth run import --plan <file> --input <id>=<file>... \
   [--predecessor <bundle>...] [--config <file>] [--out <file>]
 ```
 
-Core loads the complete unselected model and accepts Check-only, Challenge-only and mixed strict requests. Requests name configured capabilities and finite work units; compact Challenge selection names a declared Verification Challenge and a bounded target selection. Core resolves exact assessment fingerprints and scope rather than asking agents to maintain duplicate file inventories.
+Core loads the complete unselected model and accepts Check-only, Challenge-only and mixed strict requests. Requests name configured capabilities and finite work units; Challenge selection names a declared Verification Challenge and a prepared scope report. Core resolves the exact implementation target fingerprint and scope rather than asking agents to maintain duplicate file inventories.
 
-Launch inputs preserve source-backed semantic items and accountable locators. The adapter translates this frozen account into tool parameters and records exclusions, ambiguity and tool-driven scope expansion; it does not reinterpret the Azimuth model. Historical declaration Plans retain their own Decision Policy and schedule rules.
+Launch inputs preserve source-backed semantic items and accountable locators. The adapter translates this frozen account into tool parameters and records exclusions, ambiguity and tool-driven scope expansion; it does not reinterpret the Azimuth model.
 
 Execute and import stage executable, resource and input content from the streams core hashes, clear the child environment and bound both output streams. On supported hosts, the adapter starts in a fresh process group before its code runs. One deadline bounds core request writing, response and diagnostic reads and process wait. Core signals remaining group members on every terminal path. An adapter descendant can deliberately use `setsid`, `setpgid` or an equivalent to leave the group; it cannot extend core's wait beyond the deadline, but its termination is not guaranteed. This is not non-escapable descendant containment, daemon supervision, hostile-code isolation or a filesystem or network sandbox.
 
@@ -136,7 +136,7 @@ Core validates the strict response, exact route provenance, actual selection and
 
 A valid violated Check Result, Challenge finding, partial or cancelled Run, or adapter-returned protocol-valid `timed-out` Run fact is an execution fact and exits zero. A host-enforced process deadline is a transport timeout and exits one, as does a semantic, identity, content, other transport or bundle mismatch. The returned `timed-out` fact is valid only when its complete bundle arrives within the host deadline; the host timeout publishes nothing. CLI and schema failures exit two. Neither nonzero class leaves an output file.
 
-Challenge Results are exactly `clean | findings | inconclusive`. Clean is only a negative search fact and creates no credibility or product evidence. Every planned Challenge omitted from a partial, cancelled or timed-out Run has one exact execution diagnostic and no fabricated Result; omitting scheduled work is allowed deferral, while gate omission records execution failure. Added or substituted targets, Execution Context, units or scope are selection mismatches and publish nothing.
+Challenge Results are exactly `clean | findings | inconclusive`. Clean is only a negative search fact and creates no credibility or product evidence. Every planned Challenge omitted from a partial, cancelled or timed-out Run has one exact execution diagnostic and no fabricated Result; gate omission records execution failure. Added or substituted targets, Execution Context, units or scope are selection mismatches and publish nothing.
 
 `model.extract` execution is absent. The current Run ledger provides project-role authorization, append-only Run/review histories, main-model publication and exact-Verification-Target compact Assurance State. Current planning defines no cache validity, cadence, historical-applicability or cross-target reuse semantics. Adapters are bounded short-lived processes; there is no daemon, webhook, inbound gateway or long-running adapter boundary.
 
@@ -162,8 +162,8 @@ The stable entity identity change preserves project-wide Requirement, Scenario, 
 
 `azimuth workflow init --workflow change-development --inputs <file>` selects a shipped declarative process and expands declared module targets; `next`, `update` and `verify` coordinate its finite concrete graph. Later validated same-project inventories instantiate assurance tasks without a coordinator-authored DAG. `workflow definition --workflow change-development` exposes the pinned reusable contract. Request, plan steps and workflow tasks are distinct. `next` is read-only and gives full handoffs in `eligible` without recommending an execution order; no `next`, `blocked`, `current` or `superseded` fields are returned. The harness selects work, controls cost and permissions, and launches agents. `update` records actual results conditionally and idempotently; it does not perform work or grant permissions. See [workflow.md](../contracts/workflow.md) and `azimuth reference show workflow`.
 
-Independent authoring reviews cover intent completeness, design support and verification adequacy. Their exact inputs, reviewer and findings remain separate from artifact completion, structural validation and human approval. Adverse outcomes expose configured correction work and independent reassessment. After implementation, Requirement Review assesses the complete candidate definitions and verification. Requirement Status assesses observed behavior from applicable evidence for a deployment. A valid adverse record is preserved; it does not satisfy readiness. No separate Check Review is required.
+Independent delta reviews cover intent completeness, realization support and verification adequacy; they stay local to the change. Their exact inputs, reviewer and findings remain separate from artifact completion, structural validation and human approval. Adverse outcomes expose configured correction work and independent reassessment. After implementation, the Verification and Realization Reviews assess the complete candidate verification and realization. Requirement Status assesses observed behavior from applicable evidence for a deployment. A valid adverse record is preserved; it does not satisfy readiness. No separate Check Review is required.
 
 Agents can perform all review work locally. CI/CD executes deterministic Checks and transports the current accountable delivery package to AAS, rather than uploading every draft or correction attempt. Include exact dependencies, necessary provenance and relevant adverse or unresolved facts. A CI producer token authorizes Runs only; publishing unchanged local review records requires the authorized reviewer credential matching their original reviewer. Transport must not fabricate a CI reviewer or silently refresh review time.
 
-Subsequent hosted Runs and deployment Requirement Status follow authorized deployment. AAS preserves immutable published reviews and correction chains, exposes definition review independently of Verification-Target-specific Requirement Status, and never joins different Verification Targets solely because model revisions match. Missing or stale assessments pause progression without requiring model calls in CI. Generated packets, compiled bundles, Runs and local scope reports belong in ignored change `.azimuth/`; authored definitions and aggregate review records remain in their owning source account. This increment does not automate deployment, federation acceptance, archive handoff or production scheduling.
+Subsequent hosted Runs and deployment Requirement Status follow authorized deployment. AAS preserves immutable published reviews and correction chains, exposes both review dimensions independently of Verification-Target-specific Requirement Status, and never joins different Verification Targets solely because model revisions match. Missing or stale assessments pause progression without requiring model calls in CI. Generated packets, compiled bundles, Runs and local scope reports belong in ignored change `.azimuth/`; authored definitions and aggregate review records remain in their owning source account. This increment does not automate deployment, federation acceptance, archive handoff or production scheduling.

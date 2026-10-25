@@ -1,7 +1,6 @@
 # Intent delta: framework/account-authoring
 
 ## Add requirement: module-facet-deltas-project-exact-targets
-Criticality: routine
 
 A change projects the target spec, design, verification and pending-review documents for a new module from explicit facet deltas without inventing declarations or silently merging prose. Applying the target requires an exact reviewed preview, a valid target account and an absent target facet. Edits to accepted facets require a guarded identity and exact base content; stale or ambiguous edits fail without overwriting accepted content.
 
@@ -15,7 +14,6 @@ A replacement or removal names its exact parent and accepted block fingerprint. 
 Application compares the complete current projection with the reviewed preview and rejects mismatches or already present target facets. Structural account errors block application; missing implementation support remains an explicit finding.
 
 ## Add requirement: claim-design-owns-architectural-scope
-Criticality: routine
 
 A Claim-first design retains the developer's explanation and declares each non-routine Claim's required Areas as its single authored Realization Obligation. Local Sections and Elements are optional explanatory structure; selected Mechanisms identify controls worth independent review without requiring a mechanism or Case edge for every implementation path. A selected Mechanism may explicitly declare contextual or qualified Case applicability; omitted applicability remains unspecified and cannot be inferred as evidence coverage.
 
@@ -41,7 +39,6 @@ Given an explicitly scoped Mechanism nested under a Claim, when its Case list co
 For each declared Claim Area, absent extracted production Realizes support is reported. A linked site satisfies only the participation floor and never establishes design completeness or Claim correctness.
 
 ## Add requirement: claim-verification-exposes-support-gaps
-Criticality: routine
 
 A Claim-first verification retains the QA explanation of methods, dependencies and limits and names required verification elements. Azimuth joins these expectations to source- or configuration-derived method artifacts, independently decidable Check propositions and explicit Case contributions, while leaving qualification and Claim judgment as separate decisions.
 
@@ -73,7 +70,6 @@ A missing required exercise, job, probe, alert or support dependency is reported
 Every Case of a non-routine Claim requires an explicit extracted Check contribution. A Check implementation identity without a Case relationship cannot be counted as Case support, and a Case link alone cannot establish observation or adequacy.
 
 ## Add requirement: account-inspection-preserves-decision-boundaries
-Criticality: routine
 
 Account inspection reports structural errors and unresolved production, method, Case and review relationships against the prospective model without manufacturing accepted judgments, Run observations or per-deployment Assurance State. Definition and substantive explanation changes invalidate dependent review fingerprints.
 

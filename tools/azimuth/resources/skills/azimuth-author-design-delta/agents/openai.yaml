@@ -1,4 +1,0 @@
-interface:
-  display_name: "Author an Azimuth design delta"
-  short_description: "Author an Azimuth design delta"
-  default_prompt: "Use $azimuth-author-design-delta for the assigned Azimuth work and retain its exact result."

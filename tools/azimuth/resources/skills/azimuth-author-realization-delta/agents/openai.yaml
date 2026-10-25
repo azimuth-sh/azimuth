@@ -1,0 +1,4 @@
+interface:
+  display_name: "Author an Azimuth realization delta"
+  short_description: "Author an Azimuth realization delta"
+  default_prompt: "Use $azimuth-author-realization-delta for the assigned Azimuth work and retain its exact result."

@@ -10,9 +10,9 @@ New Run requests use three Verification Target kinds: `source`, `artifact`, `dep
 
 Local/CI origin belongs to Run provenance, not a different source identity. Complete relevant tracked/staged/modified/untracked capture remains a producer obligation; a digest proves identity only, not capture completeness. Service/component selection and observation intervals are explicit examination scope carried in exact planned Execution Context and native evidence. They do not erase deployment differences or authorize cross-target evidence transfer. Existing `workspace`, `ci-candidate`, `service` and `monitoring-window` Run descriptors remain readable with their original meanings. Their descriptor hashes are not rewritten to new types. They are rejected for newly authored Run requests.
 
-New implementation-directed Challenge targets have `kind: "implementation"`, `id` equal to the selected Verification Challenge ID, and `fingerprint` identifying its exact implementation/Check definitions, source scope and execution Verification Target basis as specified in [run-launch-plan.md](run-launch-plan.md). They can execute before Requirement Review. Scope anchors also accept `implementation`.
+New implementation-directed Challenge targets have `kind: "implementation"`, `id` equal to the selected Verification Challenge ID, and `fingerprint` identifying its exact implementation/Check definitions, source scope and execution Verification Target basis as specified in [run-launch-plan.md](run-launch-plan.md). They execute before the Verification Review. Scope anchors also accept `implementation`.
 
-Historical target kinds keep their original meanings. For `requirement-review`, the ID names the assessed Requirement and the fingerprint names the exact native assessment. Requirement Status is computed, never authored, and is not a target or scope kind. Execution Verification Target identity is always separately retained in the Run.
+For the read-only target kind `requirement-review`, the ID names the assessed Requirement and the fingerprint names the exact native assessment. Requirement Status is computed, never authored, and is not a target or scope kind. Execution Verification Target identity is always separately retained in the Run.
 
 Machine Challenge Results remain `clean | findings | inconclusive` with native objections, artifacts, diagnostics and measured work-unit attempts. Findings may coexist with incomplete search; diagnostics must retain those gaps. Clean never establishes product satisfaction or a supported Requirement Status. Surviving mutations require equivalence/relevance assessment, while timeout/compile/discovery failures remain visible.
 
@@ -248,11 +248,11 @@ selection may name several Scenarios without duplicating its physical execution.
 
 Implementation `identity` is the stable semantic SourceIdentity `<area>|<address-kind>|<address>`. Area and address kind are lower kebab ids. Compiler symbol address kinds retain their ecosystem syntax: .NET array/generic/pointer type notation and ECMAScript package/module/binding and package/module/receiver/member signatures are semantic addresses, including a relative logical module and optional-property/array syntax; these are not file locators or wildcard selections. Address is non-empty, glob-free semantic identity rather than a file, path, numeric line, or path-plus-line locator; it uses the realization-selector boundary from [verification.md](verification.md).
 
-Challenges sort by their plan-local id, which is unique. `lane` is exactly `gate | scheduled` and is derived from the current Challenge Schedule. Scope is the strict semantic Challenge scope from [verification.md](verification.md); its arrays and fingerprint are validated independently.
+Challenges sort by their plan-local id, which is unique. `lane` is exactly `gate | scheduled`; planning a compact machine Verification Challenge records `gate`. Scope is the strict semantic Challenge scope from [verification.md](verification.md); its arrays and fingerprint are validated independently.
 
 The semantic tuple of Verification Challenge fingerprint, target kind and target fingerprint is also unique
-within the plan. Target kind is exactly `method-qualification | applicability-decision |
-requirement-judgment`, plus the assessment kind `requirement-review` described above. Method Qualification ids are project-global, Applicability Decision ids are exact
+within the plan. Target kind is exactly `implementation | method-qualification | applicability-decision |
+requirement-judgment | requirement-review`; planning produces only `implementation`, and the other kinds are read with the meanings described above. Method Qualification ids are project-global, Applicability Decision ids are exact
 Evidence Binding ids retain their declared identity; Requirement Judgment ids equal their stable Requirement ids. The
 fingerprint, not the display id, is the exact decision target.
 
@@ -268,7 +268,7 @@ Generated Challenge ids are `challenge/<64-lowercase-hex>`, where the suffix is 
 }
 ```
 
-The id is independent of selector order, authored Plan id, capability, work units, lane and scope. Selections with the same exact tuple union their anchors and inputs. Conflicting capabilities or work units fail planning; neither arrival order nor one lexically smaller Plan wins.
+The id is independent of request order, capability, work units, lane and scope. Selections with the same exact tuple union their anchors and inputs. Conflicting capabilities or work units fail planning; arrival order never wins.
 
 For Verification Challenge fingerprint `sha256:` followed by 64 `a` characters, Method Qualification
 fingerprint `sha256:` followed by 64 `b` characters and target kind `method-qualification`, the

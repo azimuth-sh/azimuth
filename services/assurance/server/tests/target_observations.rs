@@ -35,7 +35,7 @@ fn publication_policy(policy: Value) -> Value {
 fn publication_variant(policy: Value, artifact: char) -> Value {
     let deployment_id = format!("deployment-{artifact}");
     let model=azimuth::model::Model {
-        specs:vec![azimuth::spec::parse_spec("spec.md","# Spec: sample\n\n## Requirement: restricted\nCriticality: routine\n\nAccess SHALL be restricted.\n\n### Scenario: works\nEvent: request\nRequired: restricted access\n").unwrap()],
+        specs:vec![azimuth::spec::parse_spec("spec.md","# Spec: sample\n\n## Requirement: restricted\n\nAccess SHALL be restricted.\n\n### Scenario: works\nEvent: request\nRequired: restricted access\n").unwrap()],
         account_verifications:vec![azimuth::account_verification::parse_account_verification("verification.md",&format!("# Verification: sample\n\n## Requirement verification: restricted\n\n### Check: recovery\n- Deployment: {policy}\n- Evidence bindings:\n  - Scenario: `works`\n    - Contribution: Establishes access restrictions.\n\nExercise access restrictions.\n")).unwrap()],
         ..Default::default()
     };

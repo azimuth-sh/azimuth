@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review an Azimuth Requirement's realization"
+  short_description: "Judge whether the code realizes a Requirement's Scenarios"
+  default_prompt: "Use $azimuth-review-realization to independently perform the Realization Review of the selected Requirement against its exact code snapshot and retain the decision and findings."

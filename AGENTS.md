@@ -11,7 +11,6 @@ Canonical development and release repository for Azimuth. Framework source, mode
 | `docs/change-process.md` | change delivery, evidence and rollout guidance |
 | `docs/assurance-extensions.md` | role and authority boundaries extension work must preserve |
 | `contracts/` | parser contracts |
-| `azimuth/standards/` | Decision Policies and Challenge Schedule for non-routine decisions |
 | `azimuth/model/` | the framework's own accepted intent and mechanisms |
 | `azimuth/changes/` | active changes; one identifier has one authority |
 | `azimuth/changes/archive/` | the decision record: one archived change per accepted transition |
@@ -27,25 +26,24 @@ When two artifacts disagree, the earlier item wins:
 
 1. `tools/azimuth/src/` and `tools/azimuth/tests/` — behaviour, and the tests that pin it;
 2. `contracts/` — parser contracts, pinned by frozen-vector tests;
-3. `azimuth/standards/verification.md` — current Decision Policies and the one Challenge Schedule;
-4. `azimuth/model/` — the framework's own accepted intent and mechanisms;
-5. `azimuth/changes/archive/<id>/` — why one accepted transition happened;
-6. `docs/` — derived prose, which holds no authority of its own.
+3. `azimuth/model/` — the framework's own accepted intent and mechanisms;
+4. `azimuth/changes/archive/<id>/` — why one accepted transition happened;
+5. `docs/` — derived prose, which holds no authority of its own.
 
 Read the format contract for the area you are changing before structural work. Derived prose is never the reason to keep a behaviour. There is no monolithic decision log: an accepted change's `proposal.md`, `design.md` and `outcome.md` are its record, and archived changes are immutable.
 
 ## Working rules
 
 - State claims as falsifiable propositions and distinguish decided, proposed and open work.
-- For compact Requirement accounts, `verification.md` owns Checks, inline Check–Scenario Evidence Bindings and package declarations. Separate definition-based Requirement Review and exact-Verification-Target Requirement Status records are independently authored and retained by the Azimuth Assurance Service, which computes deployment Requirement Status from applicable evidence; no source marker or execution creates an approved assessment. Earlier qualification/applicability/judgment records retain historical meaning and do not substitute for the current review model. Decision Policies and challenge scheduling for this lane remain deferred. The older declaration lane in `contracts/verification.md` retains its repository-owned decisions, project Decision Policies and Challenge Schedule. Routine Requirements owe no evidence review.
+- A Requirement owes only the reviews it declares. `Verification: reviewed` owes Checks bound to every Scenario and an independent Verification Review; `Realization: reviewed` owes `Realizes` sites (and `ImplementsMechanism` sites where a `realization.md` exists) and an independent Realization Review. A Requirement that declares neither is specified and owes no review or evidence. `verification.md` owns Checks, inline Check–Scenario Evidence Bindings, optional Challenge declarations and package declarations. The latest accepted review of each kind is a sealed head in the module's `verification-review.md` or `realization-review.md`, written only at finalization; the Azimuth Assurance Service retains review history and computes deployment Requirement Status from applicable evidence. No source marker or execution creates an accepted review.
 - Use `azimuth` for the tool and reserve Check for a deliberately enrolled verification method. Commands for the current model are `azimuth validate`, `azimuth report traceability` and `azimuth export`.
 - Configure short-lived provider adapters explicitly in strict `azimuth/adapters.json`; core never discovers executables through `PATH`, invokes a shell or inherits the ambient environment. Adapters are not daemons, webhook hosts or long-running supervisors.
 - Use `azimuth adapter verify [--config <file>]` for the configured description handshake. Use `azimuth run plan --request <file>` to resolve Check-only, Challenge-only or mixed requests from the complete unselected model, then `azimuth run execute --plan <file>` or `azimuth run import --plan <file> --input <id>=<file>` for one bounded provider exchange. Planning has no partial-model or `--only` mode.
 - Adapter content and import inputs are staged and hashed from the same opened streams. Every invocation requires supported fresh process-group isolation before spawn, one bounded core exchange whose deadline covers request writing, concurrent capped-stream draining and core's wait, and complete response validation before atomic output.
 - Core signals the process group on every terminal path and cleans members and inherited pipes while they remain in the group. Authorized descendants may escape with `setsid`, `setpgid` or equivalent; core does not guarantee their termination. This is not non-escapable descendant containment, a filesystem or network sandbox, daemon supervision or hostile-code isolation.
 - Use `azimuth run verify --bundle <file>...` for standalone Run-protocol consistency and `azimuth run inspect --bundle <file>...` for a deterministic local account. These commands do not establish current model authority or Assurance State.
-- Challenge planning preserves `selected | missing-decision | stale-decision | rejected-decision | invalid-decision | inapplicable | unresolved-relation` candidates and resolves current accepted Qualifications or Requirement Judgments, required Decision Policy forms, `gate | scheduled` lanes, semantic scope and accountable launch inputs. Each request names an explicit configured capability, finite units and target cap; core never auto-selects a capability, form, provider selector or broader fallback.
-- Execute and import preserve protocol-valid adverse facts. A clean Challenge Result is only a negative search fact. An allowed incomplete scheduled omission has an exact `challenge-selection` diagnostic and no fabricated result; `deferred` is not a result.
+- Challenge planning resolves the Challenges declared in `verification.md`, their semantic scope and accountable launch inputs. Each request names an explicit configured capability, finite units and target cap; core never auto-selects a capability, form, provider selector or broader fallback.
+- Execute and import preserve protocol-valid adverse facts. A clean Challenge Result is only a negative search fact. `deferred` is not a result.
 - The current `run-ledger` service provides project-scoped ingestion, append-only correction and review histories, main-model publication (the default model is the highest `(main_sequence, publication_revision)` publication; ratification is recorded in git) and exact-Verification-Target Assurance State. `azimuth assurance authority` exports the full current model projection. `azimuth run ingest` is not a command. There is no automatic expiry, cache-validity, cross-target reuse or historical applicability inference.
 - A marker-derived mechanism uses the project-global one-argument `ImplementsMechanism(<mechanism-id>)` annotation and an extractor-derived, ecosystem-semantic qualified `site`, exact path-free typed binding and companion Artifact. Extractors fail closed on ambiguity, unsupported semantic identity or non-normal/outside-root locators; a source path never disambiguates the site.
 - Evidence precedes notation: no mechanism enters the model until two structurally different concerns demand it in prose.
@@ -62,16 +60,16 @@ Read the format contract for the area you are changing before structural work. D
 - Enable verification packages explicitly in the project or workspace. Package source tags use their package namespaces; ecosystem emitters derive schemas and exact producer sites. `azimuth surface verify` validates complete enumeration and expectation reports against those descriptors. Compact method prose is preserved, never translated into a fabricated Terminal.
 - Heavy code analysis belongs to an extractor, never to core. AST, call-graph and schema access happen in the ecosystem whose compiler API is already present; core reads manifests only. That division is what keeps the zero-dependency rule affordable rather than heroic.
 - Every parse failure names the file, the line and what was expected. Strict formats are only tolerable when their errors are precise, and there is no parser library to supply that for free.
-- Criticality needs counter-pressure before the first non-routine Requirement lands. Whoever declares a level does not pay for it, so without a cap or an explicit review at the change boundary every Requirement drifts to the top and the level stops carrying information. No mechanism enforces this yet.
+- Review declarations need counter-pressure before the first reviewed Requirement lands. Whoever declares a review does not pay for it, so without a cap or an explicit check at the change boundary every Requirement drifts to declaring both and the declarations stop carrying information. No mechanism enforces this yet.
 - Keep each mechanism usable alone. Adding one must enrich existing validation without re-authoring existing artifacts, mixed adoption levels must coexist with no coordinating centre, and adopting Azimuth on an existing codebase must be possible by baselining current Findings and forbidding new ones.
 - A Verification Challenge has no aggregate score. Findings are reviewed against the specific predicate they attack; a project-wide percentage or threshold rewards irrelevant findings and punishes deliberately untested infrastructure. A clean Challenge Result is likewise only a negative search fact.
-- Requalification follows definition drift, not re-execution. Re-running an unchanged qualified definition needs no new review and no commit; only a change to the definition, its form, oracle, inputs or required Execution Context does.
+- Re-review follows definition drift, not re-execution. Re-running unchanged Checks needs no new Verification Review and no commit; only a change to a blocking dependency of the review does.
 
 ## Adapter command boundary
 
 ```text
 azimuth adapter verify [--config <file>]
-azimuth run plan --request <file> [--model <dir>] [--standards <file>] \
+azimuth run plan --request <file> [--model <dir>] \
   [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
 azimuth run execute --plan <file> [--predecessor <bundle>...] \
   [--config <file>] [--out <file>]

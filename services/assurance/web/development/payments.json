@@ -18,7 +18,9 @@
         "id": "delivery-delay-monitor",
         "interval_seconds": 60,
         "freshness_seconds": 300
-      }
+      },
+      "verification": "reviewed",
+      "realization_review": null
     },
     {
       "id": "reminders-follow-current-payment",
@@ -32,7 +34,13 @@
       "title": "Reminders reflect current payments",
       "verification_target": "source",
       "context_required": false,
-      "monitor": null
+      "monitor": null,
+      "verification": "reviewed",
+      "realization_review": {
+        "status": "accepted",
+        "code_drift": true,
+        "reviewed_commit": "4c1d9e7a2b3f5061d8e9a7c4b2f1e0d3c5a6b7e8"
+      }
     },
     {
       "id": "delivery-recovers-after-outage",
@@ -47,7 +55,9 @@
       "title": "Delivery retries avoid duplicates",
       "verification_target": "deployment",
       "context_required": false,
-      "monitor": null
+      "monitor": null,
+      "verification": "reviewed",
+      "realization_review": null
     },
     {
       "id": "personal-data-remains-private",
@@ -62,7 +72,13 @@
       "title": "Workers access only necessary payment data",
       "verification_target": "source",
       "context_required": true,
-      "monitor": null
+      "monitor": null,
+      "verification": "reviewed",
+      "realization_review": {
+        "status": "accepted",
+        "code_drift": false,
+        "reviewed_commit": "9fb783f0c2d14e6a8b7d5c3e1a09f4b2d6c8e7a1"
+      }
     },
     {
       "id": "delivery-remains-observable",
@@ -81,7 +97,9 @@
         "id": "delivery-alert-monitor",
         "interval_seconds": 60,
         "freshness_seconds": 300
-      }
+      },
+      "verification": "reviewed",
+      "realization_review": null
     },
     {
       "id": "notification-content-is-complete",
@@ -95,7 +113,9 @@
       "title": "Reminders contain complete payment details",
       "verification_target": "source",
       "context_required": false,
-      "monitor": null
+      "monitor": null,
+      "verification": "reviewed",
+      "realization_review": null
     },
     {
       "id": "workers-use-restricted-credentials",
@@ -110,7 +130,29 @@
       "title": "Workers use restricted delivery credentials",
       "verification_target": "source",
       "context_required": true,
-      "monitor": null
+      "monitor": null,
+      "verification": "reviewed",
+      "realization_review": {
+        "status": "stale",
+        "code_drift": null,
+        "reviewed_commit": "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d"
+      }
+    },
+    {
+      "id": "operators-can-pause-reminders",
+      "module": "operations",
+      "statement": "Operators can pause all reminders during an incident.",
+      "scenario": "operator-pauses",
+      "check": null,
+      "method": null,
+      "status": "unresolved",
+      "reason": "Declares neither review: the intent is specified and no Checks or reviews are owed.",
+      "title": "Operators can pause reminders",
+      "verification_target": null,
+      "context_required": false,
+      "monitor": null,
+      "verification": "none",
+      "realization_review": null
     }
   ]
 }

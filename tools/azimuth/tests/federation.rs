@@ -12,23 +12,9 @@ use std::time::Instant;
 
 static NEXT_LAB: AtomicU64 = AtomicU64::new(0);
 
-const STANDARDS: &str = "# Decision policies and Challenge schedule
-
-## Decision Policy: credible-executable
-Required challenge: implementation-perturbation
-
-The policy requires an implementation challenge.
-
-## Challenge Schedule: current
-Gate challenge: implementation-perturbation
-
-The implementation challenge runs in the gate lane.
-";
-
 const SYSTEM_SPEC: &str = "# Spec: payments/receipt
 
 ## Requirement: capture-identifier-is-returned
-Criticality: routine
 
 The receipt SHALL carry the capture identifier.
 
@@ -40,7 +26,6 @@ Required: its capture identifier is returned
 const EXPERIENCE_SPEC: &str = "# Spec: experience/receipt
 
 ## Requirement: capture-identifier-is-shown
-Criticality: routine
 
 The rider receipt SHALL show the capture identifier.
 
@@ -49,7 +34,7 @@ Event: a rider opens a captured trip receipt
 Required: its capture identifier is shown
 ";
 
-const SYSTEM_DESIGN: &str = "# Design: payments/receipt
+const SYSTEM_REALIZATION: &str = "# Realization: payments/receipt
 
 ## Requirement: capture-identifier-is-returned
 Mechanism: capture-identifier-projection
@@ -63,7 +48,6 @@ identifier at either public surface.
 const ROUTINE_SPEC: &str = "# Spec: experience/display-density
 
 ## Requirement: density-is-remembered
-Criticality: routine
 
 The rider application SHALL remember the selected display density in the browser.
 
@@ -75,7 +59,6 @@ Required: the selected density remains active
 const OPERATIONS_SPEC: &str = "# Spec: operations/dashboard
 
 ## Requirement: title-is-readable
-Criticality: routine
 
 The dashboard SHALL have a readable title.
 
@@ -84,7 +67,6 @@ Event: an operator opens the dashboard
 Required: its title identifies the ride system
 
 ## Requirement: delivery-backlog-is-alerted
-Criticality: routine
 
 The monitoring system SHALL alert on a persistent delivery backlog.
 
@@ -129,12 +111,8 @@ impl Lab {
             SYSTEM_SPEC,
         );
         write(
-            &backend_root.join("azimuth/model/payments/receipt/design.md"),
-            SYSTEM_DESIGN,
-        );
-        write(
-            &backend_root.join("azimuth/standards/verification.md"),
-            STANDARDS,
+            &backend_root.join("azimuth/model/payments/receipt/realization.md"),
+            SYSTEM_REALIZATION,
         );
         write(
             &backend_root.join("app/services/Payments/Capture.cs"),
@@ -209,7 +187,6 @@ impl Lab {
                     "system-intent",
                     federation::tree_digest(&backend_root.join("azimuth/model")).unwrap(),
                 )],
-                Some(sha256(STANDARDS.as_bytes())),
                 BACKEND_LINKAGE,
             ),
         );
@@ -223,7 +200,6 @@ impl Lab {
                     "experience-intent",
                     federation::tree_digest(&experience_root.join("azimuth/model")).unwrap(),
                 )],
-                None,
                 EXPERIENCE_LINKAGE,
             ),
         );
@@ -237,7 +213,6 @@ impl Lab {
                     "operations-intent",
                     federation::tree_digest(&operations_root.join("azimuth/model")).unwrap(),
                 )],
-                None,
                 OPERATIONS_LINKAGE,
             ),
         );
@@ -248,7 +223,6 @@ impl Lab {
                 &assurance_revision,
                 &["system-e2e"],
                 &[],
-                None,
                 ASSURANCE_LINKAGE,
             ),
         );
@@ -405,7 +379,6 @@ fn duplicate_active_change_authority_fails_complete_assembly() {
             "system-intent",
             federation::tree_digest(&lab.backend.root.join("azimuth/model")).unwrap(),
         )],
-        Some(sha256(STANDARDS.as_bytes())),
         BACKEND_LINKAGE,
     );
     write_manifest_with_current_changes(
@@ -415,7 +388,6 @@ fn duplicate_active_change_authority_fails_complete_assembly() {
             "experience-intent",
             federation::tree_digest(&lab.experience.root.join("azimuth/model")).unwrap(),
         )],
-        None,
         EXPERIENCE_LINKAGE,
     );
     write(
@@ -459,7 +431,6 @@ fn an_omitted_active_change_is_a_manifest_mismatch() {
                 "system-intent",
                 federation::tree_digest(&lab.backend.root.join("azimuth/model")).unwrap(),
             )],
-            Some(sha256(STANDARDS.as_bytes())),
             BACKEND_LINKAGE,
         ),
     );
@@ -496,7 +467,7 @@ fn project_acceptance_binds_the_archive_to_pre_and_post_evidence() {
         &lab.backend
             .root
             .join(format!("{active_path}/specs/payments-receipt.md")),
-        "# Intent delta: payments/receipt\n\n## Add requirement: caption-is-stable\nCriticality: routine\n\nThe receipt caption SHALL be stable.\n\n### Add scenario: caption-remains\nEvent: a receipt is rendered\nRequired: its caption remains stable\n",
+        "# Intent delta: payments/receipt\n\n## Add requirement: caption-is-stable\n\nThe receipt caption SHALL be stable.\n\n### Add scenario: caption-remains\nEvent: a receipt is rendered\nRequired: its caption remains stable\n",
     );
     write(
         &lab.backend.root.join(format!("{active_path}/outcome.md")),
@@ -507,7 +478,7 @@ fn project_acceptance_binds_the_archive_to_pre_and_post_evidence() {
             .root
             .join("azimuth/model/payments/receipt/spec.md"),
         format!(
-            "{SYSTEM_SPEC}\n## Requirement: caption-is-stable\nCriticality: routine\n\nThe receipt caption SHALL be stable.\n\n### Scenario: caption-remains\nEvent: a receipt is rendered\nRequired: its caption remains stable\n"
+            "{SYSTEM_SPEC}\n## Requirement: caption-is-stable\n\nThe receipt caption SHALL be stable.\n\n### Scenario: caption-remains\nEvent: a receipt is rendered\nRequired: its caption remains stable\n"
         ),
     )
     .unwrap();
@@ -544,7 +515,6 @@ fn project_acceptance_binds_the_archive_to_pre_and_post_evidence() {
                 "system-intent",
                 federation::tree_digest(&before_backend.join("azimuth/model")).unwrap(),
             )],
-            Some(sha256(STANDARDS.as_bytes())),
             &before_change,
             BACKEND_LINKAGE,
         ),
@@ -598,7 +568,6 @@ fn project_acceptance_binds_the_archive_to_pre_and_post_evidence() {
                 "system-intent",
                 federation::tree_digest(&lab.backend.root.join("azimuth/model")).unwrap(),
             )],
-            Some(sha256(STANDARDS.as_bytes())),
             &after_change,
             BACKEND_LINKAGE,
         ),
@@ -649,7 +618,6 @@ fn project_acceptance_binds_the_archive_to_pre_and_post_evidence() {
                 "system-intent",
                 federation::tree_digest(&lab.backend.root.join("azimuth/model")).unwrap(),
             )],
-            Some(sha256(STANDARDS.as_bytes())),
             &after_change,
             BACKEND_LINKAGE,
         ),
@@ -716,10 +684,6 @@ fn split_and_monorepo_controls_derive_the_same_assurance_relations() {
             copy_tree(&source, &control.join("azimuth/model"));
         }
     }
-    copy_tree(
-        &lab.backend.root.join("azimuth/standards"),
-        &control.join("azimuth/standards"),
-    );
     write(
         &control.join("azimuth/workspace.json"),
         "{\"format\":\"azimuth-workspace\",\"version\":2,\"areas\":[\
@@ -742,7 +706,6 @@ fn split_and_monorepo_controls_derive_the_same_assurance_relations() {
     });
     let monorepo = azimuth::load(
         &control.join("azimuth/model"),
-        &control.join("azimuth/standards/verification.md"),
         &control.join("azimuth/workspace.json"),
         &manifests,
         &[],
@@ -897,7 +860,7 @@ fn local_routine_work_is_clean_but_explicitly_incomplete() {
         .iter()
         .any(|input| input == "repository:backend"));
     let loaded = azimuth::load_assembly(&assembly, &["experience/display-density".into()])
-        .expect("routine model loads without global standards");
+        .expect("routine model loads");
     assert!(loaded.warnings.is_empty());
     assert_eq!(loaded.model.scenario_count(), 1);
     assert!(loaded.model.realizes.is_empty());
@@ -933,7 +896,6 @@ fn centralized_model_is_complete_but_makes_local_routine_intent_nonlocal() {
                 "central-intent",
                 federation::tree_digest(&lab.backend.root.join("azimuth/model")).unwrap(),
             )],
-            Some(sha256(STANDARDS.as_bytes())),
             BACKEND_LINKAGE,
         ),
     );
@@ -944,7 +906,6 @@ fn centralized_model_is_complete_but_makes_local_routine_intent_nonlocal() {
             &lab.experience.revision,
             &["rider-experience"],
             &[],
-            None,
             EXPERIENCE_LINKAGE,
         ),
     );
@@ -955,7 +916,6 @@ fn centralized_model_is_complete_but_makes_local_routine_intent_nonlocal() {
             &lab.operations.revision,
             &["monitoring"],
             &[],
-            None,
             OPERATIONS_LINKAGE,
         ),
     );
@@ -1047,7 +1007,7 @@ fn execution_receipt_subjects_form_an_exact_set() {
 }
 
 #[test]
-fn required_model_and_standards_owners_are_not_optional_in_a_complete_account() {
+fn required_model_owners_are_not_optional_in_a_complete_account() {
     let lab = Lab::new();
     let project = lab.root.join("optional-owner-project.json");
     write(
@@ -1065,10 +1025,6 @@ fn required_model_and_standards_owners_are_not_optional_in_a_complete_account() 
         .join("\n");
     assert!(
         error.contains("model source `system-intent` requires"),
-        "{error}"
-    );
-    assert!(
-        error.contains("standards require repository `backend`"),
         "{error}"
     );
 }
@@ -1286,7 +1242,6 @@ fn two_model_sources_cannot_own_the_same_spec() {
                 "experience-intent",
                 federation::tree_digest(&lab.experience.root.join("azimuth/model")).unwrap(),
             )],
-            None,
             EXPERIENCE_LINKAGE,
         ),
     );
@@ -1321,7 +1276,9 @@ fn assembled_verification_authority_requires_a_current_owning_spec() {
         &lab.backend
             .root
             .join("azimuth/model/retired/verification.md"),
-        "# Verification: retired\n\n## Check: retired-check\nMethod: invoke\nTerminal: works\n\nAtomic.\n",
+        "# Verification: retired\n\n## Requirement verification: capture-identifier-is-returned\n\n\
+         ### Scenario verification: identifier-returned\n\n#### Check: retired-check\n\
+         - Evidence bindings:\n  - Contribution: Observes the identifier.\n\nInvoke capture.\n",
     );
     output(
         &lab.backend.root,
@@ -1342,7 +1299,6 @@ fn assembled_verification_authority_requires_a_current_owning_spec() {
                 "system-intent",
                 federation::tree_digest(&lab.backend.root.join("azimuth/model")).unwrap(),
             )],
-            Some(sha256(STANDARDS.as_bytes())),
             BACKEND_LINKAGE,
         ),
     );
@@ -1389,7 +1345,6 @@ fn whole_area_relocation_preserves_check_implementation_identity() {
                 "experience-intent",
                 federation::tree_digest(&lab.experience.root.join("azimuth/model")).unwrap(),
             )],
-            None,
             &linkage,
         ),
     );
@@ -1535,10 +1490,7 @@ fn federated_marker_relocation_rewrites_one_path_free_identity_pair() {
 
     write(&lab.backend.manifest, &before_observation);
     lab.write_workset(&["backend", "experience", "operations", "assurance"], true);
-    let mut assembly = lab.assemble(None).expect("marker observation assembles");
-    // This linkage test isolates assembly while the shared federation fixture still carries the
-    // pre-F standards grammar owned by the later fixture-migration package.
-    assembly.standards_path = None;
+    let assembly = lab.assemble(None).expect("marker observation assembles");
     let loaded = azimuth::load_assembly(&assembly, &[]).expect("assembled marker model loads");
     let implementation = loaded
         .model
@@ -1616,7 +1568,6 @@ fn untracked_input_prevents_finalization() {
             "system-intent",
             federation::tree_digest(&lab.backend.root.join("azimuth/model")).unwrap(),
         )],
-        Some(sha256(STANDARDS.as_bytes())),
         BACKEND_LINKAGE,
     );
     write(&lab.backend.manifest, &updated);
@@ -1646,7 +1597,6 @@ fn ignored_model_input_cannot_hide_behind_a_clean_git_status() {
             "system-intent",
             federation::tree_digest(&lab.backend.root.join("azimuth/model")).unwrap(),
         )],
-        Some(sha256(STANDARDS.as_bytes())),
         BACKEND_LINKAGE,
     );
     write(&lab.backend.manifest, &updated);
@@ -1690,7 +1640,7 @@ fn assembly_scales_to_fifty_real_repositories_and_five_thousand_sources() {
         let model_source = format!("intent-{index}");
         let repo_root = root.join(&id);
         let spec = format!(
-            "# Spec: scale/repo-{index}\n\n## Requirement: repo-{index}-remains-routine\nCriticality: routine\n\nThe fixture SHALL remain routine.\n\n### Scenario: repo-{index}-remains\nEvent: it is checked\nRequired: it remains routine\n"
+            "# Spec: scale/repo-{index}\n\n## Requirement: repo-{index}-remains-routine\n\nThe fixture SHALL remain routine.\n\n### Scenario: repo-{index}-remains\nEvent: it is checked\nRequired: it remains routine\n"
         );
         write(
             &repo_root.join(format!("azimuth/model/scale/repo-{index}/spec.md")),
@@ -1700,12 +1650,6 @@ fn assembly_scales_to_fifty_real_repositories_and_five_thousand_sources() {
             &repo_root.join("src/sites.txt"),
             "100 derived source sites\n",
         );
-        if index == 0 {
-            write(
-                &repo_root.join("azimuth/standards/verification.md"),
-                STANDARDS,
-            );
-        }
         let revision = commit(&repo_root, "scale fixture");
         let artifacts = (0..100)
             .map(|site| {
@@ -1727,7 +1671,6 @@ fn assembly_scales_to_fifty_real_repositories_and_five_thousand_sources() {
                     &model_source,
                     federation::tree_digest(&repo_root.join("azimuth/model")).unwrap(),
                 )],
-                (index == 0).then(|| sha256(STANDARDS.as_bytes())),
                 &linkage,
             )
             .replace("\"project\":\"rides\"", "\"project\":\"scale\""),
@@ -1750,7 +1693,7 @@ fn assembly_scales_to_fifty_real_repositories_and_five_thousand_sources() {
     write(
         &project,
         &format!(
-            "{{\"format\":\"azimuth-project\",\"version\":1,\"project\":\"scale\",\"repositories\":[{}],\"areas\":[{}],\"model_sources\":[{}],\"standards\":{{\"repository\":\"repo-0\",\"path\":\"azimuth/standards/verification.md\"}},\"required_receipts\":[]}}",
+            "{{\"format\":\"azimuth-project\",\"version\":1,\"project\":\"scale\",\"repositories\":[{}],\"areas\":[{}],\"model_sources\":[{}],\"required_receipts\":[]}}",
             repository_declarations.join(","),
             area_declarations.join(","),
             source_declarations.join(",")
@@ -1797,7 +1740,6 @@ const PROJECT: &str = r#"{
     {"id":"experience-intent","repository":"experience","path":"azimuth/model","required":true},
     {"id":"operations-intent","repository":"operations","path":"azimuth/model","required":true}
   ],
-  "standards":{"repository":"backend","path":"azimuth/standards/verification.md"},
   "required_receipts":[{"id":"integrated","subjects":["backend","experience","operations","assurance"]}]
 }"#;
 
@@ -1831,18 +1773,9 @@ fn repository_manifest(
     revision: &str,
     areas: &[&str],
     model_sources: &[(&str, String)],
-    standards_digest: Option<String>,
     linkage: &str,
 ) -> String {
-    repository_manifest_with_changes(
-        repository,
-        revision,
-        areas,
-        model_sources,
-        standards_digest,
-        "",
-        linkage,
-    )
+    repository_manifest_with_changes(repository, revision, areas, model_sources, "", linkage)
 }
 
 fn repository_manifest_with_changes(
@@ -1850,7 +1783,6 @@ fn repository_manifest_with_changes(
     revision: &str,
     areas: &[&str],
     model_sources: &[(&str, String)],
-    standards_digest: Option<String>,
     changes: &str,
     linkage: &str,
 ) -> String {
@@ -1864,11 +1796,8 @@ fn repository_manifest_with_changes(
         .map(|(id, digest)| format!("{{\"id\":\"{id}\",\"digest\":\"{digest}\"}}"))
         .collect::<Vec<_>>()
         .join(",");
-    let standards = standards_digest
-        .map(|digest| format!(",\"standards_digest\":\"{digest}\""))
-        .unwrap_or_default();
     format!(
-        "{{\"format\":\"azimuth-repository-manifest\",\"version\":1,\"project\":\"rides\",\"repository\":\"{repository}\",\"revision\":\"{revision}\",\"producer\":\"federation-lab/1\",\"areas\":[{areas}],\"model_sources\":[{sources}]{standards},\"changes\":[{changes}],\"linkage\":{linkage}}}\n"
+        "{{\"format\":\"azimuth-repository-manifest\",\"version\":1,\"project\":\"rides\",\"repository\":\"{repository}\",\"revision\":\"{revision}\",\"producer\":\"federation-lab/1\",\"areas\":[{areas}],\"model_sources\":[{sources}],\"changes\":[{changes}],\"linkage\":{linkage}}}\n"
     )
 }
 
@@ -1876,7 +1805,6 @@ fn write_manifest_with_current_changes(
     repo: &Repo,
     areas: &[&str],
     model_sources: &[(&str, String)],
-    standards_digest: Option<String>,
     linkage: &str,
 ) {
     let changes_root = repo.root.join("azimuth/changes");
@@ -1920,7 +1848,6 @@ fn write_manifest_with_current_changes(
             &repo.revision,
             areas,
             model_sources,
-            standards_digest,
             &changes.join(","),
             linkage,
         ),
@@ -1982,8 +1909,12 @@ fn requirement_projection(model: &azimuth::model::Model) -> Vec<String> {
             spec.requirements.iter().flat_map(move |requirement| {
                 requirement.scenarios.iter().map(move |scenario| {
                     format!(
-                        "{}#{}:{}:{:?}",
-                        spec.id, scenario.id, requirement.id, requirement.criticality
+                        "{}#{}:{}:{:?}:{:?}",
+                        spec.id,
+                        scenario.id,
+                        requirement.id,
+                        requirement.realization,
+                        requirement.verification
                     )
                 })
             })

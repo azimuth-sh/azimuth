@@ -5,8 +5,7 @@
 //! because deriving them would manufacture the judgment the archive exists to preserve.
 
 use crate::json::Json;
-use crate::labels::read_block;
-use crate::model::{Criticality, Model};
+use crate::model::{Model, Rigor};
 use crate::spec::parse_spec;
 use crate::validation::{self, Finding};
 use std::fs;
@@ -18,7 +17,8 @@ use std::path::PathBuf;
 pub struct Addition {
     pub spec: String,
     pub requirement: String,
-    pub criticality: Criticality,
+    pub realization: Option<Rigor>,
+    pub verification: Option<Rigor>,
     pub statement: String,
     pub scenarios: Vec<AddedScenario>,
     pub applied: bool,
@@ -30,22 +30,10 @@ pub struct AddedScenario {
     pub statement: String,
 }
 
-#[derive(Debug, Clone)]
-pub struct CriticalityChange {
-    pub spec: String,
-    pub requirement: String,
-    pub from: Criticality,
-    pub to: Criticality,
-    pub because: String,
-    pub revisit: Option<String>,
-    pub applied: bool,
-}
-
 #[derive(Debug)]
 pub struct Report {
     pub id: String,
     pub additions: Vec<Addition>,
-    pub criticality_changes: Vec<CriticalityChange>,
     pub mutations: usize,
     pub unapplied_mutations: usize,
     pub unchanged_intent_reason: Option<String>,
@@ -88,7 +76,6 @@ pub fn inspect(root: &Path, model: &Model) -> Result<Report, Vec<String>> {
         .count();
 
     let mut additions = Vec::new();
-    let mut criticality_changes = Vec::new();
     let mut mutations = 0;
     match crate::intent::delta_paths(root) {
         Ok(files) => {
@@ -99,7 +86,6 @@ pub fn inspect(root: &Path, model: &Model) -> Result<Report, Vec<String>> {
                         &source,
                         model,
                         &mut additions,
-                        &mut criticality_changes,
                         &mut mutations,
                         &mut errors,
                     ),
@@ -110,9 +96,7 @@ pub fn inspect(root: &Path, model: &Model) -> Result<Report, Vec<String>> {
         Err(mut diagnostics) => errors.append(&mut diagnostics),
     }
 
-    if unchanged_intent_reason.is_some()
-        && (!additions.is_empty() || !criticality_changes.is_empty() || mutations > 0)
-    {
+    if unchanged_intent_reason.is_some() && (!additions.is_empty() || mutations > 0) {
         errors.push(
             "proposal declares unchanged intent but specs contain a supported intent delta".into(),
         );
@@ -123,9 +107,7 @@ pub fn inspect(root: &Path, model: &Model) -> Result<Report, Vec<String>> {
             Ok(projected) => projected
                 .operations
                 .iter()
-                .filter(|(name, applied)| {
-                    !*applied && !name.starts_with("add ") && !name.starts_with("criticality ")
-                })
+                .filter(|(name, applied)| !*applied && !name.starts_with("add "))
                 .count(),
             Err(projection_errors) => {
                 errors.extend(projection_errors);
@@ -166,7 +148,6 @@ pub fn inspect(root: &Path, model: &Model) -> Result<Report, Vec<String>> {
     Ok(Report {
         id,
         additions,
-        criticality_changes,
         mutations,
         unapplied_mutations,
         unchanged_intent_reason,
@@ -248,7 +229,6 @@ fn parse_delta(
     source: &str,
     model: &Model,
     additions: &mut Vec<Addition>,
-    criticality_changes: &mut Vec<CriticalityChange>,
     mutations: &mut usize,
     errors: &mut Vec<String>,
 ) {
@@ -289,21 +269,6 @@ fn parse_delta(
         } else if let Some(scenario) = trimmed.strip_prefix("### Add scenario:") {
             normalized.push_str("### Scenario:");
             normalized.push_str(scenario);
-        } else if let Some(requirement) = trimmed.strip_prefix("## Change criticality:") {
-            let (block, next) =
-                read_block(&lines, index + 1, &["From", "To", "Because", "Revisit"]);
-            parse_criticality_change(
-                path,
-                index + 1,
-                spec,
-                requirement.trim(),
-                &block,
-                model,
-                criticality_changes,
-                errors,
-            );
-            index = next;
-            continue;
         } else if trimmed.starts_with("## Replace requirement:")
             || trimmed.starts_with("## Remove requirement:")
             || trimmed.starts_with("## Remove scenario:")
@@ -316,7 +281,7 @@ fn parse_delta(
             continue;
         } else if trimmed.starts_with("## ") || trimmed.starts_with("### ") {
             errors.push(format!(
-                "{}:{}: unsupported delta operation `{trimmed}`; additions and criticality changes are machine-projected",
+                "{}:{}: unsupported delta operation `{trimmed}`; additions are machine-projected",
                 path.display(),
                 index + 1,
             ));
@@ -342,14 +307,6 @@ fn parse_delta(
     };
 
     for requirement in parsed.requirements {
-        let Some(criticality) = requirement.criticality else {
-            errors.push(format!(
-                "{}: `{}` declares no criticality",
-                path.display(),
-                requirement.id
-            ));
-            continue;
-        };
         if requirement.scenarios.is_empty() {
             errors.push(format!(
                 "{}: `{}` adds no Scenarios",
@@ -370,7 +327,8 @@ fn parse_delta(
             candidate.id == parsed.id
                 && candidate.requirements.iter().any(|existing| {
                     existing.id == requirement.id
-                        && existing.criticality == Some(criticality)
+                        && existing.realization == requirement.realization
+                        && existing.verification == requirement.verification
                         && existing.statement == requirement.statement
                         && existing.scenarios.len() == scenarios.len()
                         && scenarios
@@ -384,148 +342,11 @@ fn parse_delta(
         additions.push(Addition {
             spec: parsed.id.clone(),
             requirement: requirement.id,
-            criticality,
+            realization: requirement.realization,
+            verification: requirement.verification,
             statement: requirement.statement,
             scenarios,
             applied,
-        });
-    }
-}
-
-fn parse_criticality_change(
-    path: &Path,
-    line: usize,
-    spec: &str,
-    requirement: &str,
-    block: &crate::labels::Block,
-    model: &Model,
-    changes: &mut Vec<CriticalityChange>,
-    errors: &mut Vec<String>,
-) {
-    for duplicate in block.duplicates() {
-        errors.push(format!(
-            "{}:{}: `{}` is declared twice",
-            path.display(),
-            duplicate.line,
-            duplicate.key
-        ));
-    }
-    for (text, source_line) in &block.stray {
-        errors.push(format!(
-            "{}:{}: unrecognized line `{text}`; expected From, To, Because or Revisit",
-            path.display(),
-            source_line
-        ));
-    }
-    if !block.prose.is_empty() {
-        errors.push(format!(
-            "{}:{line}: criticality rationale belongs in `Because:` and the lowering condition in `Revisit:`",
-            path.display()
-        ));
-    }
-
-    let parse_level = |label: &str, errors: &mut Vec<String>| -> Option<Criticality> {
-        let Some(value) = block.value(label) else {
-            errors.push(format!(
-                "{}:{line}: criticality change is missing `{label}:`",
-                path.display()
-            ));
-            return None;
-        };
-        match Criticality::parse(value) {
-            Some(level) => Some(level),
-            None => {
-                errors.push(format!(
-                    "{}:{line}: unknown criticality `{value}` in `{label}:`",
-                    path.display()
-                ));
-                None
-            }
-        }
-    };
-    let from = parse_level("From", errors);
-    let to = parse_level("To", errors);
-    let because = block.value("Because").unwrap_or_default().trim();
-    if because.is_empty() {
-        errors.push(format!(
-            "{}:{line}: criticality change is missing `Because:`",
-            path.display()
-        ));
-    }
-    let (Some(from), Some(to)) = (from, to) else {
-        return;
-    };
-    if from == to {
-        errors.push(format!(
-            "{}:{line}: criticality change keeps `{requirement}` at `{}`",
-            path.display(),
-            from.name()
-        ));
-    }
-    let revisit = block
-        .value("Revisit")
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    if to < from && revisit.is_none() {
-        errors.push(format!(
-            "{}:{line}: lowering `{requirement}` requires `Revisit:` with the condition that raises it again",
-            path.display()
-        ));
-    }
-    if changes
-        .iter()
-        .any(|change| change.spec == spec && change.requirement == requirement)
-    {
-        errors.push(format!(
-            "{}:{line}: criticality for `{spec}#{requirement}` changes more than once",
-            path.display()
-        ));
-        return;
-    }
-
-    let current = model
-        .specs
-        .iter()
-        .find(|candidate| candidate.id == spec)
-        .and_then(|candidate| {
-            candidate
-                .requirements
-                .iter()
-                .find(|candidate| candidate.id == requirement)
-        });
-    let Some(current) = current else {
-        errors.push(format!(
-            "{}:{line}: `{spec}#{requirement}` does not exist in current intent",
-            path.display()
-        ));
-        return;
-    };
-    let Some(current_level) = current.criticality else {
-        errors.push(format!(
-            "{}:{line}: `{spec}#{requirement}` is unclassified and cannot match `From:`",
-            path.display()
-        ));
-        return;
-    };
-    if current_level != from && current_level != to {
-        errors.push(format!(
-            "{}:{line}: `{spec}#{requirement}` is `{}`, not declared `From: {}` or `To: {}`",
-            path.display(),
-            current_level.name(),
-            from.name(),
-            to.name()
-        ));
-        return;
-    }
-    if from != to && !because.is_empty() {
-        changes.push(CriticalityChange {
-            spec: spec.to_string(),
-            requirement: requirement.to_string(),
-            from,
-            to,
-            because: because.to_string(),
-            revisit: revisit.map(str::to_string),
-            applied: current_level == to,
         });
     }
 }
@@ -557,7 +378,6 @@ pub fn completion_issues(root: &Path, report: &Report) -> Vec<String> {
         issues.push("retained/manifest.json is required for workflow finalization; capture the relied-on input closure".into());
     }
     if report.additions.is_empty()
-        && report.criticality_changes.is_empty()
         && report.mutations == 0
         && report.unchanged_intent_reason.is_none()
     {
@@ -574,17 +394,6 @@ pub fn completion_issues(root: &Path, report: &Report) -> Vec<String> {
             issues.push(format!(
                 "{}#{} has not been applied to current specs",
                 addition.spec, addition.requirement
-            ));
-        }
-    }
-    for change in &report.criticality_changes {
-        if !change.applied {
-            issues.push(format!(
-                "{}#{} criticality has not changed from {} to {}",
-                change.spec,
-                change.requirement,
-                change.from.name(),
-                change.to.name()
             ));
         }
     }
@@ -632,7 +441,7 @@ pub fn completion_issues(root: &Path, report: &Report) -> Vec<String> {
     issues
 }
 
-/// A recorded human decision that accepts non-routine Requirements without a locally authored
+/// A recorded human decision that accepts reviewed Requirements without a locally authored
 /// Requirement Status. The record preserves who decided, when and on what basis; it supplies no
 /// review, Run or Status, and Assurance State stays the computed account of evidence.
 #[derive(Debug, Clone, PartialEq)]
@@ -1084,7 +893,6 @@ fn archived_requirement_scope(root: &Path) -> Result<std::collections::BTreeSet<
                 "## Add requirement: ",
                 "## Replace requirement: ",
                 "## Remove requirement: ",
-                "## Change criticality: ",
             ] {
                 if let Some(id) = line.strip_prefix(prefix) {
                     crate::diag::validate_id(id.trim(), false)?;
@@ -1307,11 +1115,20 @@ pub fn read_reviews(change_root: &Path) -> Result<Vec<Json>, Vec<String>> {
     }
 }
 
-/// Reads the committed review records of active and archived changes under one `changes/` directory.
+/// Reads the committed review records of the active changes under one `changes/` directory.
+/// An archived change's reviews are history: the model's review heads carry what still ratifies.
 pub fn reviews(changes_dir: &Path) -> Result<Vec<Json>, Vec<String>> {
     let mut found = Vec::new();
     let mut errors = Vec::new();
     for root in change_roots(changes_dir) {
+        if root
+            .parent()
+            .and_then(|parent| parent.file_name())
+            .and_then(|name| name.to_str())
+            == Some("archive")
+        {
+            continue;
+        }
         match read_reviews(&root) {
             Ok(mut records) => found.append(&mut records),
             Err(mut issues) => errors.append(&mut issues),
@@ -1324,58 +1141,105 @@ pub fn reviews(changes_dir: &Path) -> Result<Vec<Json>, Vec<String>> {
     }
 }
 
-/// An accepted Requirement Review that is still current against the merged model.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// An accepted Verification or Realization Review that is still current against the merged model.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Ratification {
     pub requirement: String,
+    pub kind: crate::review_heads::HeadKind,
     pub review: String,
+    pub record: Json,
 }
 
-/// Assesses the latest Requirement Review of every accepted Requirement against the merged model,
-/// so a review that went stale in a rebase or merge cannot ratify.
+/// Assesses the latest review of each declared kind for every Requirement against the merged
+/// model, so a review or head that went stale in a rebase or merge cannot ratify. Heads stored in
+/// the model compete with the change's own sealed reviews on review time.
 pub fn ratifications(
     model: &Model,
-    acceptances: &[Acceptance],
     reviews: &[Json],
     bundles: &[crate::run::RunBundle],
 ) -> Result<Vec<Ratification>, String> {
-    if acceptances.is_empty() {
-        return Ok(Vec::new());
-    }
+    let mut all = reviews.to_vec();
+    all.extend(model.review_heads.iter().map(|head| head.record.clone()));
     let authority = crate::assurance_review::authority(model, RATIFICATION_PROJECT)?;
     let mut ratified = Vec::new();
-    for requirement in acceptances
-        .iter()
-        .flat_map(|acceptance| &acceptance.requirements)
-    {
-        let target = Json::obj(vec![
-            ("kind", Json::str("requirement-review")),
-            ("requirement", Json::str(requirement)),
-        ]);
-        let Some(review) = crate::assurance_review::latest_review(reviews, &target)? else {
-            continue;
-        };
-        if crate::assurance_review::assess_record(review, &authority, reviews, bundles).status
-            != "accepted"
-        {
-            continue;
+    for view in model.requirements() {
+        let declared = [
+            (
+                crate::review_heads::HeadKind::Verification,
+                view.requirement.verification.is_some(),
+            ),
+            (
+                crate::review_heads::HeadKind::Realization,
+                view.requirement.realization.is_some(),
+            ),
+        ];
+        for (kind, declares) in declared {
+            if !declares {
+                continue;
+            }
+            let target = Json::obj(vec![
+                ("kind", Json::str(kind.record_kind())),
+                ("requirement", Json::str(view.requirement.id.clone())),
+            ]);
+            let Some(review) = crate::assurance_review::latest_review(&all, &target)? else {
+                continue;
+            };
+            if crate::assurance_review::assess_record(review, &authority, &all, bundles).status
+                != "accepted"
+            {
+                continue;
+            }
+            let fingerprint = review
+                .get("fingerprint")
+                .and_then(Json::as_str)
+                .ok_or("review record has no fingerprint")?;
+            ratified.push(Ratification {
+                requirement: view.requirement.id.clone(),
+                kind,
+                review: fingerprint.to_string(),
+                record: review.clone(),
+            });
         }
-        let fingerprint = review
-            .get("fingerprint")
-            .and_then(Json::as_str)
-            .ok_or("review record has no fingerprint")?;
-        ratified.push(Ratification {
-            requirement: requirement.clone(),
-            review: fingerprint.to_string(),
-        });
     }
-    ratified.sort_by(|left, right| left.requirement.cmp(&right.requirement));
+    ratified.sort_by(|left, right| {
+        (&left.requirement, left.kind).cmp(&(&right.requirement, right.kind))
+    });
     ratified.dedup();
     Ok(ratified)
 }
 
-/// An accepted Requirement without a current accepted review blocks the change that records it.
+/// Heads the model does not yet carry, or carries with a superseded record, for the ratified reviews.
+pub fn head_updates(model: &Model, ratified: &[Ratification]) -> Vec<crate::review_heads::Head> {
+    ratified
+        .iter()
+        .filter(|item| {
+            !model.review_heads.iter().any(|head| {
+                head.kind == item.kind
+                    && head.requirement == item.requirement
+                    && head.record.get("fingerprint").and_then(Json::as_str)
+                        == Some(item.review.as_str())
+            })
+        })
+        .filter_map(|item| {
+            let view = model
+                .requirements()
+                .find(|view| view.requirement.id == item.requirement)?;
+            Some(crate::review_heads::Head {
+                path: String::new(),
+                owner: view.spec.id.clone(),
+                kind: item.kind,
+                requirement: item.requirement.clone(),
+                record: item.record.clone(),
+                line: 0,
+            })
+        })
+        .collect()
+}
+
+/// An accepted Requirement whose declared review has no current accepted record blocks the change
+/// that records it.
 pub fn ratification_issues(
+    model: &Model,
     acceptances: &[Acceptance],
     ratified: &[Ratification],
     report: &Report,
@@ -1383,10 +1247,33 @@ pub fn ratification_issues(
     let mut issues = Vec::new();
     for acceptance in acceptances.iter().filter(|value| value.change == report.id) {
         for requirement in &acceptance.requirements {
-            if !ratified.iter().any(|item| &item.requirement == requirement) {
-                issues.push(format!(
-                    "{ACCEPTANCE_FILE} accepts `{requirement}`, which has no accepted Requirement Review that is current against the merged model; commit it under {REVIEWS_DIRECTORY}/"
-                ));
+            let Some(view) = model
+                .requirements()
+                .find(|view| &view.requirement.id == requirement)
+            else {
+                continue;
+            };
+            for (kind, label, declares) in [
+                (
+                    crate::review_heads::HeadKind::Verification,
+                    "Verification",
+                    view.requirement.verification.is_some(),
+                ),
+                (
+                    crate::review_heads::HeadKind::Realization,
+                    "Realization",
+                    view.requirement.realization.is_some(),
+                ),
+            ] {
+                if declares
+                    && !ratified
+                        .iter()
+                        .any(|item| &item.requirement == requirement && item.kind == kind)
+                {
+                    issues.push(format!(
+                        "{ACCEPTANCE_FILE} accepts `{requirement}`, which has no accepted {label} Review that is current against the merged model; commit it under {REVIEWS_DIRECTORY}/"
+                    ));
+                }
             }
         }
     }
@@ -1413,21 +1300,23 @@ pub fn acceptance_issues(acceptances: &[Acceptance], report: &Report) -> Vec<Str
     issues
 }
 
-/// Removes the missing-assurance findings of Requirements whose human acceptance is backed by a
-/// current accepted Requirement Review.
-pub fn waive_accepted_requirements(
-    findings: &mut Vec<Finding>,
-    acceptances: &[Acceptance],
-    ratified: &[Ratification],
-) {
+/// Removes the missing-review findings of Requirements whose declared review is current and accepted.
+pub fn waive_accepted_requirements(findings: &mut Vec<Finding>, ratified: &[Ratification]) {
     findings.retain(|finding| {
-        finding.kind != validation::FindingKind::MissingRequirementAssurance
-            || !finding.requirement.as_ref().is_some_and(|requirement| {
-                acceptances
-                    .iter()
-                    .any(|acceptance| acceptance.requirements.contains(requirement))
-                    && ratified.iter().any(|item| &item.requirement == requirement)
-            })
+        let kind = match finding.kind {
+            validation::FindingKind::MissingRequirementAssurance => {
+                crate::review_heads::HeadKind::Verification
+            }
+            validation::FindingKind::MissingRealizationReview => {
+                crate::review_heads::HeadKind::Realization
+            }
+            _ => return true,
+        };
+        !finding.requirement.as_ref().is_some_and(|requirement| {
+            ratified
+                .iter()
+                .any(|item| &item.requirement == requirement && item.kind == kind)
+        })
     });
 }
 
@@ -1485,6 +1374,7 @@ pub fn finalization(
                     .map(|item| {
                         Json::obj(vec![
                             ("requirement", Json::str(&item.requirement)),
+                            ("kind", Json::str(item.kind.record_kind())),
                             ("review", Json::str(&item.review)),
                         ])
                     })
@@ -1542,7 +1432,9 @@ mod tests {
 
         let ratified = [Ratification {
             requirement: "r".into(),
+            kind: crate::review_heads::HeadKind::Verification,
             review: "sha256:x".into(),
+            record: Json::Null,
         }];
         let (_, with_review) = finalization(&model, &[], &[], &ratified);
         assert!(with_review.contains("ratifying_reviews"));
@@ -1556,12 +1448,12 @@ mod tests {
         fs::write(root.join("plan.md"), "- [ ] Apply it.\n").unwrap();
         fs::write(
             root.join("specs/alpha.md"),
-            "# Intent delta: alpha\n\n## Add requirement: added\nCriticality: routine\n\nText.\n\n### Add scenario: visible\nY occurs when X occurs.\n",
+            "# Intent delta: alpha\n\n## Add requirement: added\n\nText.\n\n### Add scenario: visible\nY occurs when X occurs.\n",
         )
         .unwrap();
         let current = parse_spec(
             "alpha.md",
-            "# Spec: alpha\n\n## Requirement: old\nCriticality: routine\n\nOld.\n\n### Scenario: existing\nY occurs when X occurs.\n",
+            "# Spec: alpha\n\n## Requirement: old\n\nOld.\n\n### Scenario: existing\nY occurs when X occurs.\n",
         )
         .unwrap();
         let model = Model {
@@ -1583,12 +1475,12 @@ mod tests {
         fs::write(root.join("plan.md"), "- [ ] Apply it.\n").unwrap();
         fs::write(
             root.join("specs/alpha.md"),
-            "# Intent delta: alpha\n\n## Add requirement: added\nCriticality: routine\n\nTarget statement.\n\n### Add scenario: visible\nThe target behavior occurs.\n",
+            "# Intent delta: alpha\n\n## Add requirement: added\n\nTarget statement.\n\n### Add scenario: visible\nThe target behavior occurs.\n",
         )
         .unwrap();
         let current = parse_spec(
             "alpha.md",
-            "# Spec: alpha\n\n## Requirement: added\nCriticality: routine\n\nDifferent statement.\n\n### Scenario: visible\nDifferent behavior occurs.\n",
+            "# Spec: alpha\n\n## Requirement: added\n\nDifferent statement.\n\n### Scenario: visible\nDifferent behavior occurs.\n",
         )
         .unwrap();
         let model = Model {
@@ -1703,7 +1595,7 @@ mod tests {
         fs::create_dir_all(root.join("specs")).unwrap();
         fs::write(
             root.join("specs/alpha.md"),
-            "# Intent delta: alpha\n\n## Add requirement: added\nCriticality: routine\n\nText.\n\n### Add scenario: visible\nY occurs when X occurs.\n",
+            "# Intent delta: alpha\n\n## Add requirement: added\n\nText.\n\n### Add scenario: visible\nY occurs when X occurs.\n",
         )
         .unwrap();
 
@@ -1713,91 +1605,6 @@ mod tests {
             "proposal declares unchanged intent but specs contain a supported intent delta"
         )));
         fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn a_criticality_raise_projects_without_changing_requirement_identity() {
-        let root = transition_change(
-            "## Change criticality: existing\nFrom: routine\nTo: standard\nBecause: riders now rely on this value\n",
-        );
-        let model = model_at(Criticality::Routine);
-
-        let report = inspect(&root, &model).unwrap();
-
-        assert_eq!(report.current_requirements, 1);
-        assert_eq!(report.target_requirements, 1);
-        assert_eq!(report.criticality_changes.len(), 1);
-        assert!(!report.criticality_changes[0].applied);
-        assert_eq!(report.criticality_changes[0].to, Criticality::Standard);
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn a_criticality_transition_is_applied_only_at_the_declared_target() {
-        let root = transition_change(
-            "## Change criticality: existing\nFrom: routine\nTo: standard\nBecause: riders now rely on this value\n",
-        );
-
-        let report = inspect(&root, &model_at(Criticality::Standard)).unwrap();
-
-        assert!(report.criticality_changes[0].applied);
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn lowering_criticality_requires_the_condition_that_raises_it_again() {
-        let root = transition_change(
-            "## Change criticality: existing\nFrom: critical\nTo: routine\nBecause: the value is no longer user-visible\n",
-        );
-
-        let errors = inspect(&root, &model_at(Criticality::Critical)).unwrap_err();
-
-        assert!(errors
-            .iter()
-            .any(|error| error.contains("requires `Revisit:`")));
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn a_stale_from_level_fails_instead_of_reinterpreting_the_transition() {
-        let root = transition_change(
-            "## Change criticality: existing\nFrom: routine\nTo: standard\nBecause: riders now rely on this value\n",
-        );
-
-        let errors = inspect(&root, &model_at(Criticality::Critical)).unwrap_err();
-
-        assert!(errors
-            .iter()
-            .any(|error| error.contains("not declared `From:")));
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    fn transition_change(delta: &str) -> PathBuf {
-        let root = temp_change();
-        fs::create_dir_all(root.join("specs")).unwrap();
-        fs::write(root.join("proposal.md"), "# Change: x\n\nStatus: active\n").unwrap();
-        fs::write(root.join("plan.md"), "- [ ] Apply it.\n").unwrap();
-        fs::write(
-            root.join("specs/alpha.md"),
-            format!("# Intent delta: alpha\n\n{delta}"),
-        )
-        .unwrap();
-        root
-    }
-
-    fn model_at(criticality: Criticality) -> Model {
-        let current = parse_spec(
-            "alpha.md",
-            &format!(
-                "# Spec: alpha\n\n## Requirement: existing\nCriticality: {}\n\nOld.\n\n### Scenario: visible\nY occurs when X occurs.\n",
-                criticality.name()
-            ),
-        )
-        .unwrap();
-        Model {
-            specs: vec![current],
-            ..Default::default()
-        }
     }
 
     fn temp_change() -> PathBuf {
@@ -1828,31 +1635,16 @@ impl ValidationFacet {
 pub fn validation_facet(kind: validation::FindingKind) -> ValidationFacet {
     use validation::FindingKind::*;
     match kind {
-        MissingRequirementJudgment
-        | PendingRequirementReview
-        | MissingRequirementAssurance
-        | RejectedRequirementJudgment
-        | StaleRequirementJudgment
-        | MissingMethodQualification
-        | RejectedMethodQualification
-        | StaleMethodQualification
-        | MissingApplicabilityDecision
-        | RejectedApplicabilityDecision
-        | StaleApplicabilityDecision
-        | MissingChallengeDecision
-        | StaleChallengeDecision
-        | RejectedChallengeDecision
-        | MissingRequiredChallenge
-        | InsufficientChallengeScope => ValidationFacet::Readiness,
+        MissingRequirementAssurance | MissingRealizationReview | UnknownReviewHead => {
+            ValidationFacet::Readiness
+        }
         Unrealized
-        | UnresolvedDesignBinding
+        | UnresolvedRealizationBinding
         | MissingRequiredRealization
         | UnimplementedCheck
         | VerificationElementSupportUnresolved
         | ScenarioCheckContributionUnresolved
-        | MechanismSupportUnresolved
-        | MissingVerificationChallenge
-        | InapplicableVerification => ValidationFacet::Evidence,
+        | MechanismSupportUnresolved => ValidationFacet::Evidence,
         _ => ValidationFacet::Structure,
     }
 }

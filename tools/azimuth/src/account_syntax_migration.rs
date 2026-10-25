@@ -12,11 +12,11 @@ use crate::json::Json;
 const HEADINGS: &[(&str, &str)] = &[
     ("Claim", "Requirement"),
     ("Case", "Scenario"),
-    ("Claim design", "Requirement design"),
-    ("Case design", "Scenario design"),
+    ("Claim realization", "Requirement realization"),
+    ("Case realization", "Scenario realization"),
     ("Claim verification", "Requirement verification"),
     ("Case verification", "Scenario verification"),
-    ("Claim review", "Requirement review"),
+    ("Claim review", "Verification review"),
     ("Claim health", "Requirement status"),
     ("Claim judgment", "Requirement judgment"),
     ("Claim Judgment", "Requirement Judgment"),
@@ -30,11 +30,11 @@ const OPERATIONS: &[&str] = &["Add ", "Replace ", "Remove "];
 const DECLARATIONS: &[(&str, &str)] = &[
     ("claim", "Requirement"),
     ("case", "Scenario"),
-    ("claim design", "Requirement design"),
-    ("case design", "Scenario design"),
+    ("claim realization", "Requirement realization"),
+    ("case realization", "Scenario realization"),
     ("claim verification", "Requirement verification"),
     ("case verification", "Scenario verification"),
-    ("claim review", "Requirement review"),
+    ("claim review", "Verification review"),
     ("challenger", "Verification Challenge"),
 ];
 
@@ -51,7 +51,7 @@ const LABELS: &[(&str, &str)] = &[
 const KINDS: &[(&str, &str)] = &[
     ("claim", "requirement"),
     ("case", "scenario"),
-    ("claim-review", "requirement-review"),
+    ("claim-review", "verification-review"),
     ("claim-judgment", "requirement-judgment"),
 ];
 
@@ -144,7 +144,7 @@ fn rewrite_targets(value: &str) -> String {
         .join(",")
 }
 
-/// `Add claim design`, `Remove case verification`, `Add challenger` and the other delta operations.
+/// `Add claim realization`, `Remove case verification`, `Add challenger` and the other delta operations.
 /// A lowercase declaration keeps lowercase, as the account delta parser requires; a capitalized one
 /// takes the canonical spelling.
 fn rewrite_operation(label: &str) -> Option<String> {
@@ -389,10 +389,10 @@ mod tests {
 
     #[test]
     fn rewrites_syntax_positions_and_preserves_identifiers_prose_and_fences() {
-        let source = "# Spec: claims\n\n## Claim: verification-context-is-observed\nCriticality: standard\n\n\
+        let source = "# Spec: claims\n\n## Claim: verification-context-is-observed\nVerification: reviewed\n\n\
                       The claim holds in case of retries.\n\n### Case: case-one\nIt works.\n\n\
                       ```md\n## Claim: fenced\n```\n\n## Mechanism Case scope verification: prose\n";
-        let expected = "# Spec: claims\n\n## Requirement: verification-context-is-observed\nCriticality: standard\n\n\
+        let expected = "# Spec: claims\n\n## Requirement: verification-context-is-observed\nVerification: reviewed\n\n\
                         The claim holds in case of retries.\n\n### Scenario: case-one\nIt works.\n\n\
                         ```md\n## Claim: fenced\n```\n\n## Mechanism Case scope verification: prose\n";
         assert_eq!(rewrite_markdown(source), expected);
@@ -406,7 +406,7 @@ mod tests {
                       - Claims: claim-review\n  - Subjects: artifact\nRequired scope: [\"claim\",\"case\",\"mechanism\"]\n\
                       Select: claim-judgment from claim claim\nSelect: applicability-decision from case case-id\n\
                       Remove cases: a, b\n";
-        let expected = "### Verification Challenge: mutation/search\n- Form: mutation\n- Targets: requirement-review, claim-health\n- Targets: `requirement-review`\n\
+        let expected = "### Verification Challenge: mutation/search\n- Form: mutation\n- Targets: verification-review, claim-health\n- Targets: `verification-review`\n\
                         - Requirements: claim-review\n  - Verification Targets: artifact\nRequired scope: [\"requirement\",\"scenario\",\"mechanism\"]\n\
                         Select: requirement-judgment from requirement claim\nSelect: applicability-decision from scenario case-id\n\
                         Remove scenarios: a, b\n";
@@ -430,15 +430,15 @@ mod tests {
 
     #[test]
     fn rewrites_every_delta_operation_declaration_and_check_deployment_scope() {
-        let source = "## Add claim design: a\n### Add case design: a/s\n## Replace claim verification: a\n\
+        let source = "## Add claim realization: a\n### Add case realization: a/s\n## Replace claim verification: a\n\
                       ### Remove case verification: a/s\n## Add claim review: a\n### Add challenger: m/s\n\
-                      ### Replace challenger: m/s\n### Remove challenger: m/s\n## Add Claim design: b\n\
+                      ### Replace challenger: m/s\n### Remove challenger: m/s\n## Add Claim realization: b\n\
                       ## Add term: subject\n\n### Check: admission\n\
                       - Deployment: {\"subject\":\"source\",\"components\":[\"api\"],\"monitor\":{\"subject\":\"x\"}}\n\
                       - Note: {\"subject\":\"source\"}\n\n## Section: other\n- Deployment: {\"subject\":\"source\"}\n";
-        let expected = "## Add requirement design: a\n### Add scenario design: a/s\n## Replace requirement verification: a\n\
-                        ### Remove scenario verification: a/s\n## Add requirement review: a\n### Add verification challenge: m/s\n\
-                        ### Replace verification challenge: m/s\n### Remove verification challenge: m/s\n## Add Requirement design: b\n\
+        let expected = "## Add requirement realization: a\n### Add scenario realization: a/s\n## Replace requirement verification: a\n\
+                        ### Remove scenario verification: a/s\n## Add verification review: a\n### Add verification challenge: m/s\n\
+                        ### Replace verification challenge: m/s\n### Remove verification challenge: m/s\n## Add Requirement realization: b\n\
                         ## Add term: subject\n\n### Check: admission\n\
                         - Deployment: {\"verification_target\":\"source\",\"components\":[\"api\"],\"monitor\":{\"subject\":\"x\"}}\n\
                         - Note: {\"subject\":\"source\"}\n\n## Section: other\n- Deployment: {\"subject\":\"source\"}\n";

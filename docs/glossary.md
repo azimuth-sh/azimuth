@@ -18,16 +18,16 @@ package, service, repository or deployment boundary.
 path-independent. Specs are organized by problem domain rather than by service.
 
 **Requirement** — behavior or a constraint the system must satisfy: the independently governable
-proposition about a product or its operation. Requirements belong in specifications; designs
+proposition about a product or its operation. Requirements belong in specifications; realizations
 explain how implementations meet them. A Requirement can express business, functional, security,
-reliability or other system constraints. It owns criticality, production realization, total
-Requirement Judgment and Assurance State.
+reliability or other system constraints. It owns its review declarations, production realization, its
+Realization and Verification Reviews and Assurance State.
 
 **Scenario** — a concrete situation and its expected outcome within one Requirement, commonly
 expressed with Given/When/Then or the authored `Context` / `Event` / `Required outcome` lines. A
 Scenario describes behavior; it is distinct from the Check that verifies it. It is addressable for
 Evidence Bindings, Runs, Check Results and Verification Challenge impact, but owns no independent
-criticality, realization, Judgment or Assurance State. Its stable project-wide ID is independent of
+review declaration, realization, review or Assurance State. Its stable project-wide ID is independent of
 its current Module and parent Requirement.
 
 **Predicate** — what must hold, written as free-form normative Markdown in a Requirement and its
@@ -41,34 +41,34 @@ receives one implicit Scenario.
 
 **Quantifier** — deliberately absent from a Requirement. Requirements are universal; a constant field would carry no information. Evidence Binding quantification describes the breadth of a Check, not the logical quantifier of the Requirement.
 
-**Criticality** — how much a Requirement matters, declared on every Requirement and changeable
-without changing its identity. Scenarios inherit it but do not own it.
+**Review declaration** — one of the two optional Requirement header labels `Realization: reviewed` and `Verification: reviewed`. Each declares that the Requirement owes the matching independent review and its obligations; an absent label declares nothing. `reviewed` is the only value. Declarations change through an ordinary `Replace requirement` without changing identity. Scenarios inherit them.
+
+**Specified** — a Requirement that declares neither review. It states intent only and owes no realization linkage, Check, Evidence Binding or review.
 
 ## Facets and authority
 
-**Facet** — one of the three accountabilities for a Requirement: intent, mechanism and evidence. Which facets are applicable depends on criticality.
+**Facet** — one of the three accountabilities for a Requirement: intent, realization and verification, recorded in `spec.md`, `realization.md` and `verification.md`. The review declarations decide which obligations apply.
 
-**Intent** — what must be true, over what domain and how much it matters. Recorded in `spec.md`.
+**Intent** — what must be true and over what domain. Recorded in `spec.md`.
 
-**Mechanism** — what makes a Requirement true. Recorded in `design.md` when applicable.
+**Realization facet** — what makes a Requirement true in the code, recorded in a module's optional `realization.md` (header `# Realization: <spec-id>`, with `## Requirement realization:` and `### Scenario realization:` declarations or mechanism entries). No review declaration requires it; when it exists, the Realization Review checks the code against it. A **mechanism** is a named entry inside it, not the facet. A change's root `design.md` is a different, non-normative document that is never applied to the model.
 
-**Evidence facet** — the repository-owned account of which deliberately enrolled methods bear on
-which Scenarios and why. Compact `verification.md` owns Checks and inline Evidence Bindings; independently authored Method Qualifications, exact-target Applicability Decisions and Requirement Judgments are separate strict review records. The older declaration lane records those decisions in `verification.md`.
+**Verification facet** — the repository-owned account of which deliberately enrolled Checks bear on which Scenarios and why. `verification.md` owns Checks, inline Evidence Bindings and optional Verification Challenges; it authors no decision.
 
 **Requirement assurance record** — the logical body of assurance information associated with one
 Requirement. Its definition-time part is the per-Requirement cluster of authored Module documents
-(`spec.md`, `design.md`, `verification.md` and `judgments.md` where present) assembled into one
-account. AAS separately holds the Requirement Reviews, Runs, Check Results, Execution Context
+(`spec.md`, and `realization.md` and `verification.md` where present) assembled into one
+account, together with its review heads. AAS separately holds the review records, Runs, Check Results, Execution Context
 captures and derived assessments that bear on it. *Narrowing:* it names that collection only; there
 is no first-class aggregate, table, API resource or lifecycle with this name. Broader scopes such as
 the installation account remain distinct.
 
 **Residue** — knowledge that belongs to no Requirement, such as orientation, danger zones and deliberately absent behavior. It is outside the model and creates no assurance relation.
 
-**Facet owner** — whoever is accountable for the sufficiency of one facet. Intent owner, mechanism owner and evidence owner describe accountabilities, not required job titles or exclusive authorship rights.
+**Facet owner** — whoever is accountable for the sufficiency of one facet. Intent owner, realization owner and verification owner describe accountabilities, not required job titles or exclusive authorship rights.
 
 **Repository authority** — durable model meaning owned and reviewed with source: Requirements,
-Scenarios, criticality, mechanisms, Checks and authored Evidence Bindings. The older declaration lane also owns Method Qualifications, Applicability Decisions, Verification Challenges, Challenge Plans, Requirement Judgments, Decision Policies and the Challenge Schedule in repository documents. Compact reviews remain separate accountable records over exact repository definitions.
+Scenarios, review declarations, realizations and mechanisms, Checks, authored Evidence Bindings and Verification Challenges, and the review heads finalization writes. Reviews remain separate accountable records over exact repository definitions.
 
 ## Verification graph
 
@@ -82,48 +82,15 @@ separate verification primitive.
 
 **Check implementation** — one compiler- or extractor-resolved source site linked to a Check by `ImplementsCheck(<check-id>)`. It supplies implementation identity and an exact source fingerprint, but declares no Requirement relation or evidence form. Several sites may compose one Check.
 
-**Evidence Binding** — one authored relation from a Check's proposition to one Scenario. The unique typed `(Check, Scenario)` pair identifies a compact binding; its inline Contribution states the narrower evidentiary meaning. It has no separate authored binding ID, Execution Context, Decision Policy or Method Qualification field. The older declaration lane additionally records those fields.
+**Evidence Binding** — one authored relation from a Check's proposition to one Scenario. The unique typed `(Check, Scenario)` pair identifies a compact binding; its inline Contribution states the narrower evidentiary meaning. It has no separate authored binding ID or Execution Context field.
 
-The following form/context/policy fields belong to the older declaration lane; they are not implicit compact binding fields.
+**Oracle** — the source of the expected result for an Evidence Binding. The vocabulary is descriptive and is not a ranking. Three values are routinely confused and are distinguished by what the expectation is drawn from: `relational` states a relation among values observed for **one** case; `metamorphic` states a relation **across executions** connected by an intentional transformation; `model-based` computes the exact expected result from an **independent** model. One case is not one function or process — a request, its response, resulting persisted state and an outbound call gathered for the same case are one case.
 
-**Scope** — defined by what must be real for the Check rather than by how many processes happen to execute. The closed rungs are in [`contracts/verification.md`](../contracts/verification.md).
+**Verification Challenge** — an optional, author-declared machine search for weaknesses that the Checks fail to detect, targeting the exact implementation and Check basis before the Verification Review. No rule requires one; the Verification Review judges whether the present or absent Challenges are adequate.
 
-**Quantification** — whether a Check evaluates one case or ranges over a derived or generated set. *Narrowing:* the broad value describes the method's declared breadth, not mathematical exhaustiveness. The closed values are in [`contracts/verification.md`](../contracts/verification.md).
+**Decision impact edge** — the pure projection from a challenged target through its exact dependants to the parent Requirement. It never creates another Challenge Result.
 
-**Oracle** — the source of the expected result for an Evidence Binding. The vocabulary is descriptive and is not a ranking; its closed values are in [`contracts/verification.md`](../contracts/verification.md). Three values are routinely confused and are distinguished by what the expectation is drawn from: `relational` states a relation among values observed for **one** case; `metamorphic` states a relation **across executions** connected by an intentional transformation; `model-based` computes the exact expected result from an **independent** model. One case is not one function or process — a request, its response, resulting persisted state and an outbound call gathered for the same case are one case.
-
-**Required Execution Context** — the exact string-to-string Execution Context in which an Evidence Binding is qualified. Alpha 2 provides no wildcards, ranges or provider expressions.
-
-**Challenge domain** — the relations a Verification Challenge may traverse from an Evidence Binding. It is not a list of provider products; the closed set is in [`contracts/verification.md`](../contracts/verification.md).
-
-**Method Qualification** — an independent review of the credibility of an exact Check method. Compact records pin the Check fingerprint and use `accepted | rejected`; shared bindings may rely on the same current qualification. The older declaration lane uses `qualified | rejected` and pins its declared form, oracle, Execution Context, challenge domain and policy.
-
-**Applicability Decision** — the independent review that qualified evidence bears on one Check–Scenario contribution. Compact records use `accepted | rejected`, pin the exact Verification Target, current binding and qualification, and reference exact Run/bundle/Check Result basis. The older declaration lane uses `applicable | rejected` and the authored binding ID.
-
-**Decision Policy** — a project standard naming open Verification Challenge forms required for a
-Method Qualification, Applicability Decision or Requirement Judgment.
-
-**Challenge Schedule** — the one project account assigning every required or declared Challenge
-form exactly once to `gate | scheduled`. The lane never changes repository decision identity.
-
-**Verification Challenge** — an activity that tests whether verification detects defects or
-incorrect behavior: a method that searches for a reason to distrust an exact assessment. Current
-compact targets are Requirement Review records; the older declaration lane
-targets a Method Qualification, Applicability Decision or Requirement Judgment.
-
-**Challenge Plan** — a repository declaration pairing one Verification Challenge with twelve
-semantic selector forms for exact current Method Qualification, Applicability Decision and
-Requirement Judgment fingerprints.
-
-**Challenge candidate disposition** — how one resolved candidate stands. Only a current positive decision is selected, and adverse siblings remain visible. The closed dispositions are in [`contracts/verification.md`](../contracts/verification.md).
-
-**Requirement Judgment** — the independent assessment of a parent Requirement's complete Scenario, mechanism and applicable-evidence composition. Compact records pin an exact Verification Target and complete current dependencies, with `supported | violated | unresolved` conclusions and residual risks. The older declaration lane uses a repository-owned `accepted | rejected` decision.
-
-**Decision impact edge** — the pure projection from a challenged decision through its exact
-dependants to the parent Requirement and current Requirement Judgment. Method impact fans out;
-applicability impact stays local. It never creates another Challenge Result.
-
-**Ordinary engineering test** — an unenrolled native test used to build confidence in the implementation. It creates no Azimuth evidence relation and needs no exemption. All tests for the current routine Requirements are in this category.
+**Ordinary engineering test** — an unenrolled native test used to build confidence in the implementation. It creates no Azimuth evidence relation and needs no exemption. Every test of a Requirement that does not declare `Verification:` is in this category.
 
 ## Verification packages
 
@@ -135,13 +102,13 @@ applicability impact stays local. It never creates another Challenge Result.
 
 **Probe** — a package-owned measurement implementation used by Checks for declared origins. It supplies measurement provenance and health, not automatic Scenario meaning or a Requirement verdict.
 
-**Authority projection** — the full unselected model's pinned Checks, Scenarios, bindings, Requirements, mechanisms and structural gaps. The ledger owner explicitly selects it; exporting or registering a candidate does not accept a change.
+**Authority projection** — the full unselected model's pinned Checks, Scenarios, bindings, Requirements with their `realization` and `verification` declarations, mechanisms and structural gaps. The latest main-model publication is the default; exporting or registering a candidate does not accept a change.
 
 ## Mechanism and linkage
 
-**Mechanism identity** — a stable, design-owned id for one atomic enforcement mechanism. It is independent of a code symbol, so deleting an implementation leaves an unresolved declaration instead of erasing both sides of the relation.
+**Mechanism identity** — a stable, realization-owned id for one atomic enforcement mechanism. It is independent of a code symbol, so deleting an implementation leaves an unresolved declaration instead of erasing both sides of the relation.
 
-**Enforcement kind** — how a mechanism prevents a violation. Kinds are mechanism properties, not executable Check forms; the closed ladder is in [`contracts/design.md`](../contracts/design.md).
+**Enforcement kind** — how a mechanism prevents a violation. Kinds are mechanism properties, not executable Check forms; the closed ladder is in [`contracts/realization.md`](../contracts/realization.md).
 
 **Choke point** — a single place through which a violation would have to pass. Contrast with a guard repeated at every site.
 
@@ -151,15 +118,15 @@ applicability impact stays local. It never creates another Challenge Result.
 parent Requirement's predicate. It names the project-global Requirement ID and carries no Scenario
 or evidence form.
 
-**`implements-mechanism`** — a production relation binding a compiler-resolved symbol to one declared design mechanism. Its source annotation names the project-global Mechanism ID; the extractor derives qualified identity.
+**`implements-mechanism`** — a production relation binding a compiler-resolved symbol to one declared realization mechanism. Its source annotation names the project-global Mechanism ID; the extractor derives qualified identity.
 
 **Mechanism implementation site** — the ecosystem-semantic qualified `site` emitted with one marker-derived mechanism implementation. .NET uses namespace/type/method/metadata signature; JVM uses binary class/method/descriptor; TypeScript and JavaScript use package/module/receiver/symbol and canonical overloads; Go uses import path/receiver/function/typed signature with positional generics; Python uses the one root-relative module and `__qualname__`; Rust uses a conventional Cargo target, reachable module and normalized declared signature whose type-path spelling remains semantic; C++ accepts only an external-linkage, non-module, non-template, unconstrained program-global declaration and uses its qualified name and canonical function type. Ambiguity fails rather than consulting a file.
 
-**Marker companion** — the exact Artifact paired with one raw mechanism implementation by `(id, kind, file)`. The raw implementation has exactly six fields and binding `<address-kind>:<site>`; companion id equals that binding. Assembly atomically rewrites both ids to `<area>|<address-kind>|<site>`. It is marker-only and cannot also satisfy an explicit Design binding.
+**Marker companion** — the exact Artifact paired with one raw mechanism implementation by `(id, kind, file)`. The raw implementation has exactly six fields and binding `<address-kind>:<site>`; companion id equals that binding. Assembly atomically rewrites both ids to `<area>|<address-kind>|<site>`. It is marker-only and cannot also satisfy an explicit realization binding.
 
 **`ImplementsCheck`** — source linkage from one resolved implementation site to one project-global Check id. The Evidence Binding remains repository-owned.
 
-**Design binding** — an explicit machine-addressable ordinary Artifact for a design mechanism. Without one, each tagged source site contributes its own derived binding and companion Artifact; several distinct sites may support one mechanism.
+**Realization binding** — an explicit machine-addressable ordinary Artifact for a realization mechanism. Without one, each tagged source site contributes its own derived binding and companion Artifact; several distinct sites may support one mechanism.
 
 **Delivery topology** — the exchange, bindings, queues and failure routes that connect a brokered producer to consumers. It is a realization site when correct routing is part of the Requirement.
 
@@ -177,24 +144,24 @@ or evidence form.
 
 **Surface** — a named site domain assembled from independently derived enumerator contributions. It answers which sites participate in a universal domain, not which business Requirements they realize.
 
-**Realization obligation** — an optional requirement that an applicable Requirement have at least one realization in each named area. It constrains architectural participation and creates no evidence edge.
+**Realization obligation** — an optional requirement that a Requirement declaring `Realization:` have at least one realization in each named area. It constrains architectural participation and creates no evidence edge.
 
 ## Validation and outputs
 
-**Finding** — one deterministic validation result with a stable kind, closed category, severity, source location, optional Requirement and criticality, detail and corrective help. The exhaustive registry and the closed categories are in [`contracts/findings.md`](../contracts/findings.md).
+**Finding** — one deterministic validation result with a stable kind, closed category, severity, source location, optional entity reference, detail and corrective help. The exhaustive registry and the closed categories are in [`contracts/findings.md`](../contracts/findings.md).
 
 **Validation** — deterministic interpretation of the derived repository model. `azimuth validate` reports Findings without executing Checks.
 
-**Traceability report** — a pure derived view of selected Scenarios, inherited parent
-realizations, Check relationships, Challenge resolutions and decision-impact edges.
+**Traceability report** — a pure derived view (version 6) of selected Scenarios with their parent
+Requirement's realization and verification rigor, inherited parent realizations and Check contributions.
 
 **Export** — the complete derived repository model serialized as format version 8 by `azimuth
-export`. It includes Requirements, Scenarios, decisions, Challenge resolutions and Findings, but no
+export`. It includes Requirements with their review declarations, Scenarios, mechanisms, Checks, Verification Challenges and Findings, but no
 runtime ledger data.
 
 **Machine tier** — deterministic model validation. It reports structural Findings and cannot establish truth.
 
-**Agent tier** — accountable semantic review of relations and propositions the machine cannot interpret, such as whether a Check is discriminating or a realization earns its tag. *The model records no agent-tier artifact.* Review happens outside the tool and reaches the repository only as an authored `Qualifier:` or `Judge:` identity on a decision, which is accountable for the verdict however it was drafted.
+**Agent tier** — accountable semantic review of relations and propositions the machine cannot interpret, such as whether a Check is discriminating or a realization earns its tag. Review happens outside the tool and reaches the repository only as a sealed review record whose `reviewer` is accountable for the verdict however it was drafted; finalization stores the latest ratifying one as a review head.
 
 ## Project and change process
 
@@ -214,7 +181,7 @@ runtime ledger data.
 
 **Project snapshot** — a finalization record over a complete clean assembly: catalog digest, area topology, revisions, manifest and receipt digests, and derived model fingerprint.
 
-**Change** — the temporal envelope from accepted current state to a proposed target. It carries intent deltas, design where needed, implementation work and verification obligations. It is not a branch, merge request, artifact, environment or rollout.
+**Change** — the temporal envelope from accepted current state to a proposed target. It carries intent, realization and verification deltas, an optional free-form `design.md`, implementation work and verification obligations. It is not a branch, merge request, artifact, environment or rollout.
 
 **Change authority** — the one repository record containing a change id, active or archived.
 
@@ -263,9 +230,9 @@ timing and completion state. Native processes, parameters, shards and retries ar
 details. The Run envelope is distinct from the Check executions and Check Results it contains. A
 Check executes inside a Run and never emits one.
 
-**Semantic Plan** — the provider-neutral selection inside a Run bundle. It freezes complete-model identity, exact required Execution Context, Check implementations, Verification Challenge targets, schedule lanes, semantic scope and finite work units without naming an adapter or native selector.
+**Semantic Plan** — the provider-neutral selection inside a Run bundle. It freezes complete-model identity, exact required Execution Context, Check implementations, Verification Challenge targets, lanes, semantic scope and finite work units without naming an adapter or native selector.
 
-**Semantic Challenge scope** — the sorted, unique provider-neutral account of selector anchors and complete decision inputs for one Challenge selection. Every item has a closed kind, stable id and canonical fingerprint. Overlapping selectors union scope; conflicting fingerprints fail.
+**Semantic Challenge scope** — the sorted, unique provider-neutral account of target anchors and complete inputs for one Challenge selection. Every item has a closed kind, stable id and canonical fingerprint. Overlapping selectors union scope; conflicting fingerprints fail.
 
 **Accountable launch input** — the exact route-local projection of one source-backed semantic scope item. It repeats kind, id and fingerprint plus a strict source, Artifact, enumeration or surface-member locator account. Locators affect launch identity, never semantic Plan identity.
 
@@ -289,15 +256,13 @@ umbrella concept with no record of its own; information whose applicability is n
 not Evidence for that Requirement.
 
 **Challenge Result** — the terminal result for one selected Verification Challenge and exact
-assessment fingerprint. A clean result records a negative search, not positive product evidence.
-
-**Scheduled omission** — absence of one planned `scheduled` Challenge from an incomplete Run. It has exactly one execution diagnostic scoped to the Challenge-selection id and no Challenge Result. It is not a fourth result and does not make the selection disappear from the Plan.
+implementation target fingerprint. A clean result records a negative search, not positive product evidence.
 
 **Correction** — the complete next immutable revision of one Run bundle. It names its immediate predecessor and preserves Run identity, Verification Target, plan, required and actual Execution Context, source system and execution, started time, adapter identity and version, descriptor, configuration, launch, capability routes, complete normalizer and planned time. Import-input identities are protected per revision but may change when later bytes from the same native execution arrive through the frozen route. A correction is not a patch or timestamp-selected winner.
 
 **Protocol-valid** — internally consistent under the Run-bundle schema, identities, selection, reduction, references and correction rules. It says neither that repository fingerprints are current nor that Assurance State is acceptable.
 
-**Assurance State** — a dynamic conclusion for one exact Verification Target, derived from repository decisions and accepted execution facts.
+**Assurance State** — a dynamic conclusion for one exact Verification Target, derived from repository definitions, review heads and accepted execution facts.
 
 **Adapter** — an explicitly configured, short-lived provider process that translates core-selected semantic targets to native work or imports an exact native report. It returns a provider-neutral Run bundle and never interprets repository meaning independently. Core invokes it without a shell, `PATH` discovery or ambient environment inheritance.
 
@@ -311,37 +276,37 @@ assessment fingerprint. A clean result records a negative search, not positive p
 
 A protocol-valid adapter-returned `timed-out` Run is an execution fact and exits zero only when its complete response arrives within that deadline. A host-enforced deadline is a transport timeout, exits one and publishes no bundle.
 
-**Azimuth Assurance Service (AAS)** — the current project-scoped `run-ledger` persists valid Run histories, main-model publications and independent compact reviews, then derives exact-Verification-Target state. It also holds the separate, non-assessment Work Provenance ledger. Its producer, reviewer and owner roles authorize different actions. The earlier service API and version 2 project-snapshot wire stay isolated with no compatibility bridge. A bounded adapter is not this ledger or a long-running webhook host.
+**Azimuth Assurance Service (AAS)** — the current project-scoped `run-ledger` persists valid Run histories, main-model publications and independent reviews, then derives exact-Verification-Target state. It also holds the separate, non-assessment Work Provenance ledger. Its producer, reviewer and owner roles authorize different actions. The earlier service API and version 2 project-snapshot wire stay isolated with no compatibility bridge. A bounded adapter is not this ledger or a long-running webhook host.
 
-## Current compact assessment vocabulary
+## Review vocabulary
 
-**Requirement Review** — an independent assessment of whether the proposed verification is a
-sensible way to verify the Requirement and whether that verification has been implemented
-correctly. It examines exact Requirement/Scenario definitions, design, implementation, Check
-contributions, oracles, scope and limitations, and records `accepted | rejected`. No execution
-Verification Target or Check Results are required. It is distinct from deployment Requirement
-Status.
+**Verification Review** — the independent global review owed by `Verification: reviewed`: is the verification credible? It examines the Checks, their bindings, oracles, coverage, input and expectation independence, controls, limitations and whether the declared or absent Verification Challenges are adequate, and records `accepted | rejected` (record kind `verification-review`). Its blocking dependencies are the Requirement text including its declarations, the Scenarios, the Checks and their bindings, the Challenge declarations and the Check execution units; product realization sites are not among them. No execution Verification Target or Check Results are required. It is distinct from deployment Requirement Status, which requires an accepted current Verification Review to be Satisfied.
+
+**Realization Review** — the independent global review owed by `Realization: reviewed`: does the code at the realization sites do what the Scenarios say, consistent with `realization.md` where present? It records `accepted | rejected` (record kind `realization-review`) with the required `reviewed_commit` and an informational `sites_fingerprint` over the realization sites. Its blocking dependencies are the Requirement text including its rigor declarations, the realization declaration, the `realization.md`-derived mechanism fingerprints, the realization gaps and the Scenarios; the code at the sites is not among them. It is an opinion about a code snapshot, not evidence, and never makes a Requirement Satisfied.
+
+**Delta review** — the local, independent review of one authored proposal or spec, realization or verification delta inside the change workflow. Its record stays in the change's archived decision record and never enters the model.
+
+**Review head** — the latest ratifying review of one kind for one Requirement, written only by `azimuth change finalize` into the module's `verification-review.md` or `realization-review.md` as a `## <requirement-id>` section with readable bullet lines and the complete sealed record in a fenced `json` block. It is never authored: loading re-renders the file from its records and rejects any difference, so a hand edit of any line breaks it. Its state is computed, never stored. A scan recomputes ratifications from the change's reviews plus the heads; a Requirement without a current accepted review of a declared kind keeps `missing-requirement-assurance` (Verification) or `missing-realization-review` (Realization), and a head whose Requirement is absent or no longer declares that review is `unknown-review-head`.
+
+**Code drift** — a boolean: the Realization Review's `sites_fingerprint` differs from the current fingerprint over the Requirement's realization sites. It is displayed as "reviewed at <commit>, code at the realization sites changed since". It is informational and never stales a review.
 
 **Requirement Status** — the conclusion established by applicable evidence about a Requirement for
 a deployment. AAS computes it from reviewed definitions, release provenance, the observed deployment
 and compatible Execution Context captures. Internal values `supported | violated | unresolved` are
 presented as **Satisfied**, **Not satisfied** and **Unresolved**. Missing, stale, conflicting or
-incomplete support remains unresolved. A passing Check or an accepted Requirement Review alone never
+incomplete support remains unresolved. A passing Check or an accepted review alone never
 implies a satisfied Requirement. Requirement Status is always computed; there is no authored
-Requirement Status record.
+Requirement Status record. Each status also shows the verification review and realization review dimensions, each `accepted | missing | stale | rejected | not-declared`.
 
 **Verification Challenge implementation** — tagged machine-executable code/configuration
-implementing a declared search for objections to a Requirement Review. Production targets use ordinary Requirement/Mechanism implementation tags, not separate
+implementing a declared Verification Challenge search. Production targets use ordinary Requirement/Mechanism implementation tags, not separate
 Verification-Challenge-specific target tags.
-
-Method Qualification, Applicability Decision and Requirement Judgment definitions above describe
-historical records; they are not mandatory steps in the current compact assessment lane.
 
 ## Work Provenance vocabulary
 
 **Work Provenance** — the ledger of completed workflow attempts, kept as a separate domain that is
-never an input to Requirement Review currentness, Requirement Status or acceptance. It records
-activities, not their products: a review, design or implementation lives in its own domain and is
+never an input to review currentness, Requirement Status or acceptance. It records
+activities, not their products: a review, realization or implementation lives in its own domain and is
 referenced by fingerprint. See [`contracts/work-provenance.md`](../contracts/work-provenance.md).
 
 **Attempt** — one completed, submitted workflow result: action, outcome, actor, agent descriptor,

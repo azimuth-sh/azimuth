@@ -8,18 +8,16 @@ use std::path::Path;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Facet {
     Spec,
-    Design,
+    Realization,
     Verification,
-    Judgments,
 }
 
 impl Facet {
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "spec" => Some(Self::Spec),
-            "design" => Some(Self::Design),
+            "realization" => Some(Self::Realization),
             "verification" => Some(Self::Verification),
-            "judgments" => Some(Self::Judgments),
             _ => None,
         }
     }
@@ -27,27 +25,24 @@ impl Facet {
     fn delta_title(self) -> &'static str {
         match self {
             Self::Spec => "Intent",
-            Self::Design => "Design",
+            Self::Realization => "Realization",
             Self::Verification => "Verification",
-            Self::Judgments => "Judgments",
         }
     }
 
     pub fn name(self) -> &'static str {
         match self {
             Self::Spec => "spec",
-            Self::Design => "design",
+            Self::Realization => "realization",
             Self::Verification => "verification",
-            Self::Judgments => "judgments",
         }
     }
 
     fn model_title(self) -> &'static str {
         match self {
             Self::Spec => "Spec",
-            Self::Design => "Design",
+            Self::Realization => "Realization",
             Self::Verification => "Verification",
-            Self::Judgments => "Judgments",
         }
     }
 
@@ -56,11 +51,11 @@ impl Facet {
             (Self::Spec, 2, "requirement") => Some("Requirement"),
             (Self::Spec, 2, "term") => Some("Term"),
             (Self::Spec, 3, "scenario") => Some("Scenario"),
-            (Self::Design, 2, "requirement design") => Some("Requirement design"),
-            (Self::Design, 3, "scenario design") => Some("Scenario design"),
-            (Self::Design, 2..=6, "section") => Some("Section"),
-            (Self::Design, 3..=6, "element") => Some("Element"),
-            (Self::Design, 3..=6, "mechanism") => Some("Mechanism"),
+            (Self::Realization, 2, "requirement realization") => Some("Requirement realization"),
+            (Self::Realization, 3, "scenario realization") => Some("Scenario realization"),
+            (Self::Realization, 2..=6, "section") => Some("Section"),
+            (Self::Realization, 3..=6, "element") => Some("Element"),
+            (Self::Realization, 3..=6, "mechanism") => Some("Mechanism"),
             (Self::Verification, 2, "requirement verification") => Some("Requirement verification"),
             (Self::Verification, 3, "scenario verification") => Some("Scenario verification"),
             (Self::Verification, 2 | 3, "section") => Some("Section"),
@@ -70,8 +65,6 @@ impl Facet {
             (Self::Verification, 3, "surface") => Some("Surface"),
             (Self::Verification, 3, "expectation set") => Some("Expectation set"),
             (Self::Verification, 3, "probe") => Some("Probe"),
-            (Self::Judgments, 2, "requirement review") => Some("Requirement review"),
-            (Self::Judgments, 2, "section") => Some("Section"),
             _ => None,
         }
     }
@@ -206,11 +199,11 @@ pub fn project_additions(path: &Path, module: &str, facet: Facet) -> Result<Stri
                     "Requirement"
                         | "Scenario"
                         | "Term"
-                        | "Requirement design"
-                        | "Scenario design"
+                        | "Requirement realization"
+                        | "Scenario realization"
                         | "Requirement verification"
                         | "Scenario verification"
-                        | "Requirement review"
+                        | "Verification review"
                         | "Section"
                         | "Element"
                         | "Mechanism"
@@ -358,7 +351,7 @@ pub fn project_new_modules(
                 .and_then(|name| name.to_str())
                 .and_then(Facet::from_name)
             else {
-                issues.push(diagnostic(&path, 1, "unsupported account delta facet; expected spec.md, design.md, verification.md or judgments.md"));
+                issues.push(diagnostic(&path, 1, "unsupported account delta facet; expected spec.md, realization.md or verification.md"));
                 continue;
             };
             if facet == Facet::Spec {

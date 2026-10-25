@@ -3,7 +3,6 @@
 ## Replace requirement: semantic-planning-uses-the-complete-model
 From: sha256:f4968e8c2ffa794b10c1c4be4c32a8778ebf814b45e380b790f3143b026a2e55
 Because: Claim Review and Claim Health replace removed review targets while Check execution remains independent of approval.
-Criticality: routine
 
 Azimuth SHALL derive Check and machine Challenge execution plans from one complete unselected current model without delegating semantic resolution to an adapter.
 

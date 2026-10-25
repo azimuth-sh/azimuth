@@ -1,8 +1,8 @@
 # Assurance extensions
 
-Status: **compact verification packages, independent review records and the current Run ledger implemented; compact Decision Policies and challenge scheduling deferred**.
+Status: **compact verification packages, independent review records and the current Run ledger implemented**.
 
-Azimuth is an evidence control plane, not a catalog of testing and analysis products. Packages extend authoring, extraction and execution over shared Requirements, Scenarios, Checks and inline contributions. Requirement Review assesses definitions and their verification credibility; Requirement Status assesses applicable Check Results for an exact Verification Target or deployment. Machine-executed Verification Challenges search for weaknesses in an exact assessment. No separate Check Review, Method Qualification, Applicability Decision or Requirement Judgment step is mandatory in the compact account. Historical declaration contracts and review records retain their original meanings without granting current positive assurance.
+Azimuth is an evidence control plane, not a catalog of testing and analysis products. Packages extend authoring, extraction and execution over shared Requirements, Scenarios, Checks and inline contributions. The Verification Review assesses verification credibility and the Realization Review assesses whether the code at the realization sites does what the Scenarios say; Requirement Status assesses applicable Check Results for an exact Verification Target or deployment. Optional machine-executed Verification Challenges search for weaknesses in the exact implementation and Check basis; the Verification Review judges whether the declared or absent Challenges are adequate.
 
 This document records the role and authority boundaries extension work must preserve. Strict wire details remain in the [adapter](../contracts/adapter.md), [launch-plan](../contracts/run-launch-plan.md) and [Run-bundle](../contracts/run-bundle.md) formats.
 
@@ -17,7 +17,7 @@ The executable brand does not decide whether an activity is a Check or a Verific
 - Broad static analysis is normally a Verification Challenge because a clean search does not establish product behavior.
 - A requirement-specific static rule with an independent product oracle can be a Check.
 - Flakiness repetition, test-order randomization and oracle mutation are Verification Challenges because they
-  search for reasons to distrust a Requirement Review or Requirement Status assessment.
+  search for reasons to distrust the verification.
 - A contract or schema assertion is a Check when the accepted or rejected interaction is itself the product predicate.
 - A backup restoration or rollback drill is a Check when it directly evaluates a recovery Requirement for an exact artifact or deployment.
 - A machine-executed penetration search can be a Verification Challenge because negative search does not imply product satisfaction. Agent-only exploratory investigations are not enrolled Verification Challenge execution in this increment.
@@ -36,15 +36,13 @@ The compact account keeps distinct ownership:
 - `verification.md` declares Checks, inline contributions, package concepts and machine-executed Verification Challenges;
 - source tags identify Check/Verification Challenge implementations and meaningful Requirement or Mechanism realization scope;
 - ecosystem extractors emit semantic sites, accountable locations and fingerprints, not reviewer decisions;
-- exact Requirement Reviews are authored separately and compiled against pinned packets, while deployment Requirement Status is computed; and
+- exact Verification and Realization Reviews are authored separately, compiled against pinned packets and stored as review heads in the model at finalization, while deployment Requirement Status is computed; and
 - Runs retain actual execution Verification Targets, Check Results, Challenge Results and provenance.
-
-The older repository declaration lane retains its separately documented Decision Policies and Challenge Plans. It is historical guidance for that grammar, not a mandatory compact review layer. See [the historical review contract](../contracts/history/assurance-reviews-before-claim-health.md).
 
 Ordinary tests, analyzer rules and monitors remain outside Azimuth until deliberately enrolled. This prevents thousands of native test cases from becoming accidental assurance authority. It is independent of storage capacity: the current ledger may retain large execution volumes while the semantic Check graph remains sparse.
 
-Every Requirement in the accepted model under `azimuth/model/` is routine. They therefore have no current
-Checks, Evidence Bindings or decisions. The parser, extractor and release suites are ordinary
+No Requirement in the accepted model under `azimuth/model/` declares `Realization:` or `Verification:`. They therefore have no current
+Checks, Evidence Bindings or reviews. The parser, extractor and release suites are ordinary
 engineering tests, not Azimuth evidence.
 
 ## Current Run exchange
@@ -75,7 +73,7 @@ The public journey is:
 
 ```text
 azimuth adapter verify [--config <file>]
-azimuth run plan --request <file> [--model <dir>] [--standards <file>] \
+azimuth run plan --request <file> [--model <dir>] \
   [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
 azimuth run execute --plan <file> [--predecessor <bundle>...] \
   [--config <file>] [--out <file>]
@@ -83,11 +81,11 @@ azimuth run import --plan <file> --input <id>=<file>... \
   [--predecessor <bundle>...] [--config <file>] [--out <file>]
 ```
 
-Verification performs the configured description handshake. Planning loads the complete unselected model and accepts Check-only, Challenge-only or mixed strict requests. Check requests name an explicit capability and finite units. Challenge requests additionally name an authored Plan and nonzero candidate cap. The two arrays are required and their combined selection is non-empty.
+Verification performs the configured description handshake. Planning loads the complete unselected model and accepts Check-only, Challenge-only or mixed strict requests. Check requests name an explicit capability and finite units. Challenge requests additionally name a declared Verification Challenge, its prepared scope report and a nonzero candidate cap. The two arrays are required and their combined selection is non-empty.
 
-Compact planning selects exact current Requirement Review or Requirement Status assessment fingerprints and resolves a bounded semantic scope. The mutation execution Verification Target is separate from the review target. Current Stryker integration pins exact batch source input and native mutation statuses/locations; per-mutant exact Verification Targets and mutant-specific product Check Results are unavailable. Future materialized mutants require distinct Verification Targets before their Check Results can support Requirement Status. Source scope uses meaningful Requirement or Mechanism tags rather than duplicate file lists; emitters supply locations and adapters translate them into tool filters. Mutation targets, compilation/analysis dependencies and exercised Checks remain distinct. Missing mappings, exclusions and scope expansion must be recorded rather than silently broadening execution.
+Planning selects the exact implementation target fingerprint and resolves a bounded semantic scope. The mutation execution Verification Target is separate from the Challenge target. Current Stryker integration pins exact batch source input and native mutation statuses/locations; per-mutant exact Verification Targets and mutant-specific product Check Results are unavailable. Future materialized mutants require distinct Verification Targets before their Check Results can support Requirement Status. Source scope uses meaningful Requirement or Mechanism tags rather than duplicate file lists; emitters supply locations and adapters translate them into tool filters. Mutation targets, compilation/analysis dependencies and exercised Checks remain distinct. Missing mappings, exclusions and scope expansion must be recorded rather than silently broadening execution.
 
-Historical authored Challenge Plans retain their policy and schedule semantics. Compact planning does not invent a mandatory Decision Policy, recursive Verification Challenge qualification or positive interpretation of a clean search. The adapter executes the frozen semantic selection and accountable launch inputs; it never loads or reinterprets repository authority.
+Planning does not require any Challenge form, qualify a Verification Challenge recursively or interpret a clean search positively. The adapter executes the frozen semantic selection and accountable launch inputs; it never loads or reinterprets repository authority.
 
 For every exchange, core stages executable, resource and import-input bytes from the same open streams it hashes and invokes only staged content with a cleared environment. On a supported host, the adapter starts in a fresh process group before its code runs. One configured deadline bounds core request writing, concurrent response and diagnostic reads and core's own wait. Core signals remaining group members on every terminal path and cleans inherited pipes while those processes remain in the group. A host without the required process-group primitive rejects the exchange before spawn.
 
@@ -100,7 +98,7 @@ Adapter, configuration, description, launch, routes and normalizer are correctio
 A valid violated Check Result, Challenge finding, partial or cancelled Run, or adapter-returned protocol-valid `timed-out` Run fact exits zero. A host-enforced process deadline is a transport timeout and exits one, as does another transport, semantic, content or identity mismatch. A returned `timed-out` fact is valid only when the complete response arrives inside that host deadline; host timeout publishes nothing. CLI and schema failures exit two. No nonzero result publishes an output bundle.
 
 Challenge Results are exactly `clean | findings | inconclusive`. Clean records only that the
-configured search found no objection. Findings attack the pinned assessment and require disposition, correction and reassessment where relevant. They do not fabricate a violated product Requirement, and clean results do not establish a supported Requirement Status.
+configured search found no objection. Findings attack the pinned implementation and Check basis and require disposition, correction and reassessment where relevant. They do not fabricate a violated product Requirement, and clean results do not establish a supported Requirement Status.
 
 Adapters are short-lived processes. There is no long-running adapter, service bridge, provider webhook or generic event gateway. Provider-specific event hosting does not enter core or the Assurance Service.
 
@@ -108,11 +106,9 @@ Continuous monitoring must become bounded execution windows. Alert delivery may 
 
 Raw reports and telemetry remain in their systems of record. Run bundles carry content digests, immutable references and enough provenance to preserve their normalized interpretation; standalone verification never dereferences an artifact locator.
 
-The synthetic [Challenge-planning conformance](../experiments/challenge-planning/README.md) proves these planning, outcome, omission, import and mismatch boundaries through public commands only.
-
 ## Service and wire boundary
 
-The current `run-ledger` accepts strict Run bundles and independently authored compact review records under project-scoped producer, reviewer and owner credentials. The default model is the highest-sequence main-model publication of a complete authority projection exported with `azimuth assurance authority`; ratification is recorded in git, not by the service. A snapshot joins that authority, immutable reviews and current correction heads for an exact Verification Target. No passing Run fabricates a supported Requirement Status assessment. Stale, rejected, missing and ambiguous support remains visible.
+The current `run-ledger` accepts strict Run bundles and independently authored review records under project-scoped producer, reviewer and owner credentials. The default model is the highest-sequence main-model publication of a complete authority projection exported with `azimuth assurance authority`; ratification is recorded in git, not by the service. A snapshot joins that authority, its review heads and current correction heads for an exact Verification Target. No passing Run fabricates a supported Requirement Status assessment. Stale, rejected, missing and ambiguous support remains visible.
 
 The older claim-contract/project-snapshot service stays isolated, with no compatibility bridge into current Run state. `azimuth export` emits repository model content; the authority command emits its pinned full-model review projection, neither exporting runtime ledger history. Provider-specific event hosting remains outside the ledger. See [run-ledger.md](../contracts/run-ledger.md).
 
@@ -129,10 +125,10 @@ A future provider package or ledger integration is composable only if it preserv
 - monitoring silence is not interpreted as a satisfied product result; and
 - equivalent normalized bundles work locally and through the optional ledger.
 
-Adapter transport stops before durable ingestion; the separate current ledger supplies authorization, immutable history and Verification-Target-specific compact Assurance State. No cache-validity, automatic expiry, cross-target reuse or historical applicability inference is defined. Compact challenge policies and scheduling remain deferred. Guidance must not simulate those missing authorities or turn checked-in records into fresh measurements.
+Adapter transport stops before durable ingestion; the separate current ledger supplies authorization, immutable history and Verification-Target-specific compact Assurance State. No cache-validity, automatic expiry, cross-target reuse or historical applicability inference is defined. Guidance must not simulate those missing authorities or turn checked-in records into fresh measurements.
 
 ## Review provenance and publication
 
-Native reviews may retain optional `provenance: {agent, model, reassesses}`. Agent and model labels are null or supplied nonempty names; reassessment is null or an earlier same-target review fingerprint with an earlier review time. Labels do not establish independence or permission. Markdown aggregates preserve reviewer, actual review time, rationale and exact packet dependencies.
+Native reviews carry `reassesses`: null or an earlier same-target, same-kind review fingerprint with an earlier review time. Who performed a review is Work Provenance, not a review field. Markdown aggregates preserve reviewer, actual review time, rationale and exact packet dependencies.
 
-Local drafts and experimental executions stay local by default. CI publishes the current package relied on for delivery and relevant adverse facts, preserving original authorship. Review publication requires an authorized reviewer credential matching the record; producer permission cannot publish reviews. AAS retains published immutable records, separately exposes definition Review currentness and exact-target Requirement Status, and never infers acceptance from registration, transport, execution or deployment provenance.
+Local drafts and experimental executions stay local by default. CI publishes the current package relied on for delivery and relevant adverse facts, preserving original authorship. Review publication requires an authorized reviewer credential matching the record; producer permission cannot publish reviews. AAS retains published immutable records, separately exposes both review dimensions and exact-target Requirement Status, and never infers acceptance from registration, transport, execution or deployment provenance.

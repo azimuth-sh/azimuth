@@ -54,24 +54,13 @@ impl PackageStatus {
 
 pub fn initialize(root: &Path) -> Result<Vec<PathBuf>, String> {
     let mut created = Vec::new();
-    for relative in [
-        "model",
-        "changes/archive",
-        "explorations/archive",
-        "standards",
-    ] {
+    for relative in ["model", "changes/archive", "explorations/archive"] {
         let path = root.join(relative);
         if !path.exists() {
             fs::create_dir_all(&path)
                 .map_err(|error| format!("cannot create {}: {error}", path.display()))?;
             created.push(path);
         }
-    }
-    let standards = root.join("standards/verification.md");
-    if !standards.exists() {
-        fs::write(&standards, crate::resources::DEFAULT_STANDARDS)
-            .map_err(|error| format!("cannot write {}: {error}", standards.display()))?;
-        created.push(standards);
     }
     let workspace = root.join("workspace.json");
     if !workspace.exists() {
@@ -706,7 +695,6 @@ mod tests {
 
         assert!(!first.is_empty());
         assert!(second.is_empty());
-        assert!(root.join("standards/verification.md").is_file());
         assert!(root.join("workspace.json").is_file());
         fs::remove_dir_all(root.parent().unwrap()).unwrap();
     }

@@ -498,6 +498,11 @@ async fn model_revision_requirement_reviews(
     materialized_reviews::read(&state, &project, Some(&revision)).await
 }
 
+const REVIEW_KINDS: [(&str, &str, &str); 2] = [
+    ("verification-review", "verification", "Verification Review"),
+    ("realization-review", "realization", "Realization Review"),
+];
+
 fn definition_reviews(
     authority: &CoreJson,
     reviews: &[CoreJson],
@@ -512,17 +517,27 @@ fn definition_reviews(
         let id = requirement["id"]
             .as_str()
             .ok_or_else(|| LedgerError::invalid("Requirement identity missing"))?;
-        let target = CoreJson::obj(vec![
-            ("kind", CoreJson::str("requirement-review")),
-            ("requirement", CoreJson::str(id)),
-        ]);
-        match assurance_review::latest_review(reviews, &target) {
-            Ok(Some(record)) => {
-                let assessment = assurance_review::assess_record(record, authority, reviews, bundles);
-                requirements.push(json!({"requirement":id,"record":to_value(record)?,"assessment":assessment.status,"diagnostics":assessment.diagnostics}));
+        for (kind, label, name) in REVIEW_KINDS {
+            if requirement[label].as_str() != Some("reviewed") {
+                requirements.push(json!({"kind":kind,"requirement":id,"record":null,"assessment":"not-declared","code_drift":null,"diagnostics":[]}));
+                continue;
             }
-            Ok(None) => requirements.push(json!({"requirement":id,"record":null,"assessment":"missing","diagnostics":["Requirement Review is absent"]})),
-            Err(error) => requirements.push(json!({"requirement":id,"record":null,"assessment":"invalid","diagnostics":[error]})),
+            let target = CoreJson::obj(vec![
+                ("kind", CoreJson::str(kind)),
+                ("requirement", CoreJson::str(id)),
+            ]);
+            match assurance_review::latest_review(reviews, &target) {
+                Ok(Some(record)) => {
+                    let assessment =
+                        assurance_review::assess_record(record, authority, reviews, bundles);
+                    let code_drift = (kind == "realization-review")
+                        .then(|| assurance_review::realization_drift(record, authority))
+                        .flatten();
+                    requirements.push(json!({"kind":kind,"requirement":id,"record":to_value(record)?,"assessment":assessment.status,"code_drift":code_drift,"diagnostics":assessment.diagnostics}));
+                }
+                Ok(None) => requirements.push(json!({"kind":kind,"requirement":id,"record":null,"assessment":"missing","code_drift":null,"diagnostics":[format!("{name} is absent")]})),
+                Err(error) => requirements.push(json!({"kind":kind,"requirement":id,"record":null,"assessment":"invalid","code_drift":null,"diagnostics":[error]})),
+            }
         }
     }
     Ok(Json(
@@ -799,7 +814,7 @@ async fn submit_review(
 ) -> Result<(StatusCode, Json<Value>), LedgerError> {
     let reviewer = state.authorize(project, headers, Some(Role::Reviewer))?;
     let record = core_json(body)?;
-    require_requirement_review(record.get("kind"))?;
+    require_global_review(record.get("kind"))?;
     assurance_review::validate_record(&record).map_err(LedgerError::invalid)?;
     let payload = to_value(&record)?;
     if payload.get("reviewer").and_then(Value::as_str) != Some(&reviewer) {
@@ -868,15 +883,15 @@ async fn review_history(
     ))
 }
 
-// Deployment Requirement Status is computed from evidence, and the earlier assessment kinds no
-// longer have storage, so a record of any other kind is refused before validation.
-fn require_requirement_review(kind: Option<&CoreJson>) -> Result<(), LedgerError> {
+// Deployment Requirement Status is computed from evidence and only the two global reviews are
+// stored, so a record of any other kind is refused before validation.
+fn require_global_review(kind: Option<&CoreJson>) -> Result<(), LedgerError> {
     match kind.and_then(CoreJson::as_str) {
-        Some("requirement-review") => Ok(()),
+        Some("verification-review" | "realization-review") => Ok(()),
         Some(kind @ ("requirement-status" | "method-qualification" | "applicability-decision" | "requirement-judgment")) => Err(LedgerError::invalid(format!(
-            "{kind} records are not accepted: the Assurance Service stores only requirement-review records, and deployment Requirement Status is computed from evidence"
+            "{kind} records are not accepted: the Assurance Service stores only verification-review and realization-review records, and deployment Requirement Status is computed from evidence"
         ))),
-        _ => Err(LedgerError::invalid("review records require kind requirement-review")),
+        _ => Err(LedgerError::invalid("review records require kind verification-review or realization-review")),
     }
 }
 
@@ -1190,7 +1205,7 @@ mod tests {
         let model = azimuth::model::Model {
             specs: vec![azimuth::spec::parse_spec(
                 "spec.md",
-                "# Spec: module\n\n## Requirement: bounded\nCriticality: routine\n\nThe operation SHALL complete.\n\n### Scenario: completes\nGiven ordinary input, when invoked, then complete.\n",
+                "# Spec: module\n\n## Requirement: bounded\n\nThe operation SHALL complete.\n\n### Scenario: completes\nGiven ordinary input, when invoked, then complete.\n",
             ).unwrap()],
             ..Default::default()
         };

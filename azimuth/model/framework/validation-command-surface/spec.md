@@ -2,7 +2,6 @@
 
 ## Requirement: validation-is-distinct-from-check-execution
 Title: Validation is distinct from check execution
-Criticality: routine
 
 Azimuth SHALL expose deterministic model validation separately from enrolled Check execution and
 SHALL present traceability only as a derived view.

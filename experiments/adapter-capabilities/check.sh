@@ -33,7 +33,6 @@ plan() {
   "$AZIMUTH" run plan \
     --request "$request" \
     --model "$FIXTURE/model" \
-    --standards "$FIXTURE/standards.md" \
     --workspace "$FIXTURE/workspace.json" \
     --manifest "$FIXTURE/manifest.json" \
     --config "$config" \
@@ -229,13 +228,12 @@ assert scope["fingerprint"] == "sha256:" + hashlib.sha256(
     json.dumps(scope_preimage, separators=(",", ":"), sort_keys=True).encode()
 ).hexdigest()
 assert [(item["kind"], item["id"]) for item in scope["anchors"]] == [
-    ("requirement", "behavior-is-observable")
+    ("implementation", "synthetic-implementation-perturbation")
 ]
+assert selection["target"]["kind"] == "implementation"
+assert scope["anchors"][0]["fingerprint"] == selection["target"]["fingerprint"]
 assert [(item["kind"], item["id"]) for item in scope["inputs"]] == [
-    ("requirement", "behavior-is-observable"),
-    ("requirement-judgment", "behavior-is-observable"),
     ("realization", "synthetic|rust-symbol|behavior::execute"),
-    ("policy", "synthetic/requirement-judgment-policy"),
 ]
 challenge_route = dual["provenance"]["adapter"]["routes"][1]
 assert challenge_route["selection"] == {"kind": "challenge", "id": selection["id"]}

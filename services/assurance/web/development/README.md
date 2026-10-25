@@ -14,8 +14,8 @@ OAuth application, credentials, Tailscale or API process is needed.
 
 | Scenario | Purpose |
 | --- | --- |
-| `mixed` (default) | Two satisfied Requirements, one not satisfied Requirement, missing execution, stale Requirement Review, Execution Context mismatch and overdue monitoring; deployed release awaiting acceptance. |
-| `healthy` | All seven Requirements satisfied; accepted deployed release. |
+| `mixed` (default) | Two satisfied Requirements, one not satisfied Requirement, missing execution, stale Verification Review, stale Realization Review, an accepted Realization Review with code drift, a specified-only Requirement, Execution Context mismatch and overdue monitoring; deployed release awaiting acceptance. |
+| `healthy` | All seven Requirements that declare verification satisfied; the specified-only Requirement owes no review; accepted deployed release. |
 | `incident` | Mixed scenario plus a delivery deadline violation. |
 | `empty` | Project with no model, releases, reviews or Runs. |
 
@@ -32,8 +32,8 @@ link keys, not protocol content fingerprints.
 
 `payments.json` owns the example Requirements, Scenarios, methods, outcomes and explanations.
 `src/lib/development-data.ts` adapts them to existing inspection screens. The dashboard opens the exact model and deployment referenced by the release.
-The prior main model contains six reminder Requirements; the candidate adds retry
-recovery as a seventh Requirement. Prior-main definitions have no synthetic reviews or
+The prior main model contains seven Requirements, one of them specified only; the candidate
+adds retry recovery as an eighth Requirement. Prior-main definitions have no synthetic reviews or
 production assessments; candidate evidence is not transferred to the prior main model.
 The model selector defaults to the prior main model in the mixed/incident scenario; choose
 the candidate revision and production version to inspect the deployed change.
@@ -77,7 +77,7 @@ Model and system-version selectors use published names and descriptor labels.
 Exact fingerprints and raw records live in Technical details; copy buttons use
 the browser clipboard, with manual selection available if clipboard access fails.
 A module view includes Requirements from its nested modules. A Requirement view separates
-Requirement Status, Scenarios and declared Checks, Requirement Review, work history and review history.
+Requirement Status, Scenarios and declared Checks, Verification Review, Realization Review, work history and review history.
 Recorded Check Results must match the selected Verification Target fingerprint, current Check
 fingerprint and Scenario before appearing under that Check. Displaying a Check Result
 is not an applicability decision or a new Requirement Status assessment.
@@ -122,7 +122,7 @@ deployments. Selection is explicit in the URL and remembered per project in a
 browser cookie. The overview, Requirement lists, release evidence and model contexts
 read that environment's selection and observations. Switching environment clears
 an explicitly selected deployment so evidence cannot follow the wrong environment.
-The local fixture includes production and staging; staging has seven unresolved
+The local fixture includes production and staging; staging has eight unresolved
 Requirements with no execution evidence. Environment selection never deploys or updates
 AAS records.
 
@@ -147,9 +147,9 @@ A Requirement view has a collapsed Work history section fed by
 action, actor, outcome, agent kind, model, effort and harness with a
 harness-attested, declared or unknown basis marker, handoff and record times with
 the derived duration, and a collapsed report. Failure Attributions link to the
-attempts they name. Work provenance is never evidence: it does not affect Requirement
-Review currentness or Requirement Status, and an unavailable provenance read leaves
-the rest of the page intact. The Requirement Review section shows the reviewing
+attempts they name. Work provenance is never evidence: it does not affect Verification
+or Realization Review currentness or Requirement Status, and an unavailable provenance read leaves
+the rest of the page intact. The Verification Review section shows the reviewing
 attempt's descriptor when an attempt in the history generated that review.
 
 The synthetic `reminders-follow-current-payment` history has an intent change with a

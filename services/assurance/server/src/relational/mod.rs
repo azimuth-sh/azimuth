@@ -157,7 +157,7 @@ fn invalid(message: impl Into<String>) -> sqlx::Error {
     sqlx::Error::Protocol(message.into())
 }
 
-const SCHEMA_VERSION: i32 = 9;
+const SCHEMA_VERSION: i32 = 10;
 
 pub(crate) async fn initialize(pool: &PgPool) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
@@ -713,9 +713,9 @@ mod schema_version_tests {
             sqlx::query_as("SELECT version,signature FROM assurance_storage_schema")
                 .fetch_one(&pool)
                 .await?;
-        assert_eq!(version, 9);
+        assert_eq!(version, 10);
         initialize(&pool).await?;
-        for (version, signature) in [(8, signature.clone()), (9, format!("{signature}-changed"))] {
+        for (version, signature) in [(9, signature.clone()), (10, format!("{signature}-changed"))] {
             sqlx::query("DELETE FROM assurance_storage_schema")
                 .execute(&pool)
                 .await?;
@@ -735,7 +735,7 @@ mod schema_version_tests {
     }
 
     #[tokio::test]
-    async fn fresh_database_reaches_schema_version_nine_and_restarts(
+    async fn fresh_database_reaches_schema_version_ten_and_restarts(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let postgres = Postgres::default().start().await?;
         let pool = crate::connect(&format!(
@@ -747,7 +747,7 @@ mod schema_version_tests {
         let version: i32 = sqlx::query_scalar("SELECT version FROM assurance_storage_schema")
             .fetch_one(&pool)
             .await?;
-        assert_eq!(version, 9);
+        assert_eq!(version, 10);
         let tables: Vec<String> = sqlx::query_scalar(
             "SELECT table_name FROM information_schema.tables WHERE table_schema='public'",
         )
@@ -761,6 +761,8 @@ mod schema_version_tests {
             "model_revisions",
             "assurance_review_artifacts_item",
             "assurance_review_challenge_basis_item",
+            "assurance_review_issues_item",
+            "assurance_review_dispositions_item",
             "assurance_authority_requirement_intents_item",
             "provenance_ledgers",
             "provenance_instances",
@@ -785,7 +787,7 @@ mod schema_version_tests {
             );
         }
         let columns: Vec<(String, String)> = sqlx::query_as(
-            "SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND (table_name,column_name) IN (('assurance_releases','baseline_model_revision'),('assurance_releases','integration_commit'),('assurance_releases','integration_sequence'),('assessment_requirements','supported_since_ms'),('provenance_attempts','agent_type'),('provenance_attempts','usage_basis'),('provenance_failure_attributions','agent_type'))",
+            "SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND (table_name,column_name) IN (('assurance_releases','baseline_model_revision'),('assurance_releases','integration_commit'),('assurance_releases','integration_sequence'),('assessment_requirements','supported_since_ms'),('provenance_attempts','agent_type'),('provenance_attempts','usage_basis'),('provenance_failure_attributions','agent_type'),('assessment_requirements','review'),('assessment_requirements','verification_review'),('assessment_requirements','realization_review'),('assessment_requirements','realization_code_drift'),('assessment_requirements','realization_reviewed_commit'),('definition_requirements','kind'),('definition_requirements','code_drift'))",
         )
         .fetch_all(&pool)
         .await?;
@@ -794,6 +796,7 @@ mod schema_version_tests {
             .map(|(t, c)| format!("{t}.{c}"))
             .collect();
         assert!(!columns.contains(&"assurance_releases.baseline_model_revision".into()));
+        assert!(!columns.contains(&"assessment_requirements.review".into()));
         for expected in [
             "assurance_releases.integration_commit",
             "assurance_releases.integration_sequence",
@@ -801,6 +804,12 @@ mod schema_version_tests {
             "provenance_attempts.agent_type",
             "provenance_attempts.usage_basis",
             "provenance_failure_attributions.agent_type",
+            "assessment_requirements.verification_review",
+            "assessment_requirements.realization_review",
+            "assessment_requirements.realization_code_drift",
+            "assessment_requirements.realization_reviewed_commit",
+            "definition_requirements.kind",
+            "definition_requirements.code_drift",
         ] {
             assert!(columns.iter().any(|c| c == expected), "missing {expected}");
         }

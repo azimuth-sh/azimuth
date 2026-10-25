@@ -230,7 +230,7 @@ def initialize(root: pathlib.Path) -> None:
     (package / "spec.md").write_text(
         "# Spec: synthetic/behavior\n\n"
         "## Requirement: behavior-is-observable\n"
-        "Criticality: standard\n\n"
+        "Verification: reviewed\n\n"
         "The synthetic component SHALL expose one observable behavior.\n\n"
         "### Scenario: works\n"
         "The synthetic behavior is observable when checked.\n",
@@ -238,68 +238,12 @@ def initialize(root: pathlib.Path) -> None:
     )
     (package / "verification.md").write_text(
         "# Verification: synthetic/behavior\n\n"
-        "## Check: behavior-check\n"
-        "Method: invoke the synthetic behavior\n"
-        "Terminal: one bounded result\n\n"
-        "The adapter runs one finite synthetic work unit.\n\n"
-        "## Evidence Binding: synthetic/behavior-edge\n"
-        "Check: behavior-check\n"
-        "Scenario: works\n"
-        "Method qualification: synthetic/behavior-method\n"
-        "Proposition: the bounded result directly establishes observable behavior\n"
-        "Execution Context: {}\n"
-        "Challenge domain: [\"check-implementation\"]\n"
-        "Policy: synthetic-evidence\n\n"
-        "The experiment binds its one Check to its one Scenario.\n\n"
-        "## Method Qualification: synthetic/behavior-method\n"
-        "Check: behavior-check\n"
-        "Scope: component\n"
-        "Quantification: example\n"
-        "Oracle: relational\n"
-        "Execution Context: {\"platform\":\"synthetic\"}\n"
-        "Challenge domain: [\"check-implementation\"]\n"
-        "Policy: synthetic-evidence\n"
-        "Verdict: qualified\n"
-        "Fingerprint: sha256:2acf632396c94573b0df63d28467ccf16b7cf3d3ffc3fc277e80551789674725\n"
-        "Qualified: 2026-08-30\n"
-        "Qualifier: adapter-experiment\n\n"
-        "The synthetic implementation and oracle are controlled by the fixture.\n\n"
-        "## Applicability Decision: synthetic/behavior-edge\n"
-        "Verdict: applicable\n"
-        "Fingerprint: sha256:15e4326e47b435bbcbbb73f80df45a6f4414c6c706ab16309cb1440cef530ea6\n"
-        "Decided: 2026-08-30\n"
-        "Decider: adapter-experiment\n\n"
-        "The bounded Check applies directly to the fixture Scenario.\n\n"
-        "## Requirement Judgment: behavior-is-observable\n"
-        "Verdict: accepted\n"
-        "Policy: synthetic-evidence\n"
-        "Fingerprint: sha256:c1a199c852170cd84bf5699d0b696f98d4c6db95819f2bd380588e0701ac897d\n"
-        "Judged: 2026-08-30\n"
-        "Judge: adapter-experiment\n"
-        "Basis: the current method and binding cover the only Scenario\n"
-        "Residual risk: synthetic execution cannot establish production behavior\n\n"
-        "The fixture accepts only its deliberately bounded synthetic composition.\n\n"
-        "## Verification Challenge: synthetic/implementation-perturbation\n"
-        "Form: implementation-perturbation\n"
-        "Searches for: a synthetic implementation change that escapes the bounded result\n"
-        "Required scope: [\"policy\"]\n\n"
-        "The Verification Challenge attacks the policy basis shared by the synthetic decisions.\n\n"
-        "## Challenge Plan: synthetic/decision-coverage\n"
-        "Verification Challenge: synthetic/implementation-perturbation\n"
-        "Select: method-qualification from check behavior-check\n"
-        "Select: applicability-decision from binding synthetic/behavior-edge\n"
-        "Select: requirement-judgment from requirement behavior-is-observable\n\n"
-        "The plan covers each positive decision made by the fixture.\n",
-        encoding="utf-8",
-    )
-    (root / "standards.md").write_text(
-        "# Decision policies and Challenge schedule\n\n"
-        "## Decision Policy: synthetic-evidence\n"
-        "Required challenge: implementation-perturbation\n\n"
-        "The synthetic fixture requires one bounded implementation challenge form.\n\n"
-        "## Challenge Schedule: current\n"
-        "Gate challenge: implementation-perturbation\n\n"
-        "The one required synthetic form is assigned to the gate lane.\n",
+        "## Requirement verification: behavior-is-observable\n\n"
+        "### Scenario verification: works\n\n"
+        "#### Check: behavior-check\n"
+        "- Evidence bindings:\n"
+        "  - Contribution: The bounded result directly establishes observable behavior.\n\n"
+        "The adapter runs one finite synthetic work unit and observes one bounded result.\n",
         encoding="utf-8",
     )
     write_json(
@@ -420,31 +364,16 @@ def derive_launches(source: pathlib.Path, config_path: pathlib.Path, target: pat
     target_fingerprint = fixed("d")
     anchors = [
         {
-            "kind": "requirement",
-            "id": "behavior-is-observable",
-            "fingerprint": fixed("e"),
+            "kind": "implementation",
+            "id": "synthetic-implementation-perturbation",
+            "fingerprint": target_fingerprint,
         }
     ]
     inputs = [
         {
-            "kind": "requirement",
-            "id": "behavior-is-observable",
-            "fingerprint": fixed("e"),
-        },
-        {
-            "kind": "requirement-judgment",
-            "id": "behavior-is-observable",
-            "fingerprint": target_fingerprint,
-        },
-        {
             "kind": "realization",
             "id": "synthetic|rust-symbol|behavior::execute",
             "fingerprint": fixed("f"),
-        },
-        {
-            "kind": "policy",
-            "id": "synthetic/requirement-judgment-policy",
-            "fingerprint": fixed("9"),
         },
     ]
     scope_fingerprint = fingerprint(
@@ -460,7 +389,7 @@ def derive_launches(source: pathlib.Path, config_path: pathlib.Path, target: pat
             "format": "azimuth-challenge-selection-identity",
             "version": 2,
             "verification_challenge_fingerprint": verification_challenge_fingerprint,
-            "target_kind": "requirement-judgment",
+            "target_kind": "implementation",
             "target_fingerprint": target_fingerprint,
         }
     )
@@ -468,12 +397,12 @@ def derive_launches(source: pathlib.Path, config_path: pathlib.Path, target: pat
     challenge = {
         "id": challenge_id,
         "verification_challenge": {
-            "id": "fault-injection/synthetic",
+            "id": "synthetic-implementation-perturbation",
             "fingerprint": verification_challenge_fingerprint,
         },
         "target": {
-            "kind": "requirement-judgment",
-            "id": "behavior-is-observable",
+            "kind": "implementation",
+            "id": "synthetic-implementation-perturbation",
             "fingerprint": target_fingerprint,
         },
         "lane": "gate",

@@ -35,7 +35,7 @@ package with `baseline_model_revision` or `composition` is rejected as an undecl
 Optional `integration` is `{commit, main_sequence}`: the full Git ID of the main commit the release was built
 from and its positive integer first-parent sequence, attested by CI. Optional `catalog` contains
 `modules`, `requirements`, `scenarios`, `checks` as below. Optional `required_reviews` is an explicit array of
-native Requirement Review fingerprints. When present it covers every non-routine Requirement; each selected
+native Verification Review fingerprints. When present it covers every Requirement that declares `Verification:`; each selected
 record must be accepted, current against the snapshot authority and latest without ambiguity.
 Missing/stale/rejected records produce actionable errors for local correction. Historical adverse
 predecessors remain in the snapshot; they are not mistaken for the selected current review.

@@ -78,7 +78,7 @@ async fn refresh(
             .iter()
             .map(|value| value.as_str().unwrap())
             .collect();
-        sqlx::query("INSERT INTO definition_requirements(project,revision,requirement,record_fingerprint,status,diagnostics) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(project,revision,requirement) DO UPDATE SET record_fingerprint=excluded.record_fingerprint,status=excluded.status,diagnostics=excluded.diagnostics").bind(project).bind(revision).bind(requirement["requirement"].as_str()).bind(requirement["record"]["fingerprint"].as_str()).bind(requirement["assessment"].as_str()).bind(diagnostics).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO definition_requirements(project,revision,requirement,kind,record_fingerprint,status,code_drift,diagnostics) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(project,revision,requirement,kind) DO UPDATE SET record_fingerprint=excluded.record_fingerprint,status=excluded.status,code_drift=excluded.code_drift,diagnostics=excluded.diagnostics").bind(project).bind(revision).bind(requirement["requirement"].as_str()).bind(requirement["kind"].as_str()).bind(requirement["record"]["fingerprint"].as_str()).bind(requirement["assessment"].as_str()).bind(requirement["code_drift"].as_bool()).bind(diagnostics).execute(&mut *tx).await?;
         if let Some(basis) = requirement["record"]["challenge_basis"].as_array() {
             for item in basis {
                 if let Some(run) = item["run"].as_str() {
@@ -113,7 +113,7 @@ pub(super) async fn read(
     let generation: i64 = row.get("generation");
     let published: i64 = row.get("published_generation");
     let ready = generation == published && published > 0 && !row.get::<bool, _>("pending");
-    let entries=sqlx::query("SELECT requirement,status,diagnostics,record_fingerprint FROM definition_requirements WHERE project=$1 AND revision=$2 ORDER BY requirement").bind(project).bind(&revision).fetch_all(&mut *tx).await?;
+    let entries=sqlx::query("SELECT requirement,kind,status,code_drift,diagnostics,record_fingerprint FROM definition_requirements WHERE project=$1 AND revision=$2 ORDER BY requirement,kind='realization-review'").bind(project).bind(&revision).fetch_all(&mut *tx).await?;
     let mut requirements = Vec::new();
     for entry in entries {
         let record: Option<Value> = if ready {
@@ -130,7 +130,7 @@ pub(super) async fn read(
         } else {
             None
         };
-        requirements.push(json!({"requirement":entry.get::<String,_>("requirement"),"record":record,"assessment":if ready {entry.get::<String,_>("status")} else {"pending".into()},"diagnostics":if ready {entry.get::<Vec<String>,_>("diagnostics")} else {vec!["Requirement Review assessment is updating".into()]}}));
+        requirements.push(json!({"kind":entry.get::<String,_>("kind"),"requirement":entry.get::<String,_>("requirement"),"record":record,"assessment":if ready {entry.get::<String,_>("status")} else {"pending".into()},"code_drift":if ready {entry.get::<Option<bool>,_>("code_drift")} else {None},"diagnostics":if ready {entry.get::<Vec<String>,_>("diagnostics")} else {vec!["Review assessment is updating".into()]}}));
     }
     Ok(Json(
         json!({"authority_fingerprint":revision,"requirements":requirements,"assessment":{"state":if ready {"ready"} else {"pending"},"generation":generation,"published_generation":published,"evaluated_at_ms":row.get::<Option<i64>,_>("evaluated_at_ms"),"valid_until_ms":null}}),

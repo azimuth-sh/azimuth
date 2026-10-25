@@ -5,6 +5,7 @@ import { Disclosure } from "@/components/disclosure";
 import { Identifier } from "@/components/identifier";
 import { LocalTime } from "@/components/local-time";
 import { shortIdentifier } from "@/lib/identifier";
+import { CodeDrift, declares, specifiedOnly } from "@/components/review-dimensions";
 
 export const dynamic = "force-dynamic";
 const statusLabel = (status: string) =>
@@ -25,6 +26,10 @@ const tone = (status: string) =>
         : "warn";
 const STALE_STATUS_MS = 30 * 24 * 60 * 60 * 1000;
 const differenceLabel = { added: "Added", changed: "Changed", removed: "Removed" } as const;
+const declaredReviews = (r: { realization: string | null; verification: string | null }) =>
+  [r.verification === "reviewed" && "Verification", r.realization === "reviewed" && "Realization"]
+    .filter(Boolean)
+    .join(" · ") || "Specified only";
 
 export default async function ProjectPage({
   params,
@@ -68,15 +73,22 @@ export default async function ProjectPage({
     if (deployment) query.set("deployment", deployment.deployment.id);
     return `${root}/requirements?${query}`;
   };
+  // Status tiles count only Requirements that declare `Verification:`: a Requirement without it owns
+  // no Checks, so its Status is unresolved by construction and says nothing about the deployment.
+  const verified = requirements.filter((c) => declares(c.verification_review));
   const counts = {
-    supported: requirements.filter((c) => c.status === "supported").length,
-    violated: requirements.filter((c) => c.status === "violated").length,
-    unresolved: requirements.filter(
+    supported: verified.filter((c) => c.status === "supported").length,
+    violated: verified.filter((c) => c.status === "violated").length,
+    unresolved: verified.filter(
       (c) => !["supported", "violated", "not-applicable"].includes(c.status),
     ).length,
   };
+  const realizationDeclared = requirements.filter((c) => declares(c.realization_review));
+  const realizationAccepted = realizationDeclared.filter((c) => c.realization_review === "accepted");
+  const drifted = realizationAccepted.filter((c) => c.realization_code_drift === true);
+  const specified = requirements.filter(specifiedOnly);
   const notApplicable = requirements.filter((c) => c.status === "not-applicable");
-  const attention = requirements
+  const attention = verified
     .filter((c) => c.status !== "supported" && c.status !== "not-applicable")
     .sort(
       (a, b) =>
@@ -192,28 +204,56 @@ export default async function ProjectPage({
         <p>Evidence is being reassessed. Previous conclusions are not shown as current.
           {freshness.evaluated_at_ms ? <> Last evaluated <LocalTime value={freshness.evaluated_at_ms} />.</> : null}</p>
       </section>}
-      <div className="metricGrid">
-        {(
-          [
-            ["supported", "Satisfied", "Current evidence satisfies the Requirement"],
-            ["violated", "Not satisfied", "Evidence contradicts the Requirement"],
-            ["unresolved", "Unresolved", "More evidence or review is needed"],
-          ] as const
-        ).map(([status, label, description]) => (
-          <Link
-            key={status}
-            href={requirementListLink(status)}
-            aria-label={`View ${label.toLowerCase()} Requirements`}
-            className={`statusMetric ${tone(status)}`}
-          >
-            <span>
-              {label}
-              <span className={`statusDot ${tone(status)}`} />
-            </span>
-            <strong>{state ? counts[status] : "—"}</strong>
-            <small>{description}</small>
-          </Link>
-        ))}
+      <section aria-label="Verification declared">
+        <p className="overline">VERIFICATION DECLARED · {state ? verified.length : "—"}</p>
+        <div className="metricGrid">
+          {(
+            [
+              ["supported", "Satisfied", "Current evidence satisfies the Requirement"],
+              ["violated", "Not satisfied", "Evidence contradicts the Requirement"],
+              ["unresolved", "Unresolved", "More evidence or Verification Review is needed"],
+            ] as const
+          ).map(([status, label, description]) => (
+            <Link
+              key={status}
+              href={requirementListLink(status)}
+              aria-label={`View ${label.toLowerCase()} Requirements`}
+              className={`statusMetric ${tone(status)}`}
+            >
+              <span>
+                {label}
+                <span className={`statusDot ${tone(status)}`} />
+              </span>
+              <strong>{state ? counts[status] : "—"}</strong>
+              <small>{description}</small>
+            </Link>
+          ))}
+        </div>
+      </section>
+      <div className="reviewMetrics">
+        <section className="statusMetric" aria-label="Realization reviewed">
+          <span>Realization reviewed</span>
+          <strong>
+            {state ? realizationAccepted.length : "—"}
+            {state && <small> of {realizationDeclared.length} declared</small>}
+          </strong>
+          <small>An accepted Realization Review is an opinion about a code snapshot; it never makes a Requirement satisfied.</small>
+          {state && drifted.length > 0 && (
+            <ul className="driftList" aria-label="Code changed since Realization Review">
+              {drifted.map((c) => (
+                <li key={c.requirement}>
+                  <Link href={modelLink(c.requirement)}>{title(c.requirement)}</Link>{" "}
+                  <CodeDrift drift={c.realization_code_drift} commit={c.explanation.realization_review?.reviewed_commit} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+        <section className="statusMetric" aria-label="Specified only">
+          <span>Specified only</span>
+          <strong>{state ? specified.length : "—"}</strong>
+          <small>Requirements that declare neither review: intent only, no review or evidence owed.</small>
+        </section>
       </div>
       {state && notApplicable.length > 0 && (
         <section className="dashboardPanel" id="not-applicable" aria-label="Not applicable here">
@@ -250,7 +290,7 @@ export default async function ProjectPage({
           <div className="panelHeading">
             <div>
               <h2>Needs attention</h2>
-              <p>Violations first. Uncertainty stays visible.</p>
+              <p>Requirements that declare verification. Violations first. Uncertainty stays visible.</p>
             </div>
             <span className="panelCount">{state ? attention.length : "—"}</span>
           </div>
@@ -269,7 +309,7 @@ export default async function ProjectPage({
               <span className="emptySymbol good">✓</span>
               <h3>No Requirements need attention</h3>
               <p>
-                All {requirements.length - notApplicable.length} applicable Requirements are satisfied for this
+                All {verified.length - verified.filter((c) => c.status === "not-applicable").length} applicable Requirements that declare verification are satisfied for this
                 deployment.
               </p>
             </div>
@@ -329,7 +369,7 @@ export default async function ProjectPage({
                   <tr>
                     <th>Requirement</th>
                     <th>Difference</th>
-                    <th>Criticality</th>
+                    <th>Declared reviews</th>
                     <th>Status on deployed release</th>
                   </tr>
                 </thead>
@@ -338,7 +378,7 @@ export default async function ProjectPage({
                     <tr key={r.id}>
                       <td>{r.difference === "added" ? title(r.id) : <Link href={modelLink(r.id)}>{title(r.id)}</Link>}</td>
                       <td>{differenceLabel[r.difference]}</td>
-                      <td>{r.criticality ?? "—"}</td>
+                      <td>{declaredReviews(r)}</td>
                       <td>
                         {r.release_status ? (
                           <span className={`badge ${tone(r.release_status)}`}>
@@ -367,7 +407,7 @@ export default async function ProjectPage({
         <div className="panelHeading">
           <div>
             <h2>Rollback candidates</h2>
-            <p>Earlier deployments whose non-routine Requirements were all satisfied at their last stored status.</p>
+            <p>Earlier deployments whose Requirements that declare verification were all satisfied at their last stored status.</p>
           </div>
           <span className="panelCount">{rollbackCandidates.length}</span>
         </div>
@@ -382,7 +422,7 @@ export default async function ProjectPage({
                   <th>Deployment</th>
                   <th>Last observed</th>
                   <th>Last stored status</th>
-                  <th>Non-routine Requirements</th>
+                  <th>Requirements declaring verification</th>
                 </tr>
               </thead>
               <tbody>
@@ -405,7 +445,7 @@ export default async function ProjectPage({
                         <LocalTime value={c.last_status_at_ms} />{" "}
                         {stale && <span className="badge warn">Stale</span>}
                       </td>
-                      <td>{c.non_routine_requirements}</td>
+                      <td>{c.verification_requirements}</td>
                     </tr>
                   );
                 })}
@@ -440,6 +480,7 @@ export default async function ProjectPage({
                 <th>Not satisfied</th>
                 <th>Unresolved</th>
                 <th>Not applicable</th>
+                <th>Specified only</th>
                 <th>
                   <span className="srOnly">Details</span>
                 </th>
@@ -447,7 +488,8 @@ export default async function ProjectPage({
             </thead>
             <tbody>
               {modules.map((m) => {
-                const rows = requirements.filter((c) => m.requirements.includes(c.requirement));
+                const inModule = requirements.filter((c) => m.requirements.includes(c.requirement));
+                const rows = inModule.filter((c) => declares(c.verification_review));
                 return (
                   <tr key={m.id}>
                     <td>
@@ -473,6 +515,7 @@ export default async function ProjectPage({
                     <td>
                       {state ? rows.filter((c) => c.status === "not-applicable").length : "—"}
                     </td>
+                    <td>{state ? inModule.filter(specifiedOnly).length : "—"}</td>
                     <td>
                       <Link
                         aria-label={`Inspect ${m.id}`}
@@ -494,7 +537,7 @@ export default async function ProjectPage({
         )}
       </section>
       <Disclosure summary="How to read this page">
-        <p>Modules organize Requirements. Scenarios describe expected behavior. Checks produce Results. The Azimuth Assurance Service assesses the evidence against the deployment&apos;s own release model and shows Requirement Status for it. A passing Check or an accepted Requirement Review alone does not make a Requirement satisfied. This view is read-only and assessed on page load.</p>
+        <p>Modules organize Requirements. Scenarios describe expected behavior. Checks produce Results. The Azimuth Assurance Service assesses the evidence against the deployment&apos;s own release model and shows Requirement Status for it. Status counts cover Requirements that declare verification. A passing Check or an accepted Verification Review alone does not make a Requirement satisfied, and a Realization Review never does: code drift since a Realization Review is shown as information, not as a failure. This view is read-only and assessed on page load.</p>
       </Disclosure>
     </div>
   );

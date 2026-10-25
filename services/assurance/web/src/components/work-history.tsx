@@ -133,7 +133,7 @@ export function WorkHistory({ history }: { history: RequirementWorkHistory | nul
   const attributions = history?.attributions ?? [];
   return <section id="requirement-work-history" className="requirementDetailSection disclosureSection">
     <Disclosure summary="Work history" meta={<><span className="workCaption">Work provenance — not used for Requirement Status</span>{history && <span>{releases.length} {releases.length === 1 ? 'release' : 'releases'} · {attempts.size} {attempts.size === 1 ? 'attempt' : 'attempts'}</span>}</>}>
-      <p className="modelDetailMuted">Which workflow attempts changed or reviewed this Requirement, as recorded by the workflow and transported by the publisher. Work history is not evidence: it never affects Requirement Review currentness, Requirement Status or acceptance.</p>
+      <p className="modelDetailMuted">Which workflow attempts changed or reviewed this Requirement, as recorded by the workflow and transported by the publisher. Work history is not evidence: it never affects Verification or Realization Review currentness, Requirement Status or acceptance.</p>
       {history === undefined ? <p className="modelDetailMuted">Work history is unavailable right now; Requirement Status is unaffected.</p>
         : !releases.length ? <p className="modelDetailMuted">No work history recorded for this Requirement.</p>
         : releases.map(release => <div className="workRelease" key={release.release}>

@@ -1,6 +1,6 @@
 # Azimuth — what the framework is
 
-Status: **derived**. This document states the current framework. It is written from the artifacts and holds no authority of its own. When it disagrees with them, the authority order is the implementation and its tests, then the parser contracts in [`contracts/`](../contracts/), then [`azimuth/standards/verification.md`](../azimuth/standards/verification.md), then the accepted model under [`azimuth/model/`](../azimuth/model/). Terminology is bounded by [`glossary.md`](./glossary.md); each completed change keeps its own record under [`azimuth/changes/archive/`](../azimuth/changes/archive/).
+Status: **derived**. This document states the current framework. It is written from the artifacts and holds no authority of its own. When it disagrees with them, the authority order is the implementation and its tests, then the parser contracts in [`contracts/`](../contracts/), then the accepted model under [`azimuth/model/`](../azimuth/model/). Terminology is bounded by [`glossary.md`](./glossary.md); each completed change keeps its own record under [`azimuth/changes/archive/`](../azimuth/changes/archive/).
 
 For the intended assurance control plane, harness boundaries, decision handling and production maintenance loop, see [intended-architecture.md](intended-architecture.md). That document describes direction rather than current executable contracts.
 
@@ -13,8 +13,8 @@ Azimuth is an **evidence control plane**. It keeps durable product intent, imple
 Modules organize Requirements. Scenarios describe expected behavior. Checks produce Results. AAS assesses the evidence and shows Requirement Status for a deployment.
 
 A **Requirement** is behavior or a constraint the system must satisfy: the independently governable
-proposition about a product or its operation. It owns criticality, production realization,
-Requirement Review and exact-target Requirement Status. A **Scenario** is a concrete situation and
+proposition about a product or its operation. It owns its review declarations, production realization, its Realization and Verification Reviews and
+exact-target Requirement Status. A **Scenario** is a concrete situation and
 its expected outcome inside that Requirement's predicate. Scenarios are addressable for evidence,
 Runs, Check Results and Verification Challenge impact, but own none of the parent governance. A
 result about one Scenario does not silently establish its broader Requirement. A **Module** is a
@@ -25,19 +25,22 @@ Each Requirement can have three facets:
 
 | Facet | Question | Repository authority |
 |---|---|---|
-| intent | What must be true, over what domain, and how much does it matter? | `spec.md` |
-| mechanism | What makes it true? | `design.md` |
-| evidence | Why should a particular method be believed for each Scenario? | `verification.md` |
+| intent | What must be true, over what domain? | `spec.md` |
+| realization | What makes it true in the code? | `realization.md` (optional) |
+| verification | Why should a particular method be believed for each Scenario? | `verification.md` |
 
-Criticality decides which facets are applicable. A routine Requirement stops at intent and owes no
-realization, mechanism, Evidence Binding or evidence review. Standard and critical Requirements add the applicable obligations. Every active Requirement in this
-repository is routine during the fast-moving alpha phase. Its ordinary tests and release checks
-remain engineering safeguards; they are not Azimuth evidence.
+A Requirement declares which independent reviews it owes with two optional header labels,
+`Realization: reviewed` and `Verification: reviewed` ([spec.md](../contracts/spec.md)). `Realization:` owes
+production `Realizes` sites and a Realization Review; `Verification:` owes enrolled Checks with an Evidence
+Binding for every Scenario and a Verification Review. A Requirement that declares neither is specified: it
+stops at intent and owes no realization linkage, Check, Evidence Binding or review. A `realization.md` is never
+required; when it exists, the Realization Review checks the code against it. Ordinary tests and release
+checks of a Requirement without `Verification:` remain engineering safeguards; they are not Azimuth evidence.
 
 ## Intent and mechanism
 
 A spec is the intent document of one Module, with a declared, path-independent id. Every Requirement has a declared
-id, criticality and one or more Scenarios. Requirement and Scenario IDs are stable project-wide lower-kebab names in separate typed namespaces. Module membership and Scenario parent relationships are mutable and separately declared. Specs are organized by problem domain rather than by service because
+id, optional review declarations and one or more Scenarios. Requirement and Scenario IDs are stable project-wide lower-kebab names in separate typed namespaces. Module membership and Scenario parent relationships are mutable and separately declared. Specs are organized by problem domain rather than by service because
 one Requirement may be realized across several components and languages.
 
 Requirement and Scenario bodies are non-empty free-form normative Markdown. They may use prose, tables,
@@ -47,15 +50,15 @@ notation. Structural validation establishes identity and assurance relationships
 review owns clarity, consistency and truth. Azimuth never infers that an implementation is correct
 merely because it is linked.
 
-A design entry declares a stable mechanism identity, enforcement kind and rationale, then resolves to either one explicitly bound artifact or a set of distinct tagged source sites. Code identifies each participating site with `implements-mechanism`; a non-code artifact uses an explicit `Binding:` instead. The design identity survives deletion of all implementations, making the broken relation visible. Extraction cannot establish whether the tagged set is complete or adequate for the rationale.
+A realization entry declares a stable mechanism identity, enforcement kind and rationale, then resolves to either one explicitly bound artifact or a set of distinct tagged source sites. Code identifies each participating site with `implements-mechanism`; a non-code artifact uses an explicit `Binding:` instead. The realization identity survives deletion of all implementations, making the broken relation visible. Extraction cannot establish whether the tagged set is complete or adequate for the rationale.
 
 A marker-derived implementation is one atomic implementation-and-companion account. Its six raw fields are `mechanism`, `site`, `binding`, `file`, `lang` and `source_fingerprint`; its raw binding is exactly `<address-kind>:<site>`. Project assembly resolves the file to one area and atomically rewrites the implementation binding and companion Artifact id to `<area>|<address-kind>|<site>`. The compiler- or runtime-qualified site is semantic; the file is only an accountable locator. Local and federated assembly use the same rewrite, and neither file, mount, repository nor revision can disambiguate semantic identity.
 
 The qualified-site account is deliberately ecosystem-specific. .NET uses namespace, declaring type, method and metadata parameter signature; Java and Kotlin use binary class, method and JVM descriptor. TypeScript and JavaScript use owning package, compiler module, receiver, symbol and canonical overload set. Compiler default-library names require a resolved symbol anchored in those libraries; consumer homonyms fail. Union members use sorted `union(...)` accounts, including within nested types, so qualified sites contain no `|`. Go uses import path, receiver, function and `go/types` signature with positional generics. Python uses the one root-relative module and `__qualname__`. Rust binds one conventional Cargo target and reachable module to a normalized declared signature whose type-path spelling remains semantic. C++ accepts only a program-global, external-linkage, non-module, non-template and unconstrained declaration and uses qualified name plus canonical function type. Each emitter fails when that account is ambiguous rather than adding a path.
 
-Residue belongs outside the Requirement graph: orientation, danger zones, deliberately absent behavior and other knowledge that cannot be derived. It may be recorded beside design, but it creates no semantic relation.
+Residue belongs outside the Requirement graph: orientation, danger zones, deliberately absent behavior and other knowledge that cannot be derived. It may be recorded in a realization, but it creates no semantic relation.
 
-The facets must also separate cleanly at N=1. If intent, mechanism and evidence only make sense when three different people author them, the separation is decorative and the framework cannot be dogfooded by a single maintainer. Ownership is therefore a removable layer rather than part of the model.
+The facets must also separate cleanly at N=1. If intent, realization and verification only make sense when three different people author them, the separation is decorative and the framework cannot be dogfooded by a single maintainer. Ownership is therefore a removable layer rather than part of the model.
 
 ## Compact verification account
 
@@ -63,33 +66,32 @@ The compact verification account separates authored meaning, machine execution a
 
 Explicit packages add shared concepts without changing Requirement kinds. `azimuth.surface` supplies Surfaces, independent Expectation Sets, typed producer descriptors and deterministic report validation. `azimuth.network` supplies named Probes and origins. .NET attributes and Python annotations use their package namespaces. A Surface publishes field names; its emitter derives language types and supported values from the enumerator's output. `azimuth surface verify` checks exact Verification Targets, producer support, completion, schema, unique keys, membership fingerprints and joins in both directions. It does not establish runtime behavior from registration metadata.
 
-Requirement Review assesses whether the proposed verification is a sensible way to verify the Requirement and whether it has been implemented correctly, over the complete authored Requirement account: Scenarios, design, realizations, Check methods and implementations, oracles, coverage, Verification Challenges and limitations. It records `accepted | rejected` against exact definition dependencies, without an execution Verification Target. Deployment Requirement Status is computed in AAS from applicable evidence and presented as Satisfied, Not satisfied or Unresolved; see [deployment-requirement-status.md](../contracts/deployment-requirement-status.md). Execution and structural validation author neither assessment. See [assurance-reviews.md](../contracts/assurance-reviews.md).
+Two independent reviews are global and stored in the model. The Verification Review assesses whether the verification is credible and correctly implemented: Checks, bindings, oracles, coverage, independence, controls, limitations and whether the declared or absent Verification Challenges are adequate. The Realization Review assesses whether the code at the realization sites does what the Scenarios say, consistent with `realization.md` where present; it is an opinion about a code snapshot, not evidence. Each records `accepted | rejected` against exact blocking dependencies, without an execution Verification Target, and finalization stores the latest ratifying review of each kind beside the spec as a review head (`verification-review.md`, `realization-review.md`). A change to production code at the realization sites is code drift — the review's `sites_fingerprint` no longer matches — reported beside the Realization Review, never staling it. Intent review and delta reviews stay local to the change workflow. Deployment Requirement Status is computed in AAS from applicable evidence and presented as Satisfied, Not satisfied or Unresolved; see [deployment-requirement-status.md](../contracts/deployment-requirement-status.md). Execution and structural validation author neither assessment. See [assurance-reviews.md](../contracts/assurance-reviews.md).
 
-No separate Check Review, Method Qualification, Applicability Decision or Requirement Judgment stage is mandatory in this compact account. Missing, rejected, stale, invalid and ambiguous dependencies remain visible. Changing definitions requires reassessment; rerunning unchanged Checks does not require repeating their definition review.
+Every scan recomputes ratifications from the change reviews and the model's review heads. A Requirement without a current accepted review of a declared kind keeps `missing-requirement-assurance` (Verification) or `missing-realization-review` (Realization), and a head whose Requirement no longer declares that review is `unknown-review-head`; CI and finalization fail on them. Changing definitions requires reassessment; rerunning unchanged Checks does not require repeating their definition review.
 
-`azimuth assurance authority` exports a complete unselected authority projection whose model identity matches Run planning. Trusted CI publishes it for each commit that reaches main, with its committed reviews and a ratification verdict, in the project-scoped Run ledger; the latest published main model is the default model and no owner selects or accepts it. The ledger retains Runs, correction chains and independently authenticated reviews, then computes exact-Verification-Target state against the default model. See [run-ledger.md](../contracts/run-ledger.md).
+`azimuth assurance authority` exports a complete unselected authority projection whose model identity matches Run planning. Trusted CI publishes it for each commit that reaches main, with the model's review heads and a ratification verdict, in the project-scoped Run ledger; the latest published main model is the default model and no owner selects or accepts it. The ledger retains Runs, correction chains and independently authenticated reviews, then computes exact-Verification-Target state against the default model. See [run-ledger.md](../contracts/run-ledger.md).
 
 ## Review and execution relationships
 
 ```text
-Requirement + Scenarios + design + sources + verification -> Requirement Review
+Requirement + Scenarios + realization declaration + realization.md mechanisms + realization gaps -> Realization Review (code drift at the realization sites informational)
+Requirement + Scenarios + Checks + bindings + Challenges + execution units -> Verification Review
 Check implementation -> Check --Contribution--> Scenario --> Requirement
 Check execution --exact Verification Target--> Check Result
-Current Requirement Review + applicable Check Results -> Requirement Status
-Verification Challenge --exact assessment target--> Challenge Result
+Current Verification Review + applicable Check Results -> Requirement Status
+Verification Challenge --exact implementation target--> Challenge Result
 ```
 
 A Check is deliberately enrolled; it is not every test, analyzer rule or monitor in a repository. One implementation may support several Checks, and one Check may contribute to several Scenarios when its assertions bear on those Scenarios. `ImplementsCheck(<check-id>)` identifies the implementation, not evidentiary meaning or reviewer approval.
 
-An inline Evidence Binding explains what a Check establishes for a Scenario. The typed Check–Scenario pair identifies that relation. Definition review assesses its credibility as part of Requirement Review; observed support is assessed as part of Requirement Status. Structural mechanisms can support the reviewed design without inventing Check Results.
+An inline Evidence Binding explains what a Check establishes for a Scenario. The typed Check–Scenario pair identifies that relation. The Verification Review assesses its credibility; observed support is assessed as part of Requirement Status. Structural mechanisms can support the reviewed realization without inventing Check Results.
 
-A machine-executed Verification Challenge searches for reasons to distrust an exact Requirement Review or Requirement Status assessment. Its declaration lives beside Checks in `verification.md`; code or configuration supplies its implementation. Mutation, adversarial requests and static analysis may serve this role. The proposition being investigated determines the role: a bounded product assertion is a Check, whereas a search for blind spots in an assessment is a Verification Challenge.
+A machine-executed Verification Challenge searches the exact implementation and Check basis for weaknesses the Checks fail to detect, before the Verification Review. Challenges are optional: the author declares them where they strengthen the verification, and the Verification Review judges their adequacy. A declaration lives beside Checks in `verification.md`; code or configuration supplies its implementation. Mutation, adversarial requests and static analysis may serve this role. The proposition being investigated determines the role: a bounded product assertion is a Check, whereas a search for blind spots in the verification is a Verification Challenge.
 
 Source scope is selected through meaningful Requirement realization and Mechanism implementation tags. Ecosystem emitters resolve semantic sites and accountable locations; adapters translate them into tool filters. Target scope is distinct from compilation/analysis dependencies and exercised Check scope. Missing mappings, exclusions and tool-driven expansion remain visible in the scope report. Tags do not prove completeness.
 
-Planning selects an exact assessment fingerprint. The execution Verification Target is separate from the assessment target. Current Stryker integration pins exact source input for an isolated mutation batch and retains native statuses and locations; materialized per-mutant Verification Targets and mutant-specific product Check Results are unavailable. Future captured mutants would require distinct Verification Targets before their Check Results could support Requirement Status. Results are `clean | findings | inconclusive`; clean is only a negative search fact. Findings require disposition and, when relevant, correction and independent reassessment. There is no aggregate mutation-score assurance or recursive Verification Challenge qualification stage.
-
-The earlier repository declaration lane remains separately documented in [verification.md](../contracts/verification.md), and earlier independent review records retain [their historical contract](../contracts/history/assurance-reviews-before-claim-health.md). Historical decisions do not substitute for current Requirement Review or Requirement Status.
+Planning selects an exact implementation target fingerprint. The execution Verification Target is separate from the Challenge target. Current Stryker integration pins exact source input for an isolated mutation batch and retains native statuses and locations; materialized per-mutant Verification Targets and mutant-specific product Check Results are unavailable. Future captured mutants would require distinct Verification Targets before their Check Results could support Requirement Status. Results are `clean | findings | inconclusive`; clean is only a negative search fact. Findings require disposition and, when relevant, correction and independent reassessment. There is no aggregate mutation-score assurance or recursive Verification Challenge qualification stage.
 
 ## Linkage and domains
 
@@ -97,7 +99,7 @@ Production code uses `realizes` to identify a site on a parent Requirement's rea
 relation names the project-global Requirement ID and carries no Scenario or evidence form. A tagged site may
 be code or declared delivery topology when routing is part of the behavior.
 
-Routine Requirements owe no realization linkage. For applicable non-routine Requirements, several sites may realize one Requirement across components and languages. This fan-out is why the model must derive traceability rather than maintain a second hand-written matrix.
+A Requirement that does not declare `Realization:` owes no realization linkage. Several sites may realize one Requirement across components and languages. This fan-out is why the model must derive traceability rather than maintain a second hand-written matrix.
 
 A Requirement ranges over one of exactly two domains: executions of a behavior, or a set of sites. A
 Requirement with authored Scenarios takes the behavioral domain implicitly; an `Invariant` with an `Over:`
@@ -107,9 +109,9 @@ Areas locate source participation. A surface can combine enumerator contribution
 
 ## Findings
 
-`azimuth validate` deterministically reports **Findings**. Each Finding has one kind from the exhaustive registry, a closed category, severity, source location, optional Requirement and criticality, detail and corrective help. The exhaustive registry and its closed categories are in [`contracts/findings.md`](../contracts/findings.md). No current Finding kind maps to the execution category; it is reserved for the deferred execution plane.
+`azimuth validate` deterministically reports **Findings**. Each Finding has one kind from the exhaustive registry, a closed category, severity, source location, optional entity reference, detail and corrective help. The exhaustive registry and its closed categories are in [`contracts/findings.md`](../contracts/findings.md). No current Finding kind maps to the execution category; it is reserved for the deferred execution plane.
 
-Findings include incomplete intent, dangling or missing realizations, unresolved mechanisms and surfaces, invalid Check relationships, unsupported or unstable implementations and unresolved Challenge scope. Change validation distinguishes structural Findings from acceptance obligations. Exact review currentness and observed Requirement Status remain separate assessments; structural validity is not evidence of a supported Requirement.
+Findings include incomplete intent, dangling or missing realizations, unresolved mechanisms and surfaces, invalid Check relationships, unsupported or unstable implementations and unresolved Challenge scope. Change validation distinguishes structural Findings from acceptance obligations. Review ratification and observed Requirement Status remain separate assessments; structural validity is not evidence of a supported Requirement.
 
 ## Consumer installation and guidance
 
@@ -135,12 +137,12 @@ Authoring, installation and project commands sit beside them: `azimuth init`, `a
 
 `azimuth validate` is the sole deterministic model validator. It does not execute Checks. `azimuth
 report traceability` is a pure projection over selected Scenarios with inherited parent realizations,
-derived Check relationships, Challenge resolution accounts and decision-impact edges. It creates
+and derived Check contributions; it is version 6 and carries each Scenario's realization and verification rigor. It creates
 no authored authority or execution fact.
 
 `azimuth export` writes the complete derived model as format version 8. The export includes Requirements,
-Scenarios, workspace data, realization and implementation linkage, mechanisms, Checks, Evidence
-Bindings, Verification Challenges, Challenge resolutions and Findings. Historical declaration collections remain separately represented where that lane is present; runtime review histories are not repository export content.
+Scenarios, workspace data, realization and implementation linkage, mechanisms, Checks, account Checks with their inline Evidence
+Bindings, Verification Challenges and Findings. Runtime review histories are not repository export content.
 
 The core reads language-neutral manifests rather than source. Ecosystem extractors emit the shared strict linkage collections. This keeps source parsing outside the core and makes a language integration an extractor concern instead of a fork of the model.
 
@@ -156,15 +158,15 @@ A local project result may be useful without being complete. Missing required in
 
 ## Changes and archive
 
-Current facets describe accepted state. A **change** proposes a target state through intent deltas, solution design, implementation work and verification obligations. Proposed facts do not become current simply because they appear in a change directory.
+Current facets describe accepted state. A **change** proposes a target state through intent, realization and verification deltas, an optional free-form `design.md`, implementation work and verification obligations. Proposed facts do not become current simply because they appear in a change directory.
 
 Completion distils mechanisms that now exist and accepted intent into the current packages before archiving the whole change. The archive retains alternatives, departures and the semantic history of the transition. A change is not a branch, release or rollout; several repositories may contribute work while one repository retains change authority.
 
-Criticality changes through the same lifecycle without changing Requirement identity. Raising a Requirement activates the applicable mechanism and evidence obligations. Lowering it records why those obligations no longer apply and what would raise it again.
+Review declarations change through the same lifecycle without changing Requirement identity: a `Replace requirement` whose target adds or removes `Realization:` or `Verification:` adds or removes the matching obligations.
 
 ## Merge-first lifecycle, observed context and reuse
 
-A change is applied to the model and archived when it merges to main, before any release or deployment; main's model is the current model. A release carries no baseline, composes no deltas and is never accepted, and a deployment's Requirement Status is measured against its own release's model only. What main contains that an environment does not run is a separate delivery-gap report. Ratification of a model change is recorded in git (committed accepted reviews and, for non-routine Requirements, the owner's acceptance record) and verified by trusted CI, which publishes main's model as ratified or unratified; the Azimuth Assurance Service keeps no acceptance record. See [release-publication.md](../contracts/release-publication.md), [validation.md](../contracts/validation.md) and [run-ledger.md](../contracts/run-ledger.md).
+A change is applied to the model and archived when it merges to main, before any release or deployment; main's model is the current model. A release carries no baseline, composes no deltas and is never accepted, and a deployment's Requirement Status is measured against its own release's model only. What main contains that an environment does not run is a separate delivery-gap report. Ratification of a model change is recorded in git (review heads written at finalization from the change's sealed reviews and, for added Requirements that declare a review, the owner's acceptance record) and verified by trusted CI, which publishes main's model as ratified or unratified; the Azimuth Assurance Service keeps no acceptance record. See [release-publication.md](../contracts/release-publication.md), [validation.md](../contracts/validation.md) and [run-ledger.md](../contracts/run-ledger.md).
 
 A feature flag is not a new concept: it is a leaf of a component's observed Execution Context, which Azimuth reads and never sets. A Requirement or Scenario may declare a `Context:` condition naming a component and leaf, and a deployment whose captured context does not match shows it as not applicable here, which is not a violation. A Check lists the leaves its result depends on, and its evidence applies to a deployment only while those leaves hold the values the Run pinned. See [spec.md](../contracts/spec.md) and [deployment-requirement-status.md](../contracts/deployment-requirement-status.md).
 
@@ -193,7 +195,7 @@ The implemented provider journey is:
 
 ```text
 azimuth adapter verify [--config <file>]
-azimuth run plan --request <file> [--model <dir>] [--standards <file>] \
+azimuth run plan --request <file> [--model <dir>] \
   [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
 azimuth run execute --plan <file> [--predecessor <bundle>...] \
   [--config <file>] [--out <file>]
@@ -201,9 +203,9 @@ azimuth run import --plan <file> --input <id>=<file>... \
   [--predecessor <bundle>...] [--config <file>] [--out <file>]
 ```
 
-Verification compares the running adapter's complete description with configuration. Planning loads the complete unselected model and accepts strict Check-only, Challenge-only or mixed requests; the two arrays are required and their union is non-empty. A Check request names its exact configured capability and finite units. A compact Challenge request selects a declared Verification Challenge, explicit capability, finite units and a bounded target selection. Core resolves assessment fingerprints and semantic scope from the account; historical Plan requests retain their separate native rules. There is no partial-model or `--only` mode.
+Verification compares the running adapter's complete description with configuration. Planning loads the complete unselected model and accepts strict Check-only, Challenge-only or mixed requests; the two arrays are required and their union is non-empty. A Check request names its exact configured capability and finite units. A Challenge request selects a declared Verification Challenge, explicit capability, finite units and a prepared scope report. Core resolves the implementation target fingerprint and semantic scope from the account. There is no partial-model or `--only` mode.
 
-Compact Challenge planning resolves declarations against current Requirement Review or Requirement Status fingerprints and produces bounded semantic scope and accountable launch inputs. Adverse or ambiguous target selection fails rather than silently choosing a larger source tree or whole suite. Historical authored Challenge Plans retain their own policy and scheduling rules; those rules are not extra mandatory compact review stages.
+Challenge planning resolves declarations against the current implementation and Check basis and produces bounded semantic scope and accountable launch inputs. Adverse or ambiguous target selection fails rather than silently choosing a larger source tree or whole suite.
 
 Each selection freezes an exact target and semantic scope. Source-backed scope items project into accountable source, Artifact, enumeration or surface-member locators. Semantic scope changes Plan identity; locator projection changes launch identity. An adapter translates this frozen account rather than reinterpreting repository authority.
 
@@ -217,17 +219,13 @@ Adapter, configuration, description, launch, capability routes, planned time and
 
 The current Run bundle version 2 requires this adapter provenance. No compatibility reader accepts an earlier version.
 
-Generated plans currently represent Check and Challenge routes with model authority. Challenge Results are exactly `clean | findings | inconclusive`. Clean means only that the configured search found no objection; it creates no evidence or credibility. Every planned Challenge omitted from a partial, cancelled or timed-out Run has exactly one execution diagnostic scoped to its selection id and no fabricated Result. Scheduled omission is allowed deferral; gate omission records an honest execution failure. Added or substituted target, context, scope or units is a mismatch.
+Generated plans currently represent Check and Challenge routes with model authority. Challenge Results are exactly `clean | findings | inconclusive`. Clean means only that the configured search found no objection; it creates no evidence or credibility. Every planned Challenge omitted from a partial, cancelled or timed-out Run has exactly one execution diagnostic scoped to its selection id and no fabricated Result. Gate omission records an honest execution failure. Added or substituted target, context, scope or units is a mismatch.
 
 `model.extract` execution remains absent. The current Run ledger supplies authenticated durable ingestion, immutable histories and compact exact-Verification-Target Assurance State. Current planning defines no cache validity, cadence, historical-applicability or cross-target reuse semantics. Adapters remain bounded short-lived processes; there is no daemon, webhook, event gateway or long-running adapter boundary.
 
-The synthetic [Challenge-planning conformance](../experiments/challenge-planning/README.md) uses only
-the public commands and exercises all twelve selector forms, mixed planning, exact scope and routes,
-scheduled omission, import provenance and selection mismatch without creating persistent state.
-
 The earlier Assurance Service remains isolated beside the current Run ledger. Its earlier service API and version 2 project-snapshot wire remain isolated inside that separate service boundary. A snapshot Case is opaque `caseStatement` text, but the protocol is not the alpha 5 repository model or Run-bundle protocol, is not emitted by `azimuth export`, and receives no compatibility bridge. The current ledger supplies authorization, durable ingest, immutable history and compact Verification-Target-specific Assurance State.
 
-The authority split is current: repositories own Requirements, Checks and binding meaning; Run producers own execution facts about exact Verification Targets, and independently authenticated reviewers own compact review records. The older declaration lane retains its repository-owned decisions. A standalone valid bundle does not establish that its model or decision fingerprints are current.
+The authority split is current: repositories own Requirements, Checks and binding meaning; Run producers own execution facts about exact Verification Targets, and independently authenticated reviewers own review records. A standalone valid bundle does not establish that its model or decision fingerprints are current.
 
 Historical consumer feedback is retained only as an [immutable provenance citation][historical-consumer-provenance]. The citation is documentary; no build, test, release or acceptance step reads that repository.
 
@@ -235,7 +233,7 @@ Historical consumer feedback is retained only as an [immutable provenance citati
 
 ## What is not claimed
 
-One falsifier stays open and is cheap to run once the export carries non-routine content: if the intent, mechanism and evidence views over the export turn out to be substantially the same view, the three-facet split is decorative and the artifacts should collapse into fewer.
+One falsifier stays open and is cheap to run once the export carries Requirements that declare reviews: if the intent, realization and verification views over the export turn out to be substantially the same view, the three-facet split is decorative and the artifacts should collapse into fewer.
 
 Azimuth does not prove prose predicates, infer honest linkage from source, turn a clean Verification Challenge search into positive product evidence, create a repository decision from execution facts or enroll native tests automatically. Its current outputs are a versioned repository account, derived traceability and validated bounded adapter exchanges. The current ledger adds durable ingestion and independently reviewed Verification-Target-specific assurance. Protocol validity alone still supplies no positive Requirement conclusion.
 

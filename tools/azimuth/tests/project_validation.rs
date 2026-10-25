@@ -61,7 +61,7 @@ impl Fixture {
             r#"{"format":"azimuth-project","version":1,"project":"example","repositories":[{"id":"app","required":true}],"areas":[{"id":"api","repository":"app","mounts":[{"id":"code","path":"src"}]}],"model_sources":[{"id":"intent","repository":"app","path":"azimuth/model","required":true}],"standards":{"repository":"app","path":"azimuth/standards/verification.md"},"required_receipts":[]}"#,
         );
         write(&repo.join("src/example.txt"), "implementation");
-        write(&repo.join("azimuth/model/example/spec.md"),"# Spec: example\n\n## Requirement: visible\nCriticality: routine\n\nThe state SHALL be visible.\n\n### Scenario: shown\nGiven a request, when served, then state is shown.\n");
+        write(&repo.join("azimuth/model/example/spec.md"),"# Spec: example\n\n## Requirement: visible\n\nThe state SHALL be visible.\n\n### Scenario: shown\nGiven a request, when served, then state is shown.\n");
         write(
             &repo.join("azimuth/standards/verification.md"),
             "# Decision policies and Challenge schedule\n\n## Decision Policy: credible\nRequired challenge: implementation-perturbation\n\nReview the method.\n\n## Challenge Schedule: current\nGate challenge: implementation-perturbation\n\nChallenge required methods.\n",
@@ -78,7 +78,7 @@ impl Fixture {
             &repo.join("azimuth/changes/add-state/plan.md"),
             "# Plan\n\n- [ ] Review evidence.\n",
         );
-        write(&repo.join("azimuth/changes/add-state/deltas/example/spec.md"),"# Intent delta: example\n\n## Add requirement: stable\nCriticality: routine\n\nThe state SHALL remain stable.\n\n### Add scenario: retained\nGiven state, when inspected, then it remains stable.\n");
+        write(&repo.join("azimuth/changes/add-state/deltas/example/spec.md"),"# Intent delta: example\n\n## Add requirement: stable\n\nThe state SHALL remain stable.\n\n### Add scenario: retained\nGiven state, when inspected, then it remains stable.\n");
         git(&repo, &["init", "-q"]);
         git(&repo, &["add", "."]);
         git(
@@ -225,15 +225,19 @@ fn pending_reviews_are_readiness_obligations_not_structural_errors() {
         validation::FindingKind,
     };
     assert_eq!(
-        validation_facet(FindingKind::PendingRequirementReview),
+        validation_facet(FindingKind::MissingRequirementAssurance),
         ValidationFacet::Readiness
     );
     assert_eq!(
-        validation_facet(FindingKind::MissingRequirementJudgment),
+        validation_facet(FindingKind::MissingRealizationReview),
         ValidationFacet::Readiness
     );
     assert_eq!(
-        validation_facet(FindingKind::InvalidRequirementReview),
+        validation_facet(FindingKind::UnknownReviewHead),
+        ValidationFacet::Readiness
+    );
+    assert_eq!(
+        validation_facet(FindingKind::CheckWithoutBinding),
         ValidationFacet::Structure
     );
     assert_eq!(
@@ -275,7 +279,7 @@ fn compact_bindings_use_global_scenario_identity_and_require_real_implementation
         validation::{self, FindingKind},
     };
     let mut model = Model::default();
-    model.specs.push(azimuth::spec::parse_spec("spec.md", "# Spec: example\n\n## Requirement: admitted\nCriticality: critical\n\nOnly admitted requests SHALL succeed.\n\n### Scenario: denied\nGiven invalid admission, when requested, then deny.\n").unwrap());
+    model.specs.push(azimuth::spec::parse_spec("spec.md", "# Spec: example\n\n## Requirement: admitted\nVerification: reviewed\n\nOnly admitted requests SHALL succeed.\n\n### Scenario: denied\nGiven invalid admission, when requested, then deny.\n").unwrap());
     model.account_verifications.push(parse_account_verification("verification.md", "# Verification: example\n\n## Requirement verification: admitted\n\n### Scenario verification: denied\n\n#### Check: denies-request\n- Evidence bindings:\n  - Contribution: Establishes rejection.\n\nExercise denial and a successful control.\n").unwrap());
     let findings = validation::validate(&model);
     assert!(!findings
@@ -308,4 +312,83 @@ fn compact_bindings_use_global_scenario_identity_and_require_real_implementation
             | FindingKind::ScenarioCheckContributionUnresolved
             | FindingKind::UnimplementedCheck
     )));
+}
+
+fn replace_projection(old_labels: &str, new_labels: &str) -> Result<String, Vec<String>> {
+    let root = std::env::temp_dir().join(format!(
+        "azimuth-replace-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let block = format!(
+        "## Requirement: stable\n{old_labels}\nThe state SHALL remain stable.\n\n\
+         ### Scenario: retained\nGiven state, when inspected, then it remains stable.\n"
+    );
+    let spec_path = root.join("model/example/spec.md");
+    write(&spec_path, &format!("# Spec: example\n\n{block}"));
+    let change = root.join("change");
+    write(
+        &change.join("deltas/example/spec.md"),
+        &format!(
+            "# Intent delta: example\n\n## Replace requirement: stable\nFrom: {}\n\
+             Because: the review obligations changed\n{new_labels}\n\
+             The state SHALL remain stable.\n\n### Scenario: retained\n\
+             Given state, when inspected, then it remains stable.\n",
+            azimuth::intent::fingerprint(&block)
+        ),
+    );
+    let model = azimuth::model::Model {
+        specs: vec![azimuth::spec::parse_spec(
+            spec_path.to_str().unwrap(),
+            &fs::read_to_string(&spec_path).unwrap(),
+        )
+        .unwrap()],
+        ..Default::default()
+    };
+    let projected = azimuth::intent::project(&change, &root.join("model"), &model)
+        .map(|projection| projection.files[0].after.clone());
+    fs::remove_dir_all(&root).unwrap();
+    projected
+}
+
+#[test]
+fn replace_requirement_carries_rigor_labels_in_any_order() {
+    let after = replace_projection("", "Verification: reviewed\nRealization: reviewed\n").unwrap();
+    let requirement = &azimuth::spec::parse_spec("target.md", &after)
+        .unwrap()
+        .requirements[0];
+    assert_eq!(
+        requirement.realization,
+        Some(azimuth::model::Rigor::Reviewed)
+    );
+    assert_eq!(
+        requirement.verification,
+        Some(azimuth::model::Rigor::Reviewed)
+    );
+
+    let after = replace_projection("Verification: reviewed\n", "").unwrap();
+    let requirement = &azimuth::spec::parse_spec("target.md", &after)
+        .unwrap()
+        .requirements[0];
+    assert_eq!(requirement.realization, None);
+    assert_eq!(requirement.verification, None);
+}
+
+#[test]
+fn replace_requirement_rejects_unknown_and_duplicate_rigor_labels() {
+    let unknown = replace_projection("", "Verification: thorough\n").unwrap_err();
+    assert!(
+        unknown
+            .iter()
+            .any(|error| error.contains("unknown verification rigor `thorough`")),
+        "{unknown:?}"
+    );
+    let duplicate =
+        replace_projection("", "Realization: reviewed\nRealization: reviewed\n").unwrap_err();
+    assert!(
+        duplicate
+            .iter()
+            .any(|error| error.contains("`Realization:` is declared twice")),
+        "{duplicate:?}"
+    );
 }

@@ -3,7 +3,6 @@
 ## Replace requirement: method-and-applicability-decisions-have-exact-boundaries
 From: sha256:c850613854c98e08af9e07f1f2777ea20614e19cf7a6bc2bdf5f319b862cc8b8
 Because: One definition review covers method credibility and Case contributions, while health assesses exact execution facts.
-Criticality: routine
 Remove scenarios: one-applicability-decision-per-binding
 
 Azimuth SHALL separate assessment of a Claim definition from assessment of its health for an exact Subject. A Claim Review SHALL assess the complete relevant definition, implementation and declared Check-to-Case contributions. Claim Health SHALL assess the current review and exact execution basis. Neither assessment SHALL infer support from source markers, artifact existence or another Subject.
@@ -27,7 +26,6 @@ Given Observations for an exact Subject, when Claim Health is assessed, then eve
 ## Replace requirement: challenge-plans-resolve-through-traceability
 From: sha256:e97609564e4583ccd686379aac4e573c6a4a46377f7d09cbeb1a6e770c479532
 Because: Current machine planning selects Claim Review or Claim Health and resolves tagged production and Check scope.
-Criticality: routine
 
 Azimuth SHALL resolve machine Challenge requests through stable model relations to exact current Claim Review or Claim Health fingerprints. Assessment identity and execution scope SHALL remain separate. Provider file paths and source regions SHALL be derived by adapters from the selected semantic scope, not substituted for assessment identity.
 

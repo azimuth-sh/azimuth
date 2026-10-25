@@ -8,18 +8,25 @@ use azimuth::spec::parse_spec;
 const SHA: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 fn model() -> Model {
     Model {
-        specs: vec![parse_spec("spec.md", "# Spec: catalog\n\n## Requirement: restricted-access\nCriticality: critical\n\nAccess SHALL be restricted.\n\n### Scenario: rejected-access\nEvent: rejected caller requests data\nRequired: no data is returned\n").unwrap()],
+        specs: vec![parse_spec("spec.md", "# Spec: catalog\n\n## Requirement: restricted-access\nVerification: reviewed\n\nAccess SHALL be restricted.\n\n### Scenario: rejected-access\nEvent: rejected caller requests data\nRequired: no data is returned\n").unwrap()],
         account_verifications: vec![parse_account_verification("verification.md", "# Verification: catalog\n\n## Requirement verification: restricted-access\n\n### Check: rejects-access\n- Evidence bindings:\n  - Scenario: `rejected-access`\n    - Contribution: Establishes rejection.\n\nExercise rejection and a successful control.\n").unwrap()],
         ..Model::default()
     }
 }
-fn qualification(authority: &Json, at: u64) -> Json {
-    let check_fp = authority.get("checks").unwrap().as_array().unwrap()[0]
-        .get("fingerprint")
-        .unwrap()
-        .clone();
-    let mut record = Json::obj(vec![
-        ("kind", Json::str("method-qualification")),
+fn seal(mut record: Json) -> Json {
+    if let Json::Obj(fields) = &mut record {
+        fields.retain(|(name, _)| name != "fingerprint");
+    }
+    let fingerprint = assurance_review::record_fingerprint(&record).unwrap();
+    if let Json::Obj(fields) = &mut record {
+        fields.push(("fingerprint".into(), Json::str(fingerprint)));
+    }
+    record
+}
+fn verification_review(authority: &Json, at: u64) -> Json {
+    let requirement = authority.get("requirements").unwrap().as_array().unwrap()[0].clone();
+    seal(Json::obj(vec![
+        ("kind", Json::str("verification-review")),
         ("reviewer", Json::str("independent-reviewer")),
         ("reviewed_at_ms", Json::Num(at as f64)),
         (
@@ -33,50 +40,44 @@ fn qualification(authority: &Json, at: u64) -> Json {
             ))
             .unwrap(),
         ),
-        ("check", Json::str("rejects-access")),
-        ("check_fingerprint", check_fp),
+        ("requirement", Json::str("restricted-access")),
+        (
+            "requirement_fingerprint",
+            requirement.get("fingerprint").unwrap().clone(),
+        ),
+        (
+            "dependencies_fingerprint",
+            Json::str(
+                assurance_review::requirement_closure_fingerprint(authority, "restricted-access")
+                    .unwrap(),
+            ),
+        ),
         ("decision", Json::str("accepted")),
-    ]);
-    let fp = assurance_review::record_fingerprint(&record).unwrap();
-    if let Json::Obj(fields) = &mut record {
-        fields.push(("fingerprint".into(), Json::str(fp)));
-    }
-    record
-}
-#[test]
-fn changing_check_method_stales_prior_independent_qualification() {
-    let mut model = model();
-    let initial = assurance_review::authority(&model, "sample-project").unwrap();
-    let review = qualification(&initial, 100);
-    assert_eq!(
-        assess_record(&review, &initial, &[], &[]).status,
-        "accepted"
-    );
-    model.account_verifications[0].checks[0].definition.methods[0].push_str(" A different oracle.");
-    let changed = assurance_review::authority(&model, "sample-project").unwrap();
-    assert_eq!(assess_record(&review, &changed, &[], &[]).status, "stale");
+        ("reassesses", Json::Null),
+        ("challenge_basis", Json::Arr(vec![])),
+    ]))
 }
 #[test]
 fn conflicting_latest_reviews_do_not_fall_back_to_earlier_acceptance() {
     let authority = assurance_review::authority(&model(), "sample-project").unwrap();
-    let earlier = qualification(&authority, 50);
-    let later = qualification(&authority, 100);
+    let earlier = verification_review(&authority, 50);
+    let later = verification_review(&authority, 100);
     let mut conflicting = later.clone();
     if let Json::Obj(fields) = &mut conflicting {
         fields.iter_mut().find(|(k, _)| k == "decision").unwrap().1 = Json::str("rejected");
-        fields.retain(|(k, _)| k != "fingerprint");
     }
-    let fp = assurance_review::record_fingerprint(&conflicting).unwrap();
-    if let Json::Obj(fields) = &mut conflicting {
-        fields.push(("fingerprint".into(), Json::str(fp)));
-    }
+    let conflicting = seal(conflicting);
     let target = assurance_review::review_target(&later).unwrap();
     assert!(assurance_review::latest_review(&[earlier, later, conflicting], &target).is_err());
 }
 #[test]
 fn editing_review_content_without_recomputing_fingerprint_is_invalid() {
     let authority = assurance_review::authority(&model(), "sample-project").unwrap();
-    let mut record = qualification(&authority, 100);
+    let mut record = verification_review(&authority, 100);
+    assert_eq!(
+        assess_record(&record, &authority, &[], &[]).status,
+        "accepted"
+    );
     if let Json::Obj(fields) = &mut record {
         fields.iter_mut().find(|(k, _)| k == "rationale").unwrap().1 =
             Json::str("Substituted rationale.");
@@ -104,134 +105,11 @@ fn reverse_object_fields(value: &mut Json) {
     }
 }
 
-fn unresolved_judgment(authority: &Json) -> Json {
-    let requirement = &authority.get("requirements").unwrap().as_array().unwrap()[0];
-    let scenarios = authority.get("scenarios").unwrap().as_array().unwrap();
-    let bindings = authority.get("bindings").unwrap().as_array().unwrap();
-    let mut record = qualification(authority, 100);
-    if let Json::Obj(fields) = &mut record {
-        fields.retain(|(name, _)| {
-            !matches!(
-                name.as_str(),
-                "check" | "check_fingerprint" | "decision" | "fingerprint"
-            )
-        });
-        fields
-            .iter_mut()
-            .find(|(name, _)| name == "kind")
-            .unwrap()
-            .1 = Json::str("requirement-judgment");
-        fields.extend([
-            ("requirement".into(), requirement.get("id").unwrap().clone()),
-            (
-                "requirement_fingerprint".into(),
-                requirement.get("fingerprint").unwrap().clone(),
-            ),
-            ("verification_target_fingerprint".into(), Json::str(SHA)),
-            (
-                "scenarios".into(),
-                Json::Arr(
-                    scenarios
-                        .iter()
-                        .map(|scenario| {
-                            Json::obj(vec![
-                                ("id", scenario.get("id").unwrap().clone()),
-                                ("fingerprint", scenario.get("fingerprint").unwrap().clone()),
-                            ])
-                        })
-                        .collect(),
-                ),
-            ),
-            (
-                "mechanisms".into(),
-                requirement.get("mechanisms").unwrap().clone(),
-            ),
-            (
-                "bindings".into(),
-                Json::Arr(
-                    bindings
-                        .iter()
-                        .map(|binding| {
-                            Json::obj(vec![
-                                ("check", binding.get("check").unwrap().clone()),
-                                ("scenario", binding.get("scenario").unwrap().clone()),
-                                ("fingerprint", binding.get("fingerprint").unwrap().clone()),
-                                ("applicability_fingerprint", Json::Null),
-                            ])
-                        })
-                        .collect(),
-                ),
-            ),
-            ("conclusion".into(), Json::str("unresolved")),
-            (
-                "residual_risks".into(),
-                Json::Arr(vec![Json::str("Applicable evidence is missing.")]),
-            ),
-        ]);
-    }
-    let fingerprint = assurance_review::record_fingerprint(&record).unwrap();
-    if let Json::Obj(fields) = &mut record {
-        fields.push(("fingerprint".into(), Json::str(fingerprint)));
-    }
-    record
-}
-
-#[test]
-fn judgment_dependencies_survive_json_object_reordering_but_not_fingerprint_change() {
-    let mut model = model();
-    model.account_designs.push(azimuth::account_design::parse_account_design(
-        "design.md",
-        "# Design: catalog\n\n## Requirement design: restricted-access\n- Areas:\n  - `api`\n\n### Mechanism: admission-guard\n- Scenarios: `rejected-access`\n\nThe guard precedes protected data delivery.\n",
-    ).unwrap());
-    let mut authority = assurance_review::authority(&model, "sample-project").unwrap();
-    let mut record = unresolved_judgment(&authority);
-    assert_eq!(
-        assess_record(&record, &authority, &[], &[]).status,
-        "accepted"
-    );
-    let original_fingerprint = assurance_review::record_fingerprint(&record).unwrap();
-    reverse_object_fields(&mut record);
-    reverse_object_fields(&mut authority);
-    assert_eq!(
-        assurance_review::record_fingerprint(&record).unwrap(),
-        original_fingerprint
-    );
-    assert_eq!(
-        assess_record(&record, &authority, &[], &[]).status,
-        "accepted"
-    );
-    if let Json::Obj(fields) = &mut record {
-        let mechanisms = &mut fields
-            .iter_mut()
-            .find(|(name, _)| name == "mechanisms")
-            .unwrap()
-            .1;
-        let Json::Arr(mechanisms) = mechanisms else {
-            panic!("mechanisms must be an array")
-        };
-        let Json::Obj(dependency) = &mut mechanisms[0] else {
-            panic!("dependency must be an object")
-        };
-        dependency
-            .iter_mut()
-            .find(|(name, _)| name == "fingerprint")
-            .unwrap()
-            .1 =
-            Json::str("sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
-        fields.retain(|(name, _)| name != "fingerprint");
-    }
-    let fingerprint = assurance_review::record_fingerprint(&record).unwrap();
-    if let Json::Obj(fields) = &mut record {
-        fields.push(("fingerprint".into(), Json::str(fingerprint)));
-    }
-    assert_eq!(assess_record(&record, &authority, &[], &[]).status, "stale");
-}
-
 #[test]
 fn latest_review_target_is_independent_of_json_object_key_order() {
     let authority = assurance_review::authority(&model(), "sample-project").unwrap();
-    let earlier = qualification(&authority, 50);
-    let later = qualification(&authority, 100);
+    let earlier = verification_review(&authority, 50);
+    let later = verification_review(&authority, 100);
     let mut target = assurance_review::review_target(&later).unwrap();
     reverse_object_fields(&mut target);
     let reviews = vec![earlier, later];
@@ -246,7 +124,8 @@ fn requirement_review_input_pins_definition_without_manufacturing_a_review() {
     let input = assurance_review::review_input(
         &model(),
         "sample-project",
-        &json::parse(r#"{"kind":"requirement-review","requirement":"restricted-access"}"#).unwrap(),
+        &json::parse(r#"{"kind":"verification-review","requirement":"restricted-access"}"#)
+            .unwrap(),
         &[],
         &[],
     )
@@ -305,8 +184,8 @@ fn requirement_status_input_is_rejected_because_status_is_computed() {
 #[test]
 fn review_input_rejects_unknown_targets_and_authored_decisions() {
     for request in [
-        r#"{"kind":"requirement-review","requirement":"unknown-requirement"}"#,
-        r#"{"kind":"requirement-review","requirement":"restricted-access","decision":"accepted"}"#,
+        r#"{"kind":"verification-review","requirement":"unknown-requirement"}"#,
+        r#"{"kind":"verification-review","requirement":"restricted-access","decision":"accepted"}"#,
         r#"{"kind":"requirement-status","requirement":"unknown-requirement","verification_target_fingerprint":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
         r#"{"kind":"requirement-status","requirement":"restricted-access"}"#,
         r#"{"kind":"method-qualification","check":"unknown-check"}"#,
@@ -330,7 +209,8 @@ fn requirement_review_input_includes_all_current_dependencies_and_visible_gaps()
     let input = assurance_review::review_input(
         &model(),
         "sample-project",
-        &json::parse(r#"{"kind":"requirement-review","requirement":"restricted-access"}"#).unwrap(),
+        &json::parse(r#"{"kind":"verification-review","requirement":"restricted-access"}"#)
+            .unwrap(),
         &[],
         &[],
     )
@@ -362,11 +242,11 @@ fn requirement_review_input_includes_all_current_dependencies_and_visible_gaps()
 }
 
 #[test]
-fn unrelated_authority_changes_do_not_require_method_requalification() {
+fn unrelated_authority_changes_do_not_stale_a_verification_review() {
     let mut model = model();
     let initial = assurance_review::authority(&model, "sample-project").unwrap();
-    let review = qualification(&initial, 100);
-    model.specs.push(parse_spec("other/spec.md", "# Spec: other\n\n## Requirement: other-restriction\nCriticality: routine\n\nOther access is restricted.\n\n### Scenario: other-rejected\nOther rejection occurs.\n").unwrap());
+    let review = verification_review(&initial, 100);
+    model.specs.push(parse_spec("other/spec.md", "# Spec: other\n\n## Requirement: other-restriction\n\nOther access is restricted.\n\n### Scenario: other-rejected\nOther rejection occurs.\n").unwrap());
     let changed = assurance_review::authority(&model, "sample-project").unwrap();
     assert_ne!(initial.get("fingerprint"), changed.get("fingerprint"));
     assert_eq!(
@@ -376,19 +256,16 @@ fn unrelated_authority_changes_do_not_require_method_requalification() {
 }
 
 #[test]
-fn evidence_binding_edits_do_not_requalify_an_unchanged_method() {
+fn evidence_binding_edits_stale_a_verification_review() {
     let mut model = model();
     let initial = assurance_review::authority(&model, "sample-project").unwrap();
-    let review = qualification(&initial, 100);
+    let review = verification_review(&initial, 100);
     model.account_verifications[0].checks[0].bindings[0]
         .contribution
         .push_str(" A clarified contribution.");
     let changed = assurance_review::authority(&model, "sample-project").unwrap();
     assert_ne!(initial.get("bindings"), changed.get("bindings"));
-    assert_eq!(
-        assess_record(&review, &changed, &[], &[]).status,
-        "accepted"
-    );
+    assert_eq!(assess_record(&review, &changed, &[], &[]).status, "stale");
 }
 
 fn observed_bundle(
@@ -581,100 +458,15 @@ fn refresh_observed_bundle(bundle: &mut azimuth::run::RunBundle) {
     );
     bundle.bundle_fingerprint = bundle_fingerprint(bundle);
 }
-fn applicability(authority: &Json, qualification: &Json, bundle: &azimuth::run::RunBundle) -> Json {
-    let binding = &authority.get("bindings").unwrap().as_array().unwrap()[0];
-    let mut record = qualification.clone();
-    if let Json::Obj(fields) = &mut record {
-        fields.retain(|(name, _)| name != "fingerprint");
-        fields
-            .iter_mut()
-            .find(|(name, _)| name == "kind")
-            .unwrap()
-            .1 = Json::str("applicability-decision");
-        fields.extend([
-            ("scenario".into(), binding.get("scenario").unwrap().clone()),
-            (
-                "scenario_fingerprint".into(),
-                binding.get("scenario_fingerprint").unwrap().clone(),
-            ),
-            (
-                "binding_fingerprint".into(),
-                binding.get("fingerprint").unwrap().clone(),
-            ),
-            (
-                "verification_target_fingerprint".into(),
-                Json::str(&bundle.verification_target_fingerprint),
-            ),
-            (
-                "method_qualification_fingerprint".into(),
-                qualification.get("fingerprint").unwrap().clone(),
-            ),
-            (
-                "basis".into(),
-                Json::Arr(vec![Json::obj(vec![
-                    ("run", Json::str(&bundle.run_id)),
-                    ("bundle_fingerprint", Json::str(&bundle.bundle_fingerprint)),
-                    (
-                        "check_result",
-                        Json::str(&bundle.check_executions[0].results[0].fingerprint),
-                    ),
-                ])]),
-            ),
-            ("limitations".into(), Json::Arr(vec![])),
-        ]);
-    }
-    let fp = assurance_review::record_fingerprint(&record).unwrap();
-    if let Json::Obj(fields) = &mut record {
-        fields.push(("fingerprint".into(), Json::str(fp)));
-    }
-    record
-}
-#[test]
-fn fresh_check_results_stale_only_relevant_applicability_not_qualified_methods() {
-    let mut model = model();
-    model.specs.push(parse_spec("other/spec.md", "# Spec: other\n\n## Requirement: other-restriction\nCriticality: routine\n\nOther access is restricted.\n\n### Scenario: other-rejected\nOther rejection occurs.\n").unwrap());
-    model.account_verifications.push(parse_account_verification("other/verification.md", "# Verification: other\n\n## Requirement verification: other-restriction\n\n### Check: rejects-other\n- Evidence bindings:\n  - Scenario: `other-rejected`\n    - Contribution: Establishes other rejection.\n\nExercise other rejection.\n").unwrap());
-    let authority = assurance_review::authority(&model, "sample-project").unwrap();
-    let qualification = qualification(&authority, 100);
-    let old = observed_bundle(&authority, "rejects-access", "rejected-access", 10);
-    let application = applicability(&authority, &qualification, &old);
-    let unrelated = observed_bundle(&authority, "rejects-other", "other-rejected", 20);
-    let reviews = vec![qualification.clone(), application.clone()];
-    assert_eq!(
-        assess_record(
-            &application,
-            &authority,
-            &reviews,
-            &[old.clone(), unrelated.clone()]
-        )
-        .status,
-        "accepted"
-    );
-    let relevant = observed_bundle(&authority, "rejects-access", "rejected-access", 30);
-    assert_eq!(
-        assess_record(
-            &application,
-            &authority,
-            &reviews,
-            &[old.clone(), unrelated, relevant.clone()]
-        )
-        .status,
-        "stale"
-    );
-    assert_eq!(
-        assess_record(&qualification, &authority, &reviews, &[old, relevant]).status,
-        "accepted"
-    );
-}
 #[test]
 fn requirement_review_packet_retains_relevant_native_execution_evidence() {
     let mut model = model();
-    model.specs.push(parse_spec("other/spec.md", "# Spec: other\n\n## Requirement: other-restriction\nCriticality: routine\n\nOther access is restricted.\n\n### Scenario: other-rejected\nOther rejection occurs.\n").unwrap());
+    model.specs.push(parse_spec("other/spec.md", "# Spec: other\n\n## Requirement: other-restriction\n\nOther access is restricted.\n\n### Scenario: other-rejected\nOther rejection occurs.\n").unwrap());
     model.account_verifications.push(parse_account_verification("other/verification.md", "# Verification: other\n\n## Requirement verification: other-restriction\n\n### Check: rejects-other\n- Evidence bindings:\n  - Scenario: `other-rejected`\n    - Contribution: Establishes other rejection.\n\nExercise other rejection.\n").unwrap());
     let authority = assurance_review::authority(&model, "sample-project").unwrap();
     let bundle = observed_bundle(&authority, "rejects-access", "rejected-access", 10);
     let request =
-        json::parse(r#"{"kind":"requirement-review","requirement":"restricted-access"}"#).unwrap();
+        json::parse(r#"{"kind":"verification-review","requirement":"restricted-access"}"#).unwrap();
     let unrelated = observed_bundle(&authority, "rejects-other", "other-rejected", 20);
     let packet = assurance_review::review_input(
         &model,
@@ -719,90 +511,20 @@ fn requirement_review_packet_retains_relevant_native_execution_evidence() {
 }
 
 #[test]
-fn unresolved_judgment_becomes_stale_when_its_applicability_basis_is_superseded() {
-    let model = model();
-    let authority = assurance_review::authority(&model, "sample-project").unwrap();
-    let qualification = qualification(&authority, 100);
-    let old = observed_bundle(&authority, "rejects-access", "rejected-access", 10);
-    let application = applicability(&authority, &qualification, &old);
-    let mut judgment = unresolved_judgment(&authority);
-    if let Json::Obj(fields) = &mut judgment {
-        fields.retain(|(name, _)| name != "fingerprint");
-        fields
-            .iter_mut()
-            .find(|(name, _)| name == "verification_target_fingerprint")
-            .unwrap()
-            .1 = Json::str(&old.verification_target_fingerprint);
-        if let Json::Arr(bindings) = &mut fields
-            .iter_mut()
-            .find(|(name, _)| name == "bindings")
-            .unwrap()
-            .1
-        {
-            if let Json::Obj(binding) = &mut bindings[0] {
-                binding
-                    .iter_mut()
-                    .find(|(name, _)| name == "applicability_fingerprint")
-                    .unwrap()
-                    .1 = application.get("fingerprint").unwrap().clone();
-            }
-        }
-    }
-    let fp = assurance_review::record_fingerprint(&judgment).unwrap();
-    if let Json::Obj(fields) = &mut judgment {
-        fields.push(("fingerprint".into(), Json::str(fp)));
-    }
-    let reviews = vec![qualification, application, judgment.clone()];
-    assert_eq!(
-        assess_record(&judgment, &authority, &reviews, &[old.clone()]).status,
-        "accepted"
-    );
-    let new = observed_bundle(&authority, "rejects-access", "rejected-access", 20);
-    assert_eq!(
-        assess_record(&judgment, &authority, &reviews, &[old, new]).status,
-        "stale"
-    );
-}
-
-#[test]
 fn review_input_retains_existing_review_without_rewriting_its_decision() {
     let model = model();
     let authority = assurance_review::authority(&model, "sample-project").unwrap();
     let request =
-        json::parse(r#"{"kind":"requirement-review","requirement":"restricted-access"}"#).unwrap();
+        json::parse(r#"{"kind":"verification-review","requirement":"restricted-access"}"#).unwrap();
     let input =
         assurance_review::review_input(&model, "sample-project", &request, &[], &[]).unwrap();
-    let requirement = &authority.get("requirements").unwrap().as_array().unwrap()[0];
-    let mut review = qualification(&authority, 100);
-    if let Json::Obj(fields) = &mut review {
-        fields.retain(|(name, _)| {
-            !matches!(name.as_str(), "check" | "check_fingerprint" | "fingerprint")
-        });
-        fields
-            .iter_mut()
-            .find(|(name, _)| name == "kind")
-            .unwrap()
-            .1 = Json::str("requirement-review");
-        fields.extend([
-            ("requirement".into(), requirement.get("id").unwrap().clone()),
-            (
-                "requirement_fingerprint".into(),
-                requirement.get("fingerprint").unwrap().clone(),
-            ),
-            (
-                "dependencies_fingerprint".into(),
-                Json::str(azimuth::fingerprint::canonical_sha256(
-                    input.get("dependencies").unwrap(),
-                )),
-            ),
-            ("reassesses".into(), Json::Null),
-            ("challenge_basis".into(), Json::Arr(vec![])),
-        ]);
-    }
-    let fingerprint = assurance_review::record_fingerprint(&review).unwrap();
-    if let Json::Obj(fields) = &mut review {
-        fields.push(("fingerprint".into(), Json::str(fingerprint)));
-    }
+    let review = verification_review(&authority, 100);
+    assert_eq!(
+        review
+            .get("dependencies_fingerprint")
+            .and_then(Json::as_str),
+        Some(azimuth::fingerprint::canonical_sha256(input.get("dependencies").unwrap()).as_str())
+    );
     let packet =
         assurance_review::review_input(&model, "sample-project", &request, &[review.clone()], &[])
             .unwrap();

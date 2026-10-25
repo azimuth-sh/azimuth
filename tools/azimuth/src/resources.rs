@@ -23,8 +23,6 @@ pub const PROJECT_README: &str = include_str!("../resources/templates/init/READM
 pub const CLAUDE_CODE_HOOKS: &str =
     include_str!("../resources/integrations/claude-code/settings.json");
 pub const CODEX_HOOKS: &str = include_str!("../resources/integrations/codex/hooks.json");
-pub const DEFAULT_STANDARDS: &str =
-    include_str!("../resources/templates/init/standards-verification.md");
 pub const DEFAULT_WORKSPACE: &str = include_str!("../resources/templates/init/workspace.json");
 pub const EXPLORATION_TEMPLATE: &str =
     include_str!("../resources/templates/exploration/exploration.md");
@@ -69,14 +67,18 @@ pub const SKILLS: &[SkillResource] = &[
         openai: include_str!("../resources/skills/azimuth-review-spec-delta/agents/openai.yaml"),
     },
     SkillResource {
-        id: "azimuth-author-design-delta",
-        source: include_str!("../resources/skills/azimuth-author-design-delta/SKILL.md"),
-        openai: include_str!("../resources/skills/azimuth-author-design-delta/agents/openai.yaml"),
+        id: "azimuth-author-realization-delta",
+        source: include_str!("../resources/skills/azimuth-author-realization-delta/SKILL.md"),
+        openai: include_str!(
+            "../resources/skills/azimuth-author-realization-delta/agents/openai.yaml"
+        ),
     },
     SkillResource {
-        id: "azimuth-review-design-delta",
-        source: include_str!("../resources/skills/azimuth-review-design-delta/SKILL.md"),
-        openai: include_str!("../resources/skills/azimuth-review-design-delta/agents/openai.yaml"),
+        id: "azimuth-review-realization-delta",
+        source: include_str!("../resources/skills/azimuth-review-realization-delta/SKILL.md"),
+        openai: include_str!(
+            "../resources/skills/azimuth-review-realization-delta/agents/openai.yaml"
+        ),
     },
     SkillResource {
         id: "azimuth-author-verification-delta",
@@ -105,9 +107,14 @@ pub const SKILLS: &[SkillResource] = &[
         openai: include_str!("../resources/skills/azimuth-implement-change/agents/openai.yaml"),
     },
     SkillResource {
-        id: "azimuth-review-requirement",
-        source: include_str!("../resources/skills/azimuth-review-requirement/SKILL.md"),
-        openai: include_str!("../resources/skills/azimuth-review-requirement/agents/openai.yaml"),
+        id: "azimuth-review-verification",
+        source: include_str!("../resources/skills/azimuth-review-verification/SKILL.md"),
+        openai: include_str!("../resources/skills/azimuth-review-verification/agents/openai.yaml"),
+    },
+    SkillResource {
+        id: "azimuth-review-realization",
+        source: include_str!("../resources/skills/azimuth-review-realization/SKILL.md"),
+        openai: include_str!("../resources/skills/azimuth-review-realization/agents/openai.yaml"),
     },
     SkillResource {
         id: "azimuth-author-change-outcome",
@@ -287,13 +294,14 @@ pub const REFERENCES: &[ReferenceDescriptor] = &[
             "## Remove requirement: <id>",
             "## Remove scenario: <requirement-id>/<scenario-id>",
             "From: sha256:<digest>",
-            "Criticality: routine",
+            "Realization: reviewed",
+            "Verification: reviewed",
         ],
         rejected: &["Claim", "Case", "rename", "silent Scenario removal"],
         prose: include_str!("../resources/references/intent-delta.md"),
     },
     ReferenceDescriptor {
-        id: "design",
+        id: "realization",
         format_version: 4,
         accepted: &[
             "## Requirement: <id>",
@@ -302,18 +310,19 @@ pub const REFERENCES: &[ReferenceDescriptor] = &[
             "Binding: <identity>",
         ],
         rejected: &["path-derived identity", "unscoped speculative mechanism"],
-        prose: include_str!("../resources/references/design.md"),
+        prose: include_str!("../resources/references/realization.md"),
     },
     ReferenceDescriptor {
         id: "verification",
         format_version: 4,
         accepted: &[
-            "non-routine Requirement verification only",
-            "Decision Policy",
-            "Challenge Schedule: current",
+            "verification only for a Requirement that declares `Verification: reviewed`",
+            "Check",
+            "Evidence Binding",
+            "Verification Challenge",
         ],
         rejected: &[
-            "verification declarations for routine Requirements",
+            "verification declarations for a Requirement without `Verification:`",
             "clean result as positive evidence",
         ],
         prose: include_str!("../resources/references/verification.md"),

@@ -34,10 +34,12 @@ domain notations are all permitted; Azimuth preserves and fingerprints them with
 understand their meaning. Ids are declared rather than derived from file paths, so reorganising
 files changes nothing.
 
-Every Requirement declares its criticality: `critical`, `standard` or `routine`. Scenarios inherit it and do
-not become separate governance centres.
+A Requirement may declare two optional review lines, `Realization: reviewed` and `Verification: reviewed`.
+Scenarios inherit them and do not become separate governance centres. `Realization:` owes production
+sites and an independent Realization Review; `Verification:` owes enrolled Checks for every Scenario and an
+independent Verification Review.
 
-> **Routine Requirements stop here.** No linkage, no evidence, no ceremony — one markdown entry, validated for internal consistency. This is the cost dial, and it is why adoption can start at effectively zero. Everything below applies only where you decided it should.
+> **A Requirement that declares neither stops here.** It is specified: no linkage, no evidence, no ceremony — one markdown entry, validated for internal consistency. This is the cost dial, and it is why adoption can start at effectively zero. Everything below applies only where you decided it should.
 
 ### 2. Mark the code that establishes it
 
@@ -45,7 +47,7 @@ Production code carries `Realizes(requirement-id)`. A site earns the marker when
 of the parent Requirement predicate—not merely because the request passes through it. Scenario
 identity stays out of source markers.
 
-Where a mechanism is what makes the Requirement true — a type, a schema constraint, a choke point — the design facet names it and `ImplementsMechanism(mechanism-id)` binds the implementation. Extractors resolve both to semantic identities, so a rename or a file move is a locator change, not a semantic one.
+Where a mechanism is what makes the Requirement true — a type, a schema constraint, a choke point — the optional realization facet names it and `ImplementsMechanism(mechanism-id)` binds the implementation. Extractors resolve both to semantic identities, so a rename or a file move is a locator change, not a semantic one.
 
 ### 3. Enroll a method as a Check
 
@@ -61,22 +63,23 @@ honestly bears on each, and each edge is a separate binding.
 
 This is the step a traceability matrix skips.
 
-### 5. Qualify the method and decide applicability
+### 5. Review the Requirement
 
-A Method Qualification reviews the shared Check implementation, oracle, form and common context.
-An Applicability Decision separately reviews whether that qualified method establishes one exact
-Check-to-Scenario binding. Both are attributed and fingerprinted. Neither says that the Requirement is
-satisfied or that anything was executed.
+Two independent reviews are global, and each Requirement owes only the ones it declares.
 
-### 6. Judge the Requirement
+A **Verification Review** judges whether the verification is credible: the Checks, their oracles and
+bindings, Scenario coverage, independence and whether the declared Challenges, present or absent, are
+adequate. Its blocking dependencies are the Requirement text, Scenarios, Checks and bindings, Challenge
+declarations and the execution units the Checks run.
 
-A Requirement Judgment is the decision over the parent Requirement's total composition—every Scenario,
-realization, mechanism, Evidence Binding, Method Qualification and Applicability Decision—with an
-ordered basis and explicit residual risk.
+A **Realization Review** judges whether the code at the realization sites does what the Scenarios say,
+consistent with the realization facet where one exists. Its blocking dependencies are the Requirement
+text, Scenarios and realization facet. Code changed at the sites since the reviewed commit is reported
+as drift but never blocks: the review is an opinion about a code snapshot, not evidence.
 
-All three decision kinds are fingerprinted, so a relevant change to the code, Scenario, Requirement, Execution Context
-or policy marks the precise dependent decision stale and asks for it again. Paths, line numbers and
-prose do not.
+The latest accepted review of each kind is stored in the model beside the spec, sealed, and written
+only at finalization. Every review is attributed and fingerprinted, so a relevant change to a blocking
+dependency marks the precise review stale and asks for it again. Paths, line numbers and prose do not.
 
 ### Alongside: execution and challenge
 
@@ -84,7 +87,7 @@ These are a separate plane, not later steps.
 
 **Running enrolled work** produces execution facts (Check Results and Challenge Results) about an exact Verification Target — a source snapshot, an artifact, a deployment. Facts never author a decision, and a decision never records an execution.
 
-**Verification Challenges** search for a reason to distrust a decision that already exists: mutation testing, broad static analysis, fault injection, an exploratory session. They can withdraw belief; they can never create it. A clean result records only that a configured search found nothing.
+**Verification Challenges** are optional searches, declared by the author, for a reason to distrust verification that already exists: mutation testing, broad static analysis, fault injection, an exploratory session. They can withdraw belief; they can never create it. A clean result records only that a configured search found nothing.
 
 ### Throughout: derived output
 
@@ -94,7 +97,7 @@ These are a separate plane, not later steps.
 
 | You write | The tool derives |
 |---|---|
-| Requirements, Scenarios and Requirement criticality | which obligations apply |
+| Requirements, Scenarios and review declarations | which obligations apply |
 | Three markers in source | semantic site identity and source fingerprints |
 | Why a method bears on a Scenario | the traceability graph |
 | Reviewed decisions with your name on them | which decisions have gone stale |
@@ -115,9 +118,9 @@ For running enrolled work through a provider, `azimuth run plan | execute | impo
 
 ## Adopting it
 
-Start with everything `routine`. That costs one spec file per area and gives you a declared, reviewable statement of what the system is supposed to do, validated for internal consistency.
+Start with every Requirement specified, declaring no review. That costs one spec file per area and gives you a declared, reviewable statement of what the system is supposed to do, validated for internal consistency.
 
-Then raise criticality where the answer matters — a payment invariant, an authorization rule, a data-retention guarantee — and pay the evidence cost only there. Ten critical Requirements with real evidence are worth more than a thousand nominal ones, and the levels only carry information if raising one is a deliberate act.
+Then declare `Verification: reviewed` or `Realization: reviewed` where the answer matters — a payment invariant, an authorization rule, a data-retention guarantee — and pay the evidence cost only there. Ten reviewed Requirements with real evidence are worth more than a thousand nominal ones, and a declaration only carries information if adding one is a deliberate act.
 
 There is no hosted service to buy, no daemon to run, and no data leaves your repository.
 
@@ -137,11 +140,8 @@ Stated plainly, because discovering it later is worse.
 
 - **No runtime assurance state.** You cannot yet ask "what is assured in production right now." Durable Run ingestion, retention and per-Verification-Target Assurance State are deferred.
 - **Decisions decay with content, not with time.** Staleness is fingerprint equality. There is no cadence, expiry or recurrence, so nothing re-opens a decision because the world moved.
-- **Required evidence does not follow criticality.** Decision Policy is selected explicitly by
-  each Method Qualification, Evidence Binding and Requirement Judgment; criticality does not yet select
-  one automatically.
-- **Nothing caps criticality.** No mechanism prevents everything drifting to the top level.
-- **Azimuth does not yet apply its own evidence graph to itself.** Every Requirement in this repository is routine, so the graph is exercised by fixtures and conformance suites rather than by the framework's own assurance.
+- **Nothing caps review declarations.** No mechanism prevents every Requirement from declaring both reviews.
+- **Azimuth does not yet apply its own evidence graph to itself.** No Requirement in this repository declares a review, so the graph is exercised by fixtures and conformance suites rather than by the framework's own assurance.
 
 Open design questions are recorded under `azimuth/explorations/`, including these.
 
@@ -165,7 +165,6 @@ Canonical development and release. Framework changes, pull requests and version 
 | `tools/extractors/` | language and structural extractors |
 | `packages/` | annotation packages; .NET and TypeScript are supported |
 | `azimuth/model/` | this project's own Requirements — Azimuth described in Azimuth |
-| `azimuth/standards/` | this project's Decision Policies and Challenge Schedule |
 | `azimuth/changes/` | active and archived changes; the decision record |
 | `azimuth/explorations/` | non-normative research and open questions |
 | `experiments/` | self-contained conformance suites |
@@ -177,7 +176,7 @@ Consumer-domain intent stays in the repository that owns it. This repository bui
 ## Start here
 
 - **Evaluating it** — this file, then `docs/framework.md` for the derived account of the model.
-- **Using it** — `contracts/spec.md`, `contracts/design.md` and `contracts/verification.md` for what you author; `contracts/markers.md` for the three source annotations; `tools/azimuth/README.md` for the commands.
+- **Using it** — `contracts/spec.md`, `contracts/realization.md` and `contracts/verification.md` for what you author; `contracts/markers.md` for the three source annotations; `tools/azimuth/README.md` for the commands.
 - **Integrating it** — `contracts/manifest.md` to write an extractor, `contracts/adapter.md` with `contracts/run-bundle.md` to write a provider adapter, `contracts/export.md` to consume the model.
 - **Changing it** — `docs/change-process.md`, then `AGENTS.md` for the authority order and working rules.
 

@@ -55,7 +55,7 @@ form. `check_implementations` links source to one stable project-wide Check ID a
 form, context or decision. Workspace or project assembly attaches area, mount and semantic source
 address. Several implementation records may compose one Check.
 
-`mechanism_implementations` links source to a declared design mechanism. Its six raw fields are all required; `mechanism` is a stable project-wide lowercase kebab ID. Module membership is not a source field. The old record without `site` is invalid. The extractor derives a qualified site under its closed semantic profile, exact typed binding and companion Artifact as one atomic account. Enumeration witnesses and class members establish complete site domains independently of linkage markers. Artifacts provide exact structural binding targets.
+`mechanism_implementations` links source to a mechanism declared in the realization facet. Its six raw fields are all required; `mechanism` is a stable project-wide lowercase kebab ID. Module membership is not a source field. The old record without `site` is invalid. The extractor derives a qualified site under its closed semantic profile, exact typed binding and companion Artifact as one atomic account. Enumeration witnesses and class members establish complete site domains independently of linkage markers. Artifacts provide exact structural binding targets.
 
 For the marker-derived pair:
 
@@ -68,7 +68,7 @@ The marker address-kind mapping is `csharp` to `dotnet-symbol`; `cpp | go | java
 
 The raw companion requires `id`, `kind` and `file` and permits only optional typed `unique`, `columns` and `predicate`. It is paired by `(id, kind, file)`. A repeated or ambiguous triple fails; the same raw id in different files survives until area assembly only when every collision is an exact marker companion. An unmatched or ordinary Artifact collision fails. Assembly resolves the file to one area and mount, derives the SourceIdentity key and atomically rewrites both implementation binding and companion id to that key before model identity, resolution or fingerprinting. Optional properties are preserved; absence becomes `null`, `[]` and `null` in the canonical Artifact account.
 
-A raw companion is marker-only. Before rewrite, core rejects any explicit Design `Binding:` equal to its raw id or derived assembled key. One MechanismImplementation and companion resolve only the exact stable `mechanism` named by that record; an artifact-id match cannot fan out to another target. Only ordinary non-companion Artifacts may be reused by several explicit Design bindings.
+A raw companion is marker-only. Before rewrite, core rejects any explicit realization `Binding:` equal to its raw id or derived assembled key. One MechanismImplementation and companion resolve only the exact stable `mechanism` named by that record; an artifact-id match cannot fan out to another target. Only ordinary non-companion Artifacts may be reused by several explicit realization bindings.
 
 The companion is the one Artifact identity exception. Its assembled id is already the SourceIdentity key and is not expanded again as `<area>|<kind>|<id>`. Other Artifacts, including explicit schema or index bindings, retain their authored kind and id as semantic input.
 
@@ -78,7 +78,7 @@ The accountable emitter derives compiler qualification and fails when its compil
 
 Every emitter resolves `--root` once. Raw `file` is a non-empty normalized path beneath it, uses `/` and contains no empty, `.`, `..` or backslash segment. Inputs outside that root fail. Input arguments select files only; they never become semantic roots or path-based disambiguators.
 
-A locator-only move within one area that preserves the ecosystem-qualified site and content preserves SourceIdentity, Requirement Judgment and semantic Challenge scope. The new file changes complete-model and accountable launch locator fingerprints. Moving across areas or changing a semantic module, language, site or source content changes semantic identity or content identity.
+A locator-only move within one area that preserves the ecosystem-qualified site and content preserves SourceIdentity, the Verification Review and semantic Challenge scope. The new file changes complete-model and accountable launch locator fingerprints. Moving across areas or changing a semantic module, language, site or source content changes semantic identity or content identity.
 
 Unknown collections and removed alpha-era fields fail closed. There are no result-import binaries in the extractor packages. Run normalization and provider adapters belong to dependent execution plane changes, not to language extraction.
 
@@ -91,7 +91,7 @@ in `verification.md` own every Check-to-Scenario relationship.
 
 A mechanism implementation continues to use `ImplementsMechanism(<mechanism>)` in the ecosystem spelling. The extractor, not source authors, owns qualified `site`, typed `binding`, companion Artifact and source fingerprint derivation.
 
-An unmarked native test emits nothing. This is the normal state for ordinary engineering tests and for every test of a routine Requirement. All current framework Requirements are routine, so canonical synthetic fixtures emit Realizes linkage only.
+An unmarked native test emits nothing. This is the normal state for ordinary engineering tests and for every test of a Requirement that does not declare `Verification:`. No current framework Requirement declares a review, so canonical synthetic fixtures emit Realizes linkage only.
 
 ## Ecosystems
 
@@ -150,10 +150,10 @@ Every ecosystem's mechanism tests also prove:
 - nested modules, declaring types or receivers and overload signatures produce distinct sites;
 - two declarations that would collapse to one site fail extraction rather than adding a file path;
 - missing site, untyped or path-bearing binding, raw prequalified area key, prefix/address mismatch and companion id, kind or file mismatch are rejected;
-- an explicit Design binding to either a marker companion's raw id or assembled key, and two marker targets sharing one companion, are rejected before rewrite;
-- one ordinary non-companion Artifact may still serve several explicit Design bindings;
+- an explicit realization binding to either a marker companion's raw id or assembled key, and two marker targets sharing one companion, are rejected before rewrite;
+- one ordinary non-companion Artifact may still serve several explicit realization bindings;
 - repeated tags on one site and same-area cross-manifest qualified-site conflicts fail, while several distinct sites may support one mechanism and the same kind/site in two areas produces distinct assembled ids;
 - local and federated assembly produce the same atomic binding and companion-id rewrite; and
-- relocation inside one area preserves SourceIdentity, Requirement Judgment and semantic scope while the complete-model and launch locator fingerprints change.
+- relocation inside one area preserves SourceIdentity, the Verification Review and semantic scope while the complete-model and launch locator fingerprints change.
 
 An ecosystem without overloads still tests declaring-type or receiver qualification. A compiler or runtime metadata reader that cannot prove a unique qualified declaration must reject that marker; it may not fall back to a simple name or path.
