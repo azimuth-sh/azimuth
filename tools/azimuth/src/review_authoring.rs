@@ -99,26 +99,22 @@ fn packet(v: &Json) -> Result<(), String> {
         return Err(format!("invalid packet Run history: {findings:?}"));
     }
     let deps = v.get("dependencies").ok_or("missing dependencies")?;
-    for k in ["checks", "scenarios", "requirements", "bindings"] {
-        array(deps, k)?;
-    }
     let target = v.get("target").ok_or("missing target")?;
+    if text(target, "kind")? == "realization-review" {
+        for k in ["requirement", "realization"] {
+            deps.get(k)
+                .ok_or_else(|| format!("realization review requires {k} dependency"))?;
+        }
+        array(deps, "scenarios")?;
+    } else {
+        for k in ["checks", "scenarios", "requirements", "bindings"] {
+            array(deps, k)?;
+        }
+    }
     match text(target, "kind")? {
-        "method-qualification" => {
-            text(target, "check")?;
-        }
-        "applicability-decision" => {
-            text(target, "check")?;
-            text(target, "scenario")?;
-            text(target, "verification_target_fingerprint")?;
-        }
-        "requirement-review" => {
+        "verification-review" | "realization-review" => {
             exact(target, &["kind", "requirement"])?;
             text(target, "requirement")?;
-        }
-        "requirement-judgment" => {
-            text(target, "requirement")?;
-            text(target, "verification_target_fingerprint")?;
         }
         _ => return Err("unknown review-input target kind".into()),
     }
@@ -134,10 +130,8 @@ fn packet(v: &Json) -> Result<(), String> {
 }
 fn label(kind: &str) -> Result<&'static str, String> {
     match kind {
-        "method-qualification" => Ok("Method qualification"),
-        "applicability-decision" => Ok("Applicability decision"),
-        "requirement-judgment" => Ok("Requirement judgment"),
-        "requirement-review" => Ok("Requirement review"),
+        "verification-review" => Ok("Verification review"),
+        "realization-review" => Ok("Realization review"),
         _ => Err("unknown review kind".into()),
     }
 }
@@ -164,10 +158,12 @@ fn relative(root: &Path, name: &str) -> Result<std::path::PathBuf, String> {
 }
 pub fn skeleton(input: &Json, input_ref: &str, id: &str) -> Result<String, String> {
     packet(input)?;
-    if text(input.get("target").unwrap(), "kind")? != "requirement-review" {
+    if !matches!(
+        text(input.get("target").unwrap(), "kind")?,
+        "verification-review" | "realization-review"
+    ) {
         return Err(
-            "new authored reviews require Requirement Review; historical records remain inspectable"
-                .into(),
+            "new authored reviews require a Verification Review or a Realization Review".into(),
         );
     }
     crate::diag::validate_id(id, false)?;
@@ -177,27 +173,15 @@ pub fn skeleton(input: &Json, input_ref: &str, id: &str) -> Result<String, Strin
     let target = input.get("target").unwrap();
     let kind = text(target, "kind")?;
     let mut s = format!("# Assurance reviews\n\n## {}: {id}\n\n", label(kind)?);
-    for (k, title) in [
-        ("check", "Check"),
-        ("scenario", "Scenario"),
-        ("requirement", "Requirement"),
-    ] {
-        if let Some(v) = target.get(k).and_then(Json::as_str) {
-            s.push_str(&format!("- {title}: `{v}`\n"));
-        }
+    if let Some(v) = target.get("requirement").and_then(Json::as_str) {
+        s.push_str(&format!("- Requirement: `{v}`\n"));
     }
     s.push_str(&format!("- Input: `{input_ref}`\n- Input fingerprint: `{}`\n- Reviewer: <accountable reviewer>\n- Reviewed at: <UTC timestamp, YYYY-MM-DDTHH:MM:SSZ>\n", text(input, "fingerprint")?));
-    if kind == "requirement-judgment" {
-        s.push_str("- Conclusion: <supported, violated or unresolved>\n- Residual risks:\n");
-    } else {
-        s.push_str("- Decision: <accepted or rejected>\n");
-        if kind == "requirement-review" {
-            s.push_str("- Issues: []\n- Dispositions: []\n");
-        }
-        if kind == "applicability-decision" {
-            s.push_str("- Limitations:\n");
-        }
+    s.push_str("- Decision: <accepted or rejected>\n");
+    if kind == "realization-review" {
+        s.push_str("- Reviewed commit: <commit of the code at the realization sites>\n");
     }
+    s.push_str("- Issues: []\n- Dispositions: []\n");
     s.push_str("\n### Rationale\n\n<Independent assessment; replace all placeholders before compilation.>\n");
     Ok(s)
 }
@@ -234,8 +218,8 @@ fn parse(source: &str) -> Result<Vec<Review>, String> {
             .split_once(": ")
             .ok_or_else(|| format!("line {}: expected review kind: ID", cursor + 1))?;
         let kind = match title {
-            "Method qualification" | "Applicability decision" | "Requirement judgment" => return Err(format!("line {}: historical review kind cannot be newly authored; use Requirement review", cursor + 1)),
-            "Requirement review" => "requirement-review",
+            "Verification review" => "verification-review",
+            "Realization review" => "realization-review",
             "Requirement status" => return Err(format!("line {}: Requirement status records are no longer authored; deployment Requirement Status is computed by the Assurance Service from applicable evidence", cursor + 1)),
             _ => return Err(format!("line {}: unknown review kind", cursor + 1)),
         };
@@ -301,6 +285,7 @@ fn parse(source: &str) -> Result<Vec<Review>, String> {
                     "Reviewer",
                     "Reviewed at",
                     "Reassesses",
+                    "Reviewed commit",
                     "Decision",
                     "Conclusion",
                     "Limitations",
@@ -459,15 +444,6 @@ fn dependency<'a>(packet: &'a Json, group: &str, id: &str) -> Result<&'a Json, S
     }
     Ok(items[0])
 }
-fn current_review(packet: &Json, target: &Json) -> Result<Json, String> {
-    let reviews = array(packet, "existing_reviews")?;
-    let review = crate::assurance_review::latest_review(reviews, target)?
-        .ok_or("required review dependency absent from input")?;
-    Ok(review
-        .get("fingerprint")
-        .ok_or("review fingerprint absent")?
-        .clone())
-}
 fn compile_record(
     r: &Review,
     packet: &Json,
@@ -486,20 +462,20 @@ fn compile_record(
         "Reassesses",
     ];
     allowed.extend(match r.kind.as_str() {
-        "requirement-review" => vec!["Requirement", "Decision", "Issues", "Dispositions"],
-        "method-qualification" => vec!["Check", "Decision"],
-        "applicability-decision" => vec!["Check", "Scenario", "Decision"],
-        _ => vec!["Requirement", "Conclusion"],
+        "verification-review" => vec!["Requirement", "Decision", "Issues", "Dispositions"],
+        "realization-review" => vec![
+            "Requirement",
+            "Decision",
+            "Issues",
+            "Dispositions",
+            "Reviewed commit",
+        ],
+        _ => return Err("unknown review kind".into()),
     });
     if r.fields.keys().any(|k| !allowed.contains(&k.as_str())) {
         return Err("metadata field does not belong to this review kind".into());
     }
-    let list_name = match r.kind.as_str() {
-        "applicability-decision" => Some("Limitations"),
-        "requirement-judgment" => Some("Residual risks"),
-        _ => None,
-    };
-    if r.lists.keys().any(|k| Some(k.as_str()) != list_name) {
+    if !r.lists.is_empty() {
         return Err("list field does not belong to this review kind".into());
     }
     if field(r, "Input fingerprint")? != text(packet, "fingerprint")? {
@@ -542,19 +518,54 @@ fn compile_record(
             ])]),
         ),
     ]);
-    for (k, title) in [
-        ("check", "Check"),
-        ("scenario", "Scenario"),
-        ("requirement", "Requirement"),
-    ] {
-        if let Some(expected) = target.get(k) {
-            if expected.as_str() != Some(field(r, title)?) {
-                return Err(format!("{title} differs from packet target"));
-            }
-            put(&mut native, k, expected.clone());
+    if let Some(expected) = target.get("requirement") {
+        if expected.as_str() != Some(field(r, "Requirement")?) {
+            return Err("Requirement differs from packet target".into());
         }
+        put(&mut native, "requirement", expected.clone());
     }
-    if r.kind == "requirement-review" {
+    if r.kind == "realization-review" {
+        let dependencies = packet.get("dependencies").unwrap();
+        put(
+            &mut native,
+            "requirement_fingerprint",
+            dependencies
+                .get("requirement")
+                .and_then(|value| value.get("fingerprint"))
+                .ok_or("realization dependencies require the Requirement fingerprint")?
+                .clone(),
+        );
+        put(
+            &mut native,
+            "dependencies_fingerprint",
+            Json::str(crate::fingerprint::canonical_sha256(dependencies)),
+        );
+        put(
+            &mut native,
+            "sites_fingerprint",
+            packet
+                .get("definitions")
+                .and_then(|definitions| definitions.get("sites_fingerprint"))
+                .ok_or("realization review input requires sites_fingerprint")?
+                .clone(),
+        );
+        put(
+            &mut native,
+            "reviewed_commit",
+            Json::str(field(r, "Reviewed commit")?),
+        );
+        for (title, key) in [("Issues", "issues"), ("Dispositions", "dispositions")] {
+            if let Some(value) = r.fields.get(title) {
+                let parsed =
+                    crate::json::parse(value).map_err(|error| format!("{title}: {error}"))?;
+                parsed
+                    .as_array()
+                    .ok_or_else(|| format!("{title} requires a JSON array"))?;
+                put(&mut native, key, parsed);
+            }
+        }
+        put(&mut native, "reassesses", reassesses.clone());
+    } else if r.kind == "verification-review" {
         put(
             &mut native,
             "requirement_fingerprint",
@@ -615,220 +626,33 @@ fn compile_record(
         }
         put(&mut native, "challenge_basis", Json::Arr(basis));
         put(&mut native, "reassesses", reassesses.clone());
-    } else if r.kind == "method-qualification" {
-        put(
-            &mut native,
-            "check_fingerprint",
-            dependency(packet, "checks", field(r, "Check")?)?
-                .get("fingerprint")
-                .ok_or("missing Check fingerprint")?
-                .clone(),
-        );
-    } else if r.kind == "applicability-decision" {
-        let binding = array(packet.get("dependencies").unwrap(), "bindings")?
-            .iter()
-            .find(|b| {
-                b.get("check") == target.get("check") && b.get("scenario") == target.get("scenario")
-            })
-            .ok_or("missing binding dependency")?;
-        for (key, from) in [
-            ("check_fingerprint", "check_fingerprint"),
-            ("scenario_fingerprint", "scenario_fingerprint"),
-            ("binding_fingerprint", "fingerprint"),
-        ] {
-            put(
-                &mut native,
-                key,
-                binding.get(from).ok_or("missing binding field")?.clone(),
-            );
-        }
-        put(
-            &mut native,
-            "verification_target_fingerprint",
-            target
-                .get("verification_target_fingerprint")
-                .unwrap()
-                .clone(),
-        );
-        put(
-            &mut native,
-            "method_qualification_fingerprint",
-            current_review(
-                packet,
-                &Json::obj(vec![
-                    ("kind", Json::str("method-qualification")),
-                    ("check", target.get("check").unwrap().clone()),
-                ]),
-            )?,
-        );
-        let basis = array(packet, "check_results")?
-            .iter()
-            .filter(|v| {
-                v.get("check") == target.get("check") && v.get("scenario") == target.get("scenario")
-            })
-            .map(|v| {
-                Ok(Json::obj(vec![
-                    (
-                        "run",
-                        v.get("run").ok_or("missing Check Result run")?.clone(),
-                    ),
-                    (
-                        "bundle_fingerprint",
-                        v.get("bundle_fingerprint")
-                            .ok_or("missing bundle fingerprint")?
-                            .clone(),
-                    ),
-                    (
-                        "check_result",
-                        v.get("check_result")
-                            .ok_or("missing Check Result fingerprint")?
-                            .clone(),
-                    ),
-                ]))
-            })
-            .collect::<Result<Vec<_>, String>>()?;
-        put(&mut native, "basis", Json::Arr(basis));
-        put(
-            &mut native,
-            "limitations",
-            Json::Arr(
-                r.lists
-                    .get("Limitations")
-                    .ok_or("expected Limitations list (may be empty)")?
-                    .clone(),
-            ),
-        );
-    } else {
-        let requirement = dependency(packet, "requirements", field(r, "Requirement")?)?;
-        put(
-            &mut native,
-            "requirement_fingerprint",
-            requirement
-                .get("fingerprint")
-                .ok_or("missing Requirement fingerprint")?
-                .clone(),
-        );
-        put(
-            &mut native,
-            "verification_target_fingerprint",
-            target
-                .get("verification_target_fingerprint")
-                .unwrap()
-                .clone(),
-        );
-        let scenarios = array(requirement, "scenarios")?
-            .iter()
-            .map(|id| {
-                let d = dependency(
-                    packet,
-                    "scenarios",
-                    id.as_str().ok_or("invalid Scenario ID")?,
-                )?;
-                Ok(Json::obj(vec![
-                    ("id", id.clone()),
-                    (
-                        "fingerprint",
-                        d.get("fingerprint")
-                            .ok_or("missing Scenario fingerprint")?
-                            .clone(),
-                    ),
-                ]))
-            })
-            .collect::<Result<Vec<_>, String>>()?;
-        put(&mut native, "scenarios", Json::Arr(scenarios));
-        put(
-            &mut native,
-            "mechanisms",
-            requirement
-                .get("mechanisms")
-                .ok_or("missing mechanisms")?
-                .clone(),
-        );
-        let bindings = array(packet.get("dependencies").unwrap(), "bindings")?
-            .iter()
-            .map(|b| {
-                let t = Json::obj(vec![
-                    ("kind", Json::str("applicability-decision")),
-                    ("check", b.get("check").ok_or("missing Check")?.clone()),
-                    (
-                        "scenario",
-                        b.get("scenario").ok_or("missing Scenario")?.clone(),
-                    ),
-                    (
-                        "verification_target_fingerprint",
-                        target
-                            .get("verification_target_fingerprint")
-                            .unwrap()
-                            .clone(),
-                    ),
-                ]);
-                let applicability = match crate::assurance_review::latest_review(
-                    array(packet, "existing_reviews")?,
-                    &t,
-                )? {
-                    Some(v) => v.get("fingerprint").unwrap().clone(),
-                    None => Json::Null,
-                };
-                Ok(Json::obj(vec![
-                    ("check", b.get("check").unwrap().clone()),
-                    ("scenario", b.get("scenario").unwrap().clone()),
-                    (
-                        "fingerprint",
-                        b.get("fingerprint")
-                            .ok_or("missing binding fingerprint")?
-                            .clone(),
-                    ),
-                    ("applicability_fingerprint", applicability),
-                ]))
-            })
-            .collect::<Result<Vec<_>, String>>()?;
-        put(&mut native, "bindings", Json::Arr(bindings));
-        put(
-            &mut native,
-            "residual_risks",
-            Json::Arr(
-                r.lists
-                    .get("Residual risks")
-                    .ok_or("expected Residual risks list (may be empty)")?
-                    .clone(),
-            ),
-        );
     }
-    let decision = if r.kind == "requirement-judgment" {
-        ("conclusion", "Conclusion")
-    } else {
-        ("decision", "Decision")
-    };
-    put(&mut native, decision.0, Json::str(field(r, decision.1)?));
-    if r.kind == "requirement-review" {
-        let definitions = packet
-            .get("definitions")
-            .ok_or("review definitions absent")?;
-        let known_issues = definitions
-            .get("challenge_issues")
-            .and_then(Json::as_array)
-            .unwrap_or(&[])
-            .iter()
-            .filter_map(|issue| issue.get("id").and_then(Json::as_str))
-            .chain(
-                definitions
-                    .get("review_issues")
-                    .and_then(Json::as_array)
-                    .unwrap_or(&[])
-                    .iter()
-                    .filter_map(|issue| issue.get("reference").and_then(Json::as_str)),
-            )
-            .collect::<BTreeSet<_>>();
-        for disposition in native
-            .get("dispositions")
-            .and_then(Json::as_array)
-            .unwrap_or(&[])
-        {
-            if !known_issues.contains(text(disposition, "issue")?) {
-                return Err(
-                    "disposition refers to an issue absent from the exact review input".into(),
-                );
-            }
+    put(&mut native, "decision", Json::str(field(r, "Decision")?));
+    let definitions = packet
+        .get("definitions")
+        .ok_or("review definitions absent")?;
+    let known_issues = definitions
+        .get("challenge_issues")
+        .and_then(Json::as_array)
+        .unwrap_or(&[])
+        .iter()
+        .filter_map(|issue| issue.get("id").and_then(Json::as_str))
+        .chain(
+            definitions
+                .get("review_issues")
+                .and_then(Json::as_array)
+                .unwrap_or(&[])
+                .iter()
+                .filter_map(|issue| issue.get("reference").and_then(Json::as_str)),
+        )
+        .collect::<BTreeSet<_>>();
+    for disposition in native
+        .get("dispositions")
+        .and_then(Json::as_array)
+        .unwrap_or(&[])
+    {
+        if !known_issues.contains(text(disposition, "issue")?) {
+            return Err("disposition refers to an issue absent from the exact review input".into());
         }
     }
     seal(&mut native)?;

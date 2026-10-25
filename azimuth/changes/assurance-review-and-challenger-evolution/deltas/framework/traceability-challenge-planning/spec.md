@@ -3,7 +3,6 @@
 ## Replace requirement: claim-judgments-bind-total-composition
 From: sha256:1115e66cc1f79b27417ed8fb449201a7639c5c90442aeaed61c40f238eed54e2
 Because: Definition review and exact Subject health replace the mandatory total-composition Judgment.
-Criticality: routine
 Remove scenarios: routine-claims-reject-judgments
 
 Azimuth SHALL identify each Claim Review by its complete relevant definition composition and each Claim Health by that composition, its exact Subject, current review and execution basis. Historical record names SHALL NOT create current assessment status.
@@ -23,7 +22,6 @@ Given a routine Claim, when the standard workflow derives required assurance wor
 ## Replace requirement: challenge-resolution-preserves-every-candidate
 From: sha256:89e83ba938cf33a732db4313439ad3022bf8660ccc58a61f0cc5796e39d2c0f5
 Because: Assessment target and source-scope resolution retain explicit gaps without relying on per-binding challenge domains.
-Criticality: routine
 
 Azimuth SHALL resolve machine Challenger targets and scope without hiding missing, stale, rejected, invalid or unresolved assessment candidates.
 
@@ -46,7 +44,6 @@ Given a machine Challenger declaring required semantic scope, when its scope rep
 ## Replace requirement: challenge-planning-binds-current-decisions
 From: sha256:5642a3b38aeafd2b594753f3f2242271c1323cd86d319fbcd5aa827390f9ab94
 Because: New machine targets are exact native Claim Review or Claim Health records and do not share an implicit Run context.
-Criticality: routine
 
 Azimuth SHALL expand authored machine Challenger declarations and requests from the complete current model into exact current eligible assessment targets, bounded work units and pinned implementation configuration.
 
@@ -69,7 +66,6 @@ Given target expansion exceeding a nonzero request cap, when planning checks the
 ## Replace requirement: adapters-receive-frozen-semantic-scope
 From: sha256:1672968becb21c65a9e9bb22d144d31c6b17d70f877b21fe8c0d10d8f50d85f1
 Because: Standard realization and Mechanism markers plus pinned explicit additions resolve bounded machine source scope.
-Criticality: routine
 
 Azimuth SHALL freeze selected assessment identity, semantic source scope, source-resolution report and accountable launch inputs before an adapter translates a machine Challenger into provider-native work. Build dependencies SHALL remain distinct from challenged targets.
 
@@ -96,7 +92,6 @@ Given relevant helpers outside tagged sites, when scope is prepared, then explic
 ## Replace requirement: challenge-outcomes-remain-negative-search-facts
 From: sha256:681e1652c01f13ff21240960aa922e2d2787a79747469cdb1b14bc12597f8d28
 Because: Machine objection searches never fabricate native assessments or product Observations.
-Criticality: routine
 
 Azimuth SHALL keep machine Challenge outcomes, scheduling deferral and selection mismatch as different states.
 
@@ -119,7 +114,6 @@ Given actual target, fingerprint, execution Subject, units or scope differing fr
 ## Replace requirement: challenge-policy-is-form-and-cost-aware
 From: sha256:c54c0b1d2a50096c53d14aa18bb712a27a55381a53a1a0d818c2fcab069767ef
 Because: Required declared Challenger work and explicit resource bounds replace mandatory Decision Policies.
-Criticality: routine
 
 Azimuth SHALL distinguish declared machine objection searches and their execution requirements from negative search outcomes. Resource limits and selected scope SHALL remain accountable without requiring a Decision Policy record.
 
@@ -142,7 +136,6 @@ Given prior Challenge facts for another execution Subject or time, when current 
 ## Replace requirement: challenged-decision-impact-does-not-duplicate-results
 From: sha256:351e37e15212da272d5a837b44bc9d85a80360e44792b766640ec3dc876157df
 Because: Exact native assessment targets replace method/applicability fan-out without duplicating machine objections.
-Criticality: routine
 Remove scenarios: method-finding-fans-out-through-dependent-edges, applicability-finding-remains-local
 
 Azimuth SHALL retain each machine objection as one exact Challenge Result and derive affected native assessment status without manufacturing additional results.

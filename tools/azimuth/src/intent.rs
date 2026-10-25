@@ -94,7 +94,6 @@ enum Kind {
     Replace,
     RemoveRequirement,
     RemoveScenario,
-    Criticality,
 }
 
 pub fn fingerprint(block: &str) -> String {
@@ -375,7 +374,6 @@ fn operation_name(kind: &Kind) -> &'static str {
         Kind::Replace => "replace",
         Kind::RemoveRequirement => "remove requirement",
         Kind::RemoveScenario => "remove scenario",
-        Kind::Criticality => "criticality",
     }
 }
 
@@ -503,7 +501,6 @@ fn read_operations(change: &Path) -> Result<Vec<Operation>, Vec<String>> {
                 ("Replace requirement: ", Kind::Replace),
                 ("Remove requirement: ", Kind::RemoveRequirement),
                 ("Remove scenario: ", Kind::RemoveScenario),
-                ("Change criticality: ", Kind::Criticality),
             ]
             .into_iter()
             .find_map(|(prefix, kind)| {
@@ -601,7 +598,15 @@ fn apply_operation(
             let body = operation
                 .source
                 .replace("### Add scenario: ", "### Scenario: ");
-            let block = format!("## Requirement: {}\n{}", operation.id, body.trim());
+            let body = body.trim_end();
+            // A Requirement without labels opens with its statement, which the spec grammar
+            // separates from the heading by one blank line.
+            let body = if body.trim_start_matches([' ', '\t']).starts_with('\n') {
+                format!("\n{}", body.trim_start())
+            } else {
+                body.trim_start().to_string()
+            };
+            let block = format!("## Requirement: {}\n{}", operation.id, body);
             parse_requirement(&operation.spec, &block)?;
             if let Some((start, end)) = current {
                 if same_requirement(&source[start..end], &block, &operation.spec)? {
@@ -624,14 +629,18 @@ fn apply_operation(
                     "From",
                     "Because",
                     "Title",
-                    "Criticality",
+                    "Realization",
+                    "Verification",
                     "Remove scenarios",
                 ],
             )?;
             let from = required(&labels, "From")?;
             let because = required(&labels, "Because")?;
             let _ = because;
-            let criticality = required(&labels, "Criticality")?;
+            let rigor_lines = ["Realization", "Verification"]
+                .into_iter()
+                .filter_map(|label| labels.get(label).map(|value| format!("{label}: {value}\n")))
+                .collect::<String>();
             let title = labels
                 .get("Title")
                 .map(|value| format!("Title: {value}\n"))
@@ -641,7 +650,7 @@ fn apply_operation(
                 .map(|line| format!("Context: {line}\n"))
                 .collect::<String>();
             let block = format!(
-                "## Requirement: {requirement_id}\n{title}Criticality: {criticality}\n{context}\n{}",
+                "## Requirement: {requirement_id}\n{title}{rigor_lines}{context}\n{}",
                 body.trim()
             );
             let target = parse_requirement(&operation.spec, &block)?;
@@ -748,34 +757,6 @@ fn apply_operation(
             parse_requirement(&operation.spec, &next[requirement_start..new_end])?;
             Ok((next, false))
         }
-        Kind::Criticality => {
-            let (labels, body) =
-                labels_and_body(&operation.source, &["From", "To", "Because", "Revisit"])?;
-            if !body.trim().is_empty() {
-                return Err("criticality change accepts labels only".into());
-            }
-            let from = required(&labels, "From")?;
-            let to = required(&labels, "To")?;
-            required(&labels, "Because")?;
-            let Some((start, end)) = current else {
-                return Err(format!("`{identity}` does not exist"));
-            };
-            let block = &source[start..end];
-            let old = format!("Criticality: {from}");
-            let new = format!("Criticality: {to}");
-            if block.lines().any(|line| line == new) {
-                return Ok((source.to_string(), true));
-            }
-            if !block.lines().any(|line| line == old) {
-                return Err(format!(
-                    "`{identity}` is not declared `From: {from}` or `To: {to}`"
-                ));
-            }
-            Ok((
-                replace_range(source, start, end, &block.replacen(&old, &new, 1)),
-                false,
-            ))
-        }
     }
 }
 
@@ -856,7 +837,8 @@ fn same_requirement(left: &str, right: &str, spec: &str) -> Result<bool, String>
     let b = parse_requirement(spec, right)?;
     Ok(a.id == b.id
         && a.title == b.title
-        && a.criticality == b.criticality
+        && a.realization == b.realization
+        && a.verification == b.verification
         && a.conditions == b.conditions
         && a.statement == b.statement
         && a.scenarios.len() == b.scenarios.len()
@@ -907,34 +889,32 @@ fn ensure_requirement_unreferenced(
     requirement: &str,
 ) -> Result<(), String> {
     let identity = requirement.to_string();
-    if model.account_design_for_requirement(spec, requirement).is_some()
-        || model.account_verifications.iter().any(|document| document.requirements.iter().any(|scope| scope.requirement == identity))
-        || model.account_reviews.iter().any(|document| document.requirements.iter().any(|scope| scope.requirement == identity))
-        || model.account_supports.iter().any(|support| support.elements.iter().any(|element| element.requirement == identity))
+    if model
+        .account_realization_for_requirement(spec, requirement)
+        .is_some()
+        || model.account_verifications.iter().any(|document| {
+            document
+                .requirements
+                .iter()
+                .any(|scope| scope.requirement == identity)
+        })
+        || model.account_supports.iter().any(|support| {
+            support
+                .elements
+                .iter()
+                .any(|element| element.requirement == identity)
+        })
         || model.workspace.obligation(spec, requirement).is_some()
         || model
-        .realizes
-        .iter()
-        .any(|site| site.requirement == requirement)
-        || model
-            .designs
+            .realizes
             .iter()
-            .any(|design| design.spec == spec && design.for_requirement(requirement).is_some())
-        || model.verifications.iter().any(|verification| {
-            verification.owner == spec
-                && (verification
-                    .requirement_judgments
-                    .iter()
-                    .any(|item| item.id == requirement || item.id == identity)
-                    || verification.challenge_plans.iter().any(|plan| plan.selectors.iter().any(|selector| matches!(selector, crate::verification::Selector::RequirementJudgmentFromRequirement(id) if id == &identity)))
-                    || verification
-                        .bindings
-                        .iter()
-                        .any(|item| model.find_scenario(&item.scenario).is_some_and(|view| view.requirement.id == requirement)))
+            .any(|site| site.requirement == requirement)
+        || model.realizations.iter().any(|realization| {
+            realization.spec == spec && realization.for_requirement(requirement).is_some()
         })
     {
         return Err(format!(
-            "Requirement `{requirement}` in module `{spec}` has current realization, design or verification references"
+            "Requirement `{requirement}` in module `{spec}` has current realization or verification references"
         ));
     }
     Ok(())
@@ -947,27 +927,33 @@ fn ensure_scenario_unreferenced(
     scenario: &str,
 ) -> Result<(), String> {
     let identity = scenario.to_string();
-    if model.account_verifications.iter().any(|document| document.scenarios.iter().any(|scope| scope.scenario == identity) || document.checks.iter().any(|check| check.scenarios.contains(&identity)))
-        || model.account_reviews.iter().any(|document| document.requirements.iter().any(|scope| scope.scenarios.contains(&identity)))
-        || model.account_supports.iter().any(|support| support.contributions.iter().any(|contribution| contribution.scenario == identity))
-        || model.verifications.iter().any(|verification| {
-        verification
-            .bindings
+    if model.account_verifications.iter().any(|document| {
+        document
+            .scenarios
             .iter()
-            .any(|item| item.scenario == identity)
-            || verification.requirement_judgments.iter().any(|judgment| judgment.basis.iter().any(|basis| basis == &identity))
-            || verification.challenge_plans.iter().any(|plan| plan.selectors.iter().any(|selector| matches!(selector, crate::verification::Selector::ApplicabilityDecisionFromScenario(id) if id == &identity)))
-    }) || model.designs.iter().any(|design| {
-        design.spec == spec
-            && design.for_requirement(requirement).is_some_and(|entry| {
-                entry
-                    .mechanisms
-                    .iter()
-                    .any(|mechanism| mechanism.scenarios.iter().any(|id| id == scenario))
-            })
+            .any(|scope| scope.scenario == identity)
+            || document
+                .checks
+                .iter()
+                .any(|check| check.scenarios.contains(&identity))
+    }) || model.account_supports.iter().any(|support| {
+        support
+            .contributions
+            .iter()
+            .any(|contribution| contribution.scenario == identity)
+    }) || model.realizations.iter().any(|realization| {
+        realization.spec == spec
+            && realization
+                .for_requirement(requirement)
+                .is_some_and(|entry| {
+                    entry
+                        .mechanisms
+                        .iter()
+                        .any(|mechanism| mechanism.scenarios.iter().any(|id| id == scenario))
+                })
     }) {
         return Err(format!(
-            "`{identity}` has current design or verification references"
+            "`{identity}` has current realization or verification references"
         ));
     }
     Ok(())

@@ -3,7 +3,7 @@
 //! Every hand-written artifact in the framework has the same shape — ids live in headings,
 //! everything else on labelled lines, so that a changed field is a one-line diff rather than
 //! something that reads as a rename. This is the reader for that shape, shared by the verification
-//! plan and (later) the design artifact.
+//! plan and (later) the realization artifact.
 //!
 //! Values wrap: inside the label block, a line that does not begin a known label continues the
 //! previous one. Prose wraps at 100 columns everywhere in this repo, and a format that forbade

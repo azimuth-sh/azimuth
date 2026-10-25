@@ -2,7 +2,6 @@
 
 ## Requirement: subjects-have-exact-identity
 Title: Verification Targets have exact identity
-Criticality: routine
 
 Azimuth SHALL bind every Run to one exact typed Verification Target and accountable execution provenance.
 
@@ -23,7 +22,6 @@ Azimuth SHALL bind every Run to one exact typed Verification Target and accounta
 
 ## Requirement: actual-selection-is-bounded-by-plan
 Title: Actual selection is bounded by plan
-Criticality: routine
 
 Azimuth SHALL freeze planned and actual semantic selection and SHALL fail closed on substituted or
 additional targets.
@@ -45,7 +43,6 @@ additional targets.
 
 ## Requirement: execution-reduces-to-cardinal-results
 Title: Execution reduces to cardinal results
-Criticality: routine
 
 Azimuth SHALL reduce activities, work units and ordered attempts to exactly cardinal terminal
 Check Results and Challenge Results without conflating their meaning.
@@ -68,7 +65,6 @@ Check Results and Challenge Results without conflating their meaning.
 
 ## Requirement: bundle-history-is-immutable-and-deterministic
 Title: Bundle history is immutable and deterministic
-Criticality: routine
 
 Azimuth SHALL identify Run bundles by versioned canonical fingerprints and SHALL represent changed
 content only through a linear immutable correction chain.
@@ -89,7 +85,6 @@ content only through a linear immutable correction chain.
 
 ## Requirement: run-protocol-is-service-independent
 Title: Run protocol is service independent
-Criticality: routine
 
 Azimuth SHALL verify and inspect normalized Run bundles locally without an adapter or Assurance
 Service.

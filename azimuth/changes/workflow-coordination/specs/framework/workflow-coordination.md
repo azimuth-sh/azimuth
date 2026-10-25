@@ -1,7 +1,6 @@
 # Intent delta: framework/workflow-coordination
 
 ## Add requirement: explicit-workflow-progression
-Criticality: routine
 
 Workflow coordination derives eligible tasks from an explicitly registered definition, exact current inputs and recorded results. Querying performs no progression or agent execution. Conditional updates retain the actual outcomes and their dependencies; neither completion nor protocol-valid evidence creates review approval.
 
@@ -30,7 +29,6 @@ Given a registered candidate revision and explicit assurance target inventory, w
 Given correction that registers another immutable candidate, when its validated inventory is recorded, then the workflow adds the new candidate's assurance tasks and retains earlier task definitions and results as superseded history.
 
 ## Add requirement: same-project-candidate-assessment
-Criticality: routine
 
 An already configured Assurance State project can retain immutable candidate model revisions and assess their exact evidence without replacing the project's accepted authority.
 

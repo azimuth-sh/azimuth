@@ -1,4 +1,0 @@
-interface:
-  display_name: "Review an Azimuth design delta"
-  short_description: "Review an Azimuth design delta"
-  default_prompt: "Use $azimuth-review-design-delta for the assigned Azimuth work and retain its exact result."

@@ -359,8 +359,8 @@ async fn publish(
             requirement,
         )
         .await?;
-        sqlx::query("INSERT INTO assessment_requirements(project,deployment,requirement,generation,published_generation,record_key,status,review,summary,evaluated_at_ms,valid_until_ms,supported_since_ms) VALUES($1,$2,$3,$4,$4,$5,$6::text,$7,$8,$9::bigint,$10,CASE WHEN $6::text='supported' THEN $9::bigint END) ON CONFLICT(project,deployment,requirement) DO UPDATE SET published_generation=excluded.published_generation,record_key=excluded.record_key,supported_since_ms=CASE WHEN excluded.status<>'supported' THEN NULL WHEN assessment_requirements.status='supported' AND assessment_requirements.supported_since_ms IS NOT NULL THEN assessment_requirements.supported_since_ms ELSE excluded.evaluated_at_ms END,status=excluded.status,review=excluded.review,summary=excluded.summary,evaluated_at_ms=excluded.evaluated_at_ms,valid_until_ms=excluded.valid_until_ms,renewing=false")
-            .bind(project).bind(deployment).bind(id).bind(requirement_generation).bind(&key).bind(requirement["status"].as_str()).bind(requirement["review"].as_str()).bind(requirement["explanation"]["summary"].as_str()).bind(result["evaluated_at_ms"].as_i64()).bind(due).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO assessment_requirements(project,deployment,requirement,generation,published_generation,record_key,status,verification_review,realization_review,realization_code_drift,realization_reviewed_commit,summary,evaluated_at_ms,valid_until_ms,supported_since_ms) VALUES($1,$2,$3,$4,$4,$5,$6::text,$7,$8,$9,$10,$11,$12::bigint,$13,CASE WHEN $6::text='supported' THEN $12::bigint END) ON CONFLICT(project,deployment,requirement) DO UPDATE SET published_generation=excluded.published_generation,record_key=excluded.record_key,supported_since_ms=CASE WHEN excluded.status<>'supported' THEN NULL WHEN assessment_requirements.status='supported' AND assessment_requirements.supported_since_ms IS NOT NULL THEN assessment_requirements.supported_since_ms ELSE excluded.evaluated_at_ms END,status=excluded.status,verification_review=excluded.verification_review,realization_review=excluded.realization_review,realization_code_drift=excluded.realization_code_drift,realization_reviewed_commit=excluded.realization_reviewed_commit,summary=excluded.summary,evaluated_at_ms=excluded.evaluated_at_ms,valid_until_ms=excluded.valid_until_ms,renewing=false")
+            .bind(project).bind(deployment).bind(id).bind(requirement_generation).bind(&key).bind(requirement["status"].as_str()).bind(requirement["verification_review"].as_str()).bind(requirement["realization_review"].as_str()).bind(requirement["realization_code_drift"].as_bool()).bind(requirement["explanation"]["realization_review"]["reviewed_commit"].as_str()).bind(requirement["explanation"]["summary"].as_str()).bind(result["evaluated_at_ms"].as_i64()).bind(due).execute(&mut *tx).await?;
         if let Some(previous) = previous.filter(|previous| previous != &key) {
             relational::discard_assessment_requirement(&mut tx, project, &previous).await?;
         }
@@ -407,7 +407,10 @@ async fn publish(
                 }
             }
         }
-        if let Some(review) = requirement["explanation"]["review"]["fingerprint"].as_str() {
+        if let Some(review) = requirement["explanation"]["realization_review"]["fingerprint"].as_str() {
+            dependencies.insert(("review".into(), review.into()));
+        }
+        if let Some(review) = requirement["explanation"]["verification_review"]["fingerprint"].as_str() {
             dependencies.insert(("review".into(), review.into()));
             if let Some(record) = request["reviews"]
                 .as_array()
@@ -512,7 +515,7 @@ pub(super) async fn read(
     } else {
         "ready"
     };
-    let entries=sqlx::query("SELECT requirement,record_key,status,review,summary,evaluated_at_ms,supported_since_ms,generation<>published_generation AND NOT renewing AS unpublished,valid_until_ms FROM assessment_requirements WHERE project=$1 AND deployment=$2 ORDER BY requirement").bind(project).bind(deployment).fetch_all(&mut *tx).await?;
+    let entries=sqlx::query("SELECT requirement,record_key,status,verification_review,realization_review,realization_code_drift,realization_reviewed_commit,summary,evaluated_at_ms,supported_since_ms,generation<>published_generation AND NOT renewing AS unpublished,valid_until_ms FROM assessment_requirements WHERE project=$1 AND deployment=$2 ORDER BY requirement").bind(project).bind(deployment).fetch_all(&mut *tx).await?;
     let mut requirements = Vec::new();
     for entry in entries {
         let mut requirement = if summary {
@@ -522,7 +525,7 @@ pub(super) async fn read(
                 .fetch_optional(&mut *tx)
                 .await?
                 .flatten();
-            json!({"requirement":entry.get::<String,_>("requirement"),"status":entry.get::<String,_>("status"),"review":entry.get::<String,_>("review"),"diagnostics":[],"gaps":[],"explanation":{"summary":entry.get::<String,_>("summary")},"checks":checks.unwrap_or_else(|| json!([]))})
+            json!({"requirement":entry.get::<String,_>("requirement"),"status":entry.get::<String,_>("status"),"verification_review":entry.get::<String,_>("verification_review"),"realization_review":entry.get::<String,_>("realization_review"),"realization_code_drift":entry.get::<Option<bool>,_>("realization_code_drift"),"diagnostics":[],"gaps":[],"explanation":{"summary":entry.get::<String,_>("summary"),"realization_review":{"status":entry.get::<String,_>("realization_review"),"reviewed_commit":entry.get::<Option<String>,_>("realization_reviewed_commit"),"code_drift":entry.get::<Option<bool>,_>("realization_code_drift")}},"checks":checks.unwrap_or_else(|| json!([]))})
         } else {
             sqlx::query_scalar::<_, Value>(
                 "SELECT assurance_record('assessment_requirement',$1,$2)",
@@ -685,12 +688,12 @@ mod tests {
             bundle
         }
         pub(super) fn request(freshness: i64) -> Value {
-            request_with_criticality(freshness, "routine")
+            request_with_header(freshness, "")
         }
-        pub(super) fn request_with_criticality(freshness: i64, criticality: &str) -> Value {
-            let publication = publication_policy_with_criticality(
+        pub(super) fn request_with_header(freshness: i64, extra_header: &str) -> Value {
+            let publication = publication_policy_with_header(
                 json!({"verification_target":"deployment","components":["api"],"contexts":[],"contribution":"both","monitor":{"id":"monitor","interval_seconds":1,"freshness_seconds":freshness}}),
-                criticality,
+                extra_header,
             );
             let deployment = publication["release"]["deployments"][0].clone();
             let mut bundle = valid_bundle();
@@ -792,6 +795,103 @@ mod tests {
         .is_err());
     }
 
+    #[tokio::test]
+    async fn a_realization_review_is_a_status_neutral_dimension_with_informational_drift(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut request = evidence::request_with_header(10, "\nRealization: reviewed");
+        let authority = request["publication"]["snapshot"]["authority"].clone();
+        let native_authority = core_json(authority.to_string().as_bytes())?;
+        let current_sites = authority["requirement_realizations"][0]["sites_fingerprint"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let realization = |sites: &str, dependencies: String| -> Value {
+            let mut review = json!({"kind":"realization-review","requirement":"restricted",
+                "requirement_fingerprint":authority["requirement_intents"][0]["fingerprint"],
+                "dependencies_fingerprint":dependencies,"sites_fingerprint":sites,"reviewed_commit":"b".repeat(40),
+                "decision":"accepted","reassesses":null,"reviewer":"reviewer","reviewed_at_ms":200,
+                "rationale":"The realization sites do what the Scenarios say.",
+                "artifacts":[{"id":"notes","digest":format!("sha256:{}","a".repeat(64)),"locator":"reviews/notes.md"}]});
+            review["fingerprint"] = json!(assurance_review::record_fingerprint(
+                &core_json(review.to_string().as_bytes()).unwrap()
+            )
+            .unwrap());
+            review
+        };
+        let dependencies = azimuth::fingerprint::canonical_sha256(
+            &assurance_review::realization_dependencies(&native_authority, "restricted")?,
+        );
+        let assess = |request: &Value| {
+            to_value(
+                &azimuth::deployment_status::assess(&core_json(request.to_string().as_bytes()).unwrap())
+                    .unwrap(),
+            )
+            .unwrap()
+        };
+        let cases = [
+            (None, "missing", Value::Null),
+            (Some(realization(&current_sites, dependencies.clone())), "accepted", json!(false)),
+            (Some(realization(&format!("sha256:{}", "d".repeat(64)), dependencies.clone())), "accepted", json!(true)),
+            (Some(realization(&current_sites, format!("sha256:{}", "9".repeat(64)))), "stale", json!(false)),
+        ];
+        let mut drifted = None;
+        for (record, expected, drift) in cases {
+            request["reviews"] = json!(record.iter().collect::<Vec<_>>());
+            let result = assess(&request);
+            let requirement = &result["requirements"][0];
+            assert_eq!(
+                requirement["status"], "supported",
+                "a Realization Review never makes or blocks Satisfied: {result}"
+            );
+            assert_eq!(requirement["verification_review"], "accepted", "{result}");
+            assert_eq!(requirement["realization_review"], expected, "{result}");
+            assert_eq!(requirement["realization_code_drift"], drift, "{result}");
+            assert_eq!(requirement["explanation"]["realization_review"]["status"], expected);
+            if drift == json!(true) {
+                assert_eq!(
+                    requirement["explanation"]["realization_review"]["reviewed_commit"],
+                    "b".repeat(40)
+                );
+                drifted = Some(result.clone());
+            }
+        }
+        let drifted = drifted.unwrap();
+        request["reviews"] = json!([]);
+
+        let postgres = Postgres::default().with_tag("17-alpine").start().await?;
+        let pool = crate::connect(&format!(
+            "postgres://postgres:postgres@127.0.0.1:{}/postgres",
+            postgres.get_host_port_ipv4(5432).await?
+        ))
+        .await?;
+        crate::migrate(&pool).await?;
+        let state = LedgerState {
+            pool: pool.clone(),
+            credentials: Arc::new(BTreeMap::new()),
+            evidence: Default::default(),
+        };
+        sqlx::query("INSERT INTO deployment_assessments(project,deployment,release) VALUES('project','monitor-deployment','release')").execute(&pool).await?;
+        publish(&state, "project", "monitor-deployment", 1, &[], &drifted, &request).await?;
+        let stored: Value = sqlx::query_scalar("SELECT assurance_record('assessment_requirement','project','monitor-deployment:restricted:1')").fetch_one(&pool).await?;
+        assert_eq!(stored, drifted["requirements"][0], "typed storage keeps both review dimensions");
+        // The fixture evaluates at a fixed past instant; only a current projection exposes its explanation.
+        sqlx::query("UPDATE assessment_requirements SET valid_until_ms=9007199254740991").execute(&pool).await?;
+        sqlx::query("UPDATE deployment_assessments SET valid_until_ms=9007199254740991").execute(&pool).await?;
+        let summary = read(&state, "project", "monitor-deployment", true).await?;
+        let row = &summary["requirements"][0];
+        assert_eq!(
+            (&row["verification_review"], &row["realization_review"], &row["realization_code_drift"]),
+            (&json!("accepted"), &json!("accepted"), &json!(true)),
+            "{summary}"
+        );
+        assert_eq!(
+            row["explanation"]["realization_review"],
+            json!({"status":"accepted","reviewed_commit":"b".repeat(40),"code_drift":true}),
+            "an overview names the drifted review's commit without the full explanation: {summary}"
+        );
+        Ok(())
+    }
+
     async fn store_run(pool: &PgPool, bundle: &RunBundle) -> Result<(), LedgerError> {
         let mut tx = pool.begin().await?;
         relational::store(
@@ -824,7 +924,7 @@ mod tests {
         };
         sqlx::query("INSERT INTO deployment_assessments(project,deployment,release,authority,model,verification_target,generation,published_generation,valid_until_ms) VALUES('project','deployment','release','authority','model','verification_target',1,1,9007199254740991)").execute(&pool).await?;
         for (requirement, check) in [("first", "recovery"), ("second", "unrelated")] {
-            sqlx::query("INSERT INTO assessment_requirements(project,deployment,requirement,generation,published_generation,status,review,summary,valid_until_ms) VALUES('project','deployment',$1,1,1,'unresolved','not-required','No evidence',9007199254740991)").bind(requirement).execute(&pool).await?;
+            sqlx::query("INSERT INTO assessment_requirements(project,deployment,requirement,generation,published_generation,status,verification_review,realization_review,summary,valid_until_ms) VALUES('project','deployment',$1,1,1,'unresolved','not-declared','not-declared','No evidence',9007199254740991)").bind(requirement).execute(&pool).await?;
             sqlx::query("INSERT INTO assessment_dependencies(project,deployment,requirement,kind,identity) VALUES('project','deployment',$1,'check',$2)").bind(requirement).bind(check).execute(&pool).await?;
         }
         let mut tx = pool.begin().await?;
@@ -903,7 +1003,7 @@ mod tests {
             .await?;
         tokio::time::timeout(std::time::Duration::from_secs(1), tick(&restarted)).await??;
         leader.rollback().await?;
-        let request = evidence::request_with_criticality(10, "standard");
+        let request = evidence::request(10);
         let full = to_value(
             &azimuth::deployment_status::assess(&core_json(request.to_string().as_bytes())?)
                 .unwrap(),
@@ -927,7 +1027,7 @@ mod tests {
         let version: i32 = sqlx::query_scalar("SELECT max(version) FROM assurance_storage_schema")
             .fetch_one(&pool)
             .await?;
-        assert_eq!(version, 9);
+        assert_eq!(version, 10);
         sqlx::query("UPDATE deployment_assessments SET generation=2 WHERE project='project' AND deployment='monitor-deployment'").execute(&pool).await?;
         sqlx::query("UPDATE assessment_requirements SET generation=2 WHERE project='project' AND deployment='monitor-deployment'").execute(&pool).await?;
         let mut refreshed_request = request.clone();
@@ -1001,7 +1101,7 @@ mod tests {
         relational::store(&mut registered, "authority", "project", revision, authority).await?;
         sqlx::query("INSERT INTO assurance_authorities(project,fingerprint,registered_by) VALUES('project',$1,'owner')").bind(revision).execute(&mut *registered).await?;
         sqlx::query("INSERT INTO model_revisions(project,fingerprint,registered_by) VALUES('project',$1,'owner')").bind(revision).execute(&mut *registered).await?;
-        let mut review = json!({"kind":"requirement-review","requirement":"restricted","requirement_fingerprint":authority["requirements"][0]["fingerprint"],
+        let mut review = json!({"kind":"verification-review","requirement":"restricted","requirement_fingerprint":authority["requirements"][0]["fingerprint"],
             "dependencies_fingerprint":assurance_review::requirement_closure_fingerprint(&core_json(authority.to_string().as_bytes())?,"restricted")?,
             "decision":"accepted","reassesses":null,"challenge_basis":[],"reviewer":"reviewer","reviewed_at_ms":100,"rationale":"Reviewed the exact declared account.",
             "artifacts":[{"id":"notes","digest":format!("sha256:{}","a".repeat(64)),"locator":"reviews/notes.md"}]});
@@ -1075,7 +1175,7 @@ mod tests {
             deployment_status::compute_deployment(&state, "project", "monitor-deployment", None)
                 .await?;
         assert_eq!(
-            computed["requirements"][0]["review"], "accepted",
+            computed["requirements"][0]["verification_review"], "accepted",
             "{computed}"
         );
         let generation: i64 = sqlx::query_scalar(
@@ -1117,7 +1217,7 @@ mod tests {
             "Challenge-only review evidence must survive the bounded deployment input selection"
         );
         assert_eq!(
-            adverse["requirements"][0]["review"], "unresolved",
+            adverse["requirements"][0]["verification_review"], "unresolved",
             "{adverse}"
         );
 
@@ -1291,7 +1391,7 @@ mod tests {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let (_state, pool, _postgres) = migrated_state().await?;
         sqlx::query("INSERT INTO deployment_assessments(project,deployment,release,authority,model,verification_target,generation,published_generation,valid_until_ms,observed_current) VALUES('project','deployment','release','authority','model','deployment-target',1,1,9007199254740991,true)").execute(&pool).await?;
-        sqlx::query("INSERT INTO assessment_requirements(project,deployment,requirement,generation,published_generation,status,review,summary,valid_until_ms) VALUES('project','deployment','restricted',1,1,'unresolved','not-required','No evidence',9007199254740991)").execute(&pool).await?;
+        sqlx::query("INSERT INTO assessment_requirements(project,deployment,requirement,generation,published_generation,status,verification_review,realization_review,summary,valid_until_ms) VALUES('project','deployment','restricted',1,1,'unresolved','not-declared','not-declared','No evidence',9007199254740991)").execute(&pool).await?;
         for (kind, identity) in [("context", "settings"), ("environment", "production")] {
             sqlx::query("INSERT INTO assessment_dependencies(project,deployment,requirement,kind,identity) VALUES('project','deployment','restricted',$1,$2)").bind(kind).bind(identity).execute(&pool).await?;
         }
@@ -1340,14 +1440,14 @@ mod tests {
     async fn an_overtaken_computation_publishes_requirements_whose_evidence_is_unchanged(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let (state, pool, _postgres) = migrated_state().await?;
-        let request = evidence::request_with_criticality(10, "standard");
+        let request = evidence::request(10);
         let result = to_value(
             &azimuth::deployment_status::assess(&core_json(request.to_string().as_bytes())?)
                 .unwrap(),
         )?;
         sqlx::query("INSERT INTO deployment_assessments(project,deployment,release) VALUES('project','deployment','release')").execute(&pool).await?;
         publish(&state, "project", "deployment", 1, &[], &result, &request).await?;
-        sqlx::query("INSERT INTO assessment_requirements(project,deployment,requirement,generation,published_generation,status,review,summary,valid_until_ms) VALUES('project','deployment','other',1,1,'unresolved','not-required','No evidence',9007199254740991)").execute(&pool).await?;
+        sqlx::query("INSERT INTO assessment_requirements(project,deployment,requirement,generation,published_generation,status,verification_review,realization_review,summary,valid_until_ms) VALUES('project','deployment','other',1,1,'unresolved','not-declared','not-declared','No evidence',9007199254740991)").execute(&pool).await?;
 
         // Evidence for both Requirements arrives and the computation starts; then more evidence reaches only `other`.
         sqlx::query("UPDATE deployment_assessments SET generation=2")
@@ -1447,7 +1547,7 @@ mod tests {
         let now = time(&mut *pool.acquire().await?).await?;
         sqlx::query("INSERT INTO deployment_assessments(project,deployment,release,authority,model,verification_target,generation,published_generation,valid_until_ms,evaluated_at_ms) VALUES('project','deployment','release','authority','model','verification_target',1,1,$1,$2)").bind(now + 20_000).bind(now - 100_000).execute(&pool).await?;
         for (requirement, lifetime) in [("renewed", 20_000), ("distant", 3_600_000)] {
-            sqlx::query("INSERT INTO assessment_requirements(project,deployment,requirement,generation,published_generation,status,review,summary,valid_until_ms,evaluated_at_ms) VALUES('project','deployment',$1,1,1,'unresolved','not-required','No evidence',$2,$3)").bind(requirement).bind(now + lifetime).bind(now - 100_000).execute(&pool).await?;
+            sqlx::query("INSERT INTO assessment_requirements(project,deployment,requirement,generation,published_generation,status,verification_review,realization_review,summary,valid_until_ms,evaluated_at_ms) VALUES('project','deployment',$1,1,1,'unresolved','not-declared','not-declared','No evidence',$2,$3)").bind(requirement).bind(now + lifetime).bind(now - 100_000).execute(&pool).await?;
         }
         events(&state).await?;
         let rows: Vec<(String, i64, bool)> = sqlx::query_as(

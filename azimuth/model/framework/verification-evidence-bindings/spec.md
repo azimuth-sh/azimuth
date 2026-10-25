@@ -2,7 +2,6 @@
 
 ## Requirement: checks-bind-through-explicit-edges
 Title: Checks bind through explicit edges
-Criticality: routine
 
 Azimuth SHALL represent a Check as one atomic terminal proposition with sparse explicit Evidence
 Bindings to normative Scenarios.
@@ -24,7 +23,6 @@ Bindings to normative Scenarios.
 
 ## Requirement: method-and-applicability-decisions-have-exact-boundaries
 Title: Method and applicability decisions have exact boundaries
-Criticality: routine
 
 Azimuth SHALL assign one exact Method Qualification to shared method inputs and one exact
 Applicability Decision to every Evidence Binding, expiring only decisions whose inputs change.
@@ -47,7 +45,6 @@ Applicability Decision to every Evidence Binding, expiring only decisions whose 
 
 ## Requirement: challenge-plans-resolve-through-traceability
 Title: Challenge plans resolve through traceability
-Criticality: routine
 
 Azimuth SHALL resolve Challenge Plan selectors through stable model relations to exact current
 Method Qualification, Applicability Decision or Requirement Judgment fingerprints.
@@ -68,7 +65,6 @@ Method Qualification, Applicability Decision or Requirement Judgment fingerprint
 
 ## Requirement: check-linkage-is-provider-neutral
 Title: Check linkage is provider neutral
-Criticality: routine
 
 Azimuth SHALL normalize Check implementation linkage independently of providers and SHALL reject
 every alpha 1 evidence input.

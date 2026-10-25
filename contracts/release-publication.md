@@ -24,14 +24,15 @@ of relative authored file names and file digests, excluding `.azimuth` and `.git
 
 Main's current model reaches the Azimuth Assurance Service through a separate main-model publication
 ([run-ledger.md](run-ledger.md)), made by trusted CI for each commit that reaches main. That publication
-carries the commit's complete native authority, the sealed native Requirement Review records committed in
-git, the optional navigation catalog and a ratification verdict. A release names the model it ships
+carries the commit's complete native authority, the sealed records of every review head in the commit's model
+(`verification-review.md` and `realization-review.md`, see [assurance-reviews.md](assurance-reviews.md#review-heads-in-the-model)),
+the optional navigation catalog and a ratification verdict. A release names the model it ships
 through `model_revision` in its snapshot; it does not select or replace main's model.
 
 Ratification of a model change is recorded in git, never by the service:
 
-- for each Requirement the change accepts in `acceptance.json`, its latest sealed Requirement Review record under the change, assessed against the merged authority (without Run bundles, so only definition-only reviews ratify; see [validation.md](validation.md));
-- for each non-routine Requirement the change adds, an owner acceptance record (`acceptance.json`, see [validation.md](validation.md));
+- every Requirement of the merged model that declares `Realization:` or `Verification:` is ratified by a current accepted review of each declared kind, recomputed from the change reviews and the model's review heads, and finalization wrote the new heads from the change's sealed reviews ([validation.md](validation.md#ratification-gate-at-finalization));
+- for each Requirement the change adds that declares `Realization:` or `Verification:`, an owner acceptance record (`acceptance.json`, see [validation.md](validation.md));
 - an owner's approving review on the pull request that brought the commit to main.
 
 The finalization gate of the CLI verifies the first two facts ([validation.md](validation.md)). Trusted CI verifies the third: the commit comes from a
@@ -40,10 +41,9 @@ credential. Failing a check is published with `ratification.status: "unratified"
 displayed that way. The service stores the verdict as submitted; it cannot call the hosting API and does
 not re-verify it. Branch protection is not assumed. Ratification is separate from release: an unratified
 model can be published, observed and assessed, and is shown as unratified. `ratified` records who
-approved the merge and that the sealed records are present; it does not assert that every review is
-current. Review currency is assessed per Requirement against the merged model, so a publication can be
-ratified while a review it carries is `stale` (for example right after the pull request that changed
-that Requirement, before its re-review).
+approved the merge and that the full review-head scan passed for that commit. The service recomputes head
+states against each publication's authority and never stores currency; a head carried by an older publication
+remains readable with the state computed for that publication.
 
 ## Publication request
 
@@ -61,9 +61,9 @@ that Requirement, before its re-review).
 - `evidence`: `{digest, media_type, availability: "unavailable"}`.
 
 Optional `integration` is `{commit, main_sequence}`: trusted CI's attestation that `commit` (a full 40/64-lowercase-hex Git ID) is on main at first-parent commit count `main_sequence` (a positive integer); it is hashed into the release fingerprint only when present. The service records it and does not re-verify ancestry. Optional `unit_inputs` is the release unit-input manifest in [unit-inputs.md](unit-inputs.md); `release prepare --checkout/--unit-rule/--repository` computes it, `verify` checks its shape and that its optional `repository` is a release source. Optional `catalog` contains
-`modules`, `requirements`, `scenarios`, `checks` as below. Optional `required_reviews` is an explicit array of
-native Requirement Review fingerprints. When present it covers every non-routine Requirement; each selected
-record must be accepted, current against the snapshot's authority and latest without ambiguity.
+`modules`, `requirements`, `scenarios`, `checks` as below. The snapshot's `reviews` are the sealed records of the review heads in the shipped model. Optional `required_reviews` is an explicit array of
+native review record fingerprints. When present it covers, for every Requirement, one head per declared review kind; each selected
+record must be accepted, current against the snapshot's authority and latest of its kind without ambiguity.
 Missing/stale/rejected records produce actionable errors for local correction. Historical adverse
 predecessors remain in the snapshot; they are not mistaken for the selected current review.
 Omitting this optional gate permits publication of unresolved facts, not release readiness.
@@ -138,7 +138,7 @@ There is no release acceptance: `POST .../releases/{fingerprint}/acceptance`, th
 
 ## Git-driven handoff
 
-The standard local workflow completes the finalized archived change; publication input assembly is deterministic CI work, not an agent task. `azimuth release inputs` remains the low-level validator for a strict `{format:"azimuth-publication-inputs",version:1,request}` envelope. CI derives the native request from exact selected source revisions, current complete authority, sealed independent reviews and validated retained input/Run closure. It selects the latest review before checking decision and native dependency/proof currentness; a newer rejected, stale or ambiguous assessment never permits fallback to an older positive record. The native request names a label, includes explicit required review coverage and contains no fabricated builds/artifacts/deployments. The CLI preserves immutable native records and validates portability and size without AAS connectivity. Publication transports actual records later; no local publication task or draft Release upload is required.
+The standard local workflow completes the finalized archived change; publication input assembly is deterministic CI work, not an agent task. `azimuth release inputs` remains the low-level validator for a strict `{format:"azimuth-publication-inputs",version:1,request}` envelope. CI derives the native request from exact selected source revisions, current complete authority, the model's review heads and validated retained input/Run closure. It selects the head of each declared review kind before checking decision and native dependency/proof currentness; a newer rejected, stale or ambiguous assessment never permits fallback to an older positive record. The native request names a label, includes explicit required review coverage and contains no fabricated builds/artifacts/deployments. The CLI preserves immutable native records and validates portability and size without AAS connectivity. Publication transports actual records later; no local publication task or draft Release upload is required.
 
 Optional request/release `components: [{id,digest}]` binds unique explicit runtime component identities to declared build artifacts. When the project catalog declares `components` ([project-catalog.md](project-catalog.md)), preparation that receives that catalog requires every release component id to be a registered component id; without a catalog this check is not made. Unused build artifacts need not be deployed. Components are fingerprinted with the release and never inferred by ordering. Native runtime deployment observation requires these explicit bindings.
 

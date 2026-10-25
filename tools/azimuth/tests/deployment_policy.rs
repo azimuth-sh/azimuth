@@ -9,7 +9,7 @@ fn deployment_policy_is_structured_review_authority() {
     let policy = r#"{"verification_target":"source","components":["api"],"contexts":[],"contribution":"both","monitor":null}"#;
     let account = parse_account_verification("verification.md", &document(policy)).unwrap();
     assert!(account.checks[0].inputs.contains_key("deployment-policy"));
-    let authority = assurance_review::authority(&Model { specs: vec![azimuth::spec::parse_spec("spec.md", "# Spec: sample\n\n## Requirement: restricted\nCriticality: routine\n\nAccess SHALL be restricted.\n\n### Scenario: denied\nEvent: denied request\nRequired: denied access\n").unwrap()], account_verifications: vec![account], ..Default::default() }, "sample").unwrap();
+    let authority = assurance_review::authority(&Model { specs: vec![azimuth::spec::parse_spec("spec.md", "# Spec: sample\n\n## Requirement: restricted\n\nAccess SHALL be restricted.\n\n### Scenario: denied\nEvent: denied request\nRequired: denied access\n").unwrap()], account_verifications: vec![account], ..Default::default() }, "sample").unwrap();
     let deployment = authority.get("checks").unwrap().as_array().unwrap()[0]
         .get("deployment")
         .unwrap();

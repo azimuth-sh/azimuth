@@ -55,7 +55,7 @@ pub struct ModelSourceDecl {
 }
 
 #[derive(Debug, Clone)]
-pub struct StandardsDecl {
+pub struct ReleaseDecl {
     pub repository: String,
     pub path: String,
 }
@@ -78,13 +78,12 @@ pub struct ComponentDecl {
 #[derive(Debug, Clone)]
 pub struct Project {
     pub components: Vec<ComponentDecl>,
-    pub release: Option<StandardsDecl>,
+    pub release: Option<ReleaseDecl>,
     pub packages: Vec<String>,
     pub id: String,
     pub repositories: Vec<RepositoryDecl>,
     pub areas: Vec<AreaDecl>,
     pub model_sources: Vec<ModelSourceDecl>,
-    pub standards: StandardsDecl,
     pub required_receipts: Vec<ReceiptRequirement>,
 }
 
@@ -230,7 +229,6 @@ pub struct RepositoryManifest {
     pub producer: String,
     pub areas: Vec<String>,
     pub model_sources: Vec<ModelSourceObservation>,
-    pub standards_digest: Option<String>,
     pub changes: Vec<ChangeObservation>,
     pub linkage: Manifest,
     pub account_support: Option<AccountSupportObservation>,
@@ -287,7 +285,6 @@ pub struct Assembly {
     pub missing_inputs: Vec<String>,
     pub repositories: Vec<RepositorySnapshot>,
     pub model_roots: Vec<PathBuf>,
-    pub standards_path: Option<PathBuf>,
     pub manifests: Vec<Manifest>,
     pub account_support: Vec<AssembledAccountSupport>,
     pub receipts: Vec<ExecutionReceipt>,
@@ -361,14 +358,15 @@ impl Assembly {
             {
                 acceptances.push(acceptance);
             }
-            reviews.extend(
-                crate::change::read_reviews(&repository.root.join(&change.path))
-                    .map_err(|errors| errors.join("\n"))?,
-            );
+            if parent.file_name().and_then(|name| name.to_str()) != Some("archive") {
+                reviews.extend(
+                    crate::change::read_reviews(&repository.root.join(&change.path))
+                        .map_err(|errors| errors.join("\n"))?,
+                );
+            }
         }
-        let ratified =
-            crate::change::ratifications(&loaded.model, &acceptances, &reviews, &bundles)?;
-        crate::change::waive_accepted_requirements(&mut findings, &acceptances, &ratified);
+        let ratified = crate::change::ratifications(&loaded.model, &reviews, &bundles)?;
+        crate::change::waive_accepted_requirements(&mut findings, &ratified);
         let summary = crate::validation::summarize(&loaded.model, &findings);
         if summary.errors > 0 || summary.warnings > 0 {
             return Err(format!(
@@ -547,22 +545,6 @@ pub fn load_project(path: &Path) -> Result<Project, Vec<Diag>> {
             }
         })
         .collect::<Vec<_>>();
-    let standards = match root.get("standards") {
-        Some(value) => StandardsDecl {
-            repository: nested_string(&display, "standards", value, "repository", &mut errors),
-            path: nested_string(&display, "standards", value, "path", &mut errors),
-        },
-        None => {
-            errors.push(Diag::file(
-                &display,
-                "project catalog has no `standards` object",
-            ));
-            StandardsDecl {
-                repository: String::new(),
-                path: String::new(),
-            }
-        }
-    };
     let required_receipts =
         optional_object_array(&display, &root, "required_receipts", &mut errors)
             .into_iter()
@@ -585,14 +567,13 @@ pub fn load_project(path: &Path) -> Result<Project, Vec<Diag>> {
                 "release requires a declared repository and normalized relative request path",
             ));
         }
-        StandardsDecl { repository, path }
+        ReleaseDecl { repository, path }
     });
     validate_catalog(
         &display,
         &repositories,
         &areas,
         &model_sources,
-        &standards,
         &required_receipts,
         &mut errors,
     );
@@ -622,7 +603,6 @@ pub fn load_project(path: &Path) -> Result<Project, Vec<Diag>> {
             repositories,
             areas,
             model_sources,
-            standards,
             required_receipts,
         })
     } else {
@@ -1109,16 +1089,6 @@ pub fn assemble(
                 ));
             }
         }
-        if !selected_ids.contains(project.standards.repository.as_str()) {
-            missing_inputs.push("standards".into());
-            errors.push(Diag::file(
-                &display,
-                format!(
-                    "missing-input: standards require repository `{}`",
-                    project.standards.repository
-                ),
-            ));
-        }
     }
 
     let known_repositories = project
@@ -1227,7 +1197,6 @@ pub fn assemble(
         }
     }
     let mut model_roots = Vec::new();
-    let mut standards_path = None;
     for (entry, repository_manifest) in &parsed {
         for source in project
             .model_sources
@@ -1291,47 +1260,6 @@ pub fn assemble(
                 },
             }
         }
-        if project.standards.repository == entry.id {
-            let path = match contained_path(&entry.root, &project.standards.path) {
-                Ok(path) => path,
-                Err(error) => {
-                    errors.push(Diag::file(
-                        &repository_manifest.path.display().to_string(),
-                        format!("standards escape their repository: {error}"),
-                    ));
-                    continue;
-                }
-            };
-            if !git_file_tracked(&entry.root, &project.standards.path) {
-                errors.push(Diag::file(
-                    &repository_manifest.path.display().to_string(),
-                    "standards are not a tracked file at the selected revision",
-                ));
-            }
-            match (
-                repository_manifest.standards_digest.as_ref(),
-                fs::read(&path),
-            ) {
-                (Some(expected), Ok(content)) if *expected == sha256(&content) => {
-                    standards_path = Some(path)
-                }
-                (Some(expected), Ok(content)) => errors.push(Diag::file(
-                    &repository_manifest.path.display().to_string(),
-                    format!(
-                        "standards-mismatch: manifest declares {expected}, checkout contains {}",
-                        sha256(&content)
-                    ),
-                )),
-                (None, _) => errors.push(Diag::file(
-                    &repository_manifest.path.display().to_string(),
-                    "missing-input: standards digest",
-                )),
-                (_, Err(error)) => errors.push(Diag::file(
-                    &path.display().to_string(),
-                    format!("cannot read standards: {error}"),
-                )),
-            }
-        }
     }
 
     let mut receipts = Vec::new();
@@ -1384,7 +1312,6 @@ pub fn assemble(
         missing_inputs,
         repositories: snapshots,
         model_roots,
-        standards_path,
         manifests,
         account_support,
         receipts,
@@ -1943,21 +1870,6 @@ pub fn observe_repository_with_support(
             )),
         }
     }
-    let standards_digest = if project.standards.repository == repository {
-        let path = root.join(&project.standards.path);
-        match fs::read(&path) {
-            Ok(content) => Some(sha256(&content)),
-            Err(error) => {
-                errors.push(Diag::file(
-                    &path.display().to_string(),
-                    format!("cannot read standards: {error}"),
-                ));
-                None
-            }
-        }
-    } else {
-        None
-    };
     let changes = match observe_changes(root, repository) {
         Ok(changes) => changes,
         Err(error) => {
@@ -2017,9 +1929,6 @@ pub fn observe_repository_with_support(
             ),
         ),
     ];
-    if let Some(digest) = standards_digest {
-        fields.push(("standards_digest".to_string(), Json::str(digest)));
-    }
     if let Some(support) = account_support {
         fields.push((
             "account_support".to_string(),
@@ -2392,10 +2301,6 @@ fn load_repository_manifest(path: &Path) -> Result<RepositoryManifest, Vec<Diag>
             ),
         })
         .collect();
-    let standards_digest = root
-        .get("standards_digest")
-        .and_then(Json::as_str)
-        .map(str::to_string);
     let account_support = match root.get("account_support") {
         None => None,
         Some(Json::Obj(_)) => {
@@ -2475,7 +2380,6 @@ fn load_repository_manifest(path: &Path) -> Result<RepositoryManifest, Vec<Diag>
             producer,
             areas,
             model_sources,
-            standards_digest,
             changes,
             linkage: linkage.unwrap(),
             account_support,
@@ -2662,7 +2566,6 @@ fn validate_catalog(
     repositories: &[RepositoryDecl],
     areas: &[AreaDecl],
     model_sources: &[ModelSourceDecl],
-    standards: &StandardsDecl,
     receipts: &[ReceiptRequirement],
     errors: &mut Vec<Diag>,
 ) {
@@ -2741,21 +2644,6 @@ fn validate_catalog(
                 ),
             ));
         }
-    }
-    if !repository_ids.contains(standards.repository.as_str()) {
-        errors.push(Diag::file(
-            path,
-            format!(
-                "standards belong to unknown repository `{}`",
-                standards.repository
-            ),
-        ));
-    }
-    if !repository_relative(&standards.path) {
-        errors.push(Diag::file(
-            path,
-            "standards must use a normalized repository-relative path",
-        ));
     }
     for receipt in receipts {
         duplicate_ids(
@@ -3129,16 +3017,6 @@ fn non_versioned_paths(root: &Path, relative: &str) -> Result<Vec<String>, Strin
         }
     }
     Ok(paths.into_iter().collect())
-}
-
-fn git_file_tracked(root: &Path, relative: &str) -> bool {
-    Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["ls-files", "--error-unmatch", "--"])
-        .arg(relative)
-        .output()
-        .is_ok_and(|output| output.status.success())
 }
 
 fn tracked_paths(root: &Path) -> Result<BTreeSet<String>, String> {

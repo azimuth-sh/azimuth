@@ -10,7 +10,7 @@ fn fp() -> String {
 fn model() -> Model {
     let document="# Verification: catalog\n\n## Requirement verification: admission\n\n### Scenario verification: rejected\n\n#### Check: alpha\n- Execution:\n  - Verification Targets: artifact, ci-candidate, workspace\n  - Family: application\n  - Requirements: database\n- Evidence bindings:\n  - Contribution: Rejects invalid requests.\n\nExercise requests.\n\n#### Check: beta\n- Execution:\n  - Verification Targets: artifact, workspace\n  - Family: application\n- Evidence bindings:\n  - Contribution: Examines registrations.\n\nInspect registrations.\n";
     let account = parse_account_verification("verification.md", document).unwrap();
-    let spec=azimuth::spec::parse_spec("spec.md","# Spec: catalog\n\n## Requirement: admission\nCriticality: standard\n\nThe API SHALL reject invalid callers.\n\n### Scenario: rejected\nGiven invalid authority, when invoked, then deny.\n").unwrap();
+    let spec=azimuth::spec::parse_spec("spec.md","# Spec: catalog\n\n## Requirement: admission\nVerification: reviewed\n\nThe API SHALL reject invalid callers.\n\n### Scenario: rejected\nGiven invalid authority, when invoked, then deny.\n").unwrap();
     Model {
         account_verifications: vec![account],
         specs: vec![spec],

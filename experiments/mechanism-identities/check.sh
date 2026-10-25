@@ -124,16 +124,13 @@ for phase in before after; do
   for family in cpp python go rust dotnet jvm typescript; do
     manifests+=(--manifest "$OUTPUTS/$phase/$family.json")
   done
-  "$AZIMUTH" export --model "$CORE/model" --standards "$CORE/standards.md" \
-    --workspace "$CORE/workspace.json" "${manifests[@]}" \
-    --out "$CORE/initial-export.json"
-  python3 experiments/mechanism-identities/generate.py seal "$FIXTURE" "$phase"
-  "$AZIMUTH" validate --model "$CORE/model" --standards "$CORE/standards.md" \
+  manifests+=(--manifest "$CORE/challenges.json")
+  "$AZIMUTH" validate --model "$CORE/model" \
     --workspace "$CORE/workspace.json" "${manifests[@]}"
-  "$AZIMUTH" export --model "$CORE/model" --standards "$CORE/standards.md" \
+  "$AZIMUTH" export --model "$CORE/model" \
     --workspace "$CORE/workspace.json" "${manifests[@]}" --out "$CORE/export.json"
   "$AZIMUTH" run plan --request "$CORE/request.json" --model "$CORE/model" \
-    --standards "$CORE/standards.md" --workspace "$CORE/workspace.json" \
+    --workspace "$CORE/workspace.json" \
     "${manifests[@]}" --config "$CORE/adapters.json" --out "$CORE/launch.json"
 done
 
@@ -142,9 +139,10 @@ legacy_other_manifests=()
 for family in python go rust dotnet jvm typescript; do
   legacy_other_manifests+=(--manifest "$OUTPUTS/before/$family.json")
 done
+legacy_other_manifests+=(--manifest "$LEGACY_CORE/challenges.json")
 for profile in missing-site file-binding mismatched-companion; do
   expect_failure "$LEGACY_CORE/pre-d48-$profile-output.json" "$AZIMUTH" export \
-    --model "$LEGACY_CORE/model" --standards "$LEGACY_CORE/standards.md" \
+    --model "$LEGACY_CORE/model" \
     --workspace "$LEGACY_CORE/workspace.json" \
     --manifest "$OUTPUTS/pre-d48-$profile.json" "${legacy_other_manifests[@]}" \
     --out "$LEGACY_CORE/pre-d48-$profile-output.json"
@@ -158,16 +156,16 @@ collision_manifests=(
   --manifest "$OUTPUTS/collision-first.json"
   --manifest "$OUTPUTS/collision-second.json"
 )
-"$AZIMUTH" validate --model "$COLLISION/model" --standards "$COLLISION/standards.md" \
+"$AZIMUTH" validate --model "$COLLISION/model" \
   --workspace "$COLLISION/cross-area.json" "${collision_manifests[@]}"
 expect_failure "$COLLISION/must-not-exist.json" "$AZIMUTH" export \
-  --model "$COLLISION/model" --standards "$COLLISION/standards.md" \
+  --model "$COLLISION/model" \
   --workspace "$COLLISION/same-area.json" "${collision_manifests[@]}" \
   --out "$COLLISION/must-not-exist.json"
 
 printf '{"covers":[]}\n' >"$FIXTURE/legacy.json"
 expect_failure "$COLLISION/legacy-output.json" "$AZIMUTH" export \
-  --model "$COLLISION/model" --standards "$COLLISION/standards.md" \
+  --model "$COLLISION/model" \
   --workspace "$COLLISION/cross-area.json" --manifest "$FIXTURE/legacy.json" \
   --out "$COLLISION/legacy-output.json"
 

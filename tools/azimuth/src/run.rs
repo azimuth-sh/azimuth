@@ -236,7 +236,7 @@ impl ChallengeScopeKind {
     pub fn name(self) -> &'static str {
         match self {
             Self::Implementation => "implementation",
-            Self::RequirementReview => "requirement-review",
+            Self::RequirementReview => "verification-review",
             Self::ApplicabilityDecision => "applicability-decision",
             Self::Scenario => "scenario",
             Self::Requirement => "requirement",
@@ -286,7 +286,7 @@ impl ChallengeTargetKind {
     pub fn name(self) -> &'static str {
         match self {
             Self::Implementation => "implementation",
-            Self::RequirementReview => "requirement-review",
+            Self::RequirementReview => "verification-review",
             Self::ApplicabilityDecision => "applicability-decision",
             Self::RequirementJudgment => "requirement-judgment",
             Self::MethodQualification => "method-qualification",
@@ -1494,7 +1494,7 @@ fn parse_challenge_scope_item(value: &Json, where_: &str) -> Result<ChallengeSco
     let object = object(value, where_, &["kind", "id", "fingerprint"])?;
     let kind = match string(object, "kind", where_)? {
         "implementation" => ChallengeScopeKind::Implementation,
-        "requirement-review" => ChallengeScopeKind::RequirementReview,
+        "verification-review" => ChallengeScopeKind::RequirementReview,
         "applicability-decision" => ChallengeScopeKind::ApplicabilityDecision,
         "scenario" => ChallengeScopeKind::Scenario,
         "requirement" => ChallengeScopeKind::Requirement,
@@ -1545,7 +1545,7 @@ fn parse_target(value: &Json, where_: &str) -> Result<ChallengeTarget, String> {
     let object = object(value, where_, &["kind", "id", "fingerprint"])?;
     let kind = match string(object, "kind", where_)? {
         "implementation" => ChallengeTargetKind::Implementation,
-        "requirement-review" => ChallengeTargetKind::RequirementReview,
+        "verification-review" => ChallengeTargetKind::RequirementReview,
         "applicability-decision" => ChallengeTargetKind::ApplicabilityDecision,
         "requirement-judgment" => ChallengeTargetKind::RequirementJudgment,
         "method-qualification" => ChallengeTargetKind::MethodQualification,

@@ -1,6 +1,6 @@
 ---
 name: azimuth-author-proposal
-description: Author or revise proposal.md for one bounded Azimuth change from a clear request or approved exploration. Use for author-proposal work; detailed spec, design and verification deltas have separate skills.
+description: Author or revise proposal.md for one bounded Azimuth change from a clear request or approved exploration. Use for author-proposal work; detailed spec, realization and verification deltas have separate skills.
 ---
 
 # Author a proposal

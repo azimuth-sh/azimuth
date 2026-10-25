@@ -1315,7 +1315,7 @@ pub fn assess(request: &Json) -> Result<Json, String> {
 }
 
 /// Evidence the caller has already verified: the publication, the context contracts and captures, every Run
-/// individually and as a history, and every Requirement Review. Evaluation does not repeat that work.
+/// individually and as a history, and every Verification Review. Evaluation does not repeat that work.
 pub struct Evidence<'a> {
     pub publication: &'a Json,
     pub deployment: &'a Json,
@@ -1448,12 +1448,12 @@ fn evaluate(
             continue;
         }
         let target = Json::obj(vec![
-            ("kind", Json::str("requirement-review")),
+            ("kind", Json::str("verification-review")),
             ("requirement", Json::str(id)),
         ]);
         let latest = crate::assurance_review::latest_review(reviews, &target);
-        let (review_status, review_record) = if text(requirement, "criticality")? == "routine" {
-            ("not-required".to_string(), None)
+        let (review_status, review_record) = if text(requirement, "verification")? == "none" {
+            ("not-declared".to_string(), None)
         } else {
             match latest {
                 Ok(Some(r)) => (
@@ -1464,10 +1464,30 @@ fn evaluate(
                 Err(_) => ("invalid".into(), None),
             }
         };
-        let review_ok = review_status == "accepted" || review_status == "not-required";
+        let review_ok = review_status == "accepted" || review_status == "not-declared";
+        let realization_target = Json::obj(vec![
+            ("kind", Json::str("realization-review")),
+            ("requirement", Json::str(id)),
+        ]);
+        let (realization_status, realization_record) = if text(requirement, "realization")?
+            == "none"
+        {
+            ("not-declared".to_string(), None)
+        } else {
+            match crate::assurance_review::latest_review(reviews, &realization_target) {
+                Ok(Some(r)) => (
+                    crate::assurance_review::assess_record_in(r, authority, reviews, &runs).status,
+                    Some(r),
+                ),
+                Ok(None) => ("missing".into(), None),
+                Err(_) => ("invalid".into(), None),
+            }
+        };
+        let realization_drift = realization_record
+            .and_then(|r| crate::assurance_review::realization_drift(r, authority));
         let mut reasons = input.deployment_reasons.clone();
         if !review_ok {
-            reasons.push(format!("Requirement Review is {review_status}"));
+            reasons.push(format!("Verification Review is {review_status}"));
         }
         let mut dependencies = vec![Json::obj(vec![
             ("kind", Json::str("release")),
@@ -1475,7 +1495,7 @@ fn evaluate(
         ])];
         if let Some(r) = review_record {
             dependencies.push(Json::obj(vec![
-                ("kind", Json::str("requirement-review")),
+                ("kind", Json::str("verification-review")),
                 ("fingerprint", field(r, "fingerprint")?.clone()),
             ]));
         }
@@ -1981,6 +2001,41 @@ fn evaluate(
                 ])
             })
             .collect();
+        let realization_details = Json::obj(vec![
+            ("status", Json::str(&realization_status)),
+            (
+                "fingerprint",
+                realization_record
+                    .and_then(|r| r.get("fingerprint"))
+                    .cloned()
+                    .unwrap_or(Json::Null),
+            ),
+            (
+                "reviewer",
+                realization_record
+                    .and_then(|r| r.get("reviewer"))
+                    .cloned()
+                    .unwrap_or(Json::Null),
+            ),
+            (
+                "reviewed_at_ms",
+                realization_record
+                    .and_then(|r| r.get("reviewed_at_ms"))
+                    .cloned()
+                    .unwrap_or(Json::Null),
+            ),
+            (
+                "reviewed_commit",
+                realization_record
+                    .and_then(|r| r.get("reviewed_commit"))
+                    .cloned()
+                    .unwrap_or(Json::Null),
+            ),
+            (
+                "code_drift",
+                realization_drift.map_or(Json::Null, Json::Bool),
+            ),
+        ]);
         let review_details = Json::obj(vec![
             ("status", Json::str(&review_status)),
             (
@@ -2016,7 +2071,8 @@ fn evaluate(
             ("summary", Json::str(summary)),
             ("status", Json::str(status)),
             ("reasons", Json::Arr(reason_records)),
-            ("review", review_details),
+            ("verification_review", review_details),
+            ("realization_review", realization_details),
             (
                 "requirement_status",
                 Json::obj(vec![
@@ -2045,7 +2101,12 @@ fn evaluate(
         requirements.push(Json::obj(vec![
             ("requirement", Json::str(id)),
             ("status", Json::str(status)),
-            ("review", Json::str(review_status)),
+            ("verification_review", Json::str(review_status)),
+            ("realization_review", Json::str(realization_status)),
+            (
+                "realization_code_drift",
+                realization_drift.map_or(Json::Null, Json::Bool),
+            ),
             (
                 "diagnostics",
                 Json::Arr(reasons.iter().map(Json::str).collect()),
@@ -2217,7 +2278,7 @@ mod reason_code_tests {
             "observation-future"
         );
         assert_eq!(
-            reason_code("Requirement Review is rejected"),
+            reason_code("Verification Review is rejected"),
             "review-not-current"
         );
     }

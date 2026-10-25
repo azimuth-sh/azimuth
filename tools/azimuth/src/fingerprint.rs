@@ -195,14 +195,6 @@ pub fn check_fingerprint(
     ]))
 }
 
-pub fn policy_fingerprint(policy: &crate::verification::DecisionPolicy) -> String {
-    canonical_sha256(&crate::verification::policy_json(policy))
-}
-
-pub fn schedule_fingerprint(schedule: &crate::verification::ChallengeSchedule) -> String {
-    canonical_sha256(&crate::verification::schedule_json(schedule))
-}
-
 pub fn verification_challenge_fingerprint(
     verification_challenge: &crate::verification::VerificationChallenge,
 ) -> String {
@@ -274,53 +266,12 @@ pub fn verification_challenge_fingerprint(
     ]))
 }
 
-pub fn requirement_judgment_fingerprint(preimage: &crate::json::Json) -> String {
-    canonical_sha256(preimage)
-}
-
-pub fn mechanism_record_digest(record: &crate::json::Json) -> String {
-    use crate::json::Json;
-    canonical_sha256(&Json::obj(vec![
-        ("format", Json::str("azimuth-mechanism-record-digest")),
-        ("version", Json::Num(1.0)),
-        ("mechanism", record.clone()),
-    ]))
-}
-
 pub fn artifact_property_digest(account: &crate::json::Json) -> String {
     use crate::json::Json;
     canonical_sha256(&Json::obj(vec![
         ("format", Json::str("azimuth-artifact-property-digest")),
         ("version", Json::Num(1.0)),
         ("artifact", account.clone()),
-    ]))
-}
-
-pub fn area_digest(id: &str) -> String {
-    use crate::json::Json;
-    canonical_sha256(&Json::obj(vec![
-        ("format", Json::str("azimuth-area-digest")),
-        ("version", Json::Num(1.0)),
-        ("id", Json::str(id)),
-    ]))
-}
-
-pub fn realization_obligation_digest(requirement: &str, areas: &[String]) -> String {
-    use crate::json::Json;
-    canonical_sha256(&Json::obj(vec![
-        ("format", Json::str("azimuth-realization-obligation-digest")),
-        ("version", Json::Num(2.0)),
-        ("requirement", Json::str(requirement)),
-        ("areas", Json::Arr(areas.iter().map(Json::str).collect())),
-    ]))
-}
-
-pub fn surface_account_digest(account: &crate::json::Json) -> String {
-    use crate::json::Json;
-    canonical_sha256(&Json::obj(vec![
-        ("format", Json::str("azimuth-surface-account-digest")),
-        ("version", Json::Num(1.0)),
-        ("surface", account.clone()),
     ]))
 }
 
@@ -335,104 +286,10 @@ pub fn enumerated_surface_member_digest(surface: &str, file: &str) -> String {
     ]))
 }
 
-pub fn binding_fingerprint(
-    binding: &crate::verification::EvidenceBinding,
-    scenario_digest: &str,
-    method_qualification_fingerprint: &str,
-    policy_digest: &str,
-) -> String {
-    use crate::json::Json;
-    let mut challenge_domain = binding
-        .challenge_domain
-        .iter()
-        .map(|domain| domain.name())
-        .collect::<Vec<_>>();
-    challenge_domain.sort();
-    challenge_domain.dedup();
-    canonical_sha256(&Json::obj(vec![
-        ("format", Json::str("azimuth-evidence-binding-fingerprint")),
-        ("version", Json::Num(3.0)),
-        ("id", Json::str(&binding.id)),
-        ("check", Json::str(&binding.check)),
-        ("scenario_digest", Json::str(scenario_digest)),
-        (
-            "method_qualification_fingerprint",
-            Json::str(method_qualification_fingerprint),
-        ),
-        ("proposition", Json::str(&binding.proposition)),
-        (
-            "execution_context",
-            crate::verification::execution_context_json(&binding.execution_context),
-        ),
-        (
-            "challenge_domain",
-            Json::Arr(challenge_domain.into_iter().map(Json::str).collect()),
-        ),
-        ("decision_policy_digest", Json::str(policy_digest)),
-    ]))
-}
-
 pub fn execution_context_fingerprint(
     context: &std::collections::BTreeMap<String, String>,
 ) -> String {
     canonical_sha256(&crate::verification::execution_context_json(context))
-}
-
-pub fn method_qualification_fingerprint(
-    qualification: &crate::verification::MethodQualification,
-    check_fingerprint: &str,
-    policy_digest: &str,
-) -> String {
-    use crate::json::Json;
-    let mut challenge_domain = qualification
-        .challenge_domain
-        .iter()
-        .map(|domain| domain.name())
-        .collect::<Vec<_>>();
-    challenge_domain.sort();
-    challenge_domain.dedup();
-    canonical_sha256(&Json::obj(vec![
-        (
-            "format",
-            Json::str("azimuth-method-qualification-fingerprint"),
-        ),
-        ("version", Json::Num(2.0)),
-        ("id", Json::str(&qualification.id)),
-        ("check", Json::str(&qualification.check)),
-        ("check_fingerprint", Json::str(check_fingerprint)),
-        (
-            "form",
-            Json::obj(vec![
-                ("scope", Json::str(qualification.scope.name())),
-                (
-                    "quantification",
-                    Json::str(qualification.quantification.name()),
-                ),
-                ("oracle", Json::str(qualification.oracle.name())),
-            ]),
-        ),
-        (
-            "execution_context",
-            crate::verification::execution_context_json(&qualification.execution_context),
-        ),
-        (
-            "challenge_domain",
-            Json::Arr(challenge_domain.into_iter().map(Json::str).collect()),
-        ),
-        ("decision_policy_digest", Json::str(policy_digest)),
-    ]))
-}
-
-pub fn applicability_decision_fingerprint(binding_fingerprint: &str) -> String {
-    use crate::json::Json;
-    canonical_sha256(&Json::obj(vec![
-        (
-            "format",
-            Json::str("azimuth-applicability-decision-fingerprint"),
-        ),
-        ("version", Json::Num(1.0)),
-        ("binding_fingerprint", Json::str(binding_fingerprint)),
-    ]))
 }
 
 #[cfg(test)]

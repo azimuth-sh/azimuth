@@ -168,7 +168,7 @@ class Normalization(unittest.TestCase):
             execute(["adapter", "verify", "--config", str(config)])
             launch_path = root / "launch.json"
             execute(["run", "plan", "--request", str(request_path), "--model", str(fixture_root / "model"),
-                     "--standards", str(fixture_root / "standards.md"), "--workspace", str(fixture_root / "workspace.json"),
+                     "--workspace", str(fixture_root / "workspace.json"),
                      "--manifest", str(fixture_root / "manifest.json"), "--config", str(config), "--out", str(launch_path)])
             launch = load_json(launch_path.read_bytes())
             start, finish = request["planned_at_ms"] + 10, request["planned_at_ms"] + 20

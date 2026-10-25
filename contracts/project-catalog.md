@@ -1,6 +1,6 @@
 # Project catalog format
 
-A project catalog declares which repositories, model sources, areas, decision standards and execution receipts make one complete project account. It is the single topology authority for a project: a workset supplies checkouts, and a repository manifest reports observations, but neither may widen or narrow what the catalog declares. The file is strict JSON with format `azimuth-project` and version `1`.
+A project catalog declares which repositories, model sources, areas and execution receipts make one complete project account. It is the single topology authority for a project: a workset supplies checkouts, and a repository manifest reports observations, but neither may widen or narrow what the catalog declares. The file is strict JSON with format `azimuth-project` and version `1`.
 
 ```json
 {
@@ -24,7 +24,6 @@ A project catalog declares which repositories, model sources, areas, decision st
   "model_sources": [
     { "id": "system-intent", "repository": "backend", "path": "azimuth/model", "required": true }
   ],
-  "standards": { "repository": "backend", "path": "azimuth/standards/verification.md" },
   "required_receipts": [
     { "id": "integrated", "subjects": ["backend", "experience"] }
   ]
@@ -47,7 +46,6 @@ The document is parsed by the core JSON reader and then read field by field. Unr
 | `repositories` | array of objects | yes | declared repository boundaries |
 | `areas` | array of objects | yes | declared area topology |
 | `model_sources` | array of objects | yes | declared intent owners |
-| `standards` | object | yes | the singular Decision Policies and Challenge Schedule locator |
 | `required_receipts` | array of objects | no | composed engineering-check requirements |
 | `components` | array of objects | no | runtime component registry |
 | `unshipped_areas` | array of strings | no | areas that are code or configuration but no running component; read only when `components` is present |
@@ -91,10 +89,6 @@ A source locator resolves to the mount with the longest matching path among the 
 | `required` | boolean | no | whether a complete account must include it; default `true` |
 
 A model source whose `repository` is undeclared, or whose `path` is not normalized repository-relative, is a violation. A non-boolean `required` is read as `true`.
-
-## Standards
-
-`standards` is one object with non-empty `repository` and `path`. A missing `standards` object is a violation. The repository must be declared and the path must be normalized repository-relative. A project has exactly one standards locator; there is no per-repository standards declaration.
 
 ## Required receipts
 
@@ -155,7 +149,7 @@ Assembly fingerprints the catalog file as read: `catalog_digest` is the SHA-256 
 
 A project reference names this catalog and one of its repositories. A workset supplies checkouts for its repositories and paths to execution receipts. A repository manifest observes the areas, model sources and changes the catalog assigns to one repository. A project snapshot restates the catalog id, its digest and its area topology.
 
-Completeness is declared here and never inferred from what a workset happens to contain. A complete account selects every required repository, the repository owning every required model source, the standards repository, every declared area and every required receipt. Anything else is a partial local account, which cannot be finalized.
+Completeness is declared here and never inferred from what a workset happens to contain. A complete account selects every required repository, the repository owning every required model source, every declared area and every required receipt. Anything else is a partial local account, which cannot be finalized.
 
 ## Verification packages
 

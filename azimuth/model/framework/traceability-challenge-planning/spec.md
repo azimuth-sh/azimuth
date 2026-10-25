@@ -2,7 +2,6 @@
 
 ## Requirement: claim-judgments-bind-total-composition
 Title: Requirement judgments bind total composition
-Criticality: routine
 
 Azimuth SHALL identify one current Requirement Judgment by the complete applicable assurance composition
 for one non-routine parent Requirement.
@@ -24,7 +23,6 @@ for one non-routine parent Requirement.
 
 ## Requirement: challenge-resolution-preserves-every-candidate
 Title: Challenge resolution preserves every candidate
-Criticality: routine
 
 Azimuth SHALL resolve Challenge Plan selectors without hiding missing, stale, rejected,
 invalid, inapplicable or unresolved decision candidates.
@@ -50,7 +48,6 @@ invalid, inapplicable or unresolved decision candidates.
 
 ## Requirement: challenge-planning-binds-current-decisions
 Title: Challenge planning binds current decisions
-Criticality: routine
 
 Azimuth SHALL expand authored Challenge Plans from the complete current model into exact accepted
 decision targets under one Run context.
@@ -75,7 +72,6 @@ decision targets under one Run context.
 
 ## Requirement: adapters-receive-frozen-semantic-scope
 Title: Adapters receive frozen semantic scope
-Criticality: routine
 
 Azimuth SHALL freeze traceability-derived semantic scope and accountable launch inputs before an
 adapter translates a Challenge into provider-native work.
@@ -98,7 +94,6 @@ adapter translates a Challenge into provider-native work.
 
 ## Requirement: challenge-outcomes-remain-negative-search-facts
 Title: Challenge outcomes remain negative search facts
-Criticality: routine
 
 Azimuth SHALL keep Challenge search outcomes, scheduling deferral and selection mismatch as
 different states.
@@ -125,7 +120,6 @@ different states.
 
 ## Requirement: challenge-policy-is-form-and-cost-aware
 Title: Challenge policy is form and cost aware
-Criticality: routine
 
 Azimuth SHALL distinguish required semantic challenge forms from their gate or scheduled execution
 lane without treating omitted expensive work as success.
@@ -149,7 +143,6 @@ lane without treating omitted expensive work as success.
 
 ## Requirement: challenged-decision-impact-does-not-duplicate-results
 Title: Challenged decision impact does not duplicate results
-Criticality: routine
 
 Azimuth SHALL propagate challenged-decision impact through the semantic graph without manufacturing
 additional Challenge Results.

@@ -35,7 +35,8 @@ export interface ReleaseCheck {
 }
 export interface ReleaseRequirementChecks {
   requirement: string;
-  criticality: string | null;
+  realization: 'none' | 'reviewed' | null;
+  verification: 'none' | 'reviewed' | null;
   checks: ReleaseCheck[];
 }
 

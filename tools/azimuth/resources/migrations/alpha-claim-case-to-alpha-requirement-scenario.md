@@ -3,7 +3,7 @@
 Migration line: alpha-requirement-scenario
 Account transformation: automatic authored-syntax rewrite
 
-Claims become Requirements, specification Cases become Scenarios, assurance Subjects become Verification Targets, Check Observations become Check Results, Verification Context becomes Execution Context, Challengers become Verification Challenges, and Claim Review and Claim Health become Requirement Review and Requirement Status. Obligations, stable identifiers, evidence semantics and assessment rules do not change.
+Claims become Requirements, specification Cases become Scenarios, assurance Subjects become Verification Targets, Check Observations become Check Results, Verification Context becomes Execution Context, Challengers become Verification Challenges, and Claim Review becomes Verification Review and Claim Health becomes Requirement Status. Obligations, stable identifiers, evidence semantics and assessment rules do not change.
 
 `azimuth migrate plan` rewrites only syntax positions in active Markdown under `azimuth/model`, `azimuth/standards` and active changes, never inside `archive`, `history`, retained `reviews` or local `.azimuth` runtime directories, or fenced blocks:
 

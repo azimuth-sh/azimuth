@@ -1298,7 +1298,7 @@ mod tests {
         let model = azimuth::model::Model {
             specs: vec![azimuth::spec::parse_spec(
                 "spec.md",
-                &format!("# Spec: module\n\n## Requirement: bounded\nCriticality: routine\n\nThe operation SHALL complete.\n\n### Scenario: completes\n{scenario}\n"),
+                &format!("# Spec: module\n\n## Requirement: bounded\n\nThe operation SHALL complete.\n\n### Scenario: completes\n{scenario}\n"),
             ).unwrap()],
             ..azimuth::model::Model::default()
         };
@@ -1384,7 +1384,7 @@ mod tests {
         c1["instances"][1]["attempts"][1]["generated"]
             .as_array_mut()
             .unwrap()
-            .push(json!({"kind":"requirement-review","repository":"application","ref":"azimuth/changes/c1/reviews/bundle.json","fingerprint":digest('7'),"record":"bounded","record_fingerprint":digest('6')}));
+            .push(json!({"kind":"verification-review","repository":"application","ref":"azimuth/changes/c1/reviews/bundle.json","fingerprint":digest('7'),"record":"bounded","record_fingerprint":digest('6')}));
         c1["instances"][1]["attempts"][1]["usage"] = harness_usage();
         assert_eq!(
             service.post("ledgers", PUBLISHER, &c1).await?.0,

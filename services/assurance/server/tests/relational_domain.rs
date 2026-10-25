@@ -28,7 +28,7 @@ async fn fresh_storage_contains_no_document_columns_and_initializes_idempotently
         sqlx::query_scalar("SELECT version FROM assurance_storage_schema ORDER BY version")
             .fetch_all(&pool)
             .await?;
-    assert_eq!(versions, vec![9]);
+    assert_eq!(versions, vec![10]);
     let renamed_tables: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' \
          AND table_name IN ('assessment_requirements', 'assessment_scenarios', 'definition_requirements')",

@@ -11,10 +11,10 @@ A `facet-unchanged` result is an explicit no-change decision. Load `azimuth refe
 
 Read the original request, reviewed proposal, captured handoff, delta, captured baseline and exact intent preview. Load `azimuth reference show intent-delta` and applicable installed account guidance. Assess both the transition and its composed result, including unchanged neighboring obligations and repaired references.
 
-Check that each Requirement is one falsifiable proposition with deliberate criticality, and that Scenarios supply meaningful independent conditions/results without narrowing the universal obligation. Examine denial effects, failure paths, boundaries, removals and compatibility where observable. A concrete example does not prove the full Requirement.
+Check that each Requirement is one falsifiable proposition with deliberate `Realization:`/`Verification:` declarations (or deliberately none), and that Scenarios supply meaningful independent conditions/results without narrowing the universal obligation. Examine denial effects, failure paths, boundaries, removals and compatibility where observable. A concrete example does not prove the full Requirement.
 
 Reject silent Scenario loss, duplicated or incompatible obligations, unjustified scope changes and test procedures disguised as intent. Confirm that guarded replacement/removal targets the intended accepted blocks. Do not accept merely because projection parses or all included examples sound plausible.
 
 Finish the complete assigned review rather than stopping at the first blocker. Retain stable review issue identities, exact locations/basis, the required proposition, consequence and bounded correction through the installed issue contract. Assess predecessor issues directly against current artifacts and preserve their history.
 
-Return an independently authored accepted/rejected result. Acceptance permits design delta authoring, not implementation or intent application. Do not edit the author's delta, invent approval or weaken intent to match implementation.
+Return an independently authored accepted/rejected result. Acceptance permits realization delta authoring, not implementation or intent application. Do not edit the author's delta, invent approval or weaken intent to match implementation.

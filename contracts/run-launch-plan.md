@@ -2,13 +2,13 @@
 
 ## Compact machine Verification Challenge planning
 
-A requested Challenge can name a compact Verification Challenge directly and supply a complete `scope_report` without an `assessment`. Its declaration selects `Targets: implementation`. Planning derives an exact implementation target before Requirement Review; it does not require an accepted assessment or infer permission from execution. `execution-capability`, finite `units` and `max_candidates` retain their native meanings. Every unit pins the prepared report's `scope_fingerprint`.
+A requested Challenge can name a compact Verification Challenge directly and supply a complete `scope_report` without an `assessment`. Its declaration selects `Targets: implementation`. Planning derives an exact implementation target before the Verification Review; it does not require an accepted assessment or infer permission from execution. `execution-capability`, finite `units` and `max_candidates` retain their native meanings. Every unit pins the prepared report's `scope_fingerprint`.
 
 The target has `{kind: "implementation", id: <Verification Challenge id>, fingerprint}`. The fingerprint is canonical SHA-256 over `{format: "azimuth-challenge-implementation-basis", version: 1, verification_challenge, requirements, checks, source_scope_fingerprint, verification_target_fingerprint}`. `verification_challenge` is the exact authority declaration including implementation/configuration support; `requirements` lists its declared Requirement IDs and current closure fingerprints in declaration order; `checks` retains its explicitly selected complete Check authority entries. Source scope and execution Verification Target remain exact. Unrelated whole-model changes alone do not alter this basis. The native scope anchor has kind `implementation` and the same target id and fingerprint.
 
-Historical assessment-directed requests may explicitly supply `assessment` with its `assessment_history` and `run_history`. That path validates the selected Requirement Review's current accepted state and declared target scope. It is separate from new implementation-directed execution and never reinterprets a historical target as an implementation target. Requirement Status is computed, never authored, and cannot be a Challenge target.
+Requirement Status is computed, never authored, and cannot be a Challenge target.
 
-`scope_report` uses format `azimuth-challenge-source-scope`, version 2, complete status, the selected Verification Challenge identity in `verification_challenge` and Run-protocol canonical fingerprint (RFC 8785 in the safe-integer domain). Its request matches the declared Requirements/Mechanisms/Checks; inherited Requirements may be omitted from the implementation selector when Mechanisms narrow production scope. Every selected site must match current model source linkage, file locator and emitted fingerprint. Launch inputs use the matched model source identity (`area|address-kind|address`), never an entity/site concatenation; absent or ambiguous qualified mappings fail. Native planning supplies source-backed launch inputs and the exact implementation or explicitly historical Requirement Review scope anchor. The Challenge target remains separate from the execution Verification Target.
+`scope_report` uses format `azimuth-challenge-source-scope`, version 2, complete status, the selected Verification Challenge identity in `verification_challenge` and Run-protocol canonical fingerprint (RFC 8785 in the safe-integer domain). Its request matches the declared Requirements/Mechanisms/Checks; inherited Requirements may be omitted from the implementation selector when Mechanisms narrow production scope. Every selected site must match current model source linkage, file locator and emitted fingerprint. Launch inputs use the matched model source identity (`area|address-kind|address`), never an entity/site concatenation; absent or ambiguous qualified mappings fail. Native planning supplies source-backed launch inputs and the exact implementation scope anchor. The Challenge target remains separate from the execution Verification Target.
 
 The `azimuth.challenge` package prepares scope from compiler/structural emitter manifests, not directory discovery in core. Repository bindings locate files; source identities remain semantic. Current tool adapters report whole-file expansion where emitters do not expose source regions, explicit repository/Area exclusions, broader test filters and analysis limitations. Independently reviewed scope/configuration inputs remain essential; accepted target status alone does not establish source scope completeness.
 
@@ -71,24 +71,16 @@ A Run launch plan binds one provider-neutral Run-bundle semantic Plan to explici
 
 Operation is `execute | import`. `planned_at_ms` is the non-negative integral safe Unix-millisecond time at which core creates the bounded execution plan. `verification_target` has one exact Run-bundle Verification Target shape. `required_execution_context` and unit parameters are exact objects from unique non-empty strings to strings; `{}` is valid. `checks` and `challenges` are both required arrays; either may be empty, but their combined selection is non-empty.
 
-Checks sort by unique project-global Check id. A Check request may omit `scenarios`; core derives all authored Check-to-Scenario bindings. An explicit nonempty sorted unique subset must resolve to exactly one binding per Scenario. A Check request may omit `units`; core supplies one `whole` unit with empty parameters. Explicit units remain finite, nonempty, sorted and unique. Neither default means internal Surface coverage is complete. Challenge requests sort by unique authored Challenge Plan id. Both name an exact
+Checks sort by unique project-global Check id. A Check request may omit `scenarios`; core derives all authored Check-to-Scenario bindings. An explicit nonempty sorted unique subset must resolve to exactly one binding per Scenario. A Check request may omit `units`; core supplies one `whole` unit with empty parameters. Explicit units remain finite, nonempty, sorted and unique. Neither default means internal Surface coverage is complete. Challenge requests sort by unique Verification Challenge id. Both name an exact
 configured `<adapter-id>/<capability-id>` address and non-empty units sorted by unique lower-kebab
 path id. `max_candidates` is required only for Challenge requests and is an integer from 1 through
-the Run-bundle safe-integer maximum. It counts unique candidate records from that authored Plan
-after duplicate selectors are removed and before selections from different requested Plans
-deduplicate. Every disposition counts. Exceeding the cap fails before a launch is created; it never
+the Run-bundle safe-integer maximum. Exceeding the cap fails before a launch is created; it never
 truncates.
 
-The planner loads the complete unselected current model before selection. It derives the Verification Target fingerprint, complete-model fingerprint, each selected current Check and its complete implementation set, and every candidate, current decision, Verification Challenge, lane and semantic scope reached by the fixed union of requested Challenge Plans. It never accepts caller-supplied fingerprints, implementations, Verification Challenge forms, targets, lanes, scopes or launch inputs.
+The planner loads the complete unselected current model before selection. It derives the Verification Target fingerprint, complete-model fingerprint, each selected current Check and its complete implementation set, and the Verification Challenge, implementation target, lane and semantic scope of every requested Challenge. It never accepts caller-supplied fingerprints, implementations, Verification Challenge forms, targets, lanes, scopes or launch inputs.
 
-Only a `selected` candidate is runnable. Any other disposition in a requested Plan fails planning.
-For every selected decision, the requested Plan union contains at least one runnable selection for
-every form required by its Decision Policy. Extra forms strengthen the search. The selected
-decision's applicable Execution Context equals `required_execution_context` exactly; decisions from different Execution Contexts
-fail with guidance to create separate Runs. Requirement Judgment repository identity remains independent
-of Run Execution Context and uses the one request Execution Context for execution. Check execution itself requires the
-explicit Check-to-Scenario bindings but not current positive repository decisions; it records an
-execution fact and does not infer evidentiary applicability.
+A requested Challenge whose declaration or scope report does not resolve fails planning. Check execution requires the
+explicit Check-to-Scenario bindings; it records an execution fact and does not infer evidentiary applicability.
 
 Core verifies that each explicit capability has the operation's Challenge class and the current Verification Challenge's exact form. It never chooses a capability lexically or trusts a form in the request. Every route has an explicit configured adapter prefix; one Run may select several adapters for the same exact Verification Target. Duplicate selections with different capabilities or units fail. There is no complete-model broadening, partial-model or `--only` path.
 
@@ -277,7 +269,7 @@ Execute and import accept repeated predecessor bundle files in any order. Core v
 ## Command boundary
 
 ```text
-azimuth run plan --request <file> [--model <dir>] [--standards <file>] \
+azimuth run plan --request <file> [--model <dir>] \
   [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
 azimuth run execute --plan <file> [--predecessor <bundle>...] \
   [--config <file>] [--out <file>]

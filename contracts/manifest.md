@@ -89,7 +89,7 @@ Within one manifest the identity is `requirement|site|file|lang`, and a repeat i
 ## `check_implementations`
 
 One source site that implements one project-global Check, defined either by accepted verification or a document-authored candidate account. The marker carries implementation
-identity only: no Scenario, form, Execution Context, Method Qualification or Applicability Decision. Several
+identity only: no Scenario, form or Execution Context. Several
 records may implement one Check.
 
 ```json
@@ -108,7 +108,7 @@ All five fields are required, including `source_fingerprint`. The four source-id
 
 ## `mechanism_implementations`
 
-One compiler-resolved site that implements one design-owned mechanism identity. The record, its binding and its companion Artifact are one atomic account: an extractor emits all three or none.
+One compiler-resolved site that implements one realization-owned mechanism identity. The record, its binding and its companion Artifact are one atomic account: an extractor emits all three or none.
 
 ```json
 {
@@ -182,7 +182,7 @@ All four fields are required. The four source-identity fields are permitted. No 
 
 ## `artifacts`
 
-A machine-addressable artifact emitted from a compiler or schema model. Optional properties carry only facts the extractor derived; semantic statements stay in design prose.
+A machine-addressable artifact emitted from a compiler or schema model. Optional properties carry only facts the extractor derived; semantic statements stay in realization prose.
 
 ```json
 {
@@ -199,7 +199,7 @@ A machine-addressable artifact emitted from a compiler or schema model. Optional
 
 Within one manifest the identity is the triple `(id, kind, file)`.
 
-An Artifact is either a marker companion — claimed by exactly one `mechanism_implementations` record as described above — or an ordinary Artifact. An ordinary Artifact may not reuse the id of a companion, and may not use a reserved raw marker id `<address-kind>:<site>` for any mechanism site in the manifest. Ordinary artifact ids are unique among themselves. Only ordinary Artifacts may be named by an explicit `Binding:` in a design; an explicit binding to a companion's raw id or its assembled key is rejected.
+An Artifact is either a marker companion — claimed by exactly one `mechanism_implementations` record as described above — or an ordinary Artifact. An ordinary Artifact may not reuse the id of a companion, and may not use a reserved raw marker id `<address-kind>:<site>` for any mechanism site in the manifest. Ordinary artifact ids are unique among themselves. Only ordinary Artifacts may be named by an explicit `Binding:` in a realization; an explicit binding to a companion's raw id or its assembled key is rejected.
 
 ## Address kinds
 
@@ -243,7 +243,7 @@ Several manifests are read together. Duplicate detection inside one manifest is 
 - one class member per `(class, file)`; and
 - one Artifact per `id`, with no ordinary Artifact colliding with a reserved raw marker id.
 
-The same qualified site in two different areas is legal and produces different assembled binding and Artifact ids. A locator-only move within one area that preserves the qualified site and the content preserves source identity, Requirement Judgment and semantic Challenge scope; only the locator fingerprints change.
+The same qualified site in two different areas is legal and produces different assembled binding and Artifact ids. A locator-only move within one area that preserves the qualified site and the content preserves source identity, mechanism records and semantic Challenge scope; only the locator fingerprints change.
 
 ## Diagnostics
 
@@ -254,7 +254,7 @@ A manifest diagnostic names the manifest path and, for a record-level failure, t
 - `contracts/markers.md` — the source annotations an extractor reads to produce these records.
 - `contracts/verification.md` — the exact per-ecosystem semantic-site profile each extractor must satisfy, and the Check linkage rules.
 - `contracts/workspace.md` — areas, mounts, surfaces and contributions used by assembly.
-- `contracts/design.md` — explicit mechanism `Binding:` declarations that resolve against Artifacts.
+- `contracts/realization.md` — explicit mechanism `Binding:` declarations that resolve against Artifacts.
 
 ## Stable entity identities: 2026-10-02
 

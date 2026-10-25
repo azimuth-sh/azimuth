@@ -24,7 +24,7 @@ fn azimuth(arguments: &[&str]) -> Output {
 
 const SPEC: &str = "# Spec: sample\n\n\
 ## Claim: claim-holds-in-case-of-retry\n\
-Criticality: routine\n\n\
+\n\
 The claim holds in case of a retry.\n\n\
 ### Case: retried-case\n\
 A retried request is answered once.\n\n\
@@ -32,7 +32,7 @@ A retried request is answered once.\n\n\
 
 const DELTA: &str = "# Intent delta: sample\n\n\
 ## Add claim: added\n\
-Criticality: routine\n\n\
+\n\
 The added statement holds.\n\n\
 ### Add case: visible\n\
 It is visible.\n\n\
@@ -51,8 +51,7 @@ Qualified.\n\n\
 Context: unrelated prose label\n\n\
 ```md\n## Evidence Binding: fenced\nContext: {}\n```\n";
 
-const ARCHIVED: &str =
-    "# Spec: sample\n\n## Claim: archived\nCriticality: routine\n\nOld.\n\n### Case: old\nOld.\n";
+const ARCHIVED: &str = "# Spec: sample\n\n## Claim: archived\n\nOld.\n\n### Case: old\nOld.\n";
 
 /// An alpha.6 installation recorded on the earlier `alpha-claim-case` line.
 fn earlier_line_repository() -> (PathBuf, PathBuf) {
@@ -254,11 +253,6 @@ fn plan_and_apply_round_trip_rewrites_only_active_syntax_and_records_the_line() 
         "validate",
         "--model",
         azimuth_root.join("model").to_str().unwrap(),
-        "--standards",
-        azimuth_root
-            .join("standards/verification.md")
-            .to_str()
-            .unwrap(),
         "--workspace",
         azimuth_root.join("workspace.json").to_str().unwrap(),
     ]);
@@ -290,7 +284,7 @@ fn apply_refuses_account_drift_after_planning() {
     let spec = azimuth_root.join("model/sample/spec.md");
     fs::write(
         &spec,
-        format!("{SPEC}\n## Claim: late\nCriticality: routine\n\nLate.\n\n### Case: late\nLate.\n"),
+        format!("{SPEC}\n## Claim: late\n\nLate.\n\n### Case: late\nLate.\n"),
     )
     .unwrap();
     let before = fs::read_to_string(&spec).unwrap();
@@ -377,20 +371,20 @@ fn current_line_plan_rewrites_retired_syntax_without_changing_the_line() {
 const OLD_DELTAS: &[(&str, &str, &str)] = &[
     (
         "spec.md",
-        "# Intent delta: sample\n\n## Add claim: visible\nCriticality: standard\n\n\
+        "# Intent delta: sample\n\n## Add claim: visible\nRealization: reviewed\nVerification: reviewed\n\n\
          The system SHALL expose its state.\n\n### Add case: state-is-visible\n\
          Event: the state is requested\nRequired: the state is exposed\n",
-        "# Intent delta: sample\n\n## Add requirement: visible\nCriticality: standard\n\n\
+        "# Intent delta: sample\n\n## Add requirement: visible\nRealization: reviewed\nVerification: reviewed\n\n\
          The system SHALL expose its state.\n\n### Add scenario: state-is-visible\n\
          Event: the state is requested\nRequired: the state is exposed\n",
     ),
     (
-        "design.md",
-        "# Design delta: sample\n\n## Add claim design: visible\n- Areas:\n  - `api`\n\n\
-         The handler returns the state.\n\n### Add case design: state-is-visible\n\n\
+        "realization.md",
+        "# Realization delta: sample\n\n## Add claim realization: visible\n- Areas:\n  - `api`\n\n\
+         The handler returns the state.\n\n### Add case realization: state-is-visible\n\n\
          The handler reads the stored state.\n",
-        "# Design delta: sample\n\n## Add requirement design: visible\n- Areas:\n  - `api`\n\n\
-         The handler returns the state.\n\n### Add scenario design: state-is-visible\n\n\
+        "# Realization delta: sample\n\n## Add requirement realization: visible\n- Areas:\n  - `api`\n\n\
+         The handler returns the state.\n\n### Add scenario realization: state-is-visible\n\n\
          The handler reads the stored state.\n",
     ),
     (
@@ -406,20 +400,11 @@ const OLD_DELTAS: &[(&str, &str, &str)] = &[
          - Deployment: {\"verification_target\":\"source\",\"components\":[\"api\"],\"contexts\":[],\"contribution\":\"both\",\"monitor\":null}\n\
          - Evidence bindings:\n  - Scenario: `state-is-visible`\n    - Contribution: Requests the state.\n\n\
          Request the state and compare it.\n\n### Add verification challenge: mutation-search\n\
-         - Form:\n  - `mutation`\n- Targets:\n  - `requirement-review`\n\nSearch for an undetected change.\n",
-    ),
-    (
-        "judgments.md",
-        "# Judgments delta: sample\n\n## Add claim review: visible\n\n- State: `pending`\n\
-         - Cases:\n  - `state-is-visible`\n- Verification: `visible`\n- Design: `visible`\n\n\
-         Pending independent review.\n",
-        "# Judgments delta: sample\n\n## Add requirement review: visible\n\n- State: `pending`\n\
-         - Scenarios:\n  - `state-is-visible`\n- Verification: `visible`\n- Design: `visible`\n\n\
-         Pending independent review.\n",
+         - Form:\n  - `mutation`\n- Targets:\n  - `verification-review`\n\nSearch for an undetected change.\n",
     ),
 ];
 
-const RETAINED_REVIEW: &str = "# Requirement reviews\n\n## Claim review: visible-1\n- Claim: `visible`\n\
+const RETAINED_REVIEW: &str = "# Verification reviews\n\n## Claim review: visible-1\n- Claim: `visible`\n\
 - Cases:\n  - `state-is-visible`\n- Deployment: {\"subject\":\"source\"}\n\nRetained as reviewed.\n";
 
 #[test]
@@ -502,11 +487,6 @@ fn migrated_account_delta_operations_and_deployment_scope_pass_change_validate()
         azimuth_root.join("changes").to_str().unwrap(),
         "--model",
         azimuth_root.join("model").to_str().unwrap(),
-        "--standards",
-        azimuth_root
-            .join("standards/verification.md")
-            .to_str()
-            .unwrap(),
         "--workspace",
         change.join("workspace.json").to_str().unwrap(),
     ]);

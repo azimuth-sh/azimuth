@@ -1,6 +1,6 @@
 # Candidate execution verification
 
-`azimuth run verify-candidate --authority <file> --bundle <file> [--unit-rule <file>] --out <file>` evaluates one native Run against a supplied complete current authority. It creates no Requirement Review, Check Result, Challenge finding disposition, deployment applicability or Requirement Status. The caller selects the exact candidate and independently compares the Run Verification Target with its required source/artifact vector.
+`azimuth run verify-candidate --authority <file> --bundle <file> [--unit-rule <file>] --out <file>` evaluates one native Run against a supplied complete current authority. It creates no review, Check Result, Challenge finding disposition, deployment applicability or Requirement Status. The caller selects the exact candidate and independently compares the Run Verification Target with its required source/artifact vector.
 
 The evaluator returns the following fields, plus `unit_rule_fingerprint` when a unit rule is supplied:
 

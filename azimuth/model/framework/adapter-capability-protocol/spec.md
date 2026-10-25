@@ -2,7 +2,6 @@
 
 ## Requirement: adapter-configuration-is-explicit-and-pinned
 Title: Adapter configuration is explicit and pinned
-Criticality: routine
 
 Azimuth SHALL invoke only explicitly configured adapters whose protocol, description, limits and
 capabilities are pinned before provider interaction.
@@ -41,7 +40,6 @@ capabilities are pinned before provider interaction.
 
 ## Requirement: semantic-planning-uses-the-complete-model
 Title: Semantic planning uses the complete model
-Criticality: routine
 
 Azimuth SHALL derive Check and Challenge execution plans from one complete unselected current
 model without delegating semantic resolution to an adapter.
@@ -65,7 +63,6 @@ model without delegating semantic resolution to an adapter.
 
 ## Requirement: launch-plans-bind-capability-routing
 Title: Launch plans bind capability routing
-Criticality: routine
 
 Azimuth SHALL bind an exact Verification Target, operation and complete Run-bundle semantic plan to explicit
 capability routes in one canonical launch plan.
@@ -83,7 +80,6 @@ capability routes in one canonical launch plan.
 
 ## Requirement: adapter-invocation-is-strict-and-bounded
 Title: Adapter invocation is strict and bounded
-Criticality: routine
 
 Azimuth SHALL invoke an adapter as a bounded short-lived process with one strict JSON request and
 exactly one strict JSON response.
@@ -112,7 +108,6 @@ exactly one strict JSON response.
 
 ## Requirement: execute-validates-normalized-run-semantics
 Title: Execute validates normalized run semantics
-Criticality: routine
 
 Azimuth SHALL accept an executed adapter response only after validating its request identity,
 provenance, actual selection and complete Run bundle.
@@ -134,7 +129,6 @@ provenance, actual selection and complete Run bundle.
 
 ## Requirement: import-inputs-are-content-addressed
 Title: Import inputs are content addressed
-Criticality: routine
 
 Azimuth SHALL bind every native import input to the exact file content core supplied to the
 configured adapter.
@@ -159,7 +153,6 @@ configured adapter.
 
 ## Requirement: capability-classes-and-provider-identities-stay-separate
 Title: Capability classes and provider identities stay separate
-Criticality: routine
 
 Azimuth SHALL use a closed semantic capability-class vocabulary with open configured-adapter
 capability addresses, separate open provider-family identities and open challenge forms.
@@ -174,7 +167,6 @@ capability addresses, separate open provider-family identities and open challeng
 
 ## Requirement: runtime-command-results-have-stable-exit-classes
 Title: Runtime command results have stable exit classes
-Criticality: routine
 
 Azimuth SHALL distinguish valid execution facts from semantic or transport mismatches and from
 input schema failures across the adapter command surface.

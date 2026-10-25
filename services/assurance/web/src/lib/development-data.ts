@@ -23,19 +23,21 @@ export function developmentRead(project: string, path: string): unknown {
   const notApplicableHere = (id: string) => scenario !== 'healthy' && id === 'delivery-recovers-after-outage';
   const requirements = scenario === 'empty' ? [] : data.requirements.map((requirement) => ({
     ...requirement,
-    status: scenario === 'healthy' ? 'supported' : notApplicableHere(requirement.id) ? 'not-applicable' : scenario === 'incident' && requirement.id === 'reminders-arrive-on-time' ? 'violated' : requirement.status,
-    reason: scenario === 'healthy' ? 'Illustrative current review and applicable Check Results satisfy this Requirement.' : notApplicableHere(requirement.id) ? 'Outage recovery applies only where the queue-backed delivery context holds; this deployment runs without it.' : scenario === 'incident' && requirement.id === 'reminders-arrive-on-time' ? 'The production delivery probe exceeded the five-minute deadline.' : requirement.reason,
+    status: requirement.check === null ? 'unresolved' : scenario === 'healthy' ? 'supported' : notApplicableHere(requirement.id) ? 'not-applicable' : scenario === 'incident' && requirement.id === 'reminders-arrive-on-time' ? 'violated' : requirement.status,
+    reason: requirement.check === null ? requirement.reason : scenario === 'healthy' ? 'Illustrative current review and applicable Check Results satisfy this Requirement.' : notApplicableHere(requirement.id) ? 'Outage recovery applies only where the queue-backed delivery context holds; this deployment runs without it.' : scenario === 'incident' && requirement.id === 'reminders-arrive-on-time' ? 'The production delivery probe exceeded the five-minute deadline.' : requirement.reason,
     gap: scenario === 'healthy' || notApplicableHere(requirement.id) ? undefined : requirement.gap,
   }));
+  // A Requirement owns Checks only when it declares `Verification:`.
+  const verified = requirements.flatMap(c => c.check === null ? [] : [{ ...c, check: c.check, method: c.method ?? '', verification_target: c.verification_target ?? 'source' }]);
   const authority = {
     fingerprint: revision, model_fingerprint: identity('source-model'),
-    requirements: requirements.map(c => ({ id: c.id, scenarios: [c.scenario], bindings: [{ check: c.check, scenario: c.scenario }], gaps: [] })),
-    checks: requirements.map(c => ({ id: c.check, fingerprint: identity(c.check), deployment: {
+    requirements: requirements.map(c => ({ id: c.id, realization: c.realization_review ? 'reviewed' : 'none', verification: c.verification, scenarios: [c.scenario], bindings: c.check === null ? [] : [{ check: c.check, scenario: c.scenario }], gaps: [] })),
+    checks: verified.map(c => ({ id: c.check, fingerprint: identity(c.check), deployment: {
       verification_target: c.verification_target, components: ['notifications'], contexts: c.context_required ? [{ component: 'notifications', leaves: ['delivery.channel'] }] : [], contribution: 'both', monitor: c.monitor,
     } })),
   };
-  const reviews = requirements.map(c => ({
-    record: { kind: 'requirement-review', reviewer: 'development-reviewer', reviewed_at_ms: Date.now() - 120 * 60000, rationale: c.reason,
+  const verificationReviews = verified.map(c => ({
+    record: { kind: 'verification-review', reviewer: 'development-reviewer', reviewed_at_ms: Date.now() - 120 * 60000, rationale: c.reason,
       artifacts: [{ id: 'verification', digest: identity(`artifact:${c.id}`), locator: `model/${c.module}/verification.md` }],
       requirement: c.id, requirement_fingerprint: identity(`requirement:${c.id}`), dependencies_fingerprint: identity(`review-dependencies:${c.id}`),
       decision: c.gap === 'rejected-review' ? 'rejected' : 'accepted', reassesses: c.id === workedRequirement ? identity(`review:${c.id}:first`) : null,
@@ -44,14 +46,39 @@ export function developmentRead(project: string, path: string): unknown {
     diagnostics: c.gap?.endsWith('review') ? [c.reason] : [], historical: false,
     submitted_by: 'development-publisher', submitted_at: at(120), provenance_basis: 'synthetic-ui-data',
   }));
-  const reviewState = { assessment: { state: 'ready', generation: 1, published_generation: 1, evaluated_at_ms: Date.now(), valid_until_ms: null }, authority_fingerprint: revision, requirements: requirements.map((c, i) => ({
-    requirement: c.id, record: reviews[i].record, assessment: reviews[i].assessment, diagnostics: reviews[i].diagnostics,
-  })) };
+  const realizationReviews = requirements.flatMap(c => c.realization_review ? [{
+    record: { kind: 'realization-review', reviewer: 'development-reviewer', reviewed_at_ms: Date.now() - 300 * 60000,
+      rationale: 'The reminder scheduler and renderer do what the Scenarios say for the reviewed commit.',
+      artifacts: [{ id: 'realization', digest: identity(`realization-artifact:${c.id}`), locator: `model/${c.module}/realization.md` }],
+      requirement: c.id, requirement_fingerprint: identity(`intent:${c.id}`), dependencies_fingerprint: identity(`realization-dependencies:${c.id}`),
+      sites_fingerprint: identity(`sites:${c.id}`), reviewed_commit: c.realization_review.reviewed_commit,
+      decision: 'accepted', reassesses: null, fingerprint: identity(`realization-review:${c.id}`) },
+    assessment: c.realization_review.status, code_drift: c.realization_review.code_drift,
+    diagnostics: c.realization_review.status === 'stale' ? ['Realization declaration changed after the Realization Review.'] : [], historical: false,
+    submitted_by: 'development-publisher', submitted_at: at(300), provenance_basis: 'synthetic-ui-data',
+  }] : []);
+  const reviews = [...verificationReviews, ...realizationReviews];
+  const verificationOf = (id: string) => verificationReviews.find(r => r.record.requirement === id);
+  const realizationOf = (id: string) => realizationReviews.find(r => r.record.requirement === id);
+  const reviewState = { assessment: { state: 'ready', generation: 1, published_generation: 1, evaluated_at_ms: Date.now(), valid_until_ms: null }, authority_fingerprint: revision, requirements: requirements.flatMap(c => {
+    const verification = verificationOf(c.id);
+    const realization = realizationOf(c.id);
+    return [
+      verification ? { kind: 'verification-review', requirement: c.id, record: verification.record, assessment: verification.assessment, code_drift: null, diagnostics: verification.diagnostics }
+        : { kind: 'verification-review', requirement: c.id, record: null, assessment: 'not-declared', code_drift: null, diagnostics: [] },
+      realization ? { kind: 'realization-review', requirement: c.id, record: realization.record, assessment: realization.assessment, code_drift: realization.code_drift, diagnostics: realization.diagnostics }
+        : { kind: 'realization-review', requirement: c.id, record: null, assessment: 'not-declared', code_drift: null, diagnostics: [] },
+    ];
+  }) };
   const freshness = { state: scenario === 'pending' ? 'pending' : scenario === 'expired' ? 'expired' : 'ready', generation: 2, published_generation: scenario === 'pending' ? 1 : 2, evaluated_at_ms: Date.now() - 60000, valid_until_ms: Date.now() + (scenario === 'expired' ? -1000 : 240000) };
   const state = { assessment: freshness, format: 'azimuth-deployment-status', version: 2, deployment: 'payments-2026-10-18', verification_target_fingerprint: verificationTarget,
     evaluated_at_ms: Date.now(), authority_fingerprint: revision, model_fingerprint: authority.model_fingerprint,
-    requirements: requirements.map((c, i) => {
-      const hasCheckResult = c.gap !== 'missing-execution';
+    requirements: requirements.map(c => {
+      const verification = verificationOf(c.id);
+      const realization = realizationOf(c.id);
+      const verificationStatus = verification?.assessment ?? 'not-declared';
+      const realizationStatus = realization?.assessment ?? 'not-declared';
+      const hasCheckResult = c.check !== null && c.gap !== 'missing-execution';
       const acceptedBasis = !c.gap;
       const checkResult = {
         check: c.check, scenario: c.scenario, run: identity(`run:${c.id}`),
@@ -62,20 +89,23 @@ export function developmentRead(project: string, path: string): unknown {
       };
       const checkResults = hasCheckResult ? [checkResult] : [];
       const reasons = [
-        ...(reviews[i].assessment !== 'accepted' ? [{ code: `requirement-review-${reviews[i].assessment}`, category: 'requirement-review', message: c.reason }] : []),
+        ...(verification && verificationStatus !== 'accepted' ? [{ code: `verification-review-${verificationStatus}`, category: 'verification-review', message: c.reason }] : []),
+        ...(realization && realizationStatus !== 'accepted' ? [{ code: `realization-review-${realizationStatus}`, category: 'realization-review', message: realization.diagnostics[0] ?? 'Realization Review is not current.' }] : []),
         ...(c.gap === 'context-mismatch' ? [{ code: 'context-mismatch', category: 'deployment-evidence', check: c.check, scenario: c.scenario, message: c.reason }] : []),
         ...(c.gap === 'lost-visibility' ? [{ code: 'monitor-overdue', category: 'deployment-evidence', check: c.check, scenario: c.scenario, message: c.reason }] : []),
-        ...(!hasCheckResult ? [{ code: 'current-check-result-missing', category: 'evidence', check: c.check, scenario: c.scenario, message: c.reason }] : []),
+        ...(c.check !== null && !hasCheckResult ? [{ code: 'current-check-result-missing', category: 'evidence', check: c.check, scenario: c.scenario, message: c.reason }] : []),
       ];
-      return { requirement: c.id, status: c.status, review: reviews[i].assessment, evaluated_at_ms: Date.now(),
+      return { requirement: c.id, status: c.status, verification_review: verificationStatus, realization_review: realizationStatus, realization_code_drift: realization?.code_drift ?? null, evaluated_at_ms: Date.now(),
         diagnostics: [c.reason], gaps: c.gap ? [{ kind: c.gap, description: c.reason }] : [],
-        bindings: [{ scenario: c.scenario, check: c.check, status: acceptedBasis ? 'satisfied' : 'unresolved', monitor: c.monitor,
+        bindings: c.check === null ? [] : [{ scenario: c.scenario, check: c.check, status: acceptedBasis ? 'satisfied' : 'unresolved', monitor: c.monitor,
           reasons: c.gap ? [c.gap === 'lost-visibility' ? 'Monitor Check Result is overdue.' : c.reason] : [] }], challenges: [],
         explanation: {
           summary: c.reason, status: c.status, reasons,
-          review: { status: reviews[i].assessment, fingerprint: reviews[i].record.fingerprint, reviewer: 'development-reviewer', reviewed_at_ms: Date.now() - 120 * 60000, rationale: c.reason },
+          verification_review: { status: verificationStatus, fingerprint: verification?.record.fingerprint ?? null, reviewer: verification ? 'development-reviewer' : null, reviewed_at_ms: verification?.record.reviewed_at_ms ?? null, rationale: verification ? c.reason : null },
+          realization_review: { status: realizationStatus, fingerprint: realization?.record.fingerprint ?? null, reviewer: realization ? 'development-reviewer' : null, reviewed_at_ms: realization?.record.reviewed_at_ms ?? null,
+            rationale: realization?.record.rationale ?? null, reviewed_commit: realization?.record.reviewed_commit ?? null, code_drift: realization?.code_drift ?? null },
           dependencies: [{ kind: 'release', fingerprint: releaseId }, ...(acceptedBasis && c.context_required ? [{ kind: 'context-capture', fingerprint: identity(`capture:${c.id}`) }] : [])],
-          coverage: [{ check: c.check, scenario: c.scenario, status: !hasCheckResult ? 'missing' : acceptedBasis ? checkResult.outcome : 'unassessed', check_results: checkResults }],
+          coverage: c.check === null ? [] : [{ check: c.check, scenario: c.scenario, status: !hasCheckResult ? 'missing' : acceptedBasis ? checkResult.outcome : 'unassessed', check_results: checkResults }],
           evidence: {
             supporting: acceptedBasis && c.status !== 'violated' ? checkResults : [],
             violations: acceptedBasis && c.status === 'violated' ? checkResults : [],
@@ -85,7 +115,9 @@ export function developmentRead(project: string, path: string): unknown {
       };
     }),
   };
-  const executed = requirements.filter(c => c.gap !== 'missing-execution');
+  // The status summary carries only what an overview needs to name a drifted Realization Review.
+  const compactRealization = ({ realization_review: { status, reviewed_commit, code_drift } }: { realization_review: { status: string; reviewed_commit: string | null; code_drift: boolean | null } }) => ({ status, reviewed_commit, code_drift });
+  const executed = verified.filter(c => c.gap !== 'missing-execution');
   const runs = executed.map(c => ({ run_id: identity(`run:${c.id}`), revision: 0,
     fingerprint: identity(`run-bundle:${c.id}`), verification_target_fingerprint: c.verification_target === 'source' ? identity('tested-source') : verificationTarget,
     model_fingerprint: authority.model_fingerprint, status: 'complete',
@@ -103,7 +135,7 @@ export function developmentRead(project: string, path: string): unknown {
       [...new Set(requirements.map(c => c.module).filter(id => id.includes('/')))].map(id => ({ id, title: id.split('/')[1], parent: id.split('/')[0], requirements: requirements.filter(c => c.module === id).map(c => c.id) }))),
     requirements: requirements.map(c => ({ id: c.id, title: c.title, statement: c.statement })),
     scenarios: requirements.map(c => ({ id: c.scenario, description: c.scenario.replaceAll('-', ' ') })),
-    checks: requirements.map(c => ({ id: c.check, description: c.method })),
+    checks: verified.map(c => ({ id: c.check, description: c.method })),
   };
   const priorMainRequirements = requirements.filter(c => c.id !== 'delivery-recovers-after-outage');
   const priorMainIds = new Set(priorMainRequirements.map(c => c.id));
@@ -150,9 +182,9 @@ export function developmentRead(project: string, path: string): unknown {
     return { environment, deployment_id: current.id, release_fingerprint: releaseId, release_model_revision: revision, main_model_revision: identity('main-model'),
       main_commit: '9fb783f0c2d14e6a8b7d5c3e1a09f4b2d6c8e7a1', main_sequence: 42,
       requirements: [
-        { id: 'delivery-recovers-after-outage', difference: 'added', criticality: 'critical', release_status: null },
-        { id: 'reminders-follow-current-payment', difference: 'changed', criticality: 'important', release_status: scenario === 'healthy' ? 'supported' : 'violated' },
-        { id: 'notification-content-is-complete', difference: 'changed', criticality: 'routine', release_status: 'supported' },
+        { id: 'delivery-recovers-after-outage', difference: 'added', realization: 'none', verification: 'reviewed', release_status: null },
+        { id: 'reminders-follow-current-payment', difference: 'changed', realization: 'reviewed', verification: 'reviewed', release_status: scenario === 'healthy' ? 'supported' : 'violated' },
+        { id: 'notification-content-is-complete', difference: 'changed', realization: 'none', verification: 'reviewed', release_status: 'supported' },
       ].filter(r => scenario !== 'healthy' || r.difference !== 'changed' || r.id !== 'notification-content-is-complete') };
   };
   const environmentRoute = /^\/environments\/([^/]+)\/(delivery-gap|rollback-candidates|deployment-history)$/.exec(route);
@@ -161,8 +193,8 @@ export function developmentRead(project: string, path: string): unknown {
     if (kind === 'delivery-gap') return deliveryGapFor(environment);
     if (kind === 'deployment-history') return { project, environment, deployments: history(environment), next_page_token: null };
     return { project, environment, candidates: environment === 'production' ? [
-      { ...previousDeployment, last_status_at_ms: Date.now() - 2 * 24 * hour, non_routine_requirements: 4 },
-      { ...olderDeployment, last_status_at_ms: Date.now() - 38 * 24 * hour, non_routine_requirements: 3 },
+      { ...previousDeployment, last_status_at_ms: Date.now() - 2 * 24 * hour, verification_requirements: 4 },
+      { ...olderDeployment, last_status_at_ms: Date.now() - 38 * 24 * hour, verification_requirements: 3 },
     ] : [] };
   }
   if (route === '/environments/staging/deployment') return {
@@ -175,7 +207,7 @@ export function developmentRead(project: string, path: string): unknown {
     observation: { state: 'complete', observed_at_ms: Date.now() - 60000, valid_for_seconds: 300, release_fingerprint: releaseId },
   };
   if (route === `/deployments/${stagingDeployment.id}`) return { deployment: stagingDeployment, release_fingerprint: releaseId };
-  if (route === `/deployments/${stagingDeployment.id}/status/summary`) return { ...state, deployment: stagingDeployment.id, verification_target_fingerprint: stagingTarget, requirements: state.requirements.map(({ bindings, explanation, ...requirement }) => ({ ...requirement, status: 'unresolved', explanation: { summary: 'Required Check Results are missing for this staging deployment.' } })) };
+  if (route === `/deployments/${stagingDeployment.id}/status/summary`) return { ...state, deployment: stagingDeployment.id, verification_target_fingerprint: stagingTarget, requirements: state.requirements.map(({ bindings, explanation, ...requirement }) => ({ ...requirement, status: 'unresolved', explanation: { summary: 'Required Check Results are missing for this staging deployment.', realization_review: compactRealization(explanation) } })) };
   if (route === `/deployments/${stagingDeployment.id}/status` || route === `/model-revisions/${revision}/verification-targets/${stagingTarget}/state`) return {
     ...state, deployment: stagingDeployment.id, verification_target_fingerprint: stagingTarget,
     requirements: state.requirements.map(requirement => ({ ...requirement, status: 'unresolved',
@@ -222,7 +254,7 @@ export function developmentRead(project: string, path: string): unknown {
   if (route === `/model-revisions/${revision}`) return { authority, selected: onMain };
   if (route === `/model-revisions/${revision}/snapshot`) return { authority, reviews: [...reviews.map(r => r.record)], bundles };
   if (route === `/verification-targets/${verificationTarget}/state`) return onMain ? state : { ...state, authority_fingerprint: priorMain, requirements: [] };
-  if (route === `/deployments/${deployment.id}/status/summary`) return { ...state, requirements: state.requirements.map(({ bindings, explanation, ...requirement }) => ({ ...requirement, status: freshness.state === 'ready' ? requirement.status : 'unresolved', explanation: { summary: freshness.state === 'ready' ? explanation.summary : 'Evidence is being reassessed.' } })) };
+  if (route === `/deployments/${deployment.id}/status/summary`) return { ...state, requirements: state.requirements.map(({ bindings, explanation, ...requirement }) => ({ ...requirement, status: freshness.state === 'ready' ? requirement.status : 'unresolved', explanation: { summary: freshness.state === 'ready' ? explanation.summary : 'Evidence is being reassessed.', realization_review: compactRealization(explanation) } })) };
   if (route === `/deployments/${deployment.id}/status` || route === `/model-revisions/${revision}/verification-targets/${verificationTarget}/state`) return state;
   if (route === `/model-revisions/${priorMain}`) return { authority: priorMainAuthority, selected: !onMain };
   if (route === `/model-revisions/${priorMain}/requirement-reviews`) return { assessment: { state: 'ready', generation: 1, published_generation: 1, evaluated_at_ms: Date.now(), valid_until_ms: null }, authority_fingerprint: priorMain, requirements: [] };
@@ -284,11 +316,11 @@ function workHistory(requirement: string, currentRelease: string, currentRevisio
   };
   const attempt = (instance: string, sequence: number, action: string, actor: string, outcome: string, agent: unknown, captured: number | null, recorded: number | null, report: string | null, generated: unknown[] = [], usage: unknown = null) => ({
     id: attemptId(`${instance}:${sequence}`), instance: instances[instance].id, disposition: instances[instance].disposition, sequence, action, task: action, scope: 'requirement', target: target(instance.split(':')[0]), actor, outcome, report,
-    handoff_captured_at_ms: captured, recorded_at_ms: recorded, agent, guidance: action === 'review-requirement' ? [{ kind: 'skill', id: 'azimuth-review-requirement', fingerprint: identity('guidance:review') }] : [],
+    handoff_captured_at_ms: captured, recorded_at_ms: recorded, agent, guidance: action === 'review-requirement' ? [{ kind: 'skill', id: 'azimuth-review-verification', fingerprint: identity('guidance:review') }] : [],
     trace: null, usage, used: [{ kind: 'requirement', repository: 'application', ref: 'model/reminders/planning/requirements.md', fingerprint: identity(`used:${instance}:${sequence}`), record: null }], generated,
   });
   // `fingerprint` identifies the review bundle file; `record_fingerprint` is the native review it selects.
-  const review = (recordFingerprint: string, local: string) => [{ kind: 'requirement-review', repository: 'application', ref: 'reviews/requirement-reviews.md', fingerprint: identity(`review-bundle:${local}:${recordFingerprint}`), record: local, record_fingerprint: recordFingerprint }];
+  const review = (recordFingerprint: string, local: string) => [{ kind: 'verification-review', repository: 'application', ref: 'reviews/verification-reviews.md', fingerprint: identity(`review-bundle:${local}:${recordFingerprint}`), record: local, record_fingerprint: recordFingerprint }];
   const intentAttempts = [
     attempt(intentChange, 1, 'author-proposal', 'session-author-1', 'completed', harnessAgent('example-model-large', 'high', 'general-purpose'), start, start + 14 * 60000, 'Proposed reading the amount at send time instead of at scheduling time.', [],
       harnessUsage(4, 11, tokenCounts(120_000, 98_000, 2_400, null), 2, tokenCounts(40_000, null, 900, 300))),

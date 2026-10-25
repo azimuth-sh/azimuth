@@ -103,7 +103,11 @@ pub fn with_unit_inputs(request: &Json, source: &UnitInputsSource) -> Result<Jso
         Some(repository) => repository.to_string(),
         None => match array(request, "sources")? {
             [only] => text(only, "repository")?.to_string(),
-            _ => return Err("release has several sources; name the checkout's with --repository".into()),
+            _ => {
+                return Err(
+                    "release has several sources; name the checkout's with --repository".into(),
+                )
+            }
         },
     };
     if !array(request, "sources")?
@@ -425,9 +429,9 @@ pub fn verify(value: &Json) -> Result<Json, String> {
         for fingerprint in selected {
             digest(&fingerprint)?;
             let record = reviews.iter().find(|record| record.get("fingerprint").and_then(Json::as_str) == Some(fingerprint.as_str())).ok_or_else(|| format!("required review `{fingerprint}` missing; publish its native record and meaningful dependencies"))?;
-            if text(record, "kind")? != "requirement-review" {
+            if text(record, "kind")? != "verification-review" {
                 return Err(
-                    "required_reviews selects Requirement Review records, not Requirement Status"
+                    "required_reviews selects Verification Review records, not Requirement Status"
                         .into(),
                 );
             }
@@ -448,10 +452,10 @@ pub fn verify(value: &Json) -> Result<Json, String> {
             }
         }
         for requirement in array(field(snapshot, "authority")?, "requirements")? {
-            if text(requirement, "criticality")? != "routine"
+            if text(requirement, "verification")? != "none"
                 && !covered.contains(text(requirement, "id")?)
             {
-                return Err(format!("required_reviews omits non-routine Requirement `{}`; include its latest accepted current review", text(requirement, "id")?));
+                return Err(format!("required_reviews omits Requirement declaring `Verification:` `{}`; include its latest accepted current review", text(requirement, "id")?));
             }
         }
     }
@@ -722,7 +726,10 @@ pub fn catalog(model: &crate::model::Model) -> Json {
 
 /// Lowercase only, as `git rev-parse` prints and the service stores, so one commit has one spelling.
 fn is_git_id(value: &str) -> bool {
-    matches!(value.len(), 40 | 64) && value.bytes().all(|v| matches!(v, b'0'..=b'9' | b'a'..=b'f'))
+    matches!(value.len(), 40 | 64)
+        && value
+            .bytes()
+            .all(|v| matches!(v, b'0'..=b'9' | b'a'..=b'f'))
 }
 fn verify_integration(value: &Json) -> Result<(), String> {
     shape(value, &["commit", "main_sequence"], &[])?;

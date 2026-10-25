@@ -4,7 +4,8 @@ import { readProject } from "./assurance";
 export interface DeliveryGapRequirement {
   id: string;
   difference: "added" | "changed" | "removed";
-  criticality: string | null;
+  realization: 'none' | 'reviewed' | null;
+  verification: 'none' | 'reviewed' | null;
   release_status: string | null;
 }
 export interface DeliveryGap {
@@ -42,7 +43,7 @@ export interface RollbackCandidate {
   last_observed_ms: number;
   rollout_id: string | null;
   last_status_at_ms: number;
-  non_routine_requirements: number;
+  verification_requirements: number;
 }
 export interface RollbackCandidates {
   project: string;

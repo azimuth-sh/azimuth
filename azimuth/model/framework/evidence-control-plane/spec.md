@@ -2,7 +2,6 @@
 
 ## Requirement: claims-own-governance-and-cases-own-addressability
 Title: Requirements own governance and scenarios own addressability
-Criticality: routine
 
 Azimuth SHALL govern one product proposition as a Requirement while retaining each normative
 condition/outcome clause as an addressable Scenario within that Requirement.
@@ -14,7 +13,6 @@ condition/outcome clause as an addressable Scenario within that Requirement.
 
 ## Requirement: normative-text-remains-author-owned
 Title: Normative text remains author owned
-Criticality: routine
 
 Requirement and Scenario bodies remain authored normative content whose meaning belongs to human and agent
 review rather than interpretation by Azimuth core.
@@ -31,7 +29,6 @@ gain parser-defined meaning merely by appearing in a normative body.
 
 ## Requirement: checks-bind-atomic-outcomes-to-cases
 Title: Checks bind atomic outcomes to scenarios
-Criticality: routine
 
 Azimuth SHALL treat a Check as a deliberately enrolled verification method whose atomic outcome
 bears on Scenarios only through explicit Evidence Bindings.
@@ -46,7 +43,6 @@ bears on Scenarios only through explicit Evidence Bindings.
 
 ## Requirement: credibility-separates-method-from-applicability
 Title: Credibility separates method from applicability
-Criticality: routine
 
 Azimuth SHALL qualify shared Check-method credibility independently from the applicability of that
 method to each Evidence Binding.
@@ -58,7 +54,6 @@ method to each Evidence Binding.
 
 ## Requirement: runs-contain-subject-bound-execution
 Title: Runs contain verification target bound execution
-Criticality: routine
 
 Azimuth SHALL represent a Run as a bounded execution envelope over an exact Verification Target that can
 contain Check executions, Verification Challenge executions or both.
@@ -73,7 +68,6 @@ contain Check executions, Verification Challenge executions or both.
 
 ## Requirement: challenges-target-semantic-decisions
 Title: Challenges target semantic decisions
-Criticality: routine
 
 Azimuth SHALL target each Challenge Result at one exact Method Qualification, Applicability
 Decision or Requirement Judgment and SHALL propagate its impact through traceability without duplicating
@@ -85,7 +79,6 @@ the result.
 
 ## Requirement: core-owns-semantics-and-adapters-own-providers
 Title: Core owns semantics and adapters own providers
-Criticality: routine
 
 Azimuth SHALL keep model traversal, semantic target selection and normalized-result validation in
 core while configured adapters own provider-native selection, execution and report import.

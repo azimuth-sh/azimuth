@@ -3,7 +3,6 @@
 ## Replace requirement: subjects-have-exact-identity
 From: sha256:b65f7b4e307c9352ae3671dc2f8ad646eabe8af9bc358689ad87319a7b833c32
 Because: Source, artifact and deployment identify what executes; local, CI and hosted execution are provenance rather than interchangeable assurance Subjects.
-Criticality: routine
 
 Azimuth SHALL bind every Run to one exact typed Subject and accountable execution provenance. Current Subjects SHALL distinguish source state, built artifact and deployment state. Execution location, provider and time SHALL remain explicit provenance and SHALL NOT imply health transfer between Subjects.
 

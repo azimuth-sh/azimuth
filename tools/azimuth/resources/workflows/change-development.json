@@ -203,8 +203,8 @@
       ]
     },
     {
-      "id": "author-design-delta",
-      "kind": "author-design-delta",
+      "id": "author-realization-delta",
+      "kind": "author-realization-delta",
       "collection": "modules",
       "depends_on": [
         {
@@ -220,7 +220,7 @@
       "guidance": [
         {
           "kind": "skill",
-          "id": "azimuth-author-design-delta"
+          "id": "azimuth-author-realization-delta"
         },
         {
           "kind": "reference",
@@ -228,8 +228,8 @@
         }
       ],
       "required_output": {
-        "kind": "design-delta",
-        "description": "Author a guarded design delta and review its projected account against the reviewed spec delta."
+        "kind": "realization-delta",
+        "description": "Author a guarded realization delta and review its projected account against the reviewed spec delta."
       },
       "correction": null,
       "outcomes": [
@@ -241,12 +241,12 @@
       ]
     },
     {
-      "id": "review-design-delta",
-      "kind": "review-design-delta",
+      "id": "review-realization-delta",
+      "kind": "review-realization-delta",
       "collection": "modules",
       "depends_on": [
         {
-          "action": "author-design-delta",
+          "action": "author-realization-delta",
           "match": "same-module",
           "condition": "current-success"
         },
@@ -263,7 +263,7 @@
       "guidance": [
         {
           "kind": "skill",
-          "id": "azimuth-review-design-delta"
+          "id": "azimuth-review-realization-delta"
         },
         {
           "kind": "reference",
@@ -274,7 +274,7 @@
         "kind": "authoring-review",
         "description": "Retain the actual authoring-review and exact input basis; follow the workflow reference."
       },
-      "correction": "author-design-delta",
+      "correction": "author-realization-delta",
       "outcomes": [
         "accepted",
         "rejected"
@@ -294,7 +294,7 @@
           "condition": "current-success"
         },
         {
-          "action": "review-design-delta",
+          "action": "review-realization-delta",
           "match": "same-module",
           "condition": "current-success"
         }
@@ -315,7 +315,7 @@
       ],
       "required_output": {
         "kind": "verification-delta",
-        "description": "Author a guarded verification delta against the reviewed spec and design deltas; retain its exact projected account."
+        "description": "Author a guarded verification delta against the reviewed spec and realization deltas; retain its exact projected account."
       },
       "correction": null,
       "outcomes": [
@@ -337,7 +337,7 @@
           "condition": "current-success"
         },
         {
-          "action": "review-design-delta",
+          "action": "review-realization-delta",
           "match": "same-module",
           "condition": "current-success"
         }
@@ -375,7 +375,7 @@
       "collection": "change",
       "depends_on": [
         {
-          "action": "review-design-delta",
+          "action": "review-realization-delta",
           "match": "all",
           "condition": "current-success"
         },
@@ -428,7 +428,7 @@
           "condition": "current-success"
         },
         {
-          "action": "review-design-delta",
+          "action": "review-realization-delta",
           "match": "all",
           "condition": "current-success"
         },
@@ -676,7 +676,7 @@
       ],
       "required_output": {
         "kind": "run-bundle",
-        "description": "Execute this declared Challenge against its exact implementation, Check definitions, source scope and Verification Target before Requirement Review. Retain native Run and readable report. Execution gaps and confirmed defects block review; every equivalence or irrelevance proposal must identify the exact objection and rationale for independent review."
+        "description": "Execute this declared Challenge against its exact implementation, Check definitions, source scope and Verification Target before Verification Review. Retain native Run and readable report. Execution gaps and confirmed defects block review; every equivalence or irrelevance proposal must identify the exact objection and rationale for independent review."
       },
       "correction": "implement-change",
       "outcomes": [
@@ -721,7 +721,7 @@
       "guidance": [
         {
           "kind": "skill",
-          "id": "azimuth-review-requirement"
+          "id": "azimuth-review-verification"
         },
         {
           "kind": "reference",
@@ -733,8 +733,8 @@
         }
       ],
       "required_output": {
-        "kind": "requirement-review",
-        "description": "Independently assess the composed Requirement, design, implementation and verification with current Check and Challenge results. Adjudicate each proposed Challenge disposition. Retain exact proof dependencies and predecessor history; acceptance establishes credibility, not deployment status."
+        "kind": "verification-review",
+        "description": "Independently perform the Verification Review: assess the Requirement, its Scenarios, Checks, execution units and Challenge declarations with current Check and Challenge results. Adjudicate each proposed Challenge disposition. Retain exact proof dependencies and predecessor history; acceptance establishes credibility, not deployment status."
       },
       "correction": "implement-change",
       "outcomes": [

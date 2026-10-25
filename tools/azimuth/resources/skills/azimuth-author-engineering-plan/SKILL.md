@@ -1,11 +1,11 @@
 ---
 name: azimuth-author-engineering-plan
-description: Write a dependency-ordered engineering plan from reviewed spec, design and verification deltas, with validated path-isolated packages when delegation is useful.
+description: Write a dependency-ordered engineering plan from reviewed spec, realization and verification deltas, with validated path-isolated packages when delegation is useful.
 ---
 
 # Author an engineering plan
 
-Read the original request, captured handoff and complete reviewed spec/design/verification candidate. Plan concrete engineering work without deciding missing product, authority, compatibility or completion semantics. Return material gaps to their owning delta and review.
+Read the original request, captured handoff and complete reviewed spec/realization/verification candidate. Plan concrete engineering work without deciding missing product, authority, compatibility or completion semantics. Return material gaps to their owning delta and review.
 
 Cover production implementation, required interfaces/configuration, Check/Challenge code, expectations, instrumentation, capture, retained records, rollout prerequisites and relevant documentation. Sequence dependencies so an implementer can proceed without guessing. Use repository-permitted verification commands; a plan does not override a repository restriction on test work.
 

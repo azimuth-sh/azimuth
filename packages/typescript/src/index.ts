@@ -31,7 +31,7 @@ export function implementsCheck(check: string): void {
 }
 
 /**
- * Marks a production symbol as the implementation of a design-owned mechanism identity.
+ * Marks a production symbol as the implementation of a realization-owned mechanism identity.
  *
  * The emitter derives the symbol binding. If the symbol or marker disappears while the design
  * remains, Azimuth reports the mechanism as unresolved.

@@ -2,7 +2,6 @@
 
 ## Requirement: first-alpha-contract
 Title: First alpha contract
-Criticality: routine
 
 The first public alpha artifacts SHALL have one explicit and internally consistent release
 contract before publication.
@@ -44,7 +43,6 @@ contract before publication.
 
 ## Requirement: experimental-source-isolation
 Title: Experimental source isolation
-Criticality: routine
 
 The canonical repository's experimental source SHALL remain continuously verifiable without
 reading a domain-owned checkout.

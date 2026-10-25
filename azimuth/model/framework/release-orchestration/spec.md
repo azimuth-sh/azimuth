@@ -2,7 +2,6 @@
 
 ## Requirement: qualification-lanes-converge
 Title: Qualification lanes converge
-Criticality: routine
 
 The release workflow SHALL qualify independent artifact lanes before publication can begin.
 
@@ -24,7 +23,6 @@ The release workflow SHALL qualify independent artifact lanes before publication
 
 ## Requirement: tagged-candidates-are-verifiable
 Title: Tagged candidates are verifiable
-Criticality: routine
 
 Every published release artifact SHALL remain attributable to the source revision named by its
 release tag until public verification completes.
@@ -46,7 +44,6 @@ release tag until public verification completes.
 
 ## Requirement: qualified-candidates-compose
 Title: Qualified candidates compose
-Criticality: routine
 
 Every selected first-alpha candidate SHALL expose its declared public entry point from the retained
 distribution shape.
@@ -67,7 +64,6 @@ distribution shape.
 
 ## Requirement: partial-publication-resumes-safely
 Title: Partial publication resumes safely
-Criticality: routine
 
 The first-alpha publication SHALL preserve successful immutable targets and resume only targets
 that are absent from retrieved registry state.

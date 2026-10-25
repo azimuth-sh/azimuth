@@ -45,6 +45,6 @@ The reference asserts nothing about the workset beyond its location. It is not v
 
 ## Relationships
 
-A project reference locates exactly one project catalog and identifies exactly one of that catalog's repositories. It is duplicated per checkout deliberately: it is a locator, not a second source of project authority, and a repository's areas, model sources, standards and change obligations are read from the catalog rather than restated here.
+A project reference locates exactly one project catalog and identifies exactly one of that catalog's repositories. It is duplicated per checkout deliberately: it is a locator, not a second source of project authority, and a repository's areas, model sources and change obligations are read from the catalog rather than restated here.
 
 A reference never establishes completeness. Selecting inputs, checking revisions and deciding whether an account is complete belong to the workset and the assembly it drives.

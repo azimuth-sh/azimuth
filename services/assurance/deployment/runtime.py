@@ -45,8 +45,9 @@ def fingerprint(value):
 def seed(base, tokens):
     baseline = {"project": "checkout", "model_fingerprint": fingerprint({"fixture": "baseline"}),
         "checks": [], "scenarios": [{"id": "recorded", "requirement": "history-is-retained", "fingerprint": fingerprint({"scenario": "recorded"})}], "bindings": [],
-        "requirements": [{"id": "history-is-retained", "criticality": "routine", "fingerprint": fingerprint({"requirement": "history-is-retained"}), "scenarios": ["recorded"], "mechanisms": [], "bindings": [], "gaps": []}],
-        "requirement_intents": [{"id": "history-is-retained", "fingerprint": fingerprint({"intent": "history-is-retained"})}]}
+        "requirements": [{"id": "history-is-retained", "realization": "none", "verification": "none", "fingerprint": fingerprint({"requirement": "history-is-retained"}), "scenarios": ["recorded"], "bindings": [], "gaps": []}],
+        "requirement_intents": [{"id": "history-is-retained", "fingerprint": fingerprint({"intent": "history-is-retained"})}],
+        "requirement_realizations": [{"id": "history-is-retained", "realization": "none", "account": None, "mechanisms": [], "gaps": [], "sites_fingerprint": fingerprint({"sites": "history-is-retained"})}]}
     baseline["fingerprint"] = fingerprint(baseline)
     publication = {"format": "azimuth-main-model-publication", "version": 2, "commit": "a" * 40, "main_sequence": 1,
         "publication_revision": 1, "sources": {"qualification-fixture": "b" * 40},

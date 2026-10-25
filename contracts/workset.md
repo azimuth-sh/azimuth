@@ -91,13 +91,11 @@ For each selected repository:
 
 When either the workset or repository manifest names `account_support`, both must do so. The workset object supplies the filesystem `path` and the SHA-256 `digest` of the exact JSON bytes. The repository manifest supplies a normalized repository-relative `path`, the same `digest`, its `producer`, and its `revision`. Assembly requires the two paths to resolve to the same file within the selected checkout, the two digests to agree and match its bytes, the support producer to equal the manifest producer, and the support revision to equal the selected checkout and manifest revision. It then parses the support JSON and retains its repository, revision, producer and digest provenance alongside the support records. One-sided, missing, malformed or mismatched observations fail assembly. Repositories that have not adopted account support omit the object from both files; this omission never supplies verification support for an adopted Requirement.
 
-### Model sources and standards
+### Model sources
 
 For every catalog model source owned by a selected repository, the declared path must resolve inside the repository root, must contain no untracked and no ignored file, and the SHA-256 tree digest of the resolved directory must equal the digest the manifest observed for that id, otherwise `model-source-mismatch`. A required model source the manifest does not observe is `missing-input: model-source:<id>`.
 
 The tree digest of a directory is the SHA-256 over its files sorted by normalized relative path, each contributing its path, a zero byte, its exact content and a `0xff` byte. A `.git` directory is excluded. A symbolic link anywhere in the tree is a violation.
-
-When the standards repository is selected, the declared standards path must resolve inside the repository, must be a tracked file at that revision, and its SHA-256 must equal the manifest's `standards_digest`, otherwise `standards-mismatch`. A manifest without `standards_digest` is `missing-input: standards digest`.
 
 ### Areas, changes and source identities
 
@@ -111,13 +109,13 @@ Every linkage record in a manifest must carry a typed source identity, must name
 
 ### Manifest inputs
 
-Assembly reads each pinned repository manifest as strict JSON with format `azimuth-repository-manifest` and version `1`. It requires non-empty strings `project`, `repository`, `revision` and `producer`, an array `changes` whose entries carry non-empty `id`, `path` and `digest` and a `state` of exactly `active` or `archived`, and a `linkage` object. It accepts optional arrays `areas` of strings and `model_sources` of `{ id, digest }`, an optional string `standards_digest`, and optional `account_support` with `{ path, digest, producer, revision }`. Its `linkage` object is read by the same reader that reads a bare linkage manifest, and carries the same six collections. A repository manifest is produced by `azimuth project observe --project <file> --repository <id> --root <dir> --producer <name/version> --manifest <file>... --out <repository.json>`. The library entry point `observe_repository_with_support` can include an emitted support artifact; CLI wiring remains separate.
+Assembly reads each pinned repository manifest as strict JSON with format `azimuth-repository-manifest` and version `1`. It requires non-empty strings `project`, `repository`, `revision` and `producer`, an array `changes` whose entries carry non-empty `id`, `path` and `digest` and a `state` of exactly `active` or `archived`, and a `linkage` object. It accepts optional arrays `areas` of strings and `model_sources` of `{ id, digest }` and optional `account_support` with `{ path, digest, producer, revision }`. Its `linkage` object is read by the same reader that reads a bare linkage manifest, and carries the same six collections. A repository manifest is produced by `azimuth project observe --project <file> --repository <id> --root <dir> --producer <name/version> --manifest <file>... --out <repository.json>`. The library entry point `observe_repository_with_support` can include an emitted support artifact; CLI wiring remains separate.
 
 ## Completeness
 
-`missing_inputs` accumulates `repository:<id>`, `model-source:<id>`, `standards`, `area:<id>` and `receipt:<id>`. An account is complete when no `--local` repository was requested and `missing_inputs` is empty.
+`missing_inputs` accumulates `repository:<id>`, `model-source:<id>`, `area:<id>` and `receipt:<id>`. An account is complete when no `--local` repository was requested and `missing_inputs` is empty.
 
-Without `--local`, every missing required input is also a violation and assembly fails. With `--local`, missing inputs outside the selected repository are recorded but not reported as violations, and model-source, standards and receipt requirements are not enforced. That is what makes a local result a local result: it never establishes project completeness, and it can never be finalized.
+Without `--local`, every missing required input is also a violation and assembly fails. With `--local`, missing inputs outside the selected repository are recorded but not reported as violations, and model-source and receipt requirements are not enforced. That is what makes a local result a local result: it never establishes project completeness, and it can never be finalized.
 
 ## Relationships
 

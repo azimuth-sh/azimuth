@@ -32,8 +32,8 @@ pub fn verify_snapshot(value: &Json) -> Result<Json, String> {
         .ok_or("reviews must be an array")?;
     for review in reviews {
         crate::assurance_review::validate_record(review)?;
-        if review.get("kind").and_then(Json::as_str) != Some("requirement-review") {
-            return Err("publication requires Requirement Review records; historical records remain in their existing ledger".into());
+        if review.get("kind").and_then(Json::as_str) != Some("verification-review") {
+            return Err("publication requires Verification Review records; historical records remain in their existing ledger".into());
         }
     }
     let raw_bundles = value
@@ -88,7 +88,7 @@ pub fn verify_snapshot(value: &Json) -> Result<Json, String> {
 
 /// Validates an acceptance-boundary snapshot against the complete reviewed model. Requirement
 /// Status is never authored, so a snapshot establishes no Requirement's assurance by itself; only
-/// ratification (a committed accepted Requirement Review plus the change's acceptance) does.
+/// ratification (a committed accepted Verification Review plus the change's acceptance) does.
 pub fn verify_acceptance_snapshot(
     model: &crate::model::Model,
     snapshot: &Json,

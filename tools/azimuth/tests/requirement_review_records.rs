@@ -1,4 +1,4 @@
-//! A Requirement Review record pins its definitions by fingerprint and carries no work provenance.
+//! A Verification Review record pins its definitions by fingerprint and carries no work provenance.
 use azimuth::account_verification::parse_account_verification;
 use azimuth::assurance_review::{self, assess_record};
 use azimuth::json::{self, Json};
@@ -15,7 +15,7 @@ fn model_with(statement: &str, method: &str) -> Model {
     Model {
         specs: vec![parse_spec(
             "spec.md",
-            &format!("# Spec: catalog\n\n## Requirement: restricted-access\nCriticality: critical\n\n{statement}\n\n### Scenario: rejected-access\nEvent: rejected caller requests data\nRequired: no data is returned\n"),
+            &format!("# Spec: catalog\n\n## Requirement: restricted-access\nVerification: reviewed\n\n{statement}\n\n### Scenario: rejected-access\nEvent: rejected caller requests data\nRequired: no data is returned\n"),
         )
         .unwrap()],
         account_verifications: vec![parse_account_verification(
@@ -61,7 +61,7 @@ fn seal(mut record: Json) -> Json {
 fn review(authority: &Json, at: u64, reassesses: Json) -> Json {
     let requirement = authority.get("requirements").unwrap().as_array().unwrap()[0].clone();
     seal(Json::obj(vec![
-        ("kind", Json::str("requirement-review")),
+        ("kind", Json::str("verification-review")),
         ("reviewer", Json::str("independent-reviewer")),
         ("reviewed_at_ms", Json::Num(at as f64)),
         (
@@ -161,7 +161,7 @@ fn challenge_basis_and_reassesses_are_required() {
         let mut record = review(&authority, 100, Json::Null);
         remove(&mut record, field);
         let error = assurance_review::validate_record(&seal(record)).unwrap_err();
-        assert_eq!(error, format!("requirement-review requires {field}"));
+        assert_eq!(error, format!("verification-review requires {field}"));
     }
     let mut record = review(&authority, 100, Json::Null);
     set(&mut record, "reassesses", Json::str("earlier-review"));
@@ -298,7 +298,7 @@ impl Change {
         let input = assurance_review::review_input(
             &model(),
             PROJECT,
-            &json::parse(r#"{"kind":"requirement-review","requirement":"restricted-access"}"#)
+            &json::parse(r#"{"kind":"verification-review","requirement":"restricted-access"}"#)
                 .unwrap(),
             &[],
             &[],
@@ -308,10 +308,10 @@ impl Change {
         (Self { root }, input)
     }
     fn compile(&self, markdown: &str) -> Result<Json, String> {
-        fs::write(self.root.join("reviews/requirement-reviews.md"), markdown).unwrap();
+        fs::write(self.root.join("reviews/verification-reviews.md"), markdown).unwrap();
         azimuth::review_authoring::compile(
             &self.root,
-            &["reviews/requirement-reviews.md".to_string()],
+            &["reviews/verification-reviews.md".to_string()],
             &model(),
             PROJECT,
             &[],
@@ -326,7 +326,7 @@ impl Drop for Change {
 }
 fn section(id: &str, fingerprint: &str, at: &str, extra: &str) -> String {
     format!(
-        "## Requirement review: {id}\n\n- Requirement: `restricted-access`\n- Input: `input.json`\n- Input fingerprint: `{fingerprint}`\n- Reviewer: independent-reviewer\n- Reviewed at: {at}\n{extra}- Decision: accepted\n\n### Rationale\n\nThe rejection oracle and its successful control establish the Scenario.\n\n"
+        "## Verification review: {id}\n\n- Requirement: `restricted-access`\n- Input: `input.json`\n- Input fingerprint: `{fingerprint}`\n- Reviewer: independent-reviewer\n- Reviewed at: {at}\n{extra}- Decision: accepted\n\n### Rationale\n\nThe rejection oracle and its successful control establish the Scenario.\n\n"
     )
 }
 
@@ -408,7 +408,7 @@ fn markdown_agent_and_model_fields_are_rejected_at_their_line() {
             .unwrap_err();
         assert_eq!(
             error,
-            format!("reviews/requirement-reviews.md:{line}: {field} is not a review field; agent and model provenance is recorded in the change's Work Provenance ledger (provenance/ledger.json)")
+            format!("reviews/verification-reviews.md:{line}: {field} is not a review field; agent and model provenance is recorded in the change's Work Provenance ledger (provenance/ledger.json)")
         );
     }
 }
@@ -425,6 +425,488 @@ fn markdown_requirement_status_heading_is_rejected_at_its_line() {
         .unwrap_err();
     assert_eq!(
         error,
-        "reviews/requirement-reviews.md:16: Requirement status records are no longer authored; deployment Requirement Status is computed by the Assurance Service from applicable evidence"
+        "reviews/verification-reviews.md:16: Requirement status records are no longer authored; deployment Requirement Status is computed by the Assurance Service from applicable evidence"
     );
+}
+
+const REALIZATION: &str = "# Realization: catalog\n\n## Requirement realization: restricted-access\n- Areas:\n  - `api`\n\n### Mechanism: admission-guard\n- Scenarios: `rejected-access`\n\nThe guard precedes protected data delivery.\n";
+
+fn realized_model_with(statement: &str, realization: &str, site_fingerprint: char) -> Model {
+    let mut model = model_with(statement, "Exercise rejection and a successful control.");
+    model.specs[0] = parse_spec(
+        "spec.md",
+        &format!("# Spec: catalog\n\n## Requirement: restricted-access\nRealization: reviewed\nVerification: reviewed\n\n{statement}\n\n### Scenario: rejected-access\nEvent: rejected caller requests data\nRequired: no data is returned\n"),
+    )
+    .unwrap();
+    model.account_realizations.push(
+        azimuth::account_realization::parse_account_realization("realization.md", realization)
+            .unwrap(),
+    );
+    model.realizes.push(azimuth::model::Site {
+        spec: "catalog".into(),
+        requirement: REQUIREMENT.into(),
+        site: "Catalog::admit".into(),
+        file: "src/catalog.rs".into(),
+        lang: "rust".into(),
+        source: Some(azimuth::model::SourceIdentity {
+            area: "api".into(),
+            kind: "rust-symbol".into(),
+            address: "Catalog::admit".into(),
+            mount: "code".into(),
+        }),
+        source_fingerprint: format!("sha256:{}", site_fingerprint.to_string().repeat(64)),
+    });
+    model
+}
+
+fn realized_model() -> Model {
+    realized_model_with("Access SHALL be restricted.", REALIZATION, 'b')
+}
+
+fn realization_entry(authority: &Json) -> Json {
+    authority
+        .get("requirement_realizations")
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry.get("id").and_then(Json::as_str) == Some(REQUIREMENT))
+        .unwrap()
+        .clone()
+}
+
+fn realization_review(
+    authority: &Json,
+    at: u64,
+    decision: &str,
+    reassesses: Json,
+    extra: Vec<(&str, Json)>,
+) -> Json {
+    let intent = authority
+        .get("requirement_intents")
+        .unwrap()
+        .as_array()
+        .unwrap()[0]
+        .get("fingerprint")
+        .unwrap()
+        .clone();
+    let mut fields = vec![
+        ("kind", Json::str("realization-review")),
+        ("reviewer", Json::str("independent-reviewer")),
+        ("reviewed_at_ms", Json::Num(at as f64)),
+        (
+            "rationale",
+            Json::str("The admission guard precedes every protected read."),
+        ),
+        (
+            "artifacts",
+            json::parse(&format!(
+                r#"[{{"id":"review-notes","digest":"{SHA}","locator":"reviews/notes.md"}}]"#
+            ))
+            .unwrap(),
+        ),
+        ("requirement", Json::str(REQUIREMENT)),
+        ("requirement_fingerprint", intent),
+        (
+            "dependencies_fingerprint",
+            Json::str(azimuth::fingerprint::canonical_sha256(
+                &assurance_review::realization_dependencies(authority, REQUIREMENT).unwrap(),
+            )),
+        ),
+        (
+            "sites_fingerprint",
+            realization_entry(authority)
+                .get("sites_fingerprint")
+                .unwrap()
+                .clone(),
+        ),
+        ("reviewed_commit", Json::str("a".repeat(40))),
+        ("decision", Json::str(decision)),
+        ("reassesses", reassesses),
+    ];
+    fields.extend(extra);
+    seal(Json::obj(fields))
+}
+
+fn blocking_issue() -> Json {
+    json::parse(
+        r#"[{"id":"bypass","proposition":"Every protected read is admitted","location":"src/catalog.rs","reason":"The export path skips the guard","correction":"Route export through the guard","blocking":true}]"#,
+    )
+    .unwrap()
+}
+
+#[test]
+fn authority_separates_verification_requirements_from_realizations() {
+    let authority = authority(&realized_model());
+    let requirement = &authority.get("requirements").unwrap().as_array().unwrap()[0];
+    assert_eq!(
+        requirement.get("realization").and_then(Json::as_str),
+        Some("reviewed")
+    );
+    assert_eq!(
+        requirement.get("verification").and_then(Json::as_str),
+        Some("reviewed")
+    );
+    assert!(requirement.get("mechanisms").is_none());
+    let realization = realization_entry(&authority);
+    let Json::Obj(fields) = &realization else {
+        unreachable!()
+    };
+    assert_eq!(
+        fields
+            .iter()
+            .map(|(key, _)| key.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "id",
+            "realization",
+            "account",
+            "mechanisms",
+            "gaps",
+            "sites_fingerprint"
+        ]
+    );
+    assert_eq!(
+        realization
+            .get("mechanisms")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let routine = assurance_review::authority(&model(), PROJECT).unwrap();
+    let requirement = &routine.get("requirements").unwrap().as_array().unwrap()[0];
+    assert_eq!(
+        requirement.get("realization").and_then(Json::as_str),
+        Some("none")
+    );
+}
+
+#[test]
+fn realization_site_drift_is_informational_and_stales_no_review() {
+    let before = authority(&realized_model());
+    let verification = review(&before, 100, Json::Null);
+    let realization = realization_review(&before, 100, "accepted", Json::Null, vec![]);
+    let after = authority(&realized_model_with(
+        "Access SHALL be restricted.",
+        REALIZATION,
+        'c',
+    ));
+    assert_ne!(
+        realization_entry(&before).get("sites_fingerprint"),
+        realization_entry(&after).get("sites_fingerprint")
+    );
+    assert_eq!(
+        assurance_review::requirement_closure_fingerprint(&before, REQUIREMENT).unwrap(),
+        assurance_review::requirement_closure_fingerprint(&after, REQUIREMENT).unwrap()
+    );
+    assert_eq!(
+        assurance_review::realization_dependencies(&before, REQUIREMENT).unwrap(),
+        assurance_review::realization_dependencies(&after, REQUIREMENT).unwrap()
+    );
+    assert_eq!(
+        assess_record(&verification, &after, &[verification.clone()], &[]).status,
+        "accepted"
+    );
+    assert_eq!(
+        assess_record(&realization, &after, &[realization.clone()], &[]).status,
+        "accepted"
+    );
+    assert_eq!(
+        assurance_review::realization_drift(&realization, &before),
+        Some(false)
+    );
+    assert_eq!(
+        assurance_review::realization_drift(&realization, &after),
+        Some(true)
+    );
+}
+
+#[test]
+fn realization_declaration_or_requirement_text_changes_stale_a_realization_review() {
+    let before = authority(&realized_model());
+    let record = realization_review(&before, 100, "accepted", Json::Null, vec![]);
+    for changed in [
+        realized_model_with(
+            "Access SHALL be restricted.",
+            &REALIZATION.replace("precedes protected", "precedes all protected"),
+            'b',
+        ),
+        realized_model_with("Access SHALL be restricted to members.", REALIZATION, 'b'),
+    ] {
+        let assessment = assess_record(&record, &authority(&changed), &[record.clone()], &[]);
+        assert_eq!(assessment.status, "stale");
+        assert_eq!(
+            assessment.diagnostics,
+            ["Requirement text, realization declaration or Scenarios changed"]
+        );
+    }
+}
+
+#[test]
+fn realization_review_records_validate_and_assess_their_decision() {
+    let authority = authority(&realized_model());
+    let accepted = realization_review(&authority, 100, "accepted", Json::Null, vec![]);
+    assurance_review::validate_record(&accepted).unwrap();
+    assert_eq!(
+        assess_record(&accepted, &authority, &[accepted.clone()], &[]).status,
+        "accepted"
+    );
+
+    let rejected = realization_review(
+        &authority,
+        100,
+        "rejected",
+        Json::Null,
+        vec![("issues", blocking_issue())],
+    );
+    assurance_review::validate_record(&rejected).unwrap();
+    assert_eq!(
+        assess_record(&rejected, &authority, &[rejected.clone()], &[]).status,
+        "rejected"
+    );
+
+    for field in [
+        "sites_fingerprint",
+        "reviewed_commit",
+        "dependencies_fingerprint",
+    ] {
+        let mut record = accepted.clone();
+        remove(&mut record, field);
+        assert_eq!(
+            assurance_review::validate_record(&seal(record)).unwrap_err(),
+            format!("realization-review requires {field}")
+        );
+    }
+    let mut blocking_acceptance = accepted.clone();
+    set(&mut blocking_acceptance, "issues", blocking_issue());
+    assert_eq!(
+        assurance_review::validate_record(&seal(blocking_acceptance)).unwrap_err(),
+        "accepted review cannot retain a blocking issue"
+    );
+}
+
+#[test]
+fn realization_reassessment_must_dispose_blocking_issues_and_come_later() {
+    let authority = authority(&realized_model());
+    let rejected = realization_review(
+        &authority,
+        100,
+        "rejected",
+        Json::Null,
+        vec![("issues", blocking_issue())],
+    );
+    let predecessor = rejected.get("fingerprint").unwrap().clone();
+    let undisposed = realization_review(&authority, 200, "accepted", predecessor.clone(), vec![]);
+    let history = [rejected.clone(), undisposed.clone()];
+    assert_eq!(
+        assess_record(&undisposed, &authority, &history, &[]).status,
+        "unresolved"
+    );
+    let disposition = Json::Arr(vec![Json::obj(vec![
+        (
+            "issue",
+            Json::str(format!("{}#bypass", predecessor.as_str().unwrap())),
+        ),
+        ("outcome", Json::str("corrected")),
+        (
+            "rationale",
+            Json::str("Export now routes through the guard."),
+        ),
+    ])]);
+    let disposed = realization_review(
+        &authority,
+        200,
+        "accepted",
+        predecessor.clone(),
+        vec![("dispositions", disposition.clone())],
+    );
+    assert_eq!(
+        assess_record(
+            &disposed,
+            &authority,
+            &[rejected.clone(), disposed.clone()],
+            &[]
+        )
+        .status,
+        "accepted"
+    );
+    let earlier = realization_review(
+        &authority,
+        50,
+        "accepted",
+        predecessor,
+        vec![("dispositions", disposition)],
+    );
+    assert_eq!(
+        assess_record(&earlier, &authority, &[rejected, earlier.clone()], &[]).status,
+        "invalid"
+    );
+    assert_eq!(
+        assess_record(&disposed, &authority, &[disposed.clone()], &[]).status,
+        "missing"
+    );
+}
+
+fn head(kind: azimuth::review_heads::HeadKind, record: &Json) -> azimuth::review_heads::Head {
+    azimuth::review_heads::Head {
+        path: String::new(),
+        owner: "catalog".into(),
+        kind,
+        requirement: REQUIREMENT.into(),
+        record: record.clone(),
+        line: 0,
+    }
+}
+
+fn scratch(name: &str) -> PathBuf {
+    let path = std::env::temp_dir().join(format!(
+        "azimuth-review-heads-{}-{name}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&path);
+    fs::create_dir_all(&path).unwrap();
+    path
+}
+
+#[test]
+fn review_heads_round_trip_and_reject_hand_edits() {
+    use azimuth::review_heads::{load, render, HeadKind};
+    let authority = authority(&realized_model());
+    let root = scratch("round-trip");
+    for (kind, record) in [
+        (HeadKind::Verification, review(&authority, 100, Json::Null)),
+        (
+            HeadKind::Realization,
+            realization_review(&authority, 100, "accepted", Json::Null, vec![]),
+        ),
+    ] {
+        let rendered = render("catalog", kind, &[head(kind, &record)]);
+        let path = root.join(kind.file_name());
+        fs::write(&path, &rendered).unwrap();
+        let loaded = load(&path, kind).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].owner, "catalog");
+        assert_eq!(loaded[0].requirement, REQUIREMENT);
+        assert_eq!(loaded[0].record, record);
+        assert_eq!(render("catalog", kind, &loaded), rendered);
+
+        fs::write(
+            &path,
+            rendered.replace(
+                "- Reviewer: independent-reviewer",
+                "- Reviewer: someone-else",
+            ),
+        )
+        .unwrap();
+        let error = load(&path, kind).unwrap_err();
+        assert!(
+            error[0]
+                .message
+                .contains("heads are written only by `azimuth change finalize`"),
+            "{error:?}"
+        );
+
+        fs::write(&path, rendered.replace("\"accepted\"", "\"rejected\"")).unwrap();
+        assert!(load(&path, kind).is_err());
+
+        let other = match kind {
+            HeadKind::Verification => HeadKind::Realization,
+            HeadKind::Realization => HeadKind::Verification,
+        };
+        fs::write(&path, &rendered).unwrap();
+        assert!(load(&path, other).is_err());
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn ratifications_weigh_model_heads_against_change_reviews_by_review_time() {
+    use azimuth::change::ratifications;
+    use azimuth::review_heads::HeadKind;
+    let mut model = realized_model();
+    let authority = authority(&model);
+    let verification = review(&authority, 100, Json::Null);
+    let realization = realization_review(&authority, 100, "accepted", Json::Null, vec![]);
+    model.review_heads = vec![
+        head(HeadKind::Verification, &verification),
+        head(HeadKind::Realization, &realization),
+    ];
+    let ratified = ratifications(&model, &[], &[]).unwrap();
+    assert_eq!(
+        ratified
+            .iter()
+            .map(|item| (item.requirement.as_str(), item.kind))
+            .collect::<Vec<_>>(),
+        [
+            (REQUIREMENT, HeadKind::Verification),
+            (REQUIREMENT, HeadKind::Realization)
+        ]
+    );
+    assert_eq!(
+        ratified[0].review,
+        verification
+            .get("fingerprint")
+            .and_then(Json::as_str)
+            .unwrap()
+    );
+
+    let rejection = realization_review(
+        &authority,
+        200,
+        "rejected",
+        realization.get("fingerprint").unwrap().clone(),
+        vec![("issues", blocking_issue())],
+    );
+    let ratified = ratifications(&model, &[rejection], &[]).unwrap();
+    assert_eq!(
+        ratified.iter().map(|item| item.kind).collect::<Vec<_>>(),
+        [HeadKind::Verification]
+    );
+
+    let successor = review(
+        &authority,
+        200,
+        verification.get("fingerprint").unwrap().clone(),
+    );
+    let ratified = ratifications(&model, &[successor.clone()], &[]).unwrap();
+    assert_eq!(
+        ratified[0].review,
+        successor.get("fingerprint").and_then(Json::as_str).unwrap()
+    );
+
+    let mut changed =
+        realized_model_with("Access SHALL be restricted to members.", REALIZATION, 'b');
+    changed.review_heads = model.review_heads.clone();
+    assert!(ratifications(&changed, &[], &[]).unwrap().is_empty());
+
+    let mut undeclared = model_with(
+        "Access SHALL be restricted.",
+        "Exercise rejection and a successful control.",
+    );
+    undeclared.specs[0].requirements[0].verification = None;
+    undeclared.review_heads = vec![head(HeadKind::Verification, &verification)];
+    assert!(ratifications(&undeclared, &[], &[]).unwrap().is_empty());
+}
+
+#[test]
+fn a_head_that_reassesses_an_absent_predecessor_still_ratifies() {
+    use azimuth::change::ratifications;
+    use azimuth::review_heads::HeadKind;
+    let mut model = realized_model();
+    let authority = authority(&model);
+    let predecessor = realization_review(&authority, 100, "rejected", Json::Null, vec![]);
+    let reassessment = realization_review(
+        &authority,
+        200,
+        "accepted",
+        predecessor.get("fingerprint").unwrap().clone(),
+        vec![],
+    );
+    model.review_heads = vec![head(HeadKind::Realization, &reassessment)];
+    let ratified = ratifications(&model, &[], &[]).unwrap();
+    assert_eq!(ratified.len(), 1);
+    assert_eq!(ratified[0].kind, HeadKind::Realization);
 }

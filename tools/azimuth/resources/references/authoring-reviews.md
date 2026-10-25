@@ -1,6 +1,6 @@
 # Authoring reviews reference
 
-Proposal, spec-delta, design-delta and verification-delta reviews independently assess the authored transition and complete composed account against the original request and captured handoff. They precede implementation; post-implementation Requirement Review uses its own native assurance contract.
+Proposal review and the spec, realization and verification delta reviews independently assess the authored transition and complete composed account against the original request and captured handoff. They are local to the change workflow and precede implementation; the global Verification and Realization Reviews use their own native assurance contract (`azimuth reference show assurance-reviews`).
 
 Return the compact workflow result with actual reviewer actor, `outcome: accepted` or `rejected`, a substantive `report`, stable `issues` and `outputs: []` when the result itself contains the assessment. Core derives the exact dependency basis from the captured handoff. Follow its published result shape; do not invent another wrapper or generator command. A separate native record is optional: `{format:"azimuth-authoring-review",version:1,task,reviewer,outcome,dependencies,findings,rationale}`. Its task, actor, decision and dependencies must match the handoff/result exactly.
 

@@ -220,7 +220,8 @@ fn help_exposes_only_current_run_operations() {
         assert!(stdout.contains("azimuth run verify --bundle <file>..."));
         assert!(stdout.contains("azimuth run inspect --bundle <file>..."));
         assert!(stdout.contains("azimuth run plan --request <file>"));
-        assert!(stdout.contains("[--model <dir>] [--standards <file>]"));
+        assert!(stdout.contains("--selection <file> [--model <dir>]"));
+        assert!(!stdout.contains("--standards"));
         assert!(stdout.contains("azimuth run execute --plan <file>"));
         assert!(stdout.contains("azimuth run import --plan <file>"));
         assert!(stdout.contains("Checks, Challenges, or both"));

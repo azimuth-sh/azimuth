@@ -2,7 +2,6 @@
 
 ## Requirement: deployment-status-traces-applicable-evidence
 Title: Deployment Status traces applicable evidence
-Criticality: routine
 
 Azimuth SHALL determine a deployment Requirement Status only from explicitly related current verification evidence and its independently reviewed account, retaining the exact Verification Targets actually examined and exposing every missing applicability condition without inventing Check Results or approvals.
 
@@ -17,7 +16,6 @@ Given a correction superseding a relied-on Run, when deployment Status is evalua
 
 ## Requirement: verification-context-is-observed-and-bounded
 Title: Execution Context is observed and bounded
-Criticality: routine
 
 Azimuth SHALL establish context-dependent deployment evidence applicability only from typed, attributable effective-context observations covering the examined execution and relevant deployed instances, without treating authored intended settings as observed application behavior.
 
@@ -29,7 +27,6 @@ Given unchanged declared context fields, when only configuration outside that co
 
 ## Requirement: public-test-integrations-retain-execution-facts
 Title: Public test integrations retain execution facts
-Criticality: routine
 
 Azimuth's public test integrations SHALL retain selected test attempts, unsuccessful executions and effective-context capture limitations as attributable execution facts, separate from Requirement conclusions and independent of ASS publication availability.
 
@@ -41,7 +38,6 @@ Given a completed native Run awaiting publication, when delivery fails and is re
 
 ## Requirement: monitor-freshness-governs-current-evidence
 Title: Monitor freshness governs current evidence
-Criticality: routine
 
 Azimuth SHALL distinguish an overdue or inconclusive required Monitor from a demonstrated product violation and SHALL prevent superseded, expired or ambiguously current Check Results from establishing satisfied deployment Requirement Status.
 

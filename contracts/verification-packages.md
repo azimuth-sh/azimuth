@@ -1,6 +1,6 @@
 # Verification package contracts
 
-Packages extend the authoring and source contracts of a Check. They do not introduce another Check identity or establish qualification, applicability, execution or a Requirement Judgment.
+Packages extend the authoring and source contracts of a Check. They do not introduce another Check identity or establish applicability, execution or a review.
 
 ## Enablement and identity
 
@@ -58,7 +58,7 @@ A Check retains its own method prose and may declare `Surface`, `Expectations`, 
 Compare independently enumerated registrations with the expected records, preserving omissions and unexpected members.
 ```
 
-An inline binding owns a Scenario reference and nonempty Contribution. Inside a Scenario verification, omitting Scenario selects that enclosing Scenario. Outside a Scenario, Scenario is explicit. The typed `(Check, Scenario)` pair identifies the relation; no authored binding ID, Execution Context, Decision Policy or Method Qualification field is required in this compact account. Source tags supply implementation identity only. They cannot generate the Scenario contribution or any approved decision. Separate review records remain separate authority.
+An inline binding owns a Scenario reference and nonempty Contribution. Inside a Scenario verification, omitting Scenario selects that enclosing Scenario. Outside a Scenario, Scenario is explicit. The typed `(Check, Scenario)` pair identifies the relation; no authored binding ID or Execution Context field is required in this compact account. Source tags supply implementation identity only. They cannot generate the Scenario contribution or any approved decision. Separate review records remain separate authority.
 
 ## Source producer records
 

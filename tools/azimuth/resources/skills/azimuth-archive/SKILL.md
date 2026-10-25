@@ -7,7 +7,7 @@ description: Apply reviewed facets, validate actual acceptance and retained evid
 
 Load `azimuth reference show retained-inputs` before assembling or relying on the final durable evidence package.
 
-Read repository instructions, captured handoff, complete implemented change, reviewed spec/design/verification deltas and previews, current account, outcome, execution/review dispositions and actual human acceptance. Load `azimuth reference show outcome` and installed workflow/retention guidance. Finalization and archival are one workflow task with separate recoverable CLI operations.
+Read repository instructions, captured handoff, complete implemented change, reviewed spec/realization/verification deltas and previews, current account, outcome, execution/review dispositions and actual human acceptance. Load `azimuth reference show outcome` and installed workflow/retention guidance. Finalization and archival are one workflow task with separate recoverable CLI operations.
 
 Confirm completion conditions, exact required review/execution basis, durable dependency closure and remaining hosted obligations. A full federated account cannot be substituted by local-only output. Missing or stale inputs, unresolved blockers and invented rollout facts prevent completion.
 
@@ -15,7 +15,7 @@ Apply still-pending reviewed spec and account deltas through `intent-apply` and 
 
 Use the installed acceptance record grammar to retain the human's actual decision for supported affected obligations. Never author approval on your own initiative. Current sealed reviews and relied-on Runs/proofs must remain accessible at finalization; acceptance alone waives no missing review or unrelated finding.
 
-Run the repository's permitted `azimuth validate`, relevant change validation and `change finalize`. Retain generated Work Provenance/finalization records without hand editing. The installed closure contract determines the ledger's boundary; a generated completion artifact must not recursively invalidate its semantic basis.
+Run the repository's permitted `azimuth validate`, relevant change validation and `change finalize`. Retain generated Work Provenance/finalization records without hand editing. Finalization writes the latest ratifying Verification and Realization Review of each Requirement into the model's `verification-review.md` and `realization-review.md` from the change's sealed reviews, and recomputes every review head's currency against the merged model; never hand-edit those files, because a hand edit breaks their seal. The installed closure contract determines the ledger's boundary; a generated completion artifact must not recursively invalidate its semantic basis.
 
 Inspect the exact finalized account and use `change archive` only within the actual authorization. Archive relocation preserves content and portable dependency references. Validate resulting artifacts and any finalization-currentness diagnostics. If archival fails, retain progress, reconcile the basis and retry; do not manufacture a new review merely because a command receipt was lost.
 

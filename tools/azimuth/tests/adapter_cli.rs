@@ -207,26 +207,26 @@ fn model(root: &Path, checks: &[&str]) -> (PathBuf, PathBuf, PathBuf) {
     fs::create_dir(&package).unwrap();
     fs::write(
         package.join("spec.md"),
-        "# Spec: demo\n\n## Requirement: works\nCriticality: routine\n\n\
+        "# Spec: demo\n\n## Requirement: works\nVerification: reviewed\n\n\
          The demo SHALL work.\n\n### Scenario: works\nEvent: invoked\nRequired: it works\n",
     )
     .unwrap();
     let declarations = checks
         .iter()
         .map(|id| {
-            let suffix = id.rsplit('/').next().unwrap();
             format!(
-                "## Check: {id}\nMethod: invoke\nTerminal: works\n\nOne result.\n\n\
-                 ## Evidence Binding: demo/{suffix}-edge\nCheck: {id}\nScenario: works\n\
-                 Method qualification: demo/{suffix}-method\nProposition: direct\nExecution Context: {{}}\n\
-                 Challenge domain: [\"check-implementation\"]\nPolicy: credible\n\nReviewable.\n"
+                "#### Check: {id}\n- Evidence bindings:\n  - Contribution: Observes the demo working.\n\n\
+                 Invoke the demo and observe one terminal result.\n"
             )
         })
         .collect::<Vec<_>>()
         .join("\n");
     fs::write(
         package.join("verification.md"),
-        format!("# Verification: demo\n\n{declarations}"),
+        format!(
+            "# Verification: demo\n\n## Requirement verification: works\n\n\
+             ### Scenario verification: works\n\n{declarations}"
+        ),
     )
     .unwrap();
     let workspace = root.join("workspace.json");
@@ -262,78 +262,69 @@ fn model(root: &Path, checks: &[&str]) -> (PathBuf, PathBuf, PathBuf) {
     (model, workspace, manifest)
 }
 
-fn challenge_model(root: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
+fn challenge_model(root: &Path) -> (PathBuf, PathBuf, PathBuf) {
     let (model, workspace, manifest) = model(root, &["check"]);
-    fs::write(
-        model.join("demo/spec.md"),
-        "# Spec: demo\n\n## Requirement: works\nCriticality: standard\n\n\
-         The demo SHALL work.\n\n### Scenario: works\nEvent: invoked\nRequired: it works\n",
-    )
-    .unwrap();
-    let standards = root.join("standards.md");
-    fs::write(
-        &standards,
-        "# Decision policies and Challenge schedule\n\n\
-         ## Decision Policy: credible\nRequired challenge: mutation\n\n\
-         The decision must be challenged.\n\n\
-         ## Challenge Schedule: current\nGate challenge: mutation\n\nMutation is gate work.\n",
-    )
-    .unwrap();
     let verification = model.join("demo/verification.md");
-    let render = |fingerprint: &str, verdict: &str, form: &str, selector: &str| {
-        format!(
-            "# Verification: demo\n\n\
-             ## Check: check\nMethod: invoke\nTerminal: works\n\nOne result.\n\n\
-             ## Evidence Binding: demo/edge\nCheck: check\nScenario: works\n\
-             Method qualification: demo/method\nProposition: direct\n\
-             Execution Context: {{\"platform\":\"linux\"}}\nChallenge domain: [\"realization\",\"mechanism\"]\n\
-             Policy: credible\n\nReviewable.\n\n\
-             ## Method Qualification: demo/method\nCheck: check\nScope: unit\n\
-             Quantification: example\nOracle: direct\nExecution Context: {{\"platform\":\"linux\"}}\n\
-             Challenge domain: [\"check-implementation\"]\nPolicy: credible\n\
-             Verdict: {verdict}\nFingerprint: {fingerprint}\n\
-             Qualified: 2026-08-22\nQualifier: owner\n\nQualified.\n\n\
-             ## Verification Challenge: mutation/search\nForm: {form}\nSearches for: an undetected change\n\
-             Required scope: [\"check-implementation\"]\n\nSearches exact semantics.\n\n\
-             ## Challenge Plan: demo/plan\nVerification Challenge: mutation/search\nSelect: {selector}\n\n\
-             Targets the current decision.\n"
-        )
+    let source = fs::read_to_string(&verification).unwrap().replace(
+        "### Scenario verification: works",
+        "### Verification Challenge: search\n- Form: `mutation`\n- Targets: `implementation`\n\
+         - Checks: `check`\n\nSearch for a change the Check cannot detect.\n\n\
+         ### Scenario verification: works",
+    );
+    fs::write(verification, source).unwrap();
+    let workspace_source = fs::read_to_string(&workspace).unwrap().replace(
+        "\"realization_obligations\":[]",
+        "\"realization_obligations\":[],\"packages\":[\"azimuth.challenge\"]",
+    );
+    fs::write(&workspace, workspace_source).unwrap();
+    let manifest_source = fs::read_to_string(&manifest).unwrap().replacen(
+        '{',
+        &format!(
+            "{{\"extensions\":[{{\"package\":\"azimuth.challenge\",\
+             \"contract\":\"verification-challenge-implementation\",\"entity\":\"search\",\
+             \"site\":\"challenges::search\",\"file\":\"src/challenge.rs\",\
+             \"lang\":\"rust-symbol\",\"source_fingerprint\":\"{}\"}}],",
+            fp('c')
+        ),
+        1,
+    );
+    fs::write(&manifest, manifest_source).unwrap();
+    (model, workspace, manifest)
+}
+
+/// The prepared source scope is produced outside the planner; the fixture mirrors the one
+/// declared Check implementation so the planner can map it to a qualified source identity.
+fn scope_report(challenge: &str) -> Json {
+    let payload = Json::obj(vec![
+        ("format", Json::str("azimuth-challenge-source-scope")),
+        ("version", Json::Num(2.0)),
+        ("status", Json::str("complete")),
+        ("verification_challenge", Json::str(challenge)),
+        (
+            "request",
+            Json::obj(vec![
+                ("requirements", Json::Arr(vec![Json::str("works")])),
+                ("mechanisms", Json::Arr(Vec::new())),
+                ("checks", Json::Arr(vec![Json::str("check")])),
+            ]),
+        ),
+        (
+            "sites",
+            Json::Arr(vec![Json::obj(vec![
+                ("relationship", Json::str("check")),
+                ("entity", Json::str("check")),
+                ("site", Json::str("checks::0")),
+                ("file", Json::str("src/check-0.rs")),
+                ("source_fingerprint", Json::str(&fp('a'))),
+            ])]),
+        ),
+    ]);
+    let fingerprint = canonical_fingerprint(&payload).unwrap();
+    let Json::Obj(mut fields) = payload else {
+        unreachable!()
     };
-    fs::write(
-        &verification,
-        render(
-            &fp('0'),
-            "qualified",
-            "mutation",
-            "method-qualification from method-qualification demo/method",
-        ),
-    )
-    .unwrap();
-    let loaded = azimuth::load(
-        &model,
-        &standards,
-        &workspace,
-        std::slice::from_ref(&manifest),
-        &[],
-    )
-    .unwrap();
-    let fingerprint = loaded
-        .model
-        .expected_method_qualification_fingerprint(
-            &loaded.model.verifications[0].method_qualifications[0],
-        )
-        .unwrap();
-    fs::write(
-        &verification,
-        render(
-            &fingerprint,
-            "qualified",
-            "mutation",
-            "method-qualification from method-qualification demo/method",
-        ),
-    )
-    .unwrap();
-    (model, standards, workspace, manifest)
+    fields.push(("fingerprint".into(), Json::str(&fingerprint)));
+    Json::Obj(fields)
 }
 
 fn request(path: &Path, operation: RunOperation, check: &str) {
@@ -369,10 +360,15 @@ fn challenge_request(
     path: &Path,
     operation: RunOperation,
     checks: bool,
-    context: &str,
     capability: &str,
-    max_candidates: u64,
+    challenge: &str,
 ) {
+    let scope = scope_report("search");
+    let scope_fingerprint = scope
+        .get("fingerprint")
+        .and_then(Json::as_str)
+        .unwrap()
+        .to_string();
     let request = PlanRequest {
         operation,
         planned_at_ms: 1_787_300_000_000,
@@ -382,7 +378,7 @@ fn challenge_request(
                 digest: fp('8'),
             }],
         },
-        required_execution_context: BTreeMap::from([("platform".into(), context.into())]),
+        required_execution_context: BTreeMap::new(),
         checks: if checks {
             vec![RequestedCheck {
                 id: "check".into(),
@@ -400,13 +396,13 @@ fn challenge_request(
             assessment: None,
             assessment_history: Vec::new(),
             run_history: Vec::new(),
-            scope_report: None,
-            id: "demo/plan".into(),
+            scope_report: Some(scope),
+            id: challenge.into(),
             capability: capability.into(),
-            max_candidates,
+            max_candidates: 1,
             units: vec![WorkUnit {
                 id: "whole".into(),
-                parameters: BTreeMap::new(),
+                parameters: BTreeMap::from([("scope_fingerprint".into(), scope_fingerprint)]),
             }],
         }],
     };
@@ -438,98 +434,6 @@ fn planning_arguments<'a>(
         "--config",
         config.to_str().unwrap(),
     ]
-}
-
-fn challenge_planning_arguments<'a>(
-    request: &'a Path,
-    model: &'a Path,
-    standards: &'a Path,
-    workspace: &'a Path,
-    manifest: &'a Path,
-    config: &'a Path,
-) -> Vec<&'a str> {
-    let mut arguments = planning_arguments(request, model, workspace, manifest, config);
-    arguments.extend(["--standards", standards.to_str().unwrap()]);
-    arguments
-}
-
-fn add_second_challenge_candidate(
-    model: &Path,
-    standards: &Path,
-    workspace: &Path,
-    manifest: &Path,
-) {
-    let manifest_source = fs::read_to_string(manifest).unwrap();
-    fs::write(
-        manifest,
-        manifest_source.replacen(
-            '{',
-            &format!(
-                "{{\"realizes\":[{{\"requirement\":\"works\",\
-                 \"site\":\"demo::works\",\"file\":\"src/demo.rs\",\
-                 \"lang\":\"rust-symbol\",\"source_fingerprint\":\"{}\"}}],",
-                fp('2')
-            ),
-            1,
-        ),
-    )
-    .unwrap();
-    let verification = model.join("demo/verification.md");
-    let source = fs::read_to_string(&verification).unwrap();
-    let source = source
-        .replace(
-            "## Verification Challenge: mutation/search",
-            &format!(
-                "## Applicability Decision: demo/edge\nVerdict: applicable\nFingerprint: {}\n\
-                 Decided: 2026-08-22\nDecider: owner\n\nApplicable.\n\n\
-                 ## Requirement Judgment: works\nVerdict: accepted\nPolicy: credible\nFingerprint: {}\n\
-                 Judged: 2026-08-22\nJudge: owner\nBasis: the exact composition is accepted\n\
-                 Residual risk: none identified\n\nAccepted.\n\n\
-                 ## Verification Challenge: mutation/search",
-                fp('3'),
-                fp('1')
-            ),
-        )
-        .replace(
-            "Select: method-qualification from method-qualification demo/method",
-            "Select: method-qualification from method-qualification demo/method\n\
-             Select: requirement-judgment from requirement works",
-        );
-    fs::write(&verification, source).unwrap();
-    let loaded = azimuth::load(
-        model,
-        standards,
-        workspace,
-        std::slice::from_ref(&manifest.to_path_buf()),
-        &[],
-    )
-    .unwrap();
-    let applicability_fingerprint = loaded
-        .model
-        .expected_applicability_fingerprint(&loaded.model.verifications[0].bindings[0])
-        .unwrap();
-    let source = fs::read_to_string(&verification)
-        .unwrap()
-        .replace(&fp('3'), &applicability_fingerprint);
-    fs::write(&verification, source).unwrap();
-    let loaded = azimuth::load(
-        model,
-        standards,
-        workspace,
-        std::slice::from_ref(&manifest.to_path_buf()),
-        &[],
-    )
-    .unwrap();
-    let fingerprint = loaded
-        .model
-        .expected_requirement_judgment_fingerprint(
-            &loaded.model.verifications[0].requirement_judgments[0],
-        )
-        .unwrap();
-    let source = fs::read_to_string(&verification)
-        .unwrap()
-        .replace(&fp('1'), &fingerprint);
-    fs::write(verification, source).unwrap();
 }
 
 fn description_json(adapter: &ConfiguredAdapter) -> Json {
@@ -839,7 +743,7 @@ fn challenge_adapter_bundle(
             class: DiagnosticClass::Execution,
             severity: Severity::Warning,
             code: "challenge/deferred".into(),
-            message: "The scheduled Challenge did not execute.".into(),
+            message: "The imported Challenge did not execute.".into(),
             scope: DiagnosticScope::ChallengeSelection(selection.id.clone()),
             artifacts: Vec::new(),
             details: BTreeMap::new(),
@@ -1156,23 +1060,21 @@ fn nonempty_verify_and_execute_import_routes_publish_valid_bundles() {
 }
 
 #[test]
-fn challenge_execute_and_import_accept_terminal_and_scheduled_incomplete_facts() {
+fn challenge_execute_and_import_accept_terminal_and_incomplete_facts() {
     let root = root();
     let fixture = ProtocolFixture::new(&root);
-    let (model, standards, workspace, manifest) = challenge_model(&root);
+    let (model, workspace, manifest) = challenge_model(&root);
     let request_path = root.join("challenge-request.json");
     challenge_request(
         &request_path,
         RunOperation::Execute,
         false,
-        "linux",
         "synthetic/challenges",
-        1,
+        "search",
     );
-    let planned = azimuth(&challenge_planning_arguments(
+    let planned = azimuth(&planning_arguments(
         &request_path,
         &model,
-        &standards,
         &workspace,
         &manifest,
         &fixture.config,
@@ -1255,33 +1157,31 @@ fn challenge_execute_and_import_accept_terminal_and_scheduled_incomplete_facts()
         );
     }
 
-    let schedule = fs::read_to_string(&standards)
-        .unwrap()
-        .replace("Gate challenge: mutation", "Scheduled challenge: mutation");
-    fs::write(&standards, schedule).unwrap();
     challenge_request(
         &request_path,
         RunOperation::Import,
         false,
-        "linux",
         "synthetic/challenges",
-        1,
+        "search",
     );
-    let planned = azimuth(&challenge_planning_arguments(
+    let planned = azimuth(&planning_arguments(
         &request_path,
         &model,
-        &standards,
         &workspace,
         &manifest,
         &fixture.config,
     ));
-    assert!(planned.status.success());
+    assert!(
+        planned.status.success(),
+        "{}",
+        String::from_utf8_lossy(&planned.stderr)
+    );
     let launch = run_plan::parse_launch_plan(
         "challenge import launch",
         std::str::from_utf8(&planned.stdout).unwrap(),
     )
     .unwrap();
-    assert_eq!(launch.plan.challenges[0].lane, ChallengeLane::Scheduled);
+    assert_eq!(launch.plan.challenges[0].lane, ChallengeLane::Gate);
     let launch_path = root.join("challenge-import.json");
     fs::write(&launch_path, &planned.stdout).unwrap();
     let native = root.join("native-challenge.json");
@@ -1423,25 +1323,17 @@ fn plan_loads_the_complete_model_and_has_exact_stdout_file_parity() {
 fn challenge_only_and_mixed_plans_have_exact_stdout_file_parity() {
     let root = root();
     let config = configuration(&root);
-    let (model, standards, workspace, manifest) = challenge_model(&root);
+    let (model, workspace, manifest) = challenge_model(&root);
     for (index, checks) in [false, true].into_iter().enumerate() {
         let request_path = root.join(format!("challenge-request-{index}.json"));
         challenge_request(
             &request_path,
             RunOperation::Execute,
             checks,
-            "linux",
             "synthetic/challenges",
-            1,
+            "search",
         );
-        let arguments = challenge_planning_arguments(
-            &request_path,
-            &model,
-            &standards,
-            &workspace,
-            &manifest,
-            &config,
-        );
+        let arguments = planning_arguments(&request_path, &model, &workspace, &manifest, &config);
         let stdout = azimuth(&arguments);
         assert!(
             stdout.status.success(),
@@ -1471,15 +1363,14 @@ fn challenge_only_and_mixed_plans_have_exact_stdout_file_parity() {
 fn challenge_request_schema_is_strict_and_preserves_sentinel_outputs() {
     let root = root();
     let config = configuration(&root);
-    let (model, standards, workspace, manifest) = challenge_model(&root);
+    let (model, workspace, manifest) = challenge_model(&root);
     let request_path = root.join("request.json");
     challenge_request(
         &request_path,
         RunOperation::Execute,
         false,
-        "linux",
         "synthetic/challenges",
-        1,
+        "search",
     );
     let valid = azimuth::json::parse(&fs::read_to_string(&request_path).unwrap()).unwrap();
     for (name, mutate) in [("missing", 0_u8), ("unknown", 1_u8)] {
@@ -1494,14 +1385,8 @@ fn challenge_request_schema_is_strict_and_preserves_sentinel_outputs() {
         fs::write(&request_path, Json::Obj(fields).to_string_pretty()).unwrap();
         let output_path = root.join(format!("{name}.json"));
         fs::write(&output_path, "sentinel").unwrap();
-        let mut arguments = challenge_planning_arguments(
-            &request_path,
-            &model,
-            &standards,
-            &workspace,
-            &manifest,
-            &config,
-        );
+        let mut arguments =
+            planning_arguments(&request_path, &model, &workspace, &manifest, &config);
         arguments.extend(["--out", output_path.to_str().unwrap()]);
         let output = azimuth(&arguments);
         assert_eq!(output.status.code(), Some(2), "{name}");
@@ -1514,93 +1399,76 @@ fn challenge_request_schema_is_strict_and_preserves_sentinel_outputs() {
 #[test]
 fn challenge_semantic_failures_exit_one_without_publishing() {
     enum Failure {
-        Adverse,
-        Context,
-        Cap,
         Form,
         Capability,
-        UnknownPlan,
+        UnknownChallenge,
+        StaleScope,
+        UnpinnedUnit,
     }
     for (index, failure) in [
-        Failure::Adverse,
-        Failure::Context,
-        Failure::Cap,
         Failure::Form,
         Failure::Capability,
-        Failure::UnknownPlan,
+        Failure::UnknownChallenge,
+        Failure::StaleScope,
+        Failure::UnpinnedUnit,
     ]
     .into_iter()
     .enumerate()
     {
         let root = root();
         let config = configuration(&root);
-        let (model, standards, workspace, manifest) = challenge_model(&root);
+        let (model, workspace, manifest) = challenge_model(&root);
         let request_path = root.join("request.json");
-        let mut context = "linux";
         let mut capability = "synthetic/challenges";
-        if matches!(failure, Failure::Adverse) {
-            let path = model.join("demo/verification.md");
-            let source = fs::read_to_string(&path)
-                .unwrap()
-                .replace("Verdict: qualified", "Verdict: rejected");
-            fs::write(path, source).unwrap();
-        }
-        if matches!(failure, Failure::Context) {
-            context = "windows";
-        }
-        if matches!(failure, Failure::Cap) {
-            add_second_challenge_candidate(&model, &standards, &workspace, &manifest);
-        }
+        let mut challenge = "search";
         if matches!(failure, Failure::Form) {
             let path = model.join("demo/verification.md");
             let source = fs::read_to_string(&path)
                 .unwrap()
-                .replace("Form: mutation", "Form: destructive");
+                .replace("- Form: `mutation`", "- Form: `source-analysis`");
             fs::write(path, source).unwrap();
-            let source = fs::read_to_string(&standards).unwrap().replace(
-                "Gate challenge: mutation",
-                "Gate challenge: mutation\nScheduled challenge: destructive",
-            );
-            fs::write(&standards, source).unwrap();
         }
         if matches!(failure, Failure::Capability) {
             capability = "synthetic/missing";
+        }
+        if matches!(failure, Failure::UnknownChallenge) {
+            challenge = "missing";
         }
         challenge_request(
             &request_path,
             RunOperation::Execute,
             false,
-            context,
             capability,
-            1,
+            challenge,
         );
-        if matches!(failure, Failure::UnknownPlan) {
+        if matches!(failure, Failure::StaleScope) {
             let source = fs::read_to_string(&request_path)
                 .unwrap()
-                .replace("demo/plan", "demo/missing");
+                .replace("checks::0", "checks::moved");
+            fs::write(&request_path, source).unwrap();
+        }
+        if matches!(failure, Failure::UnpinnedUnit) {
+            let source = fs::read_to_string(&request_path)
+                .unwrap()
+                .replace("\"scope_fingerprint\"", "\"unpinned\"");
             fs::write(&request_path, source).unwrap();
         }
         let output_path = root.join(format!("failure-{index}.json"));
         fs::write(&output_path, "sentinel").unwrap();
-        let mut arguments = challenge_planning_arguments(
-            &request_path,
-            &model,
-            &standards,
-            &workspace,
-            &manifest,
-            &config,
-        );
+        let mut arguments =
+            planning_arguments(&request_path, &model, &workspace, &manifest, &config);
         arguments.extend(["--out", output_path.to_str().unwrap()]);
         let output = azimuth(&arguments);
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert_eq!(output.status.code(), Some(1), "{index}: {stderr}",);
         let expected = match failure {
-            Failure::Adverse => "not runnable",
-            Failure::Context => "context must equal",
-            Failure::Cap => "exceeding max_candidates 1",
-            Failure::Form => "Challenge form `destructive`",
-            Failure::Capability => "unknown configured capability",
-            Failure::UnknownPlan => "unknown Challenge Plan",
+            Failure::Form => "does not support Verification Challenge form",
+            Failure::Capability => "unknown Verification Challenge capability",
+            Failure::UnknownChallenge => {
+                "does not select one compact machine Verification Challenge"
+            }
+            Failure::StaleScope => "scope report fingerprint mismatch",
+            Failure::UnpinnedUnit => "must pin the prepared scope_fingerprint",
         };
         assert!(stderr.contains(expected), "{index}: {stderr}");
         assert!(output.stdout.is_empty());

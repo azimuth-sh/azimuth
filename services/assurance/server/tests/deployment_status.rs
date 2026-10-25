@@ -555,7 +555,6 @@ async fn a_context_leaf_that_changed_during_capture_leaves_the_condition_unresol
     let contract = contract();
     let package = publication_policy_with_header(
         json!({"verification_target":"source","components":["api"],"contexts":[],"contribution":"both","monitor":null}),
-        "routine",
         "\nContext: api: enabled = true",
     );
     for (url, token, body) in [

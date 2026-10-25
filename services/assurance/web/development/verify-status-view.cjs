@@ -16,6 +16,7 @@ const sharedStubs = {
 const { RequirementVerification } = loadSource('../src/components/requirement-verification.tsx', sharedStubs);
 const identifierLibrary = loadSource('../src/lib/identifier.ts', {});
 const workHistoryComponents = loadSource('../src/components/work-history.tsx', { ...sharedStubs, '../lib/identifier': identifierLibrary });
+const reviewDimensions = loadSource('../src/components/review-dimensions.tsx', { '@/lib/identifier': identifierLibrary });
 const at = 1792400000000;
 const context = { component: 'notifications', leaves: ['delivery.channel', 'delivery.retry'] };
 const sourcePolicy = { verification_target: 'source', components: ['notifications'], contexts: [context], contribution: 'both', monitor: null };
@@ -97,6 +98,7 @@ async function verifyMaterializedOverview() {
     '@/components/local-time': localTime,
     '@/components/identifier': sharedStubs['./identifier'],
     '@/lib/identifier': loadSource('../src/lib/identifier.ts', {}),
+    '@/components/review-dimensions': reviewDimensions,
     'next/link': ({ children, prefetch, ...props }) => React.createElement('a', props, children),
   }).default;
   for (const value of ['healthy', 'pending', 'expired']) {
@@ -110,17 +112,26 @@ async function verifyMaterializedOverview() {
     const markup = renderToStaticMarkup(await Page({ params: Promise.resolve({ projectId: 'payments-demo' }), searchParams: Promise.resolve({}) }));
     if (value === 'healthy') {
       assert(!markup.includes('Assessment updating') && !markup.includes('Assessment overdue'));
-      assert(markup.includes('All 7 applicable Requirements are satisfied'));
+      assert(markup.includes('All 7 applicable Requirements that declare verification are satisfied'));
       assert(markup.includes('Modules organize Requirements. Scenarios describe expected behavior.'));
+      assert(markup.includes('VERIFICATION DECLARED · 7'), 'verification tiles count only Requirements declaring Verification');
+      assert(/aria-label="Realization reviewed">.*?<strong>2<small> of 3 declared<\/small><\/strong>/.test(markup), 'accepted out of declared Realization Reviews');
+      assert(/aria-label="Specified only">.*?<strong>1<\/strong>/.test(markup), 'Requirements declaring neither review');
+      const drift = /<ul class="driftList"[^>]*>(.*?)<\/ul>/.exec(markup);
+      assert(drift, 'drift list');
+      assert(drift[1].includes('Reminders reflect current payments') && drift[1].includes('Reviewed at <code title="4c1d9e7a2b3f5061d8e9a7c4b2f1e0d3c5a6b7e8">4c1d9e7a</code>, code changed since'), 'drifted accepted Realization Review names its commit');
+      assert(!drift[1].includes('Workers access only necessary payment data'), 'an undrifted review is not listed');
+      assert(!markup.includes('Operators can pause reminders'), 'a specified-only Requirement never needs attention');
+      assert(!/criticality|non-routine/i.test(markup), 'no criticality presentation remains');
     } else {
       assert(markup.includes(value === 'expired' ? 'Assessment overdue' : 'Assessment updating'));
       assert(!markup.includes('No Requirements need attention'));
-      assert(!markup.includes('All 7 applicable Requirements are satisfied'));
+      assert(!markup.includes('All 7 applicable Requirements that declare verification are satisfied'));
       assert(markup.includes('<td>2</td>'));
       assert(markup.includes('goodText">—'));
     }
   }
-  console.log('Materialized overview passed: compact reads, fresh counts, pending/expired suppression and preserved Requirement inventory.');
+  console.log('Materialized overview passed: compact reads, verification-declared counts, Realization Review drift list, specified-only count, pending/expired suppression and preserved Requirement inventory.');
 }
 assert(html.includes('<strong>Caller</strong>') && html.includes('<code>tests</code>') && html.includes('<li>first</li>'), 'Check method renders as Markdown');
 {
@@ -164,6 +175,7 @@ async function verifyModelAssessmentFreshness() {
     '@/components/local-time': localTime,
     '@/components/markdown': sharedStubs['./markdown'],
     '@/components/work-history': workHistoryComponents,
+    '@/components/review-dimensions': reviewDimensions,
     '@/lib/identifier': identifierLibrary,
   }).default;
   for (const value of ['ready', 'pending', 'expired', 'missing', 'elapsed']) {
@@ -171,7 +183,7 @@ async function verifyModelAssessmentFreshness() {
     const markup = renderToStaticMarkup(await Page({ params: Promise.resolve({ projectId: 'payments-demo' }), searchParams: Promise.resolve({ context: `deployment:${deployment}`, requirement: 'reminders-arrive-on-time' }) }));
     assert.equal(markup.includes('Current assessment evidence sentinel'), value === 'ready', value);
     assert.equal(markup.includes('>Satisfied</span>'), value === 'ready', value);
-    assert.equal(markup.includes('Requirement Review: <strong>accepted</strong>'), value === 'ready' || value === 'elapsed', value);
+    assert.equal(markup.includes('Verification review: <strong>Accepted</strong> · Realization review: <strong>Not declared</strong>'), value === 'ready' || value === 'elapsed', value);
   }
   assert.equal(snapshotReads, 0, 'Requirement details must not eagerly load the complete evidence snapshot');
   freshness = 'ready';
@@ -187,7 +199,7 @@ function verifyWorkHistory() {
   const history = developmentRead('payments-demo', '/provenance/requirements/reminders-follow-current-payment');
   const markup = renderToStaticMarkup(React.createElement(WorkHistory, { history }));
   assert(markup.includes('Work provenance — not used for Requirement Status'), 'non-evidence caption');
-  assert(markup.includes('never affects Requirement Review currentness, Requirement Status or acceptance'));
+  assert(markup.includes('never affects Verification or Realization Review currentness, Requirement Status or acceptance'));
   assert(/<details class="disclosure"><summary><span class="disclosureTitle">Work history<\/span>/.test(markup), 'work history is collapsed by default');
   assert(markup.includes('>intent</span>') && markup.includes('>dependency</span>'), 'relation badges');
   assert(markup.indexOf('Payments 1.8') < markup.indexOf('Payments 1.7'), 'newest release first');
@@ -249,17 +261,26 @@ async function verifyRequirementPageWorkHistory() {
     '@/components/local-time': localTime,
     '@/components/markdown': sharedStubs['./markdown'],
     '@/components/work-history': workHistoryComponents,
+    '@/components/review-dimensions': reviewDimensions,
     '@/lib/identifier': identifierLibrary,
   }).default;
   const render = async requirement => renderToStaticMarkup(await Page({ params: Promise.resolve({ projectId: 'payments-demo' }), searchParams: Promise.resolve({ requirement }) }));
   const markup = await render('reminders-follow-current-payment');
-  assert(markup.indexOf('id="requirement-review"') < markup.indexOf('id="requirement-work-history"'), 'work history follows the review');
+  assert(markup.indexOf('id="verification-review"') < markup.indexOf('id="realization-review"'), 'Verification Review precedes Realization Review');
+  assert(markup.indexOf('id="realization-review"') < markup.indexOf('id="requirement-work-history"'), 'work history follows the reviews');
+  const realization = markup.slice(markup.indexOf('id="realization-review"'), markup.indexOf('id="requirement-work-history"'));
+  assert(realization.includes('<span class="badge good">Accepted</span>') && realization.includes('<span class="codeDrift">Reviewed at <code'), 'drift is a muted note beside an accepted review');
+  assert(realization.includes('<dt>Reviewed commit</dt>') && !realization.includes('<dt>Challenge basis</dt>'), 'Realization Review record fields');
   assert(markup.includes('Reviewing attempt from Work Provenance: <a href="#attempt-'), 'review shows its generating attempt');
   assert(markup.includes('<dt>Reviewed dependencies</dt>') && markup.includes('<dt>Challenge basis</dt><dd>none</dd>'), 'review record fields');
   assert(markup.includes('verification</code> model/reminders/planning/verification.md'), 'reviewed artifacts');
   assert(markup.includes('&quot;dependencies_fingerprint&quot;') && !markup.includes('&quot;provenance&quot;') && !markup.includes('Author provenance'), 'review record carries no authored provenance');
   const other = await render('reminders-arrive-on-time');
   assert(!other.includes('Reviewing attempt from Work Provenance'), 'no reviewer descriptor without a generating attempt');
+  assert(other.includes('so no realization review is owed'), 'an undeclared Realization Review is not owed');
+  const specified = await render('operators-can-pause-reminders');
+  assert(specified.includes('Verification review: <strong>Not declared</strong> · Realization review: <strong>Not declared</strong>'), 'specified-only Requirement shows no review owed');
+  assert(!specified.includes('codeDrift'), 'no drift without a Realization Review');
   failProvenance = true;
   const degraded = await render('reminders-follow-current-payment');
   assert(degraded.includes('>Satisfied</span>') && degraded.includes('Work history is unavailable right now'), 'unavailable provenance never hides Requirement Status');

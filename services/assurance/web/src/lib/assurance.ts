@@ -30,8 +30,20 @@ export interface Review {
   submitted_by: string;
   submitted_at: string;
 }
-export interface RequirementReviewRecord {
-  kind: 'requirement-review';
+export interface ReviewIssue {
+  id: string;
+  proposition: string;
+  location: string;
+  reason: string;
+  correction: string;
+  blocking: boolean;
+}
+export interface ReviewDisposition {
+  issue: string;
+  outcome: string;
+  rationale: string;
+}
+interface ReviewRecordFields {
   reviewer: string;
   reviewed_at_ms: number;
   rationale: string;
@@ -41,22 +53,44 @@ export interface RequirementReviewRecord {
   dependencies_fingerprint: string;
   decision: string;
   reassesses: string | null;
-  challenge_basis: unknown[];
+  issues?: ReviewIssue[];
+  dispositions?: ReviewDisposition[];
   fingerprint: string;
 }
+export interface VerificationReviewRecord extends ReviewRecordFields {
+  kind: 'verification-review';
+  challenge_basis: unknown[];
+}
+export interface RealizationReviewRecord extends ReviewRecordFields {
+  kind: 'realization-review';
+  sites_fingerprint: string;
+  reviewed_commit: string;
+}
+export type GlobalReviewRecord = VerificationReviewRecord | RealizationReviewRecord;
+export type ReviewStatus = 'accepted' | 'missing' | 'stale' | 'rejected' | 'invalid' | 'unresolved' | 'not-declared';
 export interface ReviewPage {
   records: Review[];
   next: string | null;
 }
+export interface RequirementReviewEntry {
+  kind: GlobalReviewRecord['kind'];
+  requirement: string;
+  record: (Partial<Omit<VerificationReviewRecord, 'kind'> & Omit<RealizationReviewRecord, 'kind'>> & { kind?: GlobalReviewRecord['kind'] }) | null;
+  assessment: ReviewStatus | 'pending';
+  code_drift: boolean | null;
+  diagnostics: string[];
+}
 export interface RequirementReviewState {
   assessment?: AssessmentFreshness;
   authority_fingerprint: string;
-  requirements: Array<{
-    requirement: string;
-    record: Partial<RequirementReviewRecord> | null;
-    assessment: string;
-    diagnostics: string[];
-  }>;
+  requirements: RequirementReviewEntry[];
+}
+export interface ReviewDetail {
+  status: ReviewStatus;
+  fingerprint: string | null;
+  reviewer: string | null;
+  reviewed_at_ms: number | null;
+  rationale: string | null;
 }
 export interface CheckResultReference {
   check: string;
@@ -76,7 +110,8 @@ export interface StatusExplanation {
   summary: string;
   status: string;
   reasons: Array<{ code: string; category: string; message: string; check?: string; scenario?: string; diagnostics?: string[] }>;
-  review: { status: string; fingerprint: string | null; reviewer: string | null; reviewed_at_ms: number | null; rationale: string | null };
+  verification_review: ReviewDetail;
+  realization_review: ReviewDetail & { reviewed_commit: string | null; code_drift: boolean | null };
   coverage: Array<{ check: string; scenario: string; status: string; check_results: CheckResultReference[] }>;
   evidence: { supporting: CheckResultReference[]; violations: CheckResultReference[]; inconclusive: CheckResultReference[]; unassessed: CheckResultReference[] };
   residual_risks: unknown[];
@@ -123,7 +158,9 @@ export interface AssessmentFreshness {
   valid_until_ms: number | null;
 }
 export type DeploymentStatusSummary = Omit<VerificationTargetState, 'requirements'> & {
-  requirements: Array<Pick<VerificationTargetState['requirements'][number], 'requirement' | 'status' | 'review' | 'diagnostics' | 'gaps'> & { explanation: Pick<StatusExplanation, 'summary'> }>;
+  requirements: Array<Pick<VerificationTargetState['requirements'][number], 'requirement' | 'status' | 'verification_review' | 'realization_review' | 'realization_code_drift' | 'diagnostics' | 'gaps'> & {
+    explanation: Pick<StatusExplanation, 'summary'> & { realization_review?: Pick<StatusExplanation['realization_review'], 'status' | 'reviewed_commit' | 'code_drift'> };
+  }>;
 };
 export interface VerificationTargetState {
   assessment?: AssessmentFreshness;
@@ -137,7 +174,9 @@ export interface VerificationTargetState {
     requirement: string;
     status: string;
     explanation: StatusExplanation;
-    review?: string;
+    verification_review: ReviewStatus;
+    realization_review: ReviewStatus;
+    realization_code_drift: boolean | null;
     diagnostics: string[];
     gaps: unknown;
     bindings: RequirementBindingStatus[];

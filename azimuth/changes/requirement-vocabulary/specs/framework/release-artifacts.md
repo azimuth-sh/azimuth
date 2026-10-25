@@ -4,7 +4,6 @@
 From: sha256:eec58bbf3a489b26368ca0b854b347588ee33a70ef5ebcbc0276f9e76ab0cb49
 Because: The release contract names the current source version and migration line; the obligation is unchanged and only the pinned values move to 0.1.0-alpha.7 and alpha-requirement-scenario.
 Title: First alpha contract
-Criticality: routine
 
 The first public alpha artifacts SHALL have one explicit and internally consistent release
 contract before publication.

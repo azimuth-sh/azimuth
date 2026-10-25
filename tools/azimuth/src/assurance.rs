@@ -51,7 +51,8 @@ pub struct RequirementContract {
     pub spec: String,
     pub requirement: String,
     pub requirement_kind: String,
-    pub criticality: String,
+    pub realization_rigor: String,
+    pub verification_rigor: String,
     pub statement: String,
     pub scenario_statement: String,
     pub domain: String,
@@ -185,7 +186,14 @@ fn contract_json(contract: &RequirementContract, include_fingerprint: bool) -> J
             "requirementKind".to_string(),
             Json::str(&contract.requirement_kind),
         ),
-        ("criticality".to_string(), Json::str(&contract.criticality)),
+        (
+            "realizationRigor".to_string(),
+            Json::str(&contract.realization_rigor),
+        ),
+        (
+            "verificationRigor".to_string(),
+            Json::str(&contract.verification_rigor),
+        ),
         ("statement".to_string(), Json::str(&contract.statement)),
         (
             "scenarioStatement".to_string(),

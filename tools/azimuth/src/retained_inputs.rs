@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
 const FORMAT: &str = "azimuth-retained-inputs";
-const KINDS: &[&str] = &["file", "run-bundle", "review-input", "requirement-review"];
+const KINDS: &[&str] = &["file", "run-bundle", "review-input", "verification-review"];
 
 #[derive(Debug, Clone)]
 pub struct Input {
@@ -281,7 +281,7 @@ fn packet_runs(value: &Json, name: &str) -> Result<Vec<crate::run::RunBundle>, S
 }
 fn section(source: &str, id: &str) -> Result<String, String> {
     let lines = source.lines().collect::<Vec<_>>();
-    let heading = format!("## Requirement review: {id}");
+    let heading = format!("## Verification review: {id}");
     let start = lines
         .iter()
         .position(|line| *line == heading)
@@ -315,7 +315,7 @@ fn native_closure(
         let value = json_bytes(&bytes[&entry.id], &entry.source_path)?;
         match entry.kind.as_str() {
             "run-bundle" => all_runs.push(run(&value, &entry.source_path)?),
-            "requirement-review" => {
+            "verification-review" => {
                 crate::assurance_review::validate_record(&value)?;
             }
             "review-input" => {
@@ -335,7 +335,7 @@ fn native_closure(
         ));
     }
     for entry in &package.inputs {
-        if entry.kind != "requirement-review" {
+        if entry.kind != "verification-review" {
             continue;
         }
         let value = &values[&entry.id];
@@ -363,7 +363,7 @@ fn native_closure(
                             .cloned(),
                     );
                 }
-                "requirement-review" => available_reviews.push(values[&dependency.id].clone()),
+                "verification-review" => available_reviews.push(values[&dependency.id].clone()),
                 _ => {}
             }
         }
@@ -510,7 +510,7 @@ pub fn verify_change(change_root: &Path) -> Result<Json, String> {
                 let path = below(change_root, &relative)?;
                 let bytes = fs::read(&path).map_err(|e| e.to_string())?;
                 if !package.inputs.iter().any(|input| {
-                    input.kind == "requirement-review"
+                    input.kind == "verification-review"
                         && input.source_path == relative
                         && input.fingerprint == digest(&bytes)
                 }) {

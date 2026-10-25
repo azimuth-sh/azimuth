@@ -1,6 +1,6 @@
 # Extracted account support manifest (candidate)
 
-An ecosystem extractor emits this JSON after inspecting source code and configuration with its own semantic tools. Azimuth core reads the manifest; it does not parse language source, scheduler configuration, alert rules or deployment files. The manifest declares implementation linkage and independently decidable Check definitions. It contains no execution result, method qualification, applicability decision, Requirement Judgment or Assurance State.
+An ecosystem extractor emits this JSON after inspecting source code and configuration with its own semantic tools. Azimuth core reads the manifest; it does not parse language source, scheduler configuration, alert rules or deployment files. The manifest declares implementation linkage and independently decidable Check definitions. It contains no execution result, review or Assurance State.
 
 ```json
 {
@@ -59,7 +59,7 @@ The .NET emitter recognizes `SupportsVerificationElement(requirement, element)` 
 
 `contributions` explicitly connect a Check to an existing Scenario through a method Element and a nonempty proposition explaining the relation. The referenced Check must name that Element, and the Element must have support for the Requirement owning the Scenario. One Check may contribute to several Scenarios through separate records. One `(Check, Scenario)` pair is unique. Element support alone never covers a Scenario.
 
-Core rejects duplicate ids, unknown fields, invalid identities, missing fingerprinted Artifacts and dangling local references. Account assembly resolves Element/Requirement/Scenario identities across facets and reports missing support. Cross-manifest identity collisions also require detection during assembly. The manifest is an **input to review**, not a positive conclusion: qualification, applicability, challenge, Run evidence and deployed Verification Target freshness remain separate authorities.
+Core rejects duplicate ids, unknown fields, invalid identities, missing fingerprinted Artifacts and dangling local references. Account assembly resolves Element/Requirement/Scenario identities across facets and reports missing support. Cross-manifest identity collisions also require detection during assembly. The manifest is an **input to review**, not a positive conclusion: review, applicability, challenge, Run evidence and deployed Verification Target freshness remain separate authorities.
 
 ## Document-owned Check authority
 

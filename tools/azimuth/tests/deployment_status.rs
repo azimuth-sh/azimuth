@@ -198,14 +198,19 @@ fn policy(verification_target: &str) -> Json {
     ])
 }
 fn request(policy: Json) -> Json {
-    request_with_criticality(policy, "routine")
+    request_with_labels(policy, "")
 }
-fn request_with_criticality(policy: Json, criticality: &str) -> Json {
-    request_with_header(policy, criticality, "")
+fn request_with_labels(policy: Json, labels: &str) -> Json {
+    request_with_header(policy, labels, "")
 }
-fn request_with_header(policy: Json, criticality: &str, extra_header: &str) -> Json {
+fn request_with_header(policy: Json, labels: &str, extra_header: &str) -> Json {
+    let header = [labels, extra_header.trim_start_matches('\n')]
+        .iter()
+        .filter(|line| !line.is_empty())
+        .map(|line| format!("{line}\n"))
+        .collect::<String>();
     let model=azimuth::model::Model{
-  specs:vec![azimuth::spec::parse_spec("spec.md",&"# Spec: sample\n\n## Requirement: restricted-access\nCriticality: routine\n\nAccess SHALL be restricted.\n\n### Scenario: works\nEvent: a request arrives\nRequired: access is restricted\n".replace("Criticality: routine", &format!("Criticality: {criticality}{extra_header}"))).unwrap()],
+  specs:vec![azimuth::spec::parse_spec("spec.md",&format!("# Spec: sample\n\n## Requirement: restricted-access\n{header}\nAccess SHALL be restricted.\n\n### Scenario: works\nEvent: a request arrives\nRequired: access is restricted\n")).unwrap()],
   account_verifications:vec![azimuth::account_verification::parse_account_verification("verification.md",&format!("# Verification: sample\n\n## Requirement verification: restricted-access\n\n### Check: recovery\n- Deployment: {}\n- Evidence bindings:\n  - Scenario: `works`\n    - Contribution: Establishes restricted access.\n\nExercise restricted access.\n",policy.to_string_pretty().replace('\n'," "))).unwrap()],
   check_implementations:vec![azimuth::model::CheckImplementation {check:"recovery".into(),site:"access::check".into(),file:"tests/access.rs".into(),lang:"rust".into(),source:Some(azimuth::model::SourceIdentity {area:"sample".into(),kind:"rust-symbol".into(),address:"access::check".into(),mount:"root".into()}),source_fingerprint:fp('c')}],
   realizes:vec![azimuth::model::Site {spec:"sample".into(),requirement:"restricted-access".into(),site:"access::enforce".into(),file:"src/access.rs".into(),lang:"rust".into(),source:Some(azimuth::model::SourceIdentity {area:"sample".into(),kind:"rust-symbol".into(),address:"access::enforce".into(),mount:"root".into()}),source_fingerprint:fp('d')}],
@@ -384,12 +389,12 @@ fn source_evidence_supports_exact_deployment_without_source_status() {
     );
     assert_eq!(
         explanation
-            .get("review")
+            .get("verification_review")
             .unwrap()
             .get("status")
             .unwrap()
             .as_str(),
-        Some("not-required")
+        Some("not-declared")
     );
 }
 #[test]
@@ -663,7 +668,7 @@ fn corrections_replace_support_and_stale_deployment_observation_does_not_renew_i
 }
 #[test]
 fn missing_review_blocks_support_without_hiding_declared_counterexample() {
-    let mut request = request_with_criticality(policy("source"), "critical");
+    let mut request = request_with_labels(policy("source"), "Verification: reviewed");
     let bundle = bundle_for(&request, source(), 100, CheckResultOutcome::Satisfied);
     attach(&mut request, &[bundle]);
     assert_eq!(status(&request), "unresolved");
@@ -686,7 +691,7 @@ fn missing_review_blocks_support_without_hiding_declared_counterexample() {
     );
     assert_eq!(
         out.get("requirements").unwrap().as_array().unwrap()[0]
-            .get("review")
+            .get("verification_review")
             .unwrap()
             .as_str(),
         Some("missing")
@@ -889,7 +894,7 @@ fn accepted_review(request: &Json) -> Json {
         .unwrap();
     let requirement = &authority.get("requirements").unwrap().as_array().unwrap()[0];
     let mut record = Json::obj(vec![
-        ("kind", Json::str("requirement-review")),
+        ("kind", Json::str("verification-review")),
         ("reviewer", Json::str("independent-reviewer")),
         ("reviewed_at_ms", Json::Num(50.0)),
         (
@@ -932,7 +937,7 @@ fn accepted_review(request: &Json) -> Json {
 }
 #[test]
 fn current_independent_review_enables_confirmation_and_policy_change_stales_it() {
-    let mut request = request_with_criticality(policy("source"), "critical");
+    let mut request = request_with_labels(policy("source"), "Verification: reviewed");
     let review = accepted_review(&request);
     set(&mut request, "reviews", Json::Arr(vec![review.clone()]));
     let bundle = bundle_for(&request, source(), 100, CheckResultOutcome::Satisfied);
@@ -940,7 +945,7 @@ fn current_independent_review_enables_confirmation_and_policy_change_stales_it()
     assert_eq!(status(&request), "supported");
     let mut changed_policy = policy("source");
     set(&mut changed_policy, "contribution", Json::str("support"));
-    let mut changed = request_with_criticality(changed_policy, "critical");
+    let mut changed = request_with_labels(changed_policy, "Verification: reviewed");
     set(&mut changed, "reviews", Json::Arr(vec![review]));
     let bundle = bundle_for(&changed, source(), 100, CheckResultOutcome::Satisfied);
     attach(&mut changed, &[bundle]);
@@ -948,7 +953,7 @@ fn current_independent_review_enables_confirmation_and_policy_change_stales_it()
     let out = deployment_status::assess(&changed).unwrap();
     assert_eq!(
         out.get("requirements").unwrap().as_array().unwrap()[0]
-            .get("review")
+            .get("verification_review")
             .unwrap()
             .as_str(),
         Some("stale")
@@ -998,7 +1003,7 @@ fn verified_assessment(request: &Json) -> Json {
 }
 #[test]
 fn verified_evidence_is_evaluated_exactly_as_the_complete_request() {
-    let mut request = request_with_criticality(policy("source"), "critical");
+    let mut request = request_with_labels(policy("source"), "Verification: reviewed");
     let review = accepted_review(&request);
     set(&mut request, "reviews", Json::Arr(vec![review]));
     let bundle = bundle_for(&request, source(), 100, CheckResultOutcome::Satisfied);
@@ -1593,11 +1598,8 @@ fn a_unit_restricted_to_another_check_is_not_required_of_this_one() {
 #[test]
 fn a_context_leaf_that_changed_during_capture_leaves_the_condition_unresolved() {
     let contract = context_contract();
-    let mut conditioned = request_with_header(
-        policy("source"),
-        "routine",
-        "\nContext: api: enabled = true",
-    );
+    let mut conditioned =
+        request_with_header(policy("source"), "", "\nContext: api: enabled = true");
     set(
         &mut conditioned,
         "context_contracts",
@@ -1619,4 +1621,167 @@ fn a_context_leaf_that_changed_during_capture_leaves_the_condition_unresolved() 
     set(&mut unstable, "after", after);
     set(&mut conditioned, "captures", Json::Arr(vec![unstable]));
     assert_eq!(status(&conditioned), "unresolved");
+}
+
+fn realization_review_for(request: &Json, sites_fingerprint: Option<Json>) -> Json {
+    let authority = request
+        .get("publication")
+        .unwrap()
+        .get("snapshot")
+        .unwrap()
+        .get("authority")
+        .unwrap();
+    let entry = authority
+        .get("requirement_realizations")
+        .unwrap()
+        .as_array()
+        .unwrap()[0]
+        .clone();
+    let intent = authority
+        .get("requirement_intents")
+        .unwrap()
+        .as_array()
+        .unwrap()[0]
+        .get("fingerprint")
+        .unwrap()
+        .clone();
+    let mut record = Json::obj(vec![
+        ("kind", Json::str("realization-review")),
+        ("reviewer", Json::str("independent-reviewer")),
+        ("reviewed_at_ms", Json::Num(50.0)),
+        (
+            "rationale",
+            Json::str("The enforcement site precedes every protected read."),
+        ),
+        (
+            "artifacts",
+            json::parse(&format!(
+                r#"[{{"id":"review-notes","digest":"{}","locator":"reviews/notes.md"}}]"#,
+                fp('a')
+            ))
+            .unwrap(),
+        ),
+        ("requirement", Json::str("restricted-access")),
+        ("requirement_fingerprint", intent),
+        (
+            "dependencies_fingerprint",
+            Json::str(azimuth::fingerprint::canonical_sha256(
+                &azimuth::assurance_review::realization_dependencies(
+                    authority,
+                    "restricted-access",
+                )
+                .unwrap(),
+            )),
+        ),
+        (
+            "sites_fingerprint",
+            sites_fingerprint.unwrap_or_else(|| entry.get("sites_fingerprint").unwrap().clone()),
+        ),
+        ("reviewed_commit", Json::str("a".repeat(40))),
+        ("decision", Json::str("accepted")),
+        ("reassesses", Json::Null),
+    ]);
+    let fingerprint = azimuth::assurance_review::record_fingerprint(&record).unwrap();
+    set(&mut record, "fingerprint", Json::str(fingerprint));
+    azimuth::assurance_review::validate_record(&record).unwrap();
+    record
+}
+
+fn review_dimensions(request: &Json) -> (String, String, String, Json) {
+    let out = deployment_status::assess(request).unwrap();
+    let requirement = out.get("requirements").unwrap().as_array().unwrap()[0].clone();
+    let text = |name: &str| {
+        requirement
+            .get(name)
+            .and_then(Json::as_str)
+            .unwrap()
+            .to_string()
+    };
+    (
+        text("status"),
+        text("verification_review"),
+        text("realization_review"),
+        requirement.get("realization_code_drift").unwrap().clone(),
+    )
+}
+
+#[test]
+fn review_status_has_two_dimensions_and_only_verification_gates_support() {
+    let mut undeclared = request(policy("source"));
+    let bundle = bundle_for(&undeclared, source(), 100, CheckResultOutcome::Satisfied);
+    attach(&mut undeclared, &[bundle]);
+    assert_eq!(
+        review_dimensions(&undeclared),
+        (
+            "supported".into(),
+            "not-declared".into(),
+            "not-declared".into(),
+            Json::Null
+        )
+    );
+
+    let labels = "Realization: reviewed\nVerification: reviewed";
+    let mut owed = request_with_labels(policy("source"), labels);
+    let bundle = bundle_for(&owed, source(), 100, CheckResultOutcome::Satisfied);
+    attach(&mut owed, &[bundle]);
+    assert_eq!(
+        review_dimensions(&owed),
+        (
+            "unresolved".into(),
+            "missing".into(),
+            "missing".into(),
+            Json::Null
+        )
+    );
+
+    let mut verified = request_with_labels(policy("source"), labels);
+    let verification = accepted_review(&verified);
+    set(
+        &mut verified,
+        "reviews",
+        Json::Arr(vec![verification.clone()]),
+    );
+    let bundle = bundle_for(&verified, source(), 100, CheckResultOutcome::Satisfied);
+    attach(&mut verified, &[bundle.clone()]);
+    assert_eq!(
+        review_dimensions(&verified),
+        (
+            "supported".into(),
+            "accepted".into(),
+            "missing".into(),
+            Json::Null
+        )
+    );
+
+    let current = realization_review_for(&verified, None);
+    set(
+        &mut verified,
+        "reviews",
+        Json::Arr(vec![verification.clone(), current]),
+    );
+    assert_eq!(
+        review_dimensions(&verified),
+        (
+            "supported".into(),
+            "accepted".into(),
+            "accepted".into(),
+            Json::Bool(false)
+        )
+    );
+
+    let drifted = realization_review_for(&verified, Some(Json::str(fp('9'))));
+    set(
+        &mut verified,
+        "reviews",
+        Json::Arr(vec![verification, drifted]),
+    );
+    assert_eq!(
+        review_dimensions(&verified),
+        (
+            "supported".into(),
+            "accepted".into(),
+            "accepted".into(),
+            Json::Bool(true)
+        )
+    );
 }

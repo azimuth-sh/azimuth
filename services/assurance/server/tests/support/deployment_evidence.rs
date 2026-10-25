@@ -18,23 +18,28 @@ fn publication() -> Value {
     )
 }
 fn publication_policy(policy: Value) -> Value {
-    publication_policy_with_criticality(policy,"routine")
+    publication_policy_with_header(policy, "")
 }
-fn publication_policy_with_criticality(policy: Value, criticality:&str) -> Value {
-    publication_policy_with_header(policy, criticality, "")
-}
-fn publication_policy_with_header(policy: Value, criticality:&str, extra_header:&str) -> Value {
+// The Requirement owns an enrolled Check, so it declares `Verification:`; `extra_header` adds lines
+// such as `Context:` conditions beneath that declaration.
+fn publication_policy_with_header(policy: Value, extra_header:&str) -> Value {
     let deployment_id = if policy["monitor"].is_null() {
         "deployment"
     } else {
         "monitor-deployment"
     };
     let model=azimuth::model::Model {
-        specs:vec![azimuth::spec::parse_spec("spec.md",&"# Spec: sample\n\n## Requirement: restricted\nCriticality: routine\n\nAccess SHALL be restricted.\n\n### Scenario: works\nEvent: request\nRequired: restricted access\n".replace("Criticality: routine",&format!("Criticality: {criticality}{extra_header}"))).unwrap()],
+        specs:vec![azimuth::spec::parse_spec("spec.md",&format!("# Spec: sample\n\n## Requirement: restricted\nVerification: reviewed{extra_header}\n\nAccess SHALL be restricted.\n\n### Scenario: works\nEvent: request\nRequired: restricted access\n")).unwrap()],
+        check_implementations:vec![azimuth::model::CheckImplementation {
+            check:"recovery".into(), site:"recovery::replay".into(), file:"src/recovery.rs".into(), lang:"rust".into(),
+            source:Some(azimuth::model::SourceIdentity { area:"payments".into(), kind:"rust-symbol".into(), address:"recovery::replay".into(), mount:"code".into() }),
+            source_fingerprint:fp('c'),
+        }],
         account_verifications:vec![azimuth::account_verification::parse_account_verification("verification.md",&format!("# Verification: sample\n\n## Requirement verification: restricted\n\n### Check: recovery\n- Deployment: {policy}\n- Evidence bindings:\n  - Scenario: `works`\n    - Contribution: Establishes access restrictions.\n\nExercise access restrictions.\n")).unwrap()],
         ..Default::default()
     };
     let authority = value(&azimuth::assurance_review::authority(&model, "project").unwrap());
+    let review = accepted_verification_review(&authority);
     let verification_target = json!({"kind":"deployment","environment":"production","deployment":deployment_id,"deployment_fingerprint":fp('c'),"artifacts":[{"id":"api","digest":fp('e')}]});
     let verification_target_fp = azimuth::run::verification_target_fingerprint(
         &azimuth::run::verification_target_from_json(&native(&verification_target)).unwrap(),
@@ -46,10 +51,19 @@ fn publication_policy_with_header(policy: Value, criticality:&str, extra_header:
         "sources":[{"repository":"root","commit":"a".repeat(40),"content_fingerprint":fp('a')}],
         "builds":[{"id":"build-api","sources":["root"],"toolchain":{"compiler":"1"},"configuration_fingerprint":fp('b'),"artifacts":[fp('e')]}],
         "artifacts":[{"digest":fp('e'),"kind":"container"}],"deployments":[deployment],"components":[{"id":"api","digest":fp('e')}],
-        "snapshot":{"project":"project","model_revision":authority["fingerprint"],"authority":authority,"reviews":[],"bundles":[]},"evidence":[]
+        "snapshot":{"project":"project","model_revision":authority["fingerprint"],"authority":authority,"reviews":[review],"bundles":[]},"evidence":[]
     }))).unwrap())
 }
 
+// Satisfied requires an accepted current Verification Review, so the fixture publishes one.
+fn accepted_verification_review(authority: &Value) -> Value {
+    let mut review = json!({"kind":"verification-review","requirement":"restricted","requirement_fingerprint":authority["requirements"][0]["fingerprint"],
+        "dependencies_fingerprint":azimuth::assurance_review::requirement_closure_fingerprint(&native(authority),"restricted").unwrap(),
+        "decision":"accepted","reassesses":null,"challenge_basis":[],"reviewer":"reviewer","reviewed_at_ms":100,"rationale":"Reviewed the exact declared account.",
+        "artifacts":[{"id":"notes","digest":format!("sha256:{}","a".repeat(64)),"locator":"reviews/notes.md"}]});
+    review["fingerprint"] = json!(azimuth::assurance_review::record_fingerprint(&native(&review)).unwrap());
+    review
+}
 fn context() -> BTreeMap<String, String> {
     BTreeMap::new()
 }

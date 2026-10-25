@@ -22,7 +22,7 @@ Load every skill/reference named by the handoff. Report missing guidance rather 
 
 One coordinator owns shared workflow updates and integration. Delegate path-isolated engineering packages only after validating their ownership and dependencies with `azimuth change work-packages`; generate each package brief through the tool. Do not treat local engineering packages as CI assignments. Workers retain distinct reports and edit only their declared paths.
 
-Use the tool's gates: serialized spec, design and verification delta authoring/review; implementation; candidate preparation; required Checks; implementation/Check-directed Challenges; independent Requirement Review; outcome; actual human acceptance; finalization and archival. Follow the installed definition when an existing instance differs; do not silently rewrite its history to this sequence.
+Use the tool's gates: serialized spec, realization and verification delta authoring/review; implementation; candidate preparation; required Checks; implementation/Check-directed Challenges; independent Verification Review and, where declared, Realization Review; outcome; actual human acceptance; finalization and archival. Follow the installed definition when an existing instance differs; do not silently rewrite its history to this sequence.
 
 Failed Checks, execution gaps and confirmed Challenge defects return to correction before review. Equivalence or irrelevance justifications remain proposals for independent review, never fabricated clean results. Rerun affected work against changed inputs and retain still-current unrelated results according to native contracts.
 

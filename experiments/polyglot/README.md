@@ -2,7 +2,7 @@
 
 This experiment asks one narrow question: can independently built services in materially different language ecosystems emit one Azimuth model without the core learning any language?
 
-Seven small HTTP services expose `/identity`. Their identity capabilities realize seven routine Requirements in one synthetic spec. `check.sh` compiles or syntax-checks each service, runs ordinary engineering tests, emits seven manifests through six extractor paths, and feeds their union to the Rust core.
+Seven small HTTP services expose `/identity`. Their identity capabilities realize seven Requirements that declare no review in one synthetic spec. `check.sh` compiles or syntax-checks each service, runs ordinary engineering tests, emits seven manifests through six extractor paths, and feeds their union to the Rust core.
 
 | Language | Marker shape | Extractor authority | Fingerprint boundary |
 |---|---|---|---|
@@ -26,4 +26,4 @@ The Kotlin compiler is obtained through Gradle on the first run. Go and Gradle c
 
 ## Result boundary
 
-A green run establishes compiler-compatible annotation packages, extraction of Requirement identity, site, language and source freshness, plus composition through the current manifest contract. The tests remain ordinary engineering tests because routine Requirements cannot enroll Checks. The run does not establish framework adoption ergonomics in seven production codebases. The C++ and JVM extractors conservatively fingerprint a complete source file.
+A green run establishes compiler-compatible annotation packages, extraction of Requirement identity, site, language and source freshness, plus composition through the current manifest contract. The tests remain ordinary engineering tests because a Requirement that does not declare `Verification:` cannot enroll Checks. The run does not establish framework adoption ergonomics in seven production codebases. The C++ and JVM extractors conservatively fingerprint a complete source file.
