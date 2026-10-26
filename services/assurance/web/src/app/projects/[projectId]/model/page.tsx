@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { requireViewer } from '@/lib/auth';
-import { readProject, routeFingerprint, type Page, type RequirementReviewEntry, type RequirementReviewState, type VerificationTargetState, type DeploymentCheckPolicy, type ModelRevision, type ReleaseSummary, type ReleaseDetail, type DeploymentReference as Deployment, type RequirementWorkHistory } from '@/lib/assurance';
+import { readProject, routeFingerprint, type Page, type RequirementReviewEntry, type RequirementReviewState, type VerificationTargetState, type DeploymentRequirementStatuses, type DeploymentCheckPolicy, type ModelRevision, type ReleaseSummary, type ReleaseDetail, type DeploymentReference as Deployment, type RequirementWorkHistory } from '@/lib/assurance';
 import { requirementStatus } from '@/lib/production';
 import { ModelNavigation } from '@/components/model-navigation';
 import { ModelWorkspace } from '@/components/model-workspace';
@@ -122,7 +122,7 @@ export default async function ModelPage({ params, searchParams }: {
     readProject<{ catalog: Catalog }>(projectId, `/model-revisions/${encodeURIComponent(revision)}/catalog`),
     readProject<{ authority: Authority; selected: boolean }>(projectId, `/model-revisions/${encodeURIComponent(revision)}`),
     readProject<RequirementReviewState>(projectId, `/model-revisions/${encodeURIComponent(revision)}/requirement-reviews`),
-    verificationTarget ? readProject<VerificationTargetState>(projectId, `/model-revisions/${encodeURIComponent(revision)}/verification-targets/${encodeURIComponent(verificationTarget)}/state`) : Promise.resolve(null),
+    deployment && verificationTarget ? readProject<DeploymentRequirementStatuses>(projectId, `/deployments/${encodeURIComponent(deployment.deployment.id)}/requirements`) : Promise.resolve(null),
   ]) : [null, null, null, null];
   const catalog = catalogRecord?.catalog;
   const definitions = model?.authority.requirements ?? [];
@@ -143,12 +143,14 @@ export default async function ModelPage({ params, searchParams }: {
   const base = `${root}/model?${values}`;
   const historyRequested = query.history === '1';
   // Work history is advisory; an unavailable ledger must not hide Requirement Status, so read failures become `undefined`.
-  const [snapshot, workHistory] = requirement ? await Promise.all([
+  const assessmentFresh = deploymentStatus?.assessment?.state === 'ready' && deploymentStatus.assessment.valid_until_ms !== null && deploymentStatus.assessment.valid_until_ms > Date.now();
+  // Only the selected Requirement's full assessment is read; the other rows need just their status line.
+  const [snapshot, workHistory, requirementDetail] = requirement ? await Promise.all([
     revision && historyRequested ? readProject<Snapshot>(projectId, `/model-revisions/${encodeURIComponent(revision)}/snapshot`) : Promise.resolve(null),
     readProject<RequirementWorkHistory>(projectId, `/provenance/requirements/${encodeURIComponent(requirement.id)}`).catch(() => undefined),
-  ]) : [null, null];
-  const assessmentFresh = deploymentStatus?.assessment?.state === 'ready' && deploymentStatus.assessment.valid_until_ms !== null && deploymentStatus.assessment.valid_until_ms > Date.now();
-  const state = assessmentFresh ? deploymentStatus?.requirements.find(c => c.requirement === requirement?.id) : undefined;
+    assessmentFresh && deployment ? readProject<VerificationTargetState>(projectId, `/deployments/${encodeURIComponent(deployment.deployment.id)}/requirements/${encodeURIComponent(requirement.id)}`) : Promise.resolve(null),
+  ]) : [null, null, null];
+  const state = assessmentFresh ? requirementDetail?.requirements[0] : undefined;
   const reviewFresh = reviewState?.assessment?.state === 'ready';
   const reviewFallback = reviewFresh ? 'missing' : undefined;
   const reviewEntry = (id: string | undefined, kind: ReviewKind) => reviewFresh ? reviewState?.requirements.find(c => c.requirement === id && c.kind === kind) : undefined;
@@ -192,7 +194,7 @@ export default async function ModelPage({ params, searchParams }: {
     const status = requirementStatus(assessment?.status ?? 'unresolved');
     const verification = reviewEntry(id, 'verification-review')?.assessment ?? reviewFallback;
     const realization = reviewEntry(id, 'realization-review')?.assessment ?? reviewFallback;
-    return <Link className="modelRequirementRow" href={`${base}&requirement=${encodeURIComponent(id)}`} key={id} scroll={false}><span className={`modelStatusDot ${verificationTarget ? tones[status] : 'neutral'}`} /><div><h3>{title(id)}</h3><p>{assessment?.explanation.summary || (verificationTarget ? 'No assessment available for this system version.' : 'Requirement definition · open a version running in an environment to inspect evidence.')}</p></div><div className="modelRowStatuses"><span className={`badge ${verificationTarget ? tones[status] : 'neutral'}`}>{verificationTarget ? labels[status] : 'Definition'}</span><ReviewChips verification={verification} realization={realization} /></div><span aria-hidden="true">›</span></Link>;
+    return <Link className="modelRequirementRow" href={`${base}&requirement=${encodeURIComponent(id)}`} key={id} scroll={false}><span className={`modelStatusDot ${verificationTarget ? tones[status] : 'neutral'}`} /><div><h3>{title(id)}</h3><p>{assessment?.summary || (verificationTarget ? 'No assessment available for this system version.' : 'Requirement definition · open a version running in an environment to inspect evidence.')}</p></div><div className="modelRowStatuses"><span className={`badge ${verificationTarget ? tones[status] : 'neutral'}`}>{verificationTarget ? labels[status] : 'Definition'}</span><ReviewChips verification={verification} realization={realization} /></div><span aria-hidden="true">›</span></Link>;
   };
   return <div className="modelPage">
     <header className="modelPageHeading"><div><p className="overline">MODEL WORKSPACE</p><h1>Model</h1></div><Link className="textLink" href={`${root}?environment=${encodeURIComponent(environment)}`}>← Environment overview</Link></header>
@@ -210,7 +212,7 @@ export default async function ModelPage({ params, searchParams }: {
           <section className="requirementStatusSummary" aria-label="Requirement Status"><div><span className={`badge ${verificationTarget ? tones[status] : 'neutral'}`}>{verificationTarget ? labels[status] : 'Definition'}</span><span className="modelDetailMuted">{systemName}</span></div><p>{state?.explanation.summary || (verificationTarget ? 'No Requirement Status is available for this deployment.' : 'Browsing definitions. Open a version running in this environment to inspect Requirement Status and evidence.')}</p><span className="statusLine">{plural(new Set(requirement.bindings.map(b => b.check)).size, 'Check')} · {plural(requirement.scenarios.length, 'Scenario')}</span><span className="reviewSummary">{state?.evaluated_at_ms ? <>Evaluated <LocalTime value={state.evaluated_at_ms} /> · </> : null}Verification review: <strong>{reviewLabel(verificationReview?.assessment ?? reviewFallback)}</strong> · Realization review: <strong>{reviewLabel(realizationReview?.assessment ?? reviewFallback)}</strong></span></section>
           <nav className="requirementSections" aria-label="Requirement sections"><a href="#requirement-monitors">Monitoring</a><a href="#requirement-deployment">Deployment</a><a href="#requirement-implementation">Implementation</a><a href="#requirement-statement">Statement</a><a href="#verification-review">Reviews</a><a href="#requirement-work-history">Work history</a><Link prefetch={false} href={`${base}&requirement=${encodeURIComponent(requirement.id)}&history=1#requirement-history`}>History</Link></nav>
           {state && state.explanation.reasons.length > 0 && <details className="statusReasons"><summary>Why this Requirement is {labels[status].toLowerCase()}</summary><ul>{state.explanation.reasons.map((reason,i) => <li key={`${reason.code}:${i}`}><span>{reason.message}</span>{reason.check && <small>Check: {reason.check}</small>}</li>)}</ul></details>}
-          <RequirementVerification bindings={requirement.bindings} checks={model?.authority.checks ?? []} descriptions={catalog?.checks ?? []} scenarios={catalog?.scenarios ?? []} scenarioIds={requirement.scenarios} state={state} evaluatedAt={state?.evaluated_at_ms ?? deploymentStatus?.evaluated_at_ms} hasDeployment={!!verificationTarget} projectRoot={root} />
+          <RequirementVerification bindings={requirement.bindings} checks={model?.authority.checks ?? []} descriptions={catalog?.checks ?? []} scenarios={catalog?.scenarios ?? []} scenarioIds={requirement.scenarios} state={state} evaluatedAt={state?.evaluated_at_ms ?? requirementDetail?.evaluated_at_ms} hasDeployment={!!verificationTarget} projectRoot={root} />
           <section id="requirement-statement" className="requirementDetailSection disclosureSection"><Disclosure open summary="Statement">{catalog?.requirements.find(c => c.id === requirement.id)?.statement ? <Markdown source={catalog.requirements.find(c => c.id === requirement.id)!.statement} /> : <p className="modelDetailMuted">No statement available for this Requirement.</p>}</Disclosure></section>
           {reviewSection('verification-review', verificationReview)}
           {reviewSection('realization-review', realizationReview)}

@@ -107,7 +107,8 @@ async function verifyMaterializedOverview() {
     const view = await environmentView('payments-demo', null);
     assert.equal(!!view.state, value === 'healthy');
     assert.equal(view.freshness.state, value === 'healthy' ? 'ready' : value);
-    assert(routes.some(route => route.endsWith('/status/summary')));
+    assert(routes.some(route => route.endsWith('/requirements')));
+    assert(!routes.some(route => route.endsWith('/status/summary') || route === '/authority'));
     assert(!routes.some(route => route.endsWith('/status')));
     const markup = renderToStaticMarkup(await Page({ params: Promise.resolve({ projectId: 'payments-demo' }), searchParams: Promise.resolve({}) }));
     if (value === 'healthy') {
@@ -148,18 +149,24 @@ verifyMaterializedOverview().catch(error => { console.error(error); process.exit
 async function verifyModelAssessmentFreshness() {
   let freshness = 'ready';
   let snapshotReads = 0;
+  const reads = [];
   const { developmentRead } = loadSource('../src/lib/development-data.ts', { 'server-only': {}, './development': { developmentScenario: () => 'healthy' } });
   const deployment = developmentRead('payments-demo', '/deployments?limit=100').items[0].deployment.id;
   const Page = loadSource('../src/app/projects/[projectId]/model/page.tsx', {
     '@/lib/environment': { selectedEnvironment: async () => 'production' },
     '@/lib/auth': { requireViewer: async () => {} },
     '@/lib/assurance': { routeFingerprint: value => value, readProject: async (project, route) => {
+      reads.push(route);
       if (route.endsWith('/snapshot')) snapshotReads += 1;
       const record = structuredClone(developmentRead(project, route));
-      if (route.endsWith('/state') || route.endsWith('/requirement-reviews')) {
+      const status = route.endsWith('/requirements') || /\/requirements\/[^/]+$/.test(route);
+      if (status || route.endsWith('/requirement-reviews')) {
         if (freshness === 'missing') delete record.assessment;
-        else { record.assessment.state = freshness === 'elapsed' ? 'ready' : freshness; if (freshness === 'elapsed' && route.endsWith('/state')) record.assessment.valid_until_ms = 0; }
-        for (const requirement of record.requirements) if (requirement.explanation) requirement.explanation.summary = 'Current assessment evidence sentinel';
+        else { record.assessment.state = freshness === 'elapsed' ? 'ready' : freshness; if (freshness === 'elapsed' && status) record.assessment.valid_until_ms = 0; }
+        for (const requirement of record.requirements) {
+          if (requirement.explanation) requirement.explanation.summary = 'Current assessment evidence sentinel';
+          else if (status) requirement.summary = 'Current assessment evidence sentinel';
+        }
       }
       return record;
     } },
@@ -186,6 +193,8 @@ async function verifyModelAssessmentFreshness() {
     assert.equal(markup.includes('Verification review: <strong>Accepted</strong> · Realization review: <strong>Not declared</strong>'), value === 'ready' || value === 'elapsed', value);
   }
   assert.equal(snapshotReads, 0, 'Requirement details must not eagerly load the complete evidence snapshot');
+  assert(!reads.some(route => route.endsWith('/state') || route.endsWith('/status') || route.endsWith('/status/summary')), 'the model page reads status lines and one Requirement, never the whole verification-target state');
+  assert(reads.some(route => /\/requirements\/reminders-arrive-on-time$/.test(route)), 'the selected Requirement is read on its own');
   freshness = 'ready';
   await Page({ params: Promise.resolve({ projectId: 'payments-demo' }), searchParams: Promise.resolve({ context: `deployment:${deployment}`, requirement: 'reminders-arrive-on-time', history: '1' }) });
   assert.equal(snapshotReads, 1, 'History remains available on explicit request');
