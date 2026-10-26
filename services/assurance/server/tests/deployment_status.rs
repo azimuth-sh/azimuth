@@ -570,8 +570,18 @@ async fn a_context_leaf_that_changed_during_capture_leaves_the_condition_unresol
         ),
         (format!("{base}/releases"), PUBLISHER, package.clone()),
     ] {
-        let response = client.post(&url).bearer_auth(token).json(&body).send().await?;
-        assert_eq!(response.status(), StatusCode::CREATED, "{url}: {}", response.text().await?);
+        let response = client
+            .post(&url)
+            .bearer_auth(token)
+            .json(&body)
+            .send()
+            .await?;
+        assert_eq!(
+            response.status(),
+            StatusCode::CREATED,
+            "{url}: {}",
+            response.text().await?
+        );
     }
     let at: i64 = sqlx::query_scalar("SELECT (extract(epoch FROM clock_timestamp())*1000)::bigint")
         .fetch_one(&pool)
@@ -583,7 +593,12 @@ async fn a_context_leaf_that_changed_during_capture_leaves_the_condition_unresol
         .json(&json!({"expected_revision":0,"observation":observation}))
         .send()
         .await?;
-    assert_eq!(response.status(), StatusCode::OK, "{}", response.text().await?);
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "{}",
+        response.text().await?
+    );
     let observed: Value = client
         .get(format!("{base}/environments/production/observations"))
         .bearer_auth(VIEWER)
@@ -599,12 +614,8 @@ async fn a_context_leaf_that_changed_during_capture_leaves_the_condition_unresol
         .await?
         .json()
         .await?;
-    let snapshot = |time: i64, enabled: bool| {
-        json!({"captured_at_ms":time,"instance":"process-a","report":{"format":"azimuth-execution-context","version":2,"contexts":{"api":{"contract_revision":contract["fingerprint"],"values":{"enabled":enabled,"revision":1,"mode":"restricted"}}}}})
-    };
-    let capture = |start: i64, before: bool, after: bool| {
-        json!({"kind":"deployment","activity":null,"run":null,"bundle_fingerprint":null,"verification_target_fingerprint":deployed["deployment"]["verification_target_fingerprint"],"component":"api","instance":"process-a","started_at_ms":start,"finished_at_ms":start + 1,"before":snapshot(start, before),"after":snapshot(start + 1, after)})
-    };
+    let snapshot = |time: i64, enabled: bool| json!({"captured_at_ms":time,"instance":"process-a","report":{"format":"azimuth-execution-context","version":2,"contexts":{"api":{"contract_revision":contract["fingerprint"],"values":{"enabled":enabled,"revision":1,"mode":"restricted"}}}}});
+    let capture = |start: i64, before: bool, after: bool| json!({"kind":"deployment","activity":null,"run":null,"bundle_fingerprint":null,"verification_target_fingerprint":deployed["deployment"]["verification_target_fingerprint"],"component":"api","instance":"process-a","started_at_ms":start,"finished_at_ms":start + 1,"before":snapshot(start, before),"after":snapshot(start + 1, after)});
 
     let response = client
         .post(format!("{base}/context-captures"))
@@ -612,9 +623,17 @@ async fn a_context_leaf_that_changed_during_capture_leaves_the_condition_unresol
         .json(&json!({"capture":capture(at + 1, true, false)}))
         .send()
         .await?;
-    assert_eq!(response.status(), StatusCode::CREATED, "{}", response.text().await?);
+    assert_eq!(
+        response.status(),
+        StatusCode::CREATED,
+        "{}",
+        response.text().await?
+    );
     let unstable = ready_status(&client, &base, &deployment_id).await?;
-    assert_eq!(unstable["requirements"][0]["status"], "unresolved", "{unstable}");
+    assert_eq!(
+        unstable["requirements"][0]["status"], "unresolved",
+        "{unstable}"
+    );
 
     let response = client
         .post(format!("{base}/context-captures"))
@@ -622,9 +641,17 @@ async fn a_context_leaf_that_changed_during_capture_leaves_the_condition_unresol
         .json(&json!({"capture":capture(at + 3, false, false)}))
         .send()
         .await?;
-    assert_eq!(response.status(), StatusCode::CREATED, "{}", response.text().await?);
+    assert_eq!(
+        response.status(),
+        StatusCode::CREATED,
+        "{}",
+        response.text().await?
+    );
     let stable = ready_status(&client, &base, &deployment_id).await?;
-    assert_eq!(stable["requirements"][0]["status"], "not-applicable", "{stable}");
+    assert_eq!(
+        stable["requirements"][0]["status"], "not-applicable",
+        "{stable}"
+    );
     server.abort();
     Ok(())
 }
@@ -649,21 +676,35 @@ async fn main_publication_accepts_exactly_the_contract_commit_and_ratification_s
         let client = client.clone();
         let url = format!("{base}/main-models");
         async move {
-            let response = client.post(url).bearer_auth(PUBLISHER).json(&body).send().await.unwrap();
+            let response = client
+                .post(url)
+                .bearer_auth(PUBLISHER)
+                .json(&body)
+                .send()
+                .await
+                .unwrap();
             let status = response.status();
             (status, response.text().await.unwrap())
         }
     };
-    for commit in ["A".repeat(40), "a".repeat(39), "a".repeat(41), "g".repeat(40), "a".repeat(63)] {
+    for commit in [
+        "A".repeat(40),
+        "a".repeat(39),
+        "a".repeat(41),
+        "g".repeat(40),
+        "a".repeat(63),
+    ] {
         let (status, body) = publish(main_publication(&commit, ratified.clone())).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{commit}: {body}");
         assert!(body.contains("40 or 64 lowercase hex"), "{body}");
     }
-    let unreasoned = json!({"status":"unratified","reason":"  ","pull_request":null,"verified_at_ms":1});
+    let unreasoned =
+        json!({"status":"unratified","reason":"  ","pull_request":null,"verified_at_ms":1});
     let (status, body) = publish(main_publication(&"a".repeat(40), unreasoned)).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert!(body.contains("nonempty reason"), "{body}");
-    let negative = json!({"status":"ratified","reason":"approved","pull_request":null,"verified_at_ms":-1});
+    let negative =
+        json!({"status":"ratified","reason":"approved","pull_request":null,"verified_at_ms":-1});
     let (status, body) = publish(main_publication(&"a".repeat(40), negative)).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert!(body.contains("non-negative"), "{body}");
@@ -754,7 +795,11 @@ async fn main_publication_revisions_supersede_in_place_and_order_by_sequence_the
     assert_eq!(current["commit"], json!(a));
 
     let (status, body) = post_main(&client, &base, &first).await;
-    assert_eq!(status, StatusCode::OK, "an identical stored revision still replays: {body}");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "an identical stored revision still replays: {body}"
+    );
     let (status, body) = post_main(&client, &base, &revised(&a, 2, 3, "other sequence")).await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
 
@@ -762,7 +807,12 @@ async fn main_publication_revisions_supersede_in_place_and_order_by_sequence_the
     assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(current_main(&client, &base).await["commit"], json!(b));
 
-    let (status, body) = post_main(&client, &base, &revised(&a, 1, 3, "late revision of an older commit")).await;
+    let (status, body) = post_main(
+        &client,
+        &base,
+        &revised(&a, 1, 3, "late revision of an older commit"),
+    )
+    .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["default"], false);
     let current = current_main(&client, &base).await;
@@ -771,7 +821,10 @@ async fn main_publication_revisions_supersede_in_place_and_order_by_sequence_the
 
     let (status, body) = post_main(&client, &base, &revised(&b, 2, 3, "argocd moved again")).await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
-    assert_eq!(current_main(&client, &base).await["publication_revision"], 3);
+    assert_eq!(
+        current_main(&client, &base).await["publication_revision"],
+        3
+    );
     let (status, body) = post_main(&client, &base, &revised(&b, 2, 2, "arrived late")).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert!(body.to_string().contains("superseded"), "{body}");
@@ -792,25 +845,66 @@ async fn main_publication_rejects_missing_or_invalid_revision_sources_and_versio
     let valid = revised(&"a".repeat(40), 1, 1, "reason");
     let mutations: Vec<(&str, Box<dyn Fn(&mut Value)>)> = vec![
         ("version 1", Box::new(|v| v["version"] = json!(1))),
-        ("missing revision", Box::new(|v| { v.as_object_mut().unwrap().remove("publication_revision"); })),
-        ("zero revision", Box::new(|v| v["publication_revision"] = json!(0))),
-        ("negative revision", Box::new(|v| v["publication_revision"] = json!(-1))),
-        ("fractional revision", Box::new(|v| v["publication_revision"] = json!(1.5))),
-        ("text revision", Box::new(|v| v["publication_revision"] = json!("1"))),
-        ("missing sources", Box::new(|v| { v.as_object_mut().unwrap().remove("sources"); })),
+        (
+            "missing revision",
+            Box::new(|v| {
+                v.as_object_mut().unwrap().remove("publication_revision");
+            }),
+        ),
+        (
+            "zero revision",
+            Box::new(|v| v["publication_revision"] = json!(0)),
+        ),
+        (
+            "negative revision",
+            Box::new(|v| v["publication_revision"] = json!(-1)),
+        ),
+        (
+            "fractional revision",
+            Box::new(|v| v["publication_revision"] = json!(1.5)),
+        ),
+        (
+            "text revision",
+            Box::new(|v| v["publication_revision"] = json!("1")),
+        ),
+        (
+            "missing sources",
+            Box::new(|v| {
+                v.as_object_mut().unwrap().remove("sources");
+            }),
+        ),
         ("empty sources", Box::new(|v| v["sources"] = json!({}))),
         ("array sources", Box::new(|v| v["sources"] = json!(["a"]))),
-        ("empty repository", Box::new(|v| v["sources"] = json!({"":"a".repeat(40)}))),
-        ("short commit", Box::new(|v| v["sources"] = json!({"r":"a".repeat(39)}))),
-        ("64 hex commit", Box::new(|v| v["sources"] = json!({"r":"a".repeat(64)}))),
-        ("uppercase commit", Box::new(|v| v["sources"] = json!({"r":"A".repeat(40)}))),
-        ("non-text commit", Box::new(|v| v["sources"] = json!({"r":1}))),
+        (
+            "empty repository",
+            Box::new(|v| v["sources"] = json!({"":"a".repeat(40)})),
+        ),
+        (
+            "short commit",
+            Box::new(|v| v["sources"] = json!({"r":"a".repeat(39)})),
+        ),
+        (
+            "64 hex commit",
+            Box::new(|v| v["sources"] = json!({"r":"a".repeat(64)})),
+        ),
+        (
+            "uppercase commit",
+            Box::new(|v| v["sources"] = json!({"r":"A".repeat(40)})),
+        ),
+        (
+            "non-text commit",
+            Box::new(|v| v["sources"] = json!({"r":1})),
+        ),
     ];
     for (name, mutate) in mutations {
         let mut body = valid.clone();
         mutate(&mut body);
         let (status, response) = post_main(&client, &base, &body).await;
-        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{name}: {response}");
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{name}: {response}"
+        );
     }
     let (status, response) = post_main(&client, &base, &valid).await;
     assert_eq!(status, StatusCode::CREATED, "{response}");

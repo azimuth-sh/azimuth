@@ -100,12 +100,16 @@ async fn publications_stored_before_revisions_become_revision_one_with_no_source
     };
     before.run(&pool).await?;
     let commit = "a".repeat(40);
-    sqlx::query("INSERT INTO assurance_authorities(project,fingerprint,registered_by) VALUES('p','m','x')")
-        .execute(&pool)
-        .await?;
-    sqlx::query("INSERT INTO model_revisions(project,fingerprint,registered_by) VALUES('p','m','x')")
-        .execute(&pool)
-        .await?;
+    sqlx::query(
+        "INSERT INTO assurance_authorities(project,fingerprint,registered_by) VALUES('p','m','x')",
+    )
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO model_revisions(project,fingerprint,registered_by) VALUES('p','m','x')",
+    )
+    .execute(&pool)
+    .await?;
     sqlx::query("INSERT INTO main_publications(project,commit_sha,main_sequence,model_revision,ratification_status,ratification_verified_at_ms,published_by) VALUES('p',$1,7,'m','ratified',0,'x')")
         .bind(&commit)
         .execute(&pool)

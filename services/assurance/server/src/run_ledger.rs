@@ -529,7 +529,7 @@ fn definition_reviews(
             match assurance_review::latest_review(reviews, &target) {
                 Ok(Some(record)) => {
                     let assessment =
-                        assurance_review::assess_record(record, authority, reviews, bundles);
+                        assurance_review::assess_head(record, authority, reviews, bundles);
                     let code_drift = (kind == "realization-review")
                         .then(|| assurance_review::realization_drift(record, authority))
                         .flatten();
