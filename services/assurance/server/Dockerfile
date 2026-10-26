@@ -18,6 +18,8 @@ RUN mkdir -p tools/azimuth/src services/assurance/domain/src services/assurance/
 
 COPY tools/azimuth tools/azimuth
 COPY services/assurance services/assurance
+ARG AZIMUTH_VERSION
+ENV AZIMUTH_VERSION=$AZIMUTH_VERSION
 RUN cargo clean --release --manifest-path services/assurance/Cargo.toml \
         -p azimuth -p azimuth-assurance-domain -p azimuth-assurance-server \
     && cargo build --locked --release --manifest-path services/assurance/Cargo.toml \
