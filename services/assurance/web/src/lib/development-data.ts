@@ -15,8 +15,13 @@ export function developmentRead(project: string, path: string): unknown {
   const url = new URL(path, 'http://127.0.0.1');
   const route = decodeURIComponent(url.pathname);
   if (route.startsWith('/deployments/') && route.endsWith('/requirements')) {
-    const full = developmentRead(project, route.replace(/\/requirements$/, '/status/summary')) as { assessment: unknown; requirements: Array<{ requirement: string; status: string; verification_review: string; realization_review: string; explanation: { summary: string } }> } | null;
-    return full && { assessment: full.assessment, requirements: full.requirements.map(({ requirement, status, verification_review, realization_review, explanation }) => ({ requirement, status, verification_review, realization_review, summary: explanation.summary })) };
+    const full = developmentRead(project, route.replace(/\/requirements$/, '/status/summary')) as { assessment: unknown; requirements: Array<{ requirement: string; status: string; verification_review: string; realization_review: string; realization_code_drift: boolean | null; explanation: { summary: string; realization_review?: { reviewed_commit?: string | null } } }> } | null;
+    return full && { assessment: full.assessment, requirements: full.requirements.map(({ requirement, status, verification_review, realization_review, realization_code_drift, explanation }) => ({ requirement, status, verification_review, realization_review, realization_code_drift, realization_reviewed_commit: explanation.realization_review?.reviewed_commit ?? null, summary: explanation.summary })) };
+  }
+  const detail = /^(\/deployments\/[^/]+)\/requirements\/([^/]+)$/.exec(route);
+  if (detail) {
+    const full = developmentRead(project, `${detail[1]}/status`) as { requirements: Array<{ requirement: string }> } | null;
+    return full && { ...full, requirements: full.requirements.filter(item => item.requirement === detail[2]) };
   }
   const page = (items: unknown[]) => ({ items, next: null });
   const revision = identity('model');

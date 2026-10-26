@@ -52,7 +52,7 @@ export default async function ProjectPage({
     verificationTarget,
     state,
     freshness,
-    authority,
+    defaultRevision,
     deliveryGap,
     rollbackCandidates,
     hasMore,
@@ -155,7 +155,7 @@ export default async function ProjectPage({
               ? deliveryGap.requirements.length
                 ? `Main has ${deliveryGap.requirements.length} Requirement${deliveryGap.requirements.length === 1 ? "" : "s"} not yet deployed`
                 : "Matches main"
-              : revision && authority?.fingerprint !== revision
+              : revision && defaultRevision !== revision
                 ? "Differs from the default model"
                 : "Default model"}
           </small>
@@ -243,7 +243,7 @@ export default async function ProjectPage({
               {drifted.map((c) => (
                 <li key={c.requirement}>
                   <Link href={modelLink(c.requirement)}>{title(c.requirement)}</Link>{" "}
-                  <CodeDrift drift={c.realization_code_drift} commit={c.explanation.realization_review?.reviewed_commit} />
+                  <CodeDrift drift={c.realization_code_drift} commit={c.realization_reviewed_commit} />
                 </li>
               ))}
             </ul>
@@ -278,7 +278,7 @@ export default async function ProjectPage({
                     <span className="badge neutral">Not applicable here</span>
                   </div>
                   <h3>{title(c.requirement)}</h3>
-                  <p>{c.explanation.summary}</p>
+                  <p>{c.summary}</p>
                 </div>
               </Link>
             ))}
@@ -332,7 +332,7 @@ export default async function ProjectPage({
                       </span>
                     </div>
                     <h3>{title(c.requirement)}</h3>
-                    <p>{c.explanation.summary}</p>
+                    <p>{c.summary}</p>
                     <span className="rowAction">
                       Inspect Requirement & evidence{" "}
                       <span aria-hidden="true">↗</span>

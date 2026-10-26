@@ -157,11 +157,6 @@ export interface AssessmentFreshness {
   evaluated_at_ms: number | null;
   valid_until_ms: number | null;
 }
-export type DeploymentStatusSummary = Omit<VerificationTargetState, 'requirements'> & {
-  requirements: Array<Pick<VerificationTargetState['requirements'][number], 'requirement' | 'status' | 'verification_review' | 'realization_review' | 'realization_code_drift' | 'diagnostics' | 'gaps'> & {
-    explanation: Pick<StatusExplanation, 'summary'> & { realization_review?: Pick<StatusExplanation['realization_review'], 'status' | 'reviewed_commit' | 'code_drift'> };
-  }>;
-};
 export interface DeploymentRequirementStatuses {
   assessment: AssessmentFreshness;
   requirements: Array<{
@@ -169,6 +164,8 @@ export interface DeploymentRequirementStatuses {
     status: VerificationTargetState['requirements'][number]['status'];
     verification_review: string;
     realization_review: string;
+    realization_code_drift: boolean | null;
+    realization_reviewed_commit: string | null;
     summary: string;
   }>;
 }

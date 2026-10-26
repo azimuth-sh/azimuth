@@ -4,7 +4,6 @@ import {
   readProject,
   type Page,
   type DeploymentRequirementStatuses,
-  type DeploymentStatusSummary,
 } from "./assurance";
 
 interface Deployment {
@@ -108,7 +107,7 @@ export async function environmentView(
 ) {
   const [
     deployments,
-    authority,
+    revisions,
     currentSelection,
     exact,
     observation,
@@ -116,7 +115,7 @@ export async function environmentView(
     rollbackCandidates,
   ] = await Promise.all([
       readProject<Page<Deployment>>(project, "/deployments?limit=100"),
-      readProject<{ fingerprint: string }>(project, "/authority"),
+      readProject<Page<{ revision: string; selected: boolean }>>(project, "/model-revisions?limit=100"),
       readProject<DeploymentSelection>(
         project,
         `/environments/${encodeURIComponent(environment)}/deployment`,
@@ -165,9 +164,9 @@ export async function environmentView(
         )
       : Promise.resolve(null),
     deployment && verificationTarget
-      ? readProject<DeploymentStatusSummary>(
+      ? readProject<DeploymentRequirementStatuses>(
           project,
-          `/deployments/${encodeURIComponent(deployment.deployment.id)}/status/summary`,
+          `/deployments/${encodeURIComponent(deployment.deployment.id)}/requirements`,
         )
       : Promise.resolve(null),
   ]);
@@ -192,7 +191,7 @@ export async function environmentView(
     verificationTarget,
     state,
     freshness,
-    authority,
+    defaultRevision: revisions?.items.find((r) => r.selected)?.revision,
     deliveryGap,
     rollbackCandidates: rollbackCandidates?.candidates ?? [],
     currentSelection,

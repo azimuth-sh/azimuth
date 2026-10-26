@@ -195,6 +195,10 @@ pub fn app(state: LedgerState) -> Router {
             get(deployment_status::requirement_statuses),
         )
         .route(
+            "/v1/projects/{project}/deployments/{deployment}/requirements/{requirement}",
+            get(deployment_status::requirement_detail),
+        )
+        .route(
             "/v1/projects/{project}/deployments/{deployment}/status",
             get(deployment_status::show),
         )

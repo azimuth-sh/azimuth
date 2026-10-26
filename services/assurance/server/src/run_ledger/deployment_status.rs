@@ -607,3 +607,14 @@ pub(super) async fn requirement_statuses(
     .await
     .map(Json)
 }
+
+pub(super) async fn requirement_detail(
+    State(state): State<LedgerState>,
+    Path((project, deployment, requirement)): Path<(String, String, String)>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, LedgerError> {
+    state.authorize(&project, &headers, None)?;
+    super::materialized::requirement_detail(&state, &project, &deployment, &requirement)
+        .await
+        .map(Json)
+}

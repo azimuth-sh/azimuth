@@ -488,6 +488,33 @@ pub(super) async fn read(
     deployment: &str,
     summary: bool,
 ) -> Result<Value, LedgerError> {
+    read_requirements(state, project, deployment, summary, None).await
+}
+
+/// One Requirement's full assessment, so a page showing a single Requirement does not read the
+/// documents of all the others.
+pub(super) async fn requirement_detail(
+    state: &LedgerState,
+    project: &str,
+    deployment: &str,
+    requirement: &str,
+) -> Result<Value, LedgerError> {
+    let status = read_requirements(state, project, deployment, false, Some(requirement)).await?;
+    if status["requirements"].as_array().is_some_and(Vec::is_empty)
+        && status["assessment"]["published_generation"] != json!(0)
+    {
+        return Err(LedgerError::not_found());
+    }
+    Ok(status)
+}
+
+async fn read_requirements(
+    state: &LedgerState,
+    project: &str,
+    deployment: &str,
+    summary: bool,
+    only: Option<&str>,
+) -> Result<Value, LedgerError> {
     let mut tx = state.pool.begin().await?;
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         .execute(&mut *tx)
@@ -523,7 +550,7 @@ pub(super) async fn read(
     } else {
         "ready"
     };
-    let entries=sqlx::query("SELECT requirement,record_key,status,verification_review,realization_review,realization_code_drift,realization_reviewed_commit,summary,evaluated_at_ms,supported_since_ms,generation<>published_generation AND NOT renewing AS unpublished,valid_until_ms FROM assessment_requirements WHERE project=$1 AND deployment=$2 ORDER BY requirement").bind(project).bind(deployment).fetch_all(&mut *tx).await?;
+    let entries=sqlx::query("SELECT requirement,record_key,status,verification_review,realization_review,realization_code_drift,realization_reviewed_commit,summary,evaluated_at_ms,supported_since_ms,generation<>published_generation AND NOT renewing AS unpublished,valid_until_ms FROM assessment_requirements WHERE project=$1 AND deployment=$2 AND ($3::text IS NULL OR requirement=$3) ORDER BY requirement").bind(project).bind(deployment).bind(only).fetch_all(&mut *tx).await?;
     let mut requirements = Vec::new();
     for entry in entries {
         let mut requirement = if summary {
@@ -632,7 +659,7 @@ pub(super) async fn requirement_statuses(
     } else {
         "ready"
     };
-    let requirements = sqlx::query("SELECT requirement,status,verification_review,realization_review,summary FROM (SELECT r.requirement,r.verification_review,r.realization_review,CASE WHEN f.freshness='ready' THEN r.status ELSE 'unresolved' END AS status,CASE WHEN f.freshness='ready' THEN r.summary ELSE 'Assessment is '||f.freshness||'; current evidence is being evaluated' END AS summary FROM assessment_requirements r CROSS JOIN LATERAL (SELECT CASE WHEN $3 OR (r.generation<>r.published_generation AND NOT r.renewing) THEN 'pending' WHEN r.valid_until_ms<=$4 THEN 'expired' ELSE 'ready' END AS freshness) f WHERE r.project=$1 AND r.deployment=$2) s WHERE ($5::text IS NULL OR s.status=$5) ORDER BY requirement")
+    let requirements = sqlx::query("SELECT requirement,status,verification_review,realization_review,realization_code_drift,realization_reviewed_commit,summary FROM (SELECT r.requirement,r.verification_review,r.realization_review,r.realization_code_drift,r.realization_reviewed_commit,CASE WHEN f.freshness='ready' THEN r.status ELSE 'unresolved' END AS status,CASE WHEN f.freshness='ready' THEN r.summary ELSE 'Assessment is '||f.freshness||'; current evidence is being evaluated' END AS summary FROM assessment_requirements r CROSS JOIN LATERAL (SELECT CASE WHEN $3 OR (r.generation<>r.published_generation AND NOT r.renewing) THEN 'pending' WHEN r.valid_until_ms<=$4 THEN 'expired' ELSE 'ready' END AS freshness) f WHERE r.project=$1 AND r.deployment=$2) s WHERE ($5::text IS NULL OR s.status=$5) ORDER BY requirement")
         .bind(project)
         .bind(deployment)
         .bind(published == 0 || unbound)
@@ -641,7 +668,7 @@ pub(super) async fn requirement_statuses(
         .fetch_all(&mut *tx)
         .await?
         .iter()
-        .map(|entry| json!({"requirement":entry.get::<String,_>("requirement"),"status":entry.get::<String,_>("status"),"verification_review":entry.get::<String,_>("verification_review"),"realization_review":entry.get::<String,_>("realization_review"),"summary":entry.get::<String,_>("summary")}))
+        .map(|entry| json!({"requirement":entry.get::<String,_>("requirement"),"status":entry.get::<String,_>("status"),"verification_review":entry.get::<String,_>("verification_review"),"realization_review":entry.get::<String,_>("realization_review"),"realization_code_drift":entry.get::<Option<bool>,_>("realization_code_drift"),"realization_reviewed_commit":entry.get::<Option<String>,_>("realization_reviewed_commit"),"summary":entry.get::<String,_>("summary")}))
         .collect::<Vec<_>>();
     Ok(
         json!({"format":"azimuth-deployment-requirements","version":1,"project":project,"deployment":deployment,"requirements":requirements,
@@ -1003,6 +1030,14 @@ mod tests {
             assert_eq!(item["verification_review"], full["verification_review"]);
             assert_eq!(item["realization_review"], full["realization_review"]);
             assert_eq!(item["summary"], full["explanation"]["summary"], "{item}");
+            assert_eq!(
+                item["realization_code_drift"],
+                full["realization_code_drift"]
+            );
+            assert_eq!(
+                item["realization_reviewed_commit"],
+                full["explanation"]["realization_review"]["reviewed_commit"]
+            );
         }
         let status = summary["requirements"][0]["status"].as_str().unwrap();
         let filtered =
@@ -1014,6 +1049,25 @@ mod tests {
             .all(|item| item["status"] == status));
         assert!(
             requirement_statuses(&state, "project", "monitor-deployment", Some("bogus"))
+                .await
+                .is_err()
+        );
+        let one = summary["requirements"][0]["requirement"].as_str().unwrap();
+        let detail = requirement_detail(&state, "project", "monitor-deployment", one).await?;
+        let full = read(&state, "project", "monitor-deployment", false).await?;
+        assert_eq!(detail["requirements"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            detail["requirements"][0],
+            *full["requirements"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|item| item["requirement"] == one)
+                .unwrap()
+        );
+        assert_eq!(detail["assessment"], full["assessment"]);
+        assert!(
+            requirement_detail(&state, "project", "monitor-deployment", "absent")
                 .await
                 .is_err()
         );
