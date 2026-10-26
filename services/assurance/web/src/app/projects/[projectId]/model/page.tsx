@@ -166,7 +166,7 @@ export default async function ModelPage({ params, searchParams }: {
   const history = snapshot?.reviews.filter(r => r.requirement === requirement?.id) ?? [];
   const reviewSection = (kind: ReviewKind, review: RequirementReviewEntry | undefined) => {
     const status = review?.assessment ?? reviewFallback;
-    const reviewer = reviewAttempt(workHistory, review?.record?.fingerprint);
+    const reviewer = reviewAttempt(workHistory, kind, review?.record?.fingerprint);
     const record = review?.record;
     return <section id={kind} className="requirementDetailSection disclosureSection"><Disclosure summary={reviewKindNames[kind]} meta={<><span className={`badge ${reviewTone(status)}`}>{reviewLabel(status)}</span>{typeof record?.reviewer === 'string' && <span>{record.reviewer}</span>}{record?.reviewed_at_ms !== undefined && <LocalTime value={typeof record.reviewed_at_ms === 'number' ? record.reviewed_at_ms : undefined} fallback="Date not recorded" />}</>}>
       {status === 'not-declared' ? <p className="modelDetailMuted">This Requirement does not declare <code>{kind === 'verification-review' ? 'Verification:' : 'Realization:'}</code>, so no {reviewKindNames[kind].toLowerCase()} is owed.</p> : typeof record?.rationale === 'string' ? <Markdown source={record.rationale} /> : <p className="modelDetailMuted">No review rationale is available.</p>}

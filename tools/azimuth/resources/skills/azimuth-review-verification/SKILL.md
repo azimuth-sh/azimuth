@@ -1,6 +1,6 @@
 ---
 name: azimuth-review-verification
-description: Independently perform the Verification Review of an Azimuth Requirement that declares `Verification:`, after required local execution or after corrections. Use for review-requirement work and successor Verification Reviews; deployment Requirement Status is computed separately from applicable evidence.
+description: Independently perform the Verification Review of an Azimuth Requirement that declares `Verification:`, after required local execution or after corrections. Use for review-requirement-verification work and successor Verification Reviews; deployment Requirement Status is computed separately from applicable evidence.
 ---
 
 # Verification Review
@@ -54,6 +54,6 @@ Use `Reassesses` for successor records of the same Requirement and retain the pr
 
 Compile with `azimuth assurance review-compile`; compilation checks identity, dependency and record consistency, not semantic correctness. Inspect the selected entry's assessment status and diagnostics before presenting it as current. Retain the reviewer-authored Markdown and the sealed native JSON written beside it in the change's `reviews/`. Finalization writes the latest ratifying review into the model's `verification-review.md`; never write or edit that file by hand, because a hand edit breaks its seal. Preserve earlier records when adding a successor rather than overwriting their sealed files. Do not fabricate timestamps, independence, observations or decisions to satisfy tooling.
 
-Return a compact result with `work: review-requirement`, the selected Requirement target, `outcome: accepted | rejected`, a concise report and a `verification-review` output selecting the compiled `record` ID. Output references are relative to the workflow directory unless a repository is explicit. The coordinator records the result using the original captured handoff and current coordination revision; a delegated reviewer does not advance the workflow unless assigned that responsibility.
+Return a compact result with `work: review-requirement-verification`, the selected Requirement target, `outcome: accepted | rejected`, a concise report and a `verification-review` output selecting the compiled `record` ID. Output references are relative to the workflow directory unless a repository is explicit. The coordinator records the result using the original captured handoff and current coordination revision; a delegated reviewer does not advance the workflow unless assigned that responsibility.
 
 Stop after retaining the review. Findings return to correction and independent reassessment. Review work alone authorizes no source fixes, test or Verification Challenge execution, AAS publication, accepted-authority selection, deployment, commit or archive.

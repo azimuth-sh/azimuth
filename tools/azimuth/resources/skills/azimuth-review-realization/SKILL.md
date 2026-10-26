@@ -1,6 +1,6 @@
 ---
 name: azimuth-review-realization
-description: Independently perform the Realization Review of an Azimuth Requirement that declares `Realization:`, judging whether the code at its realization sites does what each Scenario says. Use for Realization Review work and successor Realization Reviews.
+description: Independently perform the Realization Review of an Azimuth Requirement that declares `Realization:`, judging whether the code at its realization sites does what each Scenario says. Use for review-requirement-realization work and successor Realization Reviews.
 ---
 
 # Realization Review
@@ -39,4 +39,4 @@ The blocking dependencies of this review are the Requirement text, its Scenarios
 
 Retain the reviewer-authored Markdown and the sealed native JSON beside it in the change's `reviews/`. Finalization writes the latest ratifying review into the model's `realization-review.md`; never write or edit that file by hand, because a hand edit breaks its seal. Preserve earlier records when adding a successor.
 
-Return the compact result the handoff requires, with `outcome: accepted | rejected`, a concise report and a `realization-review` output selecting the compiled record. Stop after retaining the review. Findings return to correction and independent reassessment; review work alone authorizes no source fixes, execution, publication, deployment, commit or archive.
+Return a compact result with `work: review-requirement-realization`, the selected Requirement target, `outcome: accepted | rejected`, a concise report and a `realization-review` output selecting the compiled `record` ID. The coordinator records the result using the original captured handoff and current coordination revision. A rejection reopens `implement-change` for correction before independent reassessment. Stop after retaining the review. Findings return to correction and independent reassessment; review work alone authorizes no source fixes, execution, publication, deployment, commit or archive.

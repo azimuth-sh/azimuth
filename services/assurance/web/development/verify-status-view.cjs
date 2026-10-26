@@ -229,8 +229,18 @@ function verifyWorkHistory() {
   assert(markup.indexOf(`id="${intentAttempts[2].id}"`) < markup.indexOf(`id="${intentAttempts[3].id}"`), 'ledger order across instances is preserved');
   const { reviewAttempt } = workHistoryComponents;
   const accepted = intentAttempts[4];
-  assert.equal(reviewAttempt(history, accepted.generated[0].record_fingerprint), accepted, 'reviewing attempt matches the native review fingerprint');
-  assert.equal(reviewAttempt(history, accepted.generated[0].fingerprint), undefined, 'the review bundle file fingerprint never identifies a review');
+  assert.equal(reviewAttempt(history, 'verification-review', accepted.generated[0].record_fingerprint), accepted, 'reviewing attempt matches the native review fingerprint');
+  assert.equal(reviewAttempt(history, 'verification-review', accepted.generated[0].fingerprint), undefined, 'the review bundle file fingerprint never identifies a review');
+  assert.equal(reviewAttempt(history, 'realization-review', accepted.generated[0].record_fingerprint), undefined, 'a review of another kind never identifies the attempt');
+  const dependencyAttempts = history.releases.find(release => release.relation === 'dependency').changes[0].attempts;
+  const realizationAttempt = dependencyAttempts.find(attempt => attempt.action === 'review-requirement-realization');
+  assert.equal(reviewAttempt(history, 'realization-review', realizationAttempt.generated[0].record_fingerprint), realizationAttempt, 'a Realization Review attempt is matched by its native review');
+  assert(markup.includes('<strong>review-requirement-realization</strong>') && markup.includes('<strong>review-requirement-verification</strong>'), 'work history shows both review tasks');
+  const historical = structuredClone(history);
+  historical.releases.flatMap(release => release.changes.flatMap(change => change.attempts)).forEach(attempt => {
+    if (attempt.action === 'review-requirement-verification') attempt.action = attempt.task = 'review-requirement';
+  });
+  assert.equal(reviewAttempt(historical, 'verification-review', accepted.generated[0].record_fingerprint).id, accepted.id, 'a ledger recorded under an earlier action name still identifies its review');
   const unavailable = renderToStaticMarkup(React.createElement(WorkHistory, { history: undefined }));
   assert(unavailable.includes('Work history is unavailable right now') && unavailable.includes('not used for Requirement Status'));
   const empty = renderToStaticMarkup(React.createElement(WorkHistory, { history: null }));
@@ -272,6 +282,7 @@ async function verifyRequirementPageWorkHistory() {
   assert(realization.includes('<span class="badge good">Accepted</span>') && realization.includes('<span class="codeDrift">Reviewed at <code'), 'drift is a muted note beside an accepted review');
   assert(realization.includes('<dt>Reviewed commit</dt>') && !realization.includes('<dt>Challenge basis</dt>'), 'Realization Review record fields');
   assert(markup.includes('Reviewing attempt from Work Provenance: <a href="#attempt-'), 'review shows its generating attempt');
+  assert(realization.includes('Reviewing attempt from Work Provenance: <a href="#attempt-') && realization.includes('session-reviewer-4'), 'Realization Review shows its generating attempt');
   assert(markup.includes('<dt>Reviewed dependencies</dt>') && markup.includes('<dt>Challenge basis</dt><dd>none</dd>'), 'review record fields');
   assert(markup.includes('verification</code> model/reminders/planning/verification.md'), 'reviewed artifacts');
   assert(markup.includes('&quot;dependencies_fingerprint&quot;') && !markup.includes('&quot;provenance&quot;') && !markup.includes('Author provenance'), 'review record carries no authored provenance');

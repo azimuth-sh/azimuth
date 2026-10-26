@@ -293,6 +293,10 @@ const harnessUsage = (modelCalls: number, toolCalls: number, own: ReturnType<typ
   delegated: { agents: delegatedAgents, model_calls: delegatedAgents ? 9 * delegatedAgents : 0, ...delegated },
 });
 const attemptId = (label: string) => `attempt-${identity(`attempt:${label}`).slice(7)}`;
+const reviewGuidance: Record<string, string> = {
+  'review-requirement-verification': 'azimuth-review-verification',
+  'review-requirement-realization': 'azimuth-review-realization',
+};
 
 // Synthetic ledger rows for one Requirement: an intent change with a rejected and a corrected review, then a dependency change.
 function workHistory(requirement: string, currentRelease: string, currentRevision: string) {
@@ -316,26 +320,28 @@ function workHistory(requirement: string, currentRelease: string, currentRevisio
   };
   const attempt = (instance: string, sequence: number, action: string, actor: string, outcome: string, agent: unknown, captured: number | null, recorded: number | null, report: string | null, generated: unknown[] = [], usage: unknown = null) => ({
     id: attemptId(`${instance}:${sequence}`), instance: instances[instance].id, disposition: instances[instance].disposition, sequence, action, task: action, scope: 'requirement', target: target(instance.split(':')[0]), actor, outcome, report,
-    handoff_captured_at_ms: captured, recorded_at_ms: recorded, agent, guidance: action === 'review-requirement' ? [{ kind: 'skill', id: 'azimuth-review-verification', fingerprint: identity('guidance:review') }] : [],
+    handoff_captured_at_ms: captured, recorded_at_ms: recorded, agent, guidance: reviewGuidance[action] ? [{ kind: 'skill', id: reviewGuidance[action], fingerprint: identity(`guidance:${reviewGuidance[action]}`) }] : [],
     trace: null, usage, used: [{ kind: 'requirement', repository: 'application', ref: 'model/reminders/planning/requirements.md', fingerprint: identity(`used:${instance}:${sequence}`), record: null }], generated,
   });
   // `fingerprint` identifies the review bundle file; `record_fingerprint` is the native review it selects.
-  const review = (recordFingerprint: string, local: string) => [{ kind: 'verification-review', repository: 'application', ref: 'reviews/verification-reviews.md', fingerprint: identity(`review-bundle:${local}:${recordFingerprint}`), record: local, record_fingerprint: recordFingerprint }];
+  const review = (recordFingerprint: string, local: string, kind = 'verification-review') => [{ kind, repository: 'application', ref: `reviews/${kind}s.md`, fingerprint: identity(`review-bundle:${local}:${recordFingerprint}`), record: local, record_fingerprint: recordFingerprint }];
   const intentAttempts = [
     attempt(intentChange, 1, 'author-proposal', 'session-author-1', 'completed', harnessAgent('example-model-large', 'high', 'general-purpose'), start, start + 14 * 60000, 'Proposed reading the amount at send time instead of at scheduling time.', [],
       harnessUsage(4, 11, tokenCounts(120_000, 98_000, 2_400, null), 2, tokenCounts(40_000, null, 900, 300))),
     attempt(intentChange, 2, 'implement', 'subagent-implementer-1', 'completed', declaredAgent, start + day, start + day + 52 * 60000, 'Reminder rendering reads the payment amount when the reminder is sent.'),
-    attempt(intentChange, 3, 'review-requirement', 'session-reviewer-1', 'rejected', harnessAgent('example-model-large', 'high'), start + day + 3 * 3600000, start + day + 3 * 3600000 + 21 * 60000,
+    attempt(intentChange, 3, 'review-requirement-verification', 'session-reviewer-1', 'rejected', harnessAgent('example-model-large', 'high'), start + day + 3 * 3600000, start + day + 3 * 3600000 + 21 * 60000,
       'Rejected: the integration Check edits the payment before the reminder is queued, so an edit **during** sending is never exercised.', review(identity(`review:${requirement}:rejected`), 'review-1')),
     attempt(`${intentChange}:restart`, 1, 'implement', 'subagent-implementer-2', 'completed', unknownAgent, null, start + 2 * day, 'Added an edit-during-send step to the integration Check.'),
-    attempt(`${intentChange}:restart`, 2, 'review-requirement', 'session-reviewer-2', 'accepted', harnessAgent('example-model-large', 'high', 'requirement-reviewer'), start + 2 * day + 3600000, start + 2 * day + 3600000 + 18 * 60000,
+    attempt(`${intentChange}:restart`, 2, 'review-requirement-verification', 'session-reviewer-2', 'accepted', harnessAgent('example-model-large', 'high', 'requirement-reviewer'), start + 2 * day + 3600000, start + 2 * day + 3600000 + 18 * 60000,
       'Accepted: the corrected Check covers an edit while the reminder is being sent.', review(identity(`review:${requirement}:first`), 'review-2'),
       harnessUsage(6, 14, tokenCounts(1_820, 912_000, 18_400, 2_100), 0, undefined, true)),
   ];
   const dependencyAttempts = [
     attempt(dependencyChange, 1, 'implement', 'session-implementer-3', 'completed', harnessAgent('example-model-small', 'medium'), start + 8 * day, start + 8 * day + 37 * 60000, 'Reminders and receipts share one payment snapshot.'),
-    attempt(dependencyChange, 2, 'review-requirement', 'session-reviewer-3', 'accepted', declaredAgent, start + 9 * day, start + 9 * day + 26 * 60000,
+    attempt(dependencyChange, 2, 'review-requirement-verification', 'session-reviewer-3', 'accepted', declaredAgent, start + 9 * day, start + 9 * day + 26 * 60000,
       'Accepted: the shared snapshot is refreshed on every payment update.', review(identity(`review:${requirement}`), 'review-1')),
+    attempt(dependencyChange, 3, 'review-requirement-realization', 'session-reviewer-4', 'accepted', harnessAgent('example-model-large', 'high', 'realization-reviewer'), start + 9 * day + 3600000, start + 9 * day + 3600000 + 17 * 60000,
+      'Accepted: the renderer reads the amount from the shared snapshot at send time, as each Scenario requires.', review(identity(`realization-review:${requirement}`), 'realization-1', 'realization-review')),
   ];
   return {
     requirement,

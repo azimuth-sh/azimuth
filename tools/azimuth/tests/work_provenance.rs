@@ -814,7 +814,7 @@ fn historical_version_two_instances_export_with_unknown_provenance() {
         at(&instances[1], &["template"]),
         &Json::obj(vec![
             ("id", Json::str("change-development")),
-            ("revision", Json::Num(11.0)),
+            ("revision", Json::Num(12.0)),
         ])
     );
 
@@ -1541,7 +1541,7 @@ fn a_review_attempt_links_its_generated_review_by_native_fingerprint() {
         ),
     ]);
     let work = Json::obj(vec![
-        ("action", Json::str("review-requirement")),
+        ("action", Json::str("review-requirement-verification")),
         ("target", target.clone()),
     ]);
     let digest = Json::str(format!("sha256:{}", "d".repeat(64)));
@@ -1599,7 +1599,7 @@ fn a_review_attempt_links_its_generated_review_by_native_fingerprint() {
                     "tasks",
                     Json::Arr(vec![Json::obj(vec![
                         ("id", work),
-                        ("kind", Json::str("review-requirement")),
+                        ("kind", Json::str("review-requirement-verification")),
                         ("target", target),
                         ("depends_on", Json::Arr(vec![])),
                         ("inputs", Json::Arr(vec![])),
@@ -1656,6 +1656,13 @@ fn a_review_attempt_links_its_generated_review_by_native_fingerprint() {
     );
     let rows = azimuth::provenance::dataset_rows(&ledger).unwrap();
     assert_eq!(at(&rows[0], &["generated"]), at(attempt, &["generated"]));
+
+    // A published ledger records the action names of its time; a later workflow vocabulary must
+    // not invalidate it.
+    let historical = ledger
+        .to_string_pretty()
+        .replace("review-requirement-verification", "review-requirement");
+    azimuth::provenance::validate_ledger(&parse(&historical).unwrap()).unwrap();
 
     let mut cleared = ledger.to_string_pretty();
     cleared = cleared.replacen(

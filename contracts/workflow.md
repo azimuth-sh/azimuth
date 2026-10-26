@@ -78,7 +78,7 @@ azimuth workflow update --instance workflow/workflow.json \
 
 Pass the captured handoff with `--handoff` and the executing actor with `--actor`; workers do not transcribe basis or supporting fingerprints. Use the current revision for each actual update; zero applies only to the first update. The request and optional instructions must be retained inside `workflow/` for these example references. Repository paths remain only in the separately supplied local map. No manually authored task DAG is required.
 
-The stages are: establish scope → author/review proposal → author/review module spec, realization and verification deltas → engineering plan → real implementation approval → implementation → structural change-account validation → candidate preparation and automatic target derivation → Check and Verification Challenge execution → Verification and Realization Reviews → publication inputs. Realization and verification delta authoring can proceed independently after spec delta review. Verification authoring includes any machine Verification Challenges the author declares; implementation includes their code/configuration. Delta reviews are local to the change and remain distinct from the post-implementation Verification and Realization Reviews, which finalization stores in the model ([assurance-reviews.md](assurance-reviews.md#review-heads-in-the-model)).
+The stages are: establish scope → author/review proposal → author/review module spec, realization and verification deltas → engineering plan → real implementation approval → implementation → structural change-account validation → candidate preparation and automatic target derivation → Realization Reviews (`review-requirement-realization`), alongside Check and Verification Challenge execution followed by Verification Reviews (`review-requirement-verification`) → publication inputs. Realization and verification delta authoring can proceed independently after spec delta review. Verification authoring includes any machine Verification Challenges the author declares; implementation includes their code/configuration. Delta reviews are local to the change and remain distinct from the post-implementation Verification and Realization Reviews, which finalization stores in the model ([assurance-reviews.md](assurance-reviews.md#review-heads-in-the-model)).
 
 Rejected Verification and Realization Reviews expose correction and independent reassessment. Instances pinned to the retired authored Requirement Status actions (`assess-requirement-status`, `judge-requirement`) are rejected; start a fresh instance from the shipped template. Check execution records actual violations and measurement failures rather than an invented passing result. Verification Challenges target the exact implementation basis; adverse findings affect reliance through native assessment rules. The harness selects eligible work, providers and concurrency. No `completed` result substitutes for an accepted review, supported Requirement Status or human permission.
 
@@ -334,12 +334,20 @@ For a selected compiled review entry, workflow assessment retains its exact reas
 
 ## Verification Review guidance
 
-`review-requirement` handoffs reference the shipped `azimuth-review-verification` skill; the shipped `azimuth-review-realization` skill guides the Realization Review. Verification Review acceptance requires
+`review-requirement-verification` handoffs reference the shipped `azimuth-review-verification` skill and `review-requirement-realization` handoffs the shipped `azimuth-review-realization` skill. Verification Review acceptance requires
 both an adequate verification approach and faithful implemented verification, including the measurements
 and controls promised by each contribution. Execution may remain pending. Documented unfinished
 implementation does not satisfy the gate. Existing workflow instances retain their pinned guidance
 and definitions until an explicit migration; installing this skill does not rewrite review history.
 
+
+## Requirement review actions (change-development revision 12)
+
+The shipped template has one global review action per review kind, both over the `requirement-definitions` collection. `review-requirement-verification` performs the Verification Review after candidate preparation, implementation, required Checks and declared Challenges, and its required output is a `verification-review` record. `review-requirement-realization` performs the Realization Review after candidate preparation and implementation only: it judges the code at the realization sites and relies on no Check or Challenge result, so it does not wait for execution. Its required output is a `realization-review` record.
+
+Each action expands only over the Requirements that declare its review. The candidate inventory lists every Requirement that declares `Realization: reviewed` or `Verification: reviewed` in `requirement_definitions` as `{requirement, reviews}`, where `reviews` is the declared subset of `realization`, `verification` in that order; a Requirement that declares neither owes no review task. A review action whose selection is explicitly empty satisfies its `all` gate. Both actions configure `implement-change` as their correction. `author-change-outcome`, `request-change-acceptance` and `finalize-change` wait for both review actions, and finalization requires a current accepted review of every kind each Requirement declares.
+
+Instances pinned to an earlier revision name a Requirement review action this CLI does not register; preserve such an instance and start a fresh one from the shipped template. Work Provenance ledgers keep the action names recorded when each attempt ran.
 
 ## Deployment Requirement Status workflow (revisions 9 and 10)
 

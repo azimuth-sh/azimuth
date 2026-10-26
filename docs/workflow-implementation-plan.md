@@ -36,7 +36,7 @@ Workers do not edit another lane's files, shared registries, current model facet
 
 ## Intended local workflow
 
-Scope → proposal/review → spec delta/review → realization delta/review → verification delta/review → engineering plan → implementation approval → implementation → capture/validate/prepare candidate → Checks → Challenges → Verification and Realization Reviews → outcome → change acceptance → finalize (writing review heads) and archive.
+Scope → proposal/review → spec delta/review → realization delta/review → verification delta/review → engineering plan → implementation approval → implementation → capture/validate/prepare candidate → Realization Reviews, alongside Checks → Challenges → Verification Reviews → outcome → change acceptance → finalize (writing review heads) and archive.
 
 Corrections repeat affected work only. Native outcomes, required unit coverage and current dependencies determine gates; successful command execution is insufficient. A Requirement that declares neither review owes no independent review. Hosted-only Checks remain explicit later obligations. An empty eligible set is not completion when required inputs or obligations remain missing.
 
