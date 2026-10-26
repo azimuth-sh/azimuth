@@ -6,12 +6,18 @@ import { cache } from 'react';
 import { webConfig } from './config';
 import { developmentScenario } from './development';
 
+// Project access is re-read from the configured users on every request, so a long session does
+// not keep access after a user is removed. Page renders cannot re-issue the cookie, so the
+// lifetime counts from sign-in.
+const sessionLifetimeSeconds = 7 * 24 * 60 * 60;
+
 export function authOptions(): NextAuthOptions {
   const config = webConfig();
   return {
     secret: process.env.NEXTAUTH_SECRET,
     useSecureCookies: true,
-    session: { strategy: 'jwt', maxAge: 3600 },
+    session: { strategy: 'jwt', maxAge: sessionLifetimeSeconds },
+    jwt: { maxAge: sessionLifetimeSeconds },
     providers: [
       GitHubProvider({
         clientId: config.github.clientId,
