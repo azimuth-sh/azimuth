@@ -15,9 +15,17 @@ fn relevant_event() -> String {
     relational::with_tables(RELEVANT_EVENT)
 }
 
+/// Stored assessments are recomputed only when a relevant event arrives, so a build whose
+/// assessment logic differs would otherwise keep serving verdicts computed by the previous build.
+const ASSESSOR: &str = match option_env!("AZIMUTH_VERSION") {
+    Some(version) => version,
+    None => "development",
+};
+
 pub(super) async fn process(state: &LedgerState) -> Result<(), LedgerError> {
     let mut tx = state.pool.begin().await?;
-    sqlx::query("INSERT INTO definition_assessments(project,revision) SELECT project,fingerprint FROM model_revisions ON CONFLICT DO NOTHING").execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO definition_assessments(project,revision,assessor) SELECT project,fingerprint,$1 FROM model_revisions ON CONFLICT DO NOTHING").bind(ASSESSOR).execute(&mut *tx).await?;
+    sqlx::query("UPDATE definition_assessments SET assessor=$1,generation=generation+1,retry_at=now() WHERE assessor<>$1").bind(ASSESSOR).execute(&mut *tx).await?;
     let sequences: Vec<i64> = sqlx::query_scalar(
         "SELECT sequence FROM definition_events ORDER BY sequence LIMIT 1000 FOR UPDATE",
     )

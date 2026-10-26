@@ -1208,6 +1208,27 @@ mod tests {
                 .0["assessment"]["generation"],
             review_generation
         );
+        sqlx::query("UPDATE definition_assessments SET assessor='previous-build'")
+            .execute(&pool)
+            .await?;
+        materialized_reviews::process(&state).await?;
+        let reassessed = materialized_reviews::read(&state, "project", Some(revision))
+            .await?
+            .0;
+        assert_eq!(
+            reassessed["assessment"]["generation"].as_i64().unwrap(),
+            review_generation.as_i64().unwrap() + 1,
+            "a different assessing build recomputes stored assessments without any event"
+        );
+        assert_eq!(reassessed["assessment"]["state"], "ready", "{reassessed}");
+        materialized_reviews::process(&state).await?;
+        assert_eq!(
+            materialized_reviews::read(&state, "project", Some(revision))
+                .await?
+                .0["assessment"]["generation"],
+            reassessed["assessment"]["generation"],
+            "the same build does not recompute again"
+        );
         let publication = &request["publication"];
         let release_fp = publication["release"]["fingerprint"].as_str().unwrap();
         let mut released = pool.begin().await?;
