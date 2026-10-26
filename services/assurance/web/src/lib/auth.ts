@@ -2,6 +2,7 @@ import 'server-only';
 import { getServerSession, type NextAuthOptions } from 'next-auth';
 import GitHubProvider from 'next-auth/providers/github';
 import { redirect, notFound } from 'next/navigation';
+import { cache } from 'react';
 import { webConfig } from './config';
 import { developmentScenario } from './development';
 
@@ -50,14 +51,15 @@ export function authOptions(): NextAuthOptions {
     },
   };
 }
-export async function viewer() {
+// Every project read verifies the viewer, and one page makes several reads.
+export const viewer = cache(async () => {
   if (developmentScenario()) return {
     githubId: 'synthetic-local-viewer', projects: ['payments-demo'],
     expires: '2099-01-01T00:00:00.000Z',
   };
   const session = await getServerSession(authOptions());
   return session?.githubId && session.projects.length ? session : null;
-}
+});
 export async function requireViewer(project?: string) {
   const session = await viewer();
   if (!session) redirect('/login');

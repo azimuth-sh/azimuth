@@ -162,6 +162,16 @@ export type DeploymentStatusSummary = Omit<VerificationTargetState, 'requirement
     explanation: Pick<StatusExplanation, 'summary'> & { realization_review?: Pick<StatusExplanation['realization_review'], 'status' | 'reviewed_commit' | 'code_drift'> };
   }>;
 };
+export interface DeploymentRequirementStatuses {
+  assessment: AssessmentFreshness;
+  requirements: Array<{
+    requirement: string;
+    status: VerificationTargetState['requirements'][number]['status'];
+    verification_review: string;
+    realization_review: string;
+    summary: string;
+  }>;
+}
 export interface VerificationTargetState {
   assessment?: AssessmentFreshness;
   authority_fingerprint: string;

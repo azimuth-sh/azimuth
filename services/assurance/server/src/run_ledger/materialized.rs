@@ -585,6 +585,70 @@ pub(super) async fn read(
     )
 }
 
+/// The statuses of a deployment's Requirements as one projection of their rows, filtered by
+/// status in SQL. Freshness is applied per row exactly as in `read`, so a row that is pending or
+/// overdue is unresolved here too.
+pub(super) async fn requirement_statuses(
+    state: &LedgerState,
+    project: &str,
+    deployment: &str,
+    status: Option<&str>,
+) -> Result<Value, LedgerError> {
+    if status.is_some_and(|value| {
+        !["supported", "violated", "unresolved", "not-applicable"].contains(&value)
+    }) {
+        return Err(LedgerError::invalid("unknown Requirement Status filter"));
+    }
+    let mut tx = state.pool.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        .execute(&mut *tx)
+        .await?;
+    let row = sqlx::query("SELECT a.generation,a.published_generation,a.evaluated_at_ms,a.valid_until_ms,EXISTS(SELECT 1 FROM assessment_events e WHERE e.project=a.project AND NOT e.invalidated) AS unbound,EXISTS(SELECT 1 FROM assessment_requirements r WHERE r.project=a.project AND r.deployment=a.deployment AND r.generation<>r.published_generation AND NOT r.renewing) AS invalidated FROM deployment_assessments a WHERE a.project=$1 AND a.deployment=$2")
+        .bind(project)
+        .bind(deployment)
+        .fetch_optional(&mut *tx)
+        .await?;
+    let Some(row) = row else {
+        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM release_deployments WHERE project=$1 AND deployment_id=$2)").bind(project).bind(deployment).fetch_one(&mut *tx).await?;
+        if !exists {
+            return Err(LedgerError::not_found());
+        }
+        return Ok(
+            json!({"format":"azimuth-deployment-requirements","version":1,"project":project,"deployment":deployment,"requirements":[],"assessment":{"state":"pending","generation":0,"published_generation":0,"evaluated_at_ms":null,"valid_until_ms":null}}),
+        );
+    };
+    let now = time(&mut tx).await?;
+    let generation: i64 = row.get("generation");
+    let published: i64 = row.get("published_generation");
+    let due: Option<i64> = row.get("valid_until_ms");
+    let unbound: bool = row.get("unbound");
+    let freshness = if (generation != published && row.get::<bool, _>("invalidated"))
+        || published == 0
+        || unbound
+    {
+        "pending"
+    } else if due.is_some_and(|due| due <= now) {
+        "expired"
+    } else {
+        "ready"
+    };
+    let requirements = sqlx::query("SELECT requirement,status,verification_review,realization_review,summary FROM (SELECT r.requirement,r.verification_review,r.realization_review,CASE WHEN f.freshness='ready' THEN r.status ELSE 'unresolved' END AS status,CASE WHEN f.freshness='ready' THEN r.summary ELSE 'Assessment is '||f.freshness||'; current evidence is being evaluated' END AS summary FROM assessment_requirements r CROSS JOIN LATERAL (SELECT CASE WHEN $3 OR (r.generation<>r.published_generation AND NOT r.renewing) THEN 'pending' WHEN r.valid_until_ms<=$4 THEN 'expired' ELSE 'ready' END AS freshness) f WHERE r.project=$1 AND r.deployment=$2) s WHERE ($5::text IS NULL OR s.status=$5) ORDER BY requirement")
+        .bind(project)
+        .bind(deployment)
+        .bind(published == 0 || unbound)
+        .bind(now)
+        .bind(status)
+        .fetch_all(&mut *tx)
+        .await?
+        .iter()
+        .map(|entry| json!({"requirement":entry.get::<String,_>("requirement"),"status":entry.get::<String,_>("status"),"verification_review":entry.get::<String,_>("verification_review"),"realization_review":entry.get::<String,_>("realization_review"),"summary":entry.get::<String,_>("summary")}))
+        .collect::<Vec<_>>();
+    Ok(
+        json!({"format":"azimuth-deployment-requirements","version":1,"project":project,"deployment":deployment,"requirements":requirements,
+        "assessment":{"state":freshness,"generation":generation,"published_generation":published,"evaluated_at_ms":row.get::<Option<i64>,_>("evaluated_at_ms"),"valid_until_ms":due}}),
+    )
+}
+
 pub(super) async fn rebuild(
     State(state): State<LedgerState>,
     Path((project, deployment)): Path<(String, String)>,
@@ -926,6 +990,33 @@ mod tests {
             .execute(&pool)
             .await?;
         let summary = read(&state, "project", "monitor-deployment", true).await?;
+        let listed = requirement_statuses(&state, "project", "monitor-deployment", None).await?;
+        assert_eq!(listed["assessment"], summary["assessment"], "{listed}");
+        for (item, full) in listed["requirements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .zip(summary["requirements"].as_array().unwrap())
+        {
+            assert_eq!(item["requirement"], full["requirement"]);
+            assert_eq!(item["status"], full["status"], "{item}");
+            assert_eq!(item["verification_review"], full["verification_review"]);
+            assert_eq!(item["realization_review"], full["realization_review"]);
+            assert_eq!(item["summary"], full["explanation"]["summary"], "{item}");
+        }
+        let status = summary["requirements"][0]["status"].as_str().unwrap();
+        let filtered =
+            requirement_statuses(&state, "project", "monitor-deployment", Some(status)).await?;
+        assert!(filtered["requirements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["status"] == status));
+        assert!(
+            requirement_statuses(&state, "project", "monitor-deployment", Some("bogus"))
+                .await
+                .is_err()
+        );
         let row = &summary["requirements"][0];
         assert_eq!(
             (

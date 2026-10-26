@@ -14,6 +14,10 @@ export function developmentRead(project: string, path: string): unknown {
   if (project !== data.project) return null;
   const url = new URL(path, 'http://127.0.0.1');
   const route = decodeURIComponent(url.pathname);
+  if (route.startsWith('/deployments/') && route.endsWith('/requirements')) {
+    const full = developmentRead(project, route.replace(/\/requirements$/, '/status/summary')) as { assessment: unknown; requirements: Array<{ requirement: string; status: string; verification_review: string; realization_review: string; explanation: { summary: string } }> } | null;
+    return full && { assessment: full.assessment, requirements: full.requirements.map(({ requirement, status, verification_review, realization_review, explanation }) => ({ requirement, status, verification_review, realization_review, summary: explanation.summary })) };
+  }
   const page = (items: unknown[]) => ({ items, next: null });
   const revision = identity('model');
   const priorMain = identity('prior-main');
