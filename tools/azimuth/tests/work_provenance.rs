@@ -25,6 +25,17 @@ fn azimuth(arguments: &[&str]) -> Output {
         .unwrap()
 }
 
+/// A hook saves the descriptor well after the handoff is produced; the update ignores one that is
+/// not newer, and a file written within the same filesystem timestamp tick would look older.
+fn saved_after_handoff(path: &Path) {
+    fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(60))
+        .unwrap();
+}
+
 fn succeed(arguments: &[&str]) -> String {
     let output = azimuth(arguments);
     assert!(
@@ -454,6 +465,7 @@ fn update_records_a_hook_descriptor_saved_beside_its_handoff_and_consumes_it() {
     let handoff = fixture.next("handoff.json");
     let saved = fixture.workflow.join("handoff.json.agent-descriptor.json");
     fs::copy(harness_descriptor(&fixture.root), &saved).unwrap();
+    saved_after_handoff(&saved);
 
     let recorded = fixture.update(
         &handoff,
@@ -517,6 +529,7 @@ fn an_invalid_hook_descriptor_fails_the_update_without_a_transition() {
         "{\"format\":\"azimuth-agent-descriptor\",\"version\":1}",
     )
     .unwrap();
+    saved_after_handoff(&saved);
     let before = fs::read(fixture.instance()).unwrap();
 
     let stderr = fixture.update_failure(
