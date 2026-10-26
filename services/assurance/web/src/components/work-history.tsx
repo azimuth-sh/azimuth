@@ -1,4 +1,5 @@
 import type { AgentDescriptor, AttemptUsage, FailureAttribution, ProvenanceAttempt, ProvenanceBasis, RequirementWorkHistory, TokenCounts } from '../lib/assurance';
+import type { ReviewKind } from './review-dimensions';
 import { shortIdentifier } from '../lib/identifier';
 import { Disclosure } from './disclosure';
 import { Markdown } from './markdown';
@@ -115,10 +116,12 @@ function latestRecorded(changes: RequirementWorkHistory['releases'][number]['cha
   const times = changes.flatMap(change => change.attempts.map(attempt => attempt.recorded_at_ms)).filter((time): time is number => time !== null);
   return times.length ? Math.max(...times) : null;
 }
-export function reviewAttempt(history: RequirementWorkHistory | null | undefined, reviewFingerprint: string | undefined) {
+// Matched by the generated record's kind, not the action name: a ledger keeps the action names of the
+// workflow revision that ran, while review record kinds are stable across revisions.
+export function reviewAttempt(history: RequirementWorkHistory | null | undefined, kind: ReviewKind, reviewFingerprint: string | undefined) {
   if (!history || !reviewFingerprint) return undefined;
   return history.releases.flatMap(release => release.changes.flatMap(change => change.attempts))
-    .find(attempt => attempt.action === 'review-requirement' && attempt.generated.some(entity => entity.record_fingerprint === reviewFingerprint));
+    .find(attempt => attempt.generated.some(entity => entity.kind === kind && entity.record_fingerprint === reviewFingerprint));
 }
 export function ReviewAttempt({ attempt }: { attempt: ProvenanceAttempt }) {
   return <div className="workReviewAttempt">

@@ -32,7 +32,8 @@ const KINDS: &[&str] = &[
     "prepare-candidate-model-revision",
     "register-candidate-model-revision",
     "prepare-publication-inputs",
-    "review-requirement",
+    "review-requirement-verification",
+    "review-requirement-realization",
     "execute-check",
     "run-verification-challenges",
     "run-verification-challenge",
@@ -567,7 +568,9 @@ fn definition(v: &Json) -> Result<(), String> {
         }
         for required in match text(task, "kind")? {
             "execute-check" => vec!["check"],
-            "review-requirement" => vec!["requirement"],
+            "review-requirement-verification" | "review-requirement-realization" => {
+                vec!["requirement"]
+            }
             "run-verification-challenge" => vec!["verification_challenge"],
             _ => vec![],
         } {
@@ -640,7 +643,8 @@ fn definition(v: &Json) -> Result<(), String> {
                 return Err("authoring review correction must reopen its author".into());
             }
         }
-        if ["review-requirement", "run-verification-challenge"].contains(&text(task, "kind")?)
+        if (requirement_review(text(task, "kind")?).is_some()
+            || text(task, "kind")? == "run-verification-challenge")
             && arr(task, "inputs")?
                 .iter()
                 .filter(|i| i.get("kind").and_then(Json::as_str) == Some("assurance-snapshot"))
@@ -1358,6 +1362,15 @@ fn review_kind(kind: &str) -> bool {
             | "review-verification-delta"
     )
 }
+/// The review declaration (`Verification:` or `Realization:`) that owes a global Requirement
+/// review task, named by the authority's rigor axis.
+fn requirement_review(kind: &str) -> Option<&'static str> {
+    match kind {
+        "review-requirement-verification" => Some("verification"),
+        "review-requirement-realization" => Some("realization"),
+        _ => None,
+    }
+}
 fn author_for(kind: &str) -> Option<&'static str> {
     match kind {
         "review-proposal" => Some("author-proposal"),
@@ -1462,7 +1475,7 @@ fn evaluate(state: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Evaluation, S
                     dep_results.push(result.clone());
                 }
             }
-            if text(task, "kind")? == "review-requirement" {
+            if text(task, "kind")? == "review-requirement-verification" {
                 let history = arr(state, "history")?;
                 let implementation_position = dep_results
                     .iter()
@@ -2453,7 +2466,7 @@ fn validate_completion_output(
     let mut runs = snapshot_runs(&snapshot)?;
     for reference in handoff_inputs(handoff)? {
         match text(&reference, "kind")? {
-            "verification-review" => {
+            "verification-review" | "realization-review" => {
                 for review in supporting_review_history(&reference, roots)? {
                     if !reviews.contains(&review) {
                         reviews.push(review);
@@ -2470,22 +2483,25 @@ fn validate_completion_output(
             _ => {}
         }
     }
-    for requirement in arr(authority, "requirements")?
-        .iter()
-        .filter(|requirement| {
-            requirement.get("verification").and_then(Json::as_str) != Some("none")
-        })
-    {
-        let target = Json::obj(vec![
-            ("kind", Json::str("verification-review")),
-            ("requirement", requirement.get("id").unwrap().clone()),
-        ]);
-        let review = crate::assurance_review::latest_review(&reviews, &target)?
-            .ok_or("completion Verification Review missing")?;
-        if crate::assurance_review::assess_record(review, authority, &reviews, &runs).status
-            != "accepted"
-        {
-            return Err("completion Verification Review is not current and accepted".into());
+    for requirement in arr(authority, "requirements")? {
+        for (axis, title) in [
+            ("verification", "Verification Review"),
+            ("realization", "Realization Review"),
+        ] {
+            if requirement.get(axis).and_then(Json::as_str) != Some("reviewed") {
+                continue;
+            }
+            let target = Json::obj(vec![
+                ("kind", Json::str(format!("{axis}-review"))),
+                ("requirement", requirement.get("id").unwrap().clone()),
+            ]);
+            let review = crate::assurance_review::latest_review(&reviews, &target)?
+                .ok_or(format!("completion {title} missing"))?;
+            if crate::assurance_review::assess_record(review, authority, &reviews, &runs).status
+                != "accepted"
+            {
+                return Err(format!("completion {title} is not current and accepted"));
+            }
         }
     }
     let issues = crate::change::provenance_archive_issues(archived);
@@ -2603,8 +2619,8 @@ fn review_record(
         if v.get("dependencies") != Some(&Json::Arr(expected)) {
             return Err("review dependencies must equal exact published handoff inputs".into());
         }
-    } else if kind == "review-requirement" {
-        let expected = "verification-review";
+    } else if let Some(axis) = requirement_review(kind) {
+        let expected = &format!("{axis}-review");
         let review = supporting_record(record_of(records, expected)?, r)?;
         crate::assurance_review::validate_record(&review)?;
         if let Some(expected) = handoff.get("target").and_then(|t| t.get("requirement")) {
@@ -2636,7 +2652,7 @@ fn review_record(
         let authority = snapshot.get("authority").unwrap();
         let mut local_reviews = arr(&snapshot, "reviews")?.to_vec();
         let mut runs = snapshot_runs(&snapshot)?;
-        if kind == "review-requirement" {
+        if kind == "review-requirement-verification" {
             for dependency in arr(handoff, "dependencies")? {
                 for reference in arr(dependency, "records")? {
                     if text(reference, "kind")? == "verification-review" {
@@ -2750,7 +2766,9 @@ fn unchanged_inflight_assessment(
     else {
         return Ok(None);
     };
-    if !["review-requirement", "run-verification-challenge"].contains(&text(task, "kind")?) {
+    if requirement_review(text(task, "kind")?).is_none()
+        && text(task, "kind")? != "run-verification-challenge"
+    {
         return Ok(None);
     }
     let Some(handoff) = arr(captured, "eligible")?
@@ -3326,7 +3344,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             "request-implementation-approval" | "request-change-acceptance"
         ) {
             ["approved", "denied", "deferred"].contains(&outcome)
-        } else if review_kind(kind) || kind == "review-requirement" {
+        } else if review_kind(kind) || requirement_review(kind).is_some() {
             ["accepted", "rejected"].contains(&outcome)
         } else {
             ["completed", "failed"].contains(&outcome)
@@ -3910,7 +3928,8 @@ fn permitted_outcomes(kind: &str) -> &'static [&'static str] {
         "request-implementation-approval" | "request-change-acceptance" => {
             &["approved", "denied", "deferred"]
         }
-        "review-requirement"
+        "review-requirement-verification"
+        | "review-requirement-realization"
         | "review-proposal"
         | "review-spec-delta"
         | "review-realization"
@@ -4020,7 +4039,8 @@ fn template(v: &Json) -> Result<(), String> {
                 return Err("unknown required input binding".into());
             }
         }
-        if ["review-requirement", "run-verification-challenge"].contains(&text(action, "kind")?)
+        if (requirement_review(text(action, "kind")?).is_some()
+            || text(action, "kind")? == "run-verification-challenge")
             && !input_bindings.contains("snapshot")
         {
             return Err("assurance action requires snapshot binding".into());
@@ -4209,10 +4229,21 @@ fn inventory_shape(v: &Json) -> Result<(), String> {
     if v.get("requirement_definitions").is_some() {
         let mut seen = BTreeSet::new();
         for target in arr(v, "requirement_definitions")? {
-            obj(target, &["requirement"])?;
+            obj(target, &["requirement", "reviews"])?;
             identifier(text(target, "requirement")?)?;
             if !seen.insert(text(target, "requirement")?) {
                 return Err("duplicate Requirement definition target".into());
+            }
+            let reviews = arr(target, "reviews")?;
+            let declared = ["realization", "verification"]
+                .into_iter()
+                .filter(|axis| reviews.iter().any(|review| review.as_str() == Some(axis)))
+                .map(Json::str)
+                .collect::<Vec<_>>();
+            if reviews.is_empty() || reviews != declared.as_slice() {
+                return Err(
+                    "Requirement definition reviews require a nonempty ordered subset of realization and verification".into(),
+                );
             }
         }
     }
@@ -4283,6 +4314,44 @@ fn inventory_shape(v: &Json) -> Result<(), String> {
     }
     Ok(())
 }
+/// Requirement definition targets owed to one action. A global review task is owed only for the
+/// Requirements that declare its review, so a Requirement declaring neither review yields none.
+fn requirement_definition_targets(inventory: &Json, kind: &str) -> Result<Vec<Json>, String> {
+    Ok(arr(inventory, "requirement_definitions")?
+        .iter()
+        .filter(|definition| {
+            requirement_review(kind).is_none_or(|axis| {
+                arr(definition, "reviews")
+                    .is_ok_and(|reviews| reviews.iter().any(|review| review.as_str() == Some(axis)))
+            })
+        })
+        .map(|definition| {
+            Json::obj(vec![(
+                "requirement",
+                definition.get("requirement").unwrap().clone(),
+            )])
+        })
+        .collect())
+}
+/// The inventory entry of every authority Requirement that declares at least one review, with the
+/// reviews it declares in a fixed order.
+fn requirement_definitions(authority: &Json) -> Result<Json, String> {
+    let mut definitions = Vec::new();
+    for requirement in arr(authority, "requirements")? {
+        let reviews = ["realization", "verification"]
+            .into_iter()
+            .filter(|axis| text(requirement, axis).ok() == Some("reviewed"))
+            .map(Json::str)
+            .collect::<Vec<_>>();
+        if !reviews.is_empty() {
+            definitions.push(Json::obj(vec![
+                ("requirement", requirement.get("id").unwrap().clone()),
+                ("reviews", Json::Arr(reviews)),
+            ]));
+        }
+    }
+    Ok(Json::Arr(definitions))
+}
 fn concrete_id(action: &str, target: &Json) -> String {
     work_key(&Json::obj(vec![
         ("action", Json::str(action)),
@@ -4349,11 +4418,10 @@ fn expand_generation(source: &Json, bindings: &Json) -> Result<Json, String> {
                 if bindings.get("assurance") == Some(&Json::Null) {
                     vec![]
                 } else {
-                    arr(
+                    requirement_definition_targets(
                         bindings.get("assurance").unwrap(),
-                        "requirement_definitions",
+                        text(action, "kind")?,
                     )?
-                    .to_vec()
                 }
             }
             "verification-challenges" => {
@@ -4500,12 +4568,17 @@ fn expand_generation(source: &Json, bindings: &Json) -> Result<Json, String> {
                             action.get("id") == dependency.get("action")
                                 && text(action, "collection").ok()
                                     == Some("requirement-definitions")
-                        })
-                        && bindings
-                            .get("assurance")
-                            .and_then(|inventory| inventory.get("requirement_definitions"))
-                            .and_then(Json::as_array)
-                            .is_some_and(|requirements| requirements.is_empty());
+                                && bindings
+                                    .get("assurance")
+                                    .filter(|inventory| {
+                                        inventory.get("requirement_definitions").is_some()
+                                    })
+                                    .zip(text(action, "kind").ok())
+                                    .is_some_and(|(inventory, kind)| {
+                                        requirement_definition_targets(inventory, kind)
+                                            .is_ok_and(|targets| targets.is_empty())
+                                    })
+                        });
                     let complete_empty_requirements = bindings
                         .get("assurance")
                         .filter(|v| *v != &Json::Null)
@@ -4945,18 +5018,7 @@ fn assurance_definition(
         ("methods", Json::Arr(methods)),
         (
             "requirement_definitions",
-            Json::Arr(
-                arr(authority, "requirements")?
-                    .iter()
-                    .filter(|requirement| text(requirement, "verification").ok() != Some("none"))
-                    .map(|requirement| {
-                        Json::obj(vec![(
-                            "requirement",
-                            requirement.get("id").unwrap().clone(),
-                        )])
-                    })
-                    .collect(),
-            ),
+            requirement_definitions(authority)?,
         ),
         ("checks", Json::Arr(checks)),
         ("contributions", Json::Arr(contributions)),
@@ -5078,19 +5140,7 @@ fn validate_inventory(
     let affected_selection =
         affected_execution_selection(v.get("selection"), authority, locations)?;
     if let Some(requirements) = v.get("requirement_definitions") {
-        let expected = Json::Arr(
-            arr(authority, "requirements")?
-                .iter()
-                .filter(|requirement| text(requirement, "verification").ok() != Some("none"))
-                .map(|requirement| {
-                    Json::obj(vec![(
-                        "requirement",
-                        requirement.get("id").unwrap().clone(),
-                    )])
-                })
-                .collect(),
-        );
-        if requirements != &expected {
+        if requirements != &requirement_definitions(authority)? {
             return Err("Requirement definition targets differ from candidate authority".into());
         }
     }
@@ -5242,7 +5292,8 @@ fn output_contract(action: &Json) -> Result<(), String> {
         "prepare-candidate-model-revision" => Some("candidate-preparation"),
         "register-candidate-model-revision" => Some("candidate-registration"),
         "prepare-publication-inputs" => Some("publication-inputs"),
-        "review-requirement" => Some("verification-review"),
+        "review-requirement-verification" => Some("verification-review"),
+        "review-requirement-realization" => Some("realization-review"),
         "execute-check" | "run-verification-challenges" | "run-verification-challenge" => {
             Some("run-bundle")
         }
@@ -5328,6 +5379,10 @@ mod deployment_status_workflow_tests {
     use super::*;
 
     fn bindings(pending: bool) -> Json {
+        bindings_declaring(pending, &[("restricted-access", &["verification"])])
+    }
+
+    fn bindings_declaring(pending: bool, declared: &[(&str, &[&str])]) -> Json {
         let fingerprint = Json::str(format!("sha256:{}", "a".repeat(64)));
         Json::obj(vec![
             ("project", Json::str("sample-project")),
@@ -5371,10 +5426,22 @@ mod deployment_status_workflow_tests {
                     ("requirements", Json::Arr(vec![])),
                     (
                         "requirement_definitions",
-                        Json::Arr(vec![Json::obj(vec![(
-                            "requirement",
-                            Json::str("restricted-access"),
-                        )])]),
+                        Json::Arr(
+                            declared
+                                .iter()
+                                .map(|(requirement, reviews)| {
+                                    Json::obj(vec![
+                                        ("requirement", Json::str(*requirement)),
+                                        (
+                                            "reviews",
+                                            Json::Arr(
+                                                reviews.iter().map(|r| Json::str(*r)).collect(),
+                                            ),
+                                        ),
+                                    ])
+                                })
+                                .collect(),
+                        ),
                     ),
                     ("verification_challenges", Json::Arr(vec![])),
                     ("verification_challenge_requirements", Json::Arr(vec![])),
@@ -5400,7 +5467,7 @@ mod deployment_status_workflow_tests {
         let definition = expand_generation(&template, &bindings(false)).unwrap();
         let tasks = arr(&definition, "tasks").unwrap();
         for kind in [
-            "review-requirement",
+            "review-requirement-verification",
             "author-change-outcome",
             "request-change-acceptance",
             "finalize-change",
@@ -5446,7 +5513,7 @@ mod deployment_status_workflow_tests {
         for kind in [
             "execute-check",
             "run-verification-challenge",
-            "review-requirement",
+            "review-requirement-verification",
             "author-change-outcome",
             "request-change-acceptance",
             "finalize-change",
@@ -5478,7 +5545,7 @@ mod deployment_status_workflow_tests {
         let selected_tasks = arr(&selected, "tasks").unwrap();
         for kind in [
             "execute-check",
-            "review-requirement",
+            "review-requirement-verification",
             "author-change-outcome",
             "request-change-acceptance",
             "finalize-change",
@@ -5496,7 +5563,7 @@ mod deployment_status_workflow_tests {
             .unwrap();
         let review = selected_tasks
             .iter()
-            .find(|task| text(task, "kind").unwrap() == "review-requirement")
+            .find(|task| text(task, "kind").unwrap() == "review-requirement-verification")
             .unwrap();
         assert!(arr(review, "depends_on")
             .unwrap()
@@ -5530,7 +5597,9 @@ mod deployment_status_workflow_tests {
                 fields
                     .iter()
                     .map(|(key, item)| {
-                        let item = if key == "kind" && item.as_str() == Some("review-requirement") {
+                        let item = if key == "kind"
+                            && item.as_str() == Some("review-requirement-verification")
+                        {
                             Json::str("assess-requirement-status")
                         } else {
                             retire_review_action(item)
@@ -5554,7 +5623,8 @@ mod deployment_status_workflow_tests {
                 "{error}"
             );
         }
-        assert!(registered_kind("review-requirement").is_ok());
+        assert!(registered_kind("review-requirement-verification").is_ok());
+        assert!(registered_kind("review-requirement-realization").is_ok());
         assert_eq!(
             registered_kind("invented").unwrap_err(),
             "unregistered workflow task kind `invented`"
@@ -5566,6 +5636,287 @@ mod deployment_status_workflow_tests {
             "{error}"
         );
     }
+    fn review_targets(definition: &Json, kind: &str) -> Vec<String> {
+        arr(definition, "tasks")
+            .unwrap()
+            .iter()
+            .filter(|task| text(task, "kind").unwrap() == kind)
+            .map(|task| {
+                text(task.get("target").unwrap(), "requirement")
+                    .unwrap()
+                    .to_string()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn each_review_task_is_owed_only_for_requirements_declaring_its_review() {
+        let template = shipped_template("change-development").unwrap();
+        let definition = expand_generation(
+            &template,
+            &bindings_declaring(
+                false,
+                &[
+                    ("both-declared", &["realization", "verification"]),
+                    ("realization-only", &["realization"]),
+                    ("verification-only", &["verification"]),
+                ],
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            review_targets(&definition, "review-requirement-realization"),
+            ["both-declared", "realization-only"]
+        );
+        assert_eq!(
+            review_targets(&definition, "review-requirement-verification"),
+            ["both-declared", "verification-only"]
+        );
+    }
+
+    #[test]
+    fn a_requirement_declaring_no_review_owes_no_review_task() {
+        let template = shipped_template("change-development").unwrap();
+        let definition = expand_generation(&template, &bindings_declaring(false, &[])).unwrap();
+        for kind in [
+            "review-requirement-verification",
+            "review-requirement-realization",
+        ] {
+            assert!(review_targets(&definition, kind).is_empty(), "{kind}");
+        }
+        assert!(
+            arr(&definition, "tasks")
+                .unwrap()
+                .iter()
+                .any(|task| text(task, "kind").unwrap() == "finalize-change"),
+            "an explicitly empty review collection must still permit completion"
+        );
+    }
+
+    #[test]
+    fn realization_review_needs_no_evidence_and_gates_completion_beside_verification() {
+        let template = shipped_template("change-development").unwrap();
+        let definition = expand_generation(
+            &template,
+            &bindings_declaring(
+                false,
+                &[
+                    ("realization-only", &["realization"]),
+                    ("verification-only", &["verification"]),
+                ],
+            ),
+        )
+        .unwrap();
+        let tasks = arr(&definition, "tasks").unwrap();
+        let ids = |kind: &str| {
+            tasks
+                .iter()
+                .filter(|task| text(task, "kind").unwrap() == kind)
+                .map(|task| task.get("id").unwrap().clone())
+                .collect::<Vec<_>>()
+        };
+        let realization = tasks
+            .iter()
+            .find(|task| text(task, "kind").unwrap() == "review-requirement-realization")
+            .unwrap();
+        let realization_dependencies = arr(realization, "depends_on").unwrap();
+        for kind in ["prepare-candidate-model-revision", "implement-change"] {
+            for id in ids(kind) {
+                assert!(realization_dependencies.contains(&id), "missing {kind}");
+            }
+        }
+        for kind in [
+            "execute-check",
+            "run-verification-challenge",
+            "review-requirement-verification",
+        ] {
+            assert!(
+                !ids(kind)
+                    .iter()
+                    .any(|id| realization_dependencies.contains(id)),
+                "Realization Review depends on {kind}"
+            );
+        }
+        assert_eq!(
+            realization.get("correction"),
+            ids("implement-change").first()
+        );
+        assert_eq!(
+            realization
+                .get("required_output")
+                .and_then(|output| output.get("kind"))
+                .and_then(Json::as_str),
+            Some("realization-review")
+        );
+        for kind in [
+            "author-change-outcome",
+            "request-change-acceptance",
+            "finalize-change",
+        ] {
+            let task = tasks
+                .iter()
+                .find(|task| text(task, "kind").unwrap() == kind)
+                .unwrap();
+            for review in [
+                "review-requirement-verification",
+                "review-requirement-realization",
+            ] {
+                for id in ids(review) {
+                    assert!(
+                        arr(task, "depends_on").unwrap().contains(&id),
+                        "{kind} does not wait for {review}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rejected_realization_review_reopens_implementation_for_correction() {
+        let target = Json::obj(vec![
+            ("project", Json::str("sample-project")),
+            ("change", Json::str("sample-change")),
+        ]);
+        let mut review_target = target.clone();
+        set(
+            &mut review_target,
+            "requirement",
+            Json::str("restricted-access"),
+        );
+        let implement = concrete_id("implement-change", &target);
+        let review = concrete_id("review-requirement-realization", &review_target);
+        let task = |id: &str, kind: &str, target: &Json, depends: Vec<Json>, correction: Json| {
+            Json::obj(vec![
+                ("id", Json::str(id)),
+                ("kind", Json::str(kind)),
+                ("target", target.clone()),
+                ("depends_on", Json::Arr(depends)),
+                ("inputs", Json::Arr(vec![])),
+                ("guidance", Json::Arr(vec![])),
+                (
+                    "required_output",
+                    Json::obj(vec![
+                        ("kind", Json::str(kind)),
+                        ("description", Json::str("Synthetic work.")),
+                    ]),
+                ),
+                ("correction", correction),
+            ])
+        };
+        let result = |id: &str, outcome: &str| {
+            Json::obj(vec![(
+                "result",
+                Json::obj(vec![
+                    ("task", Json::str(id)),
+                    ("outcome", Json::str(outcome)),
+                    ("basis", Json::str(format!("sha256:{}", "e".repeat(64)))),
+                    ("records", Json::Arr(vec![])),
+                ]),
+            )])
+        };
+        let state = Json::obj(vec![
+            (
+                "definition",
+                Json::obj(vec![(
+                    "tasks",
+                    Json::Arr(vec![
+                        task(&implement, "implement-change", &target, vec![], Json::Null),
+                        task(
+                            &review,
+                            "review-requirement-realization",
+                            &review_target,
+                            vec![Json::str(&implement)],
+                            Json::str(&implement),
+                        ),
+                    ]),
+                )]),
+            ),
+            (
+                "history",
+                Json::Arr(vec![
+                    result(&implement, "completed"),
+                    result(&review, "rejected"),
+                ]),
+            ),
+        ]);
+        let roots = BTreeMap::from([(String::new(), std::env::temp_dir())]);
+        let eligible = evaluate(&state, &roots).unwrap().eligible;
+        let correction = eligible
+            .iter()
+            .find(|handoff| handoff.get("id") == Some(&Json::str(&implement)))
+            .expect("rejection reopens implementation");
+        let corrections = arr(correction, "corrections").unwrap();
+        assert_eq!(corrections.len(), 1);
+        assert_eq!(corrections[0].get("task"), Some(&Json::str(&review)));
+        assert_eq!(corrections[0].get("outcome"), Some(&Json::str("rejected")));
+        assert!(
+            !eligible
+                .iter()
+                .any(|handoff| handoff.get("id") == Some(&Json::str(&review))),
+            "reassessment waits for the correction"
+        );
+    }
+
+    #[test]
+    fn inventory_requirement_definitions_record_declared_reviews_in_fixed_order() {
+        let authority = Json::obj(vec![(
+            "requirements",
+            Json::Arr(
+                [
+                    ("both-declared", "reviewed", "reviewed"),
+                    ("neither-declared", "none", "none"),
+                    ("realization-only", "reviewed", "none"),
+                ]
+                .into_iter()
+                .map(|(id, realization, verification)| {
+                    Json::obj(vec![
+                        ("id", Json::str(id)),
+                        ("realization", Json::str(realization)),
+                        ("verification", Json::str(verification)),
+                    ])
+                })
+                .collect(),
+            ),
+        )]);
+        let definitions = requirement_definitions(&authority).unwrap();
+        assert_eq!(
+            definitions,
+            bindings_declaring(
+                false,
+                &[
+                    ("both-declared", &["realization", "verification"]),
+                    ("realization-only", &["realization"]),
+                ],
+            )
+            .get("assurance")
+            .unwrap()
+            .get("requirement_definitions")
+            .unwrap()
+            .clone()
+        );
+        let mut inventory = bindings(false).get("assurance").unwrap().clone();
+        inventory_shape(&inventory).unwrap();
+        for reviews in [
+            vec![],
+            vec!["verification", "realization"],
+            vec!["verification", "verification"],
+            vec!["intent"],
+        ] {
+            set(
+                &mut inventory,
+                "requirement_definitions",
+                Json::Arr(vec![Json::obj(vec![
+                    ("requirement", Json::str("restricted-access")),
+                    (
+                        "reviews",
+                        Json::Arr(reviews.iter().map(|r| Json::str(*r)).collect()),
+                    ),
+                ])]),
+            );
+            assert!(inventory_shape(&inventory).is_err(), "{reviews:?}");
+        }
+    }
+
     #[test]
     fn candidate_reference_materialization_preserves_identity_and_rejects_changed_content() {
         let directory = std::env::temp_dir().join(format!(

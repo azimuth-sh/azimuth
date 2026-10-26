@@ -7,7 +7,14 @@ use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
 const FORMAT: &str = "azimuth-retained-inputs";
-const KINDS: &[&str] = &["file", "run-bundle", "review-input", "verification-review"];
+const KINDS: &[&str] = &[
+    "file",
+    "run-bundle",
+    "review-input",
+    "verification-review",
+    "realization-review",
+];
+const REVIEW_KINDS: &[&str] = &["verification-review", "realization-review"];
 
 #[derive(Debug, Clone)]
 pub struct Input {
@@ -315,8 +322,16 @@ fn native_closure(
         let value = json_bytes(&bytes[&entry.id], &entry.source_path)?;
         match entry.kind.as_str() {
             "run-bundle" => all_runs.push(run(&value, &entry.source_path)?),
-            "verification-review" => {
+            "verification-review" | "realization-review" => {
                 crate::assurance_review::validate_record(&value)?;
+                if text(&value, "kind")? != entry.kind {
+                    return Err(format!(
+                        "retained {} input {} holds a {} record",
+                        entry.kind,
+                        entry.id,
+                        text(&value, "kind")?
+                    ));
+                }
             }
             "review-input" => {
                 crate::review_authoring::validate_input_packet(&value)?;
@@ -335,7 +350,7 @@ fn native_closure(
         ));
     }
     for entry in &package.inputs {
-        if entry.kind != "verification-review" {
+        if !REVIEW_KINDS.contains(&entry.kind.as_str()) {
             continue;
         }
         let value = &values[&entry.id];
@@ -363,7 +378,9 @@ fn native_closure(
                             .cloned(),
                     );
                 }
-                "verification-review" => available_reviews.push(values[&dependency.id].clone()),
+                "verification-review" | "realization-review" => {
+                    available_reviews.push(values[&dependency.id].clone())
+                }
                 _ => {}
             }
         }
@@ -423,6 +440,9 @@ fn native_closure(
                     "retained review reassessment predecessor is missing: {previous}"
                 ));
             }
+        }
+        if entry.kind != "verification-review" {
+            continue;
         }
         for proof in array(value, "challenge_basis")? {
             let bundle = available_runs
@@ -510,7 +530,7 @@ pub fn verify_change(change_root: &Path) -> Result<Json, String> {
                 let path = below(change_root, &relative)?;
                 let bytes = fs::read(&path).map_err(|e| e.to_string())?;
                 if !package.inputs.iter().any(|input| {
-                    input.kind == "verification-review"
+                    REVIEW_KINDS.contains(&input.kind.as_str())
                         && input.source_path == relative
                         && input.fingerprint == digest(&bytes)
                 }) {

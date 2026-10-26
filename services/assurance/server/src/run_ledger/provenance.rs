@@ -1377,7 +1377,7 @@ mod tests {
                     "i2",
                     Some("i1"),
                     "completed",
-                    &["implement", "review-requirement"],
+                    &["implement", "review-requirement-verification"],
                 ),
             ],
         );

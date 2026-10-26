@@ -2,7 +2,7 @@
   "format": "azimuth-workflow-template",
   "version": 2,
   "id": "change-development",
-  "revision": 11,
+  "revision": 12,
   "actions": [
     {
       "id": "establish-change-scope",
@@ -688,8 +688,8 @@
       ]
     },
     {
-      "id": "review-requirement",
-      "kind": "review-requirement",
+      "id": "review-requirement-verification",
+      "kind": "review-requirement-verification",
       "collection": "requirement-definitions",
       "depends_on": [
         {
@@ -746,12 +746,65 @@
       ]
     },
     {
+      "id": "review-requirement-realization",
+      "kind": "review-requirement-realization",
+      "collection": "requirement-definitions",
+      "depends_on": [
+        {
+          "action": "prepare-candidate-model-revision",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "implement-change",
+          "match": "all",
+          "condition": "current-success"
+        }
+      ],
+      "inputs": [
+        "request",
+        "instructions",
+        "snapshot"
+      ],
+      "guidance": [
+        {
+          "kind": "skill",
+          "id": "azimuth-review-realization"
+        },
+        {
+          "kind": "reference",
+          "id": "workflow"
+        },
+        {
+          "kind": "reference",
+          "id": "assurance-reviews"
+        }
+      ],
+      "required_output": {
+        "kind": "realization-review",
+        "description": "Independently perform the Realization Review: judge whether the code at the Requirement's realization sites does what each Scenario says, consistent with realization.md where present. Record the reviewed commit; later code drift at the sites is informational. The review is an opinion about a code snapshot, not evidence; retain predecessor history."
+      },
+      "correction": "implement-change",
+      "outcomes": [
+        "accepted",
+        "rejected"
+      ],
+      "satisfies": [
+        "accepted"
+      ]
+    },
+    {
       "id": "author-change-outcome",
       "kind": "author-change-outcome",
       "collection": "change",
       "depends_on": [
         {
-          "action": "review-requirement",
+          "action": "review-requirement-verification",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "review-requirement-realization",
           "match": "all",
           "condition": "current-success"
         },
@@ -810,7 +863,12 @@
           "condition": "current-success"
         },
         {
-          "action": "review-requirement",
+          "action": "review-requirement-verification",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "review-requirement-realization",
           "match": "all",
           "condition": "current-success"
         },
@@ -885,7 +943,12 @@
           "condition": "current-success"
         },
         {
-          "action": "review-requirement",
+          "action": "review-requirement-verification",
+          "match": "all",
+          "condition": "current-success"
+        },
+        {
+          "action": "review-requirement-realization",
           "match": "all",
           "condition": "current-success"
         }

@@ -40,6 +40,7 @@ const ADVERSE_KINDS: &[&str] = &[
     "check-result",
     "verification-challenge-result",
     "verification-review",
+    "realization-review",
 ];
 const CONFIDENCES: &[&str] = &["low", "medium", "high"];
 /// Record kinds under which `workflow update` retains the authored result file itself.
