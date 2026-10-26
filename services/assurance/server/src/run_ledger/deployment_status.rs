@@ -590,3 +590,20 @@ pub(super) async fn summary(
         .await
         .map(Json)
 }
+
+pub(super) async fn requirement_statuses(
+    State(state): State<LedgerState>,
+    Path((project, deployment)): Path<(String, String)>,
+    Query(options): Query<std::collections::HashMap<String, String>>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, LedgerError> {
+    state.authorize(&project, &headers, None)?;
+    super::materialized::requirement_statuses(
+        &state,
+        &project,
+        &deployment,
+        options.get("status").map(String::as_str),
+    )
+    .await
+    .map(Json)
+}
