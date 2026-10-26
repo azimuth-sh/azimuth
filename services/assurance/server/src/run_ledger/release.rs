@@ -338,7 +338,9 @@ async fn requirement_checks(
         .bind(project).bind(fingerprint).fetch_all(&state.pool).await?;
     Ok(requirements
         .iter()
-        .map(|requirement| requirement_check_account(&release["release"], requirement, &bindings, &runs))
+        .map(|requirement| {
+            requirement_check_account(&release["release"], requirement, &bindings, &runs)
+        })
         .collect())
 }
 
@@ -405,7 +407,9 @@ fn requirement_check_account(
                         results
                             .iter()
                             .filter(|result| {
-                                result["scenario"].as_str().is_some_and(|s| scenarios.contains(&s))
+                                result["scenario"]
+                                    .as_str()
+                                    .is_some_and(|s| scenarios.contains(&s))
                             })
                             .map(|result| {
                                 (
@@ -469,10 +473,14 @@ fn run_subject(run: &Value) -> Value {
     match target["kind"].as_str() {
         Some("source" | "ci-candidate" | "workspace") => target["repositories"]
             .as_array()
-            .and_then(|list| list.iter().min_by_key(|r| r["id"].as_str().unwrap_or_default()))
-            .map_or(Value::Null, |repository| {
-                json!({"repository":repository["id"],"commit":repository["revision"]})
-            }),
+            .and_then(|list| {
+                list.iter()
+                    .min_by_key(|r| r["id"].as_str().unwrap_or_default())
+            })
+            .map_or(
+                Value::Null,
+                |repository| json!({"repository":repository["id"],"commit":repository["revision"]}),
+            ),
         Some("artifact") => json!({"artifacts":target["artifacts"]}),
         _ => Value::Null,
     }
@@ -483,26 +491,30 @@ fn run_has_release_subject(release: &Value, run: &Value) -> bool {
     match target["kind"].as_str() {
         Some("source" | "ci-candidate") => {
             let sources = release["sources"].as_array();
-            target["repositories"].as_array().is_some_and(|repositories| {
-                !repositories.is_empty()
-                    && repositories.iter().all(|repository| {
-                        sources.is_some_and(|sources| {
-                            sources.iter().any(|source| {
-                                source["repository"] == repository["id"]
-                                    && source["commit"] == repository["revision"]
-                                    && source["content_fingerprint"]
-                                        == repository["content_fingerprint"]
+            target["repositories"]
+                .as_array()
+                .is_some_and(|repositories| {
+                    !repositories.is_empty()
+                        && repositories.iter().all(|repository| {
+                            sources.is_some_and(|sources| {
+                                sources.iter().any(|source| {
+                                    source["repository"] == repository["id"]
+                                        && source["commit"] == repository["revision"]
+                                        && source["content_fingerprint"]
+                                            == repository["content_fingerprint"]
+                                })
                             })
                         })
-                    })
-            })
+                })
         }
         Some("artifact") => {
             let released = release["artifacts"].as_array();
             target["artifacts"].as_array().is_some_and(|artifacts| {
                 !artifacts.is_empty()
                     && artifacts.iter().all(|artifact| {
-                        released.is_some_and(|list| list.iter().any(|a| a["digest"] == artifact["digest"]))
+                        released.is_some_and(|list| {
+                            list.iter().any(|a| a["digest"] == artifact["digest"])
+                        })
                     })
             })
         }
@@ -511,13 +523,15 @@ fn run_has_release_subject(release: &Value, run: &Value) -> bool {
 }
 
 fn unit_matches_release(release: &Value, unit: &Value) -> bool {
-    release["unit_inputs"]["units"].as_array().is_some_and(|manifest| {
-        manifest.iter().any(|entry| {
-            entry["id"] == unit["id"]
-                && entry["hermetic"] == true
-                && entry["input_fingerprint"] == unit["input_fingerprint"]
+    release["unit_inputs"]["units"]
+        .as_array()
+        .is_some_and(|manifest| {
+            manifest.iter().any(|entry| {
+                entry["id"] == unit["id"]
+                    && entry["hermetic"] == true
+                    && entry["input_fingerprint"] == unit["input_fingerprint"]
+            })
         })
-    })
 }
 pub(super) async fn show(
     State(state): State<LedgerState>,
@@ -869,7 +883,7 @@ pub(super) async fn publish_main(
                 .map(|record| {
                     (
                         record.clone(),
-                        assurance_review::assess_record(record, &authority, &reviews, &bundles),
+                        assurance_review::assess_head(record, &authority, &reviews, &bundles),
                     )
                 })
                 .collect::<Vec<_>>())

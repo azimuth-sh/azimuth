@@ -203,7 +203,11 @@ fn deadline(request: &Value, requirement: &Value) -> i64 {
     for capture in request["captures"].as_array().unwrap() {
         let matches = capture["before"]["report"]["contexts"]
             .as_object()
-            .is_some_and(|values| values.keys().any(|component| contexts.contains(component.as_str())));
+            .is_some_and(|values| {
+                values
+                    .keys()
+                    .any(|component| contexts.contains(component.as_str()))
+            });
         if matches {
             let at = capture["finished_at_ms"].as_i64().unwrap();
             if capture["kind"] == "deployment"
@@ -407,10 +411,14 @@ async fn publish(
                 }
             }
         }
-        if let Some(review) = requirement["explanation"]["realization_review"]["fingerprint"].as_str() {
+        if let Some(review) =
+            requirement["explanation"]["realization_review"]["fingerprint"].as_str()
+        {
             dependencies.insert(("review".into(), review.into()));
         }
-        if let Some(review) = requirement["explanation"]["verification_review"]["fingerprint"].as_str() {
+        if let Some(review) =
+            requirement["explanation"]["verification_review"]["fingerprint"].as_str()
+        {
             dependencies.insert(("review".into(), review.into()));
             if let Some(record) = request["reviews"]
                 .as_array()
@@ -519,12 +527,14 @@ pub(super) async fn read(
     let mut requirements = Vec::new();
     for entry in entries {
         let mut requirement = if summary {
-            let checks: Option<Value> = sqlx::query_scalar::<_, Option<Value>>("SELECT assurance_record_field('assessment_requirement',$1,$2,'checks')")
-                .bind(project)
-                .bind(entry.get::<Option<String>, _>("record_key"))
-                .fetch_optional(&mut *tx)
-                .await?
-                .flatten();
+            let checks: Option<Value> = sqlx::query_scalar::<_, Option<Value>>(
+                "SELECT assurance_record_field('assessment_requirement',$1,$2,'checks')",
+            )
+            .bind(project)
+            .bind(entry.get::<Option<String>, _>("record_key"))
+            .fetch_optional(&mut *tx)
+            .await?
+            .flatten();
             json!({"requirement":entry.get::<String,_>("requirement"),"status":entry.get::<String,_>("status"),"verification_review":entry.get::<String,_>("verification_review"),"realization_review":entry.get::<String,_>("realization_review"),"realization_code_drift":entry.get::<Option<bool>,_>("realization_code_drift"),"diagnostics":[],"gaps":[],"explanation":{"summary":entry.get::<String,_>("summary"),"realization_review":{"status":entry.get::<String,_>("realization_review"),"reviewed_commit":entry.get::<Option<String>,_>("realization_reviewed_commit"),"code_drift":entry.get::<Option<bool>,_>("realization_code_drift")}},"checks":checks.unwrap_or_else(|| json!([]))})
         } else {
             sqlx::query_scalar::<_, Value>(
@@ -559,13 +569,12 @@ pub(super) async fn read(
             requirement["bindings"] = json!([]);
             requirement["checks"] = json!([]);
         }
-        requirement["supported_since_ms"] = if requirement_freshness == "ready"
-            && requirement["status"] == "supported"
-        {
-            json!(entry.get::<Option<i64>, _>("supported_since_ms"))
-        } else {
-            Value::Null
-        };
+        requirement["supported_since_ms"] =
+            if requirement_freshness == "ready" && requirement["status"] == "supported" {
+                json!(entry.get::<Option<i64>, _>("supported_since_ms"))
+            } else {
+                Value::Null
+            };
         requirements.push(requirement);
     }
     Ok(
@@ -823,16 +832,36 @@ mod tests {
         );
         let assess = |request: &Value| {
             to_value(
-                &azimuth::deployment_status::assess(&core_json(request.to_string().as_bytes()).unwrap())
-                    .unwrap(),
+                &azimuth::deployment_status::assess(
+                    &core_json(request.to_string().as_bytes()).unwrap(),
+                )
+                .unwrap(),
             )
             .unwrap()
         };
         let cases = [
             (None, "missing", Value::Null),
-            (Some(realization(&current_sites, dependencies.clone())), "accepted", json!(false)),
-            (Some(realization(&format!("sha256:{}", "d".repeat(64)), dependencies.clone())), "accepted", json!(true)),
-            (Some(realization(&current_sites, format!("sha256:{}", "9".repeat(64)))), "stale", json!(false)),
+            (
+                Some(realization(&current_sites, dependencies.clone())),
+                "accepted",
+                json!(false),
+            ),
+            (
+                Some(realization(
+                    &format!("sha256:{}", "d".repeat(64)),
+                    dependencies.clone(),
+                )),
+                "accepted",
+                json!(true),
+            ),
+            (
+                Some(realization(
+                    &current_sites,
+                    format!("sha256:{}", "9".repeat(64)),
+                )),
+                "stale",
+                json!(false),
+            ),
         ];
         let mut drifted = None;
         for (record, expected, drift) in cases {
@@ -846,7 +875,10 @@ mod tests {
             assert_eq!(requirement["verification_review"], "accepted", "{result}");
             assert_eq!(requirement["realization_review"], expected, "{result}");
             assert_eq!(requirement["realization_code_drift"], drift, "{result}");
-            assert_eq!(requirement["explanation"]["realization_review"]["status"], expected);
+            assert_eq!(
+                requirement["explanation"]["realization_review"]["status"],
+                expected
+            );
             if drift == json!(true) {
                 assert_eq!(
                     requirement["explanation"]["realization_review"]["reviewed_commit"],
@@ -871,16 +903,36 @@ mod tests {
             evidence: Default::default(),
         };
         sqlx::query("INSERT INTO deployment_assessments(project,deployment,release) VALUES('project','monitor-deployment','release')").execute(&pool).await?;
-        publish(&state, "project", "monitor-deployment", 1, &[], &drifted, &request).await?;
+        publish(
+            &state,
+            "project",
+            "monitor-deployment",
+            1,
+            &[],
+            &drifted,
+            &request,
+        )
+        .await?;
         let stored: Value = sqlx::query_scalar("SELECT assurance_record('assessment_requirement','project','monitor-deployment:restricted:1')").fetch_one(&pool).await?;
-        assert_eq!(stored, drifted["requirements"][0], "typed storage keeps both review dimensions");
+        assert_eq!(
+            stored, drifted["requirements"][0],
+            "typed storage keeps both review dimensions"
+        );
         // The fixture evaluates at a fixed past instant; only a current projection exposes its explanation.
-        sqlx::query("UPDATE assessment_requirements SET valid_until_ms=9007199254740991").execute(&pool).await?;
-        sqlx::query("UPDATE deployment_assessments SET valid_until_ms=9007199254740991").execute(&pool).await?;
+        sqlx::query("UPDATE assessment_requirements SET valid_until_ms=9007199254740991")
+            .execute(&pool)
+            .await?;
+        sqlx::query("UPDATE deployment_assessments SET valid_until_ms=9007199254740991")
+            .execute(&pool)
+            .await?;
         let summary = read(&state, "project", "monitor-deployment", true).await?;
         let row = &summary["requirements"][0];
         assert_eq!(
-            (&row["verification_review"], &row["realization_review"], &row["realization_code_drift"]),
+            (
+                &row["verification_review"],
+                &row["realization_review"],
+                &row["realization_code_drift"]
+            ),
             (&json!("accepted"), &json!("accepted"), &json!(true)),
             "{summary}"
         );

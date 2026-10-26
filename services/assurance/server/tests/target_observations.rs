@@ -25,7 +25,8 @@ fn value(value: &azimuth::json::Json) -> Value {
     serde_json::from_str(&value.to_string_pretty()).unwrap()
 }
 fn contract() -> Value {
-    let mut result = json!({"name":"api","fields":{"enabled":"boolean","revision":"integer","mode":"string"}});
+    let mut result =
+        json!({"name":"api","fields":{"enabled":"boolean","revision":"integer","mode":"string"}});
     result["fingerprint"] = json!(azimuth::run::canonical_fingerprint(&native(&result)).unwrap());
     result
 }
