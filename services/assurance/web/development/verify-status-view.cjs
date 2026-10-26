@@ -297,4 +297,18 @@ async function verifyRequirementPageWorkHistory() {
   assert(degraded.includes('>Satisfied</span>') && degraded.includes('Work history is unavailable right now'), 'unavailable provenance never hides Requirement Status');
   console.log('Requirement page work history passed: placement after review, reviewing-attempt descriptor, review record fields and degraded provenance reads.');
 }
+function verifySessionLifetime() {
+  const { authOptions } = loadSource('../src/lib/auth.ts', {
+    'server-only': {}, 'next-auth': { getServerSession: async () => null }, 'next-auth/providers/github': options => options,
+    'next/navigation': { redirect() {}, notFound() {} }, react: { cache: fn => fn },
+    './config': { webConfig: () => ({ github: { clientId: 'id', clientSecret: 'secret' }, users: {} }) },
+    './development': { developmentScenario: () => null },
+  });
+  const options = authOptions();
+  const week = 7 * 24 * 60 * 60;
+  assert.equal(options.session.maxAge, week, 'the session cookie lasts seven days');
+  assert.equal(options.jwt.maxAge, week, 'the session token lasts seven days');
+  console.log('Session lifetime passed: cookie and token last seven days from sign-in.');
+}
+verifySessionLifetime();
 verifyRequirementPageWorkHistory().catch(error => { console.error(error); process.exitCode = 1; });
