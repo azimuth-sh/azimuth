@@ -63,7 +63,9 @@ pub fn initialize(root: &Path) -> Result<Vec<PathBuf>, String> {
         }
     }
     let workspace = root.join("workspace.json");
-    if !workspace.exists() {
+    // A project catalog beside the model is the single topology authority; a default workspace
+    // would become a second one.
+    if !workspace.exists() && !root.join("project.json").exists() {
         fs::write(&workspace, crate::resources::DEFAULT_WORKSPACE)
             .map_err(|error| format!("cannot write {}: {error}", workspace.display()))?;
         created.push(workspace);

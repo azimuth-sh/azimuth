@@ -58,6 +58,10 @@ locator. The declaration has no role vocabulary and does not assign Scenario or 
 
 An area obligation is not an evidence obligation. Evidence follows explicit Evidence Bindings. One Check may bear on several areas when each Check-to-Requirement edge is declared separately. Test-file location does not establish evidence scope, and ordinary tests emit no Check linkage.
 
+## Relation to a project catalog
+
+A project that declares a project catalog has a single topology authority, the catalog. A `workspace.json` beside a catalog is a second authority: every local model load refuses to run while both exist and names both files; see [project-catalog.md](project-catalog.md#local-loads-without-a-workset). Federated validation never reads a local workspace. A project without a catalog keeps using its workspace for every local command.
+
 ## Package enablement
 
 Optional `packages` enables the verification package contracts described in [verification-packages.md](verification-packages.md). Package Surfaces publish member fields and source producer linkage; they are distinct from the existing workspace quantification `surfaces` collection. No authored enumerator ID or duplicate endpoint annotation is required for package Surfaces.

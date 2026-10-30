@@ -104,6 +104,7 @@ USAGE
     azimuth change brief <id-or-dir> --package <id> [--changes <dir>]
     azimuth change finalize <dir> [options]
     azimuth change archive <dir> --date <YYYY-MM-DD> [options]
+        (with project.json beside model/, both require --project <file> --workset <file>)
 
 OPTIONS
     --project <file>      project catalog; requires --workset
@@ -118,6 +119,12 @@ OPTIONS
     --out <file>           export destination (default: stdout)
     -h, --help
     -V, --version
+
+LOCAL TOPOLOGY
+    Every local model load reads topology from project.json beside model/ when it exists:
+    workspace.json must then be absent, --workspace, --manifest and --support are rejected,
+    and every catalog model source must be in this repository. change finalize and archive
+    refuse that partial load and require --project and --workset instead.
 
 RUN PLAN REQUESTS
     The strict request file may select Checks, Challenges, or both. See
@@ -231,6 +238,8 @@ struct Options {
     workset: Option<PathBuf>,
     model: PathBuf,
     workspace: PathBuf,
+    /// `--workspace`, `--manifest` or `--support` was supplied explicitly.
+    local_inputs: bool,
     manifests: Vec<PathBuf>,
     supports: Vec<PathBuf>,
     validation_scope: ValidationScope,
@@ -453,11 +462,18 @@ fn command_init(args: &[String]) -> Result<ExitCode, String> {
     for path in created {
         println!("  {}", path.display());
     }
-    println!(
-        "next: azimuth validate --model {} --workspace {}",
-        root.join("model").display(),
-        root.join("workspace.json").display()
-    );
+    if root.join("project.json").exists() {
+        println!(
+            "next: azimuth validate --model {}",
+            root.join("model").display()
+        );
+    } else {
+        println!(
+            "next: azimuth validate --model {} --workspace {}",
+            root.join("model").display(),
+            root.join("workspace.json").display()
+        );
+    }
     Ok(ExitCode::SUCCESS)
 }
 
@@ -1325,17 +1341,25 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
         }
         return command_change_validate(&root, &options);
     }
-    if options.project.is_some() {
-        return Err("project/workset inputs are supported by change validate".into());
+    if options.project.is_some() && !acceptance_boundary {
+        return Err(
+            "project/workset inputs are supported by change validate, finalize and archive".into(),
+        );
     }
     if acceptance_boundary && !options.only.is_empty() {
         return Err("finalize and archive require the complete current model; omit --only".into());
     }
+    let mut model_root = options.model.clone();
+    let catalog = if acceptance_boundary {
+        acceptance_assembly(&root, &options, &mut model_root)?
+    } else {
+        options_catalog(&options)?
+    };
     if matches!(
         operation.as_str(),
         "account-capture" | "account-preview" | "account-apply"
     ) {
-        return command_account_change(operation, &root, &options, preview_path);
+        return command_account_change(operation, &root, &options, catalog.as_ref(), preview_path);
     }
     if !options.supports.is_empty() {
         return Err("`--support` is available only for change validate and account-apply".into());
@@ -1347,12 +1371,16 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
     {
         return Err("intent commands require the complete current model; omit `--only`".into());
     }
-    let loaded = match azimuth::load(
-        &options.model,
-        &options.workspace,
-        &options.manifests,
-        &options.only,
-    ) {
+    let loaded = match &catalog {
+        Some(assembly) => azimuth::load_assembly(assembly, &options.only),
+        None => azimuth::load(
+            &options.model,
+            &options.workspace,
+            &options.manifests,
+            &options.only,
+        ),
+    };
+    let loaded = match loaded {
         Ok(loaded) => loaded,
         Err(diags) => {
             report(&diags, "error");
@@ -1400,7 +1428,7 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
         (acceptances, ratified) = change_acceptances(&root, &report, &loaded.model)?;
         azimuth::change::waive_accepted_requirements(&mut findings, &ratified);
     }
-    let projection = match azimuth::intent::project(&root, &options.model, &loaded.model) {
+    let projection = match azimuth::intent::project(&root, &model_root, &loaded.model) {
         Ok(projection) => projection,
         Err(errors) => {
             for error in errors {
@@ -1414,8 +1442,8 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
         "intent-preview" => {
             let preview = projection.preview();
             if let Some(out) = &options.out {
-                let model_dir = fs::canonicalize(&options.model)
-                    .map_err(|error| format!("{}: {error}", options.model.display()))?;
+                let model_dir = fs::canonicalize(&model_root)
+                    .map_err(|error| format!("{}: {error}", model_root.display()))?;
                 let parent = out
                     .parent()
                     .filter(|path| !path.as_os_str().is_empty())
@@ -1501,7 +1529,7 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
         }
         "status" => {
             let account =
-                azimuth::account_delta::project_new_modules(&root.join("deltas"), &options.model)
+                azimuth::account_delta::project_new_modules(&root.join("deltas"), &model_root)
                     .map_err(|errors| errors.join("\n"))?;
             println!("change `{}`", report.id);
             for file in &account.files {
@@ -1559,7 +1587,7 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
         }
         "finalize" => {
             let account =
-                azimuth::account_delta::project_new_modules(&root.join("deltas"), &options.model)
+                azimuth::account_delta::project_new_modules(&root.join("deltas"), &model_root)
                     .map_err(|errors| errors.join("\n"))?;
             let mut issues = azimuth::change::completion_issues(&root, &report);
             if account
@@ -1589,7 +1617,7 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
                 azimuth::change::finalization(&loaded.model, &findings, &acceptances, &ratified);
             let updates = azimuth::change::head_updates(&loaded.model, &ratified);
             for path in azimuth::review_heads::write(
-                &options.model,
+                &model_root,
                 &loaded.model.review_heads,
                 &updates,
                 &|_| true,
@@ -1607,7 +1635,7 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
         }
         "archive" => {
             let account =
-                azimuth::account_delta::project_new_modules(&root.join("deltas"), &options.model)
+                azimuth::account_delta::project_new_modules(&root.join("deltas"), &model_root)
                     .map_err(|errors| errors.join("\n"))?;
             if account
                 .files
@@ -1694,10 +1722,115 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
     }
 }
 
+/// Acceptance needs source linkage, which a catalog-backed project obtains only from repository
+/// observations; a catalog-only load is a partial local account and cannot be finalized. A
+/// workspace-only project keeps its local load.
+fn acceptance_assembly(
+    root: &std::path::Path,
+    options: &Options,
+    model_root: &mut PathBuf,
+) -> Result<Option<azimuth::federation::Assembly>, String> {
+    let (Some(project), Some(workset)) = (&options.project, &options.workset) else {
+        let catalog = options
+            .model
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join("project.json");
+        if catalog.exists() {
+            return Err(format!(
+                "project catalog {} declares this project's topology; change finalize and archive accept a change only in a complete account, so pass `--project <catalog> --workset <workset>`",
+                catalog.display()
+            ));
+        }
+        return Ok(None);
+    };
+    let assembly =
+        azimuth::federation::assemble(project, workset, None).map_err(render_diagnostics)?;
+    if !assembly.complete {
+        return Err(format!(
+            "a partial project account cannot be finalized; missing workset inputs: {}",
+            assembly.missing_inputs.join(", ")
+        ));
+    }
+    azimuth::federation::validate_change_location(&assembly, root).map_err(render_diagnostics)?;
+    // Applied facets and review heads are written to one model; several model sources would need
+    // a declared owner for each write.
+    match assembly.model_roots.as_slice() {
+        [single] => *model_root = single.clone(),
+        roots => {
+            return Err(format!(
+                "change finalize and archive need exactly one project model source; the workset assembles {}",
+                roots.len()
+            ))
+        }
+    }
+    Ok(Some(assembly))
+}
+
+/// A local model load reads topology from the project catalog beside the model directory, exactly
+/// where `workspace.json` is defaulted. Both files present would be two topology authorities, so
+/// neither silently wins; local manifests and support cannot be qualified by repository without a
+/// workset observation, so they are refused rather than assigned to an ambiguous Area.
+fn local_catalog_assembly(
+    model: &std::path::Path,
+    workspace: &std::path::Path,
+    local_inputs: bool,
+) -> Result<Option<azimuth::federation::Assembly>, String> {
+    let catalog = model
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join("project.json");
+    if !catalog.exists() {
+        return Ok(None);
+    }
+    if workspace.exists() {
+        return Err(format!(
+            "two topology authorities: project catalog {} and workspace {} both declare Areas and packages; the catalog is the project's single topology authority, so remove one of them",
+            catalog.display(),
+            workspace.display()
+        ));
+    }
+    if local_inputs {
+        return Err(format!(
+            "project catalog {} supplies this command's topology; omit --workspace, --manifest and --support, and assess linkage with `--project <catalog> --workset <workset>`",
+            catalog.display()
+        ));
+    }
+    azimuth::federation::assemble_repository_model(&catalog, model)
+        .map(Some)
+        .map_err(render_diagnostics)
+}
+
+fn options_catalog(options: &Options) -> Result<Option<azimuth::federation::Assembly>, String> {
+    if options.project.is_some() {
+        return Ok(None);
+    }
+    local_catalog_assembly(&options.model, &options.workspace, options.local_inputs)
+}
+
+/// Loads the complete local model from the project catalog when one exists, otherwise from the
+/// local workspace and the explicitly supplied manifests and support.
+fn load_local_inputs(options: &Options) -> Result<azimuth::Loaded, String> {
+    match options_catalog(options)? {
+        Some(assembly) => {
+            azimuth::load_assembly(&assembly, &options.only).map_err(render_diagnostics)
+        }
+        None => azimuth::load_with_support(
+            &options.model,
+            &options.workspace,
+            &options.manifests,
+            &options.supports,
+            &options.only,
+        )
+        .map_err(render_diagnostics),
+    }
+}
+
 fn command_account_change(
     operation: &str,
     root: &std::path::Path,
     options: &Options,
+    catalog: Option<&azimuth::federation::Assembly>,
     preview_path: Option<PathBuf>,
 ) -> Result<ExitCode, String> {
     if !options.only.is_empty() {
@@ -1811,7 +1944,7 @@ fn command_account_change(
         );
     }
 
-    let inspection = inspect_account_projection(&projection, options)?;
+    let inspection = inspect_account_projection(&projection, options, catalog)?;
     print!("{}", inspection.render());
 
     let mut staged = Vec::new();
@@ -1884,14 +2017,18 @@ fn command_account_change(
 fn inspect_account_projection(
     projection: &azimuth::account_delta::AccountProjection,
     options: &Options,
+    catalog: Option<&azimuth::federation::Assembly>,
 ) -> Result<azimuth::account_model::AccountReport, String> {
-    let workspace = azimuth::workspace::load(&options.workspace).map_err(|diagnostics| {
-        diagnostics
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join("\n")
-    })?;
+    let workspace = match catalog {
+        Some(assembly) => azimuth::project_workspace(&assembly.project),
+        None => azimuth::workspace::load(&options.workspace).map_err(|diagnostics| {
+            diagnostics
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+        })?,
+    };
     let mut manifests = Vec::new();
     for path in &options.manifests {
         manifests.push(azimuth::manifest::load(path).map_err(|diagnostics| {
@@ -1919,7 +2056,14 @@ fn inspect_account_projection(
     ));
     fs::create_dir(&stage).map_err(|error| format!("{}: {error}", stage.display()))?;
     let result = (|| {
-        copy_account_model(&options.model, &stage)?;
+        match catalog {
+            Some(assembly) => {
+                for source in &assembly.model_roots {
+                    merge_validation_model(source, &stage)?;
+                }
+            }
+            None => copy_account_model(&options.model, &stage)?,
+        }
         for file in &projection.files {
             let relative = file
                 .path
@@ -2036,6 +2180,8 @@ struct RunPlanOptions {
     project: Option<PathBuf>,
     workset: Option<PathBuf>,
     supports: Vec<PathBuf>,
+    /// `--workspace`, `--manifest` or `--support` was supplied explicitly.
+    local_inputs: bool,
     selection: bool,
     request: PathBuf,
     model: PathBuf,
@@ -2459,6 +2605,7 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
         return Err("run planning requires --project and --workset together".into());
     }
     let request = request.ok_or("run plan needs `--request <file>`")?;
+    let local_inputs = workspace.is_some() || !manifests.is_empty() || !supports.is_empty();
     let model = model.unwrap_or_else(|| PathBuf::from("azimuth/model"));
     let workspace = workspace.unwrap_or_else(|| {
         model
@@ -2486,6 +2633,7 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
         project,
         workset,
         supports,
+        local_inputs,
         unit_rule,
         checkout: checkout.unwrap_or_else(|| PathBuf::from(".")),
         unit_explanation,
@@ -2586,6 +2734,10 @@ fn load_run_model(options: &RunPlanOptions) -> Result<azimuth::Loaded, String> {
                 assembly.missing_inputs.join(", ")
             ));
         }
+        azimuth::load_assembly(&assembly, &[]).map_err(render_diagnostics)
+    } else if let Some(assembly) =
+        local_catalog_assembly(&options.model, &options.workspace, options.local_inputs)?
+    {
         azimuth::load_assembly(&assembly, &[]).map_err(render_diagnostics)
     } else {
         azimuth::load_with_support(
@@ -3306,6 +3458,7 @@ fn parse_options(args: &[String], allow_scope: bool) -> Result<Options, String> 
         workset: None,
         model: PathBuf::from("azimuth/model"),
         workspace: PathBuf::new(),
+        local_inputs: false,
         manifests: Vec::new(),
         supports: Vec::new(),
         validation_scope: ValidationScope::Structure,
@@ -3345,14 +3498,17 @@ fn parse_options(args: &[String], allow_scope: bool) -> Result<Options, String> 
             }
             "--workspace" => {
                 o.workspace = PathBuf::from(value("--workspace")?);
+                o.local_inputs = true;
                 i += 2;
             }
             "--manifest" => {
                 o.manifests.push(PathBuf::from(value("--manifest")?));
+                o.local_inputs = true;
                 i += 2;
             }
             "--support" => {
                 o.supports.push(PathBuf::from(value("--support")?));
+                o.local_inputs = true;
                 i += 2;
             }
             "--assurance-snapshot" => {
@@ -3595,14 +3751,7 @@ fn load_validation_inputs(options: &Options) -> Result<azimuth::Loaded, String> 
         }
         azimuth::load_assembly(&assembly, &[]).map_err(render_diagnostics)
     } else {
-        azimuth::load_with_support(
-            &options.model,
-            &options.workspace,
-            &options.manifests,
-            &options.supports,
-            &options.only,
-        )
-        .map_err(render_diagnostics)
+        load_local_inputs(options)
     }
 }
 
@@ -3643,7 +3792,7 @@ fn command_change_validate(root: &std::path::Path, options: &Options) -> Result<
             .map_err(render_diagnostics)?;
         Some(assembly)
     } else {
-        None
+        options_catalog(options)?
     };
     let original_roots = assembly
         .as_ref()
@@ -3661,6 +3810,7 @@ fn command_change_validate(root: &std::path::Path, options: &Options) -> Result<
         workset: None,
         model: stage.0.clone(),
         workspace: options.workspace.clone(),
+        local_inputs: options.local_inputs,
         manifests: options.manifests.clone(),
         supports: options.supports.clone(),
         validation_scope: options.validation_scope,
@@ -3924,13 +4074,17 @@ fn command_report(args: &[String]) -> Result<ExitCode, String> {
         return Err(format!("unknown report `{operation}`"));
     }
     let options = parse_options(&args[1..], false)?;
-    let loaded = match azimuth::load_with_support(
-        &options.model,
-        &options.workspace,
-        &options.manifests,
-        &options.supports,
-        &options.only,
-    ) {
+    let loaded = match options_catalog(&options)? {
+        Some(assembly) => azimuth::load_assembly(&assembly, &options.only),
+        None => azimuth::load_with_support(
+            &options.model,
+            &options.workspace,
+            &options.manifests,
+            &options.supports,
+            &options.only,
+        ),
+    };
+    let loaded = match loaded {
         Ok(loaded) => loaded,
         Err(diags) => {
             report(&diags, "error");
@@ -3950,13 +4104,17 @@ fn command_report(args: &[String]) -> Result<ExitCode, String> {
 }
 
 fn command_export(options: Options) -> Result<ExitCode, String> {
-    let loaded = match azimuth::load_with_support(
-        &options.model,
-        &options.workspace,
-        &options.manifests,
-        &options.supports,
-        &options.only,
-    ) {
+    let loaded = match options_catalog(&options)? {
+        Some(assembly) => azimuth::load_assembly(&assembly, &options.only),
+        None => azimuth::load_with_support(
+            &options.model,
+            &options.workspace,
+            &options.manifests,
+            &options.supports,
+            &options.only,
+        ),
+    };
+    let loaded = match loaded {
         Ok(l) => l,
         Err(diags) => {
             report(&diags, "error");
@@ -4275,13 +4433,16 @@ fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
         if catalog.is_some() || workset.is_some() {
             return Err("--catalog and --workset are required together".into());
         }
-        azimuth::load_with_support(
-            &options.model,
-            &options.workspace,
-            &options.manifests,
-            &options.supports,
-            &[],
-        )
+        match options_catalog(&options)? {
+            Some(assembly) => azimuth::load_assembly(&assembly, &[]),
+            None => azimuth::load_with_support(
+                &options.model,
+                &options.workspace,
+                &options.manifests,
+                &options.supports,
+                &[],
+            ),
+        }
     }
     .map_err(|errors| {
         errors

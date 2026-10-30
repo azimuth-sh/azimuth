@@ -1319,6 +1319,127 @@ pub fn assemble(
     })
 }
 
+/// Assembles the catalog topology for a model held by the repository a command runs in, without a
+/// workset. Spec and account authoring must not require observing other repositories, so this
+/// account is never complete: it carries no observations, manifests, support or receipts, and it
+/// refuses outright when any model source or execution-context declaration lives in another
+/// repository rather than loading a partial model.
+pub fn assemble_repository_model(
+    project_path: &Path,
+    model_dir: &Path,
+) -> Result<Assembly, Vec<Diag>> {
+    let catalog_digest = fs::read(project_path)
+        .map(|content| sha256(&content))
+        .map_err(|error| {
+            vec![Diag::file(
+                &project_path.display().to_string(),
+                format!("cannot fingerprint project catalog: {error}"),
+            )]
+        })?;
+    let project = load_project(project_path)?;
+    let display = project_path.display().to_string();
+    let model = fs::canonicalize(model_dir).map_err(|error| {
+        vec![Diag::file(
+            &model_dir.display().to_string(),
+            format!("cannot resolve model directory: {error}"),
+        )]
+    })?;
+    let source_repositories = project
+        .model_sources
+        .iter()
+        .map(|source| source.repository.as_str())
+        .collect::<BTreeSet<_>>();
+    if source_repositories.len() > 1 {
+        return Err(vec![Diag::file(
+            &display,
+            format!(
+                "model sources live in several repositories ({}); this command loads only a model held entirely in the repository it runs in, so assess the federated account with `azimuth change validate --project <catalog> --workset <workset>`",
+                source_repositories.into_iter().collect::<Vec<_>>().join(", ")
+            ),
+        )]);
+    }
+    // The model directory locates its repository: a model source's repository-relative path is
+    // the model directory's suffix, and what precedes it is that repository's root.
+    let mut located = Vec::new();
+    for source in &project.model_sources {
+        let relative = Path::new(&source.path);
+        if model.ends_with(relative) {
+            let mut root = model.clone();
+            for _ in relative.components() {
+                root.pop();
+            }
+            located.push((source.repository.clone(), root));
+        }
+    }
+    let roots = located
+        .iter()
+        .map(|(_, root)| root)
+        .collect::<BTreeSet<_>>();
+    if roots.len() != 1 {
+        let detail = if roots.is_empty() {
+            "is not the path of any catalog model source"
+        } else {
+            "matches several catalog model source paths, so its repository root is ambiguous"
+        };
+        return Err(vec![Diag::file(
+            &display,
+            format!("model directory {} {detail}", model.display()),
+        )]);
+    }
+    let (local, root) = located.swap_remove(0);
+    let mut errors = Vec::new();
+    for component in &project.components {
+        if component.repository != local && component.context.is_some() {
+            errors.push(Diag::file(
+                &display,
+                format!(
+                    "component `{}` declares its execution context in repository `{}`, not `{local}`; this command cannot read it without a workset",
+                    component.id, component.repository
+                ),
+            ));
+        }
+    }
+    let mut model_roots = Vec::new();
+    for source in project
+        .model_sources
+        .iter()
+        .filter(|source| source.repository == local)
+    {
+        if !source.required && !root.join(&source.path).exists() {
+            continue;
+        }
+        match contained_path(&root, &source.path) {
+            Ok(path) => model_roots.push(path),
+            Err(error) => errors.push(Diag::file(
+                &display,
+                format!("model source `{}`: {error}", source.id),
+            )),
+        }
+    }
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+    Ok(Assembly {
+        project,
+        catalog_digest,
+        complete: false,
+        local_repository: Some(local.clone()),
+        missing_inputs: Vec::new(),
+        repositories: vec![RepositorySnapshot {
+            id: local,
+            revision: String::new(),
+            manifest_digest: String::new(),
+            dirty: true,
+            root,
+        }],
+        model_roots,
+        manifests: Vec::new(),
+        account_support: Vec::new(),
+        receipts: Vec::new(),
+        changes: Vec::new(),
+    })
+}
+
 pub fn accept_change(
     project_path: &Path,
     before_workset: &Path,

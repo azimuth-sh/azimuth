@@ -319,7 +319,7 @@ azimuth export [--model <dir>] [--workspace <file>]
   [--manifest <file>...] [--only <pattern>...] [--out <file>]
 ```
 
-Export exits zero whenever the model loads, including when it contains error-severity Findings: the Findings are the output, not a failure of the command. Exit two covers load failure — an unparsable spec, realization, verification authority, workspace or manifest, a duplicate identity, or command usage — and emits diagnostics on stderr instead of a document. Load warnings are reported on stderr and do not change the exit code.
+With a project catalog beside the model directory, topology comes from the catalog and `--workspace`/`--manifest` are rejected ([project-catalog.md](project-catalog.md#local-loads-without-a-workset)). Export exits zero whenever the model loads, including when it contains error-severity Findings: the Findings are the output, not a failure of the command. Exit two covers load failure — an unparsable spec, realization, verification authority, workspace or manifest, a duplicate identity, or command usage — and emits diagnostics on stderr instead of a document. Load warnings are reported on stderr and do not change the exit code.
 
 `--out` writes with a plain file write rather than the atomic replacement used by the Run commands.
 

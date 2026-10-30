@@ -270,14 +270,16 @@ Execute and import accept repeated predecessor bundle files in any order. Core v
 
 ```text
 azimuth run plan --request <file> [--model <dir>] \
-  [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
+  [--workspace <file>] [--manifest <file>...] [--support <file>...] [--config <file>] [--out <file>]
+azimuth run plan --request <file> --project <project.json> --workset <workset.json> \
+  [--config <file>] [--out <file>]
 azimuth run execute --plan <file> [--predecessor <bundle>...] \
   [--config <file>] [--out <file>]
 azimuth run import --plan <file> --input <id>=<file>... \
   [--predecessor <bundle>...] [--config <file>] [--out <file>]
 ```
 
-Configuration defaults to `azimuth/adapters.json`. Execute rejects an import launch and import rejects an execute launch. Import CLI ids sort uniquely after parsing and equal the adapter request inputs. `--manifest` and `--predecessor` are repeatable. The four listed model inputs are the whole planning surface: `--only`, project accounts, worksets and local/federated selection modes are rejected. Planning and successful provider exchange write JSON only after complete validation using a temporary sibling and atomic replacement.
+With a project catalog beside the model directory, topology comes from the catalog and `--workspace`/`--manifest` are rejected ([project-catalog.md](project-catalog.md#local-loads-without-a-workset)). Configuration defaults to `azimuth/adapters.json`. Execute rejects an import launch and import rejects an execute launch. Import CLI ids sort uniquely after parsing and equal the adapter request inputs. `--manifest` and `--predecessor` are repeatable. `--project` and `--workset` are accepted only together; they assemble the complete federated account, an incomplete workset is rejected, and local model, workspace, manifest and support inputs are then not read. `--only` and a `--local` repository selection are rejected: planning always reads a complete unselected model. Planning and successful provider exchange write JSON only after complete validation using a temporary sibling and atomic replacement.
 
 Valid adverse or incomplete Run facts exit zero. Semantic, model, content, identity, transport or bundle-invariant mismatch exits one. CLI, configuration, planning-request, launch-plan or adapter- response schema failure exits two. Neither nonzero class leaves an output file. `run verify` and `run inspect` remain standalone protocol commands; `run ingest` remains unknown.
 

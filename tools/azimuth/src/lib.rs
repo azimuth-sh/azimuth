@@ -160,6 +160,30 @@ pub fn load_with_support(
     Ok(Loaded { model, warnings })
 }
 
+/// The workspace a project catalog implies: the catalog is the single topology authority, so its
+/// Areas, mounts and package selection are the only workspace facts a catalog-backed load holds.
+pub fn project_workspace(project: &federation::Project) -> workspace::Workspace {
+    workspace::Workspace {
+        packages: project.packages.clone(),
+        areas: project
+            .areas
+            .iter()
+            .map(|area| workspace::Area {
+                id: area.id.clone(),
+                mounts: area
+                    .mounts
+                    .iter()
+                    .map(|mount| workspace::Mount {
+                        id: mount.id.clone(),
+                        path: mount.path.clone(),
+                    })
+                    .collect(),
+            })
+            .collect(),
+        ..Default::default()
+    }
+}
+
 /// Loads a complete multi-repository authority account before deriving any selected view.
 pub fn load_assembly(
     assembly: &federation::Assembly,
@@ -171,23 +195,7 @@ pub fn load_assembly(
         Ok(components) => model.components = components,
         Err(mut diagnostics) => errors.append(&mut diagnostics),
     }
-    model.workspace.packages = assembly.project.packages.clone();
-    model.workspace.areas = assembly
-        .project
-        .areas
-        .iter()
-        .map(|area| workspace::Area {
-            id: area.id.clone(),
-            mounts: area
-                .mounts
-                .iter()
-                .map(|mount| workspace::Mount {
-                    id: mount.id.clone(),
-                    path: mount.path.clone(),
-                })
-                .collect(),
-        })
-        .collect();
+    model.workspace = project_workspace(&assembly.project);
 
     let mut warnings = Vec::new();
 

@@ -159,4 +159,4 @@ azimuth export [--model <dir>] [--workspace <file>]
   [--manifest <file>...] [--only <pattern>...] [--out <file>]
 ```
 
-`azimuth validate` exits one when at least one error-severity Finding exists and zero otherwise; warnings alone do not fail it. `azimuth export` exits zero whenever the model loads, error-severity Findings included: there, the Findings are the output. Both exit two on load or usage failure.
+With a project catalog beside the model directory, topology comes from the catalog and `--workspace`/`--manifest` are rejected ([project-catalog.md](project-catalog.md#local-loads-without-a-workset)). `azimuth validate` exits one when at least one error-severity Finding exists and zero otherwise; warnings alone do not fail it. `azimuth export` exits zero whenever the model loads, error-severity Findings included: there, the Findings are the output. Both exit two on load or usage failure.

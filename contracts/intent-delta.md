@@ -16,6 +16,10 @@ A change of review rigor is an ordinary `Replace requirement` whose target carri
 
 The projection preserves unrelated accepted Requirement blocks and non-normative spec text. It validates every target spec with the accepted parser before any write. Multiple target files are staged before replacement, but filesystem replacement across several files is not a transaction; a failed replacement may require repair and a fresh preview.
 
+## Topology for authoring commands
+
+`intent-capture`, `intent-preview`, `intent-apply`, `account-capture`, `account-preview` and `account-apply` take no `--project` or `--workset`. An author fingerprints and projects blocks of the model held by the repository the command runs in and never has to observe other repositories. The commands resolve their topology from a project catalog or a local workspace as described in [project-catalog.md](project-catalog.md#local-loads-without-a-workset); the intent commands and `account-apply` load the complete current model with it. Assessing the complete federated account, including source linkage and support, remains `change validate --project <catalog> --workset <workset>`.
+
 ## Corrections after completion
 
 A correction requested after CI/PR feedback is an explicitly related new change against the current model, which already includes any applied original delta. The `correction.json` scope/basis contract is defined in [validation.md](validation.md#explicit-correction-scope). It preserves the original archived change unchanged. Reconcile any changed accepted-block guards, author the correction's own transition and retain successor assessments for affected definitions/inputs. Do not reapply or silently mutate the original delta. Current semantic reviews, native execution and actual human acceptance still gate completion.
