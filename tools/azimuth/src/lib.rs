@@ -162,7 +162,13 @@ pub fn load_with_support(
 
 /// The workspace a project catalog implies: the catalog is the single topology authority, so its
 /// Areas, mounts and package selection are the only workspace facts a catalog-backed load holds.
-pub fn project_workspace(project: &federation::Project) -> workspace::Workspace {
+/// Projected onto one repository, every Area remains declared but only that repository's Areas
+/// keep mounts: mount paths are repository-relative, so another repository's identical path must
+/// not claim the same file locator.
+pub fn project_workspace(
+    project: &federation::Project,
+    repository: Option<&str>,
+) -> workspace::Workspace {
     workspace::Workspace {
         packages: project.packages.clone(),
         areas: project
@@ -173,6 +179,7 @@ pub fn project_workspace(project: &federation::Project) -> workspace::Workspace 
                 mounts: area
                     .mounts
                     .iter()
+                    .filter(|_| repository.is_none_or(|owner| owner == area.repository))
                     .map(|mount| workspace::Mount {
                         id: mount.id.clone(),
                         path: mount.path.clone(),
@@ -189,13 +196,24 @@ pub fn load_assembly(
     assembly: &federation::Assembly,
     only: &[String],
 ) -> Result<Loaded, Vec<Diag>> {
+    load_assembly_with_linkage(assembly, None, only)
+}
+
+/// Loads an assembly together with one repository's unqualified emitter manifests, qualified
+/// against that repository's projection of the catalog topology.
+pub fn load_assembly_with_linkage(
+    assembly: &federation::Assembly,
+    linkage: Option<(&str, &[PathBuf])>,
+    only: &[String],
+) -> Result<Loaded, Vec<Diag>> {
     let mut model = Model::default();
     let mut errors = Vec::new();
     match federation::load_component_registry(assembly) {
         Ok(components) => model.components = components,
         Err(mut diagnostics) => errors.append(&mut diagnostics),
     }
-    model.workspace = project_workspace(&assembly.project);
+    model.workspace =
+        project_workspace(&assembly.project, linkage.map(|(repository, _)| repository));
 
     let mut warnings = Vec::new();
 
@@ -250,6 +268,15 @@ pub fn load_assembly(
     }
     for manifest in &assembly.manifests {
         append_manifest(&mut model, manifest);
+    }
+    if let Some((_, paths)) = linkage {
+        for path in paths {
+            match manifest::load(path) {
+                Ok(manifest) => append_manifest(&mut model, &manifest),
+                Err(mut diagnostics) => errors.append(&mut diagnostics),
+            }
+        }
+        normalize_local_sources(&mut model, &mut errors);
     }
     for item in &assembly.account_support {
         let mut support = item.support.clone();

@@ -115,6 +115,7 @@ OPTIONS
     --workspace <file>     areas, surfaces and obligations (default: workspace.json beside model/)
     --manifest <file>      a linkage manifest; repeatable
     --support <file>       an account support manifest; repeatable for validate/export/report
+    --repository <id>      catalog repository whose sources --manifest describes (catalog only)
     --only <pattern>       restrict to spec ids; `billing/**` or an exact id; repeatable
     --out <file>           export destination (default: stdout)
     -h, --help
@@ -122,8 +123,10 @@ OPTIONS
 
 LOCAL TOPOLOGY
     Every local model load reads topology from project.json beside model/ when it exists:
-    workspace.json must then be absent, --workspace, --manifest and --support are rejected,
-    and every catalog model source must be in this repository. change finalize and archive
+    workspace.json must then be absent, --workspace and --support are rejected, and every
+    catalog model source must be in this repository. --manifest then needs --repository <id>
+    (validate, export, report traceability, run snapshot, assurance), which qualifies the
+    manifests against the Areas that catalog repository owns. change finalize and archive
     refuse that partial load and require --project and --workset instead.
 
 RUN PLAN REQUESTS
@@ -238,8 +241,10 @@ struct Options {
     workset: Option<PathBuf>,
     model: PathBuf,
     workspace: PathBuf,
-    /// `--workspace`, `--manifest` or `--support` was supplied explicitly.
-    local_inputs: bool,
+    /// `--workspace` was supplied explicitly rather than defaulted beside the model.
+    workspace_explicit: bool,
+    /// The catalog repository whose sources `--manifest` describes.
+    repository: Option<String>,
     manifests: Vec<PathBuf>,
     supports: Vec<PathBuf>,
     validation_scope: ValidationScope,
@@ -1222,6 +1227,7 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
                     "--scope",
                     "--assurance-snapshot",
                     "--only",
+                    "--repository",
                     "--out",
                 ]
                 .contains(&value)
@@ -1349,6 +1355,7 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
     if acceptance_boundary && !options.only.is_empty() {
         return Err("finalize and archive require the complete current model; omit --only".into());
     }
+    reject_repository(&options)?;
     let mut model_root = options.model.clone();
     let catalog = if acceptance_boundary {
         acceptance_assembly(&root, &options, &mut model_root)?
@@ -1767,20 +1774,35 @@ fn acceptance_assembly(
     Ok(Some(assembly))
 }
 
+/// What a local load supplied beside its model directory.
+struct LocalInputs<'a> {
+    workspace: bool,
+    manifests: bool,
+    supports: bool,
+    repository: Option<&'a str>,
+}
+
 /// A local model load reads topology from the project catalog beside the model directory, exactly
 /// where `workspace.json` is defaulted. Both files present would be two topology authorities, so
-/// neither silently wins; local manifests and support cannot be qualified by repository without a
-/// workset observation, so they are refused rather than assigned to an ambiguous Area.
+/// neither silently wins. Emitter manifests carry repository-relative locators, so they are
+/// qualified only against one named repository's projection of the catalog; without it the same
+/// path could resolve into another repository's Area.
 fn local_catalog_assembly(
     model: &std::path::Path,
     workspace: &std::path::Path,
-    local_inputs: bool,
+    inputs: LocalInputs,
 ) -> Result<Option<azimuth::federation::Assembly>, String> {
     let catalog = model
         .parent()
         .unwrap_or_else(|| std::path::Path::new("."))
         .join("project.json");
     if !catalog.exists() {
+        if inputs.repository.is_some() {
+            return Err(format!(
+                "--repository names a project catalog repository, but there is no project catalog at {}",
+                catalog.display()
+            ));
+        }
         return Ok(None);
     }
     if workspace.exists() {
@@ -1790,31 +1812,84 @@ fn local_catalog_assembly(
             workspace.display()
         ));
     }
-    if local_inputs {
+    if inputs.workspace {
         return Err(format!(
-            "project catalog {} supplies this command's topology; omit --workspace, --manifest and --support, and assess linkage with `--project <catalog> --workset <workset>`",
+            "project catalog {} supplies this command's topology; omit --workspace",
             catalog.display()
         ));
     }
-    azimuth::federation::assemble_repository_model(&catalog, model)
-        .map(Some)
-        .map_err(render_diagnostics)
+    if inputs.supports {
+        return Err(format!(
+            "project catalog {} supplies this command's topology; omit --support, and assess account support with `--project <catalog> --workset <workset>`",
+            catalog.display()
+        ));
+    }
+    if inputs.manifests && inputs.repository.is_none() {
+        return Err(format!(
+            "project catalog {} supplies this command's topology; --manifest needs `--repository <id>` naming the catalog repository whose sources the manifests describe, or assess linkage with `--project <catalog> --workset <workset>`",
+            catalog.display()
+        ));
+    }
+    let assembly = azimuth::federation::assemble_repository_model(&catalog, model)
+        .map_err(render_diagnostics)?;
+    if let Some(repository) = inputs.repository {
+        if !assembly
+            .project
+            .repositories
+            .iter()
+            .any(|declared| declared.id == repository)
+        {
+            return Err(format!(
+                "--repository `{repository}` is not a repository of project catalog {}",
+                catalog.display()
+            ));
+        }
+    }
+    Ok(Some(assembly))
 }
 
 fn options_catalog(options: &Options) -> Result<Option<azimuth::federation::Assembly>, String> {
     if options.project.is_some() {
         return Ok(None);
     }
-    local_catalog_assembly(&options.model, &options.workspace, options.local_inputs)
+    local_catalog_assembly(
+        &options.model,
+        &options.workspace,
+        LocalInputs {
+            workspace: options.workspace_explicit,
+            manifests: !options.manifests.is_empty(),
+            supports: !options.supports.is_empty(),
+            repository: options.repository.as_deref(),
+        },
+    )
+}
+
+/// Loads a catalog-backed model, qualifying `--manifest` linkage against `--repository`.
+fn load_catalog(
+    assembly: &azimuth::federation::Assembly,
+    options: &Options,
+) -> Result<azimuth::Loaded, Vec<Diag>> {
+    let linkage = options
+        .repository
+        .as_deref()
+        .map(|repository| (repository, options.manifests.as_slice()));
+    azimuth::load_assembly_with_linkage(assembly, linkage, &options.only)
+}
+
+/// The commands that load a model only to report on it may qualify one repository's linkage;
+/// every other local load refuses `--repository` rather than ignore it.
+fn reject_repository(options: &Options) -> Result<(), String> {
+    if options.repository.is_some() {
+        return Err("--repository is available only for validate, export, report traceability, run snapshot and assurance model commands".into());
+    }
+    Ok(())
 }
 
 /// Loads the complete local model from the project catalog when one exists, otherwise from the
 /// local workspace and the explicitly supplied manifests and support.
 fn load_local_inputs(options: &Options) -> Result<azimuth::Loaded, String> {
     match options_catalog(options)? {
-        Some(assembly) => {
-            azimuth::load_assembly(&assembly, &options.only).map_err(render_diagnostics)
-        }
+        Some(assembly) => load_catalog(&assembly, options).map_err(render_diagnostics),
         None => azimuth::load_with_support(
             &options.model,
             &options.workspace,
@@ -2020,7 +2095,7 @@ fn inspect_account_projection(
     catalog: Option<&azimuth::federation::Assembly>,
 ) -> Result<azimuth::account_model::AccountReport, String> {
     let workspace = match catalog {
-        Some(assembly) => azimuth::project_workspace(&assembly.project),
+        Some(assembly) => azimuth::project_workspace(&assembly.project, None),
         None => azimuth::workspace::load(&options.workspace).map_err(|diagnostics| {
             diagnostics
                 .iter()
@@ -2180,8 +2255,8 @@ struct RunPlanOptions {
     project: Option<PathBuf>,
     workset: Option<PathBuf>,
     supports: Vec<PathBuf>,
-    /// `--workspace`, `--manifest` or `--support` was supplied explicitly.
-    local_inputs: bool,
+    /// `--workspace` was supplied explicitly rather than defaulted beside the model.
+    workspace_explicit: bool,
     selection: bool,
     request: PathBuf,
     model: PathBuf,
@@ -2605,7 +2680,7 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
         return Err("run planning requires --project and --workset together".into());
     }
     let request = request.ok_or("run plan needs `--request <file>`")?;
-    let local_inputs = workspace.is_some() || !manifests.is_empty() || !supports.is_empty();
+    let workspace_explicit = workspace.is_some();
     let model = model.unwrap_or_else(|| PathBuf::from("azimuth/model"));
     let workspace = workspace.unwrap_or_else(|| {
         model
@@ -2633,7 +2708,7 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
         project,
         workset,
         supports,
-        local_inputs,
+        workspace_explicit,
         unit_rule,
         checkout: checkout.unwrap_or_else(|| PathBuf::from(".")),
         unit_explanation,
@@ -2735,9 +2810,16 @@ fn load_run_model(options: &RunPlanOptions) -> Result<azimuth::Loaded, String> {
             ));
         }
         azimuth::load_assembly(&assembly, &[]).map_err(render_diagnostics)
-    } else if let Some(assembly) =
-        local_catalog_assembly(&options.model, &options.workspace, options.local_inputs)?
-    {
+    } else if let Some(assembly) = local_catalog_assembly(
+        &options.model,
+        &options.workspace,
+        LocalInputs {
+            workspace: options.workspace_explicit,
+            manifests: !options.manifests.is_empty(),
+            supports: !options.supports.is_empty(),
+            repository: None,
+        },
+    )? {
         azimuth::load_assembly(&assembly, &[]).map_err(render_diagnostics)
     } else {
         azimuth::load_with_support(
@@ -3458,7 +3540,8 @@ fn parse_options(args: &[String], allow_scope: bool) -> Result<Options, String> 
         workset: None,
         model: PathBuf::from("azimuth/model"),
         workspace: PathBuf::new(),
-        local_inputs: false,
+        workspace_explicit: false,
+        repository: None,
         manifests: Vec::new(),
         supports: Vec::new(),
         validation_scope: ValidationScope::Structure,
@@ -3498,17 +3581,21 @@ fn parse_options(args: &[String], allow_scope: bool) -> Result<Options, String> 
             }
             "--workspace" => {
                 o.workspace = PathBuf::from(value("--workspace")?);
-                o.local_inputs = true;
+                o.workspace_explicit = true;
                 i += 2;
             }
             "--manifest" => {
                 o.manifests.push(PathBuf::from(value("--manifest")?));
-                o.local_inputs = true;
                 i += 2;
             }
             "--support" => {
                 o.supports.push(PathBuf::from(value("--support")?));
-                o.local_inputs = true;
+                i += 2;
+            }
+            "--repository" => {
+                if o.repository.replace(value("--repository")?).is_some() {
+                    return Err("--repository may be supplied only once".into());
+                }
                 i += 2;
             }
             "--assurance-snapshot" => {
@@ -3556,7 +3643,7 @@ fn parse_options(args: &[String], allow_scope: bool) -> Result<Options, String> 
         && args.iter().any(|arg| {
             matches!(
                 arg.as_str(),
-                "--model" | "--workspace" | "--manifest" | "--support" | "--only"
+                "--model" | "--workspace" | "--manifest" | "--support" | "--only" | "--repository"
             )
         })
     {
@@ -3771,6 +3858,7 @@ impl Drop for ValidationStage {
 }
 
 fn command_change_validate(root: &std::path::Path, options: &Options) -> Result<ExitCode, String> {
+    reject_repository(options)?;
     reject_validation_output(options, Some(root))?;
     if !options.only.is_empty() {
         return Err("change validation requires the complete account; omit --only".into());
@@ -3810,7 +3898,8 @@ fn command_change_validate(root: &std::path::Path, options: &Options) -> Result<
         workset: None,
         model: stage.0.clone(),
         workspace: options.workspace.clone(),
-        local_inputs: options.local_inputs,
+        workspace_explicit: options.workspace_explicit,
+        repository: None,
         manifests: options.manifests.clone(),
         supports: options.supports.clone(),
         validation_scope: options.validation_scope,
@@ -4075,7 +4164,7 @@ fn command_report(args: &[String]) -> Result<ExitCode, String> {
     }
     let options = parse_options(&args[1..], false)?;
     let loaded = match options_catalog(&options)? {
-        Some(assembly) => azimuth::load_assembly(&assembly, &options.only),
+        Some(assembly) => load_catalog(&assembly, &options),
         None => azimuth::load_with_support(
             &options.model,
             &options.workspace,
@@ -4105,7 +4194,7 @@ fn command_report(args: &[String]) -> Result<ExitCode, String> {
 
 fn command_export(options: Options) -> Result<ExitCode, String> {
     let loaded = match options_catalog(&options)? {
-        Some(assembly) => azimuth::load_assembly(&assembly, &options.only),
+        Some(assembly) => load_catalog(&assembly, &options),
         None => azimuth::load_with_support(
             &options.model,
             &options.workspace,
@@ -4434,7 +4523,7 @@ fn command_assurance(args: &[String]) -> Result<ExitCode, String> {
             return Err("--catalog and --workset are required together".into());
         }
         match options_catalog(&options)? {
-            Some(assembly) => azimuth::load_assembly(&assembly, &[]),
+            Some(assembly) => load_catalog(&assembly, &options),
             None => azimuth::load_with_support(
                 &options.model,
                 &options.workspace,
