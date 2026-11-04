@@ -400,8 +400,8 @@ const UNRESOLVABLE: &str = "No complete reconciliation bracket of one deployment
 // Only observations with a reconciliation before their start and after their end can resolve, so the rest are not
 // loaded at all. Deployment observations are accepted only in increasing observed time, so once a later one exists
 // the bracket history is final and a bracketed observation that does not resolve never will: it is marked
-// unresolvable instead of being retried forever. A failure that a later registration can cure (an error) is retried
-// with exponential backoff (10 s doubling to 15 min).
+// unresolvable instead of being retried forever. An error, such as a context contract that is not yet registered,
+// can be cured later and is retried with exponential backoff (10 s doubling to 15 min).
 //
 // Resolution has its own lock rather than the ingestion lock so that a slow batch never delays a submission.
 pub(super) async fn resolve_pending(state: &LedgerState, project: &str) -> Result<(), LedgerError> {
