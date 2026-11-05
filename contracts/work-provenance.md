@@ -53,7 +53,7 @@ The descriptor file accepted by `workflow update --descriptor` is:
 - `basis` is `harness` or `declared`; usage that is not known is `null`, never zeros.
 - Counts are the agent's own work: calls made by the execution instance named by `actor`, deduplicated by model call. `tool_calls` excludes the `workflow update` call that records the result.
 - Token fields keep the provider's semantics and are not normalized: an OpenAI `input_tokens` includes cached input while an Anthropic one excludes it, and an Anthropic `reasoning_output_tokens` (thinking) is part of `output_tokens`. A field the provider does not report is `null`; `input_tokens` and `output_tokens` are always present.
-- `delegated` sums every agent the instance launched during the window, transitively; their tokens are never added to the instance's own.
+- `delegated` sums every agent the instance launched during the window, transitively; their tokens are never added to the instance's own. When a launched agent's own records cannot be found, `usage` is `null` rather than a `delegated` count that omits it. A Claude Code teammate launched with a name runs as a separate top-level session that nothing links back to its launch, so a session that launches one inside the window has `null` usage.
 - `overlapping` is `true` when the same instance recorded another workflow result inside the window, so the tokens are shared between attempts and cannot be split.
 
 `actor` is unchanged: it names one execution instance (a session, a subagent run or a person) and remains the reviewer-independence key. It encodes no role, attempt number or model; those are recorded by the action, the attempt id and the descriptor.

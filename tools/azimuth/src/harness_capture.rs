@@ -402,7 +402,7 @@ fn claude_code_descriptor(
         .or_else(|| issuing.and_then(|record| text(record, "effort")));
     let usage = match (&records, window, &session) {
         (Some(records), Some(window), Some(session)) => {
-            Some(claude_usage(records, window, session, tool_use_id))
+            claude_usage(records, window, session, tool_use_id)
         }
         _ => None,
     };
@@ -479,7 +479,14 @@ fn claude_tokens<'a>(records: impl Iterator<Item = &'a Json>) -> Tokens {
     tokens
 }
 
-fn claude_usage(records: &[Json], window: &Window, session: &Path, tool_use_id: &str) -> Usage {
+/// `None` when a launched agent's transcript cannot be found: its work cannot be counted, and
+/// reporting the launch as no delegated work would attest a false zero.
+fn claude_usage(
+    records: &[Json],
+    window: &Window,
+    session: &Path,
+    tool_use_id: &str,
+) -> Option<Usage> {
     let inside: Vec<&Json> = records
         .iter()
         .filter(|record| in_window(record, window))
@@ -509,24 +516,29 @@ fn claude_usage(records: &[Json], window: &Window, session: &Path, tool_use_id: 
     }
     let mut delegated_agents = 0;
     let mut delegated = Tokens::default();
-    claude_delegated(session, &spawned, &mut delegated_agents, &mut delegated);
-    Usage {
+    claude_delegated(session, &spawned, &mut delegated_agents, &mut delegated)?;
+    Some(Usage {
         own: claude_tokens(inside.into_iter()),
         tool_calls,
         overlapping,
         delegated_agents,
         delegated,
-    }
+    })
 }
 
 /// Sums every subagent launched by `spawned` tool calls, and the subagents they launched.
-fn claude_delegated(session: &Path, spawned: &[String], agents: &mut u64, tokens: &mut Tokens) {
+/// Returns `None` when a launch has no subagent transcript, as for a named teammate, which runs
+/// as a separate session that nothing links back to its launch.
+fn claude_delegated(
+    session: &Path,
+    spawned: &[String],
+    agents: &mut u64,
+    tokens: &mut Tokens,
+) -> Option<()> {
     if spawned.is_empty() {
-        return;
+        return Some(());
     }
-    let Ok(entries) = fs::read_dir(session.join("subagents")) else {
-        return;
-    };
+    let entries = fs::read_dir(session.join("subagents")).ok()?;
     let mut children = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
@@ -549,6 +561,9 @@ fn claude_delegated(session: &Path, spawned: &[String], agents: &mut u64, tokens
             children.push(agent.to_string());
         }
     }
+    if children.len() < spawned.len() {
+        return None;
+    }
     for agent in children {
         let records = read_jsonl(&claude_subagent(session, &agent));
         *agents += 1;
@@ -564,8 +579,9 @@ fn claude_delegated(session: &Path, spawned: &[String], agents: &mut u64, tokens
             })
             .filter_map(|block| block.get("id").and_then(Json::as_str).map(str::to_string))
             .collect();
-        claude_delegated(session, &nested, agents, tokens);
+        claude_delegated(session, &nested, agents, tokens)?;
     }
+    Some(())
 }
 
 fn payloads<'a>(
