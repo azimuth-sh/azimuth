@@ -89,7 +89,7 @@ Values have `harness` basis only when read from the harness's own records; anyth
 
 | Field | Claude Code | Codex |
 |---|---|---|
-| `model` | `message.model` of the transcript record that issued the tool call (the hook waits up to 5 s for it) | the event's `model` |
+| `model` | `message.model` of the transcript record that issued the tool call (the hook waits up to 12 s for it, within the hook's 15 s timeout) | the event's `model` |
 | `effort` | the event's `effort.level` | `effort` of the rollout's `turn_context` for the event's `turn_id` |
 | `agent_type` | the event's `agent_type` (inside a subagent) | the event's `agent_type` (inside a subagent) |
 | `harness.version` | `version` of the issuing record | `session_meta.cli_version` |

@@ -459,11 +459,7 @@ fn command_provenance_capture(args: &[String]) -> Result<ExitCode, String> {
         .map_err(|error| format!("hook event: {error}"))
         .and_then(|_| azimuth::json::parse(&input))
         .and_then(|event| {
-            azimuth::harness_capture::capture(
-                harness,
-                &event,
-                azimuth::harness_capture::TRANSCRIPT_WAIT,
-            )
+            azimuth::harness_capture::capture(harness, &event, harness.transcript_wait())
         });
     if let Err(error) = captured {
         eprintln!("azimuth provenance capture: {error}");

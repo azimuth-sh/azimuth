@@ -12,9 +12,13 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// Claude Code writes the assistant message that issued a tool call shortly after the hook fires
-/// (observed 0.1-1.1 s), so the hook waits a bounded time before recording the model as unknown.
-pub const TRANSCRIPT_WAIT: Duration = Duration::from_secs(5);
+/// Claude Code writes the assistant message that issued a tool call after the hook fires, usually
+/// within about 1 s but observed beyond 5.6 s, and a late record left model and usage unknown. The
+/// wait stays below the hook's 15 s timeout so the capture still ends before the harness kills it.
+const CLAUDE_CODE_TRANSCRIPT_WAIT: Duration = Duration::from_secs(12);
+/// Codex writes the issuing response's usage record 100-180 ms after the call is streamed; a longer
+/// wait would only delay the recording command when the record never comes.
+const CODEX_TRANSCRIPT_WAIT: Duration = Duration::from_secs(5);
 const POLL: Duration = Duration::from_millis(50);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,6 +35,14 @@ impl Harness {
             other => Err(format!(
                 "unsupported harness `{other}`; expected claude-code or codex"
             )),
+        }
+    }
+
+    /// How long the hook waits for the harness to write the record that issued the tool call.
+    pub fn transcript_wait(self) -> Duration {
+        match self {
+            Harness::ClaudeCode => CLAUDE_CODE_TRANSCRIPT_WAIT,
+            Harness::Codex => CODEX_TRANSCRIPT_WAIT,
         }
     }
 
