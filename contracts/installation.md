@@ -6,14 +6,14 @@
 {
   "format": "azimuth-installation",
   "schemaVersion": 1,
-  "releaseVersion": "0.1.0-alpha.7",
+  "releaseVersion": "0.1.0-alpha.8",
   "migrationLine": "alpha-requirement-scenario",
   "agents": ["claude", "codex"],
   "components": [
     {
       "id": "typescript-annotations",
       "manifest": "frontend/package.json",
-      "version": "0.1.0-alpha.7"
+      "version": "0.1.0-alpha.8"
     }
   ],
   "resources": [

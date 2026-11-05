@@ -19,6 +19,9 @@ pub struct Projection {
     pub files: Vec<FileProjection>,
     pub operations: Vec<(String, bool)>,
     pub target_requirements: usize,
+    /// Requirements whose accepted reviews a planned Term replacement makes stale although this
+    /// change does not replace them.
+    pub successor_reviews: Vec<String>,
 }
 
 impl Projection {
@@ -73,6 +76,9 @@ impl Projection {
                 if *applied { "applied" } else { "planned" }
             ));
         }
+        for note in &self.successor_reviews {
+            output.push_str(&format!("successor review owed: {note}\n"));
+        }
         output
     }
 }
@@ -91,6 +97,7 @@ struct Operation {
 enum Kind {
     Add,
     AddTerm,
+    ReplaceTerm,
     Replace,
     RemoveRequirement,
     RemoveScenario,
@@ -118,6 +125,11 @@ pub fn project(change: &Path, model_root: &Path, model: &Model) -> Result<Projec
             })
         })
         .collect::<BTreeSet<_>>();
+    let revised_requirements = operations
+        .iter()
+        .filter(|operation| matches!(operation.kind, Kind::Replace | Kind::RemoveRequirement))
+        .map(|operation| operation.id.clone())
+        .collect::<BTreeSet<_>>();
     let mut grouped: BTreeMap<String, Vec<Operation>> = BTreeMap::new();
     for operation in operations {
         grouped
@@ -129,6 +141,7 @@ pub fn project(change: &Path, model_root: &Path, model: &Model) -> Result<Projec
     let mut statuses = Vec::new();
     let mut errors = Vec::new();
     let mut target_requirements = model.requirement_count();
+    let mut successor_reviews = Vec::new();
     for (spec, operations) in grouped {
         let old_requirements = model
             .specs
@@ -154,6 +167,7 @@ pub fn project(change: &Path, model_root: &Path, model: &Model) -> Result<Projec
         };
         let mut after = before.clone();
         let mut touched = BTreeSet::new();
+        let mut replaced_terms = Vec::new();
         for operation in operations {
             let requirement_id = if operation.kind == Kind::RemoveScenario {
                 model
@@ -163,7 +177,7 @@ pub fn project(change: &Path, model_root: &Path, model: &Model) -> Result<Projec
             } else {
                 operation.id.as_str()
             };
-            let identity = if operation.kind == Kind::AddTerm {
+            let identity = if matches!(operation.kind, Kind::AddTerm | Kind::ReplaceTerm) {
                 format!("{spec} term {}", operation.id)
             } else {
                 requirement_id.to_string()
@@ -185,6 +199,9 @@ pub fn project(change: &Path, model_root: &Path, model: &Model) -> Result<Projec
             ) {
                 Ok((next, applied)) => {
                     after = next;
+                    if operation.kind == Kind::ReplaceTerm && !applied {
+                        replaced_terms.push(operation.id.clone());
+                    }
                     statuses.push((
                         format!(
                             "{} {} (module {})",
@@ -201,6 +218,14 @@ pub fn project(change: &Path, model_root: &Path, model: &Model) -> Result<Projec
                     operation.line
                 )),
             }
+        }
+        if !replaced_terms.is_empty() {
+            successor_reviews.extend(term_dependent_reviews(
+                model,
+                &spec,
+                &replaced_terms,
+                &revised_requirements,
+            ));
         }
         match parse_spec(&path.display().to_string(), &after) {
             Ok(parsed) if parsed.id == spec && !parsed.requirements.is_empty() => {
@@ -256,6 +281,7 @@ pub fn project(change: &Path, model_root: &Path, model: &Model) -> Result<Projec
             files,
             operations: statuses,
             target_requirements,
+            successor_reviews,
         })
     } else {
         Err(errors)
@@ -268,7 +294,7 @@ pub fn capture(change: &Path, model: &Model) -> Result<Vec<PathBuf>, Vec<String>
     for operation in operations {
         if matches!(
             operation.kind,
-            Kind::Replace | Kind::RemoveRequirement | Kind::RemoveScenario
+            Kind::Replace | Kind::ReplaceTerm | Kind::RemoveRequirement | Kind::RemoveScenario
         ) {
             by_file
                 .entry(operation.path.clone())
@@ -309,11 +335,14 @@ pub fn capture(change: &Path, model: &Model) -> Result<Vec<PathBuf>, Vec<String>
             } else {
                 operation.id.as_str()
             };
-            let Some((start, end)) =
-                find_block(&source, &format!("## Requirement: {requirement_id}"))
-            else {
+            let (heading, entity) = if operation.kind == Kind::ReplaceTerm {
+                (format!("## Term: {requirement_id}"), "Term")
+            } else {
+                (format!("## Requirement: {requirement_id}"), "Requirement")
+            };
+            let Some((start, end)) = find_block(&source, &heading) else {
                 errors.push(format!(
-                    "{}:{}: accepted Requirement `{}` does not exist",
+                    "{}:{}: accepted {entity} `{}` does not exist",
                     path.display(),
                     operation.line,
                     requirement_id
@@ -371,6 +400,7 @@ fn operation_name(kind: &Kind) -> &'static str {
     match kind {
         Kind::Add => "add",
         Kind::AddTerm => "add term",
+        Kind::ReplaceTerm => "replace term",
         Kind::Replace => "replace",
         Kind::RemoveRequirement => "remove requirement",
         Kind::RemoveScenario => "remove scenario",
@@ -498,6 +528,7 @@ fn read_operations(change: &Path) -> Result<Vec<Operation>, Vec<String>> {
             let parsed = [
                 ("Add requirement: ", Kind::Add),
                 ("Add term: ", Kind::AddTerm),
+                ("Replace term: ", Kind::ReplaceTerm),
                 ("Replace requirement: ", Kind::Replace),
                 ("Remove requirement: ", Kind::RemoveRequirement),
                 ("Remove scenario: ", Kind::RemoveScenario),
@@ -593,6 +624,29 @@ fn apply_operation(
                 },
             )?;
             Ok((candidate, false))
+        }
+        Kind::ReplaceTerm => {
+            let (labels, body) = labels_and_body(&operation.source, &["From", "Because"])?;
+            let from = required(&labels, "From")?;
+            required(&labels, "Because")?;
+            if body.trim().is_empty() {
+                return Err(format!(
+                    "replace term `{}` needs the complete target definition after a blank line",
+                    operation.id
+                ));
+            }
+            let block = format!("## Term: {}\n\n{}", operation.id, body.trim());
+            let target = parse_term(&operation.spec, &block)?;
+            let Some((start, end)) = find_block(source, &format!("## Term: {}", operation.id))
+            else {
+                return Err(format!("term `{}` does not exist", operation.id));
+            };
+            let old = &source[start..end];
+            if parse_term(&operation.spec, old)? == target {
+                return Ok((source.to_string(), true));
+            }
+            check_from(from, old)?;
+            Ok((replace_range(source, start, end, &block), false))
         }
         Kind::Add => {
             let body = operation
@@ -830,6 +884,64 @@ fn parse_requirement(spec: &str, block: &str) -> Result<Requirement, String> {
         .into_iter()
         .next()
         .ok_or_else(|| "operation contains no Requirement".into())
+}
+
+fn parse_term(spec: &str, block: &str) -> Result<String, String> {
+    let source = format!("# Spec: {spec}\n\n{}\n", block.trim_end());
+    parse_spec("<target intent>", &source)
+        .map_err(|errors| {
+            errors
+                .into_iter()
+                .map(|error| error.to_string())
+                .collect::<Vec<_>>()
+                .join("; ")
+        })?
+        .terms
+        .into_iter()
+        .next()
+        .map(|term| term.definition)
+        .ok_or_else(|| "operation contains no Term".into())
+}
+
+/// Every Term participates in each Requirement digest of its spec, so replacing one stales the
+/// accepted reviews of Requirements the change leaves textually unchanged. Replaced or removed
+/// Requirements already owe their own successor reviews.
+fn term_dependent_reviews(
+    model: &Model,
+    spec: &str,
+    terms: &[String],
+    revised_requirements: &BTreeSet<String>,
+) -> Vec<String> {
+    let Some(accepted) = model.specs.iter().find(|item| item.id == spec) else {
+        return Vec::new();
+    };
+    let terms = terms
+        .iter()
+        .map(|term| format!("`{term}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    accepted
+        .requirements
+        .iter()
+        .filter(|requirement| !revised_requirements.contains(&requirement.id))
+        .filter_map(|requirement| {
+            let reviews = [
+                ("Realization", requirement.realization.is_some()),
+                ("Verification", requirement.verification.is_some()),
+            ]
+            .into_iter()
+            .filter(|(_, declared)| *declared)
+            .map(|(kind, _)| kind)
+            .collect::<Vec<_>>();
+            (!reviews.is_empty()).then(|| {
+                format!(
+                    "Requirement `{}` (module {spec}) is not replaced, but replacing Term(s) {terms} changes its definition fingerprint; its accepted {} Review(s) stop ratifying until successors are accepted",
+                    requirement.id,
+                    reviews.join(" and ")
+                )
+            })
+        })
+        .collect()
 }
 
 fn same_requirement(left: &str, right: &str, spec: &str) -> Result<bool, String> {

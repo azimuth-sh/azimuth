@@ -720,11 +720,33 @@ fn instance(v: &Json) -> Result<(), String> {
         return Err("revision/history mismatch".into());
     }
     let mut ids = BTreeSet::new();
+    let mut attempted = false;
     for item in history {
-        obj(item, &["result", "result_fingerprint", "provenance"])?;
+        if item.get("carried").is_some() {
+            obj(item, &["result", "result_fingerprint", "carried"])?;
+            if attempted {
+                return Err("carried results precede every attempt of the instance".into());
+            }
+            if v.get("predecessor") == Some(&Json::Null) {
+                return Err("carried results require a predecessor".into());
+            }
+            let carried = item.get("carried").unwrap();
+            obj(carried, &["instance", "attempt", "result_fingerprint"])?;
+            identifier(text(carried, "instance")?)?;
+            if carried.get("attempt") != item.get("result").unwrap().get("id")
+                || carried.get("result_fingerprint") != item.get("result_fingerprint")
+            {
+                return Err(
+                    "carried result does not match the predecessor attempt it names".into(),
+                );
+            }
+        } else {
+            attempted = true;
+            obj(item, &["result", "result_fingerprint", "provenance"])?;
+            crate::provenance::validate_history_provenance(item.get("provenance").unwrap())?;
+        }
         let result = item.get("result").unwrap();
         result_shape(result)?;
-        crate::provenance::validate_history_provenance(item.get("provenance").unwrap())?;
         let task = arr(v.get("definition").unwrap(), "tasks")?
             .iter()
             .find(|t| t.get("id") == result.get("task"))
@@ -1392,6 +1414,8 @@ fn basis(task: &Json, inputs: &[Json], deps: &[Json], correction: &[Json]) -> St
 }
 struct Evaluation {
     eligible: Vec<Json>,
+    /// Whether each task's latest result is current against its dependencies.
+    current: BTreeMap<String, bool>,
 }
 fn evaluate(state: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Evaluation, String> {
     if let Some(inventory) = state
@@ -1674,7 +1698,7 @@ fn evaluate(state: &Json, r: &BTreeMap<String, PathBuf>) -> Result<Evaluation, S
         }
         pending = rest;
     }
-    Ok(Evaluation { eligible })
+    Ok(Evaluation { eligible, current })
 }
 fn handoff_inputs(handoff: &Json) -> Result<Vec<Json>, String> {
     let mut references = arr(handoff, "inputs")?.to_vec();
@@ -3088,6 +3112,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             "--repositories",
             "--project",
             "--predecessor",
+            "--carry",
         ],
         "assurance-targets" => vec![
             "--instance",
@@ -3108,6 +3133,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             "--repositories",
             "--project",
             "--descriptor",
+            "--provenance",
         ],
         "abandon" => vec!["--instance", "--change", "--expected-revision", "--reason"],
         "definition" => vec!["--workflow"],
@@ -3169,6 +3195,19 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
         if path.exists() {
             return Err("workflow instance already exists".into());
         }
+        let carry = match (get("--carry"), get("--predecessor")) {
+            (None | Some("results"), Some(_)) => true,
+            (Some("none"), Some(_)) => false,
+            (Some("none" | "results"), None) => {
+                return Err("--carry requires --predecessor".into());
+            }
+            (Some(other), _) => {
+                return Err(format!(
+                    "unsupported --carry `{other}`; expected results or none"
+                ));
+            }
+            (None, None) => false,
+        };
         let predecessor = match get("--predecessor") {
             Some(file) => {
                 crate::provenance::predecessor_record(Path::new(file), r.get("").unwrap())?
@@ -3178,7 +3217,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
         // Generations of one change share a definition, so the instance id carries its creation
         // time to stay distinct in the Work Provenance ledger and in predecessor links.
         let id = format!("{}-{}", text(&def, "id")?, crate::provenance::now_ms());
-        let state = Json::obj(vec![
+        let mut state = Json::obj(vec![
             ("format", Json::str("azimuth-workflow-instance")),
             ("version", Json::Num(3.0)),
             ("id", Json::Str(id)),
@@ -3189,7 +3228,22 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             ("predecessor", predecessor),
             ("abandoned", Json::Null),
         ]);
+        let mut carried = Json::Arr(vec![]);
+        if carry {
+            let previous = read(Path::new(get("--predecessor").unwrap()))?;
+            let (history, report) = carry_over(&previous, &state, &r)?;
+            set(&mut state, "revision", Json::Num(history.len() as f64));
+            set(&mut state, "history", Json::Arr(history));
+            instance(&state)?;
+            carried = Json::Arr(report);
+        }
         write_atomic(&path, &state)?;
+        if get("--predecessor").is_some() {
+            return Ok(Json::obj(vec![
+                ("instance", state),
+                ("carry_over", carried),
+            ]));
+        }
         return Ok(state);
     }
     let _lock = if operation == "update" {
@@ -3258,6 +3312,18 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             .ok_or("update requires --expected-revision")?
             .parse::<u64>()
             .map_err(|_| "invalid expected revision")?;
+        let declared_unknown = match get("--provenance") {
+            None => false,
+            Some("unknown") if get("--descriptor").is_none() => true,
+            Some("unknown") => {
+                return Err("use either --descriptor or --provenance unknown".into());
+            }
+            Some(other) => {
+                return Err(format!(
+                    "unsupported --provenance `{other}`; the only accepted value is `unknown`"
+                ));
+            }
+        };
         let descriptor = match get("--descriptor") {
             Some(file) => {
                 let value = crate::provenance::read_json(Path::new(file))?;
@@ -3265,6 +3331,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
                     .map_err(|e| format!("{file}: {e}"))?;
                 Some(value)
             }
+            None if declared_unknown => None,
             None => crate::provenance::captured_descriptor(
                 handoff_path,
                 number(&handoffs, "captured_at_ms")?,
@@ -3309,11 +3376,19 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
                 return Ok(Json::obj(vec![
                     ("revision", state.get("revision").unwrap().clone()),
                     ("result", result),
-                    ("provenance", old.get("provenance").unwrap().clone()),
+                    (
+                        "provenance",
+                        old.get("provenance").cloned().unwrap_or(Json::Null),
+                    ),
                     ("idempotent", Json::Bool(true)),
                     ("applied_revision", Json::Num((position + 1) as f64)),
                 ]));
             }
+        }
+        // A replay above keeps its recorded provenance, so only a new attempt needs a descriptor.
+        // Recording `unknown` without being asked would hide a capture that failed.
+        if descriptor.is_none() && !declared_unknown {
+            return Err(missing_provenance(handoff_path));
         }
         if expected < number(&handoffs, "workflow_revision")?
             || handoffs.get("definition_fingerprint") != state.get("definition_fingerprint")
@@ -3760,6 +3835,206 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
     ]))
 }
 
+/// The predecessor's results a fresh instance can rely on without new work, and a report of
+/// every predecessor result with whether and why it was carried.
+///
+/// A result carries only when its task exists under the same identity with an identical definition
+/// and every file it relied on and produced is byte-identical. Adverse results carry with their own
+/// records alone: their inputs were the then-current work they rejected, and later author bases
+/// hash the rejections they answered, so dropping them would stale every correction after them.
+/// A successful result that is not current against the carried history is dropped, repeatedly,
+/// until the carried history is consistent; its task stays outstanding.
+fn carry_over(
+    previous: &Json,
+    state: &Json,
+    r: &BTreeMap<String, PathBuf>,
+) -> Result<(Vec<Json>, Vec<Json>), String> {
+    let report = |result: &Json, status: &str, reason: String| {
+        Json::obj(vec![
+            ("sequence", Json::Null),
+            ("task", result.get("task").cloned().unwrap_or(Json::Null)),
+            ("attempt", result.get("id").cloned().unwrap_or(Json::Null)),
+            (
+                "outcome",
+                result.get("outcome").cloned().unwrap_or(Json::Null),
+            ),
+            ("status", Json::str(status)),
+            ("reason", Json::str(reason)),
+        ])
+    };
+    let version = number(previous, "version")?;
+    if version != 3 {
+        return Ok((
+            Vec::new(),
+            vec![Json::obj(vec![
+                ("status", Json::str("not-carried")),
+                (
+                    "reason",
+                    Json::str(format!(
+                        "predecessor instance version {version} predates the result format this CLI records; nothing carries"
+                    )),
+                ),
+            ])],
+        ));
+    }
+    let source = text(previous, "id")?.to_string();
+    let new_tasks = arr(state.get("definition").unwrap(), "tasks")?;
+    let old_tasks = previous
+        .get("definition")
+        .and_then(|definition| definition.get("tasks"))
+        .and_then(Json::as_array)
+        .unwrap_or(&[]);
+    let mut candidates = Vec::new();
+    let mut reports = Vec::new();
+    for entry in arr(previous, "history")? {
+        let result = entry
+            .get("result")
+            .ok_or("predecessor history entry has no result")?;
+        let task = result.get("task").ok_or("predecessor result has no task")?;
+        let new_task = new_tasks
+            .iter()
+            .find(|candidate| candidate.get("id") == Some(task));
+        let old_task = old_tasks
+            .iter()
+            .find(|candidate| candidate.get("id") == Some(task));
+        let refs = |key: &str| {
+            result
+                .get(key)
+                .and_then(Json::as_array)
+                .map(|values| values.to_vec())
+                .unwrap_or_default()
+        };
+        let mut relied = refs("records");
+        if successful(result) {
+            relied.extend(refs("inputs"));
+            if let Some(decision) = result.get("decision") {
+                relied.extend(arr(decision, "dependencies")?.iter().cloned());
+            }
+        }
+        let refusal = if new_task.is_none() {
+            Some("its task is not in the new definition; a renamed or removed action is a different task and carries nothing".to_string())
+        } else if old_task.map(digest) != new_task.map(digest) {
+            Some("its task definition differs in the new definition".to_string())
+        } else if entry.get("result_fingerprint").and_then(Json::as_str) != Some(&digest(result)) {
+            Some("its recorded result fingerprint does not match the result".to_string())
+        } else {
+            relied
+                .iter()
+                .find_map(|reference| check_ref(reference, r).err())
+                .map(|error| {
+                    format!("a file it relied on or produced is no longer byte-identical: {error}")
+                })
+        };
+        if let Some(reason) = refusal {
+            reports.push(report(result, "not-carried", reason));
+            continue;
+        }
+        let instance = entry
+            .get("carried")
+            .and_then(|carried| carried.get("instance"))
+            .cloned()
+            .unwrap_or_else(|| Json::str(&source));
+        candidates.push(Json::obj(vec![
+            ("result", result.clone()),
+            ("result_fingerprint", Json::str(digest(result))),
+            (
+                "carried",
+                Json::obj(vec![
+                    ("instance", instance),
+                    ("attempt", result.get("id").unwrap().clone()),
+                    ("result_fingerprint", Json::str(digest(result))),
+                ]),
+            ),
+        ]));
+    }
+    let latest_of = |history: &[Json], task: &Json| {
+        history.iter().rposition(|entry| {
+            entry.get("result").and_then(|result| result.get("task")) == Some(task)
+        })
+    };
+    let evaluation = loop {
+        let mut trial = state.clone();
+        set(&mut trial, "revision", Json::Num(candidates.len() as f64));
+        set(&mut trial, "history", Json::Arr(candidates.clone()));
+        let evaluation = evaluate(&trial, r)?;
+        let stale = candidates
+            .iter()
+            .enumerate()
+            .filter(|(position, entry)| {
+                let result = entry.get("result").unwrap();
+                let task = result.get("task").unwrap();
+                successful(result)
+                    && latest_of(&candidates, task) == Some(*position)
+                    && !task
+                        .as_str()
+                        .and_then(|id| evaluation.current.get(id))
+                        .copied()
+                        .unwrap_or(false)
+            })
+            .map(|(position, _)| position)
+            .collect::<Vec<_>>();
+        if stale.is_empty() {
+            break evaluation;
+        }
+        for position in stale.into_iter().rev() {
+            let entry = candidates.remove(position);
+            reports.push(report(
+                entry.get("result").unwrap(),
+                "not-carried",
+                "it is not current against the carried history: a dependency or correction it was recorded against did not carry".into(),
+            ));
+        }
+    };
+    for (position, entry) in candidates.iter().enumerate() {
+        let result = entry.get("result").unwrap();
+        let task = result.get("task").unwrap();
+        let (status, reason) = if !successful(result) {
+            (
+                "carried-history",
+                "adverse result kept so the corrections that answered it keep their basis",
+            )
+        } else if latest_of(&candidates, task) != Some(position) {
+            (
+                "carried-history",
+                "superseded by a later carried result of the same task",
+            )
+        } else if task
+            .as_str()
+            .and_then(|id| evaluation.current.get(id))
+            .copied()
+            .unwrap_or(false)
+        {
+            ("carried", "current in the new instance")
+        } else {
+            ("carried-history", "kept as history")
+        };
+        reports.push(report(result, status, reason.into()));
+    }
+    let sequence = arr(previous, "history")?
+        .iter()
+        .enumerate()
+        .filter_map(|(position, entry)| {
+            Some((entry.get("result")?.get("id")?.clone(), position + 1))
+        })
+        .collect::<Vec<_>>();
+    for item in &mut reports {
+        let position = sequence
+            .iter()
+            .find(|(id, _)| Some(id) == item.get("attempt"))
+            .map(|(_, position)| *position);
+        set(
+            item,
+            "sequence",
+            position.map_or(Json::Null, |p| Json::Num(p as f64)),
+        );
+    }
+    reports.sort_by_key(|item| {
+        item.get("sequence")
+            .and_then(Json::as_num)
+            .map(|n| n as u64)
+    });
+    Ok((candidates, reports))
+}
 fn abandon(mut state: Json, path: &Path, expected: &str, reason: &str) -> Result<Json, String> {
     let expected = expected
         .parse::<u64>()
@@ -3790,6 +4065,18 @@ fn abandon(mut state: Json, path: &Path, expected: &str, reason: &str) -> Result
 }
 
 /// Query output cannot overwrite any configured input, submitted record or operational instance.
+fn missing_provenance(handoff: &Path) -> String {
+    format!(
+        "no provenance for this attempt: no harness hook saved {} after the handoff was captured, \
+         and neither --descriptor nor --provenance unknown was given. The hook captures only a \
+         single plain `azimuth workflow update` command; a chained, piped or redirected command, \
+         a command substitution or a command the harness hook does not match is not captured. \
+         Retry from the session that performed the work as one plain `azimuth workflow update ...` \
+         command, or pass --provenance unknown where no harness hook is installed",
+        crate::provenance::captured_descriptor_path(handoff).display()
+    )
+}
+
 pub fn validate_output(args: &[String], output: &Path) -> Result<(), String> {
     let value = |flag: &str| {
         args.windows(2)

@@ -2,9 +2,21 @@
 
 The canonical format contract is `contracts/intent-delta.md` in the Azimuth project.
 
-Intent files live under a change's `specs/` tree or `deltas/<module-id>/spec.md`, never both. Each begins with `# Intent delta: <spec-id>`; the account-delta layout requires the declared module id to match its path. Supported operations are module term addition, whole Requirement addition, whole Requirement replacement, and explicit Requirement or Scenario removal. A rigor change is an ordinary whole Requirement replacement whose labels add, keep or drop `Realization:` and `Verification:`. Renaming is a remove-and-add decision with explicit reference repair.
+Intent files live under a change's `specs/` tree or `deltas/<module-id>/spec.md`, never both. Each begins with `# Intent delta: <spec-id>`; the account-delta layout requires the declared module id to match its path. Supported operations are module term addition and replacement, whole Requirement addition, whole Requirement replacement, and explicit Requirement or Scenario removal. A rigor change is an ordinary whole Requirement replacement whose labels add, keep or drop `Realization:` and `Verification:`. Renaming is a remove-and-add decision with explicit reference repair.
 
-Use `## Add term: <term-id>` followed by a non-empty free-form vocabulary definition for a module term. The projector produces `## Term:` in the accepted spec. Identical existing content is already applied; conflicting content for the same term id is rejected. This operation does not replace or remove terms.
+Use `## Add term: <term-id>` followed by a non-empty free-form vocabulary definition for a module term. The projector produces `## Term:` in the accepted spec. Identical existing content is already applied; conflicting content for the same term id is rejected.
+
+To replace the definition of an accepted module term:
+
+```markdown
+## Replace term: <term-id>
+From: sha256:<accepted-Term-block-digest>
+Because: <reason for the changed vocabulary>
+
+<complete target definition>
+```
+
+The target definition replaces the whole accepted definition. A missing accepted term is rejected; there is no term rename or removal. Every term participates in the definition fingerprint of each Requirement in its module, so the replacement makes the accepted reviews of all of them stale, including Requirements the change does not replace. `intent-preview` lists those it does not replace as `successor review owed:`; the change must carry their accepted successor Realization and Verification Reviews. Replace a Requirement too only when its own text changes.
 
 Use `## Add requirement: <lower-kebab-id>`, followed by optional `Realization: reviewed` and `Verification: reviewed` lines, one non-empty free-form normative Markdown statement and one or more `### Add scenario: <lower-kebab-id>` blocks. Each Scenario contains non-empty free-form normative Markdown in any human language. Core preserves and fingerprints that content without interpreting natural-language keywords, translations, tables, diagrams or code fences. Do not use retired Claim or Case headings.
 
@@ -28,7 +40,7 @@ Remove scenarios: <scenario-id>, <scenario-id>
 
 To remove a Requirement or one Scenario, use `## Remove requirement: <requirement-id>` or `## Remove scenario: <scenario-id>`, followed by `From: sha256:<accepted-block-digest>` and a non-empty `Because:`. An optional `Replaced-by:` records the successor identity. A Scenario removal must leave at least one Scenario. Removal refuses current realization-site, realization.md or verification references to the removed identity. Removing the last Requirement retires the spec file.
 
-`From:` fingerprints the exact accepted Markdown block, excluding trailing whitespace. Run `azimuth change intent-capture <id>` to insert accepted fingerprints for replacement or removal. It refuses to overwrite a different existing `From:`. Capture does not apply the delta.
+`From:` fingerprints the exact accepted Markdown block, excluding trailing whitespace. Run `azimuth change intent-capture <id>` to insert accepted fingerprints for Requirement or term replacement and for removal. It refuses to overwrite a different existing `From:`. Capture does not apply the delta.
 
 Run `azimuth change intent-preview <id> --out <reviewed-preview-file>` during proposal review. It displays the target spec and full before/after diff. At the authorized finalization boundary after implementation and acceptance, run `azimuth change intent-apply <id> --preview <reviewed-preview-file>`. Apply recomputes the projection and refuses a stale preview or stale `From:`. It never runs automatically from finalize or archive. Run `azimuth change validate` and normal `azimuth validate` afterward. Do not treat proposed intent as accepted before implemented behavior is ready for acceptance.
 

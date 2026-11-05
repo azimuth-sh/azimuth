@@ -6,7 +6,6 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(azimuth workflow update *)",
             "command": "azimuth provenance capture --harness claude-code",
             "timeout": 15
           }

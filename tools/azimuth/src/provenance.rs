@@ -680,8 +680,8 @@ fn first_recorded_at(instance: &Instance) -> Option<u64> {
         .value
         .get("history")?
         .as_array()?
-        .first()?
-        .get("provenance")?
+        .iter()
+        .find_map(|entry| entry.get("provenance"))?
         .get("recorded_at_ms")
         .and_then(safe_integer)
 }
@@ -938,6 +938,11 @@ fn attempts(
     let history = items(&instance.value, "history", "workflow instance").map_err(&fail)?;
     let mut attempts = Vec::new();
     for (index, entry) in history.iter().enumerate() {
+        // A carried result is the predecessor's attempt, exported with the predecessor instance;
+        // counting it here would report the same work twice.
+        if entry.get("carried").is_some() {
+            continue;
+        }
         let what = format!("history entry {}", index + 1);
         let result = entry
             .get("result")
@@ -1377,9 +1382,11 @@ pub fn committed_ledger_issues(change: &Path) -> Vec<String> {
             return vec![];
         }
         return match read_json(&committed).and_then(|value| {
-            validate_ledger(&value).map_err(|e| format!("{}: {e}", committed.display()))
+            validate_ledger(&value)
+                .map(|()| value)
+                .map_err(|e| format!("{}: {e}", committed.display()))
         }) {
-            Ok(()) => vec![],
+            Ok(ledger) => committed_attestation_issues(change, Some(&ledger)),
             Err(error) => vec![error],
         };
     }
@@ -1390,7 +1397,9 @@ pub fn committed_ledger_issues(change: &Path) -> Vec<String> {
         )];
     };
     match export_ledger(change, &[], None) {
-        Ok(fresh) if recorded == fresh.to_string_pretty() => vec![],
+        Ok(fresh) if recorded == fresh.to_string_pretty() => {
+            committed_attestation_issues(change, Some(&fresh))
+        }
         Ok(_) => vec![format!(
             "{} differs from a fresh export; run `azimuth change finalize` again",
             committed.display()
@@ -1677,6 +1686,31 @@ pub fn dataset(root: &Path, change: Option<&str>) -> Result<String, String> {
     for path in ledgers {
         let ledger = read_json(&path)?;
         let rows = dataset_rows(&ledger).map_err(|e| format!("{}: {e}", path.display()))?;
+        let change_directory = path.parent().and_then(Path::parent).unwrap();
+        let attested = latest_attestations(change_directory)?;
+        let rows = rows
+            .into_iter()
+            .map(|row| {
+                let attempt = row
+                    .get("id")
+                    .and_then(Json::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let mut fields = match row {
+                    Json::Obj(fields) => fields,
+                    _ => unreachable!(),
+                };
+                let attestations = attested.get(&attempt);
+                let attribution = attribution_columns(&fields, attestations);
+                fields.extend(
+                    attestation_columns(attestations)
+                        .into_iter()
+                        .map(|(key, value)| (key.to_string(), value)),
+                );
+                fields.extend(attribution);
+                Json::Obj(fields)
+            })
+            .collect::<Vec<_>>();
         let id = ledger
             .get("change")
             .and_then(Json::as_str)
@@ -2158,6 +2192,669 @@ pub fn validate_attribution(value: &Json) -> Result<(), String> {
         return Err("attribution `fingerprint` does not match its content".into());
     }
     Ok(())
+}
+
+// Provenance attestations
+
+pub const ATTESTATIONS_FORMAT: &str = "azimuth-provenance-attestations";
+const RECONSTRUCTED: &str = "reconstructed";
+const ATTESTATION_FIELDS: &[&str] = &[
+    "id",
+    "attempt",
+    "instance",
+    "basis",
+    "source",
+    "window",
+    "agent",
+    "trace",
+    "usage",
+    "reconstructed_at_ms",
+    "reconstructed_by",
+    "tool",
+];
+
+/// `<change>/provenance/attestations.json`, committed beside the ledger and archived with it.
+pub fn default_attestations(change: &Path) -> PathBuf {
+    change.join("provenance").join("attestations.json")
+}
+
+/// Rewrites every `harness` basis of a reconstructed descriptor as `reconstructed`: the values
+/// come from the harness's own records, but read after the fact rather than attested at the
+/// moment of recording.
+fn reconstructed_bases(value: &Json) -> Json {
+    match value {
+        Json::Obj(fields) => Json::Obj(
+            fields
+                .iter()
+                .map(|(key, value)| {
+                    let value = if key == "basis" && value.as_str() == Some("harness") {
+                        Json::str(RECONSTRUCTED)
+                    } else {
+                        reconstructed_bases(value)
+                    };
+                    (key.clone(), value)
+                })
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+/// The inverse of [`reconstructed_bases`], so reconstructed values pass the descriptor's own
+/// field rules. Any other basis is refused.
+fn attested_bases(value: &Json, what: &str) -> Result<Json, String> {
+    match value {
+        Json::Obj(fields) => Ok(Json::Obj(
+            fields
+                .iter()
+                .map(|(key, value)| {
+                    if key == "basis" {
+                        return match value.as_str() {
+                            Some(RECONSTRUCTED) => Ok((key.clone(), Json::str("harness"))),
+                            Some("unknown") => Ok((key.clone(), value.clone())),
+                            _ => Err(format!("{what} basis must be reconstructed or unknown")),
+                        };
+                    }
+                    Ok((key.clone(), attested_bases(value, what)?))
+                })
+                .collect::<Result<Vec<_>, String>>()?,
+        )),
+        other => Ok(other.clone()),
+    }
+}
+
+fn attestation_content(value: &Json) -> Json {
+    match value {
+        Json::Obj(fields) => Json::Obj(
+            fields
+                .iter()
+                .filter(|(key, _)| key != "id")
+                .cloned()
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+fn attestation_id(value: &Json) -> String {
+    let digest = crate::fingerprint::canonical_sha256(&attestation_content(value));
+    format!("attestation-{}", digest.trim_start_matches("sha256:"))
+}
+
+fn validate_attestation(value: &Json) -> Result<(), String> {
+    let what = "attestation";
+    exact(value, ATTESTATION_FIELDS, what)?;
+    if nonempty(value, "id", what)? != attestation_id(value) {
+        return Err("attestation `id` differs from its content".into());
+    }
+    nonempty(value, "attempt", what)?;
+    nonempty(value, "instance", what)?;
+    if nonempty(value, "basis", what)? != RECONSTRUCTED {
+        return Err("attestation `basis` must be reconstructed".into());
+    }
+    let source = value.get("source").unwrap();
+    exact(
+        source,
+        &[
+            "kind",
+            "harness",
+            "transcript",
+            "transcript_bytes",
+            "transcript_fingerprint",
+            "tool_use",
+        ],
+        "attestation source",
+    )?;
+    let kind = nonempty(source, "kind", "attestation source")?;
+    crate::harness_capture::Source::parse(kind)?;
+    crate::harness_capture::Harness::parse(nonempty(source, "harness", "attestation source")?)?;
+    nonempty(source, "transcript", "attestation source")?;
+    integer(source, "transcript_bytes", "attestation source")?;
+    fingerprint_field(source, "transcript_fingerprint", "attestation source")?;
+    let tool_use = optional_text(source, "tool_use", "attestation source")?;
+    if (kind == "recording") != tool_use.is_some() {
+        return Err("attestation source names a `tool_use` exactly when it is a recording".into());
+    }
+    let window = value.get("window").unwrap();
+    exact(window, &["start_ms", "end_ms"], "attestation window")?;
+    if integer(window, "start_ms", "attestation window")?
+        > integer(window, "end_ms", "attestation window")?
+    {
+        return Err("attestation window ends before it starts".into());
+    }
+    validate_agent(&attested_bases(
+        value.get("agent").unwrap(),
+        "attestation agent",
+    )?)?;
+    optional_text(value, "trace", what)?;
+    let usage = value.get("usage").unwrap();
+    if usage != &Json::Null && usage.get("basis").and_then(Json::as_str) != Some(RECONSTRUCTED) {
+        return Err("attestation usage basis must be reconstructed".into());
+    }
+    validate_usage(&attested_bases(usage, "attestation usage")?)?;
+    integer(value, "reconstructed_at_ms", what)?;
+    nonempty(value, "reconstructed_by", what)?;
+    nonempty(value, "tool", what)?;
+    Ok(())
+}
+
+/// Strict validation of an `azimuth-provenance-attestations` version 1 document.
+pub fn validate_attestations(value: &Json) -> Result<(), String> {
+    exact(
+        value,
+        &["format", "version", "project", "change", "attestations"],
+        "attestations",
+    )?;
+    if value.get("format").and_then(Json::as_str) != Some(ATTESTATIONS_FORMAT)
+        || value.get("version").and_then(safe_integer) != Some(1)
+    {
+        return Err(format!("expected {ATTESTATIONS_FORMAT} version 1"));
+    }
+    nonempty(value, "project", "attestations")?;
+    nonempty(value, "change", "attestations")?;
+    let mut ids = BTreeSet::new();
+    for (index, attestation) in items(value, "attestations", "attestations")?
+        .iter()
+        .enumerate()
+    {
+        validate_attestation(attestation)
+            .map_err(|error| format!("attestation {}: {error}", index + 1))?;
+        if !ids.insert(attestation.get("id").and_then(Json::as_str).unwrap()) {
+            return Err(format!("attestation {}: duplicate id", index + 1));
+        }
+    }
+    Ok(())
+}
+
+/// Every attestation must name an attempt of the ledger, in the instance that recorded it.
+fn attestations_match_ledger(attestations: &Json, ledger: &Json) -> Result<(), String> {
+    for key in ["project", "change"] {
+        if attestations.get(key) != ledger.get(key) {
+            return Err(format!(
+                "attestations name a different {key} than the ledger"
+            ));
+        }
+    }
+    let recorded: BTreeSet<(String, String)> = ledger
+        .get("instances")
+        .and_then(Json::as_array)
+        .unwrap_or(&[])
+        .iter()
+        .flat_map(|instance| {
+            let id = instance
+                .get("id")
+                .and_then(Json::as_str)
+                .unwrap_or("")
+                .to_string();
+            instance
+                .get("attempts")
+                .and_then(Json::as_array)
+                .unwrap_or(&[])
+                .iter()
+                .map(move |attempt| {
+                    (
+                        id.clone(),
+                        attempt
+                            .get("id")
+                            .and_then(Json::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                    )
+                })
+        })
+        .collect();
+    for attestation in attestations
+        .get("attestations")
+        .and_then(Json::as_array)
+        .unwrap_or(&[])
+    {
+        let key = (
+            attestation
+                .get("instance")
+                .and_then(Json::as_str)
+                .unwrap_or("")
+                .to_string(),
+            attestation
+                .get("attempt")
+                .and_then(Json::as_str)
+                .unwrap_or("")
+                .to_string(),
+        );
+        if !recorded.contains(&key) {
+            return Err(format!(
+                "attestation {} names attempt {} of instance {}, which the ledger does not hold",
+                attestation.get("id").and_then(Json::as_str).unwrap_or(""),
+                key.1,
+                key.0
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub struct ReconstructRequest<'a> {
+    pub change: &'a Path,
+    pub repositories: Option<&'a Path>,
+    pub attempt: &'a str,
+    pub harness: crate::harness_capture::Harness,
+    pub source: crate::harness_capture::Source,
+    pub transcript: &'a Path,
+    pub tool_use: Option<&'a str>,
+    pub by: &'a str,
+    pub attestations: Option<&'a Path>,
+}
+
+/// Reconstructs one attempt's provenance from a harness log and appends the attestation. The
+/// attempt itself is never touched; its window comes from the times the ledger recorded.
+pub fn reconstruct(request: &ReconstructRequest) -> Result<(PathBuf, Json), String> {
+    let ledger = export_ledger(request.change, &[], request.repositories)?;
+    let (instance, attempt) = ledger
+        .get("instances")
+        .and_then(Json::as_array)
+        .unwrap()
+        .iter()
+        .find_map(|instance| {
+            instance
+                .get("attempts")
+                .and_then(Json::as_array)
+                .unwrap()
+                .iter()
+                .find(|attempt| attempt.get("id").and_then(Json::as_str) == Some(request.attempt))
+                .map(|attempt| (instance.get("id").cloned().unwrap(), attempt.clone()))
+        })
+        .ok_or_else(|| {
+            format!(
+                "attempt {} is not in the Work Provenance ledger of {}",
+                request.attempt,
+                request.change.display()
+            )
+        })?;
+    let time = |key: &str| {
+        attempt.get(key).and_then(safe_integer).ok_or_else(|| {
+            format!(
+                "attempt {} has no `{key}`; its window cannot be established",
+                request.attempt
+            )
+        })
+    };
+    let (start_ms, end_ms) = (time("handoff_captured_at_ms")?, time("recorded_at_ms")?);
+    let bytes = fs::read(request.transcript)
+        .map_err(|e| format!("{}: {e}", request.transcript.display()))?;
+    let reconstruction = crate::harness_capture::reconstruct(
+        request.harness,
+        request.transcript,
+        request.source,
+        start_ms,
+        end_ms,
+        request.tool_use,
+    )?;
+    validate_descriptor(&reconstruction.descriptor)?;
+    let descriptor = reconstructed_bases(&reconstruction.descriptor);
+    let mut attestation = Json::obj(vec![
+        ("id", Json::Null),
+        ("attempt", Json::str(request.attempt)),
+        ("instance", instance),
+        ("basis", Json::str(RECONSTRUCTED)),
+        (
+            "source",
+            Json::obj(vec![
+                ("kind", Json::str(request.source.name())),
+                (
+                    "harness",
+                    descriptor
+                        .get("harness")
+                        .unwrap()
+                        .get("name")
+                        .unwrap()
+                        .clone(),
+                ),
+                (
+                    "transcript",
+                    Json::str(request.transcript.display().to_string()),
+                ),
+                ("transcript_bytes", Json::Num(bytes.len() as f64)),
+                (
+                    "transcript_fingerprint",
+                    Json::str(format!("sha256:{}", crate::fingerprint::sha256(&bytes))),
+                ),
+                (
+                    "tool_use",
+                    reconstruction
+                        .tool_use
+                        .as_deref()
+                        .map(Json::str)
+                        .unwrap_or(Json::Null),
+                ),
+            ]),
+        ),
+        (
+            "window",
+            Json::obj(vec![
+                ("start_ms", Json::Num(start_ms as f64)),
+                ("end_ms", Json::Num(end_ms as f64)),
+            ]),
+        ),
+        (
+            "agent",
+            Json::obj(
+                AGENT_FIELDS
+                    .iter()
+                    .map(|field| (*field, descriptor.get(field).unwrap().clone()))
+                    .collect(),
+            ),
+        ),
+        ("trace", descriptor.get("trace").unwrap().clone()),
+        ("usage", descriptor.get("usage").unwrap().clone()),
+        ("reconstructed_at_ms", Json::Num(now_ms() as f64)),
+        ("reconstructed_by", Json::str(request.by)),
+        (
+            "tool",
+            Json::str(format!("azimuth {}", env!("CARGO_PKG_VERSION"))),
+        ),
+    ]);
+    let id = attestation_id(&attestation);
+    if let Json::Obj(fields) = &mut attestation {
+        fields[0].1 = Json::str(id);
+    }
+    validate_attestation(&attestation)?;
+
+    let path = request
+        .attestations
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| default_attestations(request.change));
+    let mut document = if path.exists() {
+        let existing = read_json(&path)?;
+        validate_attestations(&existing).map_err(|e| format!("{}: {e}", path.display()))?;
+        existing
+    } else {
+        Json::obj(vec![
+            ("format", Json::str(ATTESTATIONS_FORMAT)),
+            ("version", Json::Num(1.0)),
+            ("project", ledger.get("project").unwrap().clone()),
+            ("change", ledger.get("change").unwrap().clone()),
+            ("attestations", Json::Arr(vec![])),
+        ])
+    };
+    if let Json::Obj(fields) = &mut document {
+        for (key, value) in fields.iter_mut() {
+            if key == "attestations" {
+                if let Json::Arr(entries) = value {
+                    entries.push(attestation.clone());
+                }
+            }
+        }
+    }
+    validate_attestations(&document)?;
+    attestations_match_ledger(&document, &ledger)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+    }
+    write_atomic(&path, document.to_string_pretty().as_bytes())?;
+    Ok((path, attestation))
+}
+
+/// An attempt's attestations as the report uses them: the latest of each source kind and the
+/// total count.
+#[derive(Default)]
+struct Attested {
+    count: usize,
+    work: Option<Json>,
+    recording: Option<Json>,
+}
+
+impl Attested {
+    /// A `work` attestation describes the agent that did the work and is shown in preference to a
+    /// `recording` one, which describes the session that ran the update.
+    fn shown(&self) -> Option<&Json> {
+        self.work.as_ref().or(self.recording.as_ref())
+    }
+}
+
+fn latest_attestations(change: &Path) -> Result<BTreeMap<String, Attested>, String> {
+    let path = default_attestations(change);
+    if !path.is_file() {
+        return Ok(BTreeMap::new());
+    }
+    let document = read_json(&path)?;
+    validate_attestations(&document).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut latest: BTreeMap<String, Attested> = BTreeMap::new();
+    for attestation in document
+        .get("attestations")
+        .and_then(Json::as_array)
+        .unwrap()
+    {
+        let attempt = attestation
+            .get("attempt")
+            .and_then(Json::as_str)
+            .unwrap()
+            .to_string();
+        let entry = latest.entry(attempt).or_default();
+        entry.count += 1;
+        match attestation
+            .get("source")
+            .and_then(|source| source.get("kind"))
+            .and_then(Json::as_str)
+        {
+            Some("work") => entry.work = Some(attestation.clone()),
+            _ => entry.recording = Some(attestation.clone()),
+        }
+    }
+    Ok(latest)
+}
+
+/// Who the report treats as the attempt's agent. An attestation never supersedes what the hook
+/// captured at record time: the latest `work` attestation is attributed because it describes a
+/// different session, the one that did the work, while a `recording` attestation describes the
+/// captured session itself and only fills values the capture left unknown.
+fn attribution_columns(row: &[(String, Json)], attested: Option<&Attested>) -> Vec<(String, Json)> {
+    let recorded = |key: &str| {
+        row.iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value.clone())
+            .unwrap_or(Json::Null)
+    };
+    let field = |attestation: &Json, path: &[&str]| {
+        let mut current = Some(attestation);
+        for key in path {
+            current = current.and_then(|value| value.get(key));
+        }
+        current.cloned().unwrap_or(Json::Null)
+    };
+    let usage_names = usage_columns(&Json::Null)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect::<Vec<_>>();
+    let mut columns = Vec::new();
+    let source;
+    if let Some(work) = attested.and_then(|attested| attested.work.as_ref()) {
+        source = "work-attestation";
+        for name in ["model", "effort", "agent_type"] {
+            columns.push((name.to_string(), field(work, &["agent", name, "value"])));
+            columns.push((
+                format!("{name}_basis"),
+                field(work, &["agent", name, "basis"]),
+            ));
+        }
+        columns.push((
+            "harness_name".into(),
+            field(work, &["agent", "harness", "name"]),
+        ));
+        columns.push((
+            "harness_version".into(),
+            field(work, &["agent", "harness", "version"]),
+        ));
+        columns.extend(
+            usage_columns(&field(work, &["usage"]))
+                .into_iter()
+                .map(|(name, value)| (name.to_string(), value)),
+        );
+    } else {
+        let recording = attested.and_then(|attested| attested.recording.as_ref());
+        let mut completed = false;
+        for name in ["model", "effort", "agent_type"] {
+            let basis = format!("{name}_basis");
+            let filled = recording.filter(|attestation| {
+                recorded(&basis).as_str() == Some("unknown")
+                    && field(attestation, &["agent", name, "basis"]).as_str() != Some("unknown")
+            });
+            if let Some(attestation) = filled {
+                completed = true;
+                columns.push((
+                    name.to_string(),
+                    field(attestation, &["agent", name, "value"]),
+                ));
+                columns.push((basis, field(attestation, &["agent", name, "basis"])));
+            } else {
+                columns.push((name.to_string(), recorded(name)));
+                columns.push((basis.clone(), recorded(&basis)));
+            }
+        }
+        columns.push(("harness_name".into(), recorded("harness_name")));
+        columns.push(("harness_version".into(), recorded("harness_version")));
+        let usage = recording
+            .map(|attestation| field(attestation, &["usage"]))
+            .filter(|usage| *usage != Json::Null && recorded("usage_basis") == Json::Null);
+        if let Some(usage) = usage {
+            completed = true;
+            columns.extend(
+                usage_columns(&usage)
+                    .into_iter()
+                    .map(|(name, value)| (name.to_string(), value)),
+            );
+        } else {
+            columns.extend(
+                usage_names
+                    .iter()
+                    .map(|name| (name.to_string(), recorded(name))),
+            );
+        }
+        source = if completed {
+            "record-completed-by-recording-attestation"
+        } else {
+            "record"
+        };
+    }
+    let mut attributed = vec![("attributed_from".to_string(), Json::str(source))];
+    attributed.extend(
+        columns
+            .into_iter()
+            .map(|(name, value)| (format!("attributed_{name}"), value)),
+    );
+    attributed
+}
+
+/// The dataset columns an attestation adds beside the attempt's columns recorded at record time,
+/// which stay unchanged: every column is null when the attempt has no attestation.
+fn attestation_columns(attested: Option<&Attested>) -> Vec<(&'static str, Json)> {
+    let value = |path: &[&str]| {
+        let mut current = attested.and_then(Attested::shown);
+        for key in path {
+            current = current.and_then(|value| value.get(key));
+        }
+        current.cloned().unwrap_or(Json::Null)
+    };
+    let mut columns = vec![
+        (
+            "attestations",
+            Json::Num(attested.map_or(0, |attested| attested.count) as f64),
+        ),
+        ("attestation", value(&["id"])),
+        ("reconstructed_source", value(&["source", "kind"])),
+        ("reconstructed_transcript", value(&["source", "transcript"])),
+        (
+            "reconstructed_transcript_fingerprint",
+            value(&["source", "transcript_fingerprint"]),
+        ),
+        ("reconstructed_at_ms", value(&["reconstructed_at_ms"])),
+        ("reconstructed_by", value(&["reconstructed_by"])),
+        ("reconstructed_model", value(&["agent", "model", "value"])),
+        (
+            "reconstructed_model_basis",
+            value(&["agent", "model", "basis"]),
+        ),
+        ("reconstructed_effort", value(&["agent", "effort", "value"])),
+        (
+            "reconstructed_effort_basis",
+            value(&["agent", "effort", "basis"]),
+        ),
+        (
+            "reconstructed_agent_type",
+            value(&["agent", "agent_type", "value"]),
+        ),
+        (
+            "reconstructed_agent_type_basis",
+            value(&["agent", "agent_type", "basis"]),
+        ),
+        (
+            "reconstructed_harness_name",
+            value(&["agent", "harness", "name"]),
+        ),
+        (
+            "reconstructed_harness_version",
+            value(&["agent", "harness", "version"]),
+        ),
+        ("reconstructed_trace", value(&["trace"])),
+    ];
+    let usage = value(&["usage"]);
+    columns.extend(
+        usage_columns(&usage)
+            .into_iter()
+            .map(|(name, value)| (RECONSTRUCTED_USAGE_COLUMNS[column_index(name)], value)),
+    );
+    columns
+}
+
+const RECONSTRUCTED_USAGE_COLUMNS: &[&str] = &[
+    "reconstructed_usage_basis",
+    "reconstructed_model_calls",
+    "reconstructed_tool_calls",
+    "reconstructed_input_tokens",
+    "reconstructed_cache_read_input_tokens",
+    "reconstructed_cache_write_input_tokens",
+    "reconstructed_output_tokens",
+    "reconstructed_reasoning_output_tokens",
+    "reconstructed_usage_overlapping",
+    "reconstructed_delegated_agents",
+    "reconstructed_delegated_model_calls",
+    "reconstructed_delegated_input_tokens",
+    "reconstructed_delegated_cache_read_input_tokens",
+    "reconstructed_delegated_cache_write_input_tokens",
+    "reconstructed_delegated_output_tokens",
+    "reconstructed_delegated_reasoning_output_tokens",
+];
+
+fn column_index(name: &str) -> usize {
+    usage_columns(&Json::Null)
+        .iter()
+        .position(|(column, _)| *column == name)
+        .unwrap()
+}
+
+/// Why a change's committed attestations cannot be archived, if anything.
+pub fn committed_attestation_issues(change: &Path, ledger: Option<&Json>) -> Vec<String> {
+    let path = default_attestations(change);
+    if !path.is_file() {
+        return vec![];
+    }
+    let document = match read_json(&path) {
+        Ok(document) => document,
+        Err(error) => return vec![error],
+    };
+    if let Err(error) = validate_attestations(&document) {
+        return vec![format!("{}: {error}", path.display())];
+    }
+    match ledger {
+        Some(ledger) => attestations_match_ledger(&document, ledger)
+            .err()
+            .map(|error| format!("{}: {error}", path.display()))
+            .into_iter()
+            .collect(),
+        None => vec![],
+    }
 }
 
 #[cfg(test)]

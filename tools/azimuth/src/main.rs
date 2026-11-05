@@ -21,14 +21,15 @@ azimuth — derives and validates an evidence-control-plane model
 
 USAGE
     azimuth workflow definition --workflow change-development [--out <file>]\n\
-    azimuth workflow init (--workflow change-development --inputs <file> | --definition <file>) --instance <file> --repositories <file> [--predecessor <file>]
+    azimuth workflow init (--workflow change-development --inputs <file> | --definition <file>) --instance <file> --repositories <file> [--predecessor <file> [--carry results|none]]
     azimuth workflow next|verify --instance <file> --repositories <file> [--out <file>]
     azimuth workflow assurance-targets --instance <file> --repositories <file> --snapshot <relative-ref> [--verification-targets <relative-ref>] [--out <file>]
-    azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--descriptor <file>] [--out <file>]
+    azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--descriptor <file> | --provenance unknown] [--out <file>]
     azimuth workflow abandon --instance <file> --expected-revision <number> --reason <text> [--out <file>]
     azimuth provenance ledger --change <dir> [--instance <file>...] [--repositories <file>] [--out <file>]
     azimuth provenance attributions --input <failure-attributions.md> [--out <file>]
     azimuth provenance capture --harness <claude-code|codex>
+    azimuth provenance reconstruct --change <dir> --attempt <id> --harness <claude-code|codex> --source <recording|work> --transcript <file> --by <actor> [--tool-use <id>] [--repositories <file>] [--attestations <file>]
     azimuth release prepare|verify|inputs --input <file> [--out <file>]
         [--unit-rule <file>] [--checkout <dir>] [--repository <id>]   (prepare only)
     azimuth assurance deployment-status --input <file> [--out <file>]
@@ -328,10 +329,13 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
 
 fn command_provenance(args: &[String]) -> Result<ExitCode, String> {
     let Some(operation) = args.first() else {
-        return Err("provenance needs ledger, attributions or capture".into());
+        return Err("provenance needs ledger, attributions, capture or reconstruct".into());
     };
     if operation == "capture" {
         return command_provenance_capture(&args[1..]);
+    }
+    if operation == "reconstruct" {
+        return command_provenance_reconstruct(&args[1..]);
     }
     let mut change = None;
     let mut input = None;
@@ -389,6 +393,60 @@ fn command_provenance(args: &[String]) -> Result<ExitCode, String> {
     }
 }
 
+fn command_provenance_reconstruct(args: &[String]) -> Result<ExitCode, String> {
+    let mut values: std::collections::BTreeMap<&str, String> = std::collections::BTreeMap::new();
+    let mut index = 0;
+    while index < args.len() {
+        let flag = args[index].as_str();
+        let value = argument_value(args, index, flag)?;
+        if !matches!(
+            flag,
+            "--change"
+                | "--repositories"
+                | "--attempt"
+                | "--harness"
+                | "--source"
+                | "--transcript"
+                | "--tool-use"
+                | "--by"
+                | "--attestations"
+        ) || values.insert(flag, value.to_string()).is_some()
+        {
+            return Err(format!(
+                "unknown or repeated provenance reconstruct option `{flag}`"
+            ));
+        }
+        index += 2;
+    }
+    let required = |flag: &str| {
+        values
+            .get(flag)
+            .cloned()
+            .ok_or_else(|| format!("provenance reconstruct needs `{flag}`"))
+    };
+    let change = PathBuf::from(required("--change")?);
+    let transcript = PathBuf::from(required("--transcript")?);
+    let attempt = required("--attempt")?;
+    let by = required("--by")?;
+    let repositories = values.get("--repositories").map(PathBuf::from);
+    let attestations = values.get("--attestations").map(PathBuf::from);
+    let (path, attestation) =
+        azimuth::provenance::reconstruct(&azimuth::provenance::ReconstructRequest {
+            change: &change,
+            repositories: repositories.as_deref(),
+            attempt: &attempt,
+            harness: azimuth::harness_capture::Harness::parse(&required("--harness")?)?,
+            source: azimuth::harness_capture::Source::parse(&required("--source")?)?,
+            transcript: &transcript,
+            tool_use: values.get("--tool-use").map(String::as_str),
+            by: &by,
+            attestations: attestations.as_deref(),
+        })?;
+    println!("{}", attestation.to_string_pretty());
+    eprintln!("appended to {}", path.display());
+    Ok(ExitCode::SUCCESS)
+}
+
 /// A PreToolUse hook. It never fails the tool call: any problem is reported on stderr and the
 /// call proceeds unchanged, so a missing descriptor can only make provenance `unknown`.
 fn command_provenance_capture(args: &[String]) -> Result<ExitCode, String> {
@@ -401,11 +459,7 @@ fn command_provenance_capture(args: &[String]) -> Result<ExitCode, String> {
         .map_err(|error| format!("hook event: {error}"))
         .and_then(|_| azimuth::json::parse(&input))
         .and_then(|event| {
-            azimuth::harness_capture::capture(
-                harness,
-                &event,
-                azimuth::harness_capture::TRANSCRIPT_WAIT,
-            )
+            azimuth::harness_capture::capture(harness, &event, harness.transcript_wait())
         });
     if let Err(error) = captured {
         eprintln!("azimuth provenance capture: {error}");
