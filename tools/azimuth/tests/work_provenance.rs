@@ -77,6 +77,17 @@ fn array(value: &Json) -> &[Json] {
     value.as_array().unwrap()
 }
 
+/// How an update attests the attempt's provenance.
+#[derive(Clone, Copy)]
+enum Attestation<'a> {
+    /// `--descriptor FILE`.
+    Descriptor(&'a Path),
+    /// `--provenance unknown`: deliberately unattested, as where no harness hook is installed.
+    Unknown,
+    /// Neither flag: the descriptor a harness hook saved beside the handoff.
+    Hook,
+}
+
 /// A repository with one change coordinated by the shipped change-development workflow.
 struct Fixture {
     root: PathBuf,
@@ -162,10 +173,16 @@ impl Fixture {
             "--repositories",
             Self::s(&self.repositories),
         ];
-        if let Some(predecessor) = predecessor {
-            arguments.extend(["--predecessor", Self::s(predecessor)]);
-        }
-        parse(&succeed(&arguments)).unwrap()
+        let Some(predecessor) = predecessor else {
+            return parse(&succeed(&arguments)).unwrap();
+        };
+        arguments.extend(["--predecessor", Self::s(predecessor)]);
+        // With a predecessor, init reports the instance beside its carry-over.
+        let printed = parse(&succeed(&arguments)).unwrap();
+        let instance = at(&printed, &["instance"]).clone();
+        assert_eq!(instance, read(&self.instance()));
+        assert!(at(&printed, &["carry_over"]).as_array().is_some());
+        instance
     }
 
     fn next(&self, name: &str) -> PathBuf {
@@ -189,7 +206,7 @@ impl Fixture {
         result: &'a Path,
         actor: &'a str,
         revision: &'a str,
-        descriptor: Option<&'a Path>,
+        attestation: Attestation<'a>,
     ) -> Vec<String> {
         let mut arguments = vec![
             "workflow",
@@ -210,9 +227,16 @@ impl Fixture {
         .into_iter()
         .map(String::from)
         .collect::<Vec<_>>();
-        if let Some(descriptor) = descriptor {
-            arguments.push("--descriptor".into());
-            arguments.push(Self::s(descriptor).into());
+        match attestation {
+            Attestation::Descriptor(descriptor) => {
+                arguments.push("--descriptor".into());
+                arguments.push(Self::s(descriptor).into());
+            }
+            Attestation::Unknown => {
+                arguments.push("--provenance".into());
+                arguments.push("unknown".into());
+            }
+            Attestation::Hook => {}
         }
         arguments
     }
@@ -223,9 +247,9 @@ impl Fixture {
         result: &Path,
         actor: &str,
         revision: &str,
-        descriptor: Option<&Path>,
+        attestation: Attestation,
     ) -> Json {
-        let arguments = self.update_arguments(handoff, result, actor, revision, descriptor);
+        let arguments = self.update_arguments(handoff, result, actor, revision, attestation);
         let arguments = arguments.iter().map(String::as_str).collect::<Vec<_>>();
         parse(&succeed(&arguments)).unwrap()
     }
@@ -235,10 +259,10 @@ impl Fixture {
         handoff: &Path,
         result: &Path,
         revision: &str,
-        descriptor: Option<&Path>,
+        attestation: Attestation,
     ) -> String {
         let arguments =
-            self.update_arguments(handoff, result, "claude-session-1", revision, descriptor);
+            self.update_arguments(handoff, result, "claude-session-1", revision, attestation);
         let arguments = arguments.iter().map(String::as_str).collect::<Vec<_>>();
         let (code, stderr) = fail(&arguments);
         assert_eq!(code, 2);
@@ -246,14 +270,14 @@ impl Fixture {
     }
 
     /// Records the scope attempt, the first eligible work of change-development.
-    fn record_scope(&self, descriptor: Option<&Path>) -> Json {
+    fn record_scope(&self, attestation: Attestation) -> Json {
         let handoff = self.next("handoff.json");
         self.update(
             &handoff,
             &self.workflow.join("results/scope-result.json"),
             "claude-session-1",
             "0",
-            descriptor,
+            attestation,
         )
     }
 
@@ -346,8 +370,8 @@ fn a_descriptor_is_a_provenance_sibling_that_never_changes_attempt_identity() {
     undescribed.init(None);
     let descriptor = harness_descriptor(&described.root);
 
-    let with = described.record_scope(Some(&descriptor));
-    let without = undescribed.record_scope(None);
+    let with = described.record_scope(Attestation::Descriptor(&descriptor));
+    let without = undescribed.record_scope(Attestation::Unknown);
 
     assert_eq!(at(&with, &["result"]), at(&without, &["result"]));
     let with_state = read(&described.instance());
@@ -440,7 +464,7 @@ fn a_descriptor_is_a_provenance_sibling_that_never_changes_attempt_identity() {
 fn replaying_a_recorded_attempt_returns_its_original_provenance_unchanged() {
     let fixture = Fixture::new("sample-change");
     fixture.init(None);
-    let first = fixture.record_scope(Some(&harness_descriptor(&fixture.root)));
+    let first = fixture.record_scope(Attestation::Descriptor(&harness_descriptor(&fixture.root)));
     let before = fs::read(fixture.instance()).unwrap();
 
     let replay = fixture.update(
@@ -448,7 +472,7 @@ fn replaying_a_recorded_attempt_returns_its_original_provenance_unchanged() {
         &fixture.workflow.join("results/scope-result.json"),
         "claude-session-1",
         "1",
-        Some(&human_descriptor(&fixture.root)),
+        Attestation::Descriptor(&human_descriptor(&fixture.root)),
     );
 
     assert_eq!(at(&replay, &["idempotent"]), &Json::Bool(true));
@@ -472,7 +496,7 @@ fn update_records_a_hook_descriptor_saved_beside_its_handoff_and_consumes_it() {
         &fixture.workflow.join("results/scope-result.json"),
         "claude-session-1",
         "0",
-        None,
+        Attestation::Hook,
     );
 
     assert_eq!(
@@ -505,12 +529,27 @@ fn a_hook_descriptor_saved_before_the_handoff_was_captured_is_ignored() {
         .set_modified(earlier)
         .unwrap();
 
+    let before = fs::read(fixture.instance()).unwrap();
+    let result = fixture.workflow.join("results/scope-result.json");
+
+    // The stale file is no capture of this attempt, so an unattested update is refused.
+    let stderr = fixture.update_failure(&handoff, &result, "0", Attestation::Hook);
+    assert!(
+        stderr.contains("no provenance for this attempt"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("handoff.json.agent-descriptor.json"),
+        "{stderr}"
+    );
+    assert_eq!(fs::read(fixture.instance()).unwrap(), before);
+
     let recorded = fixture.update(
         &handoff,
-        &fixture.workflow.join("results/scope-result.json"),
+        &result,
         "claude-session-1",
         "0",
-        None,
+        Attestation::Unknown,
     );
 
     assert_eq!(at(&recorded, &["provenance", "agent"]), &unknown_agent());
@@ -536,7 +575,7 @@ fn an_invalid_hook_descriptor_fails_the_update_without_a_transition() {
         &handoff,
         &fixture.workflow.join("results/scope-result.json"),
         "0",
-        None,
+        Attestation::Hook,
     );
 
     assert!(
@@ -563,7 +602,8 @@ fn malformed_descriptors_and_superseded_formats_fail_without_a_transition() {
             .replace("\"trace\"", "\"role\":\"reviewer\",\"trace\""),
     )
     .unwrap();
-    let stderr = fixture.update_failure(&handoff, &result, "0", Some(&descriptor));
+    let stderr =
+        fixture.update_failure(&handoff, &result, "0", Attestation::Descriptor(&descriptor));
     assert_eq!(
         stderr,
         format!(
@@ -583,7 +623,7 @@ fn malformed_descriptors_and_superseded_formats_fail_without_a_transition() {
             ),
     )
     .unwrap();
-    let stderr = fixture.update_failure(&handoff, &result, "0", Some(&guessed));
+    let stderr = fixture.update_failure(&handoff, &result, "0", Attestation::Descriptor(&guessed));
     assert!(stderr.ends_with("agent `model` with basis unknown requires a null value\n"));
 
     let old_handoff = fixture.workflow.join("handoff-v2.json");
@@ -594,7 +634,7 @@ fn malformed_descriptors_and_superseded_formats_fail_without_a_transition() {
             .replacen("\"version\": 3", "\"version\": 2", 1),
     )
     .unwrap();
-    let stderr = fixture.update_failure(&old_handoff, &result, "0", None);
+    let stderr = fixture.update_failure(&old_handoff, &result, "0", Attestation::Hook);
     assert!(stderr.contains("version 2 handoff without captured_at_ms"));
     assert_eq!(fs::read(fixture.instance()).unwrap(), before);
 
@@ -623,7 +663,7 @@ fn malformed_descriptors_and_superseded_formats_fail_without_a_transition() {
 fn an_abandoned_instance_is_replaced_by_a_linked_successor() {
     let fixture = Fixture::new("sample-change");
     let original = fixture.init(None);
-    fixture.record_scope(None);
+    fixture.record_scope(Attestation::Unknown);
 
     let instance = fixture.instance();
     let (code, stderr) = fail(&[
@@ -666,7 +706,7 @@ fn an_abandoned_instance_is_replaced_by_a_linked_successor() {
         &handoff,
         &fixture.workflow.join("results/scope-result.json"),
         "1",
-        None,
+        Attestation::Hook,
     );
     assert!(stderr.ends_with("the workflow instance is abandoned and accepts no further updates\n"));
 
@@ -772,7 +812,8 @@ fn version_two(instance: &Json) -> Json {
 fn historical_version_two_instances_export_with_unknown_provenance() {
     let fixture = Fixture::new("sample-change");
     fixture.init(None);
-    let recorded = fixture.record_scope(Some(&harness_descriptor(&fixture.root)));
+    let recorded =
+        fixture.record_scope(Attestation::Descriptor(&harness_descriptor(&fixture.root)));
     let state = read(&fixture.instance());
 
     // Snapshots stay beside the live instance so their workflow-local references still resolve.
@@ -920,7 +961,7 @@ fn historical_version_two_instances_export_with_unknown_provenance() {
 fn historical_version_one_instances_export_beside_their_successor() {
     let fixture = Fixture::new("sample-change");
     fixture.init(None);
-    let recorded = fixture.record_scope(None);
+    let recorded = fixture.record_scope(Attestation::Unknown);
     let mut retired = version_two(&read(&fixture.instance()));
     if let Json::Obj(fields) = &mut retired {
         for (key, value) in fields.iter_mut() {
@@ -990,7 +1031,7 @@ fn finalize_commits_the_ledger_and_archive_rejects_a_stale_one() {
     let model = fixture.root.join("model");
     fs::create_dir_all(&model).unwrap();
     fixture.init(None);
-    fixture.record_scope(Some(&harness_descriptor(&fixture.root)));
+    fixture.record_scope(Attestation::Descriptor(&harness_descriptor(&fixture.root)));
     let draft = fixture.root.join("retained-draft.json");
     fs::write(&draft, r#"{"format":"azimuth-retained-inputs-draft","version":1,"roots":["outcome"],"inputs":[{"id":"outcome","kind":"file","path":"outcome.md","dependencies":[]}]}"#).unwrap();
     azimuth::retained_inputs::capture(&fixture.change, &draft, &fixture.change.join("retained"))
@@ -1044,7 +1085,7 @@ fn finalize_commits_the_ledger_and_archive_rejects_a_stale_one() {
         &fixture.workflow.join("results/proposal-result.json"),
         "claude-session-2",
         "1",
-        None,
+        Attestation::Unknown,
     );
 
     let (code, stderr) = fail(&[
@@ -1166,6 +1207,63 @@ fn finalize_commits_the_ledger_and_archive_rejects_a_stale_one() {
             "delegated_reasoning_output_tokens",
             "used",
             "generated",
+            "attestations",
+            "attestation",
+            "reconstructed_source",
+            "reconstructed_transcript",
+            "reconstructed_transcript_fingerprint",
+            "reconstructed_at_ms",
+            "reconstructed_by",
+            "reconstructed_model",
+            "reconstructed_model_basis",
+            "reconstructed_effort",
+            "reconstructed_effort_basis",
+            "reconstructed_agent_type",
+            "reconstructed_agent_type_basis",
+            "reconstructed_harness_name",
+            "reconstructed_harness_version",
+            "reconstructed_trace",
+            "reconstructed_usage_basis",
+            "reconstructed_model_calls",
+            "reconstructed_tool_calls",
+            "reconstructed_input_tokens",
+            "reconstructed_cache_read_input_tokens",
+            "reconstructed_cache_write_input_tokens",
+            "reconstructed_output_tokens",
+            "reconstructed_reasoning_output_tokens",
+            "reconstructed_usage_overlapping",
+            "reconstructed_delegated_agents",
+            "reconstructed_delegated_model_calls",
+            "reconstructed_delegated_input_tokens",
+            "reconstructed_delegated_cache_read_input_tokens",
+            "reconstructed_delegated_cache_write_input_tokens",
+            "reconstructed_delegated_output_tokens",
+            "reconstructed_delegated_reasoning_output_tokens",
+            "attributed_from",
+            "attributed_model",
+            "attributed_model_basis",
+            "attributed_effort",
+            "attributed_effort_basis",
+            "attributed_agent_type",
+            "attributed_agent_type_basis",
+            "attributed_harness_name",
+            "attributed_harness_version",
+            "attributed_usage_basis",
+            "attributed_model_calls",
+            "attributed_tool_calls",
+            "attributed_input_tokens",
+            "attributed_cache_read_input_tokens",
+            "attributed_cache_write_input_tokens",
+            "attributed_output_tokens",
+            "attributed_reasoning_output_tokens",
+            "attributed_usage_overlapping",
+            "attributed_delegated_agents",
+            "attributed_delegated_model_calls",
+            "attributed_delegated_input_tokens",
+            "attributed_delegated_cache_read_input_tokens",
+            "attributed_delegated_cache_write_input_tokens",
+            "attributed_delegated_output_tokens",
+            "attributed_delegated_reasoning_output_tokens",
         ]
     );
     assert_eq!(at(first, &["change"]), &Json::str("framework-only"));
@@ -1174,7 +1272,22 @@ fn finalize_commits_the_ledger_and_archive_rejects_a_stale_one() {
     assert_eq!(at(first, &["harness_basis"]), &Json::str("harness"));
     assert_eq!(at(&rows[1], &["sequence"]), &Json::Num(2.0));
     assert_eq!(at(&rows[1], &["agent_kind_basis"]), &Json::str("unknown"));
-    assert_eq!(rows, azimuth::provenance::dataset_rows(&refreshed).unwrap());
+    // The report leads with the ledger's record-time columns and appends the attestation and
+    // attribution columns; neither attempt has an attestation, so the record is the agent.
+    let recorded = azimuth::provenance::dataset_rows(&refreshed).unwrap();
+    assert_eq!(rows.len(), recorded.len());
+    for (row, recorded) in rows.iter().zip(&recorded) {
+        let (Json::Obj(row), Json::Obj(recorded)) = (row, recorded) else {
+            panic!("rows require objects");
+        };
+        assert_eq!(&row[..recorded.len()], &recorded[..]);
+    }
+    for row in &rows {
+        assert_eq!(at(row, &["attestations"]), &Json::Num(0.0));
+        assert_eq!(at(row, &["attestation"]), &Json::Null);
+        assert_eq!(at(row, &["attributed_from"]), &Json::str("record"));
+        assert_eq!(at(row, &["attributed_model"]), at(row, &["model"]));
+    }
 
     let filtered = succeed(&[
         "report",
@@ -1191,7 +1304,7 @@ fn finalize_commits_the_ledger_and_archive_rejects_a_stale_one() {
 fn the_ledger_validator_rejects_hand_edits() {
     let fixture = Fixture::new("sample-change");
     fixture.init(None);
-    fixture.record_scope(None);
+    fixture.record_scope(Attestation::Unknown);
     let ledger = fixture.ledger(&[]);
     let source = ledger.to_string_pretty();
     let edited = |from: &str, to: &str| {
