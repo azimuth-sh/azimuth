@@ -258,8 +258,23 @@ def initialize(db):
     db.commit()
 
 
+def superseded_contexts(db, observation):
+    capture = observation['capture']
+    rows = db.execute("SELECT fingerprint,payload FROM target_outbox WHERE json_extract(payload,'$.observation.kind')='context' AND json_extract(payload,'$.observation.source')=? AND json_extract(payload,'$.observation.capture.instance')=?", (observation['source'], capture['instance'])).fetchall()
+    return [identity for identity, payload in rows
+            if (queued := json.loads(payload)['observation'])['targets'] == observation['targets']
+            and queued['capture']['after']['report'] == capture['after']['report']]
+
+
+# AAS assesses only the newest context capture of an instance, and a process cannot change its reported context, so a
+# queued capture with the same report is redundant once a newer one is staged. Dropping it lets current context reach
+# AAS right after an outage instead of behind the whole backlog, and keeps the outbox from filling with heartbeats.
+# A capture whose report differs is kept, because the change itself is evidence.
 def stage_targets(db, project, observations, source=None, cursor=None, history_gap=False, max_pending=10000, token_file=None):
     with db:
+        for observation in observations:
+            if observation.get('kind') == 'context':
+                db.executemany('DELETE FROM target_outbox WHERE fingerprint=?', [(identity,) for identity in superseded_contexts(db, observation)])
         pending = sum(db.execute('SELECT COUNT(*) FROM ' + table).fetchone()[0] for table in ('outbox', 'target_outbox'))
         if pending + len(observations) > max_pending:
             fail('Outbox full; checkpoint retained')
