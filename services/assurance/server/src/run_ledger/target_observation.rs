@@ -250,7 +250,6 @@ pub(super) async fn record(
             .bind(&project).bind(&fp).bind(body.observation["source"].as_str()).bind(body.observation["execution_id"].as_str()).bind(body.observation["environment"].as_str()).bind(&principal).bind(time).bind(body.observation["started_at_ms"].as_i64()).bind(body.observation["finished_at_ms"].as_i64()).execute(&mut *tx).await?;
     }
     tx.commit().await?;
-    resolve_pending(&state, &project).await?;
     Ok((
         if replayed {
             StatusCode::OK
@@ -396,15 +395,22 @@ fn bracket(raw: &Value, history: &[Reconciliation]) -> Option<(Reconciliation, R
     Some((before.clone(), after.clone()))
 }
 
+const UNRESOLVABLE: &str = "No complete reconciliation bracket of one deployment covers this observation and its targets, or its release does not enroll the Check as deployment evidence; the surrounding history is final, so resolution is not retried";
+
 // Only observations with a reconciliation before their start and after their end can resolve, so the rest are not
-// loaded at all. A bracketed observation that still fails is retried with exponential backoff (10 s doubling to 15 min).
+// loaded at all. Deployment observations are accepted only in increasing observed time, so once a later one exists
+// the bracket history is final and a bracketed observation that does not resolve never will: it is marked
+// unresolvable instead of being retried forever. An error, such as a context contract that is not yet registered,
+// can be cured later and is retried with exponential backoff (10 s doubling to 15 min).
+//
+// Resolution has its own lock rather than the ingestion lock so that a slow batch never delays a submission.
 pub(super) async fn resolve_pending(state: &LedgerState, project: &str) -> Result<(), LedgerError> {
     let mut tx = state.pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
-        .bind(format!("{project}|target-observations"))
+        .bind(format!("{project}|target-resolution"))
         .execute(&mut *tx)
         .await?;
-    let pending: Vec<(String,Value,String)> = sqlx::query_as("SELECT t.fingerprint,assurance_record('target_observation',t.project,t.fingerprint),t.submitted_by FROM target_observations t WHERE t.project=$1 AND t.last_resolution_attempt_ms <= (extract(epoch FROM clock_timestamp())*1000)::bigint-LEAST(10000::bigint<<LEAST(t.resolution_attempts,7),900000) AND NOT EXISTS(SELECT 1 FROM target_observation_resolutions r WHERE r.project=t.project AND r.observation_fingerprint=t.fingerprint) AND (t.started_at_ms IS NULL OR (EXISTS(SELECT 1 FROM deployment_observations d WHERE d.project=t.project AND d.environment=t.environment AND d.observed_at_ms<=t.started_at_ms) AND EXISTS(SELECT 1 FROM deployment_observations d WHERE d.project=t.project AND d.environment=t.environment AND d.observed_at_ms>=t.finished_at_ms AND d.observed_at_ms>t.started_at_ms))) ORDER BY t.last_resolution_attempt_ms,t.sequence LIMIT 500")
+    let pending: Vec<(String,Value,String)> = sqlx::query_as("SELECT t.fingerprint,assurance_record('target_observation',t.project,t.fingerprint),t.submitted_by FROM target_observations t WHERE t.project=$1 AND NOT t.unresolvable AND t.last_resolution_attempt_ms <= (extract(epoch FROM clock_timestamp())*1000)::bigint-LEAST(10000::bigint<<LEAST(t.resolution_attempts,7),900000) AND NOT EXISTS(SELECT 1 FROM target_observation_resolutions r WHERE r.project=t.project AND r.observation_fingerprint=t.fingerprint) AND (t.started_at_ms IS NULL OR (EXISTS(SELECT 1 FROM deployment_observations d WHERE d.project=t.project AND d.environment=t.environment AND d.observed_at_ms<=t.started_at_ms) AND EXISTS(SELECT 1 FROM deployment_observations d WHERE d.project=t.project AND d.environment=t.environment AND d.observed_at_ms>=t.finished_at_ms AND d.observed_at_ms>t.started_at_ms))) ORDER BY t.last_resolution_attempt_ms,t.sequence LIMIT 500")
         .bind(project).fetch_all(&mut *tx).await?;
     for (fp, raw, principal) in pending {
         sqlx::query("UPDATE target_observations SET started_at_ms=$3,finished_at_ms=$4 WHERE project=$1 AND fingerprint=$2 AND started_at_ms IS NULL")
@@ -412,7 +418,11 @@ pub(super) async fn resolve_pending(state: &LedgerState, project: &str) -> Resul
         sqlx::query("UPDATE target_observations SET resolution_attempts=resolution_attempts+1,last_resolution_attempt_ms=(extract(epoch FROM clock_timestamp())*1000)::bigint WHERE project=$1 AND fingerprint=$2").bind(project).bind(&fp).execute(&mut *tx).await?;
         let mut item = tx.begin().await?;
         match resolve_one(&mut item, project, &fp, &raw, &principal).await {
-            Ok(_) => item.commit().await?,
+            Ok(true) => item.commit().await?,
+            Ok(false) => {
+                item.rollback().await?;
+                sqlx::query("UPDATE target_observations SET unresolvable=true,resolution_diagnostic=$3 WHERE project=$1 AND fingerprint=$2").bind(project).bind(&fp).bind(UNRESOLVABLE).execute(&mut *tx).await?;
+            }
             Err(error) => {
                 item.rollback().await?;
                 if error.status.is_server_error() {

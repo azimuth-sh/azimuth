@@ -251,6 +251,45 @@ fn check_target(mut raw: Value, package: &Value, execution: &str) -> Value {
     raw
 }
 
+const UNRESOLVABLE: &str = "resolution is not retried";
+
+// Resolution runs only in the background worker, so a reader waits for the state it expects instead of
+// reading it straight after a submission.
+async fn settled(
+    client: &Client,
+    endpoint: &str,
+    ready: impl Fn(&Value) -> bool,
+) -> Result<Value, Box<dyn Error>> {
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        let records: Value = client
+            .get(endpoint)
+            .bearer_auth(VIEWER)
+            .send()
+            .await?
+            .json()
+            .await?;
+        if ready(&records) {
+            return Ok(records);
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err(format!("target observations did not settle: {records}").into());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
+fn has_resolution(records: &Value, index: usize) -> bool {
+    records["records"][index]["resolution"].is_object()
+}
+
+fn unresolvable(records: &Value, index: usize) -> bool {
+    records["records"][index]["resolution"].is_null()
+        && records["records"][index]["diagnostics"][0]
+            .as_str()
+            .is_some_and(|diagnostic| diagnostic.contains(UNRESOLVABLE))
+}
+
 #[tokio::test]
 async fn retained_target_evidence_resolves_historically_with_exact_replay_and_roles(
 ) -> Result<(), Box<dyn Error>> {
@@ -400,13 +439,10 @@ async fn retained_target_evidence_resolves_historically_with_exact_replay_and_ro
         "{}",
         response.text().await?
     );
-    let resolved: Value = client
-        .get(&endpoint)
-        .bearer_auth(VIEWER)
-        .send()
-        .await?
-        .json()
-        .await?;
+    let resolved = settled(&client, &endpoint, |records| {
+        has_resolution(records, 0) && has_resolution(records, 1)
+    })
+    .await?;
     assert_eq!(resolved["records"].as_array().unwrap().len(), 2);
     let old_deployment = resolved["records"][0]["resolution"]["deployment"].clone();
     assert!(old_deployment.is_string(), "{resolved}");
@@ -516,18 +552,14 @@ async fn retained_target_evidence_resolves_historically_with_exact_replay_and_ro
         "{}",
         response.text().await?
     );
-    let records: Value = client
-        .get(&endpoint)
-        .bearer_auth(VIEWER)
-        .send()
-        .await?
-        .json()
-        .await?;
+    let records = settled(&client, &endpoint, |records| {
+        has_resolution(records, 2) && unresolvable(records, 3)
+    })
+    .await?;
     assert_eq!(
         records["records"][2]["resolution"]["deployment"], old_deployment,
         "{records}"
     );
-    assert!(records["records"][3]["resolution"].is_null(), "{records}");
     let concurrent = target(now - 4000, now - 3000, "concurrent", &contract);
     let a = client
         .post(&endpoint)
@@ -598,15 +630,8 @@ async fn retained_target_evidence_resolves_historically_with_exact_replay_and_ro
         "{}",
         response.text().await?
     );
-    let records: Value = client
-        .get(&endpoint)
-        .bearer_auth(VIEWER)
-        .send()
-        .await?
-        .json()
-        .await?;
-    assert!(records["records"][5]["resolution"].is_null());
-    assert!(records["records"][6]["resolution"].is_null());
+    let records = settled(&client, &endpoint, |records| unresolvable(records, 6)).await?;
+    assert!(records["records"][5]["resolution"].is_null(), "{records}");
     sqlx::query("UPDATE assurance_deployment SET f_verification_target_fingerprint=$3 WHERE _record_id IN (SELECT id FROM assurance_records WHERE kind='deployment' AND project=$1 AND record_key=$2)").bind("project").bind(old_deployment.as_str()).bind(fp('8')).execute(&pool).await?;
     let poison = check_target(
         target(now - 4000, now - 3000, "unused", &contract),
@@ -642,13 +667,15 @@ async fn retained_target_evidence_resolves_historically_with_exact_replay_and_ro
         "{}",
         response.text().await?
     );
-    let retained: Value = client
-        .get(&endpoint)
-        .bearer_auth(VIEWER)
-        .send()
-        .await?
-        .json()
-        .await?;
+    let retained = settled(&client, &endpoint, |records| {
+        has_resolution(records, 8)
+            && records["records"][7]["diagnostics"][0]
+                .as_str()
+                .is_some_and(|diagnostic| {
+                    diagnostic.contains("Verification Target fingerprint differs")
+                })
+    })
+    .await?;
     assert!(retained["records"][7]["resolution"].is_null(), "{retained}");
     assert!(
         retained["records"][7]["diagnostics"][0]
@@ -744,13 +771,7 @@ async fn retained_target_evidence_resolves_historically_with_exact_replay_and_ro
         "{}",
         response.text().await?
     );
-    let records: Value = client
-        .get(&endpoint)
-        .bearer_auth(VIEWER)
-        .send()
-        .await?
-        .json()
-        .await?;
+    let records = settled(&client, &endpoint, |records| has_resolution(records, 9)).await?;
     let second_run = records["records"][9]["resolution"]["run_fingerprint"]
         .as_str()
         .unwrap();
@@ -776,6 +797,44 @@ async fn retained_target_evidence_resolves_historically_with_exact_replay_and_ro
         second_run["verification_target_fingerprint"],
         run["verification_target_fingerprint"]
     );
+    let mut resolution = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind("project|target-resolution")
+        .execute(&mut *resolution)
+        .await?;
+    let independent = target(later - 90, later - 80, "during-resolution", &contract);
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        client
+            .post(&endpoint)
+            .bearer_auth(PUBLISHER)
+            .json(&json!({"observation":independent}))
+            .send(),
+    )
+    .await??;
+    assert_eq!(
+        response.status(),
+        StatusCode::CREATED,
+        "{}",
+        response.text().await?
+    );
+    observed["observed_at_ms"] = json!(later - 50);
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        client
+            .post(format!("{base}/environments/production/observations"))
+            .bearer_auth(PUBLISHER)
+            .json(&json!({"expected_revision":6,"observation":observed}))
+            .send(),
+    )
+    .await??;
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "{}",
+        response.text().await?
+    );
+    resolution.rollback().await?;
     let columns: i64 = sqlx::query_scalar("SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND udt_name IN ('json','jsonb')").fetch_one(&pool).await?;
     assert_eq!(columns, 0);
     migrate(&pool).await?;
