@@ -395,28 +395,55 @@ pub fn reference_json(reference: &ReferenceDescriptor) -> Json {
     ])
 }
 
-pub fn migration_reference(from: &str, to: &str) -> Option<&'static str> {
-    match (from, to) {
-        ("0.1.0-alpha.3", "0.1.0-alpha.4") => Some(include_str!(
-            "../resources/migrations/0.1.0-alpha.3-to-0.1.0-alpha.4.md"
-        )),
-        ("0.1.0-alpha.4", "0.1.0-alpha.5") => Some(include_str!(
-            "../resources/migrations/0.1.0-alpha.4-to-0.1.0-alpha.5.md"
-        )),
-        ("0.1.0-alpha.5", "0.1.0-alpha.6") => Some(include_str!(
-            "../resources/migrations/0.1.0-alpha.5-to-0.1.0-alpha.6.md"
-        )),
-        ("0.1.0-alpha.6", "0.1.0-alpha.7") => Some(include_str!(
-            "../resources/migrations/0.1.0-alpha.6-to-0.1.0-alpha.7.md"
-        )),
-        ("0.1.0-alpha.7", "0.1.0-alpha.8") => Some(include_str!(
-            "../resources/migrations/0.1.0-alpha.7-to-0.1.0-alpha.8.md"
-        )),
-        ("0.1.0-alpha.8", "0.1.0-alpha.9") => Some(include_str!(
-            "../resources/migrations/0.1.0-alpha.8-to-0.1.0-alpha.9.md"
-        )),
-        _ => None,
+/// Single-release migration edges, each with the reference describing that step.
+const RELEASE_MIGRATIONS: &[(&str, &str, &str)] = &[
+    (
+        "0.1.0-alpha.3",
+        "0.1.0-alpha.4",
+        include_str!("../resources/migrations/0.1.0-alpha.3-to-0.1.0-alpha.4.md"),
+    ),
+    (
+        "0.1.0-alpha.4",
+        "0.1.0-alpha.5",
+        include_str!("../resources/migrations/0.1.0-alpha.4-to-0.1.0-alpha.5.md"),
+    ),
+    (
+        "0.1.0-alpha.5",
+        "0.1.0-alpha.6",
+        include_str!("../resources/migrations/0.1.0-alpha.5-to-0.1.0-alpha.6.md"),
+    ),
+    (
+        "0.1.0-alpha.6",
+        "0.1.0-alpha.7",
+        include_str!("../resources/migrations/0.1.0-alpha.6-to-0.1.0-alpha.7.md"),
+    ),
+    (
+        "0.1.0-alpha.7",
+        "0.1.0-alpha.8",
+        include_str!("../resources/migrations/0.1.0-alpha.7-to-0.1.0-alpha.8.md"),
+    ),
+    (
+        "0.1.0-alpha.8",
+        "0.1.0-alpha.9",
+        include_str!("../resources/migrations/0.1.0-alpha.8-to-0.1.0-alpha.9.md"),
+    ),
+];
+
+/// The references of consecutive release edges leading from `from` to `to`, in order.
+///
+/// An installation several releases behind migrates through every intermediate edge, so a
+/// release is reachable whenever each step on the way has one.
+pub fn migration_path(from: &str, to: &str) -> Option<Vec<&'static str>> {
+    let mut references = Vec::new();
+    let mut release = from;
+    while release != to {
+        let (_, target, reference) = RELEASE_MIGRATIONS
+            .iter()
+            .find(|(source, _, _)| *source == release)?;
+        references.push(*reference);
+        release = target;
     }
+    (!references.is_empty()).then_some(references)
 }
 
 pub fn migration_line_reference(from: &str, to: &str) -> Option<&'static str> {

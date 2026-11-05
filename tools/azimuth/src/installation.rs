@@ -421,7 +421,7 @@ pub fn migration_plan(root: &Path) -> Result<Json, String> {
     let repository = repository_root(root)?;
     let installation_relative = repository_relative(&repository, &installation_path)?;
     let release_supported =
-        resources::migration_reference(&installation.release_version, env!("CARGO_PKG_VERSION"))
+        resources::migration_path(&installation.release_version, env!("CARGO_PKG_VERSION"))
             .is_some()
             || installation.release_version == env!("CARGO_PKG_VERSION");
     let rewrites_account = resources::migration_line_reference(

@@ -25,7 +25,7 @@
 }
 ```
 
-`fromMigrationLine` and `fromRelease` are the installation's current values; `migrationLine` and `toRelease` are the running CLI's. A plan is `unsupported` when no release edge or migration-line edge reaches the running CLI.
+`fromMigrationLine` and `fromRelease` are the installation's current values; `migrationLine` and `toRelease` are the running CLI's. A plan is `unsupported` when no chain of consecutive release edges, or no migration-line edge, reaches the running CLI; an installation several releases behind migrates through every intermediate release edge.
 
 Disposition is exactly `automatic | review-required | unsupported`. Findings are deterministic human-readable accounts of semantic work that prevents automatic application; each names a file, a line and retired syntax that the rewrite cannot express. Each edit is exactly `{path, sha256, rewrittenSha256}`: a repository-relative path and the SHA-256 of the file's current and rewritten bytes. Edits sort by path.
 

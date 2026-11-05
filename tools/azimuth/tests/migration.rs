@@ -499,3 +499,34 @@ fn migrated_account_delta_operations_and_deployment_scope_pass_change_validate()
     assert!(String::from_utf8_lossy(&validated.stdout).contains("prospective"));
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn release_edges_chain_through_every_intermediate_release() {
+    let path = azimuth::resources::migration_path("0.1.0-alpha.6", "0.1.0-alpha.9").unwrap();
+    assert_eq!(
+        path,
+        [
+            include_str!("../resources/migrations/0.1.0-alpha.6-to-0.1.0-alpha.7.md"),
+            include_str!("../resources/migrations/0.1.0-alpha.7-to-0.1.0-alpha.8.md"),
+            include_str!("../resources/migrations/0.1.0-alpha.8-to-0.1.0-alpha.9.md"),
+        ]
+    );
+    assert_eq!(
+        azimuth::resources::migration_path("0.1.0-alpha.8", "0.1.0-alpha.9")
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        azimuth::resources::migration_path("0.1.0-alpha.9", "0.1.0-alpha.9"),
+        None
+    );
+    assert_eq!(
+        azimuth::resources::migration_path("0.1.0-alpha.9", "0.1.0-alpha.6"),
+        None
+    );
+    assert_eq!(
+        azimuth::resources::migration_path("0.1.0-alpha.2", "0.1.0-alpha.9"),
+        None
+    );
+}
