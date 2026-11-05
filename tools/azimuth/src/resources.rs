@@ -409,6 +409,9 @@ pub fn migration_reference(from: &str, to: &str) -> Option<&'static str> {
         ("0.1.0-alpha.6", "0.1.0-alpha.7") => Some(include_str!(
             "../resources/migrations/0.1.0-alpha.6-to-0.1.0-alpha.7.md"
         )),
+        ("0.1.0-alpha.7", "0.1.0-alpha.8") => Some(include_str!(
+            "../resources/migrations/0.1.0-alpha.7-to-0.1.0-alpha.8.md"
+        )),
         _ => None,
     }
 }
