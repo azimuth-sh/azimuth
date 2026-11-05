@@ -8,7 +8,7 @@ The `azimuth-workflow` skill operates the process. Task skills explain how to au
 
 ```text
 azimuth workflow definition --workflow change-development [--out <file>]
-azimuth workflow init --workflow change-development --inputs <file> --instance <file> --repositories <file> [--predecessor <file>]
+azimuth workflow init --workflow change-development --inputs <file> --instance <file> --repositories <file> [--predecessor <file> [--carry results|none]]
 azimuth workflow next --instance <file> --repositories <file> [--out <file>]
 azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--descriptor <file> | --provenance unknown] [--out <file>]
 azimuth workflow verify --instance <file> --repositories <file> [--out <file>]

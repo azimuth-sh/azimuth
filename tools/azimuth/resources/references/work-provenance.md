@@ -41,6 +41,13 @@ azimuth workflow init ... --instance .azimuth/workflow.json --predecessor .azimu
 
 `abandon` is optional when the old instance is simply superseded; an abandoned instance accepts no further updates. The fresh instance records the predecessor's id, relative `ref`, revision and canonical fingerprint. Do not modify or delete a predecessor afterwards: the ledger export fails when its content no longer matches.
 
+`init --predecessor` carries the predecessor's results unless you pass `--carry none`:
+- A result carries when its task exists in the new definition with an identical definition and every file it relied on and produced is byte-identical.
+- A rejection carries as history when its own records are unchanged, so the corrections that answered it stay current.
+- Anything else stays outstanding.
+
+The command prints `carry_over`, a list of every predecessor result with its status and reason. Carried results are not new attempts: they carry no provenance and the ledger counts them only in the predecessor. Do not re-record a carried result; continue from what `workflow next` reports.
+
 ## Committed ledger
 
 `change finalize` writes `<change>/provenance/ledger.json` when `<change>/.azimuth/workflow.json` exists. Commit it with the change; it is generated, never hand-edited, and archived with the change. `change archive` fails when the committed ledger differs from a fresh export. Export on demand, adding historical instances that predate predecessor links:

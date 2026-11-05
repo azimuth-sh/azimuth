@@ -680,8 +680,8 @@ fn first_recorded_at(instance: &Instance) -> Option<u64> {
         .value
         .get("history")?
         .as_array()?
-        .first()?
-        .get("provenance")?
+        .iter()
+        .find_map(|entry| entry.get("provenance"))?
         .get("recorded_at_ms")
         .and_then(safe_integer)
 }
@@ -938,6 +938,11 @@ fn attempts(
     let history = items(&instance.value, "history", "workflow instance").map_err(&fail)?;
     let mut attempts = Vec::new();
     for (index, entry) in history.iter().enumerate() {
+        // A carried result is the predecessor's attempt, exported with the predecessor instance;
+        // counting it here would report the same work twice.
+        if entry.get("carried").is_some() {
+            continue;
+        }
         let what = format!("history entry {}", index + 1);
         let result = entry
             .get("result")
