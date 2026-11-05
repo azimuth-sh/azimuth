@@ -197,7 +197,7 @@ impl FindingKind {
             }
             Self::DanglingCheckImplementation => "Retarget the source marker to a declared Check.",
             Self::RemovedIdentityReferenced => {
-                "Remove or retarget each listed reference through this change's realization and verification deltas, support or code `Realizes` sites; intent-apply refuses the removal while any remains."
+                "Remove or retarget each listed reference through this change's realization and verification deltas, support or code `Realizes` sites; intent-apply refuses the removal while any remains in the accepted account, and finalize while any remains after composing this change's deltas."
             }
         }
     }

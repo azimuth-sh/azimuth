@@ -78,7 +78,7 @@ An active correction may record actual human acceptance for these verified exist
 
 ## Finalization closure
 
-The local workflow's combined `finalize-change` action applies any still-pending reviewed facets through their projectors, invokes finalization, then archives the completed account. The command operations remain individually inspectable/recoverable. Native completion validation requires a verified retained-input package for this workflow cohort and rejects a sealed review omitted from its native dependency closure.
+The local workflow's combined `finalize-change` action applies any still-pending reviewed facets, invokes finalization, then archives the completed account. `change finalize` applies pending intent and account deltas together from their reviewed previews and checks the composed account before writing anything ([intent-delta.md](intent-delta.md#combined-application-at-finalize)). The command operations remain individually inspectable/recoverable. Native completion validation requires a verified retained-input package for this workflow cohort and rejects a sealed review omitted from its native dependency closure.
 
 Work Provenance's committed shaping ledger excludes the consuming `finalize-change` action so recording that action does not recursively stale its own input. The actual finalization result is retained separately under `provenance/finalization-result.json`; it is not fed back into the semantic input manifest or ledger. Finalization and archive validate the same complete candidate and real acceptance. Generated records and relocation cannot excuse behaviorally changed source; affected native dependencies still require reassessment.
 
