@@ -172,12 +172,12 @@ fn model_enforces_project_check_cardinality_and_exports_only_current_root_keys()
         ..Default::default()
     };
     assert!(model
-        .account_check_issues()
+        .account_check_issues(&Default::default())
         .iter()
         .any(|issue| issue.message.contains("already has a definition")));
 
     model.account_verifications.pop();
-    assert!(model.account_check_issues().is_empty());
+    assert!(model.account_check_issues(&Default::default()).is_empty());
     let exported = model.to_json(&[]);
     let json::Json::Obj(fields) = &exported else {
         panic!("export root is an object");

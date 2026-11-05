@@ -48,7 +48,11 @@ Ordinary unit, component, integration and release tests remain normal software. 
 
 Keep intent deltas proposed while implementation is unfinished. During proposal review, run
 `azimuth change intent-capture` for replacements or removals, then
-`azimuth change intent-preview --out <file>` and inspect the target spec and diff. Near acceptance,
+`azimuth change intent-preview --out <file>` and inspect the target spec and diff. A removed
+Requirement or Scenario that realization, verification, support or code still references is an owed
+repair: `azimuth change validate` reports it as `removed-identity-referenced` until the change's
+realization and verification deltas and implementation remove the references, and `intent-apply`
+refuses it until the accepted account no longer holds them. Near acceptance,
 refresh the preview and review any drift. When implemented behavior satisfies the reviewed intent,
 run `azimuth change intent-apply --preview <file>` to update package `spec.md` mechanically.
 `finalize` and `archive` only verify that application occurred; they do not apply intent.

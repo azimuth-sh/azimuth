@@ -228,6 +228,7 @@ pub fn inspect_with_support(
         &loaded.specs,
         supports,
         &known_mechanisms,
+        &BTreeSet::new(),
     );
     if !check_errors.is_empty() {
         return Err(check_errors);
@@ -984,6 +985,7 @@ pub fn authored_check_issues<'a>(
     specs: &[Spec],
     supports: &[AccountSupport],
     mechanisms: &BTreeSet<String>,
+    owed_scenarios: &BTreeSet<String>,
 ) -> Vec<Diag> {
     let mut errors = Vec::new();
     let mut ids = BTreeMap::<String, String>::new();
@@ -1020,7 +1022,11 @@ pub fn authored_check_issues<'a>(
                 errors.push(Diag::at(&document.path, line,
                     format!("document-authored Check `{id}` also has source-authored semantics; retain only ImplementsCheck linkage")));
             }
-            for scenario in &check.scenarios {
+            for scenario in check
+                .scenarios
+                .iter()
+                .filter(|scenario| !owed_scenarios.contains(*scenario))
+            {
                 if !find_scenario_by_id(specs, scenario)
                     .is_some_and(|(_, target, _)| target.verification.is_some())
                 {

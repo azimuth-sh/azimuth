@@ -252,6 +252,9 @@ struct Options {
     assurance_snapshot: Option<PathBuf>,
     only: Vec<String>,
     out: Option<PathBuf>,
+    /// Scenarios a validated change removes whose Check bindings are reported as owed reference
+    /// repairs instead of refusing the prospective load. Empty outside `change validate`.
+    owed_scenarios: std::collections::BTreeSet<String>,
 }
 
 fn run(args: &[String]) -> Result<ExitCode, String> {
@@ -1489,19 +1492,45 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
         (acceptances, ratified) = change_acceptances(&root, &report, &loaded.model)?;
         azimuth::change::waive_accepted_requirements(&mut findings, &ratified);
     }
-    let projection = match azimuth::intent::project(&root, &model_root, &loaded.model) {
-        Ok(projection) => projection,
-        Err(errors) => {
-            for error in errors {
-                eprintln!("error: {error}");
+    // Only operations that write or seal accepted state refuse a removal whose references are still
+    // unrepaired; authoring and inspection report them as owed by later facets.
+    let removal_references =
+        if matches!(operation.as_str(), "intent-apply" | "finalize" | "archive") {
+            azimuth::intent::RemovalReferences::Refused
+        } else {
+            azimuth::intent::RemovalReferences::Owed
+        };
+    let projection =
+        match azimuth::intent::project(&root, &model_root, &loaded.model, removal_references) {
+            Ok(projection) => projection,
+            Err(errors) => {
+                for error in errors {
+                    eprintln!("error: {error}");
+                }
+                return Ok(ExitCode::from(2));
             }
-            return Ok(ExitCode::from(2));
-        }
-    };
+        };
 
     match operation.as_str() {
         "intent-preview" => {
             let preview = projection.preview();
+            // The preview file is the reviewed spec target that intent-apply compares byte for
+            // byte. Owed repairs describe the current account, which the change's later facets
+            // repair before application, so they stay out of that snapshot.
+            for repair in &projection.owed_repairs {
+                eprintln!(
+                    "owed reference repair: {}:{}: {}",
+                    repair.removal.delta.display(),
+                    repair.removal.line,
+                    repair.describe()
+                );
+            }
+            if !projection.owed_repairs.is_empty() {
+                eprintln!(
+                    "note: {} removal(s) still referenced by the accepted account; `intent-apply` refuses them until this change's realization and verification deltas and code repair the references, and `azimuth change validate` reports which remain after those deltas",
+                    projection.owed_repairs.len()
+                );
+            }
             if let Some(out) = &options.out {
                 let model_dir = fs::canonicalize(&model_root)
                     .map_err(|error| format!("{}: {error}", model_root.display()))?;
@@ -1626,6 +1655,9 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
                         if *applied { "applied" } else { "planned" }
                     );
                 }
+            }
+            for repair in &projection.owed_repairs {
+                println!("  owed reference repair · {}", repair.describe());
             }
             if let Some(reason) = &report.unchanged_intent_reason {
                 println!("  intent unchanged · {reason}");
@@ -1927,7 +1959,12 @@ fn load_catalog(
         .repository
         .as_deref()
         .map(|repository| (repository, options.manifests.as_slice()));
-    azimuth::load_assembly_with_linkage(assembly, linkage, &options.only)
+    azimuth::load_assembly_with_owed_bindings(
+        assembly,
+        linkage,
+        &options.only,
+        &options.owed_scenarios,
+    )
 }
 
 /// The commands that load a model only to report on it may qualify one repository's linkage;
@@ -1944,12 +1981,13 @@ fn reject_repository(options: &Options) -> Result<(), String> {
 fn load_local_inputs(options: &Options) -> Result<azimuth::Loaded, String> {
     match options_catalog(options)? {
         Some(assembly) => load_catalog(&assembly, options).map_err(render_diagnostics),
-        None => azimuth::load_with_support(
+        None => azimuth::load_with_owed_bindings(
             &options.model,
             &options.workspace,
             &options.manifests,
             &options.supports,
             &options.only,
+            &options.owed_scenarios,
         )
         .map_err(render_diagnostics),
     }
@@ -3602,6 +3640,7 @@ fn parse_options(args: &[String], allow_scope: bool) -> Result<Options, String> 
         assurance_snapshot: None,
         only: Vec::new(),
         out: None,
+        owed_scenarios: Default::default(),
     };
     let mut scope_seen = false;
     let mut i = 0;
@@ -3960,6 +3999,7 @@ fn command_change_validate(root: &std::path::Path, options: &Options) -> Result<
         assurance_snapshot: options.assurance_snapshot.clone(),
         only: Vec::new(),
         out: None,
+        owed_scenarios: Default::default(),
     };
     if let Some(assembly) = &mut assembly {
         assembly.model_roots = vec![stage.0.clone()];
@@ -3981,8 +4021,13 @@ fn command_change_validate(root: &std::path::Path, options: &Options) -> Result<
     };
     let change =
         azimuth::change::inspect(root, &accepted.model).map_err(|errors| errors.join("\n"))?;
-    let intent = azimuth::intent::project(root, &stage.0, &accepted.model)
-        .map_err(|errors| errors.join("\n"))?;
+    let intent = azimuth::intent::project(
+        root,
+        &stage.0,
+        &accepted.model,
+        azimuth::intent::RemovalReferences::Owed,
+    )
+    .map_err(|errors| errors.join("\n"))?;
     let account = azimuth::account_delta::project_new_modules(&root.join("deltas"), &stage.0)
         .map_err(|errors| errors.join("\n"))?;
     for file in &intent.files {
@@ -3996,25 +4041,61 @@ fn command_change_validate(root: &std::path::Path, options: &Options) -> Result<
         write_staged_facet(&file.path, &file.after)?;
     }
     staged_options.model = stage.0.clone();
+    staged_options.owed_scenarios = intent
+        .removals
+        .iter()
+        .filter_map(|removal| removal.scenario.clone())
+        .collect();
     let prospective = if let Some(assembly) = &assembly {
-        azimuth::load_assembly(assembly, &[]).map_err(render_diagnostics)?
+        azimuth::load_assembly_with_owed_bindings(
+            assembly,
+            None,
+            &[],
+            &staged_options.owed_scenarios,
+        )
+        .map_err(render_diagnostics)?
     } else {
         load_validation_inputs(&staged_options)?
     };
     report(&prospective.warnings, "warning");
     let mut findings = validation::validate(&prospective.model);
     verify_assurance_snapshot(&prospective.model, options)?;
-    for finding in &mut findings {
-        if let Ok(relative) = std::path::Path::new(&finding.path).strip_prefix(&stage.0) {
-            finding.path = original_roots
+    let original_path = |path: &str| -> Option<String> {
+        let relative = std::path::Path::new(path).strip_prefix(&stage.0).ok()?;
+        Some(
+            original_roots
                 .iter()
                 .map(|source| source.join(relative))
                 .find(|path| path.exists())
                 .unwrap_or_else(|| root.join("deltas").join(relative))
                 .display()
-                .to_string();
+                .to_string(),
+        )
+    };
+    let (owed, owed_locations) = owed_reference_repairs(
+        &intent.removals,
+        &prospective.model,
+        &account,
+        &original_path,
+    );
+    // A dangling declaration that an owed repair already lists is the same defect; reporting it
+    // twice would only make the repair look larger than it is.
+    findings.retain(|finding| {
+        !(matches!(
+            finding.kind,
+            validation::FindingKind::DanglingRealization
+                | validation::FindingKind::DanglingRealizationEntry
+                | validation::FindingKind::DanglingVerificationScenario
+                | validation::FindingKind::DanglingRealizationObligation
+        ) && owed_locations.contains(&(finding.path.clone(), finding.line)))
+    });
+    for finding in &mut findings {
+        if let Some(path) = original_path(&finding.path) {
+            finding.path = path;
         }
     }
+    findings.extend(owed);
+    validation::sort(&mut findings);
     let blockers = if options.validation_scope == ValidationScope::Acceptance {
         azimuth::change::completion_issues(root, &change)
     } else {
@@ -4033,6 +4114,83 @@ fn command_change_validate(root: &std::path::Path, options: &Options) -> Result<
         options.validation_scope,
         options.out.as_deref(),
     )
+}
+
+/// Checks each planned removal against the prospective account, which already composes this
+/// change's realization and verification deltas, so a reference those deltas repair no longer
+/// counts. A reference that remains is owed by the facet that carries it. Also returns every
+/// owed reference's prospective `(path, line)`, with `0` for a reference without a line.
+fn owed_reference_repairs(
+    removals: &[azimuth::intent::Removal],
+    prospective: &azimuth::model::Model,
+    account: &azimuth::account_delta::AccountProjection,
+    original_path: &dyn Fn(&str) -> Option<String>,
+) -> (
+    Vec<validation::Finding>,
+    std::collections::BTreeSet<(String, usize)>,
+) {
+    let mut locations = std::collections::BTreeSet::new();
+    let findings = removals
+        .iter()
+        .filter_map(|removal| {
+            let references = removal.references(prospective);
+            if references.is_empty() {
+                return None;
+            }
+            locations.extend(
+                references
+                    .iter()
+                    .map(|reference| (reference.path.clone(), reference.line.unwrap_or(0))),
+            );
+            let owed = references
+                .iter()
+                .map(|reference| {
+                    let path =
+                        original_path(&reference.path).unwrap_or_else(|| reference.path.clone());
+                    let location = match reference.line {
+                        Some(line) => format!("{path}:{line}"),
+                        None => path,
+                    };
+                    // A composed facet's line belongs to the target its delta produces, not to the
+                    // accepted file at the same path.
+                    let composed = account
+                        .files
+                        .iter()
+                        .find(|file| file.path == std::path::Path::new(&reference.path))
+                        .map(|file| {
+                            format!(" of the target composed from {}", file.source.display())
+                        })
+                        .unwrap_or_default();
+                    format!(
+                        "{} {location}{composed} ({})",
+                        reference.facet.owner(),
+                        reference.subject
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            let (entity_kind, id) = match &removal.scenario {
+                Some(scenario) => (azimuth::diag::EntityKind::Scenario, scenario.clone()),
+                None => (
+                    azimuth::diag::EntityKind::Requirement,
+                    removal.requirement.clone(),
+                ),
+            };
+            Some(validation::Finding {
+                kind: validation::FindingKind::RemovedIdentityReferenced,
+                severity: validation::Severity::Error,
+                requirement: Some(id),
+                entity_kind: Some(entity_kind),
+                path: removal.delta.display().to_string(),
+                line: removal.line,
+                detail: format!(
+                    "removed {} is still referenced; repair owed by {owed}",
+                    removal.identity()
+                ),
+            })
+        })
+        .collect();
+    (findings, locations)
 }
 
 fn write_staged_facet(path: &std::path::Path, content: &str) -> Result<(), String> {

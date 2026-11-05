@@ -157,7 +157,7 @@ fn dangling_realization_names_the_site_and_its_absent_requirement() {
 
 #[test]
 fn finding_registry_is_exhaustive_and_has_guidance() {
-    assert_eq!(FindingKind::ALL.len(), 29);
+    assert_eq!(FindingKind::ALL.len(), 30);
     let mut names = BTreeSet::new();
     for kind in FindingKind::ALL {
         assert!(!kind.name().is_empty());

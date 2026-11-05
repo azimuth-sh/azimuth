@@ -22,6 +22,130 @@ pub struct Projection {
     /// Requirements whose accepted reviews a planned Term replacement makes stale although this
     /// change does not replace them.
     pub successor_reviews: Vec<String>,
+    /// Every planned removal of an identity the target no longer carries, so a caller holding a
+    /// later account state (the change's composed realization and verification) can re-check it.
+    pub removals: Vec<Removal>,
+    /// Planned removals whose identity the projected-from model still references. Empty under
+    /// [`RemovalReferences::Refused`], which fails projection instead.
+    pub owed_repairs: Vec<OwedRepair>,
+}
+
+/// How projection treats a removed Requirement or Scenario that current account facets or code
+/// still reference.
+///
+/// The workflow authors and reviews the spec delta before the realization and verification
+/// deltas that repair those references exist, so authoring commands must report the repair as
+/// owed rather than refuse the projection. Application and finalization keep refusing: a
+/// dangling reference must never enter the accepted model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemovalReferences {
+    Owed,
+    Refused,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Removal {
+    pub spec: String,
+    pub requirement: String,
+    /// `None` removes the Requirement itself; its Scenarios are separate removals.
+    pub scenario: Option<String>,
+    pub delta: PathBuf,
+    pub line: usize,
+}
+
+/// The account facet or source that has to change for a removed identity to stop being referenced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RepairFacet {
+    Realization,
+    Verification,
+    Support,
+    Implementation,
+    Workspace,
+}
+
+impl RepairFacet {
+    pub fn owner(self) -> &'static str {
+        match self {
+            Self::Realization => "realization delta",
+            Self::Verification => "verification delta",
+            Self::Support => "support",
+            Self::Implementation => "code Realizes site",
+            Self::Workspace => "workspace declaration",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Reference {
+    pub facet: RepairFacet,
+    pub path: String,
+    /// `None` when the referencing declaration has no source line, such as a manifest-derived site.
+    pub line: Option<usize>,
+    pub subject: String,
+}
+
+impl Reference {
+    pub fn location(&self) -> String {
+        match self.line {
+            Some(line) => format!("{}:{line}", self.path),
+            None => self.path.clone(),
+        }
+    }
+
+    pub fn describe(&self) -> String {
+        format!(
+            "{} {} ({})",
+            self.facet.owner(),
+            self.location(),
+            self.subject
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct OwedRepair {
+    pub removal: Removal,
+    pub references: Vec<Reference>,
+}
+
+impl Removal {
+    pub fn identity(&self) -> String {
+        match &self.scenario {
+            Some(scenario) => format!(
+                "Scenario `{scenario}` of Requirement `{}`",
+                self.requirement
+            ),
+            None => format!(
+                "Requirement `{}` in module `{}`",
+                self.requirement, self.spec
+            ),
+        }
+    }
+
+    /// Every current reference to the removed identity in `model`, in a stable order.
+    pub fn references(&self, model: &Model) -> Vec<Reference> {
+        let mut references = match &self.scenario {
+            Some(scenario) => scenario_references(model, &self.spec, &self.requirement, scenario),
+            None => requirement_references(model, &self.spec, &self.requirement),
+        };
+        references.sort();
+        references.dedup();
+        references
+    }
+}
+
+impl OwedRepair {
+    pub fn describe(&self) -> String {
+        format!(
+            "removed {} is still referenced: {}",
+            self.removal.identity(),
+            self.references
+                .iter()
+                .map(Reference::describe)
+                .collect::<Vec<_>>()
+                .join("; ")
+        )
+    }
 }
 
 impl Projection {
@@ -93,6 +217,18 @@ struct Operation {
     line: usize,
 }
 
+impl Operation {
+    fn removal(&self, requirement: &str, scenario: Option<&str>) -> Removal {
+        Removal {
+            spec: self.spec.clone(),
+            requirement: requirement.to_string(),
+            scenario: scenario.map(str::to_string),
+            delta: self.path.clone(),
+            line: self.line,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum Kind {
     Add,
@@ -107,7 +243,12 @@ pub fn fingerprint(block: &str) -> String {
     format!("sha256:{}", sha256(block.trim_end().as_bytes()))
 }
 
-pub fn project(change: &Path, model_root: &Path, model: &Model) -> Result<Projection, Vec<String>> {
+pub fn project(
+    change: &Path,
+    model_root: &Path,
+    model: &Model,
+    references: RemovalReferences,
+) -> Result<Projection, Vec<String>> {
     let operations = read_operations(change)?;
     let retained_requirements = operations
         .iter()
@@ -142,6 +283,7 @@ pub fn project(change: &Path, model_root: &Path, model: &Model) -> Result<Projec
     let mut errors = Vec::new();
     let mut target_requirements = model.requirement_count();
     let mut successor_reviews = Vec::new();
+    let mut removals = Vec::new();
     for (spec, operations) in grouped {
         let old_requirements = model
             .specs
@@ -190,15 +332,18 @@ pub fn project(change: &Path, model_root: &Path, model: &Model) -> Result<Projec
                 ));
                 continue;
             }
+            let mut removed = Vec::new();
             match apply_operation(
                 &after,
                 &operation,
                 model,
                 &retained_requirements,
                 &retained_scenarios,
+                &mut removed,
             ) {
                 Ok((next, applied)) => {
                     after = next;
+                    removals.extend(removed);
                     if operation.kind == Kind::ReplaceTerm && !applied {
                         replaced_terms.push(operation.id.clone());
                     }
@@ -276,12 +421,34 @@ pub fn project(change: &Path, model_root: &Path, model: &Model) -> Result<Projec
             .into_iter()
             .map(|diag| diag.to_string()),
     );
+    let mut owed_repairs = Vec::new();
+    for removal in &removals {
+        let found = removal.references(model);
+        if found.is_empty() {
+            continue;
+        }
+        let repair = OwedRepair {
+            removal: removal.clone(),
+            references: found,
+        };
+        match references {
+            RemovalReferences::Owed => owed_repairs.push(repair),
+            RemovalReferences::Refused => errors.push(format!(
+                "{}:{}: {}; repair these references through this change's realization and verification deltas and code before application",
+                removal.delta.display(),
+                removal.line,
+                repair.describe()
+            )),
+        }
+    }
     if errors.is_empty() {
         Ok(Projection {
             files,
             operations: statuses,
             target_requirements,
             successor_reviews,
+            removals,
+            owed_repairs,
         })
     } else {
         Err(errors)
@@ -590,6 +757,7 @@ fn apply_operation(
     model: &Model,
     retained_requirements: &BTreeSet<String>,
     retained_scenarios: &BTreeSet<String>,
+    removed: &mut Vec<Removal>,
 ) -> Result<(String, bool), String> {
     let requirement_id = if operation.kind == Kind::RemoveScenario {
         model
@@ -717,7 +885,7 @@ fn apply_operation(
             }
             check_from(from, old)?;
             let accepted = parse_requirement(&operation.spec, old)?;
-            let removed: BTreeSet<_> = accepted
+            let removed_scenarios: BTreeSet<_> = accepted
                 .scenarios
                 .iter()
                 .map(|scenario| scenario.id.as_str())
@@ -733,15 +901,15 @@ fn apply_operation(
                         .collect()
                 })
                 .unwrap_or_default();
-            if removed != declared {
+            if removed_scenarios != declared {
                 return Err(format!(
                     "`{identity}` removes Scenarios {:?}; declare exactly these in `Remove scenarios:`",
-                    removed
+                    removed_scenarios
                 ));
             }
-            for id in &removed {
+            for id in &removed_scenarios {
                 if !retained_scenarios.contains(*id) {
-                    ensure_scenario_unreferenced(model, &operation.spec, requirement_id, id)?;
+                    removed.push(operation.removal(requirement_id, Some(id)));
                 }
             }
             Ok((replace_range(source, start, end, &block), false))
@@ -759,17 +927,12 @@ fn apply_operation(
             };
             check_from(from, &source[start..end])?;
             if !retained_requirements.contains(requirement_id) {
-                ensure_requirement_unreferenced(model, &operation.spec, requirement_id)?;
+                removed.push(operation.removal(requirement_id, None));
             }
             if let Some(accepted) = model.find_requirement(requirement_id) {
                 for scenario in &accepted.requirement.scenarios {
                     if !retained_scenarios.contains(&scenario.id) {
-                        ensure_scenario_unreferenced(
-                            model,
-                            &operation.spec,
-                            requirement_id,
-                            &scenario.id,
-                        )?;
+                        removed.push(operation.removal(requirement_id, Some(&scenario.id)));
                     }
                 }
             }
@@ -798,7 +961,7 @@ fn apply_operation(
             };
             check_from(from, &block[scenario_start..scenario_end])?;
             if !retained_scenarios.contains(scenario_id) {
-                ensure_scenario_unreferenced(model, &operation.spec, requirement_id, scenario_id)?;
+                removed.push(operation.removal(requirement_id, Some(scenario_id)));
             }
             let next = replace_range(
                 source,
@@ -995,78 +1158,214 @@ fn replace_range(source: &str, start: usize, end: usize, block: &str) -> String 
     result
 }
 
-fn ensure_requirement_unreferenced(
-    model: &Model,
-    spec: &str,
-    requirement: &str,
-) -> Result<(), String> {
-    let identity = requirement.to_string();
-    if model
-        .account_realization_for_requirement(spec, requirement)
-        .is_some()
-        || model.account_verifications.iter().any(|document| {
-            document
-                .requirements
-                .iter()
-                .any(|scope| scope.requirement == identity)
-        })
-        || model.account_supports.iter().any(|support| {
-            support
-                .elements
-                .iter()
-                .any(|element| element.requirement == identity)
-        })
-        || model.workspace.obligation(spec, requirement).is_some()
-        || model
-            .realizes
-            .iter()
-            .any(|site| site.requirement == requirement)
-        || model.realizations.iter().any(|realization| {
-            realization.spec == spec && realization.for_requirement(requirement).is_some()
-        })
+fn requirement_references(model: &Model, spec: &str, requirement: &str) -> Vec<Reference> {
+    let mut references = Vec::new();
+    for realization in model
+        .account_realizations
+        .iter()
+        .filter(|realization| realization.spec == spec)
     {
-        return Err(format!(
-            "Requirement `{requirement}` in module `{spec}` has current realization or verification references"
-        ));
+        for declaration in declarations(&realization.declarations) {
+            if declaration.kind == crate::account_realization::DeclarationKind::Requirement
+                && declaration.id == requirement
+            {
+                references.push(Reference {
+                    facet: RepairFacet::Realization,
+                    path: realization.path.clone(),
+                    line: Some(declaration.line),
+                    subject: "Requirement realization".into(),
+                });
+            }
+        }
     }
-    Ok(())
+    for realization in model
+        .realizations
+        .iter()
+        .filter(|realization| realization.spec == spec)
+    {
+        if let Some(entry) = realization.for_requirement(requirement) {
+            references.push(Reference {
+                facet: RepairFacet::Realization,
+                path: realization.path.clone(),
+                line: Some(entry.line),
+                subject: "realization entry".into(),
+            });
+        }
+    }
+    for document in &model.account_verifications {
+        for scope in document
+            .requirements
+            .iter()
+            .filter(|scope| scope.requirement == requirement)
+        {
+            references.push(Reference {
+                facet: RepairFacet::Verification,
+                path: document.path.clone(),
+                line: Some(scope.line),
+                subject: "Requirement verification".into(),
+            });
+        }
+        for challenge in document
+            .verification_challenges
+            .iter()
+            .filter(|challenge| challenge.requirements.iter().any(|id| id == requirement))
+        {
+            references.push(Reference {
+                facet: RepairFacet::Verification,
+                path: challenge.path.clone(),
+                line: Some(challenge.line),
+                subject: format!("Verification Challenge `{}`", challenge.id),
+            });
+        }
+    }
+    for support in &model.account_supports {
+        for element in support
+            .elements
+            .iter()
+            .filter(|element| element.requirement == requirement)
+        {
+            references.push(Reference {
+                facet: RepairFacet::Support,
+                path: support.path.clone(),
+                line: None,
+                subject: format!("element support `{}`", element.element),
+            });
+        }
+    }
+    if model.workspace.obligation(spec, requirement).is_some() {
+        references.push(Reference {
+            facet: RepairFacet::Workspace,
+            path: model.workspace.path.clone(),
+            line: None,
+            subject: "realization obligation".into(),
+        });
+    }
+    for site in model
+        .realizes
+        .iter()
+        .filter(|site| site.requirement == requirement)
+    {
+        references.push(Reference {
+            facet: RepairFacet::Implementation,
+            path: site.file.clone(),
+            line: None,
+            subject: format!("`Realizes` at `{}`", site.site),
+        });
+    }
+    references
 }
 
-fn ensure_scenario_unreferenced(
+fn scenario_references(
     model: &Model,
     spec: &str,
     requirement: &str,
     scenario: &str,
-) -> Result<(), String> {
-    let identity = scenario.to_string();
-    if model.account_verifications.iter().any(|document| {
-        document
+) -> Vec<Reference> {
+    let mut references = Vec::new();
+    for realization in &model.account_realizations {
+        for declaration in declarations(&realization.declarations) {
+            if declaration.kind == crate::account_realization::DeclarationKind::Scenario
+                && declaration.id == scenario
+            {
+                references.push(Reference {
+                    facet: RepairFacet::Realization,
+                    path: realization.path.clone(),
+                    line: Some(declaration.line),
+                    subject: "Scenario realization".into(),
+                });
+            } else if declaration.scenarios.iter().any(|id| id == scenario) {
+                references.push(Reference {
+                    facet: RepairFacet::Realization,
+                    path: realization.path.clone(),
+                    line: Some(declaration.line),
+                    subject: format!("Scenario relevance of `{}`", declaration.id),
+                });
+            }
+        }
+    }
+    for realization in model
+        .realizations
+        .iter()
+        .filter(|realization| realization.spec == spec)
+    {
+        if let Some(entry) = realization.for_requirement(requirement) {
+            for mechanism in entry
+                .mechanisms
+                .iter()
+                .filter(|mechanism| mechanism.scenarios.iter().any(|id| id == scenario))
+            {
+                references.push(Reference {
+                    facet: RepairFacet::Realization,
+                    path: realization.path.clone(),
+                    line: Some(mechanism.line),
+                    subject: format!("Scenario relevance of mechanism `{}`", mechanism.id),
+                });
+            }
+        }
+    }
+    for document in &model.account_verifications {
+        for scope in document
             .scenarios
             .iter()
-            .any(|scope| scope.scenario == identity)
-            || document
-                .checks
-                .iter()
-                .any(|check| check.scenarios.contains(&identity))
-    }) || model.account_supports.iter().any(|support| {
-        support
+            .filter(|scope| scope.scenario == scenario)
+        {
+            references.push(Reference {
+                facet: RepairFacet::Verification,
+                path: document.path.clone(),
+                line: Some(scope.line),
+                subject: "Scenario verification".into(),
+            });
+        }
+        for element in document
+            .elements
+            .iter()
+            .filter(|element| element.scenario.as_deref() == Some(scenario))
+        {
+            references.push(Reference {
+                facet: RepairFacet::Verification,
+                path: document.path.clone(),
+                line: Some(element.line),
+                subject: format!("verification element `{}`", element.id),
+            });
+        }
+        for check in document
+            .checks
+            .iter()
+            .filter(|check| check.scenarios.iter().any(|id| id == scenario))
+        {
+            references.push(Reference {
+                facet: RepairFacet::Verification,
+                path: check.definition.path.clone(),
+                line: Some(check.definition.line),
+                subject: format!("Check `{}` binding", check.definition.id),
+            });
+        }
+    }
+    for support in &model.account_supports {
+        for contribution in support
             .contributions
             .iter()
-            .any(|contribution| contribution.scenario == identity)
-    }) || model.realizations.iter().any(|realization| {
-        realization.spec == spec
-            && realization
-                .for_requirement(requirement)
-                .is_some_and(|entry| {
-                    entry
-                        .mechanisms
-                        .iter()
-                        .any(|mechanism| mechanism.scenarios.iter().any(|id| id == scenario))
-                })
-    }) {
-        return Err(format!(
-            "`{identity}` has current realization or verification references"
-        ));
+            .filter(|contribution| contribution.scenario == scenario)
+        {
+            references.push(Reference {
+                facet: RepairFacet::Support,
+                path: support.path.clone(),
+                line: None,
+                subject: format!("Check `{}` contribution", contribution.check),
+            });
+        }
     }
-    Ok(())
+    references
+}
+
+fn declarations(
+    roots: &[crate::account_realization::Declaration],
+) -> Vec<&crate::account_realization::Declaration> {
+    let mut all = Vec::new();
+    let mut pending: Vec<_> = roots.iter().collect();
+    while let Some(declaration) = pending.pop() {
+        all.push(declaration);
+        pending.extend(declaration.children.iter());
+    }
+    all
 }

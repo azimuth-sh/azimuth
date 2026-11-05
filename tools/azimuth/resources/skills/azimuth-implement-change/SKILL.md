@@ -7,7 +7,7 @@ description: Implement an authorized Azimuth change or bounded correction agains
 
 Read the repository instructions, original request, captured handoff, reviewed proposal/deltas/previews and engineering plan. Confirm actual implementation authorization. Inspect the dirty worktree and preserve unrelated edits. Use the composed candidate as the target; never derive normative intent from code or tests.
 
-Implement production behavior, interfaces/configuration, fixtures, independent expectations, Checks, Challenges, instrumentation and native capture together where the reviewed account requires them. Preserve stable entity identities. Keep implementation inside scope and use repository-native conventions and permitted verification commands.
+Implement production behavior, interfaces/configuration, fixtures, independent expectations, Checks, Challenges, instrumentation and native capture together where the reviewed account requires them. Preserve stable entity identities. Move or remove every code `Realizes` site and support entry that a `removed-identity-referenced` finding from `change validate` still lists; `intent-apply` refuses the removal until none remains. Keep implementation inside scope and use repository-native conventions and permitted verification commands.
 
 When assigned a package, edit only its declared paths. Report integration changes needed outside ownership rather than taking those files. One coordinator owns shared workflow state and current-model application. Workers do not finalize, archive or commit implicitly.
 

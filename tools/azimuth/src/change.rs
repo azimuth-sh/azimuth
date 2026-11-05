@@ -103,7 +103,12 @@ pub fn inspect(root: &Path, model: &Model) -> Result<Report, Vec<String>> {
     }
 
     let unapplied_mutations = if mutations > 0 && errors.is_empty() {
-        match crate::intent::project(root, Path::new("azimuth/model"), model) {
+        match crate::intent::project(
+            root,
+            Path::new("azimuth/model"),
+            model,
+            crate::intent::RemovalReferences::Owed,
+        ) {
             Ok(projected) => projected
                 .operations
                 .iter()

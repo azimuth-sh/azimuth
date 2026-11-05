@@ -15,6 +15,8 @@ Challenges are optional: declare them per Check or Requirement where a search of
 
 Specify execution contexts, adapters, required units, source/expectation fingerprints and retention outputs so engineering execution produces usable native records on its first run. Define Checks only for Requirements that declare `Verification:`; a Requirement that declares no verification takes no Checks, even when engineering tests exist.
 
+When the reviewed spec delta removes a Requirement or Scenario, remove or retarget every verification reference to it (Scenario and Requirement verifications, elements, Check bindings, Challenge scope) that `change validate` lists in its `removed-identity-referenced` finding. Any finding that remains after both deltas names the support or code `Realizes` sites that implementation still owes.
+
 Capture accepted-block bases, generate the account preview and inspect the full spec/realization/verification composition. If verification exposes a realization or intent defect, return it to the owning delta and relevant review instead of working around it in test prose.
 
 Validate and retain the delta, preview and pinned supporting inputs. Return for independent verification review. Do not fabricate execution results, apply facets or advance to implementation without the applicable gate.

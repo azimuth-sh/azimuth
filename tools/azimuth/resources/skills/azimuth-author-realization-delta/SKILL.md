@@ -15,6 +15,8 @@ Author `deltas/<module-id>/realization.md` as a guarded transition. Relate the c
 
 Resolve material authority, identity, concurrency, retry/idempotency, security, observability, migration and rollback decisions where relevant. State why the chosen mechanism provides the obligation. Free-form alternatives, rejected options and migration order belong in the optional change-root `design.md`, which is never applied to the model. Avoid speculative machinery that no scoped obligation requires.
 
+When the reviewed spec delta removes a Requirement or Scenario, remove or retarget every realization reference to it that `change validate` lists in its `removed-identity-referenced` finding, and relate the successor identities instead.
+
 Capture existing-block bases with `account-capture` and generate the exact `account-preview`. Inspect preserved content, changed relationships and the complete prospective spec/realization account. A meaningful uncertainty requires a decision, not an implementer's assumption.
 
 Validate structure and retain the delta, baseline, preview and necessary decision inputs. Return for independent delta review; the workflow serializes the realization delta review before verification delta authoring. Do not apply facets, implement code or author your own acceptance.
