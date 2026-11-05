@@ -3108,6 +3108,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             "--repositories",
             "--project",
             "--descriptor",
+            "--provenance",
         ],
         "abandon" => vec!["--instance", "--change", "--expected-revision", "--reason"],
         "definition" => vec!["--workflow"],
@@ -3258,6 +3259,18 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
             .ok_or("update requires --expected-revision")?
             .parse::<u64>()
             .map_err(|_| "invalid expected revision")?;
+        let declared_unknown = match get("--provenance") {
+            None => false,
+            Some("unknown") if get("--descriptor").is_none() => true,
+            Some("unknown") => {
+                return Err("use either --descriptor or --provenance unknown".into());
+            }
+            Some(other) => {
+                return Err(format!(
+                    "unsupported --provenance `{other}`; the only accepted value is `unknown`"
+                ));
+            }
+        };
         let descriptor = match get("--descriptor") {
             Some(file) => {
                 let value = crate::provenance::read_json(Path::new(file))?;
@@ -3265,6 +3278,7 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
                     .map_err(|e| format!("{file}: {e}"))?;
                 Some(value)
             }
+            None if declared_unknown => None,
             None => crate::provenance::captured_descriptor(
                 handoff_path,
                 number(&handoffs, "captured_at_ms")?,
@@ -3314,6 +3328,11 @@ fn command_internal(args: &[String]) -> Result<Json, String> {
                     ("applied_revision", Json::Num((position + 1) as f64)),
                 ]));
             }
+        }
+        // A replay above keeps its recorded provenance, so only a new attempt needs a descriptor.
+        // Recording `unknown` without being asked would hide a capture that failed.
+        if descriptor.is_none() && !declared_unknown {
+            return Err(missing_provenance(handoff_path));
         }
         if expected < number(&handoffs, "workflow_revision")?
             || handoffs.get("definition_fingerprint") != state.get("definition_fingerprint")
@@ -3790,6 +3809,18 @@ fn abandon(mut state: Json, path: &Path, expected: &str, reason: &str) -> Result
 }
 
 /// Query output cannot overwrite any configured input, submitted record or operational instance.
+fn missing_provenance(handoff: &Path) -> String {
+    format!(
+        "no provenance for this attempt: no harness hook saved {} after the handoff was captured, \
+         and neither --descriptor nor --provenance unknown was given. The hook captures only a \
+         single plain `azimuth workflow update` command; a chained, piped or redirected command, \
+         a command substitution or a command the harness hook does not match is not captured. \
+         Retry from the session that performed the work as one plain `azimuth workflow update ...` \
+         command, or pass --provenance unknown where no harness hook is installed",
+        crate::provenance::captured_descriptor_path(handoff).display()
+    )
+}
+
 pub fn validate_output(args: &[String], output: &Path) -> Result<(), String> {
     let value = |flag: &str| {
         args.windows(2)

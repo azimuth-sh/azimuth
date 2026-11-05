@@ -32,7 +32,7 @@ The descriptor file accepted by `workflow update --descriptor` is:
 {"format": "azimuth-agent-descriptor", "version": 1, "kind": {…}, "model": {…}, "effort": {…}, "agent_type": {…}, "harness": {…}, "trace": null, "usage": null}
 ```
 
-`trace` is `null` or a nonempty opaque string. `usage` is `null` or a usage object (below). Unknown fields are rejected. Omitting `--descriptor` records every field as `unknown`, and `trace` and `usage` as `null`.
+`trace` is `null` or a nonempty opaque string. `usage` is `null` or a usage object (below). Unknown fields are rejected. `--provenance unknown` in place of `--descriptor` records every field as `unknown`, and `trace` and `usage` as `null`.
 
 ## Usage
 
@@ -63,7 +63,7 @@ The descriptor file accepted by `workflow update --descriptor` is:
 The workflow instance, handoff and result formats are version 3. Version 1 and 2 instances are read only by `provenance ledger` for historical export; version 1 action and record names are exported verbatim.
 
 - `workflow next` adds `captured_at_ms` (tool clock, integer Unix milliseconds) to the outer handoff object. It is not part of any task basis.
-- `workflow update` accepts optional `--descriptor FILE`. Without it, `update` uses the descriptor a harness hook saved beside its handoff, at `<handoff file name>.agent-descriptor.json` in the handoff's directory, when that file was saved no earlier than the handoff's `captured_at_ms`; an older file belongs to an earlier attempt that reused the handoff path and is ignored. A saved descriptor that fails validation fails the update without a transition. Recording the attempt, or replaying it, removes the saved file. Each appended history entry is `{result, result_fingerprint, provenance}` where `provenance` is:
+- `workflow update` accepts either `--descriptor FILE` or `--provenance unknown`, not both. With neither, `update` uses the descriptor a harness hook saved beside its handoff, at `<handoff file name>.agent-descriptor.json` in the handoff's directory, when that file was saved no earlier than the handoff's `captured_at_ms`; an older file belongs to an earlier attempt that reused the handoff path and is ignored. A saved descriptor that fails validation fails the update without a transition. When no such descriptor exists, a new attempt fails without a transition: an unattested `unknown` is recorded only on request, so a skipped or failed capture cannot pass for an attempt that had no hook. A saved descriptor whose fields are themselves `unknown` is a capture and is recorded. An idempotent replay needs no descriptor. Recording the attempt, or replaying it, removes the saved file. Each appended history entry is `{result, result_fingerprint, provenance}` where `provenance` is:
 
 ```json
 {
@@ -83,7 +83,7 @@ The workflow instance, handoff and result formats are version 3. Version 1 and 2
 
 ## Harness capture
 
-`azimuth provenance capture --harness <claude-code|codex>` is a PreToolUse hook. It reads the hook event on standard input. For a single plain `azimuth workflow update` command with `--handoff` and without `--descriptor` (no shell operators, redirections or substitutions), it saves a descriptor beside the handoff (see Workflow capture), resolving a relative handoff path against the event's `cwd`. It prints nothing, never alters the tool call and never decides permission; Codex applies a command rewrite only together with a permission grant, so the descriptor travels through the file instead. A hook failure is reported on standard error and the command proceeds without a descriptor.
+`azimuth provenance capture --harness <claude-code|codex>` is a PreToolUse hook. It reads the hook event on standard input. Both installed hooks run it for every shell command, so recognition lies only here: for a single plain `azimuth workflow update` command with `--handoff` and without `--descriptor` or `--provenance` (no shell operators, redirections or substitutions; the program named bare or by any path ending in `azimuth`), it saves a descriptor beside the handoff (see Workflow capture), resolving a relative handoff path against the event's `cwd`. It prints nothing, never alters the tool call and never decides permission; Codex applies a command rewrite only together with a permission grant, so the descriptor travels through the file instead. A hook failure is reported on standard error and the command proceeds without a descriptor.
 
 Values have `harness` basis only when read from the harness's own records; anything the records lack stays `unknown`:
 
@@ -96,7 +96,9 @@ Values have `harness` basis only when read from the harness's own records; anyth
 | `usage` | the agent's transcript (a subagent's own `subagents/agent-<id>.jsonl`) from the handoff on; delegated agents are found by the `toolUseId` of their `.meta.json` | the thread's rollout from the handoff on; delegated threads are rollouts whose `session_meta` names this thread as spawning parent |
 | `trace` | `claude-code:session/<id>[/agent/<id>]/tool/<id>` | `codex:session/<id>/thread/<id>/turn/<id>/tool/<id>` |
 
-`kind` is `model`. The usage window opens at the `captured_at_ms` of the handoff file the command names with `--handoff`; without a readable handoff, `usage` is `null`.
+`kind` is `model`. The usage window opens at the `captured_at_ms` of the handoff file the command names with `--handoff`; without a readable handoff, `usage` is `null`. The hook reads the session that runs the command, so only that session's own work is attested; a session that records another agent's work attests its own usage, not that agent's.
+
+Codex starts a tool call, and so the hook, as soon as the call is streamed, and writes the `token_usage_record` of the model call that issued it only when that response completes. The hook waits up to 5 s for that record and counts the window up to it; if the record does not appear, or the issuing call cannot be identified in the rollout, `usage` is `null`. Counting earlier would omit the issuing call, and an attempt whose only call issued the update would be attested as zero.
 
 `azimuth update` installs the hook as a managed resource of each agent integration: `.claude/settings.json` for `claude` and `.codex/hooks.json` for `codex`. Both invoke `azimuth` from `PATH`, which must be a release that ships this command. An unmanaged file at either path blocks installation. Codex runs project hooks only in a trusted project and only after the hook itself is trusted through `/hooks`; a changed hook must be trusted again.
 

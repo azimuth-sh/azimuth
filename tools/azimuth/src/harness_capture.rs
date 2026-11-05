@@ -49,9 +49,12 @@ pub struct Capture {
 }
 
 /// Handles one PreToolUse event. Returns `Ok(None)` for every tool call that is not a single
-/// plain `azimuth workflow update` invocation with `--handoff` and without `--descriptor`. The
-/// hook never alters the tool call: it saves the descriptor beside the handoff, where the update
-/// finds it.
+/// plain `azimuth workflow update` invocation with `--handoff` and without `--descriptor` or
+/// `--provenance`. The hook never alters the tool call: it saves the descriptor beside the
+/// handoff, where the update finds it.
+///
+/// Both installed hooks run this for every shell call and leave recognition to
+/// [`workflow_update_handoff`], so an invocation is captured however the binary is spelled.
 pub fn capture(harness: Harness, event: &Json, wait: Duration) -> Result<Option<Capture>, String> {
     if event.get("tool_name").and_then(Json::as_str) != Some("Bash") {
         return Ok(None);
@@ -88,8 +91,9 @@ pub fn capture(harness: Harness, event: &Json, wait: Duration) -> Result<Option<
 }
 
 /// The `--handoff` argument when the command is exactly one simple `azimuth workflow update`
-/// invocation without `--descriptor`. A compound command may change directory or run several
-/// updates, so the handoff it names cannot be attributed reliably.
+/// invocation without `--descriptor` or `--provenance`. The program may be named bare or by any
+/// path whose last component is `azimuth`. A compound command may change directory or run
+/// several updates, so the handoff it names cannot be attributed reliably.
 pub fn workflow_update_handoff(command: &str) -> Option<String> {
     if command.chars().any(|c| {
         matches!(
@@ -108,7 +112,9 @@ pub fn workflow_update_handoff(command: &str) -> Option<String> {
     if !matches!(program_name, "azimuth" | "azimuth.exe")
         || workflow != "workflow"
         || update != "update"
-        || rest.iter().any(|token| token == "--descriptor")
+        || rest
+            .iter()
+            .any(|token| token == "--descriptor" || token == "--provenance")
     {
         return None;
     }
@@ -578,6 +584,7 @@ fn codex_descriptor(
     window: Option<&Window>,
     wait: Duration,
 ) -> Json {
+    let started = Instant::now();
     let turn_id = text(event, "turn_id");
     let rollout = text(event, "transcript_path").map(PathBuf::from);
     let records = rollout.as_ref().and_then(|path| {
@@ -602,21 +609,30 @@ fn codex_descriptor(
     let effort = turn.as_ref().and_then(|turn| text(turn, "effort"));
     let version = meta.as_ref().and_then(|meta| text(meta, "cli_version"));
     let thread = meta.as_ref().and_then(|meta| text(meta, "id"));
-    let usage = match (&records, window, &rollout, thread) {
-        (Some(records), Some(window), Some(rollout), Some(thread)) => {
-            let command = event
-                .get("tool_input")
-                .and_then(|input| text(input, "command"))
-                .unwrap_or("");
-            Some(codex_usage(
-                records,
-                window,
-                rollout,
-                thread,
-                tool_use_id,
-                command,
-            ))
+    let command = event
+        .get("tool_input")
+        .and_then(|input| text(input, "command"))
+        .unwrap_or("");
+    // Counting before the issuing call's usage is written would omit that call, and an attempt
+    // whose only call issued the update would be attested as zero; such usage stays unknown.
+    let settled = match (&records, &rollout, thread) {
+        (Some(_), Some(rollout), Some(thread)) => {
+            poll_jsonl(rollout, wait.saturating_sub(started.elapsed()), |records| {
+                codex_issuing_usage_written(records, thread, tool_use_id, command)
+                    .then(|| records.to_vec())
+            })
         }
+        _ => None,
+    };
+    let usage = match (&settled, window, &rollout, thread) {
+        (Some(records), Some(window), Some(rollout), Some(thread)) => Some(codex_usage(
+            records,
+            window,
+            rollout,
+            thread,
+            tool_use_id,
+            command,
+        )),
         _ => None,
     };
     let mut trace = format!(
@@ -680,6 +696,71 @@ fn codex_tokens<'a>(records: impl Iterator<Item = (&'a Json, &'a Json)>, thread:
 
 const CODEX_TOOL_CALLS: &[&str] = &["function_call", "custom_tool_call", "local_shell_call"];
 
+fn codex_tool_call(record: &Json) -> Option<&Json> {
+    (record.get("type").and_then(Json::as_str) == Some("response_item"))
+        .then(|| record.get("payload"))
+        .flatten()
+        .filter(|item| text(item, "type").is_some_and(|kind| CODEX_TOOL_CALLS.contains(&kind)))
+}
+
+fn codex_call_text(item: &Json) -> &str {
+    text(item, "arguments")
+        .or_else(|| text(item, "input"))
+        .unwrap_or("")
+}
+
+/// The position in `records` of the tool call that issued the hooked command. Code mode runs the
+/// shell command inside an outer `exec` call whose id is not the hook's tool_use_id; the issuing
+/// call is then the latest one that contains the command.
+fn codex_issuing_call(records: &[Json], tool_use_id: &str, command: &str) -> Option<usize> {
+    let calls = || {
+        records
+            .iter()
+            .enumerate()
+            .filter_map(|(index, record)| codex_tool_call(record).map(|item| (index, item)))
+    };
+    calls()
+        .find(|(_, item)| text(item, "call_id") == Some(tool_use_id))
+        .or_else(|| {
+            calls()
+                .filter(|(_, item)| !command.is_empty() && codex_call_text(item).contains(command))
+                .next_back()
+        })
+        .map(|(index, _)| index)
+}
+
+/// Codex starts a tool call, and so this hook, as soon as the call is streamed, and writes the
+/// `token_usage_record` of the model call that issued it only when that response completes. The
+/// record follows the issuing call in the rollout.
+fn codex_issuing_usage_written(
+    records: &[Json],
+    thread: &str,
+    tool_use_id: &str,
+    command: &str,
+) -> bool {
+    let own = codex_own_history(records);
+    codex_issuing_call(&own, tool_use_id, command)
+        .and_then(|issuing| codex_issuing_usage(&own, issuing, thread))
+        .is_some()
+}
+
+/// The position of the issuing call's `token_usage_record`: the first one of this thread after
+/// the call.
+fn codex_issuing_usage(records: &[Json], issuing: usize, thread: &str) -> Option<usize> {
+    records
+        .iter()
+        .enumerate()
+        .skip(issuing + 1)
+        .find(|(_, record)| {
+            record.get("type").and_then(Json::as_str) == Some("token_usage_record")
+                && record.get("payload").is_some_and(|usage| {
+                    usage.get("usage").is_some()
+                        && text(usage, "thread_id").is_none_or(|id| id == thread)
+                })
+        })
+        .map(|(index, _)| index)
+}
+
 fn codex_usage(
     records: &[Json],
     window: &Window,
@@ -688,38 +769,27 @@ fn codex_usage(
     tool_use_id: &str,
     command: &str,
 ) -> Usage {
-    let inside: Vec<Json> = codex_own_history(records)
+    let mut inside: Vec<Json> = codex_own_history(records)
         .into_iter()
         .filter(|record| in_window(record, window))
         .collect();
-    let calls: Vec<&Json> = payloads(&inside, "response_item")
-        .map(|(_, item)| item)
-        .filter(|item| text(item, "type").is_some_and(|kind| CODEX_TOOL_CALLS.contains(&kind)))
-        .collect();
-    let call_text = |item: &Json| {
-        text(item, "arguments")
-            .or_else(|| text(item, "input"))
-            .unwrap_or("")
-            .to_string()
-    };
-    // Code mode runs the shell command inside an outer `exec` call whose id is not the hook's
-    // tool_use_id; the issuing call is then the latest one that contains the command.
-    let issuing = calls
-        .iter()
-        .position(|item| text(item, "call_id") == Some(tool_use_id))
-        .or_else(|| {
-            calls
-                .iter()
-                .rposition(|item| !command.is_empty() && call_text(item).contains(command))
-        });
+    let issuing = codex_issuing_call(&inside, tool_use_id, command);
+    // The attempt ends with the model call that issued the update; whatever the rollout holds
+    // after that call's usage belongs to later work.
+    if let Some(end) = issuing.and_then(|issuing| codex_issuing_usage(&inside, issuing, thread)) {
+        inside.truncate(end + 1);
+    }
     let mut tool_calls = 0;
     let mut overlapping = false;
-    for (index, item) in calls.iter().enumerate() {
+    for (index, record) in inside.iter().enumerate() {
+        let Some(item) = codex_tool_call(record) else {
+            continue;
+        };
         if Some(index) == issuing {
             continue;
         }
         tool_calls += 1;
-        overlapping |= mentions_workflow_update(&call_text(item));
+        overlapping |= mentions_workflow_update(codex_call_text(item));
     }
     let mut delegated_agents = 0;
     let mut delegated = Tokens::default();

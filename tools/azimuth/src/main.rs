@@ -24,7 +24,7 @@ USAGE
     azimuth workflow init (--workflow change-development --inputs <file> | --definition <file>) --instance <file> --repositories <file> [--predecessor <file>]
     azimuth workflow next|verify --instance <file> --repositories <file> [--out <file>]
     azimuth workflow assurance-targets --instance <file> --repositories <file> --snapshot <relative-ref> [--verification-targets <relative-ref>] [--out <file>]
-    azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--descriptor <file>] [--out <file>]
+    azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--descriptor <file> | --provenance unknown] [--out <file>]
     azimuth workflow abandon --instance <file> --expected-revision <number> --reason <text> [--out <file>]
     azimuth provenance ledger --change <dir> [--instance <file>...] [--repositories <file>] [--out <file>]
     azimuth provenance attributions --input <failure-attributions.md> [--out <file>]
