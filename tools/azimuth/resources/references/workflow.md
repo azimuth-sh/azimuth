@@ -10,7 +10,7 @@ The `azimuth-workflow` skill operates the process. Task skills explain how to au
 azimuth workflow definition --workflow change-development [--out <file>]
 azimuth workflow init --workflow change-development --inputs <file> --instance <file> --repositories <file> [--predecessor <file>]
 azimuth workflow next --instance <file> --repositories <file> [--out <file>]
-azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--descriptor <file>] [--out <file>]
+azimuth workflow update --instance <file> --repositories <file> --handoff <file> --actor <id> --result <file> --expected-revision <number> [--descriptor <file> | --provenance unknown] [--out <file>]
 azimuth workflow verify --instance <file> --repositories <file> [--out <file>]
 azimuth workflow abandon --instance <file> --expected-revision <number> --reason <text> [--out <file>]
 ```
@@ -23,7 +23,7 @@ Read `workflow next` before executing work and capture its handoff. `eligible` c
 
 Perform only work whose actual permissions and prerequisites hold. Return one compact authored result using the handoff's exact schema and native output contract. Do not hand-author the engine's derived identity/fingerprint/dependency fields. Supply the original captured handoff and current coordination revision to update. Querying again after work does not recreate its starting basis.
 
-Update validates exact current prerequisites and records atomically. Expected revision protects competing coordinators. An exact idempotent replay returns its recorded transition; key reuse with different content fails. Interrupted locks require inspection rather than automatic deletion. One coordinator owns shared progression when agents execute in parallel.
+Update validates exact current prerequisites and records atomically. Expected revision protects competing coordinators and workers; on a revision conflict, read the current revision and repeat the same command. An exact idempotent replay returns its recorded transition; key reuse with different content fails. Interrupted locks require inspection rather than automatic deletion. One coordinator owns shared progression when agents execute in parallel, but each result is recorded by the session that performed it, because provenance is captured from the session that runs `update`.
 
 ## Delta authoring and independent review
 
@@ -65,6 +65,6 @@ CI reports and retains diagnostics only. It does not generate/report work packag
 
 ## Provenance and assurance boundary
 
-`--actor` names one execution instance, not a role, attempt number or model. Follow `azimuth reference show work-provenance` for hook capture and optional descriptor behavior. Never invent harness values, reviewer identities, timestamps, permission or execution facts. Provenance describes work and is not an assurance input.
+`--actor` names one execution instance, not a role, attempt number or model. Record each result as one plain `azimuth workflow update …` command from the session that did the work; a new attempt without captured or supplied provenance is refused unless `--provenance unknown` is given. Follow `azimuth reference show work-provenance` for hook capture and descriptor behavior. Never invent harness values, reviewer identities, timestamps, permission or execution facts. Provenance describes work and is not an assurance input.
 
 AAS computes deployment Requirement Status after authorized rollout from exact lineage, observed composition, applicable evidence and compatible fresh context. Neither workflow completion, passing CI, accepted review nor clean bounded Challenge alone establishes deployed behavior. Historical records preserve their original meaning and are not rewritten into new approvals.
