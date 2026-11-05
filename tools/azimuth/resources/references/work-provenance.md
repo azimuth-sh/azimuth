@@ -51,6 +51,17 @@ azimuth provenance ledger --change <change-directory> [--instance <file>...] [--
 
 Exported attempts are immutable: a re-export that would change or drop an attempt already in the ledger fails. Instance dispositions are `completed`, `active`, `superseded` or `abandoned`; attempt `scope` is derived from the work target (`requirement`, `check`, `verification-challenge`, `module`, `change`).
 
+## Reconstructing provenance
+
+When an attempt was recorded without captured provenance and the harness log of its window still exists, append an attestation rather than touching the attempt:
+
+```text
+azimuth provenance reconstruct --change <dir> --attempt <id> --harness <claude-code|codex> \
+  --source <recording|work> --transcript <file> --by <actor> [--tool-use <id>]
+```
+
+Use `--source recording` with the log of the session that ran the `workflow update` (it yields what the hook would have captured there), and `--source work` with the log of the session that did the work but did not record it, such as a reviewer whose result a coordinator recorded. Claude Code logs are `~/.claude/projects/<project>/<session>.jsonl`, subagents `…/<session>/subagents/agent-<id>.jsonl`, and a named teammate is its own top-level session whose records carry its `agentName`. Codex logs are rollouts under `~/.codex/sessions/YYYY/MM/DD/`. The attestation is appended to `<change>/provenance/attestations.json`; commit it with the ledger. Its values have basis `reconstructed`, anything the log cannot establish stays `unknown`, and the command refuses a window the log holds no work for. `azimuth report provenance` shows attestations beside the provenance recorded at record time, which is never replaced. Never reconstruct from a log you are not sure belongs to the attempt; a wrong attestation can only be answered by appending a correct one.
+
 ## Failure Attribution
 
 When someone actually investigates an adverse fact, they may append an attribution to `azimuth/provenance/failure-attributions.md`. It is optional; never write one to clear a gate.

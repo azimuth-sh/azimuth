@@ -161,6 +161,48 @@ By default it reads `<change>/.azimuth/workflow.json` and follows `predecessor.r
 
 The ledger fingerprint is the canonical fingerprint of the ledger JSON. The ledger is append-only across exports: an attempt id, once exported, keeps identical content.
 
+## Provenance attestations
+
+An attempt is immutable, including provenance that was not captured when it was recorded. A **provenance attestation** is an appended record about one existing attempt that states what a harness log, read afterwards, establishes about it. It never changes the attempt, its ledger entry or its fingerprint: the provenance recorded at record time, `unknown` or captured, stays visible beside it.
+
+```text
+azimuth provenance reconstruct --change <dir> --attempt <id> --harness <claude-code|codex> \
+  --source <recording|work> --transcript <file> --by <actor> \
+  [--tool-use <id>] [--repositories <file>] [--attestations <file>]
+```
+
+The command exports the change's ledger, finds the attempt in any instance of its predecessor chain and takes the window from the attempt's `handoff_captured_at_ms` and `recorded_at_ms`; an attempt without both is refused. `--source` says what the log witnessed:
+
+- `recording` — the log's session ran the `workflow update` that recorded the attempt. The call is the single `workflow update` call issued no later than `recorded_at_ms` whose result arrived no earlier; several candidates require `--tool-use`. The log is read up to that call, exactly as the capture hook would have read it: a reconstruction from the same log and window yields the capture's values. A call issued before the handoff was captured (one command that both captured the handoff and recorded the result) is refused, since the window then holds none of the work.
+- `work` — the log's session performed the attempt's work without recording it, such as a reviewer whose result a coordinator recorded. Values come from the session's activity inside the window, closed at `recorded_at_ms`: a field is established only when every model call in the window agrees on it, and `tool_calls` counts every call in the window. A log with no model call in the window is refused rather than attested as zero work.
+
+Claude Code subagent transcripts (`<session>/subagents/agent-<id>.jsonl`) take `agent_type` from their `.meta.json`; a named teammate's top-level session takes it from its `agent-setting` record. Codex `agent_type` is the spawning `agent_role`. Values the log does not establish stay `unknown`; nothing is estimated.
+
+Attestations of a change live in `<change>/provenance/attestations.json`, committed beside the ledger and moved with the change by archive:
+
+```json
+{
+  "format": "azimuth-provenance-attestations", "version": 1, "project": "drim-dev", "change": "…",
+  "attestations": [{
+    "id": "attestation-<sha256 of the canonical attestation without id>",
+    "attempt": "attempt-…", "instance": "<instance id>", "basis": "reconstructed",
+    "source": {"kind": "work", "harness": "codex", "transcript": "<path as given>",
+               "transcript_bytes": 1484470, "transcript_fingerprint": "sha256:…", "tool_use": null},
+    "window": {"start_ms": 1793885363821, "end_ms": 1793886084737},
+    "agent": { …descriptor agent fields… }, "trace": "codex:session/…/thread/…", "usage": { … },
+    "reconstructed_at_ms": 1793890000000, "reconstructed_by": "<actor>", "tool": "azimuth <version>"
+  }]
+}
+```
+
+- Every value a log established has basis `reconstructed`, never `harness`: it was read from the harness's own records, but after the fact rather than when the attempt was recorded. Other fields are `unknown`. `usage`, when present, has basis `reconstructed`.
+- `transcript_fingerprint` is the SHA-256 of the first `transcript_bytes` bytes of the log as read. Harness logs only grow, so the prefix stays checkable while the log exists. Delegated agents' logs are read but not fingerprinted.
+- `tool_use` names the recording call for a `recording` source (for Codex, the shell execution the hook would have named) and is `null` for `work`.
+- The file is append-only. A wrong attestation is answered by appending a correct one, never by editing; `id` binds the content.
+- Attestations are keyed by attempt and instance id, which survive an instance restart: the predecessor chain keeps the attempt in the ledger. Every attestation must name an attempt the ledger holds; `change archive` fails otherwise or when the file does not validate.
+
+The ledger format is unchanged and carries no attestations, so the Assurance Service still reproduces it exactly. Transporting attestations to the Assurance Service is not yet defined.
+
 ## Failure Attribution
 
 An optional, append-only record by which an investigator names the attempts believed to have **caused** an adverse fact or **allowed it through**. It is authored in `azimuth/provenance/failure-attributions.md`:
@@ -223,7 +265,7 @@ and writes `{"format": "azimuth-failure-attributions", "version": 1, "attributio
 azimuth report provenance [--root <repository>] [--change <id>] [--out <file>]
 ```
 
-reads every committed `azimuth/changes/**/provenance/ledger.json` (active and archived) and writes one JSON object per line (JSONL), one per attempt: the ledger's `project` and `change`, the instance `id` and `disposition`, and every attempt field with the descriptor flattened to `agent_kind`, `agent_kind_basis`, `model`, `model_basis`, `effort`, `effort_basis`, `agent_type`, `agent_type_basis`, `harness_name`, `harness_version`, `harness_basis`, and `usage` flattened to `usage_basis`, `model_calls`, `tool_calls`, the five token fields, `usage_overlapping`, `delegated_agents`, `delegated_model_calls` and the five token fields prefixed `delegated_`; every usage column is `null` when usage is unknown. Lines are ordered by change, instance order and sequence.
+reads every committed `azimuth/changes/**/provenance/ledger.json` (active and archived) and writes one JSON object per line (JSONL), one per attempt: the ledger's `project` and `change`, the instance `id` and `disposition`, and every attempt field with the descriptor flattened to `agent_kind`, `agent_kind_basis`, `model`, `model_basis`, `effort`, `effort_basis`, `agent_type`, `agent_type_basis`, `harness_name`, `harness_version`, `harness_basis`, and `usage` flattened to `usage_basis`, `model_calls`, `tool_calls`, the five token fields, `usage_overlapping`, `delegated_agents`, `delegated_model_calls` and the five token fields prefixed `delegated_`; every usage column is `null` when usage is unknown. Each line then carries the change's attestations for that attempt beside the values recorded at record time, which are never replaced: `attestations` (their count), `attestation` (the id shown), `reconstructed_source`, `reconstructed_transcript`, `reconstructed_transcript_fingerprint`, `reconstructed_at_ms`, `reconstructed_by`, `reconstructed_model`, `reconstructed_effort` and `reconstructed_agent_type` with their `_basis` columns, `reconstructed_harness_name`, `reconstructed_harness_version`, `reconstructed_trace`, and every usage column prefixed `reconstructed_`. The shown attestation is the latest `work` attestation, else the latest `recording` one; a `work` attestation describes the agent that did the work, a `recording` one the session that ran the update. Every attestation column is `null`, and `attestations` is `0`, for an attempt without one. A line with `model_basis` `unknown` and `reconstructed_model_basis` `reconstructed` reads: unknown at record time, reconstructed from `reconstructed_transcript`. Lines are ordered by change, instance order and sequence.
 
 ## Assurance Service
 

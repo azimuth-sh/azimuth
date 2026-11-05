@@ -164,6 +164,9 @@ fn valued(value: Option<&str>) -> Json {
 
 struct Window {
     start_ms: u64,
+    /// A live capture reads the log as it stands when the update is issued, so only a
+    /// reconstruction, reading the log afterwards, closes the window explicitly.
+    end_ms: Option<u64>,
 }
 
 /// The attempt's usage window opens when its handoff was captured.
@@ -172,6 +175,7 @@ fn window(handoff: &Path) -> Option<Window> {
     let start_ms = handoff.get("captured_at_ms")?.as_num()?;
     (start_ms >= 0.0 && start_ms.fract() == 0.0).then_some(Window {
         start_ms: start_ms as u64,
+        end_ms: None,
     })
 }
 
@@ -222,7 +226,8 @@ fn record_ms(record: &Json) -> Option<u64> {
 }
 
 fn in_window(record: &Json, window: &Window) -> bool {
-    record_ms(record).is_some_and(|ms| ms >= window.start_ms)
+    record_ms(record)
+        .is_some_and(|ms| ms >= window.start_ms && window.end_ms.is_none_or(|end| ms <= end))
 }
 
 /// Provider token counts summed over model calls; a field no call reported stays null.
@@ -386,6 +391,18 @@ fn claude_code_descriptor(
                 .then(|| records.to_vec())
         })
     });
+    claude_code_issued(event, tool_use_id, window, records, session.as_deref())
+}
+
+/// The descriptor of the session whose `records` issued `tool_use_id`, as the hook reads it.
+fn claude_code_issued(
+    event: &Json,
+    tool_use_id: &str,
+    window: Option<&Window>,
+    records: Option<Vec<Json>>,
+    session: Option<&Path>,
+) -> Json {
+    let agent_id = text(event, "agent_id");
     let issuing = records.as_ref().and_then(|records| {
         records
             .iter()
@@ -400,7 +417,7 @@ fn claude_code_descriptor(
         .get("effort")
         .and_then(|effort| text(effort, "level"))
         .or_else(|| issuing.and_then(|record| text(record, "effort")));
-    let usage = match (&records, window, &session) {
+    let usage = match (&records, window, session) {
         (Some(records), Some(window), Some(session)) => {
             claude_usage(records, window, session, tool_use_id)
         }
@@ -610,6 +627,42 @@ fn codex_descriptor(
                 .then(|| records.to_vec())
         })
     });
+    let thread = records.as_ref().and_then(|records| {
+        payloads(records, "session_meta")
+            .next()
+            .and_then(|(_, meta)| text(meta, "id").map(str::to_string))
+    });
+    let thread = thread.as_deref();
+    let command = event
+        .get("tool_input")
+        .and_then(|input| text(input, "command"))
+        .unwrap_or("");
+    // Counting before the issuing call's usage is written would omit that call, and an attempt
+    // whose only call issued the update would be attested as zero; such usage stays unknown.
+    let settled = match (&records, &rollout, thread) {
+        (Some(_), Some(rollout), Some(thread)) => {
+            poll_jsonl(rollout, wait.saturating_sub(started.elapsed()), |records| {
+                codex_issuing_usage_written(records, thread, tool_use_id, command)
+                    .then(|| records.to_vec())
+            })
+        }
+        _ => None,
+    };
+    codex_issued(event, tool_use_id, window, records, settled)
+}
+
+/// The descriptor of the thread whose rollout issued `tool_use_id`, as the hook reads it:
+/// identity from `records`, usage from `settled`, the rollout once the issuing call's usage is
+/// written.
+fn codex_issued(
+    event: &Json,
+    tool_use_id: &str,
+    window: Option<&Window>,
+    records: Option<Vec<Json>>,
+    settled: Option<Vec<Json>>,
+) -> Json {
+    let turn_id = text(event, "turn_id");
+    let rollout = text(event, "transcript_path").map(PathBuf::from);
     let turn = records.as_ref().and_then(|records| {
         payloads(records, "turn_context")
             .filter(|(_, context)| text(context, "turn_id") == turn_id)
@@ -629,17 +682,6 @@ fn codex_descriptor(
         .get("tool_input")
         .and_then(|input| text(input, "command"))
         .unwrap_or("");
-    // Counting before the issuing call's usage is written would omit that call, and an attempt
-    // whose only call issued the update would be attested as zero; such usage stays unknown.
-    let settled = match (&records, &rollout, thread) {
-        (Some(_), Some(rollout), Some(thread)) => {
-            poll_jsonl(rollout, wait.saturating_sub(started.elapsed()), |records| {
-                codex_issuing_usage_written(records, thread, tool_use_id, command)
-                    .then(|| records.to_vec())
-            })
-        }
-        _ => None,
-    };
     let usage = match (&settled, window, &rollout, thread) {
         (Some(records), Some(window), Some(rollout), Some(thread)) => Some(codex_usage(
             records,
@@ -814,7 +856,7 @@ fn codex_usage(
         codex_delegated(
             sessions,
             &[thread.to_string()],
-            window.start_ms,
+            window,
             &mut delegated_agents,
             &mut delegated,
         );
@@ -853,10 +895,11 @@ fn codex_rollouts(directory: &Path, since: std::time::SystemTime, found: &mut Ve
 fn codex_delegated(
     sessions: &Path,
     parents: &[String],
-    start_ms: u64,
+    window: &Window,
     agents: &mut u64,
     tokens: &mut Tokens,
 ) {
+    let start_ms = window.start_ms;
     let since = std::time::UNIX_EPOCH + Duration::from_millis(start_ms);
     let mut rollouts = Vec::new();
     codex_rollouts(sessions, since, &mut rollouts);
@@ -877,7 +920,7 @@ fn codex_delegated(
                 continue;
             };
             if spawned_by != Some(parent.as_str())
-                || record_ms(record).is_none_or(|ms| ms < start_ms)
+                || record_ms(record).is_none_or(|ms| !in_window(record, window) || ms < start_ms)
                 || !counted.insert(child.to_string())
             {
                 continue;
@@ -888,6 +931,509 @@ fn codex_delegated(
             pending.push(child.to_string());
         }
     }
+}
+
+/// Which part of an attempt a harness log witnessed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Source {
+    /// The log's session ran the `workflow update` that recorded the attempt; reconstruction
+    /// reads it exactly as the capture hook would have at that call.
+    Recording,
+    /// The log's session performed the attempt's work without recording it; reconstruction
+    /// reads the session's activity inside the attempt's window.
+    Work,
+}
+
+impl Source {
+    pub fn parse(name: &str) -> Result<Source, String> {
+        match name {
+            "recording" => Ok(Source::Recording),
+            "work" => Ok(Source::Work),
+            other => Err(format!(
+                "unsupported source `{other}`; expected recording or work"
+            )),
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Source::Recording => "recording",
+            Source::Work => "work",
+        }
+    }
+}
+
+/// A descriptor read from a harness log after the fact, in the shape a capture writes, with
+/// `harness` marking each value the log established.
+pub struct Reconstruction {
+    pub descriptor: Json,
+    /// The tool call that recorded the attempt, for a `recording` source.
+    pub tool_use: Option<String>,
+}
+
+/// Reads one attempt's descriptor from a harness log. `start_ms` and `end_ms` are the attempt's
+/// handoff capture and record times. Nothing is estimated: a value the log does not establish
+/// stays `unknown`, and a log with no activity of its own in the window is refused rather than
+/// attested as zero work.
+pub fn reconstruct(
+    harness: Harness,
+    log: &Path,
+    source: Source,
+    start_ms: u64,
+    end_ms: u64,
+    tool_use: Option<&str>,
+) -> Result<Reconstruction, String> {
+    if end_ms < start_ms {
+        return Err("the attempt was recorded before its handoff was captured".into());
+    }
+    let records = read_jsonl(log);
+    if records.is_empty() {
+        return Err(format!("{}: no readable harness records", log.display()));
+    }
+    match (harness, source) {
+        (Harness::ClaudeCode, Source::Recording) => {
+            claude_recording(log, records, start_ms, end_ms, tool_use)
+        }
+        (Harness::ClaudeCode, Source::Work) => claude_work(log, &records, start_ms, end_ms),
+        (Harness::Codex, Source::Recording) => {
+            codex_recording(log, records, start_ms, end_ms, tool_use)
+        }
+        (Harness::Codex, Source::Work) => codex_work(log, &records, start_ms, end_ms),
+    }
+}
+
+/// The calls that could have recorded the attempt: a `workflow update` issued no later than the
+/// record time whose result arrived no earlier, since the tool stamps the record time while the
+/// command runs.
+fn recording_candidates(
+    calls: Vec<(String, Option<u64>, Option<u64>)>,
+    end_ms: u64,
+    tool_use: Option<&str>,
+    log: &Path,
+) -> Result<String, String> {
+    if let Some(wanted) = tool_use {
+        return calls
+            .iter()
+            .find(|(id, _, _)| id == wanted)
+            .map(|(id, _, _)| id.clone())
+            .ok_or_else(|| {
+                format!(
+                    "{}: `{wanted}` is not a `workflow update` call in this log",
+                    log.display()
+                )
+            });
+    }
+    let matching: Vec<&String> = calls
+        .iter()
+        .filter(|(_, issued, returned)| {
+            issued.is_some_and(|ms| ms <= end_ms) && returned.is_some_and(|ms| ms >= end_ms)
+        })
+        .map(|(id, _, _)| id)
+        .collect();
+    match matching.as_slice() {
+        [one] => Ok((*one).clone()),
+        [] => Err(format!(
+            "{}: no `workflow update` call in this log was running when the attempt was recorded",
+            log.display()
+        )),
+        several => Err(format!(
+            "{}: several `workflow update` calls were running when the attempt was recorded ({}); name one with --tool-use",
+            log.display(),
+            several.iter().map(|id| id.as_str()).collect::<Vec<_>>().join(", ")
+        )),
+    }
+}
+
+/// A call issued before the handoff was captured (a command that both captured the handoff and
+/// recorded the result) leaves no work inside the window; counting it would attest zero work.
+fn issued_inside(issued: Option<u64>, start_ms: u64, call: &str, log: &Path) -> Result<(), String> {
+    if issued.is_some_and(|ms| ms >= start_ms) {
+        return Ok(());
+    }
+    Err(format!(
+        "{}: `{call}` recorded the attempt but was issued before its handoff was captured, so the attempt's window holds none of its work",
+        log.display()
+    ))
+}
+
+/// A Claude Code transcript path names its session; a subagent's transcript sits in the
+/// session's `subagents/` directory beside a `.meta.json` naming its agent type.
+struct ClaudeLog {
+    session: PathBuf,
+    session_id: Option<String>,
+    agent: Option<String>,
+    agent_type: Option<String>,
+}
+
+fn claude_log(log: &Path, records: &[Json]) -> ClaudeLog {
+    let name = log.file_name().and_then(|name| name.to_str()).unwrap_or("");
+    let agent = name
+        .strip_prefix("agent-")
+        .and_then(|rest| rest.strip_suffix(".jsonl"))
+        .filter(|_| {
+            log.parent()
+                .and_then(|parent| parent.file_name())
+                .is_some_and(|parent| parent == "subagents")
+        })
+        .map(str::to_string);
+    let session = match &agent {
+        Some(_) => log
+            .parent()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+            .unwrap_or_default(),
+        None => PathBuf::from(log.to_string_lossy().trim_end_matches(".jsonl")),
+    };
+    let agent_type = agent
+        .as_ref()
+        .and_then(|agent| {
+            let meta = fs::read_to_string(
+                session
+                    .join("subagents")
+                    .join(format!("agent-{agent}.meta.json")),
+            )
+            .ok()?;
+            json::parse(&meta)
+                .ok()
+                .and_then(|meta| text(&meta, "agentType").map(str::to_string))
+        })
+        // A named teammate runs as its own session and states its agent type in that
+        // session's `agent-setting` record.
+        .or_else(|| {
+            records.iter().find_map(|record| {
+                (record.get("type").and_then(Json::as_str) == Some("agent-setting"))
+                    .then(|| text(record, "agentSetting").map(str::to_string))
+                    .flatten()
+            })
+        });
+    let session_id = records
+        .iter()
+        .find_map(|record| text(record, "sessionId").or_else(|| text(record, "session_id")))
+        .map(str::to_string);
+    ClaudeLog {
+        session,
+        session_id,
+        agent,
+        agent_type,
+    }
+}
+
+fn claude_event(log: &ClaudeLog) -> Json {
+    let mut fields = vec![(
+        "session_id",
+        log.session_id
+            .as_deref()
+            .map(Json::str)
+            .unwrap_or(Json::Null),
+    )];
+    if let Some(agent) = &log.agent {
+        fields.push(("agent_id", Json::str(agent)));
+    }
+    if let Some(agent_type) = &log.agent_type {
+        fields.push(("agent_type", Json::str(agent_type)));
+    }
+    Json::obj(fields)
+}
+
+fn claude_recording(
+    log: &Path,
+    records: Vec<Json>,
+    start_ms: u64,
+    end_ms: u64,
+    tool_use: Option<&str>,
+) -> Result<Reconstruction, String> {
+    let mut returned = std::collections::BTreeMap::new();
+    for record in &records {
+        let blocks = record
+            .get("message")
+            .and_then(|message| message.get("content"))
+            .and_then(Json::as_array)
+            .unwrap_or(&[]);
+        for block in blocks {
+            if let Some(id) = text(block, "tool_use_id") {
+                returned.entry(id.to_string()).or_insert(record_ms(record));
+            }
+        }
+    }
+    let calls = records
+        .iter()
+        .flat_map(|record| claude_tool_uses(record).map(move |block| (record, block)))
+        .filter(|(_, block)| {
+            block.get("name").and_then(Json::as_str) == Some("Bash")
+                && block
+                    .get("input")
+                    .and_then(|input| text(input, "command"))
+                    .is_some_and(mentions_workflow_update)
+        })
+        .filter_map(|(record, block)| {
+            let id = text(block, "id")?.to_string();
+            let result = returned.get(&id).copied().flatten();
+            Some((id, record_ms(record), result))
+        })
+        .collect();
+    let tool_use_id = recording_candidates(calls, end_ms, tool_use, log)?;
+    // The hook reads the transcript as it stands when the call is issued: up to the record that
+    // issued it.
+    let issuing = records
+        .iter()
+        .rposition(|record| issued(record, &tool_use_id))
+        .unwrap();
+    issued_inside(record_ms(&records[issuing]), start_ms, &tool_use_id, log)?;
+    let mut seen = records;
+    seen.truncate(issuing + 1);
+    let claude = claude_log(log, &seen);
+    let window = Window {
+        start_ms,
+        end_ms: None,
+    };
+    let descriptor = claude_code_issued(
+        &claude_event(&claude),
+        &tool_use_id,
+        Some(&window),
+        Some(seen),
+        Some(&claude.session),
+    );
+    Ok(Reconstruction {
+        descriptor,
+        tool_use: Some(tool_use_id),
+    })
+}
+
+/// The one value a field takes across `values`; several distinct values leave it unknown.
+fn single<'a>(values: impl Iterator<Item = &'a str>) -> Option<&'a str> {
+    let distinct: BTreeSet<&str> = values.collect();
+    (distinct.len() == 1).then(|| *distinct.iter().next().unwrap())
+}
+
+fn claude_work(
+    log: &Path,
+    records: &[Json],
+    start_ms: u64,
+    end_ms: u64,
+) -> Result<Reconstruction, String> {
+    let window = Window {
+        start_ms,
+        end_ms: Some(end_ms),
+    };
+    let calls: Vec<&Json> = records
+        .iter()
+        .filter(|record| {
+            record.get("type").and_then(Json::as_str) == Some("assistant")
+                && in_window(record, &window)
+        })
+        .collect();
+    if calls.is_empty() {
+        return Err(format!(
+            "{}: the session made no model call inside the attempt's window",
+            log.display()
+        ));
+    }
+    let message = |record: &&Json| record.get("message").cloned().unwrap_or(Json::Null);
+    let messages: Vec<Json> = calls.iter().map(message).collect();
+    let model = single(
+        messages
+            .iter()
+            .filter_map(|message| text(message, "model"))
+            .filter(|model| !model.starts_with('<')),
+    );
+    let effort = single(calls.iter().filter_map(|record| text(record, "effort")));
+    let version = single(calls.iter().filter_map(|record| text(record, "version")));
+    let claude = claude_log(log, records);
+    let usage = claude_usage(records, &window, &claude.session, "");
+    let mut trace = format!(
+        "claude-code:session/{}",
+        claude.session_id.as_deref().unwrap_or("unknown")
+    );
+    if let Some(agent) = &claude.agent {
+        trace.push_str(&format!("/agent/{agent}"));
+    }
+    Ok(Reconstruction {
+        descriptor: descriptor(
+            Harness::ClaudeCode,
+            model,
+            effort,
+            claude.agent_type.as_deref(),
+            version,
+            trace,
+            usage,
+        ),
+        tool_use: None,
+    })
+}
+
+fn codex_recording(
+    log: &Path,
+    records: Vec<Json>,
+    start_ms: u64,
+    end_ms: u64,
+    tool_use: Option<&str>,
+) -> Result<Reconstruction, String> {
+    let own = codex_own_history(&records);
+    let mut returned = std::collections::BTreeMap::new();
+    for (record, item) in payloads(&own, "response_item") {
+        if text(item, "type").is_some_and(|kind| kind.ends_with("_call_output")) {
+            if let Some(id) = text(item, "call_id") {
+                returned.entry(id.to_string()).or_insert(record_ms(record));
+            }
+        }
+    }
+    let calls = own
+        .iter()
+        .filter_map(|record| codex_tool_call(record).map(|item| (record, item)))
+        .filter(|(_, item)| mentions_workflow_update(codex_call_text(item)))
+        .filter_map(|(record, item)| {
+            let id = text(item, "call_id")?.to_string();
+            let result = returned.get(&id).copied().flatten();
+            Some((id, record_ms(record), result))
+        })
+        .collect();
+    let call_id = recording_candidates(calls, end_ms, tool_use, log)?;
+    let position = own
+        .iter()
+        .position(|record| {
+            codex_tool_call(record).is_some_and(|item| text(item, "call_id") == Some(&call_id))
+        })
+        .unwrap();
+    issued_inside(record_ms(&own[position]), start_ms, &call_id, log)?;
+    let item = codex_tool_call(&own[position]).unwrap();
+    let turn_id = item
+        .get("internal_chat_message_metadata_passthrough")
+        .and_then(|metadata| text(metadata, "turn_id"))
+        .map(str::to_string)
+        .or_else(|| {
+            payloads(&own[..position], "turn_context")
+                .last()
+                .and_then(|(_, context)| text(context, "turn_id").map(str::to_string))
+        });
+    // The hook names the shell execution the call started, not the call itself.
+    let execution = own[position..].iter().find_map(|record| {
+        let item = record
+            .get("payload")
+            .filter(|_| record.get("type").and_then(Json::as_str) == Some("event_msg"))
+            .and_then(|payload| payload.get("item"))?;
+        (text(item, "type") == Some("CommandExecution")
+            && mentions_workflow_update(
+                &item
+                    .get("command")
+                    .map(Json::to_string_pretty)
+                    .unwrap_or_default(),
+            ))
+        .then(|| text(item, "id").map(str::to_string))
+        .flatten()
+    });
+    let mut event = vec![
+        ("transcript_path", Json::str(log.display().to_string())),
+        (
+            "session_id",
+            payloads(&records, "session_meta")
+                .next()
+                .and_then(|(_, meta)| text(meta, "id"))
+                .map(Json::str)
+                .unwrap_or(Json::Null),
+        ),
+    ];
+    if let Some(turn) = &turn_id {
+        event.push(("turn_id", Json::str(turn)));
+    }
+    let window = Window {
+        start_ms,
+        end_ms: None,
+    };
+    let mut descriptor = codex_issued(
+        &Json::obj(event),
+        &call_id,
+        Some(&window),
+        Some(records.clone()),
+        codex_issuing_usage_written(&records, &codex_thread(&records), &call_id, "")
+            .then_some(records),
+    );
+    if let (Some(execution), Json::Obj(fields)) = (&execution, &mut descriptor) {
+        for (key, value) in fields.iter_mut() {
+            if key == "trace" {
+                if let Some(trace) = value.as_str() {
+                    *value = Json::str(
+                        trace.replace(&format!("/tool/{call_id}"), &format!("/tool/{execution}")),
+                    );
+                }
+            }
+        }
+    }
+    Ok(Reconstruction {
+        descriptor,
+        tool_use: Some(execution.unwrap_or(call_id)),
+    })
+}
+
+fn codex_thread(records: &[Json]) -> String {
+    payloads(records, "session_meta")
+        .next()
+        .and_then(|(_, meta)| text(meta, "id"))
+        .unwrap_or("")
+        .to_string()
+}
+
+fn codex_work(
+    log: &Path,
+    records: &[Json],
+    start_ms: u64,
+    end_ms: u64,
+) -> Result<Reconstruction, String> {
+    let window = Window {
+        start_ms,
+        end_ms: Some(end_ms),
+    };
+    let thread = codex_thread(records);
+    if thread.is_empty() {
+        return Err(format!(
+            "{}: the rollout has no session_meta",
+            log.display()
+        ));
+    }
+    let own = codex_own_history(records);
+    let turns: BTreeSet<String> = payloads(&own, "token_usage_record")
+        .filter(|(record, usage)| {
+            in_window(record, &window) && text(usage, "thread_id").is_none_or(|id| id == thread)
+        })
+        .filter_map(|(_, usage)| text(usage, "turn_id").map(str::to_string))
+        .collect();
+    if turns.is_empty() {
+        return Err(format!(
+            "{}: the thread made no model call inside the attempt's window",
+            log.display()
+        ));
+    }
+    let contexts: Vec<&Json> = payloads(&own, "turn_context")
+        .filter(|(_, context)| text(context, "turn_id").is_some_and(|id| turns.contains(id)))
+        .map(|(_, context)| context)
+        .collect();
+    let model = single(contexts.iter().filter_map(|context| text(context, "model")));
+    let effort = single(
+        contexts
+            .iter()
+            .filter_map(|context| text(context, "effort")),
+    );
+    let version = payloads(records, "session_meta")
+        .next()
+        .and_then(|(_, meta)| text(meta, "cli_version"));
+    let agent_type = payloads(records, "session_meta")
+        .next()
+        .and_then(|(_, meta)| meta.get("source"))
+        .and_then(|source| source.get("subagent"))
+        .and_then(|subagent| subagent.get("thread_spawn"))
+        .and_then(|spawn| text(spawn, "agent_role"));
+    let usage = codex_usage(records, &window, log, &thread, "", "");
+    Ok(Reconstruction {
+        descriptor: descriptor(
+            Harness::Codex,
+            model,
+            effort,
+            agent_type,
+            version,
+            format!("codex:session/{thread}/thread/{thread}"),
+            Some(usage),
+        ),
+        tool_use: None,
+    })
 }
 
 #[cfg(test)]
