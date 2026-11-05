@@ -48,10 +48,20 @@ Ordinary unit, component, integration and release tests remain normal software. 
 
 Keep intent deltas proposed while implementation is unfinished. During proposal review, run
 `azimuth change intent-capture` for replacements or removals, then
-`azimuth change intent-preview --out <file>` and inspect the target spec and diff. Near acceptance,
+`azimuth change intent-preview --out <file>` and inspect the target spec and diff. A removed
+Requirement or Scenario that realization, verification, support or code still references is an owed
+repair: `azimuth change validate` reports it as `removed-identity-referenced` until the change's
+realization and verification deltas and implementation remove the references, and `intent-apply`
+refuses it until the accepted account no longer holds them. Near acceptance,
 refresh the preview and review any drift. When implemented behavior satisfies the reviewed intent,
 run `azimuth change intent-apply --preview <file>` to update package `spec.md` mechanically.
-`finalize` and `archive` only verify that application occurred; they do not apply intent.
+A rename whose verification delta binds the successor Scenario cannot be applied one facet at a
+time: `intent-apply` refuses while the old binding exists and `account-apply` refuses to bind a
+Scenario the accepted spec lacks. Apply such a change with
+`azimuth change finalize --preview <intent-preview> --account-preview <account-preview>`, which
+composes both pending facets, refuses any reference that still remains in the composition and
+writes nothing unless the composed account passes every finalization gate. `archive` only verifies
+that application occurred; it does not apply intent.
 Distil only mechanisms that now exist into the module's `realization.md` when it helps the Realization Review; it is optional. Because no current Requirement declares `Verification:`, do not create package `verification.md`
 files or reviews for this alpha transition.
 

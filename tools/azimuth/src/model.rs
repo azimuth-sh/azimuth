@@ -1083,7 +1083,11 @@ impl Model {
     }
 
     /// Project-wide identity and cardinality checks run only after every authority is loaded.
-    pub fn account_check_issues(&self) -> Vec<crate::diag::Diag> {
+    /// Bindings to `owed_scenarios` are left to the caller that reports them as owed repairs.
+    pub fn account_check_issues(
+        &self,
+        owed_scenarios: &std::collections::BTreeSet<String>,
+    ) -> Vec<crate::diag::Diag> {
         crate::account_model::authored_check_issues(
             self.account_verifications.iter(),
             &self.specs,
@@ -1092,6 +1096,7 @@ impl Model {
                 self.account_realizations.iter(),
                 &self.realizations,
             ),
+            owed_scenarios,
         )
     }
 

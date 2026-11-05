@@ -83,6 +83,7 @@ define_finding_kinds! {
     MechanismSupportUnresolved,
     UnimplementedCheck,
     DanglingCheckImplementation,
+    RemovedIdentityReferenced,
 }
 
 impl FindingKind {
@@ -117,6 +118,7 @@ impl FindingKind {
             Self::MechanismSupportUnresolved => "mechanism-support-unresolved",
             Self::UnimplementedCheck => "unimplemented-check",
             Self::DanglingCheckImplementation => "dangling-check-implementation",
+            Self::RemovedIdentityReferenced => "removed-identity-referenced",
         }
     }
 
@@ -125,7 +127,8 @@ impl FindingKind {
             Self::ConditionUnknownComponent
             | Self::ConditionUnknownLeaf
             | Self::ConditionTypeMismatch
-            | Self::ConditionConflict => FindingCategory::Intent,
+            | Self::ConditionConflict
+            | Self::RemovedIdentityReferenced => FindingCategory::Intent,
             Self::CheckUnknownLeaf => FindingCategory::Verification,
             Self::Unrealized
             | Self::DanglingRealization
@@ -193,6 +196,9 @@ impl FindingKind {
                 "Mark at least one stable source implementation of the Check."
             }
             Self::DanglingCheckImplementation => "Retarget the source marker to a declared Check.",
+            Self::RemovedIdentityReferenced => {
+                "Remove or retarget each listed reference through this change's realization and verification deltas, support or code `Realizes` sites; intent-apply refuses the removal while any remains in the accepted account, and finalize while any remains after composing this change's deltas."
+            }
         }
     }
 }
@@ -491,22 +497,7 @@ pub fn validate(model: &Model) -> Vec<Finding> {
     findings.extend(realization_obligation_findings(model));
     findings.extend(account_findings(model));
     findings.extend(surface_findings(model));
-    findings.sort_by(|left, right| {
-        (
-            &left.path,
-            left.line,
-            left.kind.name(),
-            &left.requirement,
-            &left.detail,
-        )
-            .cmp(&(
-                &right.path,
-                right.line,
-                right.kind.name(),
-                &right.requirement,
-                &right.detail,
-            ))
-    });
+    sort(&mut findings);
     findings
 }
 
@@ -1239,6 +1230,26 @@ pub struct Summary {
     pub requirements: usize,
     pub errors: usize,
     pub warnings: usize,
+}
+
+/// The registry's deterministic Finding order: `(file, line, kind, requirement, detail)`.
+pub fn sort(findings: &mut [Finding]) {
+    findings.sort_by(|left, right| {
+        (
+            &left.path,
+            left.line,
+            left.kind.name(),
+            &left.requirement,
+            &left.detail,
+        )
+            .cmp(&(
+                &right.path,
+                right.line,
+                right.kind.name(),
+                &right.requirement,
+                &right.detail,
+            ))
+    });
 }
 
 pub fn summarize(model: &Model, findings: &[Finding]) -> Summary {

@@ -1,6 +1,6 @@
 # Finding registry
 
-A Finding is one deterministic defect derived from the complete model. Findings are the product of `azimuth validate` and are carried inside `azimuth export` under the root `findings` key; they are part of the exported account and therefore part of the model digest.
+A Finding is one deterministic defect derived from the complete model. Findings are the product of `azimuth validate` and are carried inside `azimuth export` under the root `findings` key; they are part of the exported account and therefore part of the model digest. `azimuth change validate` reports the Findings of the prospective model, plus `removed-identity-referenced`, which only a change can produce and which therefore never appears in `azimuth validate` or `azimuth export`.
 
 A Finding is never authored. Its kind, category, severity and remediation sentence are owned by the tool; only the location, Requirement or other entity reference and detail vary with the model.
 
@@ -52,7 +52,7 @@ The mapping from kind to category is exhaustive by construction: a kind not name
 
 ## Kinds
 
-The registry is exhaustive: 29 kinds.
+The registry is exhaustive: 30 kinds.
 
 | Kind | Category | Severity |
 |---|---|---|
@@ -85,6 +85,7 @@ The registry is exhaustive: 29 kinds.
 | `mechanism-support-unresolved` | verification | error |
 | `unimplemented-check` | verification | error |
 | `dangling-check-implementation` | verification | error |
+| `removed-identity-referenced` | intent | error |
 
 The table lists kinds in registry declaration order, which is not the order Findings are emitted or sorted.
 
@@ -120,6 +121,7 @@ The table lists kinds in registry declaration order, which is not the order Find
 - `mechanism-support-unresolved` — a selected mechanism has no implementation support.
 - `unimplemented-check` — a document-authored Check has no stable extracted source implementation.
 - `dangling-check-implementation` — a source marker names a Check that does not exist.
+- `removed-identity-referenced` — a change's intent delta removes a Requirement or Scenario that the prospective account still references. It is attributed to the removal operation in the delta and its detail lists every referencing location with the facet that owes the repair ([intent-delta.md](intent-delta.md#references-to-a-removed-identity)).
 
 A Verification Challenge has no aggregate score, and no Finding kind expresses one. Findings are reviewed against the specific predicate they attack.
 

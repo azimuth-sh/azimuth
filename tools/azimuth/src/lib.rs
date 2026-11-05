@@ -83,6 +83,27 @@ pub fn load_with_support(
     supports: &[PathBuf],
     only: &[String],
 ) -> Result<Loaded, Vec<Diag>> {
+    load_with_owed_bindings(
+        model_dir,
+        workspace_path,
+        manifests,
+        supports,
+        only,
+        &BTreeSet::new(),
+    )
+}
+
+/// Loads a prospective change model in which Check bindings to `owed_scenarios` (Scenarios the
+/// change removes) remain. The caller must report those bindings as owed reference repairs;
+/// every other load diagnostic still refuses the model.
+pub fn load_with_owed_bindings(
+    model_dir: &Path,
+    workspace_path: &Path,
+    manifests: &[PathBuf],
+    supports: &[PathBuf],
+    only: &[String],
+    owed_scenarios: &BTreeSet<String>,
+) -> Result<Loaded, Vec<Diag>> {
     let loaded = spec::load_specs(model_dir)?;
     let mut model = Model {
         specs: loaded.specs,
@@ -147,7 +168,7 @@ pub fn load_with_support(
     errors.extend(verification_owner_issues(&model));
     errors.extend(model.entity_declaration_issues());
     errors.extend(model.verification_declaration_issues());
-    errors.extend(model.account_check_issues());
+    errors.extend(model.account_check_issues(owed_scenarios));
     errors.extend(verification_packages::validate_model(&model));
     errors.extend(merged_manifest_issues(&model));
     errors.extend(mechanism_route_issues(&model));
@@ -205,6 +226,16 @@ pub fn load_assembly_with_linkage(
     assembly: &federation::Assembly,
     linkage: Option<(&str, &[PathBuf])>,
     only: &[String],
+) -> Result<Loaded, Vec<Diag>> {
+    load_assembly_with_owed_bindings(assembly, linkage, only, &BTreeSet::new())
+}
+
+/// [`load_with_owed_bindings`] for a catalog assembly.
+pub fn load_assembly_with_owed_bindings(
+    assembly: &federation::Assembly,
+    linkage: Option<(&str, &[PathBuf])>,
+    only: &[String],
+    owed_scenarios: &BTreeSet<String>,
 ) -> Result<Loaded, Vec<Diag>> {
     let mut model = Model::default();
     let mut errors = Vec::new();
@@ -318,7 +349,7 @@ pub fn load_assembly_with_linkage(
     errors.extend(verification_owner_issues(&model));
     errors.extend(model.entity_declaration_issues());
     errors.extend(model.verification_declaration_issues());
-    errors.extend(model.account_check_issues());
+    errors.extend(model.account_check_issues(owed_scenarios));
     errors.extend(verification_packages::validate_model(&model));
     errors.extend(merged_manifest_issues(&model));
     errors.extend(mechanism_route_issues(&model));

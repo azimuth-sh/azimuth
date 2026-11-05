@@ -55,9 +55,9 @@ GitHub token owns GitHub Release and GHCR writes.
 Create and push one annotated tag at the intended `main` revision:
 
 ```sh
-git tag --annotate v0.1.0-alpha.8 --message "Azimuth 0.1.0-alpha.8"
-git push origin v0.1.0-alpha.8
-gh run list --workflow release --branch v0.1.0-alpha.8 --limit 1
+git tag --annotate v0.1.0-alpha.9 --message "Azimuth 0.1.0-alpha.9"
+git push origin v0.1.0-alpha.9
+gh run list --workflow release --branch v0.1.0-alpha.9 --limit 1
 gh run watch RUN_ID --exit-status
 ```
 
@@ -86,7 +86,7 @@ checks separately cover failures, retries, contexts and missing captures through
 `execution-context`, `test-report`, `test-mapping`, `native-test-results`, `deployment-assessment`
 and `deployment-status` have independent catalog protocol versions (`test-report` and
 `native-test-results` 1, the others 2). They are not inferred from package version
-`0.1.0-alpha.8`. Public source adapters under `packages/python` remain
+`0.1.0-alpha.9`. Public source adapters under `packages/python` remain
 commit-pinned source inputs rather than a newly invented PyPI artifact identity.
 
 Registry publication is not required for consumer CI adoption: build CLI/harness artifacts once

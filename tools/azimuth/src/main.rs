@@ -103,7 +103,7 @@ USAGE
     azimuth change show|status <id-or-dir> [--changes <dir>] [options]
     azimuth change work-packages <id-or-dir> [--changes <dir>]
     azimuth change brief <id-or-dir> --package <id> [--changes <dir>]
-    azimuth change finalize <dir> [options]
+    azimuth change finalize <dir> [--preview <intent-preview>] [--account-preview <account-preview>] [options]
     azimuth change archive <dir> --date <YYYY-MM-DD> [options]
         (with project.json beside model/, both require --project <file> --workset <file>)
 
@@ -252,6 +252,9 @@ struct Options {
     assurance_snapshot: Option<PathBuf>,
     only: Vec<String>,
     out: Option<PathBuf>,
+    /// Scenarios a validated change removes whose Check bindings are reported as owed reference
+    /// repairs instead of refusing the prospective load. Empty outside `change validate`.
+    owed_scenarios: std::collections::BTreeSet<String>,
 }
 
 fn run(args: &[String]) -> Result<ExitCode, String> {
@@ -1243,6 +1246,7 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
     let mut title = None;
     let mut package = None;
     let mut preview_path = None;
+    let mut account_preview_path = None;
     let mut option_args = Vec::new();
     let mut positional = Vec::new();
     let mut date = None;
@@ -1267,6 +1271,14 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
             }
             "--preview" => {
                 preview_path = Some(PathBuf::from(argument_value(args, index, "--preview")?));
+                index += 2;
+            }
+            "--account-preview" => {
+                account_preview_path = Some(PathBuf::from(argument_value(
+                    args,
+                    index,
+                    "--account-preview",
+                )?));
                 index += 2;
             }
             value if value.starts_with('-') => {
@@ -1394,6 +1406,12 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
     let value = one_position(&positional, "change operation needs one id or directory")?;
     let root = azimuth::workflow::resolve_change(&changes, value)?;
     let acceptance_boundary = matches!(operation.as_str(), "finalize" | "archive");
+    if account_preview_path.is_some() && operation != "finalize" {
+        return Err(
+            "`--account-preview` is available only for change finalize; account-apply takes `--preview`"
+                .into(),
+        );
+    }
     let options = parse_options(&option_args, operation == "validate" || acceptance_boundary)?;
     if operation == "validate" {
         if preview_path.is_some() {
@@ -1472,6 +1490,19 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
             }
         }
     }
+    if operation == "finalize" {
+        return command_change_finalize(
+            &root,
+            &options,
+            catalog,
+            &model_root,
+            loaded,
+            FinalizePreviews {
+                intent: preview_path,
+                account: account_preview_path,
+            },
+        );
+    }
     let report = match azimuth::change::inspect(&root, &loaded.model) {
         Ok(report) => report,
         Err(errors) => {
@@ -1489,19 +1520,44 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
         (acceptances, ratified) = change_acceptances(&root, &report, &loaded.model)?;
         azimuth::change::waive_accepted_requirements(&mut findings, &ratified);
     }
-    let projection = match azimuth::intent::project(&root, &model_root, &loaded.model) {
-        Ok(projection) => projection,
-        Err(errors) => {
-            for error in errors {
-                eprintln!("error: {error}");
-            }
-            return Ok(ExitCode::from(2));
-        }
+    // Only operations that write or seal accepted state refuse a removal whose references are still
+    // unrepaired; authoring and inspection report them as owed by later facets.
+    let removal_references = if matches!(operation.as_str(), "intent-apply" | "archive") {
+        azimuth::intent::RemovalReferences::Refused
+    } else {
+        azimuth::intent::RemovalReferences::Owed
     };
+    let projection =
+        match azimuth::intent::project(&root, &model_root, &loaded.model, removal_references) {
+            Ok(projection) => projection,
+            Err(errors) => {
+                for error in errors {
+                    eprintln!("error: {error}");
+                }
+                return Ok(ExitCode::from(2));
+            }
+        };
 
     match operation.as_str() {
         "intent-preview" => {
             let preview = projection.preview();
+            // The preview file is the reviewed spec target that intent-apply compares byte for
+            // byte. Owed repairs describe the current account, which the change's later facets
+            // repair before application, so they stay out of that snapshot.
+            for repair in &projection.owed_repairs {
+                eprintln!(
+                    "owed reference repair: {}:{}: {}",
+                    repair.removal.delta.display(),
+                    repair.removal.line,
+                    repair.describe()
+                );
+            }
+            if !projection.owed_repairs.is_empty() {
+                eprintln!(
+                    "note: {} removal(s) still referenced by the accepted account; `intent-apply` refuses them until the accepted account no longer references them, `change finalize` applies this change's intent and account deltas together and refuses only references that remain after them, and `azimuth change validate` reports which remain",
+                    projection.owed_repairs.len()
+                );
+            }
             if let Some(out) = &options.out {
                 let model_dir = fs::canonicalize(&model_root)
                     .map_err(|error| format!("{}: {error}", model_root.display()))?;
@@ -1627,6 +1683,9 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
                     );
                 }
             }
+            for repair in &projection.owed_repairs {
+                println!("  owed reference repair · {}", repair.describe());
+            }
             if let Some(reason) = &report.unchanged_intent_reason {
                 println!("  intent unchanged · {reason}");
             }
@@ -1645,54 +1704,6 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
             } else {
                 ExitCode::SUCCESS
             })
-        }
-        "finalize" => {
-            let account =
-                azimuth::account_delta::project_new_modules(&root.join("deltas"), &model_root)
-                    .map_err(|errors| errors.join("\n"))?;
-            let mut issues = azimuth::change::completion_issues(&root, &report);
-            if account
-                .files
-                .iter()
-                .any(|file| file.before.as_deref() != Some(file.after.as_str()))
-            {
-                issues.push("account deltas have not been applied to current facets".into());
-            }
-            if !projection.files.is_empty() {
-                issues.push("intent delta has not been applied to current specs".into());
-            }
-            let summary = validation::summarize(&loaded.model, &findings);
-            if summary.errors > 0 || summary.warnings > 0 {
-                eprintln!(
-                    "error: accepted-state model has {} error(s), {} warning(s)",
-                    summary.errors, summary.warnings
-                );
-            }
-            for issue in &issues {
-                eprintln!("error: {issue}");
-            }
-            if summary.errors > 0 || summary.warnings > 0 || !issues.is_empty() {
-                return Ok(ExitCode::from(1));
-            }
-            let (fingerprint, finalization) =
-                azimuth::change::finalization(&loaded.model, &findings, &acceptances, &ratified);
-            let updates = azimuth::change::head_updates(&loaded.model, &ratified);
-            for path in azimuth::review_heads::write(
-                &model_root,
-                &loaded.model.review_heads,
-                &updates,
-                &|_| true,
-            )? {
-                println!("wrote review head {}", path.display());
-            }
-            std::fs::write(root.join("finalization.json"), finalization).map_err(|error| {
-                format!("cannot write {}/finalization.json: {error}", root.display())
-            })?;
-            if let Some(ledger) = azimuth::change::finalize_provenance(&root)? {
-                println!("exported Work Provenance to {}", ledger.display());
-            }
-            println!("finalized `{}` at model {fingerprint}", report.id);
-            Ok(ExitCode::SUCCESS)
         }
         "archive" => {
             let account =
@@ -1786,6 +1797,437 @@ fn command_change(args: &[String]) -> Result<ExitCode, String> {
 /// Acceptance needs source linkage, which a catalog-backed project obtains only from repository
 /// observations; a catalog-only load is a partial local account and cannot be finalized. A
 /// workspace-only project keeps its local load.
+/// The reviewed previews that authorize finalize to apply a change's pending facets.
+struct FinalizePreviews {
+    intent: Option<PathBuf>,
+    account: Option<PathBuf>,
+}
+
+/// What finalize records once a model passes every acceptance check.
+struct FinalizeVerdict {
+    change: String,
+    fingerprint: String,
+    finalization: String,
+    updates: Vec<azimuth::review_heads::Head>,
+}
+
+/// One accepted facet file as it stood before finalize applied the change to it.
+struct AppliedFacet {
+    path: PathBuf,
+    before: Option<String>,
+}
+
+/// Finalizes a change. Facets the change has not applied yet are applied here, together: a Scenario
+/// rename removes an identity that the change's own verification delta rebinds, so the intent
+/// delta cannot be applied before that binding and the account delta cannot bind the successor
+/// before the intent delta adds it. Both are composed in a staged copy of the accepted model, every
+/// acceptance check runs against that composition, and only a composition that passes is written.
+fn command_change_finalize(
+    root: &std::path::Path,
+    options: &Options,
+    mut catalog: Option<azimuth::federation::Assembly>,
+    model_root: &std::path::Path,
+    loaded: azimuth::Loaded,
+    previews: FinalizePreviews,
+) -> Result<ExitCode, String> {
+    let intent = match azimuth::intent::project(
+        root,
+        model_root,
+        &loaded.model,
+        azimuth::intent::RemovalReferences::Owed,
+    ) {
+        Ok(intent) => intent,
+        Err(errors) => {
+            for error in errors {
+                eprintln!("error: {error}");
+            }
+            return Ok(ExitCode::from(2));
+        }
+    };
+    let account = azimuth::account_delta::project_new_modules(&root.join("deltas"), model_root)
+        .map_err(|errors| errors.join("\n"))?;
+    let account_pending = account
+        .files
+        .iter()
+        .any(|file| file.before.as_deref() != Some(file.after.as_str()));
+    if intent.files.is_empty() && !account_pending {
+        if previews.intent.is_some() || previews.account.is_some() {
+            return Err(
+                "the change's facets are already applied; finalize takes no `--preview` or `--account-preview`"
+                    .into(),
+            );
+        }
+        let verdict = match finalize_verdict(root, model_root, &loaded.model, options)? {
+            Ok(verdict) => verdict,
+            Err(code) => return Ok(code),
+        };
+        return record_finalization(root, model_root, &loaded.model, verdict);
+    }
+
+    if root
+        .parent()
+        .and_then(|path| path.file_name())
+        .and_then(|name| name.to_str())
+        != Some("changes")
+    {
+        return Err(
+            "finalize applies pending facets only for an active change, not an archived record"
+                .into(),
+        );
+    }
+    if !finalize_preview_current(
+        intent.files.is_empty(),
+        previews.intent.as_deref(),
+        &intent.preview(),
+        "intent",
+        "--preview",
+        "azimuth change intent-preview",
+    )? {
+        return Ok(ExitCode::from(1));
+    }
+    if !finalize_preview_current(
+        !account_pending,
+        previews.account.as_deref(),
+        &account.preview(),
+        "account",
+        "--account-preview",
+        "azimuth change account-preview",
+    )? {
+        return Ok(ExitCode::from(1));
+    }
+    let proposal = fs::read_to_string(root.join("proposal.md"))
+        .map_err(|error| format!("cannot read proposal.md: {error}"))?;
+    if !proposal.lines().any(|line| {
+        line.trim() == "Status: accepted and complete" || line.trim() == "Status: active"
+    }) {
+        return Err("facet application requires an active or accepted-and-complete change".into());
+    }
+
+    let stage = ValidationStage(std::env::temp_dir().join(format!(
+        "azimuth-change-finalize-{}-{}",
+        std::process::id(),
+        OUTPUT_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    )));
+    fs::create_dir(&stage.0).map_err(|error| format!("{}: {error}", stage.0.display()))?;
+    copy_account_model(model_root, &stage.0)?;
+    let staged_path = |path: &std::path::Path| -> Result<PathBuf, String> {
+        path.strip_prefix(model_root)
+            .map(|relative| stage.0.join(relative))
+            .map_err(|_| format!("{}: target is outside the model root", path.display()))
+    };
+    for file in &intent.files {
+        let target = staged_path(&file.path)?;
+        if file.after.is_empty() {
+            fs::remove_file(&target).map_err(|error| format!("{}: {error}", target.display()))?;
+        } else {
+            write_staged_facet(&target, &file.after)?;
+        }
+    }
+    for file in &account.files {
+        write_staged_facet(&staged_path(&file.path)?, &file.after)?;
+    }
+    // Bindings to removed Scenarios load so that each one left unrepaired is reported against the
+    // removal that strands it rather than as an unexplained load failure.
+    let owed_scenarios = intent
+        .removals
+        .iter()
+        .filter_map(|removal| removal.scenario.clone())
+        .collect();
+    let composed = match &mut catalog {
+        Some(assembly) => {
+            let roots = std::mem::replace(&mut assembly.model_roots, vec![stage.0.clone()]);
+            let composed =
+                azimuth::load_assembly_with_owed_bindings(assembly, None, &[], &owed_scenarios);
+            assembly.model_roots = roots;
+            composed
+        }
+        None => azimuth::load_with_owed_bindings(
+            &stage.0,
+            &options.workspace,
+            &options.manifests,
+            &[],
+            &[],
+            &owed_scenarios,
+        ),
+    };
+    let composed = match composed {
+        Ok(composed) => composed,
+        Err(mut diagnostics) => {
+            for diagnostic in &mut diagnostics {
+                if let Ok(relative) = std::path::Path::new(&diagnostic.path).strip_prefix(&stage.0)
+                {
+                    diagnostic.path = model_root.join(relative).display().to_string();
+                }
+            }
+            report(&diagnostics, "error");
+            return Ok(ExitCode::from(2));
+        }
+    };
+    let original_path = |path: &str| -> Option<String> {
+        let relative = std::path::Path::new(path).strip_prefix(&stage.0).ok()?;
+        Some(model_root.join(relative).display().to_string())
+    };
+    let (unrepaired, _) =
+        owed_reference_repairs(&intent.removals, &composed.model, &account, &original_path);
+    if !unrepaired.is_empty() {
+        for finding in &unrepaired {
+            eprintln!(
+                "error: {}:{}: {}",
+                finding.path, finding.line, finding.detail
+            );
+        }
+        eprintln!(
+            "error: the change's facets leave {} removed identit{} referenced; nothing was applied",
+            unrepaired.len(),
+            if unrepaired.len() == 1 { "y" } else { "ies" }
+        );
+        return Ok(ExitCode::from(1));
+    }
+    if let Err(code) = finalize_verdict(root, &stage.0, &composed.model, options)? {
+        eprintln!("error: the composed account cannot be finalized; nothing was applied");
+        return Ok(code);
+    }
+
+    let applied = apply_finalized_facets(&intent, &account)?;
+    // The staged composition decided acceptance. The written account must reproduce it; if it
+    // does not, the accepted facets are restored rather than left half-finalized.
+    let reloaded = match &catalog {
+        Some(assembly) => azimuth::load_assembly(assembly, &[]),
+        None => azimuth::load(&options.model, &options.workspace, &options.manifests, &[]),
+    };
+    let verdict = match reloaded {
+        Ok(reloaded) => match finalize_verdict(root, model_root, &reloaded.model, options) {
+            Ok(Ok(verdict)) => Ok((reloaded, verdict)),
+            Ok(Err(_)) => Err("the applied account fails a check the staged one passed".into()),
+            Err(error) => Err(error),
+        },
+        Err(diagnostics) => Err(render_diagnostics(diagnostics)),
+    };
+    match verdict {
+        Ok((reloaded, verdict)) => {
+            for facet in &applied {
+                println!("applied target facet: {}", facet.path.display());
+            }
+            record_finalization(root, model_root, &reloaded.model, verdict)
+        }
+        Err(error) => {
+            restore_facets(&applied)?;
+            Err(format!("{error}; the accepted facets were restored"))
+        }
+    }
+}
+
+/// Requires the reviewed preview of a pending facet and reports whether it is current.
+fn finalize_preview_current(
+    applied: bool,
+    reviewed: Option<&std::path::Path>,
+    preview: &str,
+    facet: &str,
+    flag: &str,
+    command: &str,
+) -> Result<bool, String> {
+    let Some(reviewed) = reviewed else {
+        if applied {
+            return Ok(true);
+        }
+        return Err(format!(
+            "finalize applies the pending {facet} delta only with `{flag} <file>` from the reviewed `{command}`"
+        ));
+    };
+    if applied {
+        return Err(format!(
+            "the {facet} delta is already applied; omit `{flag}`"
+        ));
+    }
+    let reviewed_text =
+        fs::read_to_string(reviewed).map_err(|error| format!("{}: {error}", reviewed.display()))?;
+    if reviewed_text != preview {
+        eprintln!("error: {facet} preview is stale; rerun `{command}` and review the new target");
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+/// Runs every acceptance check finalize requires against a model whose facets are applied.
+fn finalize_verdict(
+    root: &std::path::Path,
+    model_root: &std::path::Path,
+    model: &azimuth::model::Model,
+    options: &Options,
+) -> Result<Result<FinalizeVerdict, ExitCode>, String> {
+    let report = match azimuth::change::inspect(root, model) {
+        Ok(report) => report,
+        Err(errors) => {
+            for error in &errors {
+                eprintln!("error: {error}");
+            }
+            return Ok(Err(ExitCode::from(2)));
+        }
+    };
+    let mut findings = validation::validate(model);
+    verify_assurance_snapshot(model, options)?;
+    let (acceptances, ratified) = change_acceptances(root, &report, model)?;
+    azimuth::change::waive_accepted_requirements(&mut findings, &ratified);
+    let projection = match azimuth::intent::project(
+        root,
+        model_root,
+        model,
+        azimuth::intent::RemovalReferences::Refused,
+    ) {
+        Ok(projection) => projection,
+        Err(errors) => {
+            for error in errors {
+                eprintln!("error: {error}");
+            }
+            return Ok(Err(ExitCode::from(2)));
+        }
+    };
+    let account = azimuth::account_delta::project_new_modules(&root.join("deltas"), model_root)
+        .map_err(|errors| errors.join("\n"))?;
+    let mut issues = azimuth::change::completion_issues(root, &report);
+    if account
+        .files
+        .iter()
+        .any(|file| file.before.as_deref() != Some(file.after.as_str()))
+    {
+        issues.push("account deltas have not been applied to current facets".into());
+    }
+    if !projection.files.is_empty() {
+        issues.push("intent delta has not been applied to current specs".into());
+    }
+    let summary = validation::summarize(model, &findings);
+    if summary.errors > 0 || summary.warnings > 0 {
+        eprintln!(
+            "error: accepted-state model has {} error(s), {} warning(s)",
+            summary.errors, summary.warnings
+        );
+    }
+    for issue in &issues {
+        eprintln!("error: {issue}");
+    }
+    if summary.errors > 0 || summary.warnings > 0 || !issues.is_empty() {
+        return Ok(Err(ExitCode::from(1)));
+    }
+    let (fingerprint, finalization) =
+        azimuth::change::finalization(model, &findings, &acceptances, &ratified);
+    Ok(Ok(FinalizeVerdict {
+        change: report.id,
+        fingerprint,
+        finalization,
+        updates: azimuth::change::head_updates(model, &ratified),
+    }))
+}
+
+fn record_finalization(
+    root: &std::path::Path,
+    model_root: &std::path::Path,
+    model: &azimuth::model::Model,
+    verdict: FinalizeVerdict,
+) -> Result<ExitCode, String> {
+    for path in
+        azimuth::review_heads::write(model_root, &model.review_heads, &verdict.updates, &|_| true)?
+    {
+        println!("wrote review head {}", path.display());
+    }
+    fs::write(root.join("finalization.json"), verdict.finalization)
+        .map_err(|error| format!("cannot write {}/finalization.json: {error}", root.display()))?;
+    if let Some(ledger) = azimuth::change::finalize_provenance(root)? {
+        println!("exported Work Provenance to {}", ledger.display());
+    }
+    println!(
+        "finalized `{}` at model {}",
+        verdict.change, verdict.fingerprint
+    );
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Writes the projected intent and account facets into the accepted model. Every target is staged
+/// beside itself and checked against the content it was projected from before any is replaced.
+fn apply_finalized_facets(
+    intent: &azimuth::intent::Projection,
+    account: &azimuth::account_delta::AccountProjection,
+) -> Result<Vec<AppliedFacet>, String> {
+    let mut targets = Vec::new();
+    for file in &intent.files {
+        let before = (!file.before.is_empty()).then(|| file.before.clone());
+        let after = (!file.after.is_empty()).then(|| file.after.clone());
+        targets.push((file.path.clone(), before, after));
+    }
+    for file in &account.files {
+        if file.before.as_deref() != Some(file.after.as_str()) {
+            targets.push((
+                file.path.clone(),
+                file.before.clone(),
+                Some(file.after.clone()),
+            ));
+        }
+    }
+    for (path, before, _) in &targets {
+        if fs::read_to_string(path).ok() != *before {
+            return Err(format!(
+                "{}: accepted facet changed after projection; nothing was applied",
+                path.display()
+            ));
+        }
+    }
+    let mut staged = Vec::new();
+    let discard = |staged: &[PathBuf]| {
+        for path in staged {
+            let _ = fs::remove_file(path);
+        }
+    };
+    for (index, (path, _, after)) in targets.iter().enumerate() {
+        let Some(after) = after else {
+            continue;
+        };
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|error| format!("{}: {error}", parent.display()))?;
+        }
+        let temporary =
+            path.with_extension(format!("finalize-azimuth-{}-{index}", std::process::id()));
+        let written = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .and_then(|mut output| output.write_all(after.as_bytes()));
+        if let Err(error) = written {
+            let _ = fs::remove_file(&temporary);
+            discard(&staged);
+            return Err(format!("{}: {error}", temporary.display()));
+        }
+        staged.push(temporary);
+    }
+    let mut applied = Vec::new();
+    let mut temporaries = staged.iter();
+    for (path, before, after) in targets {
+        let result = match after {
+            Some(_) => fs::rename(temporaries.next().unwrap(), &path),
+            None => fs::remove_file(&path),
+        };
+        if let Err(error) = result {
+            let _ = restore_facets(&applied);
+            discard(&staged);
+            return Err(format!(
+                "{}: cannot apply target facet: {error}; the accepted facets were restored",
+                path.display()
+            ));
+        }
+        applied.push(AppliedFacet { path, before });
+    }
+    Ok(applied)
+}
+
+fn restore_facets(applied: &[AppliedFacet]) -> Result<(), String> {
+    for facet in applied.iter().rev() {
+        match &facet.before {
+            Some(before) => fs::write(&facet.path, before),
+            None => fs::remove_file(&facet.path),
+        }
+        .map_err(|error| format!("{}: cannot restore: {error}", facet.path.display()))?;
+    }
+    Ok(())
+}
+
 fn acceptance_assembly(
     root: &std::path::Path,
     options: &Options,
@@ -1927,7 +2369,12 @@ fn load_catalog(
         .repository
         .as_deref()
         .map(|repository| (repository, options.manifests.as_slice()));
-    azimuth::load_assembly_with_linkage(assembly, linkage, &options.only)
+    azimuth::load_assembly_with_owed_bindings(
+        assembly,
+        linkage,
+        &options.only,
+        &options.owed_scenarios,
+    )
 }
 
 /// The commands that load a model only to report on it may qualify one repository's linkage;
@@ -1944,12 +2391,13 @@ fn reject_repository(options: &Options) -> Result<(), String> {
 fn load_local_inputs(options: &Options) -> Result<azimuth::Loaded, String> {
     match options_catalog(options)? {
         Some(assembly) => load_catalog(&assembly, options).map_err(render_diagnostics),
-        None => azimuth::load_with_support(
+        None => azimuth::load_with_owed_bindings(
             &options.model,
             &options.workspace,
             &options.manifests,
             &options.supports,
             &options.only,
+            &options.owed_scenarios,
         )
         .map_err(render_diagnostics),
     }
@@ -3602,6 +4050,7 @@ fn parse_options(args: &[String], allow_scope: bool) -> Result<Options, String> 
         assurance_snapshot: None,
         only: Vec::new(),
         out: None,
+        owed_scenarios: Default::default(),
     };
     let mut scope_seen = false;
     let mut i = 0;
@@ -3960,6 +4409,7 @@ fn command_change_validate(root: &std::path::Path, options: &Options) -> Result<
         assurance_snapshot: options.assurance_snapshot.clone(),
         only: Vec::new(),
         out: None,
+        owed_scenarios: Default::default(),
     };
     if let Some(assembly) = &mut assembly {
         assembly.model_roots = vec![stage.0.clone()];
@@ -3981,8 +4431,13 @@ fn command_change_validate(root: &std::path::Path, options: &Options) -> Result<
     };
     let change =
         azimuth::change::inspect(root, &accepted.model).map_err(|errors| errors.join("\n"))?;
-    let intent = azimuth::intent::project(root, &stage.0, &accepted.model)
-        .map_err(|errors| errors.join("\n"))?;
+    let intent = azimuth::intent::project(
+        root,
+        &stage.0,
+        &accepted.model,
+        azimuth::intent::RemovalReferences::Owed,
+    )
+    .map_err(|errors| errors.join("\n"))?;
     let account = azimuth::account_delta::project_new_modules(&root.join("deltas"), &stage.0)
         .map_err(|errors| errors.join("\n"))?;
     for file in &intent.files {
@@ -3996,25 +4451,61 @@ fn command_change_validate(root: &std::path::Path, options: &Options) -> Result<
         write_staged_facet(&file.path, &file.after)?;
     }
     staged_options.model = stage.0.clone();
+    staged_options.owed_scenarios = intent
+        .removals
+        .iter()
+        .filter_map(|removal| removal.scenario.clone())
+        .collect();
     let prospective = if let Some(assembly) = &assembly {
-        azimuth::load_assembly(assembly, &[]).map_err(render_diagnostics)?
+        azimuth::load_assembly_with_owed_bindings(
+            assembly,
+            None,
+            &[],
+            &staged_options.owed_scenarios,
+        )
+        .map_err(render_diagnostics)?
     } else {
         load_validation_inputs(&staged_options)?
     };
     report(&prospective.warnings, "warning");
     let mut findings = validation::validate(&prospective.model);
     verify_assurance_snapshot(&prospective.model, options)?;
-    for finding in &mut findings {
-        if let Ok(relative) = std::path::Path::new(&finding.path).strip_prefix(&stage.0) {
-            finding.path = original_roots
+    let original_path = |path: &str| -> Option<String> {
+        let relative = std::path::Path::new(path).strip_prefix(&stage.0).ok()?;
+        Some(
+            original_roots
                 .iter()
                 .map(|source| source.join(relative))
                 .find(|path| path.exists())
                 .unwrap_or_else(|| root.join("deltas").join(relative))
                 .display()
-                .to_string();
+                .to_string(),
+        )
+    };
+    let (owed, owed_locations) = owed_reference_repairs(
+        &intent.removals,
+        &prospective.model,
+        &account,
+        &original_path,
+    );
+    // A dangling declaration that an owed repair already lists is the same defect; reporting it
+    // twice would only make the repair look larger than it is.
+    findings.retain(|finding| {
+        !(matches!(
+            finding.kind,
+            validation::FindingKind::DanglingRealization
+                | validation::FindingKind::DanglingRealizationEntry
+                | validation::FindingKind::DanglingVerificationScenario
+                | validation::FindingKind::DanglingRealizationObligation
+        ) && owed_locations.contains(&(finding.path.clone(), finding.line)))
+    });
+    for finding in &mut findings {
+        if let Some(path) = original_path(&finding.path) {
+            finding.path = path;
         }
     }
+    findings.extend(owed);
+    validation::sort(&mut findings);
     let blockers = if options.validation_scope == ValidationScope::Acceptance {
         azimuth::change::completion_issues(root, &change)
     } else {
@@ -4033,6 +4524,83 @@ fn command_change_validate(root: &std::path::Path, options: &Options) -> Result<
         options.validation_scope,
         options.out.as_deref(),
     )
+}
+
+/// Checks each planned removal against the prospective account, which already composes this
+/// change's realization and verification deltas, so a reference those deltas repair no longer
+/// counts. A reference that remains is owed by the facet that carries it. Also returns every
+/// owed reference's prospective `(path, line)`, with `0` for a reference without a line.
+fn owed_reference_repairs(
+    removals: &[azimuth::intent::Removal],
+    prospective: &azimuth::model::Model,
+    account: &azimuth::account_delta::AccountProjection,
+    original_path: &dyn Fn(&str) -> Option<String>,
+) -> (
+    Vec<validation::Finding>,
+    std::collections::BTreeSet<(String, usize)>,
+) {
+    let mut locations = std::collections::BTreeSet::new();
+    let findings = removals
+        .iter()
+        .filter_map(|removal| {
+            let references = removal.references(prospective);
+            if references.is_empty() {
+                return None;
+            }
+            locations.extend(
+                references
+                    .iter()
+                    .map(|reference| (reference.path.clone(), reference.line.unwrap_or(0))),
+            );
+            let owed = references
+                .iter()
+                .map(|reference| {
+                    let path =
+                        original_path(&reference.path).unwrap_or_else(|| reference.path.clone());
+                    let location = match reference.line {
+                        Some(line) => format!("{path}:{line}"),
+                        None => path,
+                    };
+                    // A composed facet's line belongs to the target its delta produces, not to the
+                    // accepted file at the same path.
+                    let composed = account
+                        .files
+                        .iter()
+                        .find(|file| file.path == std::path::Path::new(&reference.path))
+                        .map(|file| {
+                            format!(" of the target composed from {}", file.source.display())
+                        })
+                        .unwrap_or_default();
+                    format!(
+                        "{} {location}{composed} ({})",
+                        reference.facet.owner(),
+                        reference.subject
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            let (entity_kind, id) = match &removal.scenario {
+                Some(scenario) => (azimuth::diag::EntityKind::Scenario, scenario.clone()),
+                None => (
+                    azimuth::diag::EntityKind::Requirement,
+                    removal.requirement.clone(),
+                ),
+            };
+            Some(validation::Finding {
+                kind: validation::FindingKind::RemovedIdentityReferenced,
+                severity: validation::Severity::Error,
+                requirement: Some(id),
+                entity_kind: Some(entity_kind),
+                path: removal.delta.display().to_string(),
+                line: removal.line,
+                detail: format!(
+                    "removed {} is still referenced; repair owed by {owed}",
+                    removal.identity()
+                ),
+            })
+        })
+        .collect();
+    (findings, locations)
 }
 
 fn write_staged_facet(path: &std::path::Path, content: &str) -> Result<(), String> {

@@ -11,7 +11,7 @@ Read repository instructions, captured handoff, complete implemented change, rev
 
 Confirm completion conditions, exact required review/execution basis, durable dependency closure and remaining hosted obligations. A full federated account cannot be substituted by local-only output. Missing or stale inputs, unresolved blockers and invented rollout facts prevent completion.
 
-Apply still-pending reviewed spec and account deltas through `intent-apply` and `account-apply` with their exact previews, never manual transcription. Recompute and re-review material drift instead of forcing stale guards. Do not apply the original delta twice when finalizing an explicitly related correction change.
+Apply still-pending reviewed spec and account deltas with their exact previews, never manual transcription: through `intent-apply` and `account-apply`, or together through `change finalize --preview <intent-preview> --account-preview <account-preview>` when neither can go first, as with a Scenario rename whose verification delta binds the successor. Finalize writes nothing unless the composed account passes; treat its `removed-identity-referenced` errors as repairs the change's deltas still owe. Recompute and re-review material drift instead of forcing stale guards. Do not apply the original delta twice when finalizing an explicitly related correction change.
 
 Use the installed acceptance record grammar to retain the human's actual decision for supported affected obligations. Never author approval on your own initiative. Current sealed reviews and relied-on Runs/proofs must remain accessible at finalization; acceptance alone waives no missing review or unrelated finding.
 

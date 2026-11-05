@@ -345,8 +345,13 @@ fn replace_projection(old_labels: &str, new_labels: &str) -> Result<String, Vec<
         .unwrap()],
         ..Default::default()
     };
-    let projected = azimuth::intent::project(&change, &root.join("model"), &model)
-        .map(|projection| projection.files[0].after.clone());
+    let projected = azimuth::intent::project(
+        &change,
+        &root.join("model"),
+        &model,
+        azimuth::intent::RemovalReferences::Refused,
+    )
+    .map(|projection| projection.files[0].after.clone());
     fs::remove_dir_all(&root).unwrap();
     projected
 }

@@ -319,18 +319,20 @@ fn codex_attaches_the_turn_effort_cli_version_and_subagent_usage() {
                 "turn_context",
                 "{\"turn_id\":\"turn-7\",\"model\":\"gpt-6.1-sol\",\"effort\":\"low\"}",
             ),
-            codex_record("2026-10-24T03:00:02.000Z", "token_usage_record", &codex_tokens(5000, 4000, 70, 30)),
+            // Codex writes a model call's usage once its response completes, after the tool call
+            // that response streamed.
             codex_record(
-                "2026-10-24T03:00:03.000Z",
+                "2026-10-24T03:00:02.000Z",
                 "response_item",
                 "{\"type\":\"custom_tool_call\",\"call_id\":\"call_read\",\"name\":\"exec\",\"input\":\"cat spec.md\"}",
             ),
-            codex_record("2026-10-24T03:00:20.000Z", "token_usage_record", &codex_tokens(6000, 5000, 40, 10)),
+            codex_record("2026-10-24T03:00:02.150Z", "token_usage_record", &codex_tokens(5000, 4000, 70, 30)),
             codex_record(
                 "2026-10-24T03:00:21.000Z",
                 "response_item",
                 "{\"type\":\"function_call\",\"call_id\":\"call_update\",\"name\":\"shell\",\"arguments\":\"{}\"}",
             ),
+            codex_record("2026-10-24T03:00:21.150Z", "token_usage_record", &codex_tokens(6000, 5000, 40, 10)),
         ],
     );
     lines(
@@ -407,6 +409,7 @@ fn a_codex_code_mode_call_is_not_counted_as_another_call_in_its_own_window() {
                     "{{\"type\":\"custom_tool_call\",\"call_id\":\"call_outer\",\"name\":\"exec\",                     \"input\":\"const r = await tools.exec_command({{cmd:\\\"{UPDATE}\\\"}});\"}}"
                 ),
             ),
+            codex_record("2026-10-24T03:00:03.150Z", "token_usage_record", &codex_tokens(50, 0, 5, 0)),
         ],
     );
     let event = format!(
@@ -465,7 +468,18 @@ fn a_codex_subagent_counts_only_its_own_history_after_the_forked_parent_copy() {
             ),
             ordinal(
                 4,
-                codex_record("2026-10-24T03:00:07.000Z", "token_usage_record", &codex_tokens(40, 10, 4, 1)),
+                codex_record(
+                    "2026-10-24T03:00:07.000Z",
+                    "response_item",
+                    &format!(
+                        "{{\"type\":\"function_call\",\"call_id\":\"call_sub\",\"name\":\"shell\",\
+                         \"arguments\":\"{UPDATE}\"}}"
+                    ),
+                ),
+            ),
+            ordinal(
+                5,
+                codex_record("2026-10-24T03:00:07.150Z", "token_usage_record", &codex_tokens(40, 10, 4, 1)),
             ),
         ],
     );
