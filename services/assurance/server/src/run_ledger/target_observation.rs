@@ -396,12 +396,16 @@ fn bracket(raw: &Value, history: &[Reconciliation]) -> Option<(Reconciliation, R
 }
 
 const UNRESOLVABLE: &str = "No complete reconciliation bracket of one deployment covers this observation and its targets, or its release does not enroll the Check as deployment evidence; the surrounding history is final, so resolution is not retried";
+const PRECEDES_RECONCILIATION: &str = "This observation started before the first reconciliation of its environment, and a reconciliation is accepted only after the latest one, so none can ever precede it; resolution is not retried";
 
 // Only observations with a reconciliation before their start and after their end can resolve, so the rest are not
-// loaded at all. Deployment observations are accepted only in increasing observed time, so once a later one exists
-// the bracket history is final and a bracketed observation that does not resolve never will: it is marked
-// unresolvable instead of being retried forever. An error, such as a context contract that is not yet registered,
-// can be cured later and is retried with exponential backoff (10 s doubling to 15 min).
+// loaded at all. Comparing with the first and last reconciliation of the environment is equivalent to searching for
+// one before and one after, and does not cost a search of the deployment history for every observation ever
+// submitted. Deployment observations are accepted only in increasing observed time, so once a later one exists the
+// bracket history is final and a bracketed observation that does not resolve never will: it is marked unresolvable
+// instead of being retried forever. For the same reason an observation that started before the first reconciliation
+// can never be bracketed, so it is marked unresolvable without being loaded. An error, such as a context contract
+// that is not yet registered, can be cured later and is retried with exponential backoff (10 s doubling to 15 min).
 //
 // Resolution has its own lock rather than the ingestion lock so that a slow batch never delays a submission.
 pub(super) async fn resolve_pending(state: &LedgerState, project: &str) -> Result<(), LedgerError> {
@@ -410,7 +414,12 @@ pub(super) async fn resolve_pending(state: &LedgerState, project: &str) -> Resul
         .bind(format!("{project}|target-resolution"))
         .execute(&mut *tx)
         .await?;
-    let pending: Vec<(String,Value,String)> = sqlx::query_as("SELECT t.fingerprint,assurance_record('target_observation',t.project,t.fingerprint),t.submitted_by FROM target_observations t WHERE t.project=$1 AND NOT t.unresolvable AND t.last_resolution_attempt_ms <= (extract(epoch FROM clock_timestamp())*1000)::bigint-LEAST(10000::bigint<<LEAST(t.resolution_attempts,7),900000) AND NOT EXISTS(SELECT 1 FROM target_observation_resolutions r WHERE r.project=t.project AND r.observation_fingerprint=t.fingerprint) AND (t.started_at_ms IS NULL OR (EXISTS(SELECT 1 FROM deployment_observations d WHERE d.project=t.project AND d.environment=t.environment AND d.observed_at_ms<=t.started_at_ms) AND EXISTS(SELECT 1 FROM deployment_observations d WHERE d.project=t.project AND d.environment=t.environment AND d.observed_at_ms>=t.finished_at_ms AND d.observed_at_ms>t.started_at_ms))) ORDER BY t.last_resolution_attempt_ms,t.sequence LIMIT 500")
+    sqlx::query("UPDATE target_observations t SET unresolvable=true,resolution_diagnostic=$2 FROM (SELECT environment,min(observed_at_ms) AS first_ms FROM deployment_observations WHERE project=$1 GROUP BY environment) b WHERE t.project=$1 AND b.environment=t.environment AND NOT t.unresolvable AND t.started_at_ms<b.first_ms AND NOT EXISTS(SELECT 1 FROM target_observation_resolutions r WHERE r.project=t.project AND r.observation_fingerprint=t.fingerprint)")
+        .bind(project)
+        .bind(PRECEDES_RECONCILIATION)
+        .execute(&mut *tx)
+        .await?;
+    let pending: Vec<(String,Value,String)> = sqlx::query_as("WITH bounds AS (SELECT environment,min(observed_at_ms) AS first_ms,max(observed_at_ms) AS last_ms FROM deployment_observations WHERE project=$1 GROUP BY environment) SELECT t.fingerprint,assurance_record('target_observation',t.project,t.fingerprint),t.submitted_by FROM target_observations t LEFT JOIN bounds b ON b.environment=t.environment WHERE t.project=$1 AND NOT t.unresolvable AND t.last_resolution_attempt_ms <= (extract(epoch FROM clock_timestamp())*1000)::bigint-LEAST(10000::bigint<<LEAST(t.resolution_attempts,7),900000) AND NOT EXISTS(SELECT 1 FROM target_observation_resolutions r WHERE r.project=t.project AND r.observation_fingerprint=t.fingerprint) AND (t.started_at_ms IS NULL OR (b.first_ms<=t.started_at_ms AND b.last_ms>=t.finished_at_ms AND b.last_ms>t.started_at_ms)) ORDER BY t.last_resolution_attempt_ms,t.sequence LIMIT 500")
         .bind(project).fetch_all(&mut *tx).await?;
     for (fp, raw, principal) in pending {
         sqlx::query("UPDATE target_observations SET started_at_ms=$3,finished_at_ms=$4 WHERE project=$1 AND fingerprint=$2 AND started_at_ms IS NULL")
