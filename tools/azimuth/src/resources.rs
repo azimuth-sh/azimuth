@@ -291,6 +291,7 @@ pub const REFERENCES: &[ReferenceDescriptor] = &[
             "## Add requirement: <id>",
             "### Add scenario: <id>",
             "## Replace requirement: <id>",
+            "## Replace term: <term-id>",
             "## Remove requirement: <id>",
             "## Remove scenario: <requirement-id>/<scenario-id>",
             "From: sha256:<digest>",

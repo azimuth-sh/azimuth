@@ -270,6 +270,7 @@ fn parse_delta(
             normalized.push_str("### Scenario:");
             normalized.push_str(scenario);
         } else if trimmed.starts_with("## Replace requirement:")
+            || trimmed.starts_with("## Replace term:")
             || trimmed.starts_with("## Remove requirement:")
             || trimmed.starts_with("## Remove scenario:")
         {
