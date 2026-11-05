@@ -1695,11 +1695,14 @@ pub fn dataset(root: &Path, change: Option<&str>) -> Result<String, String> {
                     Json::Obj(fields) => fields,
                     _ => unreachable!(),
                 };
+                let attestations = attested.get(&attempt);
+                let attribution = attribution_columns(&fields, attestations);
                 fields.extend(
-                    attestation_columns(attested.get(&attempt))
+                    attestation_columns(attestations)
                         .into_iter()
                         .map(|(key, value)| (key.to_string(), value)),
                 );
+                fields.extend(attribution);
                 Json::Obj(fields)
             })
             .collect::<Vec<_>>();
@@ -2589,17 +2592,31 @@ pub fn reconstruct(request: &ReconstructRequest) -> Result<(PathBuf, Json), Stri
     Ok((path, attestation))
 }
 
-/// The attestation the report shows for each attempt, with the attempt's attestation count. A
-/// `work` attestation describes the agent that did the work and is preferred over a `recording`
-/// one, which describes the session that ran the update; within a kind the latest wins.
-fn latest_attestations(change: &Path) -> Result<BTreeMap<String, (usize, Json)>, String> {
+/// An attempt's attestations as the report uses them: the latest of each source kind and the
+/// total count.
+#[derive(Default)]
+struct Attested {
+    count: usize,
+    work: Option<Json>,
+    recording: Option<Json>,
+}
+
+impl Attested {
+    /// A `work` attestation describes the agent that did the work and is shown in preference to a
+    /// `recording` one, which describes the session that ran the update.
+    fn shown(&self) -> Option<&Json> {
+        self.work.as_ref().or(self.recording.as_ref())
+    }
+}
+
+fn latest_attestations(change: &Path) -> Result<BTreeMap<String, Attested>, String> {
     let path = default_attestations(change);
     if !path.is_file() {
         return Ok(BTreeMap::new());
     }
     let document = read_json(&path)?;
     validate_attestations(&document).map_err(|e| format!("{}: {e}", path.display()))?;
-    let mut latest: BTreeMap<String, (usize, Json)> = BTreeMap::new();
+    let mut latest: BTreeMap<String, Attested> = BTreeMap::new();
     for attestation in document
         .get("attestations")
         .and_then(Json::as_array)
@@ -2610,33 +2627,126 @@ fn latest_attestations(change: &Path) -> Result<BTreeMap<String, (usize, Json)>,
             .and_then(Json::as_str)
             .unwrap()
             .to_string();
-        let kind = |value: &Json| {
-            value
-                .get("source")
-                .and_then(|source| source.get("kind"))
-                .and_then(Json::as_str)
-                .map(str::to_string)
-        };
-        let (count, shown) = match latest.remove(&attempt) {
-            Some((count, shown))
-                if kind(&shown).as_deref() == Some("work")
-                    && kind(attestation).as_deref() != Some("work") =>
-            {
-                (count, shown)
-            }
-            Some((count, _)) => (count, attestation.clone()),
-            None => (0, attestation.clone()),
-        };
-        latest.insert(attempt, (count + 1, shown));
+        let entry = latest.entry(attempt).or_default();
+        entry.count += 1;
+        match attestation
+            .get("source")
+            .and_then(|source| source.get("kind"))
+            .and_then(Json::as_str)
+        {
+            Some("work") => entry.work = Some(attestation.clone()),
+            _ => entry.recording = Some(attestation.clone()),
+        }
     }
     Ok(latest)
 }
 
+/// Who the report treats as the attempt's agent. An attestation never supersedes what the hook
+/// captured at record time: the latest `work` attestation is attributed because it describes a
+/// different session, the one that did the work, while a `recording` attestation describes the
+/// captured session itself and only fills values the capture left unknown.
+fn attribution_columns(row: &[(String, Json)], attested: Option<&Attested>) -> Vec<(String, Json)> {
+    let recorded = |key: &str| {
+        row.iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value.clone())
+            .unwrap_or(Json::Null)
+    };
+    let field = |attestation: &Json, path: &[&str]| {
+        let mut current = Some(attestation);
+        for key in path {
+            current = current.and_then(|value| value.get(key));
+        }
+        current.cloned().unwrap_or(Json::Null)
+    };
+    let usage_names = usage_columns(&Json::Null)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect::<Vec<_>>();
+    let mut columns = Vec::new();
+    let source;
+    if let Some(work) = attested.and_then(|attested| attested.work.as_ref()) {
+        source = "work-attestation";
+        for name in ["model", "effort", "agent_type"] {
+            columns.push((name.to_string(), field(work, &["agent", name, "value"])));
+            columns.push((
+                format!("{name}_basis"),
+                field(work, &["agent", name, "basis"]),
+            ));
+        }
+        columns.push((
+            "harness_name".into(),
+            field(work, &["agent", "harness", "name"]),
+        ));
+        columns.push((
+            "harness_version".into(),
+            field(work, &["agent", "harness", "version"]),
+        ));
+        columns.extend(
+            usage_columns(&field(work, &["usage"]))
+                .into_iter()
+                .map(|(name, value)| (name.to_string(), value)),
+        );
+    } else {
+        let recording = attested.and_then(|attested| attested.recording.as_ref());
+        let mut completed = false;
+        for name in ["model", "effort", "agent_type"] {
+            let basis = format!("{name}_basis");
+            let filled = recording.filter(|attestation| {
+                recorded(&basis).as_str() == Some("unknown")
+                    && field(attestation, &["agent", name, "basis"]).as_str() != Some("unknown")
+            });
+            if let Some(attestation) = filled {
+                completed = true;
+                columns.push((
+                    name.to_string(),
+                    field(attestation, &["agent", name, "value"]),
+                ));
+                columns.push((basis, field(attestation, &["agent", name, "basis"])));
+            } else {
+                columns.push((name.to_string(), recorded(name)));
+                columns.push((basis.clone(), recorded(&basis)));
+            }
+        }
+        columns.push(("harness_name".into(), recorded("harness_name")));
+        columns.push(("harness_version".into(), recorded("harness_version")));
+        let usage = recording
+            .map(|attestation| field(attestation, &["usage"]))
+            .filter(|usage| *usage != Json::Null && recorded("usage_basis") == Json::Null);
+        if let Some(usage) = usage {
+            completed = true;
+            columns.extend(
+                usage_columns(&usage)
+                    .into_iter()
+                    .map(|(name, value)| (name.to_string(), value)),
+            );
+        } else {
+            columns.extend(
+                usage_names
+                    .iter()
+                    .map(|name| (name.to_string(), recorded(name))),
+            );
+        }
+        source = if completed {
+            "record-completed-by-recording-attestation"
+        } else {
+            "record"
+        };
+    }
+    let mut attributed = vec![("attributed_from".to_string(), Json::str(source))];
+    attributed.extend(
+        columns
+            .into_iter()
+            .map(|(name, value)| (format!("attributed_{name}"), value)),
+    );
+    attributed
+}
+
 /// The dataset columns an attestation adds beside the attempt's columns recorded at record time,
 /// which stay unchanged: every column is null when the attempt has no attestation.
-fn attestation_columns(attestation: Option<&(usize, Json)>) -> Vec<(&'static str, Json)> {
+fn attestation_columns(attested: Option<&Attested>) -> Vec<(&'static str, Json)> {
     let value = |path: &[&str]| {
-        let mut current = attestation.map(|(_, value)| value);
+        let mut current = attested.and_then(Attested::shown);
         for key in path {
             current = current.and_then(|value| value.get(key));
         }
@@ -2645,7 +2755,7 @@ fn attestation_columns(attestation: Option<&(usize, Json)>) -> Vec<(&'static str
     let mut columns = vec![
         (
             "attestations",
-            Json::Num(attestation.map_or(0, |(count, _)| *count) as f64),
+            Json::Num(attested.map_or(0, |attested| attested.count) as f64),
         ),
         ("attestation", value(&["id"])),
         ("reconstructed_source", value(&["source", "kind"])),
