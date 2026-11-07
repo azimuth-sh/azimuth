@@ -29,6 +29,7 @@ from release.publication import (
     public_release,
     publish,
     publish_crate,
+    publication_order,
     publish_target,
     publication_workflow_structure,
     qualify,
@@ -296,46 +297,39 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             with self.assertRaisesRegex(PublicationError, "malformed JSON"):
                 github_release("v0.1.0-alpha.2")
 
-    def test_npm_scope_requires_an_administrative_role(self):
-        for role, expected in (("owner", True), ("admin", True), ("developer", False)):
-            commands = [
-                SimpleNamespace(returncode=0, stdout=b"release-user\n", stderr=b""),
-                SimpleNamespace(
-                    returncode=0,
-                    stdout=json.dumps({"release-user": role}).encode(),
-                    stderr=b"",
-                ),
-            ]
-            with self.subTest(role=role), patch.dict(
-                "os.environ", {"NPM_TOKEN": "secret"}, clear=True
-            ), patch("release.publication.run", side_effect=commands):
-                self.assertEqual(credential_account()["npm"]["organizationAdmin"], expected)
-
-    def test_scoped_registry_tokens_record_unprobeable_write_authorization(self):
-        commands = [
-            SimpleNamespace(returncode=0, stdout=b"release-user\n", stderr=b""),
-            SimpleNamespace(
-                returncode=0,
-                stdout=json.dumps({"release-user": "owner"}).encode(),
-                stderr=b"",
-            ),
-        ]
+    def test_trusted_publishing_exchanges_are_ready_without_registry_probes(self):
         environment = {
-            "CARGO_REGISTRY_TOKEN": "cargo-secret",
-            "NUGET_API_KEY": "nuget-secret",
-            "NPM_TOKEN": "npm-secret",
+            "CARGO_REGISTRY_TOKEN": "exchanged-cargo",
+            "NUGET_API_KEY": "exchanged-nuget",
+            "ACTIONS_ID_TOKEN_REQUEST_URL": "https://token.example",
+            "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "request",
             "GITHUB_TOKEN": "github-secret",
         }
         with patch.dict("os.environ", environment, clear=True), patch(
             "release.publication.request"
-        ) as request, patch("release.publication.run", side_effect=commands) as run:
+        ) as request, patch("release.publication.run") as run:
             account = credential_account()
 
         request.assert_not_called()
-        self.assertEqual(run.call_count, 2)
+        run.assert_not_called()
         self.assertIsNone(account["cargo"]["authenticated"])
         self.assertIsNone(account["github"]["repositoryWrite"])
         self.assertTrue(account["ready"])
+
+    def test_each_missing_exchange_makes_credentials_not_ready(self):
+        complete = {
+            "CARGO_REGISTRY_TOKEN": "exchanged-cargo",
+            "NUGET_API_KEY": "exchanged-nuget",
+            "ACTIONS_ID_TOKEN_REQUEST_URL": "https://token.example",
+            "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "request",
+            "GITHUB_TOKEN": "github-secret",
+        }
+        for missing in complete:
+            environment = {key: value for key, value in complete.items() if key != missing}
+            with self.subTest(missing=missing), patch.dict(
+                "os.environ", environment, clear=True
+            ):
+                self.assertFalse(credential_account()["ready"])
 
     def test_public_state_accounts_for_every_exact_registry_target(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -537,13 +531,73 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             ("1.0.0", "latest"),
         ):
             with self.subTest(version=version), patch.dict(
-                "os.environ", {"NPM_TOKEN": "secret"}, clear=True
+                "os.environ", {}, clear=True
             ), patch("release.publication.run") as publish_command:
                 publish_target(subject, archive, {"version": version})
 
             command = publish_command.call_args.args[0]
             self.assertEqual(command[-2:], ["--tag", tag])
             self.assertIn("--provenance", command)
+
+    def test_first_publish_token_is_used_only_for_a_package_that_is_not_public_yet(self):
+        subject = {
+            "kind": "package",
+            "ecosystem": "npm",
+            "key": "package:typescript-playwright",
+            "identity": "@azimuth-sh/testing-playwright",
+        }
+        archive = Path("azimuth-sh-testing-playwright-0.1.0-alpha.10.tgz")
+        token_key = "npm_config_//registry.npmjs.org/:_authToken"
+        with patch.dict(
+            "os.environ", {"NPM_FIRST_PUBLISH_TESTING_PLAYWRIGHT": "one-off"}, clear=True
+        ):
+            with patch("release.publication.npm_registry_metadata", return_value=None), patch(
+                "release.publication.run"
+            ) as publish_command:
+                publish_target(subject, archive, {"version": "0.1.0-alpha.10"})
+            self.assertEqual(publish_command.call_args.kwargs["env"][token_key], "one-off")
+
+            with patch(
+                "release.publication.npm_registry_metadata", return_value={"versions": {}}
+            ), patch("release.publication.run") as publish_command:
+                publish_target(subject, archive, {"version": "0.1.0-alpha.10"})
+            self.assertIsNone(publish_command.call_args.kwargs["env"])
+
+        with patch.dict("os.environ", {}, clear=True), patch(
+            "release.publication.npm_registry_metadata", return_value=None
+        ), patch("release.publication.run") as publish_command:
+            with self.assertRaisesRegex(PublicationError, "has never been published"):
+                publish_target(subject, archive, {"version": "0.1.0-alpha.10"})
+        publish_command.assert_not_called()
+
+    def test_npm_is_written_first_and_the_unconfirmed_nuget_first_publish_last(self):
+        subjects = {
+            "package:cargo": {"ecosystem": "cargo", "identity": "azimuth"},
+            "package:xunit": {"ecosystem": "nuget", "identity": "Azimuth.Testing.Xunit"},
+            "package:annotations": {"ecosystem": "nuget", "identity": "Azimuth.Annotations"},
+            "package:npm": {"ecosystem": "npm", "identity": "@azimuth-sh/emit"},
+            "image:api": {"kind": "image", "identity": "ghcr.io/azimuth-sh/api"},
+        }
+        self.assertEqual(
+            publication_order(list(subjects), subjects),
+            ["package:npm", "package:cargo", "package:annotations", "image:api", "package:xunit"],
+        )
+
+    def test_other_npm_packages_never_read_the_first_publish_token(self):
+        subject = {
+            "kind": "package",
+            "ecosystem": "npm",
+            "key": "package:typescript-annotations",
+            "identity": "@azimuth-sh/annotations",
+        }
+        with patch.dict(
+            "os.environ", {"NPM_FIRST_PUBLISH_TESTING_PLAYWRIGHT": "one-off"}, clear=True
+        ), patch("release.publication.npm_registry_metadata") as metadata, patch(
+            "release.publication.run"
+        ) as publish_command:
+            publish_target(subject, Path("a.tgz"), {"version": "0.1.0-alpha.10"})
+        metadata.assert_not_called()
+        self.assertIsNone(publish_command.call_args.kwargs["env"])
 
     def test_first_npm_prerelease_accepts_the_registry_required_latest_tag(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -594,7 +648,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             SimpleNamespace(stdout=b""),
             SimpleNamespace(stdout=f"alpha: {version}\nlatest: {version}\n".encode()),
         ]
-        with patch.dict("os.environ", {"NPM_TOKEN": "secret"}, clear=True), patch(
+        with patch.dict("os.environ", {}, clear=True), patch(
             "release.publication.run", side_effect=results
         ) as npm:
             normalize_npm_dist_tags(subject, version, [])
@@ -645,7 +699,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             SimpleNamespace(stdout=f"alpha: {version}\nlatest: {version}\n".encode()),
             SimpleNamespace(stdout=f"alpha: {version}\nlatest: {version}\n".encode()),
         ]
-        with patch.dict("os.environ", {"NPM_TOKEN": "secret"}, clear=True), patch(
+        with patch.dict("os.environ", {}, clear=True), patch(
             "release.publication.run", side_effect=results
         ) as npm:
             normalize_npm_dist_tags(subject, version, [])
@@ -661,7 +715,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
         }
         version = "0.1.0-alpha.2"
         result = SimpleNamespace(stdout=f"alpha: {version}\nlatest: {version}\n".encode())
-        with patch.dict("os.environ", {"NPM_TOKEN": "secret"}, clear=True), patch(
+        with patch.dict("os.environ", {}, clear=True), patch(
             "release.publication.run", return_value=result
         ) as npm, self.assertRaisesRegex(PublicationError, "intended stable target"):
             normalize_npm_dist_tags(subject, version, ["0.0.1"])
@@ -795,7 +849,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
     def test_publication_workflow_scopes_tokens_and_supplies_complete_image_inputs(self):
         source = (self.root / ".github/workflows/publish.yml").read_text()
         self.assertEqual(source.count("persist-credentials: false"), 3)
-        self.assertEqual(source.count("docker/login-action@v4"), 2)
+        self.assertEqual(len(re.findall(r"docker/login-action@[0-9a-f]{40} # v4", source)), 2)
         self.assertEqual(source.count("attestations: write"), 3)
         self.assertIn("permissions:\n  contents: read\n  id-token: write", source)
         self.assertEqual(source.count("pattern: candidates-*"), 3)
@@ -804,10 +858,22 @@ class PublicAlphaPublicationTests(unittest.TestCase):
         source = (self.root / ".github/workflows/publish.yml").read_text()
         mutations = {
             "credential": source.replace("            --require-credentials", ""),
-            "cargo-secret": source.replace(
-                "CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}",
-                "CARGO_REGISTRY_TOKEN: ''",
+            "long-lived-secret": source.replace(
+                "GH_TOKEN: ${{ github.token }}",
+                "GH_TOKEN: ${{ github.token }}\n      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}",
+                1,
             ),
+            "unpinned-docker-login": source.replace(
+                "docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0",
+                "docker/login-action@v4",
+            ),
+            "unpinned-nuget-exchange": re.sub(
+                r"NuGet/login@[0-9a-f]{40}", "NuGet/login@v1", source
+            ),
+            "missing-crates-exchange": source.replace(
+                "rust-lang/crates-io-auth-action@", "example/other-action@"
+            ),
+            "no-oidc-token": source.replace("      id-token: write\n    outputs:", "    outputs:"),
             "github-release-permission": source.replace(
                 "      contents: write", "      contents: read", 1
             ),

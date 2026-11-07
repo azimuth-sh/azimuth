@@ -36,7 +36,7 @@ Newer Monitor executions supersede older ones, including incomplete or inconclus
 
 ## Public test integrations
 
-Azimuth.Testing.Xunit and @azimuth-sh/playwright capture actual test context and emit versioned per-attempt reports. The azimuth_testing adapter reconciles exact native TRX/Playwright identities against project-authored mappings and constructs native Run bundles through azimuth_run. Context-bearing partitions have explicit launch boundaries; missing tests, retries, skips and capture failures cannot be converted to invented successful coverage.
+Azimuth.Testing.Xunit and @azimuth-sh/testing-playwright capture actual test context and emit versioned per-attempt reports. The azimuth_testing adapter reconciles exact native TRX/Playwright identities against project-authored mappings and constructs native Run bundles through azimuth_run. Context-bearing partitions have explicit launch boundaries; missing tests, retries, skips and capture failures cannot be converted to invented successful coverage.
 
 Publishing is a separate operation. It verifies native bundles and uploads exact bytes with scoped credentials. CI may build all tools from one exact Azimuth Git commit, restore a local NuGet package feed and install a local npm tarball; registry publication is not required. The release records the selected tooling and contract identities.
 

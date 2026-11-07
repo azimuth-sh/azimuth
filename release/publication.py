@@ -52,7 +52,7 @@ else:
 
 ROOT = Path(__file__).resolve().parent.parent
 REPOSITORY = "azimuth-sh/azimuth"
-USER_AGENT = "azimuth-release/0.1.0-alpha.9 (https://github.com/azimuth-sh/azimuth)"
+USER_AGENT = "azimuth-release/0.1.0-alpha.10 (https://github.com/azimuth-sh/azimuth)"
 SUPPORT_ASSETS = ("SHA256SUMS",)
 PUBLICATION_WORKFLOW = ROOT / ".github/workflows/publish.yml"
 UNSET = object()
@@ -245,11 +245,36 @@ def publication_workflow_structure(root=ROOT):
             "publication does not call the complete build workflow")
     for name in ("publish", "image-provenance", "complete"):
         require("environment: release" in jobs[name], f"publication job {name!r} is unbounded")
-    for secret in ("CARGO_REGISTRY_TOKEN", "NPM_TOKEN", "NUGET_API_KEY"):
+    for action in re.findall(r"^\s*(?:-\s+)?uses:\s*(\S+)", source, re.MULTILINE):
         require(
-            f"{secret}: ${{{{ secrets.{secret} }}}}" in jobs["publish"],
-            f"publication workflow omits the {secret} release secret",
+            action.startswith(("actions/", "./")) or re.search(r"@[0-9a-f]{40}$", action),
+            f"publication workflow does not pin {action} by commit",
         )
+    other_secrets = [
+        name
+        for name in re.findall(r"secrets\.([A-Za-z0-9_]+)", jobs["publish"])
+        if name not in NPM_FIRST_PUBLISH_TOKENS.values()
+    ]
+    require(not other_secrets,
+            f"publication job reads long-lived secrets instead of trusted publishing: {other_secrets}")
+    exchanges = {
+        "NuGet/login": jobs["publish"].find("NuGet/login@"),
+        "rust-lang/crates-io-auth-action": jobs["publish"].find(
+            "rust-lang/crates-io-auth-action@"
+        ),
+    }
+    for action, position in exchanges.items():
+        require(position >= 0, f"publication workflow omits the {action} token exchange")
+        require(
+            re.match(r"[0-9a-f]{40}\b", jobs["publish"][position + len(action) + 1:]),
+            f"publication workflow does not pin {action} by commit",
+        )
+        require(
+            position < jobs["publish"].index("publication.py preflight"),
+            f"{action} exchanges after publication planning began",
+        )
+    require("id-token: write" in jobs["publish"],
+            "publication job cannot request an OIDC token for trusted publishing")
     require("GH_TOKEN: ${{ github.token }}" in jobs["publish"],
             "publication workflow omits the bounded GitHub token")
     require("contents: write" in jobs["publish"],
@@ -589,49 +614,35 @@ def collect_state(
 def credential_account():
     cargo_token = os.environ.get("CARGO_REGISTRY_TOKEN", "")
     nuget_token = os.environ.get("NUGET_API_KEY", "")
-    npm_token = os.environ.get("NPM_TOKEN", "")
+    npm_oidc = bool(
+        os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL")
+        and os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+    )
     github_token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN", "")
-
-    npm_identity = None
-    npm_scope = False
-    if npm_token:
-        npm_env = {**os.environ, "NODE_AUTH_TOKEN": npm_token}
-        identity = run(["npm", "whoami"], check=False, env=npm_env)
-        if identity.returncode == 0:
-            npm_identity = identity.stdout.decode().strip()
-            membership = run(
-                ["npm", "org", "ls", "azimuth-sh", "--json"],
-                check=False,
-                env=npm_env,
-            )
-            if membership.returncode == 0:
-                try:
-                    roster = json.loads(membership.stdout)
-                    npm_scope = (
-                        isinstance(roster, dict)
-                        and roster.get(npm_identity) in ("owner", "admin")
-                    )
-                except json.JSONDecodeError:
-                    npm_scope = False
 
     result = {
         "cargo": {
             "configured": bool(cargo_token),
             "authenticated": None,
             "limitation": (
-                "A publish-new scoped token has no non-publishing identity probe; "
-                "authorization is first observed by the registry write"
+                "The trusted-publishing exchange proves the policy matched, not that this "
+                "crate is covered; authorization is first observed by the registry write"
             ),
         },
         "nuget": {
             "configured": bool(nuget_token),
             "authenticated": None,
-            "limitation": "NuGet exposes no non-publishing API-key authorization probe",
+            "limitation": (
+                "The trusted-publishing exchange proves the policy matched, not that each "
+                "package ID is in its scope; authorization is first observed by the push"
+            ),
         },
         "npm": {
-            "configured": bool(npm_token),
-            "identity": npm_identity,
-            "organizationAdmin": npm_scope,
+            "configured": npm_oidc,
+            "limitation": (
+                "npm has no token exchange apart from publishing; the trusted publisher "
+                "is first observed by the registry write"
+            ),
         },
         "github": {
             "configured": bool(github_token),
@@ -646,7 +657,7 @@ def credential_account():
     result["ready"] = (
         result["cargo"]["configured"]
         and result["nuget"]["configured"]
-        and result["npm"]["organizationAdmin"]
+        and result["npm"]["configured"]
         and result["github"]["configured"]
     )
     return result
@@ -861,9 +872,7 @@ def npm_cli_dist_tags(identity, env):
 
 
 def normalize_npm_dist_tags(subject, version, stable_versions):
-    token = os.environ.get("NPM_TOKEN", "")
-    require(token, "NPM_TOKEN is absent")
-    env = {**os.environ, "NODE_AUTH_TOKEN": token}
+    env = os.environ
     identity = subject["identity"]
     channel = npm_dist_tag(version)
     tags = npm_cli_dist_tags(identity, env)
@@ -890,6 +899,25 @@ def validate_registry_completion(account, state):
     return completion
 
 
+# A trusted publisher can only be registered on an npm package that already exists, so the first
+# version of a package listed here is written with a one-off token instead of OIDC.
+NPM_FIRST_PUBLISH_TOKENS = {
+    "@azimuth-sh/testing-playwright": "NPM_FIRST_PUBLISH_TESTING_PLAYWRIGHT",
+}
+
+
+NUGET_UNCONFIRMED_FIRST_PUBLISH = {"Azimuth.Testing.Xunit"}
+
+
+def npm_first_publish_environment(subject):
+    name = NPM_FIRST_PUBLISH_TOKENS.get(subject.get("identity"))
+    if name is None or npm_registry_metadata(subject) is not None:
+        return None
+    token = os.environ.get(name, "")
+    require(token, f"{name} is absent and {subject['identity']} has never been published")
+    return {**os.environ, "npm_config_//registry.npmjs.org/:_authToken": token}
+
+
 def publish_target(subject, path, account, repository=REPOSITORY):
     if subject["kind"] == "package":
         if subject["ecosystem"] == "cargo":
@@ -904,15 +932,12 @@ def publish_target(subject, path, account, repository=REPOSITORY):
                 ]
             )
         else:
-            token = os.environ.get("NPM_TOKEN", "")
-            require(token, "NPM_TOKEN is absent")
-            env = {**os.environ, "NODE_AUTH_TOKEN": token}
             run(
                 [
                     "npm", "publish", path, "--access", "public", "--provenance",
                     "--tag", npm_dist_tag(account["version"]),
                 ],
-                env=env,
+                env=npm_first_publish_environment(subject),
             )
     elif subject["kind"] == "native":
         run(
@@ -928,6 +953,19 @@ def publish_target(subject, path, account, repository=REPOSITORY):
                 f"docker://{subject['identity']}:{account['version']}",
             ]
         )
+
+
+def publication_order(keys, subjects):
+    # NuGet documents no first publish of a package ID through a trusted-publishing policy, so the
+    # one NuGet package that has never been public goes last: a refusal then leaves every other
+    # target consistently published.
+    return sorted(
+        keys,
+        key=lambda key: (
+            subjects[key].get("identity") in NUGET_UNCONFIRMED_FIRST_PUBLISH,
+            subjects[key].get("ecosystem") != "npm",
+        ),
+    )
 
 
 def publish(arguments):
@@ -950,7 +988,13 @@ def publish(arguments):
     if native_selected or state["missingReleaseAssets"]:
         ensure_github_release(account, state, arguments.sums, arguments.repository)
     published = []
-    for key in supplied_plan["publish"]:
+    # npm has no token exchange apart from publishing, so a missing trusted-publisher policy only
+    # shows at its first write. Writing npm first makes that the first write of the run.
+    ordered = publication_order(supplied_plan["publish"], subjects)
+    for key in ordered:
+        if subjects[key].get("ecosystem") == "npm":
+            npm_first_publish_environment(subjects[key])
+    for key in ordered:
         subject = subjects[key]
         publish_target(
             subject,

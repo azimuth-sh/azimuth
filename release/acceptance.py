@@ -1,6 +1,6 @@
 APPROVED_CONTRACT = {
-    "version": "0.1.0-alpha.9",
-    "tag": "v0.1.0-alpha.9",
+    "version": "0.1.0-alpha.10",
+    "tag": "v0.1.0-alpha.10",
     "migrationLine": "alpha-requirement-scenario",
     "license": "Apache-2.0",
     "repository": "https://github.com/azimuth-sh/azimuth",
@@ -13,7 +13,7 @@ APPROVED_CONTRACT = {
             "Azimuth.Testing.Xunit",
             "@azimuth-sh/annotations",
             "@azimuth-sh/emit",
-            "@azimuth-sh/playwright",
+            "@azimuth-sh/testing-playwright",
             "ghcr.io/azimuth-sh/azimuth-assurance-api",
             "ghcr.io/azimuth-sh/azimuth-assurance-web",
         ]

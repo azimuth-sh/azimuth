@@ -8,16 +8,16 @@ It does not infer Requirements, build native Runs, hold AAS credentials or publi
 
 ```ts
 // fixtures.ts
-export { test, expect } from '@azimuth-sh/playwright';
+export { test, expect } from '@azimuth-sh/testing-playwright';
 ```
 
 ```ts
 // playwright.config.ts
 import { defineConfig } from '@playwright/test';
-import type { AzimuthOptions } from '@azimuth-sh/playwright';
+import type { AzimuthOptions } from '@azimuth-sh/testing-playwright';
 
 export default defineConfig<AzimuthOptions>({
-  reporter: [['@azimuth-sh/playwright/reporter', {
+  reporter: [['@azimuth-sh/testing-playwright/reporter', {
     outputFile: 'test-results/azimuth-report.json',
     execution: process.env.CI_EXECUTION_ID,
   }]],
@@ -76,7 +76,7 @@ npm pack --pack-destination /tmp/azimuth-packages
 ```
 
 Install that generated tarball in the consumer workspace using
-`npm install --no-save --package-lock=false /tmp/azimuth-packages/azimuth-sh-playwright-0.1.0-alpha.1.tgz`.
+`npm install --no-save --package-lock=false /tmp/azimuth-packages/azimuth-sh-testing-playwright-0.1.0-alpha.1.tgz`.
 Record the source commit and tarball digest with CI inputs. Avoid installing a
 moving branch. The package declares Playwright as a peer so the consumer uses its
 existing runner. Test execution stays unprivileged; a separate protected publisher
