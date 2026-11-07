@@ -78,12 +78,15 @@ the planner moves the first prerelease to `latest`. The `publish` job needs npm
 
 That package has never been published, and npm accepts a trusted publisher only on an existing
 package. For its first version alone, `release/publication.py` reads the `release`-environment
-secret `NPM_FIRST_PUBLISH_TESTING_PLAYWRIGHT`, a granular npm token with publish rights, bypassing
-two-factor authentication for publishing, scoped as narrowly as npm allows and expiring within 7
-days. It is used only when the registry reports the package as absent, and the run stops before
-writing any target if the token is missing. Every other target uses trusted publishing.
+secret `NPM_FIRST_PUBLISH_TESTING_PLAYWRIGHT`. npm cannot scope a granular token to a package that
+does not exist yet, so the token is a granular access token with read and write (publish) permission
+on the `@azimuth-sh` scope only, no other scope or permission, bypassing two-factor authentication
+for automation, and expiring 7 days after creation. Create the token and the secret immediately
+before pushing the tag. The secret is used only when the registry reports the package as absent, and
+the run stops before writing any target if it is missing. Every other target uses trusted
+publishing.
 
-After the first release publishes the package: delete the secret and the token on npm, then add the
+Immediately after the release publishes the package: delete the secret and revoke the token on npm, then add the
 package's trusted publisher from the table above. Later releases then take the OIDC path and the
 secret is never read.
 
