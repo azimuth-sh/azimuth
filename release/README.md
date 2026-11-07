@@ -48,9 +48,29 @@ Before tagging, update every native manifest and lockfile, `release/artifacts.js
 adopter/operator documentation to one version. Review the bundled skills as consumer workflows;
 `.agents/skills/` is development input and never a release source.
 
-Configure the protected `release` environment with `CARGO_REGISTRY_TOKEN`, `NUGET_API_KEY` and
-`NPM_TOKEN`. The npm identity must administer the `@azimuth-sh` organization. The workflow's bounded
-GitHub token owns GitHub Release and GHCR writes.
+Publication holds no long-lived registry secret. The `publish` job exchanges its GitHub OIDC token
+(`id-token: write`, protected `release` environment) for short-lived credentials before any target
+is written; the workflow's bounded GitHub token owns GitHub Release and GHCR writes. Register these
+trusted publishers, each matching the top-level caller workflow `publish.yml` and the `release`
+environment (the repository owner is `azimuth-sh` and the repository is `azimuth`):
+
+| Registry | Where | Policy |
+| --- | --- | --- |
+| nuget.org | organization `azimuth-sh` > Trusted Publishing | Repository Owner `azimuth-sh`, Repository `azimuth`, Workflow File `publish.yml`, Environment `release`, scope `Azimuth.*` allowing new packages and new versions |
+| npm | each of `@azimuth-sh/annotations`, `@azimuth-sh/emit`, `@azimuth-sh/playwright` > Settings > Trusted Publisher | GitHub Actions, organization `azimuth-sh`, repository `azimuth`, workflow `publish.yml`, environment `release`, allowing `npm publish` and `npm dist-tag` |
+| crates.io | crate `azimuth` > Settings > Trusted Publishing | repository owner `azimuth-sh`, repository `azimuth`, workflow `publish.yml`, environment `release` |
+
+The NuGet policy owner must own every `Azimuth.*` package, and the repository variable
+`NUGET_USER` names the nuget.org profile the `NuGet/login` exchange authenticates as. npm and
+crates.io accept a trusted publisher only on a package that already exists, so the first version of
+a new package is published once by an owner outside this workflow, then its policy is registered. An
+npm policy that sees no successful publish within two days expires. The `publish` job needs npm
+11.21 or newer, which the workflow installs; npm publishes provenance without a flag.
+
+The NuGet and crates.io exchanges run, and are required to return credentials, before the planner
+selects or writes anything, so a registry-side policy fault there publishes nothing and a rerun on
+the same tag is safe. npm has no exchange apart from publishing, so npm targets are written first:
+a missing npm policy then fails before any other target is written.
 
 Create and push one annotated tag at the intended `main` revision:
 

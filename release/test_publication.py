@@ -296,46 +296,39 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             with self.assertRaisesRegex(PublicationError, "malformed JSON"):
                 github_release("v0.1.0-alpha.2")
 
-    def test_npm_scope_requires_an_administrative_role(self):
-        for role, expected in (("owner", True), ("admin", True), ("developer", False)):
-            commands = [
-                SimpleNamespace(returncode=0, stdout=b"release-user\n", stderr=b""),
-                SimpleNamespace(
-                    returncode=0,
-                    stdout=json.dumps({"release-user": role}).encode(),
-                    stderr=b"",
-                ),
-            ]
-            with self.subTest(role=role), patch.dict(
-                "os.environ", {"NPM_TOKEN": "secret"}, clear=True
-            ), patch("release.publication.run", side_effect=commands):
-                self.assertEqual(credential_account()["npm"]["organizationAdmin"], expected)
-
-    def test_scoped_registry_tokens_record_unprobeable_write_authorization(self):
-        commands = [
-            SimpleNamespace(returncode=0, stdout=b"release-user\n", stderr=b""),
-            SimpleNamespace(
-                returncode=0,
-                stdout=json.dumps({"release-user": "owner"}).encode(),
-                stderr=b"",
-            ),
-        ]
+    def test_trusted_publishing_exchanges_are_ready_without_registry_probes(self):
         environment = {
-            "CARGO_REGISTRY_TOKEN": "cargo-secret",
-            "NUGET_API_KEY": "nuget-secret",
-            "NPM_TOKEN": "npm-secret",
+            "CARGO_REGISTRY_TOKEN": "exchanged-cargo",
+            "NUGET_API_KEY": "exchanged-nuget",
+            "ACTIONS_ID_TOKEN_REQUEST_URL": "https://token.example",
+            "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "request",
             "GITHUB_TOKEN": "github-secret",
         }
         with patch.dict("os.environ", environment, clear=True), patch(
             "release.publication.request"
-        ) as request, patch("release.publication.run", side_effect=commands) as run:
+        ) as request, patch("release.publication.run") as run:
             account = credential_account()
 
         request.assert_not_called()
-        self.assertEqual(run.call_count, 2)
+        run.assert_not_called()
         self.assertIsNone(account["cargo"]["authenticated"])
         self.assertIsNone(account["github"]["repositoryWrite"])
         self.assertTrue(account["ready"])
+
+    def test_each_missing_exchange_makes_credentials_not_ready(self):
+        complete = {
+            "CARGO_REGISTRY_TOKEN": "exchanged-cargo",
+            "NUGET_API_KEY": "exchanged-nuget",
+            "ACTIONS_ID_TOKEN_REQUEST_URL": "https://token.example",
+            "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "request",
+            "GITHUB_TOKEN": "github-secret",
+        }
+        for missing in complete:
+            environment = {key: value for key, value in complete.items() if key != missing}
+            with self.subTest(missing=missing), patch.dict(
+                "os.environ", environment, clear=True
+            ):
+                self.assertFalse(credential_account()["ready"])
 
     def test_public_state_accounts_for_every_exact_registry_target(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -537,7 +530,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             ("1.0.0", "latest"),
         ):
             with self.subTest(version=version), patch.dict(
-                "os.environ", {"NPM_TOKEN": "secret"}, clear=True
+                "os.environ", {}, clear=True
             ), patch("release.publication.run") as publish_command:
                 publish_target(subject, archive, {"version": version})
 
@@ -594,7 +587,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             SimpleNamespace(stdout=b""),
             SimpleNamespace(stdout=f"alpha: {version}\nlatest: {version}\n".encode()),
         ]
-        with patch.dict("os.environ", {"NPM_TOKEN": "secret"}, clear=True), patch(
+        with patch.dict("os.environ", {}, clear=True), patch(
             "release.publication.run", side_effect=results
         ) as npm:
             normalize_npm_dist_tags(subject, version, [])
@@ -645,7 +638,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             SimpleNamespace(stdout=f"alpha: {version}\nlatest: {version}\n".encode()),
             SimpleNamespace(stdout=f"alpha: {version}\nlatest: {version}\n".encode()),
         ]
-        with patch.dict("os.environ", {"NPM_TOKEN": "secret"}, clear=True), patch(
+        with patch.dict("os.environ", {}, clear=True), patch(
             "release.publication.run", side_effect=results
         ) as npm:
             normalize_npm_dist_tags(subject, version, [])
@@ -661,7 +654,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
         }
         version = "0.1.0-alpha.2"
         result = SimpleNamespace(stdout=f"alpha: {version}\nlatest: {version}\n".encode())
-        with patch.dict("os.environ", {"NPM_TOKEN": "secret"}, clear=True), patch(
+        with patch.dict("os.environ", {}, clear=True), patch(
             "release.publication.run", return_value=result
         ) as npm, self.assertRaisesRegex(PublicationError, "intended stable target"):
             normalize_npm_dist_tags(subject, version, ["0.0.1"])
@@ -804,10 +797,18 @@ class PublicAlphaPublicationTests(unittest.TestCase):
         source = (self.root / ".github/workflows/publish.yml").read_text()
         mutations = {
             "credential": source.replace("            --require-credentials", ""),
-            "cargo-secret": source.replace(
-                "CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}",
-                "CARGO_REGISTRY_TOKEN: ''",
+            "long-lived-secret": source.replace(
+                "GH_TOKEN: ${{ github.token }}",
+                "GH_TOKEN: ${{ github.token }}\n      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}",
+                1,
             ),
+            "unpinned-nuget-exchange": re.sub(
+                r"NuGet/login@[0-9a-f]{40}", "NuGet/login@v1", source
+            ),
+            "missing-crates-exchange": source.replace(
+                "rust-lang/crates-io-auth-action@", "example/other-action@"
+            ),
+            "no-oidc-token": source.replace("      id-token: write\n    outputs:", "    outputs:"),
             "github-release-permission": source.replace(
                 "      contents: write", "      contents: read", 1
             ),
