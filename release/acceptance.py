@@ -13,7 +13,7 @@ APPROVED_CONTRACT = {
             "Azimuth.Testing.Xunit",
             "@azimuth-sh/annotations",
             "@azimuth-sh/emit",
-            "@azimuth-sh/playwright",
+            "@azimuth-sh/testing-playwright",
             "ghcr.io/azimuth-sh/azimuth-assurance-api",
             "ghcr.io/azimuth-sh/azimuth-assurance-web",
         ]

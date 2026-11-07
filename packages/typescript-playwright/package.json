@@ -1,5 +1,5 @@
 {
-  "name": "@azimuth-sh/playwright",
+  "name": "@azimuth-sh/testing-playwright",
   "version": "0.1.0-alpha.10",
   "description": "Effective Execution Context capture and execution facts for Playwright.",
   "license": "Apache-2.0",

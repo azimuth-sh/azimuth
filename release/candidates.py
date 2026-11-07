@@ -309,11 +309,11 @@ def smoke_playwright(archive):
         (consumer / "package.json").write_text('{"name":"azimuth-playwright-consumer","version":"0.0.0","private":true}\n')
         run(["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund", archive], cwd=consumer)
         (consumer / "playwright.config.cjs").write_text(
-            'module.exports={testDir:".",workers:1,reporter:[[require.resolve("@azimuth-sh/playwright/reporter"),'
+            'module.exports={testDir:".",workers:1,reporter:[[require.resolve("@azimuth-sh/testing-playwright/reporter"),'
             '{outputFile:"report.json",execution:"packed-consumer"}]],use:{azimuthContexts:[]}};\n'
         )
         (consumer / "capture.spec.cjs").write_text(
-            'const {test,expect}=require("@azimuth-sh/playwright");\n'
+            'const {test,expect}=require("@azimuth-sh/testing-playwright");\n'
             'test.use({azimuthTestId:"packed-test"});\n'
             'test("captures an execution",async()=>{expect(2+2).toBe(4)});\n'
         )

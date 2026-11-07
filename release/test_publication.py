@@ -538,6 +538,53 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             self.assertEqual(command[-2:], ["--tag", tag])
             self.assertIn("--provenance", command)
 
+    def test_first_publish_token_is_used_only_for_a_package_that_is_not_public_yet(self):
+        subject = {
+            "kind": "package",
+            "ecosystem": "npm",
+            "key": "package:typescript-playwright",
+            "identity": "@azimuth-sh/testing-playwright",
+        }
+        archive = Path("azimuth-sh-testing-playwright-0.1.0-alpha.10.tgz")
+        token_key = "npm_config_//registry.npmjs.org/:_authToken"
+        with patch.dict(
+            "os.environ", {"NPM_FIRST_PUBLISH_TESTING_PLAYWRIGHT": "one-off"}, clear=True
+        ):
+            with patch("release.publication.npm_registry_metadata", return_value=None), patch(
+                "release.publication.run"
+            ) as publish_command:
+                publish_target(subject, archive, {"version": "0.1.0-alpha.10"})
+            self.assertEqual(publish_command.call_args.kwargs["env"][token_key], "one-off")
+
+            with patch(
+                "release.publication.npm_registry_metadata", return_value={"versions": {}}
+            ), patch("release.publication.run") as publish_command:
+                publish_target(subject, archive, {"version": "0.1.0-alpha.10"})
+            self.assertIsNone(publish_command.call_args.kwargs["env"])
+
+        with patch.dict("os.environ", {}, clear=True), patch(
+            "release.publication.npm_registry_metadata", return_value=None
+        ), patch("release.publication.run") as publish_command:
+            with self.assertRaisesRegex(PublicationError, "has never been published"):
+                publish_target(subject, archive, {"version": "0.1.0-alpha.10"})
+        publish_command.assert_not_called()
+
+    def test_other_npm_packages_never_read_the_first_publish_token(self):
+        subject = {
+            "kind": "package",
+            "ecosystem": "npm",
+            "key": "package:typescript-annotations",
+            "identity": "@azimuth-sh/annotations",
+        }
+        with patch.dict(
+            "os.environ", {"NPM_FIRST_PUBLISH_TESTING_PLAYWRIGHT": "one-off"}, clear=True
+        ), patch("release.publication.npm_registry_metadata") as metadata, patch(
+            "release.publication.run"
+        ) as publish_command:
+            publish_target(subject, Path("a.tgz"), {"version": "0.1.0-alpha.10"})
+        metadata.assert_not_called()
+        self.assertIsNone(publish_command.call_args.kwargs["env"])
+
     def test_first_npm_prerelease_accepts_the_registry_required_latest_tag(self):
         with tempfile.TemporaryDirectory() as temporary:
             retained, candidates, _ = self.retained_release(Path(temporary))

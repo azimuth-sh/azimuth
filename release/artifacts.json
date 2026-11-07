@@ -129,7 +129,7 @@
     {
       "id": "typescript-playwright",
       "ecosystem": "npm",
-      "identity": "@azimuth-sh/playwright",
+      "identity": "@azimuth-sh/testing-playwright",
       "manifest": "packages/typescript-playwright/package.json",
       "requiredFiles": [
         "package/package.json",

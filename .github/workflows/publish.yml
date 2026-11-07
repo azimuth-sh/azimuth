@@ -101,6 +101,7 @@ jobs:
       - name: Publish planner-selected targets
         shell: bash
         env:
+          NPM_FIRST_PUBLISH_TESTING_PLAYWRIGHT: ${{ secrets.NPM_FIRST_PUBLISH_TESTING_PLAYWRIGHT }}
           NUGET_API_KEY: ${{ steps.nuget.outputs.NUGET_API_KEY }}
           CARGO_REGISTRY_TOKEN: ${{ steps.crates.outputs.token }}
           RELEASE_TAG: ${{ github.ref_name }}

@@ -245,8 +245,13 @@ def publication_workflow_structure(root=ROOT):
             "publication does not call the complete build workflow")
     for name in ("publish", "image-provenance", "complete"):
         require("environment: release" in jobs[name], f"publication job {name!r} is unbounded")
-    require("secrets." not in jobs["publish"],
-            "publication job reads a long-lived secret instead of trusted publishing")
+    other_secrets = [
+        name
+        for name in re.findall(r"secrets\.([A-Za-z0-9_]+)", jobs["publish"])
+        if name not in NPM_FIRST_PUBLISH_TOKENS.values()
+    ]
+    require(not other_secrets,
+            f"publication job reads long-lived secrets instead of trusted publishing: {other_secrets}")
     exchanges = {
         "NuGet/login": jobs["publish"].find("NuGet/login@"),
         "rust-lang/crates-io-auth-action": jobs["publish"].find(
@@ -889,6 +894,22 @@ def validate_registry_completion(account, state):
     return completion
 
 
+# A trusted publisher can only be registered on an npm package that already exists, so the first
+# version of a package listed here is written with a one-off token instead of OIDC.
+NPM_FIRST_PUBLISH_TOKENS = {
+    "@azimuth-sh/testing-playwright": "NPM_FIRST_PUBLISH_TESTING_PLAYWRIGHT",
+}
+
+
+def npm_first_publish_environment(subject):
+    name = NPM_FIRST_PUBLISH_TOKENS.get(subject.get("identity"))
+    if name is None or npm_registry_metadata(subject) is not None:
+        return None
+    token = os.environ.get(name, "")
+    require(token, f"{name} is absent and {subject['identity']} has never been published")
+    return {**os.environ, "npm_config_//registry.npmjs.org/:_authToken": token}
+
+
 def publish_target(subject, path, account, repository=REPOSITORY):
     if subject["kind"] == "package":
         if subject["ecosystem"] == "cargo":
@@ -908,6 +929,7 @@ def publish_target(subject, path, account, repository=REPOSITORY):
                     "npm", "publish", path, "--access", "public", "--provenance",
                     "--tag", npm_dist_tag(account["version"]),
                 ],
+                env=npm_first_publish_environment(subject),
             )
     elif subject["kind"] == "native":
         run(
@@ -951,6 +973,9 @@ def publish(arguments):
         supplied_plan["publish"],
         key=lambda key: subjects[key].get("ecosystem") != "npm",
     )
+    for key in ordered:
+        if subjects[key].get("ecosystem") == "npm":
+            npm_first_publish_environment(subjects[key])
     for key in ordered:
         subject = subjects[key]
         publish_target(
