@@ -245,6 +245,11 @@ def publication_workflow_structure(root=ROOT):
             "publication does not call the complete build workflow")
     for name in ("publish", "image-provenance", "complete"):
         require("environment: release" in jobs[name], f"publication job {name!r} is unbounded")
+    for action in re.findall(r"^\s*(?:-\s+)?uses:\s*(\S+)", source, re.MULTILINE):
+        require(
+            action.startswith(("actions/", "./")) or re.search(r"@[0-9a-f]{40}$", action),
+            f"publication workflow does not pin {action} by commit",
+        )
     other_secrets = [
         name
         for name in re.findall(r"secrets\.([A-Za-z0-9_]+)", jobs["publish"])

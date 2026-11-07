@@ -849,7 +849,7 @@ class PublicAlphaPublicationTests(unittest.TestCase):
     def test_publication_workflow_scopes_tokens_and_supplies_complete_image_inputs(self):
         source = (self.root / ".github/workflows/publish.yml").read_text()
         self.assertEqual(source.count("persist-credentials: false"), 3)
-        self.assertEqual(source.count("docker/login-action@v4"), 2)
+        self.assertEqual(len(re.findall(r"docker/login-action@[0-9a-f]{40} # v4", source)), 2)
         self.assertEqual(source.count("attestations: write"), 3)
         self.assertIn("permissions:\n  contents: read\n  id-token: write", source)
         self.assertEqual(source.count("pattern: candidates-*"), 3)
@@ -862,6 +862,10 @@ class PublicAlphaPublicationTests(unittest.TestCase):
                 "GH_TOKEN: ${{ github.token }}",
                 "GH_TOKEN: ${{ github.token }}\n      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}",
                 1,
+            ),
+            "unpinned-docker-login": source.replace(
+                "docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0",
+                "docker/login-action@v4",
             ),
             "unpinned-nuget-exchange": re.sub(
                 r"NuGet/login@[0-9a-f]{40}", "NuGet/login@v1", source
