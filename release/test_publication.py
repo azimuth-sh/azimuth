@@ -29,6 +29,7 @@ from release.publication import (
     public_release,
     publish,
     publish_crate,
+    publication_order,
     publish_target,
     publication_workflow_structure,
     qualify,
@@ -568,6 +569,19 @@ class PublicAlphaPublicationTests(unittest.TestCase):
             with self.assertRaisesRegex(PublicationError, "has never been published"):
                 publish_target(subject, archive, {"version": "0.1.0-alpha.10"})
         publish_command.assert_not_called()
+
+    def test_npm_is_written_first_and_the_unconfirmed_nuget_first_publish_last(self):
+        subjects = {
+            "package:cargo": {"ecosystem": "cargo", "identity": "azimuth"},
+            "package:xunit": {"ecosystem": "nuget", "identity": "Azimuth.Testing.Xunit"},
+            "package:annotations": {"ecosystem": "nuget", "identity": "Azimuth.Annotations"},
+            "package:npm": {"ecosystem": "npm", "identity": "@azimuth-sh/emit"},
+            "image:api": {"kind": "image", "identity": "ghcr.io/azimuth-sh/api"},
+        }
+        self.assertEqual(
+            publication_order(list(subjects), subjects),
+            ["package:npm", "package:cargo", "package:annotations", "image:api", "package:xunit"],
+        )
 
     def test_other_npm_packages_never_read_the_first_publish_token(self):
         subject = {

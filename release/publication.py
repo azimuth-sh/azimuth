@@ -901,6 +901,9 @@ NPM_FIRST_PUBLISH_TOKENS = {
 }
 
 
+NUGET_UNCONFIRMED_FIRST_PUBLISH = {"Azimuth.Testing.Xunit"}
+
+
 def npm_first_publish_environment(subject):
     name = NPM_FIRST_PUBLISH_TOKENS.get(subject.get("identity"))
     if name is None or npm_registry_metadata(subject) is not None:
@@ -947,6 +950,19 @@ def publish_target(subject, path, account, repository=REPOSITORY):
         )
 
 
+def publication_order(keys, subjects):
+    # NuGet documents no first publish of a package ID through a trusted-publishing policy, so the
+    # one NuGet package that has never been public goes last: a refusal then leaves every other
+    # target consistently published.
+    return sorted(
+        keys,
+        key=lambda key: (
+            subjects[key].get("identity") in NUGET_UNCONFIRMED_FIRST_PUBLISH,
+            subjects[key].get("ecosystem") != "npm",
+        ),
+    )
+
+
 def publish(arguments):
     retained_release = retained_tagged_release(
         arguments.candidates,
@@ -969,10 +985,7 @@ def publish(arguments):
     published = []
     # npm has no token exchange apart from publishing, so a missing trusted-publisher policy only
     # shows at its first write. Writing npm first makes that the first write of the run.
-    ordered = sorted(
-        supplied_plan["publish"],
-        key=lambda key: subjects[key].get("ecosystem") != "npm",
-    )
+    ordered = publication_order(supplied_plan["publish"], subjects)
     for key in ordered:
         if subjects[key].get("ecosystem") == "npm":
             npm_first_publish_environment(subjects[key])

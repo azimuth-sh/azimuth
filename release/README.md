@@ -60,11 +60,18 @@ environment (the repository owner is `azimuth-sh` and the repository is `azimuth
 | npm | each of `@azimuth-sh/annotations`, `@azimuth-sh/emit`, `@azimuth-sh/testing-playwright` > Settings > Trusted Publisher | GitHub Actions, organization `azimuth-sh`, repository `azimuth`, workflow `publish.yml`, environment `release`, allowing `npm publish` and `npm dist-tag` |
 | crates.io | crate `azimuth` > Settings > Trusted Publishing | repository owner `azimuth-sh`, repository `azimuth`, workflow `publish.yml`, environment `release` |
 
-The NuGet policy owner must own every `Azimuth.*` package, and the repository variable
-`NUGET_USER` names the nuget.org profile the `NuGet/login` exchange authenticates as. npm and
+The NuGet policy owner must own every `Azimuth.*` package. The repository variable `NUGET_USER` is
+the nuget.org username (profile name) passed to `NuGet/login`; the action documents it only as
+"Your NuGet account username" and the policy goes inactive if its creating member leaves the
+organization, so use the username of the active `azimuth-sh` member who creates the policy. NuGet
+documents no first publish of a package ID through a policy, so `Azimuth.Testing.Xunit`, which has
+never been public, is pushed after every other target. npm and
 crates.io accept a trusted publisher only on a package that already exists, so the first version of
-a new package is published once by an owner outside this workflow, then its policy is registered. An
-npm policy that sees no successful publish within two days expires. The `publish` job needs npm
+a new package is published once by an owner outside this workflow, then its policy is registered. A
+newly created npm policy must complete its first successful publish within two days or it expires
+(https://docs.npmjs.com/trusted-publishers), so create npm policies just before tagging. Tick both
+"Allow npm publish" and "Allow npm dist-tag" on each: dist-tag access is off by default and is how
+the planner moves the first prerelease to `latest`. The `publish` job needs npm
 11.21 or newer, which the workflow installs; npm publishes provenance without a flag.
 
 ### First publish of `@azimuth-sh/testing-playwright`
