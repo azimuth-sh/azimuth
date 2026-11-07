@@ -57,7 +57,7 @@ environment (the repository owner is `azimuth-sh` and the repository is `azimuth
 | Registry | Where | Policy |
 | --- | --- | --- |
 | nuget.org | organization `azimuth-sh` > Trusted Publishing | Repository Owner `azimuth-sh`, Repository `azimuth`, Workflow File `publish.yml`, Environment `release`, scope `Azimuth.*` allowing new packages and new versions |
-| npm | each of `@azimuth-sh/annotations`, `@azimuth-sh/emit`, `@azimuth-sh/testing-playwright` > Settings > Trusted Publisher | GitHub Actions, organization `azimuth-sh`, repository `azimuth`, workflow `publish.yml`, environment `release`, allowing `npm publish` and `npm dist-tag` |
+| npm | each of `@azimuth-sh/annotations`, `@azimuth-sh/emit` (and `@azimuth-sh/testing-playwright` from its second release, see below) > Settings > Trusted Publisher | GitHub Actions, organization `azimuth-sh`, repository `azimuth`, workflow `publish.yml`, environment `release`, allowing `npm publish` and `npm dist-tag` |
 | crates.io | crate `azimuth` > Settings > Trusted Publishing | repository owner `azimuth-sh`, repository `azimuth`, workflow `publish.yml`, environment `release` |
 
 The NuGet policy owner must own every `Azimuth.*` package. The repository variable `NUGET_USER` is
