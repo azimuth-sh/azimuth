@@ -63,7 +63,7 @@ environment (the repository owner is `azimuth-sh` and the repository is `azimuth
 The NuGet policy owner must own every `Azimuth.*` package. The repository variable `NUGET_USER` is
 the nuget.org username (profile name) passed to `NuGet/login`; the action documents it only as
 "Your NuGet account username" and the policy goes inactive if its creating member leaves the
-organization, so use the username of the active `azimuth-sh` member who creates the policy. NuGet
+organization, so use the username of the active `azimuth-sh` member who creates the policy (currently `mitro52`, confirmed by the first exchange). NuGet
 documents no first publish of a package ID through a policy, so `Azimuth.Testing.Xunit`, which has
 never been public, is pushed after every other target. npm and
 crates.io accept a trusted publisher only on a package that already exists, so the first version of
@@ -86,9 +86,14 @@ before pushing the tag. The secret is used only when the registry reports the pa
 the run stops before writing any target if it is missing. Every other target uses trusted
 publishing.
 
-Immediately after the release publishes the package: delete the secret and revoke the token on npm, then add the
-package's trusted publisher from the table above. Later releases then take the OIDC path and the
-secret is never read.
+Immediately after the release publishes the package: delete the secret and revoke the token on npm.
+Do not register the package's trusted publisher yet: a newly created policy expires unless it
+completes a publish within two days. Register it on the day of the next release, just before
+tagging; that release then takes the OIDC path and the secret is never read.
+
+After the first trusted-publishing release has published, delete the retired `NUGET_API_KEY`,
+`NPM_TOKEN` and `CARGO_REGISTRY_TOKEN` secrets from the `release` environment and revoke those
+tokens at nuget.org, npm and crates.io.
 
 The NuGet and crates.io exchanges run, and are required to return credentials, before the planner
 selects or writes anything, so a registry-side policy fault there publishes nothing and a rerun on
