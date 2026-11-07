@@ -52,7 +52,7 @@ else:
 
 ROOT = Path(__file__).resolve().parent.parent
 REPOSITORY = "azimuth-sh/azimuth"
-USER_AGENT = "azimuth-release/0.1.0-alpha.9 (https://github.com/azimuth-sh/azimuth)"
+USER_AGENT = "azimuth-release/0.1.0-alpha.10 (https://github.com/azimuth-sh/azimuth)"
 SUPPORT_ASSETS = ("SHA256SUMS",)
 PUBLICATION_WORKFLOW = ROOT / ".github/workflows/publish.yml"
 UNSET = object()

@@ -63,7 +63,7 @@ def native_archive(identity, target, version):
 def native_matrix(catalog):
     runners = {
         "x86_64-unknown-linux-gnu": ("ubuntu-latest", "azimuth"),
-        "aarch64-apple-darwin": ("macos-14", "azimuth"),
+        "aarch64-apple-darwin": ("macos-15", "azimuth"),
         "x86_64-pc-windows-msvc": ("windows-latest", "azimuth.exe"),
     }
     version = catalog["release"]["version"]
