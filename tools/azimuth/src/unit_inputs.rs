@@ -1,7 +1,7 @@
 //! Unit reuse core: the project partition rule, per-unit input fingerprints, and the
 //! bundle-side checks that keep a reused unit result sound.
 //!
-//! A unit's inputs are every tracked file except the private paths of other units. A path claimed
+//! A unit's inputs are every captured working-tree file except the private paths of other units. A path claimed
 //! by two units is shared by both, which widens each unit's inputs and is recorded, never refused.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -401,12 +401,18 @@ fn input_fingerprint(rule_fingerprint: &str, inputs: &[&SourceFile]) -> String {
     ]))
 }
 
-/// Reads the exact tracked file set of a checkout; untracked files are never inputs.
+/// Uses the source capture's working-tree population so unit reuse cannot omit new source files.
 pub fn read_checkout(root: &Path) -> Result<Vec<SourceFile>, String> {
     let output = Command::new("git")
         .arg("-C")
         .arg(root)
-        .args(["ls-files", "-z", "--cached"])
+        .args([
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ])
         .output()
         .map_err(|error| format!("{}: {error}", root.display()))?;
     if !output.status.success() {
@@ -416,17 +422,24 @@ pub fn read_checkout(root: &Path) -> Result<Vec<SourceFile>, String> {
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
-    let mut files = Vec::new();
-    for raw in output
+    let paths = output
         .stdout
         .split(|byte| *byte == 0)
         .filter(|raw| !raw.is_empty())
-    {
-        let path = String::from_utf8(raw.to_vec())
-            .map_err(|_| format!("{}: tracked path is not UTF-8", root.display()))?;
+        .map(|raw| {
+            String::from_utf8(raw.to_vec())
+                .map_err(|_| format!("{}: checkout path is not UTF-8", root.display()))
+        })
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    let mut files = Vec::new();
+    for path in paths {
         let full = root.join(&path);
-        let metadata = std::fs::symlink_metadata(&full)
-            .map_err(|error| format!("{}: {error}", full.display()))?;
+        let metadata = match std::fs::symlink_metadata(&full) {
+            Ok(metadata) => metadata,
+            // Git still lists tracked deletions, but absent files contribute no input.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(format!("{}: {error}", full.display())),
+        };
         let content = if metadata.file_type().is_symlink() {
             let target = std::fs::read_link(&full)
                 .map_err(|error| format!("{}: {error}", full.display()))?;

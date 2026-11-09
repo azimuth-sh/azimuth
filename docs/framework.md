@@ -170,7 +170,7 @@ A change is applied to the model and archived when it merges to main, before any
 
 A feature flag is not a new concept: it is a leaf of a component's observed Execution Context, which Azimuth reads and never sets. A Requirement or Scenario may declare a `Context:` condition naming a component and leaf, and a deployment whose captured context does not match shows it as not applicable here, which is not a violation. A Check lists the leaves its result depends on, and its evidence applies to a deployment only while those leaves hold the values the Run pinned. See [spec.md](../contracts/spec.md) and [deployment-requirement-status.md](../contracts/deployment-requirement-status.md).
 
-Verification reuse is project policy, not per-Check authoring. One reviewed partition rule derives units; a unit's inputs are everything except other units' private paths, and a result of a unit declared hermetic may be reused for a release whose input fingerprint for that unit is equal. End-to-end Checks never take part. See [unit-inputs.md](../contracts/unit-inputs.md).
+Verification reuse is project policy, not per-Check authoring. One reviewed partition rule derives units; a unit's inputs are the checkout's tracked and untracked non-ignored files, excluding absent files and other units' private paths. This is the same working-tree population used by source capture. A result of a unit declared hermetic may be reused for a release whose input fingerprint for that unit is equal. End-to-end Checks never take part. See [unit-inputs.md](../contracts/unit-inputs.md).
 
 ## Run and adapter execution control plane
 

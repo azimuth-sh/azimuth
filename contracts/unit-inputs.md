@@ -35,6 +35,8 @@ A Check that no rule unit covers keeps the single `whole` unit. Pinned `units` i
 
 A unit's inputs are all files of the Verification Target's checkout of the repository, minus the private paths of every other unit. A path matched by the private paths of two or more units belongs to none of them: it is a shared input of every unit and is recorded as widened. The result is deterministic. The launch plan's explanation lists these paths as `widened_paths`. Planning fails only when the rule file is invalid or a pattern cannot be applied; widening never fails it.
 
+The checkout population matches source capture: tracked files plus untracked non-ignored files (`git ls-files -z --cached --others --exclude-standard`), with each path included once. Listed paths absent from the working tree are omitted, so deleting a tracked file changes unit fingerprints exactly as removing that file from a commit would. Ignored untracked files are excluded; tracked files remain inputs even when an ignore rule matches them. Only a not-found error while inspecting a listed path is treated as deletion; other metadata errors and all content-read errors fail with the file path and reason. Symbolic links contribute their link target, and directories are not file inputs.
+
 ## Unit input fingerprint
 
 For each unit core computes, at planning time and from the checkout at the exact source snapshot of the Verification Target:
