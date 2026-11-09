@@ -1,7 +1,7 @@
 {
   "format": "azimuth-installation",
   "schemaVersion": 1,
-  "releaseVersion": "0.1.0-alpha.10",
+  "releaseVersion": "0.1.0-alpha.11",
   "migrationLine": "alpha-requirement-scenario",
   "agents": [],
   "components": [],

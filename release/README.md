@@ -103,9 +103,9 @@ a missing npm policy then fails before any other target is written.
 Create and push one annotated tag at the intended `main` revision:
 
 ```sh
-git tag --annotate v0.1.0-alpha.10 --message "Azimuth 0.1.0-alpha.10"
-git push origin v0.1.0-alpha.10
-gh run list --workflow release --branch v0.1.0-alpha.10 --limit 1
+git tag --annotate v0.1.0-alpha.11 --message "Azimuth 0.1.0-alpha.11"
+git push origin v0.1.0-alpha.11
+gh run list --workflow release --branch v0.1.0-alpha.11 --limit 1
 gh run watch RUN_ID --exit-status
 ```
 
@@ -134,7 +134,7 @@ checks separately cover failures, retries, contexts and missing captures through
 `execution-context`, `test-report`, `test-mapping`, `native-test-results`, `deployment-assessment`
 and `deployment-status` have independent catalog protocol versions (`test-report` and
 `native-test-results` 1, the others 2). They are not inferred from package version
-`0.1.0-alpha.10`. Public source adapters under `packages/python` remain
+`0.1.0-alpha.11`. Public source adapters under `packages/python` remain
 commit-pinned source inputs rather than a newly invented PyPI artifact identity.
 
 Registry publication is not required for consumer CI adoption: build CLI/harness artifacts once
