@@ -737,7 +737,7 @@ function canonicalType(
     type,
     undefined,
     ts.NodeBuilderFlags.NoTruncation |
-      ts.NodeBuilderFlags.InTypeAlias |
+      (externalAlias(type, generics.project) ? 0 : ts.NodeBuilderFlags.InTypeAlias) |
       ts.NodeBuilderFlags.UseStructuralFallback,
   );
   if (!node) throw new Error('compiler could not render a canonical type identity');
@@ -754,6 +754,19 @@ function canonicalType(
   return canonical;
 }
 
+function externalAlias(type: ts.Type, project: ProjectIdentity): boolean {
+  const declarations = type.aliasSymbol?.declarations;
+  if (!declarations || declarations.length === 0) return false;
+  // InTypeAlias expands only the outer alias. Keep the existing local expansion policy,
+  // but never expose an external alias's implementation as the signature's identity.
+  return declarations.some((declaration) => {
+    const source = declaration.getSourceFile();
+    if (project.defaultLibrarySources.has(source)) return false;
+    const owner = packageAccount(path.dirname(fs.realpathSync(source.fileName)));
+    return fs.realpathSync(owner.root) !== fs.realpathSync(project.package.root);
+  });
+}
+
 interface TokenReplacement {
   end: number;
   text: string;
@@ -766,8 +779,8 @@ function canonicalTypeSyntax(
   checker: ts.TypeChecker,
   location: ts.Node | undefined,
 ): string {
-  // Printed syntax cannot rebind dependency-private names in the caller's scope. Preserve
-  // the builder's original symbol when present, and require the printed reference walk to agree.
+  // Inferred external references need not have lexical imports in the caller's scope.
+  // Preserve their compiler symbols and require the printed reference walk to agree.
   const compilerReferences: ts.TypeReferenceNode[] = [];
   visit(compilerNode, (part) => {
     if (ts.isTypeReferenceNode(part)) compilerReferences.push(part);
@@ -908,6 +921,10 @@ function packageTypeIdentity(
     throw new Error('compiler named type has no declaring package root before a dependency boundary');
   }
   const local = fs.realpathSync(owner.root) === fs.realpathSync(project.package.root);
+  if (!local && ts.isTypeAliasDeclaration(declaration)
+    && !exportedTypeDeclaration(declaration, checker)) {
+    throw new Error('compiler external alias is not exported from its declaring module');
+  }
   const parts: string[] = [];
   let node: ts.Node = declaration;
   while (!ts.isSourceFile(node)) {
@@ -934,6 +951,28 @@ function packageTypeIdentity(
   }
   project.typeIdentities.set(identity, typeSymbol);
   return identity;
+}
+
+function exportedTypeDeclaration(declaration: ts.TypeAliasDeclaration, checker: ts.TypeChecker): boolean {
+  let node: ts.TypeAliasDeclaration | ts.ModuleDeclaration = declaration;
+  while (true) {
+    const parent: ts.Node = node.parent;
+    const container: ts.Node = ts.isModuleBlock(parent) ? parent.parent : parent;
+    if (!ts.isSourceFile(container) && !ts.isModuleDeclaration(container)) return false;
+    const symbol = checker.getSymbolAtLocation(node.name);
+    const scope = checker.getSymbolAtLocation(ts.isSourceFile(container) ? container : container.name);
+    if (!symbol || !scope) return false;
+    // getExportsOfModule follows export= to its members; the namespace itself must also
+    // be accepted as that module's exported root (for example a UMD declaration package).
+    const exports = [...checker.getExportsOfModule(scope)];
+    const exportEquals = scope.exports?.get(ts.InternalSymbolName.ExportEquals);
+    if (exportEquals) exports.push(exportEquals);
+    if (!exports.some((entry) => checker.getMergedSymbol((entry.flags & ts.SymbolFlags.Alias) !== 0
+      ? checker.getAliasedSymbol(entry)
+      : entry) === checker.getMergedSymbol(symbol))) return false;
+    if (ts.isSourceFile(container)) return true;
+    node = container;
+  }
 }
 
 function entityNameText(name: ts.EntityName): string {
