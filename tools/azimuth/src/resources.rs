@@ -437,6 +437,11 @@ const RELEASE_MIGRATIONS: &[(&str, &str, &str)] = &[
         "0.1.0-alpha.11",
         include_str!("../resources/migrations/0.1.0-alpha.10-to-0.1.0-alpha.11.md"),
     ),
+    (
+        "0.1.0-alpha.11",
+        "0.1.0-alpha.12",
+        include_str!("../resources/migrations/0.1.0-alpha.11-to-0.1.0-alpha.12.md"),
+    ),
 ];
 
 /// The references of consecutive release edges leading from `from` to `to`, in order.
