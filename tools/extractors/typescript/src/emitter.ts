@@ -486,8 +486,11 @@ function validPackageIdentity(value: string): boolean {
 
 type MechanismDeclaration =
   | ts.FunctionDeclaration
+  | ts.FunctionExpression
   | ts.MethodDeclaration
-  | ts.VariableDeclaration;
+  | ts.VariableDeclaration
+  | ts.PropertyAssignment
+  | ts.PropertyDeclaration;
 
 function resolveMechanismSite(
   call: ts.CallExpression,
@@ -495,7 +498,7 @@ function resolveMechanismSite(
   checker: ts.TypeChecker,
   project: ProjectIdentity,
 ): { name: string; fingerprint: string } {
-  const declaration = enclosingMechanismDeclaration(call);
+  const declaration = enclosingMechanismDeclaration(call, source);
   if (!declaration) {
     throw mechanismSiteError(call, source, 'is not enclosed by a named callable declaration');
   }
@@ -532,7 +535,7 @@ function resolveMechanismSite(
 }
 
 function receiverKind(declaration: MechanismDeclaration): 'static' | 'instance' | 'none' {
-  if (!ts.isMethodDeclaration(declaration)) return 'none';
+  if (!ts.isMethodDeclaration(declaration) && !ts.isPropertyDeclaration(declaration)) return 'none';
   if (!ts.isClassLike(declaration.parent)) return 'none';
   return hasModifier(declaration, ts.SyntaxKind.StaticKeyword) ? 'static' : 'instance';
 }
@@ -542,19 +545,43 @@ function hasModifier(node: ts.Node, kind: ts.SyntaxKind): boolean {
     && (ts.getModifiers(node)?.some((modifier) => modifier.kind === kind) ?? false);
 }
 
-function enclosingMechanismDeclaration(call: ts.CallExpression): MechanismDeclaration | undefined {
+function enclosingMechanismDeclaration(
+  call: ts.CallExpression,
+  source: ts.SourceFile,
+): MechanismDeclaration | undefined {
   let node: ts.Node | undefined = call.parent;
   while (node) {
-    if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) return node;
-    if (ts.isVariableDeclaration(node)
-      && ts.isIdentifier(node.name)
-      && node.initializer
-      && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))) {
-      return node;
+    if (ts.isFunctionLike(node)) return mechanismCallableDeclaration(node, call, source);
+    if (ts.isClassLike(node) || ts.isClassStaticBlockDeclaration(node)) {
+      throw mechanismSiteError(call, source, 'is in a class initializer rather than a supported callable');
     }
     node = node.parent;
   }
   return undefined;
+}
+
+function mechanismCallableDeclaration(
+  node: ts.SignatureDeclaration,
+  call: ts.CallExpression,
+  source: ts.SourceFile,
+): MechanismDeclaration {
+  if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)
+    || (ts.isFunctionExpression(node) && node.name)) {
+    if (!node.name || !ts.isIdentifier(node.name)) {
+      throw mechanismSiteError(call, source, 'uses an unsupported computed or anonymous symbol');
+    }
+    return node;
+  }
+  if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
+    const binding = node.parent;
+    if ((ts.isVariableDeclaration(binding) || ts.isPropertyAssignment(binding)
+      || ts.isPropertyDeclaration(binding)) && binding.initializer === node
+      && ts.isIdentifier(binding.name)) return binding;
+    throw mechanismSiteError(call, source,
+      'is not enclosed by a named callable declaration: anonymous callable requires a direct identifier binding');
+  }
+  throw mechanismSiteError(call, source,
+    `uses an unsupported callable boundary (${ts.SyntaxKind[node.kind]}); expected a named function, method or directly bound function`);
 }
 
 function qualifiedDeclarationName(
@@ -566,7 +593,29 @@ function qualifiedDeclarationName(
   const parts: string[] = [];
   let node: ts.Node | undefined = declaration;
   while (node && !ts.isSourceFile(node)) {
-    const named = semanticDeclarationName(node, checker);
+    // Anonymous execution scopes must never disappear from a nested site's identity.
+    if (ts.isFunctionLike(node)) mechanismCallableDeclaration(node, call, source);
+    if (ts.isClassStaticBlockDeclaration(node)) {
+      throw mechanismSiteError(call, source, 'requires a named enclosing callable rather than a class static block');
+    }
+    if (ts.isClassLike(node) && !node.name) {
+      throw mechanismSiteError(call, source, 'requires a named enclosing class');
+    }
+    if (ts.isObjectLiteralExpression(node)) {
+      const owner: ts.Node = node.parent;
+      if (!(ts.isVariableDeclaration(owner) || ts.isPropertyAssignment(owner)
+        || ts.isPropertyDeclaration(owner)) || owner.initializer !== node
+        || !ts.isIdentifier(owner.name)) {
+        throw mechanismSiteError(call, source,
+          'requires an object literal with a direct identifier binding');
+      }
+    }
+    if ((ts.isVariableDeclaration(node) || ts.isPropertyAssignment(node)
+      || ts.isPropertyDeclaration(node) || ts.isMethodDeclaration(node))
+      && !ts.isIdentifier(node.name)) {
+      throw mechanismSiteError(call, source, 'uses an unsupported computed, literal or destructured name');
+    }
+    const named = semanticDeclarationName(node, checker, call, source);
     if (named) parts.unshift(named);
     node = node.parent;
   }
@@ -576,10 +625,18 @@ function qualifiedDeclarationName(
   return parts.join('.');
 }
 
-function semanticDeclarationName(node: ts.Node, checker: ts.TypeChecker): string | undefined {
+function semanticDeclarationName(
+  node: ts.Node,
+  checker: ts.TypeChecker,
+  call: ts.CallExpression,
+  source: ts.SourceFile,
+): string | undefined {
   let name: ts.DeclarationName | undefined;
   if (ts.isFunctionDeclaration(node)
+    || ts.isFunctionExpression(node)
     || ts.isMethodDeclaration(node)
+    || ts.isPropertyAssignment(node)
+    || ts.isPropertyDeclaration(node)
     || ts.isClassDeclaration(node)
     || ts.isClassExpression(node)
     || ts.isVariableDeclaration(node)) {
@@ -589,7 +646,9 @@ function semanticDeclarationName(node: ts.Node, checker: ts.TypeChecker): string
   }
   if (!name || (!ts.isIdentifier(name) && !ts.isStringLiteral(name))) return undefined;
   const symbol = checker.getSymbolAtLocation(name);
-  if (!symbol) return undefined;
+  if (!symbol) {
+    throw mechanismSiteError(call, source, 'has an enclosing name without a compiler-resolved symbol');
+  }
   const semanticName = symbol.getName();
   // The default export symbol still belongs to this explicitly named declaration.
   return semanticName === 'default' && ts.isIdentifier(name) ? name.text : semanticName;
@@ -615,10 +674,12 @@ function callableSignatures(
 }
 
 function hasCallableBody(declaration: ts.Declaration): boolean {
-  if (ts.isFunctionDeclaration(declaration) || ts.isMethodDeclaration(declaration)) {
+  if (ts.isFunctionDeclaration(declaration) || ts.isFunctionExpression(declaration)
+    || ts.isMethodDeclaration(declaration)) {
     return declaration.body !== undefined;
   }
-  return ts.isVariableDeclaration(declaration)
+  return (ts.isVariableDeclaration(declaration) || ts.isPropertyAssignment(declaration)
+    || ts.isPropertyDeclaration(declaration))
     && declaration.initializer !== undefined
     && (ts.isArrowFunction(declaration.initializer)
       || ts.isFunctionExpression(declaration.initializer));
