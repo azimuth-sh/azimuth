@@ -52,7 +52,7 @@ merely because it is linked.
 
 A realization entry declares a stable mechanism identity, enforcement kind and rationale, then resolves to either one explicitly bound artifact or a set of distinct tagged source sites. Code identifies each participating site with `implements-mechanism`; a non-code artifact uses an explicit `Binding:` instead. The realization identity survives deletion of all implementations, making the broken relation visible. Extraction cannot establish whether the tagged set is complete or adequate for the rationale.
 
-A marker-derived implementation is one atomic implementation-and-companion account. Its six raw fields are `mechanism`, `site`, `binding`, `file`, `lang` and `source_fingerprint`; its raw binding is exactly `<address-kind>:<site>`. Project assembly resolves the file to one area and atomically rewrites the implementation binding and companion Artifact id to `<area>|<address-kind>|<site>`. The compiler- or runtime-qualified site is semantic; the file is only an accountable locator. Local and federated assembly use the same rewrite, and neither file, mount, repository nor revision can disambiguate semantic identity.
+A marker-derived implementation is one atomic implementation-and-companion account. Its six raw fields are `mechanism`, `site`, `binding`, `file`, `lang` and `source_fingerprint`; its raw binding is exactly `<address-kind>:<site>`. Project assembly resolves the file to one area and atomically rewrites the implementation binding and companion Artifact id to `<area>|<address-kind>|<site>`. Identical repeated realization, Check implementation and mechanism implementation records collapse to one source site, together with identical mechanism companion Artifacts. Equality includes every field and the source fingerprint; conflicting records still fail. This permits linked source in several compilation units. The compiler- or runtime-qualified site is semantic; the file is only an accountable locator. Local and federated assembly use the same rewrite, and neither file, mount, repository nor revision can disambiguate semantic identity.
 
 The qualified-site account is deliberately ecosystem-specific. .NET uses namespace, declaring type, method and metadata parameter signature; Java and Kotlin use binary class, method and JVM descriptor. TypeScript and JavaScript use owning package, compiler module, receiver, symbol and canonical overload set. Compiler default-library names require a resolved symbol anchored in those libraries; consumer homonyms fail. Union members use sorted `union(...)` accounts, including within nested types, so qualified sites contain no `|`. Go uses import path, receiver, function and `go/types` signature with positional generics. Python uses the one root-relative module and `__qualname__`. Rust binds one conventional Cargo target and reachable module to a normalized declared signature whose type-path spelling remains semantic. C++ accepts only a program-global, external-linkage, non-module, non-template and unconstrained declaration and uses qualified name plus canonical function type. Each emitter fails when that account is ambiguous rather than adding a path.
 
@@ -196,7 +196,7 @@ The implemented provider journey is:
 ```text
 azimuth adapter verify [--config <file>]
 azimuth run plan --request <file> [--model <dir>] \
-  [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
+  [--workspace <file>] [--repository <id>] [--manifest <file>...] [--config <file>] [--out <file>]
 azimuth run execute --plan <file> [--predecessor <bundle>...] \
   [--config <file>] [--out <file>]
 azimuth run import --plan <file> --input <id>=<file>... \
@@ -206,6 +206,8 @@ azimuth run import --plan <file> --input <id>=<file>... \
 Verification compares the running adapter's complete description with configuration. Planning loads the complete unselected model and accepts strict Check-only, Challenge-only or mixed requests; the two arrays are required and their union is non-empty. A Check request names its exact configured capability and finite units. A Challenge request selects a declared Verification Challenge, explicit capability, finite units and a prepared scope report. Core resolves the implementation target fingerprint and semantic scope from the account. There is no partial-model or `--only` mode.
 
 Challenge planning resolves declarations against the current implementation and Check basis and produces bounded semantic scope and accountable launch inputs. Adverse or ambiguous target selection fails rather than silently choosing a larger source tree or whole suite.
+
+Catalog-backed local `run plan` and `run select` require `--repository <id>` with emitter manifests so locators resolve against that repository’s catalog Areas. The qualifier follows `export` and `run snapshot`; it is not accepted without a catalog or with the complete `--project`/`--workset` route.
 
 Each selection freezes an exact target and semantic scope. Source-backed scope items project into accountable source, Artifact, enumeration or surface-member locators. Semantic scope changes Plan identity; locator projection changes launch identity. An adapter translates this frozen account rather than reinterpreting repository authority.
 

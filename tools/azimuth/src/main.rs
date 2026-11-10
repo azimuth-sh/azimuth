@@ -61,7 +61,7 @@ USAGE
     azimuth run snapshot --project-id <id> --verification-target <file> [model options] [--out <file>]
     azimuth run select --policy <file> [model options] [--config <file>] [--out <file>]
     azimuth run plan --request <file>|--selection <file> [--model <dir>]
-        [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
+        [--workspace <file>] [--repository <id>] [--manifest <file>...] [--config <file>] [--out <file>]
         [--unit-rule <file>] [--checkout <dir>] [--unit-explanation <file>]
     azimuth run unit-inputs --rule <file> [--checkout <dir>] [--out <file>]
     azimuth run execute --plan <file> [--predecessor <bundle>...] [--config <file>] [--out <file>]
@@ -126,7 +126,7 @@ LOCAL TOPOLOGY
     Every local model load reads topology from project.json beside model/ when it exists:
     workspace.json must then be absent, --workspace and --support are rejected, and every
     catalog model source must be in this repository. --manifest then needs --repository <id>
-    (validate, export, report traceability, run snapshot, assurance), which qualifies the
+    (validate, export, report traceability, run snapshot/select/plan, assurance), which qualifies the
     manifests against the Areas that catalog repository owns. change finalize and archive
     refuse that partial load and require --project and --workset instead.
 
@@ -139,7 +139,7 @@ const RUN_USAGE: &str = "\
 USAGE
     azimuth run select --policy <file> [model options] [--config <file>] [--out <file>]
     azimuth run plan --request <file>|--selection <file> [--model <dir>]
-        [--workspace <file>] [--manifest <file>...] [--config <file>] [--out <file>]
+        [--workspace <file>] [--repository <id>] [--manifest <file>...] [--config <file>] [--out <file>]
     azimuth run execute --plan <file> [--predecessor <bundle>...]
         [--config <file>] [--out <file>]
     azimuth run import --plan <file> --input <id>=<file>...
@@ -2381,7 +2381,7 @@ fn load_catalog(
 /// every other local load refuses `--repository` rather than ignore it.
 fn reject_repository(options: &Options) -> Result<(), String> {
     if options.repository.is_some() {
-        return Err("--repository is available only for validate, export, report traceability, run snapshot and assurance model commands".into());
+        return Err("--repository is available only for validate, export, report traceability, run snapshot/select/plan and assurance model commands".into());
     }
     Ok(())
 }
@@ -2754,6 +2754,7 @@ struct RunOptions {
 }
 
 struct RunPlanOptions {
+    repository: Option<String>,
     project: Option<PathBuf>,
     workset: Option<PathBuf>,
     supports: Vec<PathBuf>,
@@ -3099,6 +3100,7 @@ fn command_run_snapshot(args: &[String]) -> Result<ExitCode, String> {
 }
 
 fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
+    let mut repository = None;
     let mut project = None;
     let mut workset = None;
     let mut supports = Vec::new();
@@ -3116,6 +3118,14 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
     while index < args.len() {
         let option = args[index].as_str();
         match option {
+            "--repository" => {
+                if repository
+                    .replace(argument_value(args, index, option)?)
+                    .is_some()
+                {
+                    return Err("--repository may be supplied only once".into());
+                }
+            }
             "--project" => set_once_path(
                 &mut project,
                 PathBuf::from(argument_value(args, index, option)?),
@@ -3181,6 +3191,9 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
     if project.is_some() != workset.is_some() {
         return Err("run planning requires --project and --workset together".into());
     }
+    if project.is_some() && repository.is_some() {
+        return Err("--repository is not available with --project/--workset".into());
+    }
     let request = request.ok_or("run plan needs `--request <file>`")?;
     let workspace_explicit = workspace.is_some();
     let model = model.unwrap_or_else(|| PathBuf::from("azimuth/model"));
@@ -3207,6 +3220,7 @@ fn parse_run_plan_options(args: &[String]) -> Result<RunPlanOptions, String> {
         default.is_file().then_some(default)
     });
     Ok(RunPlanOptions {
+        repository,
         project,
         workset,
         supports,
@@ -3319,10 +3333,14 @@ fn load_run_model(options: &RunPlanOptions) -> Result<azimuth::Loaded, String> {
             workspace: options.workspace_explicit,
             manifests: !options.manifests.is_empty(),
             supports: !options.supports.is_empty(),
-            repository: None,
+            repository: options.repository.as_deref(),
         },
     )? {
-        azimuth::load_assembly(&assembly, &[]).map_err(render_diagnostics)
+        let linkage = options
+            .repository
+            .as_deref()
+            .map(|repository| (repository, options.manifests.as_slice()));
+        azimuth::load_assembly_with_linkage(&assembly, linkage, &[]).map_err(render_diagnostics)
     } else {
         azimuth::load_with_support(
             &options.model,

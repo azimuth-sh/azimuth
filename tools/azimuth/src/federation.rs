@@ -1958,6 +1958,15 @@ pub fn observe_repository_with_support(
         }
     }
     assign_sources(&mut linkage, &areas, &mut errors, producer);
+    errors.extend(crate::merged_manifest_issues(&crate::model::Model {
+        realizes: linkage.realizes.clone(),
+        check_implementations: linkage.check_implementations.clone(),
+        mechanism_implementations: linkage.mechanism_implementations.clone(),
+        class_members: linkage.class_members.clone(),
+        enumerations: linkage.enumerations.clone(),
+        artifacts: linkage.artifacts.clone(),
+        ..Default::default()
+    }));
 
     let mut model_sources = Vec::new();
     for source in project
@@ -2085,6 +2094,12 @@ fn assign_sources(
     errors: &mut Vec<Diag>,
     producer: &str,
 ) {
+    manifest::collapse_identical_source_records(
+        &mut manifest.realizes,
+        &mut manifest.check_implementations,
+        &mut manifest.mechanism_implementations,
+        &mut manifest.artifacts,
+    );
     for item in &mut manifest.realizes {
         item.source = locate_source(
             areas,

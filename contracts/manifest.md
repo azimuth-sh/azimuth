@@ -84,7 +84,7 @@ A production realization site for one parent Requirement.
 
 `requirement` is a stable lower-kebab ID; an undeclared target becomes a dangling-linkage finding. The module is derived from the current Requirement declaration, never emitted by the source marker. `lang` is accepted as written and selects the address kind (see [Address kinds](#address-kinds)).
 
-Within one manifest the identity is `requirement|site|file|lang`, and a repeat is a duplicate realization.
+Within one manifest the identity is `requirement|site|file|lang`. Identical repeated records collapse to one; a repeat that differs in any field, including `source_fingerprint` or emitted source identity, is a duplicate realization error.
 
 ## `check_implementations`
 
@@ -104,7 +104,7 @@ records may implement one Check.
 
 All five fields are required, including `source_fingerprint`. The four source-identity fields are permitted. No other field is.
 
-`check` is a stable lower-kebab entity ID. Within one manifest the identity is `check` plus the emitted source key `area|address_kind|address` when a source identity is present, and `check|file|site|lang` when it is not.
+`check` is a stable lower-kebab entity ID. Within one manifest the identity is `check` plus the emitted source key `area|address_kind|address` when a source identity is present, and `check|file|site|lang` when it is not. Identical repeated records collapse to one; a repeat with any differing field, including the source fingerprint, fails.
 
 ## `mechanism_implementations`
 
@@ -142,9 +142,9 @@ With no emitted source identity, `binding` is exactly `<address-kind>:<site>` an
 
 With an emitted source identity, `address_kind` must equal the address kind implied by `lang`, `address` must equal `site`, and `binding` must equal the source key `area|address_kind|address`.
 
-Either way the record requires exactly one companion Artifact in the same manifest whose `id` equals that same binding value, whose `kind` equals the address kind, whose `file` equals the implementation's `file`, and whose source identity is present or absent exactly as the implementation's is and equal to it when present. Zero matches, several matches, or one companion claimed by two implementations each fail.
+After collapsing identical implementation records and identical companion Artifacts, the record requires exactly one companion Artifact in the same manifest whose `id` equals that same binding value, whose `kind` equals the address kind, whose `file` equals the implementation's `file`, and whose source identity is present or absent exactly as the implementation's is and equal to it when present. Zero matches, several matches, or one companion claimed by two implementations each fail.
 
-Several independent sites may implement one stable Mechanism. The full duplicate identity is `mechanism|site|binding|file|lang`; a repeated site or companion remains invalid even when it names the same mechanism. Site identity never falls back to file location.
+Several independent sites may implement one stable Mechanism. The full duplicate identity is `mechanism|site|binding|file|lang`; identical repeated records (every field equal, including the source fingerprint and emitted source identity) collapse to one source site, together with their identical companion Artifacts. This permits one linked source file to participate in several compilation units. Records that share an identity but differ in any field remain invalid even when they name the same mechanism. Site identity never falls back to file location.
 
 ## `class_members`
 
@@ -197,7 +197,7 @@ A machine-addressable artifact emitted from a compiler or schema model. Optional
 
 `id`, `kind` and `file` are required. `unique` is an optional boolean, `columns` an optional array of strings and `predicate` an optional string. The four source-identity fields are permitted. No other field is. An omitted optional property becomes `null`, `[]` and `null` in the canonical Artifact account; it is not written as `null` in the manifest.
 
-Within one manifest the identity is the triple `(id, kind, file)`.
+Within one manifest the identity is the triple `(id, kind, file)`. Identical marker companion records collapse to one; differing companion properties or source identities remain a conflict. Repeated ordinary Artifacts remain invalid.
 
 An Artifact is either a marker companion — claimed by exactly one `mechanism_implementations` record as described above — or an ordinary Artifact. An ordinary Artifact may not reuse the id of a companion, and may not use a reserved raw marker id `<address-kind>:<site>` for any mechanism site in the manifest. Ordinary artifact ids are unique among themselves. Only ordinary Artifacts may be named by an explicit `Binding:` in a realization; an explicit binding to a companion's raw id or its assembled key is rejected.
 
@@ -234,7 +234,7 @@ For an unqualified mechanism implementation, assembly atomically rewrites the im
 
 ## Merged manifests
 
-Several manifests are read together. Duplicate detection inside one manifest is by the raw identity tuples above; after assembly the following must additionally hold across all manifests:
+Several manifests are read together. Identical realization, Check implementation and mechanism implementation records, with their identical marker companions, collapse both within a manifest and when merging manifests. Equality includes every field; collapsing does not conceal differing fingerprints, locators, source identities or Artifact properties. Duplicate detection inside one manifest is by the raw identity tuples above; after assembly the following must additionally hold across all manifests:
 
 - one realization per `(requirement, source key)`;
 - one Check implementation per `(check, source key)`;
