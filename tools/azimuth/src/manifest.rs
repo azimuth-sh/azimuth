@@ -128,7 +128,7 @@ pub fn parse(path: &str, root: &Json) -> Result<Manifest, Vec<Diag>> {
             );
             if realizes.insert(identity.clone()) {
                 out.realizes.push(value);
-            } else {
+            } else if !out.realizes.contains(&value) {
                 errors.push(Diag::at(
                     path,
                     0,
@@ -187,7 +187,7 @@ pub fn parse(path: &str, root: &Json) -> Result<Manifest, Vec<Diag>> {
                 });
             if checks.insert(identity.clone()) {
                 out.check_implementations.push(value);
-            } else {
+            } else if !out.check_implementations.contains(&value) {
                 errors.push(Diag::at(
                     path,
                     0,
@@ -247,7 +247,7 @@ pub fn parse(path: &str, root: &Json) -> Result<Manifest, Vec<Diag>> {
             );
             if mechanisms.insert(identity.clone()) {
                 out.mechanism_implementations.push(value);
-            } else {
+            } else if !out.mechanism_implementations.contains(&value) {
                 errors.push(Diag::at(
                     path,
                     0,
@@ -361,7 +361,13 @@ pub fn parse(path: &str, root: &Json) -> Result<Manifest, Vec<Diag>> {
             let identity = (id.clone(), value.kind.clone(), value.file.clone());
             if artifacts.insert(identity.clone()) {
                 out.artifacts.push(value);
-            } else {
+            } else if !out.artifacts.contains(&value)
+                || !out.mechanism_implementations.iter().any(|implementation| {
+                    implementation.binding == value.id
+                        && implementation.file == value.file
+                        && implementation.source == value.source
+                })
+            {
                 errors.push(Diag::at(
                     path,
                     0,
@@ -382,6 +388,28 @@ pub fn parse(path: &str, root: &Json) -> Result<Manifest, Vec<Diag>> {
     } else {
         Err(errors)
     }
+}
+
+/// Linked compilation units may repeat one source account. Compare every field before
+/// pairing companions: identity equality alone must never hide conflicting source facts.
+pub(crate) fn collapse_identical_source_records(
+    realizes: &mut Vec<Site>,
+    checks: &mut Vec<CheckImplementation>,
+    mechanisms: &mut Vec<MechanismImplementation>,
+    artifacts: &mut Vec<Artifact>,
+) {
+    let mut seen = BTreeSet::new();
+    realizes.retain(|item| seen.insert(item.clone()));
+    let mut seen = BTreeSet::new();
+    checks.retain(|item| seen.insert(item.clone()));
+    let mut seen = BTreeSet::new();
+    mechanisms.retain(|item| seen.insert(item.clone()));
+    let companion_ids = mechanisms
+        .iter()
+        .map(|item| item.binding.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut seen = BTreeSet::new();
+    artifacts.retain(|item| !companion_ids.contains(item.id.as_str()) || seen.insert(item.clone()));
 }
 
 fn validate_mechanism_accounts(path: &str, manifest: &Manifest, errors: &mut Vec<Diag>) {

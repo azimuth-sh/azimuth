@@ -96,8 +96,15 @@ fn rejects_invalid_fingerprints_partial_identity_and_duplicates() {
         r#"{{"check":"recovery-under-loss","site":"recovery::replay_after_loss",
         "file":"src/recovery.rs","lang":"rust","source_fingerprint":"{SHA}"}}"#
     );
-    let duplicate = parse(&format!(
+    let identical = parse(&format!(
         "{{\"check_implementations\":[{implementation},{implementation}]}}"
+    ))
+    .unwrap();
+    assert_eq!(identical.check_implementations.len(), 1);
+
+    let conflicting = implementation.replace(SHA, &format!("sha256:{}", "b".repeat(64)));
+    let duplicate = parse(&format!(
+        "{{\"check_implementations\":[{implementation},{conflicting}]}}"
     ))
     .unwrap_err();
     assert!(

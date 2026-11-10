@@ -386,7 +386,7 @@ impl SourceIdentity {
 }
 
 /// A compiler-resolved production realization site.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Site {
     pub spec: String,
     pub requirement: String,
@@ -411,7 +411,7 @@ impl Site {
 }
 
 /// A compiler-resolved site that implements a realization-owned mechanism identity.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MechanismImplementation {
     pub spec: String,
     pub mechanism: String,
@@ -424,7 +424,7 @@ pub struct MechanismImplementation {
 }
 
 /// A compiler-resolved source site that implements one project-global Check.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CheckImplementation {
     pub check: String,
     pub site: String,
@@ -471,7 +471,7 @@ pub struct Enumeration {
 
 /// A machine-addressable artifact emitted from a compiler or schema model. Optional properties
 /// carry only facts the extractor can derive; semantic requirements remain in the realization prose.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Artifact {
     pub id: String,
     pub kind: String,

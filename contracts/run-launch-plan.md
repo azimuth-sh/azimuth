@@ -17,6 +17,12 @@ New plan requests require `source`, `artifact` or `deployment` Verification Targ
 
 A Run launch plan binds one provider-neutral Run-bundle semantic Plan to explicit configured adapter capabilities. The file is strict JSON with format `azimuth-run-launch-plan` and version `2`. Unknown fields, duplicate object keys, invalid numbers, non-canonical arrays and duplicate identities fail. There is no alpha 1 reader.
 
+## Model and repository inputs
+
+`azimuth run plan` (and `run select`) accepts `--repository <id>` with catalog-backed local `--model` loading, just like `export` and `run snapshot`. When `project.json` exists beside the model, supplied `--manifest` inputs require this explicit qualifier. Core qualifies their locators against the Areas owned by that catalog repository, while loading all local model sources before selection. It does not infer the emitting repository from the model source owner: sources may belong to another declared repository. See [project-catalog.md](project-catalog.md#local-loads-without-a-workset).
+
+The qualifier may appear only once, must name a declared repository, and is rejected without a catalog or with `--project`/`--workset`. The complete workset route remains available; catalog-only loading does not establish a complete federated project account. Explicit `--workspace` and `--support` remain invalid with catalog topology.
+
 ## Planning request
 
 `azimuth run plan --request <file>` accepts exactly:

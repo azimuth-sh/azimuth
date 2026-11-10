@@ -142,6 +142,12 @@ pub fn load_with_owed_bindings(
         }
     }
     normalize_local_sources(&mut model, &mut errors);
+    manifest::collapse_identical_source_records(
+        &mut model.realizes,
+        &mut model.check_implementations,
+        &mut model.mechanism_implementations,
+        &mut model.artifacts,
+    );
     model.resolve_source_membership();
     check_facet_owners(
         model
@@ -323,6 +329,12 @@ pub fn load_assembly_with_owed_bindings(
         }
         model.account_supports.push(support);
     }
+    manifest::collapse_identical_source_records(
+        &mut model.realizes,
+        &mut model.check_implementations,
+        &mut model.mechanism_implementations,
+        &mut model.artifacts,
+    );
     model.resolve_source_membership();
     check_facet_owners(
         model
@@ -534,7 +546,7 @@ fn collect_named(dir: &Path, name: &str, out: &mut Vec<PathBuf>) -> std::io::Res
     Ok(())
 }
 
-fn merged_manifest_issues(model: &Model) -> Vec<Diag> {
+pub(crate) fn merged_manifest_issues(model: &Model) -> Vec<Diag> {
     let mut issues = Vec::new();
     let mut realizations = BTreeMap::<(String, String), (&str, &str)>::new();
     for realization in &model.realizes {
@@ -914,6 +926,12 @@ fn apply_selection(model: &mut Model, only: &[String]) {
 }
 
 fn normalize_local_sources(model: &mut Model, errors: &mut Vec<Diag>) {
+    manifest::collapse_identical_source_records(
+        &mut model.realizes,
+        &mut model.check_implementations,
+        &mut model.mechanism_implementations,
+        &mut model.artifacts,
+    );
     let workspace = model.workspace.clone();
     for item in &mut model.package_producers {
         if let Some(source) = &item.source {
