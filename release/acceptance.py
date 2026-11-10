@@ -1,6 +1,6 @@
 APPROVED_CONTRACT = {
-    "version": "0.1.0-alpha.12",
-    "tag": "v0.1.0-alpha.12",
+    "version": "0.1.0-alpha.13",
+    "tag": "v0.1.0-alpha.13",
     "migrationLine": "alpha-requirement-scenario",
     "license": "Apache-2.0",
     "repository": "https://github.com/azimuth-sh/azimuth",
