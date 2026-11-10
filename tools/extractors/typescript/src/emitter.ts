@@ -114,6 +114,7 @@ interface ProjectIdentity {
   defaultLibrarySources: ReadonlySet<ts.SourceFile>;
   package: PackageAccount;
   program: ts.Program;
+  typeIdentities: Map<string, ts.Symbol>;
 }
 
 function scanSource(
@@ -590,7 +591,8 @@ function semanticDeclarationName(node: ts.Node, checker: ts.TypeChecker): string
   const symbol = checker.getSymbolAtLocation(name);
   if (!symbol) return undefined;
   const semanticName = symbol.getName();
-  return semanticName === 'default' ? undefined : semanticName;
+  // The default export symbol still belongs to this explicitly named declaration.
+  return semanticName === 'default' && ts.isIdentifier(name) ? name.text : semanticName;
 }
 
 function callableSignatures(
@@ -745,7 +747,7 @@ function canonicalType(
     node,
     location?.getSourceFile() ?? ts.createSourceFile('type.ts', '', ts.ScriptTarget.Latest),
   );
-  const canonical = canonicalTypeSyntax(rendered, generics, checker, location);
+  const canonical = canonicalTypeSyntax(rendered, node, generics, checker, location);
   if (containsLocatorType(canonical)) {
     throw new Error(`compiler type identity contains a source locator: ${canonical}`);
   }
@@ -759,10 +761,18 @@ interface TokenReplacement {
 
 function canonicalTypeSyntax(
   text: string,
+  compilerNode: ts.TypeNode,
   generics: GenericAccount,
   checker: ts.TypeChecker,
   location: ts.Node | undefined,
 ): string {
+  // Printed syntax cannot rebind dependency-private names in the caller's scope. Preserve
+  // the builder's original symbol when present, and require the printed reference walk to agree.
+  const compilerReferences: ts.TypeReferenceNode[] = [];
+  visit(compilerNode, (part) => {
+    if (ts.isTypeReferenceNode(part)) compilerReferences.push(part);
+  });
+  let referenceIndex = 0;
   const genericNames = generics.names;
   const parameters = genericNames.length > 0 ? `<${genericNames.join(',')}>` : '';
   const prefix = `type __AzimuthCanonical${parameters} = `;
@@ -803,13 +813,18 @@ function canonicalTypeSyntax(
     }
     if (ts.isTypeReferenceNode(part)) {
       const name = entityNameText(part.typeName);
+      const compilerReference = compilerReferences[referenceIndex++];
+      if (!compilerReference || entityNameText(compilerReference.typeName) !== name) {
+        throw new Error('compiler canonical reference syntax lost its symbol account');
+      }
       const symbol = semantic.checker.getSymbolAtLocation(part.typeName);
       if (symbol && (genericSymbols.has(symbol)
           || (symbol.flags & ts.SymbolFlags.TypeParameter) !== 0)) {
         return;
       }
       // Rebinding only in the synthetic scope would accept a consumer homonym as a compiler global.
-      const originalSymbol = resolveTypeSymbol(part.typeName, checker, location);
+      const originalSymbol = compilerTypeSymbol(compilerReference.typeName)
+        ?? resolveTypeSymbol(part.typeName, checker, location);
       const declarations = originalSymbol?.declarations;
       if (declarations && declarations.length > 0
         && declarations.some((entry) => generics.project.defaultLibrarySources.has(entry.getSourceFile()))) {
@@ -819,7 +834,7 @@ function canonicalTypeSyntax(
         let identities: Set<string>;
         try {
           identities = new Set(declarations.map((entry) =>
-            packageTypeIdentity(entry, checker, generics.project)));
+            packageTypeIdentity(entry, originalSymbol, checker, generics.project)));
         } catch (error) {
           throw new Error(`compiler cannot qualify named type ${name}: ${(error as Error).message}`);
         }
@@ -834,6 +849,9 @@ function canonicalTypeSyntax(
       throw new Error(`compiler cannot qualify named type ${name} without a source locator`);
     }
   });
+  if (referenceIndex !== compilerReferences.length) {
+    throw new Error('compiler canonical reference syntax omitted a symbol account');
+  }
   for (const union of unions.reverse()) {
     const members = union.types.map((member) => canonicalTokens(
       text,
@@ -847,6 +865,14 @@ function canonicalTypeSyntax(
     });
   }
   return canonicalTokens(text, replacements);
+}
+
+function compilerTypeSymbol(name: ts.EntityName): ts.Symbol | undefined {
+  const identifier = ts.isIdentifier(name) ? name : name.right;
+  // TypeScript's node builder attaches the original symbol to synthetic identifiers, although
+  // getSymbolAtLocation only binds parse-tree nodes. Keep this implementation detail at one edge;
+  // missing metadata must still resolve in the original Program or fail closed.
+  return (identifier as ts.Identifier & { symbol?: ts.Symbol }).symbol;
 }
 
 function resolveTypeSymbol(
@@ -871,15 +897,17 @@ function resolveTypeSymbol(
 
 function packageTypeIdentity(
   declaration: ts.Declaration,
+  typeSymbol: ts.Symbol,
   checker: ts.TypeChecker,
   project: ProjectIdentity,
 ): string {
   const source = declaration.getSourceFile();
   const owner = packageAccount(path.dirname(fs.realpathSync(source.fileName)));
-  // A nested dependency can share the package name without sharing its semantic module account.
-  if (fs.realpathSync(owner.root) !== fs.realpathSync(project.package.root)) {
-    throw new Error('compiler named type is outside the emitting package without a stable locator');
+  if (path.relative(owner.root, fs.realpathSync(source.fileName)).split(path.sep)
+    .includes('node_modules')) {
+    throw new Error('compiler named type has no declaring package root before a dependency boundary');
   }
+  const local = fs.realpathSync(owner.root) === fs.realpathSync(project.package.root);
   const parts: string[] = [];
   let node: ts.Node = declaration;
   while (!ts.isSourceFile(node)) {
@@ -898,7 +926,14 @@ function packageTypeIdentity(
     node = node.parent;
   }
   if (parts.length === 0) throw new Error('compiler named type has no qualified declaration name');
-  return `${moduleSpecifier(source.fileName, project.package, project.program)}::${parts.join('.')}`;
+  const module = moduleSpecifier(source.fileName, owner, project.program, true);
+  const identity = `${local ? '' : `${owner.name}::`}${module}::${parts.join('.')}`;
+  const prior = project.typeIdentities.get(identity);
+  if (prior && prior !== typeSymbol) {
+    throw new Error(`distinct compiler declarations share named type identity ${identity}`);
+  }
+  project.typeIdentities.set(identity, typeSymbol);
+  return identity;
 }
 
 function entityNameText(name: ts.EntityName): string {
@@ -917,8 +952,23 @@ function canonicalTokens(
   const tokens: Array<{ kind: ts.SyntaxKind; text: string; separated: boolean }> = [];
   scanner.setTextPos(start);
   let previousEnd = start;
+  const templateBraces: number[] = [];
   for (let kind = scanner.scan(); kind !== ts.SyntaxKind.EndOfFileToken; kind = scanner.scan()) {
     if (scanner.getTokenPos() >= end) break;
+    // A plain scanner treats a template tail as new source text, swallowing later union tokens.
+    // Rescan closing substitutions in their template context before advancing to replacements.
+    if (kind === ts.SyntaxKind.CloseBraceToken && templateBraces.length > 0) {
+      const index = templateBraces.length - 1;
+      if (templateBraces[index] === 0) {
+        kind = scanner.reScanTemplateToken(false);
+        if (kind === ts.SyntaxKind.TemplateTail) templateBraces.pop();
+      } else {
+        templateBraces[index]--;
+      }
+    } else if (kind === ts.SyntaxKind.OpenBraceToken && templateBraces.length > 0) {
+      templateBraces[templateBraces.length - 1]++;
+    }
+    if (kind === ts.SyntaxKind.TemplateHead) templateBraces.push(0);
     const token = scanner.getTokenText();
     const candidate = replacements.get(scanner.getTokenPos());
     const replacement = candidate && candidate.end <= end ? candidate : undefined;
@@ -1126,6 +1176,7 @@ export function emit(
     throw new Error(formatDiagnostic(relevantDiagnostics[0]));
   }
 
+  const typeIdentities = new Map<string, ts.Symbol>();
   for (const file of files) {
     const relative = normalizedFile(canonicalRoot, file);
     const source = sourceFileByRealPath(project.program, file);
@@ -1138,6 +1189,7 @@ export function emit(
       defaultLibrarySources,
       package: project.package,
       program: project.program,
+      typeIdentities,
     };
     const result = scanSource(relative, source, checker, identity);
     manifest.extensions!.push(...result.verificationChallengeImplementations);
@@ -1316,11 +1368,13 @@ function moduleSpecifier(
   sourceFile: string,
   account: PackageAccount,
   program: ts.Program,
+  declarationModule = false,
 ): string {
   const canonical = fs.realpathSync(sourceFile);
   ensureBelowRoot(canonical, account.root, sourceFile);
   const relative = path.relative(account.root, canonical).split(path.sep).join('/');
-  const modulePath = relative
+  const moduleSource = declarationModule ? relative.replace(/\.d\.(ts|mts|cts)$/, '.$1') : relative;
+  const modulePath = moduleSource
     .replace(/\.mts$/, '.mjs')
     .replace(/\.cts$/, '.cjs')
     .replace(/\.(?:ts|tsx|js|jsx)$/, '');
