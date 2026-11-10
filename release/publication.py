@@ -13,6 +13,7 @@ import struct
 import subprocess
 import tarfile
 import tempfile
+import time
 import tomllib
 import urllib.error
 import urllib.parse
@@ -885,11 +886,16 @@ def normalize_npm_dist_tags(subject, version, stable_versions):
         f"{subject['key']}: npm latest selects a prerelease despite stable versions; "
         "the intended stable target cannot be derived",
     )
-    observed = npm_cli_dist_tags(identity, env)
-    require(
-        npm_tags_are_exact(version, observed, stable_versions),
-        f"{subject['key']}: npm dist-tags do not identify the release channel exactly",
-    )
+    # The registry serves dist-tag reads from a cache that can lag a just-acknowledged add.
+    for _ in range(30):
+        observed = npm_cli_dist_tags(identity, env)
+        if npm_tags_are_exact(version, observed, stable_versions):
+            break
+        time.sleep(2)
+    else:
+        raise PublicationError(
+            f"{subject['key']}: npm dist-tags do not identify the release channel exactly"
+        )
 
 
 def validate_registry_completion(account, state):
