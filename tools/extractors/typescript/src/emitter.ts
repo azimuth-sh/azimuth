@@ -112,6 +112,8 @@ interface ProjectIdentity {
   packageName: string;
   moduleSpecifier: string;
   defaultLibrarySources: ReadonlySet<ts.SourceFile>;
+  package: PackageAccount;
+  program: ts.Program;
 }
 
 function scanSource(
@@ -507,8 +509,18 @@ function resolveMechanismSite(
   const qualified = qualifiedDeclarationName(declaration, checker, call, source);
   const signatures = callableSignatures(symbol, declaration, checker, call, source);
   const receiver = receiverKind(declaration);
+  let overloads: string;
+  try {
+    overloads = signatureAccount(signatures, checker, declaration, call, source, project);
+  } catch (error) {
+    throw mechanismSiteError(
+      call,
+      source,
+      `requires an exact canonical signature: ${(error as Error).message}`,
+    );
+  }
   const name = `${project.packageName}::${project.moduleSpecifier}::${receiver}::${qualified}` +
-    signatureAccount(signatures, checker, declaration, call, source, project.defaultLibrarySources);
+    overloads;
   if (name !== name.trim() || /[\u0000-\u001f\u007f|]/.test(name)) {
     throw mechanismSiteError(call, source, 'resolved to an invalid qualified identity');
   }
@@ -616,7 +628,7 @@ function signatureAccount(
   siteDeclaration: MechanismDeclaration,
   call: ts.CallExpression,
   source: ts.SourceFile,
-  defaultLibrarySources: ReadonlySet<ts.SourceFile>,
+  project: ProjectIdentity,
 ): string {
   const accounts = signatures.map((signature) => {
     const typeParameters = signature.typeParameters ?? [];
@@ -634,7 +646,7 @@ function signatureAccount(
     const genericsAccount = {
       positions: genericPositions,
       names: genericNames,
-      defaultLibrarySources,
+      project,
     };
     const generics = typeParameters.map((parameter, index) => {
       const constraint = checker.getBaseConstraintOfType(parameter);
@@ -692,7 +704,7 @@ function signatureAccount(
 interface GenericAccount {
   positions: ReadonlyMap<ts.Symbol, number>;
   names: readonly string[];
-  defaultLibrarySources: ReadonlySet<ts.SourceFile>;
+  project: ProjectIdentity;
 }
 
 function canonicalThisParameter(
@@ -797,13 +809,27 @@ function canonicalTypeSyntax(
         return;
       }
       // Rebinding only in the synthetic scope would accept a consumer homonym as a compiler global.
-      const originalSymbol = ts.isIdentifier(part.typeName)
-        ? checker.resolveName(name, location, ts.SymbolFlags.Type, false)
-        : undefined;
+      const originalSymbol = resolveTypeSymbol(part.typeName, checker, location);
       const declarations = originalSymbol?.declarations;
       if (declarations && declarations.length > 0
-        && declarations.some((entry) => generics.defaultLibrarySources.has(entry.getSourceFile()))) {
+        && declarations.some((entry) => generics.project.defaultLibrarySources.has(entry.getSourceFile()))) {
         return;
+      }
+      if (originalSymbol && declarations && declarations.length > 0) {
+        let identities: Set<string>;
+        try {
+          identities = new Set(declarations.map((entry) =>
+            packageTypeIdentity(entry, checker, generics.project)));
+        } catch (error) {
+          throw new Error(`compiler cannot qualify named type ${name}: ${(error as Error).message}`);
+        }
+        if (identities.size === 1) {
+          replacements.set(part.typeName.getStart(semantic.source) - typeStart, {
+            end: part.typeName.end - typeStart,
+            text: [...identities][0],
+          });
+          return;
+        }
       }
       throw new Error(`compiler cannot qualify named type ${name} without a source locator`);
     }
@@ -821,6 +847,58 @@ function canonicalTypeSyntax(
     });
   }
   return canonicalTokens(text, replacements);
+}
+
+function resolveTypeSymbol(
+  name: ts.EntityName,
+  checker: ts.TypeChecker,
+  location: ts.Node | undefined,
+): ts.Symbol | undefined {
+  let symbol = ts.isIdentifier(name)
+    ? checker.resolveName(name.text, location, ts.SymbolFlags.Type | ts.SymbolFlags.Namespace, false)
+    : resolveTypeSymbol(name.left, checker, location);
+  if (symbol && (symbol.flags & ts.SymbolFlags.Alias) !== 0) {
+    symbol = checker.getAliasedSymbol(symbol);
+  }
+  if (symbol && ts.isQualifiedName(name)) {
+    symbol = checker.getExportsOfModule(symbol).find((entry) => entry.getName() === name.right.text);
+    if (symbol && (symbol.flags & ts.SymbolFlags.Alias) !== 0) {
+      symbol = checker.getAliasedSymbol(symbol);
+    }
+  }
+  return symbol;
+}
+
+function packageTypeIdentity(
+  declaration: ts.Declaration,
+  checker: ts.TypeChecker,
+  project: ProjectIdentity,
+): string {
+  const source = declaration.getSourceFile();
+  const owner = packageAccount(path.dirname(fs.realpathSync(source.fileName)));
+  // A nested dependency can share the package name without sharing its semantic module account.
+  if (fs.realpathSync(owner.root) !== fs.realpathSync(project.package.root)) {
+    throw new Error('compiler named type is outside the emitting package without a stable locator');
+  }
+  const parts: string[] = [];
+  let node: ts.Node = declaration;
+  while (!ts.isSourceFile(node)) {
+    if (ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)
+      || ts.isClassDeclaration(node) || ts.isEnumDeclaration(node)
+      || ts.isModuleDeclaration(node)) {
+      if (!node.name || !ts.isIdentifier(node.name)) {
+        throw new Error('compiler named type has no exact package-qualified declaration');
+      }
+      const symbol = checker.getSymbolAtLocation(node.name);
+      if (!symbol) throw new Error('compiler named type has no resolved declaration symbol');
+      parts.unshift(symbol.getName());
+    } else if (!ts.isModuleBlock(node)) {
+      throw new Error('compiler named type has an unsupported declaration scope');
+    }
+    node = node.parent;
+  }
+  if (parts.length === 0) throw new Error('compiler named type has no qualified declaration name');
+  return `${moduleSpecifier(source.fileName, project.package, project.program)}::${parts.join('.')}`;
 }
 
 function entityNameText(name: ts.EntityName): string {
@@ -1058,6 +1136,8 @@ export function emit(
       packageName: project.package.name,
       moduleSpecifier: moduleSpecifier(source.fileName, project.package, project.program),
       defaultLibrarySources,
+      package: project.package,
+      program: project.program,
     };
     const result = scanSource(relative, source, checker, identity);
     manifest.extensions!.push(...result.verificationChallengeImplementations);

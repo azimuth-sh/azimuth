@@ -138,7 +138,7 @@ def scan(
                 if kind == "function":
                     qualname.append("<locals>")
             qualname.append(node.name)
-            site = ".".join(qualname)
+            site = f"{module}." + ".".join(qualname)
             segment = ast.get_source_segment(source, node) or source
             fingerprint = "sha256:" + hashlib.sha256(segment.encode()).hexdigest()
             for decorator in node.decorator_list:
@@ -146,7 +146,7 @@ def scan(
                 if probe is not None:
                     entity, = strings(probe, 1, "implements_probe", relative)
                     validate_entity_id(entity, relative, probe.lineno)
-                    manifest["extensions"].append({"package":"azimuth.network","contract":"probe-implementation","entity":entity,"site":f"{module}.{site}","file":relative,"lang":"python","source_fingerprint":fingerprint})
+                    manifest["extensions"].append({"package":"azimuth.network","contract":"probe-implementation","entity":entity,"site":site,"file":relative,"lang":"python","source_fingerprint":fingerprint})
                     continue
                 found = marker(decorator)
                 if found is None:
@@ -177,7 +177,7 @@ def scan(
                 elif name == "implements_mechanism":
                     mechanism, = strings(call, 1, name, relative)
                     validate_entity_id(mechanism, relative, call.lineno)
-                    semantic_site = f"{module}.{site}"
+                    semantic_site = site
                     if semantic_site in mechanism_sites:
                         prior = mechanism_sites[semantic_site]
                         raise ValueError(

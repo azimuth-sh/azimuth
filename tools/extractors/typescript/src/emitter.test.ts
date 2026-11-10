@@ -667,7 +667,7 @@ test('compiler default-library types retain path-free canonical signature identi
   );
 });
 
-test('consumer types sharing default-library names fail closed', () => {
+test('consumer types sharing default-library names use their declaring module', () => {
   for (const name of ['RequestInit', 'Response', 'Promise']) {
     const dir = sourcePackage('@fixture/library-homonym', {
       'src/request.ts': `interface ${name} { id: string }
@@ -677,9 +677,11 @@ test('consumer types sharing default-library names fail closed', () => {
         }`,
     });
 
-    assert.throws(
-      () => emit([path.join(dir, 'src')], dir),
-      new RegExp(`cannot qualify named type ${name} without a source locator`),
+    const site = emit([path.join(dir, 'src')], dir)
+      .manifest.mechanism_implementations[0].site;
+    assert.equal(
+      site,
+      `@fixture/library-homonym::./src/request::none::request(./src/request::${name}):string`,
     );
   }
 });
@@ -746,7 +748,7 @@ test('nested unions retain generic substitution and default-library identity', (
   assert.ok(!sites[0].includes('|'));
 });
 
-test('a named type without a path-free compiler qualification fails closed', () => {
+test('a package named type uses its declaring module qualification', () => {
   const dir = sourcePackage('@fixture/named-type', {
     'src/guard.ts': `interface Input { id: string }
       export function guard(value: Input): boolean {
@@ -755,9 +757,11 @@ test('a named type without a path-free compiler qualification fails closed', () 
       }`,
   });
 
-  assert.throws(
-    () => emit([path.join(dir, 'src')], dir),
-    /cannot qualify named type Input without a source locator/,
+  const site = emit([path.join(dir, 'src')], dir)
+    .manifest.mechanism_implementations[0].site;
+  assert.equal(
+    site,
+    '@fixture/named-type::./src/guard::none::guard(./src/guard::Input):boolean',
   );
 });
 
