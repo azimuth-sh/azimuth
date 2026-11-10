@@ -112,6 +112,9 @@ interface ProjectIdentity {
   packageName: string;
   moduleSpecifier: string;
   defaultLibrarySources: ReadonlySet<ts.SourceFile>;
+  package: PackageAccount;
+  program: ts.Program;
+  typeIdentities: Map<string, ts.Symbol>;
 }
 
 function scanSource(
@@ -507,8 +510,18 @@ function resolveMechanismSite(
   const qualified = qualifiedDeclarationName(declaration, checker, call, source);
   const signatures = callableSignatures(symbol, declaration, checker, call, source);
   const receiver = receiverKind(declaration);
+  let overloads: string;
+  try {
+    overloads = signatureAccount(signatures, checker, declaration, call, source, project);
+  } catch (error) {
+    throw mechanismSiteError(
+      call,
+      source,
+      `requires an exact canonical signature: ${(error as Error).message}`,
+    );
+  }
   const name = `${project.packageName}::${project.moduleSpecifier}::${receiver}::${qualified}` +
-    signatureAccount(signatures, checker, declaration, call, source, project.defaultLibrarySources);
+    overloads;
   if (name !== name.trim() || /[\u0000-\u001f\u007f|]/.test(name)) {
     throw mechanismSiteError(call, source, 'resolved to an invalid qualified identity');
   }
@@ -578,7 +591,8 @@ function semanticDeclarationName(node: ts.Node, checker: ts.TypeChecker): string
   const symbol = checker.getSymbolAtLocation(name);
   if (!symbol) return undefined;
   const semanticName = symbol.getName();
-  return semanticName === 'default' ? undefined : semanticName;
+  // The default export symbol still belongs to this explicitly named declaration.
+  return semanticName === 'default' && ts.isIdentifier(name) ? name.text : semanticName;
 }
 
 function callableSignatures(
@@ -616,7 +630,7 @@ function signatureAccount(
   siteDeclaration: MechanismDeclaration,
   call: ts.CallExpression,
   source: ts.SourceFile,
-  defaultLibrarySources: ReadonlySet<ts.SourceFile>,
+  project: ProjectIdentity,
 ): string {
   const accounts = signatures.map((signature) => {
     const typeParameters = signature.typeParameters ?? [];
@@ -634,7 +648,7 @@ function signatureAccount(
     const genericsAccount = {
       positions: genericPositions,
       names: genericNames,
-      defaultLibrarySources,
+      project,
     };
     const generics = typeParameters.map((parameter, index) => {
       const constraint = checker.getBaseConstraintOfType(parameter);
@@ -692,7 +706,7 @@ function signatureAccount(
 interface GenericAccount {
   positions: ReadonlyMap<ts.Symbol, number>;
   names: readonly string[];
-  defaultLibrarySources: ReadonlySet<ts.SourceFile>;
+  project: ProjectIdentity;
 }
 
 function canonicalThisParameter(
@@ -723,7 +737,7 @@ function canonicalType(
     type,
     undefined,
     ts.NodeBuilderFlags.NoTruncation |
-      ts.NodeBuilderFlags.InTypeAlias |
+      (externalAlias(type, generics.project) ? 0 : ts.NodeBuilderFlags.InTypeAlias) |
       ts.NodeBuilderFlags.UseStructuralFallback,
   );
   if (!node) throw new Error('compiler could not render a canonical type identity');
@@ -733,11 +747,24 @@ function canonicalType(
     node,
     location?.getSourceFile() ?? ts.createSourceFile('type.ts', '', ts.ScriptTarget.Latest),
   );
-  const canonical = canonicalTypeSyntax(rendered, generics, checker, location);
+  const canonical = canonicalTypeSyntax(rendered, node, generics, checker, location);
   if (containsLocatorType(canonical)) {
     throw new Error(`compiler type identity contains a source locator: ${canonical}`);
   }
   return canonical;
+}
+
+function externalAlias(type: ts.Type, project: ProjectIdentity): boolean {
+  const declarations = type.aliasSymbol?.declarations;
+  if (!declarations || declarations.length === 0) return false;
+  // InTypeAlias expands only the outer alias. Keep the existing local expansion policy,
+  // but never expose an external alias's implementation as the signature's identity.
+  return declarations.some((declaration) => {
+    const source = declaration.getSourceFile();
+    if (project.defaultLibrarySources.has(source)) return false;
+    const owner = packageAccount(path.dirname(fs.realpathSync(source.fileName)));
+    return fs.realpathSync(owner.root) !== fs.realpathSync(project.package.root);
+  });
 }
 
 interface TokenReplacement {
@@ -747,10 +774,18 @@ interface TokenReplacement {
 
 function canonicalTypeSyntax(
   text: string,
+  compilerNode: ts.TypeNode,
   generics: GenericAccount,
   checker: ts.TypeChecker,
   location: ts.Node | undefined,
 ): string {
+  // Inferred external references need not have lexical imports in the caller's scope.
+  // Preserve their compiler symbols and require the printed reference walk to agree.
+  const compilerReferences: ts.TypeReferenceNode[] = [];
+  visit(compilerNode, (part) => {
+    if (ts.isTypeReferenceNode(part)) compilerReferences.push(part);
+  });
+  let referenceIndex = 0;
   const genericNames = generics.names;
   const parameters = genericNames.length > 0 ? `<${genericNames.join(',')}>` : '';
   const prefix = `type __AzimuthCanonical${parameters} = `;
@@ -791,23 +826,45 @@ function canonicalTypeSyntax(
     }
     if (ts.isTypeReferenceNode(part)) {
       const name = entityNameText(part.typeName);
+      const compilerReference = compilerReferences[referenceIndex++];
+      if (!compilerReference || entityNameText(compilerReference.typeName) !== name) {
+        throw new Error('compiler canonical reference syntax lost its symbol account');
+      }
       const symbol = semantic.checker.getSymbolAtLocation(part.typeName);
       if (symbol && (genericSymbols.has(symbol)
           || (symbol.flags & ts.SymbolFlags.TypeParameter) !== 0)) {
         return;
       }
       // Rebinding only in the synthetic scope would accept a consumer homonym as a compiler global.
-      const originalSymbol = ts.isIdentifier(part.typeName)
-        ? checker.resolveName(name, location, ts.SymbolFlags.Type, false)
-        : undefined;
+      const originalSymbol = compilerTypeSymbol(compilerReference.typeName)
+        ?? resolveTypeSymbol(part.typeName, checker, location);
       const declarations = originalSymbol?.declarations;
       if (declarations && declarations.length > 0
-        && declarations.some((entry) => generics.defaultLibrarySources.has(entry.getSourceFile()))) {
+        && declarations.some((entry) => generics.project.defaultLibrarySources.has(entry.getSourceFile()))) {
         return;
+      }
+      if (originalSymbol && declarations && declarations.length > 0) {
+        let identities: Set<string>;
+        try {
+          identities = new Set(declarations.map((entry) =>
+            packageTypeIdentity(entry, originalSymbol, checker, generics.project)));
+        } catch (error) {
+          throw new Error(`compiler cannot qualify named type ${name}: ${(error as Error).message}`);
+        }
+        if (identities.size === 1) {
+          replacements.set(part.typeName.getStart(semantic.source) - typeStart, {
+            end: part.typeName.end - typeStart,
+            text: [...identities][0],
+          });
+          return;
+        }
       }
       throw new Error(`compiler cannot qualify named type ${name} without a source locator`);
     }
   });
+  if (referenceIndex !== compilerReferences.length) {
+    throw new Error('compiler canonical reference syntax omitted a symbol account');
+  }
   for (const union of unions.reverse()) {
     const members = union.types.map((member) => canonicalTokens(
       text,
@@ -821,6 +878,101 @@ function canonicalTypeSyntax(
     });
   }
   return canonicalTokens(text, replacements);
+}
+
+function compilerTypeSymbol(name: ts.EntityName): ts.Symbol | undefined {
+  const identifier = ts.isIdentifier(name) ? name : name.right;
+  // TypeScript's node builder attaches the original symbol to synthetic identifiers, although
+  // getSymbolAtLocation only binds parse-tree nodes. Keep this implementation detail at one edge;
+  // missing metadata must still resolve in the original Program or fail closed.
+  return (identifier as ts.Identifier & { symbol?: ts.Symbol }).symbol;
+}
+
+function resolveTypeSymbol(
+  name: ts.EntityName,
+  checker: ts.TypeChecker,
+  location: ts.Node | undefined,
+): ts.Symbol | undefined {
+  let symbol = ts.isIdentifier(name)
+    ? checker.resolveName(name.text, location, ts.SymbolFlags.Type | ts.SymbolFlags.Namespace, false)
+    : resolveTypeSymbol(name.left, checker, location);
+  if (symbol && (symbol.flags & ts.SymbolFlags.Alias) !== 0) {
+    symbol = checker.getAliasedSymbol(symbol);
+  }
+  if (symbol && ts.isQualifiedName(name)) {
+    symbol = checker.getExportsOfModule(symbol).find((entry) => entry.getName() === name.right.text);
+    if (symbol && (symbol.flags & ts.SymbolFlags.Alias) !== 0) {
+      symbol = checker.getAliasedSymbol(symbol);
+    }
+  }
+  return symbol;
+}
+
+function packageTypeIdentity(
+  declaration: ts.Declaration,
+  typeSymbol: ts.Symbol,
+  checker: ts.TypeChecker,
+  project: ProjectIdentity,
+): string {
+  const source = declaration.getSourceFile();
+  const owner = packageAccount(path.dirname(fs.realpathSync(source.fileName)));
+  if (path.relative(owner.root, fs.realpathSync(source.fileName)).split(path.sep)
+    .includes('node_modules')) {
+    throw new Error('compiler named type has no declaring package root before a dependency boundary');
+  }
+  const local = fs.realpathSync(owner.root) === fs.realpathSync(project.package.root);
+  if (!local && ts.isTypeAliasDeclaration(declaration)
+    && !exportedTypeDeclaration(declaration, checker)) {
+    throw new Error('compiler external alias is not exported from its declaring module');
+  }
+  const parts: string[] = [];
+  let node: ts.Node = declaration;
+  while (!ts.isSourceFile(node)) {
+    if (ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)
+      || ts.isClassDeclaration(node) || ts.isEnumDeclaration(node)
+      || ts.isModuleDeclaration(node)) {
+      if (!node.name || !ts.isIdentifier(node.name)) {
+        throw new Error('compiler named type has no exact package-qualified declaration');
+      }
+      const symbol = checker.getSymbolAtLocation(node.name);
+      if (!symbol) throw new Error('compiler named type has no resolved declaration symbol');
+      parts.unshift(symbol.getName());
+    } else if (!ts.isModuleBlock(node)) {
+      throw new Error('compiler named type has an unsupported declaration scope');
+    }
+    node = node.parent;
+  }
+  if (parts.length === 0) throw new Error('compiler named type has no qualified declaration name');
+  const module = moduleSpecifier(source.fileName, owner, project.program, true);
+  const identity = `${local ? '' : `${owner.name}::`}${module}::${parts.join('.')}`;
+  const prior = project.typeIdentities.get(identity);
+  if (prior && prior !== typeSymbol) {
+    throw new Error(`distinct compiler declarations share named type identity ${identity}`);
+  }
+  project.typeIdentities.set(identity, typeSymbol);
+  return identity;
+}
+
+function exportedTypeDeclaration(declaration: ts.TypeAliasDeclaration, checker: ts.TypeChecker): boolean {
+  let node: ts.TypeAliasDeclaration | ts.ModuleDeclaration = declaration;
+  while (true) {
+    const parent: ts.Node = node.parent;
+    const container: ts.Node = ts.isModuleBlock(parent) ? parent.parent : parent;
+    if (!ts.isSourceFile(container) && !ts.isModuleDeclaration(container)) return false;
+    const symbol = checker.getSymbolAtLocation(node.name);
+    const scope = checker.getSymbolAtLocation(ts.isSourceFile(container) ? container : container.name);
+    if (!symbol || !scope) return false;
+    // getExportsOfModule follows export= to its members; the namespace itself must also
+    // be accepted as that module's exported root (for example a UMD declaration package).
+    const exports = [...checker.getExportsOfModule(scope)];
+    const exportEquals = scope.exports?.get(ts.InternalSymbolName.ExportEquals);
+    if (exportEquals) exports.push(exportEquals);
+    if (!exports.some((entry) => checker.getMergedSymbol((entry.flags & ts.SymbolFlags.Alias) !== 0
+      ? checker.getAliasedSymbol(entry)
+      : entry) === checker.getMergedSymbol(symbol))) return false;
+    if (ts.isSourceFile(container)) return true;
+    node = container;
+  }
 }
 
 function entityNameText(name: ts.EntityName): string {
@@ -839,8 +991,23 @@ function canonicalTokens(
   const tokens: Array<{ kind: ts.SyntaxKind; text: string; separated: boolean }> = [];
   scanner.setTextPos(start);
   let previousEnd = start;
+  const templateBraces: number[] = [];
   for (let kind = scanner.scan(); kind !== ts.SyntaxKind.EndOfFileToken; kind = scanner.scan()) {
     if (scanner.getTokenPos() >= end) break;
+    // A plain scanner treats a template tail as new source text, swallowing later union tokens.
+    // Rescan closing substitutions in their template context before advancing to replacements.
+    if (kind === ts.SyntaxKind.CloseBraceToken && templateBraces.length > 0) {
+      const index = templateBraces.length - 1;
+      if (templateBraces[index] === 0) {
+        kind = scanner.reScanTemplateToken(false);
+        if (kind === ts.SyntaxKind.TemplateTail) templateBraces.pop();
+      } else {
+        templateBraces[index]--;
+      }
+    } else if (kind === ts.SyntaxKind.OpenBraceToken && templateBraces.length > 0) {
+      templateBraces[templateBraces.length - 1]++;
+    }
+    if (kind === ts.SyntaxKind.TemplateHead) templateBraces.push(0);
     const token = scanner.getTokenText();
     const candidate = replacements.get(scanner.getTokenPos());
     const replacement = candidate && candidate.end <= end ? candidate : undefined;
@@ -1048,6 +1215,7 @@ export function emit(
     throw new Error(formatDiagnostic(relevantDiagnostics[0]));
   }
 
+  const typeIdentities = new Map<string, ts.Symbol>();
   for (const file of files) {
     const relative = normalizedFile(canonicalRoot, file);
     const source = sourceFileByRealPath(project.program, file);
@@ -1058,6 +1226,9 @@ export function emit(
       packageName: project.package.name,
       moduleSpecifier: moduleSpecifier(source.fileName, project.package, project.program),
       defaultLibrarySources,
+      package: project.package,
+      program: project.program,
+      typeIdentities,
     };
     const result = scanSource(relative, source, checker, identity);
     manifest.extensions!.push(...result.verificationChallengeImplementations);
@@ -1236,11 +1407,13 @@ function moduleSpecifier(
   sourceFile: string,
   account: PackageAccount,
   program: ts.Program,
+  declarationModule = false,
 ): string {
   const canonical = fs.realpathSync(sourceFile);
   ensureBelowRoot(canonical, account.root, sourceFile);
   const relative = path.relative(account.root, canonical).split(path.sep).join('/');
-  const modulePath = relative
+  const moduleSource = declarationModule ? relative.replace(/\.d\.(ts|mts|cts)$/, '.$1') : relative;
+  const modulePath = moduleSource
     .replace(/\.mts$/, '.mjs')
     .replace(/\.cts$/, '.cjs')
     .replace(/\.(?:ts|tsx|js|jsx)$/, '');

@@ -214,6 +214,8 @@ For `realizes` and `check_implementations` the first matching rule applies:
 - `lang` is `typescript`, `file` contains `/app/` and ends `/route.ts`, and `site` is one of `GET`, `POST`, `PUT`, `PATCH` or `DELETE`: kind `next-route`, address `<site> /<route>`, where `<route>` is the portion of `file` after the first `/app/` with a trailing `/route.ts` removed. Backslashes in `file` are normalized to `/` before both the match and the split, so a Windows-emitted locator derives the same address;
 - otherwise: kind `<lang>-symbol`, address `site`.
 
+Python realizations and Check implementations emit `<module>.<__qualname__>`, using the semantic import root and module rules in [verification.md](verification.md). The fallback above preserves that complete site unchanged as the `python-symbol` address; neither local nor federated assembly adds a module prefix.
+
 For the remaining collections the kind and address are fixed:
 
 | record | address kind | address |
