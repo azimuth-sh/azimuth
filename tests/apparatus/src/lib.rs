@@ -932,13 +932,41 @@ pub fn set_of(items: &[&str]) -> BTreeSet<String> {
     items.iter().map(|item| item.to_string()).collect()
 }
 
-/// The PATH of the machine without the folders that hold a program, so a test can stand on a
-/// machine where that program, and every adapter it would start, is absent.
-pub fn path_without(program: &str) -> String {
-    let path = std::env::var_os("PATH").unwrap_or_default();
-    let mut dirs = vec![binaries_dir()];
-    dirs.extend(std::env::split_paths(&path).filter(|dir| !dir.join(program).exists()));
+/// The PATH of the machine with one program hidden, so a test can stand on a machine where that
+/// program, and every adapter it would start, is absent. A folder of PATH that holds the program
+/// is replaced by a folder in `under` with a link to each of its other entries, so `git`, `sh`
+/// and the rest stay reachable by name. Dropping the whole folder would also hide them where the
+/// program sits in a shared folder, as `/usr/bin/dotnet` does on a Linux runner. Nothing outside
+/// `under` is written.
+pub fn path_hiding(program: &str, path: &std::ffi::OsStr, under: &Path) -> String {
+    let mut dirs = Vec::new();
+    for (index, dir) in std::env::split_paths(path).enumerate() {
+        // A broken link named like the program counts as the program too.
+        if fs::symlink_metadata(dir.join(program)).is_err() {
+            dirs.push(dir);
+            continue;
+        }
+        let stand_in = under.join(format!("{index}"));
+        fs::create_dir_all(&stand_in).unwrap();
+        for entry in fs::read_dir(&dir).unwrap().flatten() {
+            if entry.file_name() != program {
+                std::os::unix::fs::symlink(entry.path(), stand_in.join(entry.file_name())).unwrap();
+            }
+        }
+        dirs.push(stand_in);
+    }
     std::env::join_paths(dirs).unwrap().to_string_lossy().to_string()
+}
+
+impl Repo {
+    /// The machine's PATH, with the apparatus first and one program hidden; the stand-in
+    /// folders live in this repository's temporary folder.
+    pub fn path_without(&self, program: &str) -> String {
+        let under = self.beside(&format!("path-without-{program}"));
+        let _ = fs::remove_dir_all(&under);
+        let hidden = path_hiding(program, &std::env::var_os("PATH").unwrap_or_default(), &under);
+        format!("{}:{hidden}", binaries_dir().display())
+    }
 }
 
 pub fn parse_toml(text: &str) -> toml::Table {
@@ -1081,6 +1109,24 @@ pub fn set_mode(path: &Path, mode: u32) {
     fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
 }
 
+/// Makes a folder one the session may not write, with mode 0o555, and proves that it holds:
+/// root, or a process with a capability that overrides file modes, writes the folder anyway.
+/// There is no way without a mount or root's own tools to refuse such a process the same
+/// permission error, so a test that needs the folder unwritable fails here with that reason
+/// instead of failing later in a way that points at the product.
+pub fn make_unwritable(dir: &Path) {
+    set_mode(dir, 0o555);
+    let probe = dir.join(".apparatus-write-probe");
+    if fs::write(&probe, b"").is_ok() {
+        let _ = fs::remove_file(&probe);
+        set_mode(dir, 0o755);
+        panic!(
+            "this test cannot run as root: it makes {} unwritable with mode 0o555, and this user writes it anyway, so what the product does when it may not write there cannot be observed",
+            dir.display()
+        );
+    }
+}
+
 /// Gives a record the next number of its format, as a later CLI version would write it.
 pub fn next_format(record: &mut Value) {
     assert_eq!(record["format"], "result-1", "{record:#}");
@@ -1096,6 +1142,43 @@ pub fn detail_of_entry(check: &Value) -> String {
 #[cfg(test)]
 mod apparatus_checks {
     use super::*;
+
+    // A folder that holds the hidden program and another tool, as `/usr/bin` holds `dotnet` and
+    // `git` on a Linux runner: the tool stays reachable by name, the program does not, and the
+    // folders of PATH are left as they were.
+    #[test]
+    fn path_hiding_hides_one_program_and_keeps_its_neighbours() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir().unwrap();
+        let shared = temp.path().join("shared");
+        let own = temp.path().join("own");
+        for dir in [&shared, &own] {
+            fs::create_dir_all(dir).unwrap();
+        }
+        let tool = |dir: &Path, name: &str| {
+            fs::write(dir.join(name), format!("#!/bin/sh\necho {name}\n")).unwrap();
+            fs::set_permissions(dir.join(name), fs::Permissions::from_mode(0o755)).unwrap();
+        };
+        tool(&shared, "hidden");
+        tool(&shared, "neighbour");
+        tool(&own, "other");
+        let before: Vec<_> = [&shared, &own].iter().map(|dir| files_under(dir)).collect();
+        let path = std::env::join_paths([&shared, &own]).unwrap();
+        let under = temp.path().join("stand-ins");
+        let hidden = path_hiding("hidden", &path, &under);
+        let found = |name: &str| {
+            Command::new("/bin/sh").args(["-c", &format!("command -v {name} && {name}")]).env_clear().env("PATH", &hidden).output().unwrap()
+        };
+        for name in ["neighbour", "other"] {
+            let output = found(name);
+            assert!(output.status.success(), "{name} is not reachable through {hidden}");
+            assert!(String::from_utf8_lossy(&output.stdout).ends_with(&format!("{name}\n")));
+        }
+        assert!(!found("hidden").status.success(), "the hidden program is reachable through {hidden}");
+        assert_eq!([&shared, &own].iter().map(|dir| files_under(dir)).collect::<Vec<_>>(), before);
+        let written: Vec<_> = std::env::split_paths(&hidden).filter(|dir| dir != &own).collect();
+        assert!(written.iter().all(|dir| dir.starts_with(&under)), "{written:?} is not in the folder given");
+    }
 
     // The sorting example of RFC 8785, section 3.2.3, where UTF-16 order differs from UTF-8 order.
     #[test]

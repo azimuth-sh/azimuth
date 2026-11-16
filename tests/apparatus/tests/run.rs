@@ -51,7 +51,7 @@ fn run_starts_the_named_adapter_command() {
     let bin = repo.beside("bin");
     fs::create_dir_all(&bin).unwrap();
     fs::copy(binaries_dir().join("text-suite-adapter"), bin.join("desk-runner")).unwrap();
-    let path = format!("{}:{}", bin.display(), path_without("dotnet"));
+    let path = format!("{}:{}", bin.display(), repo.path_without("dotnet"));
     repo.set_env("PATH", &path);
     repo.replace(PROJECT_FILE, "adapter = \"text-suite-adapter\"", "adapter = \"desk-runner\"");
     let closed = "http://127.0.0.1:9";
@@ -585,7 +585,7 @@ fn an_unwritable_store_leaves_records_in_the_outbox() {
     let repo = Repo::sample();
     let store = repo.store();
     fs::create_dir_all(&store).unwrap();
-    set_mode(&store, 0o555);
+    make_unwritable(&store);
     let output = repo.azimuth(&["run"]);
     set_mode(&store, 0o755);
     output.expect_status(0);

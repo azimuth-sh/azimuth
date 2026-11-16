@@ -76,7 +76,7 @@ fn lint_runs_no_test_and_no_proof() {
 fn lint_needs_no_adapter() {
     let mut repo = Repo::sample();
     repo.replace(PROJECT_FILE, "adapter = \"text-suite-adapter\"", "adapter = \"desk-adapter-that-is-not-installed\"");
-    repo.set_env("PATH", &path_without("dotnet"));
+    repo.set_env("PATH", &repo.path_without("dotnet"));
     assert!(repo.lint_findings(0).is_empty());
     let before = repo.snapshot();
     repo.lint_findings(0);

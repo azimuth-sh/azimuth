@@ -8,7 +8,7 @@ use azimuth_tests::*;
 /// The sample before Azimuth, on a machine where `dotnet` and so the .NET adapter are absent.
 fn fresh(branch: &str) -> Repo {
     let mut repo = Repo::sample_before_init(branch);
-    repo.set_env("PATH", &path_without("dotnet"));
+    repo.set_env("PATH", &repo.path_without("dotnet"));
     repo
 }
 
@@ -143,7 +143,7 @@ fn init_guesses_no_suite_from_file_names() {
     repo.write("spec/shelf.test.js", "test('shelf', () => {});\n");
     repo.commit_all("files that look like tests");
     let mut repo = repo;
-    repo.set_env("PATH", &path_without("dotnet"));
+    repo.set_env("PATH", &repo.path_without("dotnet"));
     init(&repo);
     let project = project(&repo);
     assert!(!project.contains_key("suite"), "init guessed suites: {project:?}");
@@ -195,7 +195,7 @@ fn init_in(origin: &Repo, clone: &std::path::Path) {
     let output = origin.azimuth_in(
         clone,
         &["init"],
-        &[("PATH", &path_without("dotnet")), ("https_proxy", closed), ("HTTPS_PROXY", closed), ("ALL_PROXY", closed)],
+        &[("PATH", &origin.path_without("dotnet")), ("https_proxy", closed), ("HTTPS_PROXY", closed), ("ALL_PROXY", closed)],
     );
     output.expect_status(0);
 }

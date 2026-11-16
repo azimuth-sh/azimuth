@@ -40,6 +40,25 @@ fn dotnet(dir: &Path, args: &[&str]) -> Output {
     run_with_time_limit(command, Duration::from_secs(600), None)
 }
 
+/// The folders of one test that the machine would otherwise share between runs and tests:
+///
+/// - `NUGET_PACKAGES`, the package folder. NuGet finds a package there without asking any source,
+///   so a shared `~/.nuget/packages` would let a restore pass on what an earlier run left and hide
+///   a source the sample cannot reach. Each test starts with an empty one.
+/// - `DOTNET_CLI_HOME`, the folder that holds `.dotnet`. Its tool resolver cache keeps one path
+///   per tool and version, so tests that restore the same adapter into their own package folders
+///   would run each other's copy, and fail once that test's folder is gone.
+fn own_folders(repo: &Repo) -> [(&'static str, PathBuf); 2] {
+    [("NUGET_PACKAGES", repo.beside("nuget-packages")), ("DOTNET_CLI_HOME", repo.beside("dotnet-home"))]
+}
+
+/// `dotnet` in a folder of the sample, with the sample's own folders.
+fn dotnet_for(repo: &Repo, dir: &Path, args: &[&str]) -> Output {
+    let mut command = Command::new("dotnet");
+    command.args(args).current_dir(dir).envs(own_folders(repo));
+    run_with_time_limit(command, Duration::from_secs(600), None)
+}
+
 /// Packs `adapters/xunit/` once per test binary. The version gets a suffix of its own for each
 /// pack, because the machine's package cache keeps the first package of a version for good, and
 /// a repacked adapter under an old version would never reach the tests.
@@ -63,16 +82,9 @@ fn feed() -> &'static Feed {
             .filter(|path| path.extension().is_some_and(|extension| extension == "nupkg"))
             .collect();
         assert_eq!(packages.len(), 1, "the pack did not write one package: {packages:?}\n{}", output.text());
-        let feed = Feed { folder, package: packages[0].clone(), version };
-        // Tests run in parallel, and restores of one new package from several of them collide in
-        // the machine's package cache. One restore here puts the package into the cache once, and
-        // the restore of each test then finds it there and writes nothing.
-        let warm_up = binaries_dir().join(format!("azimuth-xunit-restore-{stamp}"));
-        std::fs::create_dir_all(warm_up.join(".config")).unwrap();
-        std::fs::write(warm_up.join(".config/dotnet-tools.json"), manifest(&feed)).unwrap();
-        let config = local_feed_config(&feed, &warm_up.join("nuget.config"));
-        dotnet(&warm_up, &["tool", "restore", "--configfile", config.to_str().unwrap()]).expect_status(0);
-        feed
+        // Each test restores into a package folder of its own, so the parallel restores of the
+        // new package no longer meet in one folder and need no restore beforehand.
+        Feed { folder, package: packages[0].clone(), version }
     })
 }
 
@@ -100,18 +112,28 @@ fn local_feed_config(feed: &Feed, path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
-fn pin_adapter(repo: &Repo) {
+/// The tool restore reads the local feed through `--configfile`. The file is kept in a folder
+/// beside the sample and not above it: NuGet reads every `nuget.config` in the folders above a
+/// project, so one above the sample would leave the sample's own restore with the local feed as
+/// its only source. The sample's packages come from the sources of the machine, as in a person's
+/// repository. Every later start of `dotnet` or `azimuth` gets the sample's own folders.
+fn pin_adapter(repo: &mut Repo) {
     let feed = feed();
     repo.write(".config/dotnet-tools.json", &manifest(feed));
     repo.commit_all("pin the test adapter");
-    let config = local_feed_config(feed, &repo.beside("nuget.config"));
-    dotnet(repo.root(), &["tool", "restore", "--configfile", config.to_str().unwrap()]).expect_status(0);
+    let config_dir = repo.beside("tool-feed");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    let config = local_feed_config(feed, &config_dir.join("nuget.config"));
+    for (name, folder) in own_folders(repo) {
+        repo.set_env(name, folder.to_str().unwrap());
+    }
+    dotnet_for(repo, repo.root(), &["tool", "restore", "--configfile", config.to_str().unwrap()]).expect_status(0);
 }
 
 /// The sample with the adapter pinned.
 fn sample() -> Repo {
-    let repo = Repo::sample();
-    pin_adapter(&repo);
+    let mut repo = Repo::sample();
+    pin_adapter(&mut repo);
     repo
 }
 
@@ -123,7 +145,7 @@ fn start_adapter(repo: &Repo, request: &Value) -> Output {
         None => repo.root().to_path_buf(),
     };
     let mut command = Command::new("dotnet");
-    command.arg(ADAPTER).current_dir(dir);
+    command.arg(ADAPTER).current_dir(dir).envs(own_folders(repo));
     // A build needs the machine's own SDK and package cache, so the environment is kept.
     run_with_time_limit(command, Duration::from_secs(600), Some(&request.to_string()))
 }
@@ -132,12 +154,45 @@ fn run_request(checks: &[&str]) -> Value {
     json!({ "format": "adapter-request-1", "verb": "run", "suite": DOTNET_SUITE, "marker_key": "Check", "checks": checks })
 }
 
-fn report(repo: &Repo, request: &Value) -> Value {
-    let output = start_adapter(repo, request);
-    output.expect_status(0);
-    let document = output.json();
-    assert_eq!(document["format"], "adapter-report-1", "{document:#}");
-    document
+/// An adapter's report with what the adapter said on standard error. When a test fails while it
+/// holds one, both are printed, so a failed assertion on the report shows why the adapter wrote it.
+struct Answer {
+    document: Value,
+    stderr: String,
+}
+
+impl Answer {
+    fn of(output: &Output) -> Answer {
+        output.expect_status(0);
+        Answer { document: output.json(), stderr: output.stderr.clone() }
+    }
+}
+
+impl std::ops::Deref for Answer {
+    type Target = Value;
+    fn deref(&self) -> &Value {
+        &self.document
+    }
+}
+
+impl std::fmt::Display for Answer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.document, f)
+    }
+}
+
+impl Drop for Answer {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            eprintln!("the adapter's standard error:\n{}\nits report:\n{:#}", self.stderr, self.document);
+        }
+    }
+}
+
+fn report(repo: &Repo, request: &Value) -> Answer {
+    let answer = Answer::of(&start_adapter(repo, request));
+    assert_eq!(answer["format"], "adapter-report-1", "{answer:#}");
+    answer
 }
 
 fn tests_of(report: &Value) -> Vec<Value> {
@@ -154,7 +209,7 @@ fn test_named<'a>(tests: &'a [Value], name: &str) -> &'a Value {
 #[test]
 fn the_adapter_is_a_local_dotnet_tool() {
     let repo = sample();
-    let output = dotnet(repo.root(), &["tool", "list", "--local"]);
+    let output = dotnet_for(&repo, repo.root(), &["tool", "list", "--local"]);
     output.expect_status(0);
     assert!(output.stdout.contains(MANIFEST_ID), "the sample pins no local tool {MANIFEST_ID}:\n{}", output.stdout);
 }
@@ -167,7 +222,7 @@ fn the_package_is_azimuth_xunit_and_its_command_azimuth_xunit() {
     let name = feed.package.file_name().unwrap().to_string_lossy().to_string();
     assert_eq!(name, format!("{PACKAGE_ID}.{}.nupkg", feed.version), "the package id is not {PACKAGE_ID}");
     let repo = sample();
-    let output = dotnet(repo.root(), &["tool", "list", "--local"]);
+    let output = dotnet_for(&repo, repo.root(), &["tool", "list", "--local"]);
     output.expect_status(0);
     let row = output.stdout.lines().find(|line| line.starts_with(MANIFEST_ID)).unwrap_or_else(|| panic!("{}", output.stdout));
     // The columns are the package id, the version and the commands.
@@ -182,7 +237,8 @@ fn the_package_is_azimuth_xunit_and_its_command_azimuth_xunit() {
 #[test]
 fn the_adapter_lists_tests_with_their_check_ids() {
     let repo = sample();
-    let tests = tests_of(&report(&repo, &run_request(&[])));
+    let answer = report(&repo, &run_request(&[]));
+    let tests = tests_of(&answer);
     for (name, check) in [
         ("LoanLimitTests.Refuses_a_sixth_loan", SIXTH_LOAN_CHECK),
         ("LoanLimitTests.Lends_again_after_a_return", SIXTH_LOAN_CHECK),
@@ -217,7 +273,8 @@ fn the_adapter_runs_the_real_tests() {
 #[test]
 fn the_adapter_runs_only_the_asked_checks() {
     let repo = sample();
-    let tests = tests_of(&report(&repo, &run_request(&[ON_TIME_CHECK])));
+    let answer = report(&repo, &run_request(&[ON_TIME_CHECK]));
+    let tests = tests_of(&answer);
     assert_eq!(test_named(&tests, "Charges_nothing_on_the_due_date")["outcome"], "passed");
     for name in ["Refuses_a_sixth_loan", "Lends_again_after_a_return", "Fines_each_late_day", "Charges_for_a_lost_book"] {
         assert_eq!(test_named(&tests, name)["outcome"], "not_run", "{name}");
@@ -319,8 +376,8 @@ fn the_adapter_answers_a_discover_request_of_three_fields() {
 /// and the folder it started the adapter in can be read back. Returns the recorded starts that
 /// carried a `discover` request.
 fn init_through_a_recorder() -> (Repo, Vec<Value>) {
-    let repo = Repo::sample_before_init("main");
-    pin_adapter(&repo);
+    let mut repo = Repo::sample_before_init("main");
+    pin_adapter(&mut repo);
     let real_dotnet = String::from_utf8(Command::new("which").arg("dotnet").output().unwrap().stdout).unwrap().trim().to_string();
     let front = repo.beside("recorder");
     std::fs::create_dir_all(&front).unwrap();
@@ -375,7 +432,8 @@ fn the_discover_report_lists_projects_with_paths() {
 #[test]
 fn run_reports_the_tests_not_asked_for() {
     let repo = sample();
-    let tests = tests_of(&report(&repo, &run_request(&[SIXTH_LOAN_CHECK])));
+    let answer = report(&repo, &run_request(&[SIXTH_LOAN_CHECK]));
+    let tests = tests_of(&answer);
     assert_eq!(tests.len(), 5, "{tests:#?}");
 }
 
@@ -383,7 +441,8 @@ fn run_reports_the_tests_not_asked_for() {
 #[test]
 fn a_theory_is_one_failed_entry() {
     let repo = sample();
-    let tests = tests_of(&report(&repo, &run_request(&[LATE_DAYS_CHECK])));
+    let answer = report(&repo, &run_request(&[LATE_DAYS_CHECK]));
+    let tests = tests_of(&answer);
     assert_eq!(test_named(&tests, "Fines_each_late_day")["outcome"], "failed");
 }
 
@@ -391,7 +450,8 @@ fn a_theory_is_one_failed_entry() {
 #[test]
 fn every_test_has_an_outcome_and_a_duration() {
     let repo = sample();
-    for test in tests_of(&report(&repo, &run_request(&[SIXTH_LOAN_CHECK, LATE_DAYS_CHECK, LOST_BOOK_CHECK]))) {
+    let answer = report(&repo, &run_request(&[SIXTH_LOAN_CHECK, LATE_DAYS_CHECK, LOST_BOOK_CHECK]));
+    for test in tests_of(&answer) {
         let outcome = test["outcome"].as_str().unwrap_or_default();
         assert!(["passed", "failed", "skipped", "not_run"].contains(&outcome), "{test:#}");
         assert!(test["duration_ms"].is_u64(), "{test:#}");
@@ -412,16 +472,15 @@ fn a_failed_build_is_a_report() {
 #[test]
 fn failed_tests_still_end_with_zero() {
     let repo = sample();
-    let output = start_adapter(&repo, &run_request(&[LATE_DAYS_CHECK]));
-    output.expect_status(0);
-    let tests = tests_of(&output.json());
+    let answer = Answer::of(&start_adapter(&repo, &run_request(&[LATE_DAYS_CHECK])));
+    let tests = tests_of(&answer);
     assert_eq!(test_named(&tests, "Fines_each_late_day")["outcome"], "failed");
 }
 
 /// `azimuth init` on a machine where the .NET adapter is installed.
 fn init_with_adapter() -> (Repo, toml::Table) {
-    let repo = Repo::sample_before_init("main");
-    pin_adapter(&repo);
+    let mut repo = Repo::sample_before_init("main");
+    pin_adapter(&mut repo);
     repo.write("checks/Shelf.Tests/Shelf.Tests.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\" />\n");
     repo.commit_all("a project that only looks like a test project");
     let home = std::env::var("HOME").unwrap_or_default();

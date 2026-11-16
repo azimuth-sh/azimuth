@@ -30,7 +30,7 @@ fn results_in_the_outbox() -> Repo {
     let repo = Repo::sample();
     let store = repo.store();
     fs::create_dir_all(&store).unwrap();
-    set_mode(&store, 0o555);
+    make_unwritable(&store);
     let output = repo.azimuth(&["run", "--json"]);
     set_mode(&store, 0o755);
     output.expect_status(0);
