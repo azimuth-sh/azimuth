@@ -64,6 +64,7 @@ The workflows are the files in `.github/workflows/`, and the scripts they call a
 | The tag check passes for the tag `v` plus the version in the code and fails for any other tag | must equal the version in the code. The workflow stops before it builds when they differ |
 | The files that the release script assembles are a release that the install script installs from | `azimuth-<version>-<target>` for the targets `aarch64-apple-darwin` and `x86_64-unknown-linux-musl`, then `SHA256SUMS` and `VERSION` |
 | The release workflow calls the tag check and the release script, and holds no copy of their steps | Tests run them, and the workflow only calls them. |
+| The crate of the CLI is marked as not for publishing, and no workflow publishes a crate | Its crate is marked as not for publishing, so `cargo publish` refuses it |
 
 ## Proven by the first tag
 

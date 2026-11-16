@@ -575,3 +575,47 @@ fn the_two_publishing_jobs_name_the_release_environment() {
         }
     }
 }
+
+// behavior: The crate of the CLI is marked as not for publishing, and no workflow publishes a crate
+#[test]
+fn the_cli_crate_is_not_for_publishing() {
+    // A text search of every workflow, comments included. It runs first, so it is checked also
+    // while the manifest is not marked yet.
+    for (name, text, _) in workflows() {
+        let words: Vec<&str> = text.split_whitespace().collect();
+        for pair in words.windows(2) {
+            if pair[0].ends_with("cargo") {
+                assert!(!["publish", "login"].contains(&pair[1]), "{name} runs cargo {}", pair[1]);
+            }
+        }
+        assert!(!text.contains("CARGO_REGISTRY_TOKEN"), "{name} names a cargo registry token");
+        let named_token = text.match_indices("CARGO_REGISTRIES_").any(|(at, _)| {
+            text[at..].split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).next().is_some_and(|word| word.ends_with("_TOKEN"))
+        });
+        assert!(!named_token, "{name} names the token of a cargo registry");
+    }
+
+    // Cargo's own reading of the manifest, not the text: `publish` is the list of registries the
+    // package may go to, `null` when it may go to any and empty when to none. `--no-deps` and
+    // `--offline` keep this off the network.
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+    let output = Command::new(cargo)
+        .args(["metadata", "--no-deps", "--format-version", "1", "--offline"])
+        .current_dir(repository_root())
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "cargo metadata failed:\n{}", String::from_utf8_lossy(&output.stderr));
+    let metadata: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let manifest = repository_root().join("core/Cargo.toml");
+    let packages = metadata["packages"].as_array().unwrap();
+    let cli = packages
+        .iter()
+        .find(|package| package["name"] == "azimuth" && Path::new(package["manifest_path"].as_str().unwrap_or_default()) == manifest)
+        .unwrap_or_else(|| panic!("no package azimuth in {}", manifest.display()));
+    assert_eq!(
+        cli["publish"],
+        serde_json::json!([]),
+        "the package azimuth in core/Cargo.toml may be published (its `publish` is {}); it needs `publish = false`",
+        cli["publish"]
+    );
+}

@@ -134,7 +134,8 @@ pub fn check_document(survey: &Survey, id: &str) -> Value {
     output::set_present(&mut document, "reason", evaluation.reason);
     output::set_present(&mut document, "detail", evaluation.detail.clone());
     let result = evaluation.reference.as_ref().map(|result| {
-        let mut entry = json!({ "where": result.where_, "at": result.at });
+        // The count is of what the run saw, from its record, not of the tree as it is now.
+        let mut entry = json!({ "where": result.where_, "edited_paths": result.edits.len(), "at": result.at });
         output::set_present(&mut entry, "commit", result.commit.clone());
         entry
     });
@@ -174,8 +175,9 @@ pub fn check_text(survey: &Survey, id: &str) -> String {
     }
     if let Some(result) = &evaluation.reference {
         let commit = result.commit.as_deref().map(|commit| &commit[..commit.len().min(7)]).unwrap_or("none");
+        let edited = if result.edits.is_empty() { "" } else { " with uncommitted edits" };
         text.push_str(&format!(
-            "  {} result: {} on {}, commit {commit}, {}\n",
+            "  {} result: {} on {}, commit {commit}{edited}, {}\n",
             if evaluation.state == State::Kept { "kept" } else { "last" },
             result.outcome.as_str(),
             result.where_,

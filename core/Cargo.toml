@@ -4,6 +4,8 @@ version = "0.2.0-alpha.1"
 edition = "2021"
 license = "Apache-2.0"
 description = "Azimuth core CLI"
+# The CLI reaches users only as binaries on the release.
+publish = false
 
 [[bin]]
 name = "azimuth"
