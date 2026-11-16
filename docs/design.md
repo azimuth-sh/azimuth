@@ -91,7 +91,7 @@ Example: on the first rung drim-dev marks its component tests and runs them thro
 | 1. Install | one file, the CLI. Lint and the reading commands need nothing else. Running tests needs the adapter of the stack, which the stack's own package manager installs |
 | 2. `azimuth init` | writes the project file with this repository and one area that covers all of it, lists the test projects that the adapter finds as suites, and creates `.azimuth/` with its own ignore file. The model stays empty |
 | 3. First Requirement | a person or an agent writes one Requirement, marks a test, then runs `azimuth lint`, `azimuth run` and `azimuth status` |
-| 4. CI | one job that runs `azimuth lint` and `azimuth run` and fails on a finding, a failed Check or an owed Check. It reads no stored result, so it runs every Check |
+| 4. CI | one job that runs `azimuth run --lane commit`. The lane lints first and fails on a finding, a failed Check or an owed Check. It reads no stored result, so it runs every Check |
 
 `azimuth init` writes only what it cannot get wrong. One area for the whole repository is always true, and a person splits it into real areas later. It never changes a file that exists. It installs no process: the skills of the default process come from a separate command, `azimuth skills install`, for a named agent harness.
 
@@ -151,7 +151,7 @@ The cost. Until an input provider is added, almost any edit makes every Check ow
 | Increment | What the core gains | Why then |
 | --- | --- | --- |
 | 1 | the model, markers, one test adapter, the coarse fingerprint (the claim plus every file of the repository), owed and kept results, facilities, the local lane and a CI job that fails on a failed or owed Check, the class of a change, `Reuse:`, `azimuth lint`, `azimuth run`, the four reading commands, the local store | it is enough for one Requirement, and it already runs the real mechanism in its simplest form. A result cannot exist without a fingerprint, so only the precision waits. Almost any edit makes every Check owed, which is coarse and correct. A second run on an unchanged tree is kept, and going back to earlier content brings the pass back |
-| 2 | the input providers, which make the fingerprint precise; the profile with its structure units and enforcers; the step library with controls and the outcome "inconclusive"; isolation, ranking and time limits; a second test adapter | a second module exists, so change tracking has something to tell apart. The increment changes one thing, the list of files, so a fault in it is easy to see |
+| 2 | the input providers, which make the fingerprint precise; the profile with its structure units and enforcers; the step library with controls and the outcome "inconclusive"; isolation, ranking and time limits; a second test adapter, for Playwright | a second module exists, so change tracking has something to tell apart. The increment changes one thing, the list of files, so a fault in it is easy to see |
 | 3 | work records, authorship, `azimuth work`, local reviews and their issues | the first change that edits working code gives a review something to find |
 | 4 | Challenges | they are the most expensive part |
 
@@ -161,6 +161,14 @@ The scheduled lane and the referee wait for the server rung. They run kept Check
 
 Increment 2 is the heaviest. Until it lands, a test has two outcomes only. Checks written before it get their steps and roles then, which makes a declared Verification Review owed again at that moment.
 
+**The second adapter is the one for Playwright.** The first Requirement that needs it has a Scenario about what a person sees in a browser. A unit runner cannot prove it where a page loads its data on the server, because such a runner does not render that kind of page. A browser run does not have to be end to end: the suite may start only the frontend, with a stand-in where the API would be. A project can then have two Playwright suites with different facilities.
+
+**Increments 1 and 2 record no review.** A Requirement that declares one is shown with that review owed, and the reason says "this version records no reviews". A Requirement that declares none reads "not reviewed", as on every rung. So the first Requirements declare no review. Adding the declaration in increment 3 is class D and makes the approval of a person owed, once per Requirement.
+
+**Until increment 3 nothing inside `realization.md` is read.** It is prose. Its one reader is the Realization Review, and without that review lint would check root lines that nothing uses. The written form of a root and a decision is decided with the behaviors of increment 3, when that reader exists. The fragment in the Roots part is an illustration.
+
+The cost. Through increments 1 and 2 no Requirement is reviewed by anything but the person, and a Requirement that declares a review is never quiet.
+
 **In increment 1 the default process is one skill for a change, with four steps and two stops before the merge.**
 
 | Step | What the agent does | Stops for a person? |
@@ -168,7 +176,7 @@ Increment 2 is the heaviest. Until it lands, a test has two outcomes only. Check
 | 1. Proposal | writes the one page with its five parts | yes. The person reads it |
 | 2. Intent | writes the Requirement and its Scenarios, then the Checks, and runs `azimuth lint` | yes. The person reads `azimuth change show` before any code exists |
 | 3. Build | writes the marked tests from the Scenarios, then the code, and runs `azimuth run` until `azimuth status` is quiet | no |
-| 4. Hand over | prints `azimuth change show` and `azimuth status` | yes. The person merges |
+| 4. Hand over | runs `azimuth run --lane commit`, then prints `azimuth change show` and `azimuth status` | yes. The person merges |
 
 **A skill says the route and where to stop. It never restates a rule that the CLI checks.** A lint finding itself says what is wrong and what to do. A rule written in two places goes stale in one of them.
 
@@ -241,6 +249,25 @@ Example: for increment 1 the list has lines such as "`azimuth lint` fails when a
 
 Example: the list for increment 1 has the line "`azimuth lint` runs no tests", with the quote "It runs no tests and needs no facilities." from the Lint part. If that paragraph is rewritten, the test names this line, and a person decides whether the behavior of lint changed or only its wording.
 
+**The sample repository is a small invented product inside Azimuth's tests.**
+
+| Question | Answer |
+| --- | --- |
+| Where | the folder `tests/sample/` of Azimuth's repository |
+| How a test uses it | it copies the folder to a temporary place, makes it a git repository with one commit, and runs the real `azimuth` binary there |
+| Its domain | a library desk that lends books |
+| Its model | two modules, two Requirements, four Checks |
+| Tests of the core | a suite whose tests are plain text files. Each holds its marker as a comment line and its outcome as a line. A small program in Azimuth's test code is the adapter for them |
+| Tests of the .NET adapter | one real xUnit project in the sample, run with the real adapter |
+
+In the text-file suite a test's outcome is a file's content. To make a Check fail, a test of Azimuth edits one line, and that also changes the fingerprint, as a real code change does. Tests of the core then need only Rust. The suite also exercises the comment-line marker, the form for runners without tags.
+
+The real xUnit project stays, because the adapter contract is proven only when a real runner sits behind it. Those tests need the .NET SDK and are slower, so there are few of them.
+
+The cost. Most of Azimuth's own tests never touch a real test runner, so a fault that only shows with real build output is found late, on real work. And an invented domain makes weaker examples than real code.
+
+Example: a test of "a second run on unchanged content runs nothing" copies the sample, commits, runs `azimuth run --json` and expects four Checks passed with status 0. It runs again and expects four kept and no adapter started. Then it changes `outcome: passed` to `outcome: failed` in one text file, runs again, and expects one failed Check, three kept and status 1.
+
 ### The words of intent
 
 | Word | Meaning |
@@ -270,6 +297,7 @@ The API answers 403 and runs no handler.
 In `verification.md`:
 
 ```markdown
+### Requirement: private-api-admits-only-the-bff
 #### Scenario: other-service-credential-is-refused
 - Check: other-service-credential-is-refused
   The API answers 403 to a valid credential of another service.
@@ -281,13 +309,25 @@ In `verification.md`:
 | A heading holds a structure word and an id | the id is the handle, and markers and the other two files name it |
 | The text under the heading is free prose, in any language | a person approves meaning, and lint cannot judge it |
 | No required Given, When, Then | fixed keywords make every Scenario look complete, including a vague one. Whoever wants that shape writes it as prose |
-| A line `Word: value` right under the heading is a declaration | `Context:`, `Realization:`, `Verification:` and `Reuse:` all read the same way |
+| A line that starts with a declaration word and a colon is a declaration, wherever it stands under its heading | `Context:`, `Realization:`, `Verification:` and `Reuse:` all read the same way. Position cannot carry meaning in Markdown, because blank lines move when a file is formatted |
 | `realization.md` and `verification.md` repeat the heading and add their part | each file keeps its one guard |
 | Lint reads the structure word, not the heading level | a module may nest its headings as it likes |
 
 The cost. An id is written in up to three files and in the markers, so a rename touches all of them, and lint names every place that disagrees. Free prose gives lint nothing to check inside a Scenario, so a weak Scenario is caught only by a person's reading.
 
 The Requirement above is an illustration. It declares only a Verification Review, so it needs no `realization.md`.
+
+**What the reader does with a word it does not know.**
+
+| Where | Rule |
+| --- | --- |
+| The project file | a key or a table that the CLI does not know is a reading error |
+| A model file | a line that starts with any word other than a declaration word, and a colon, is prose |
+| A model file | a line whose first word is one or two letters away from a declaration word is a lint finding |
+
+The declaration words are `Context`, `Realization`, `Verification` and `Reuse`. The project file is data, so strictness costs nothing there: a mistyped key must not be ignored silently, because a suite would then run without its proof. The finding guards the dangerous slip in a model file: `Verificaton: reviewed` would otherwise become prose, and the Requirement would quietly lose its declared review.
+
+The cost. A sentence of prose cannot start with one of the four words and a colon. And the near-miss rule is a heuristic: it catches a slip of the keyboard and misses a wrong word such as `Verify: reviewed`.
 
 ### Three vocabularies
 
@@ -411,7 +451,7 @@ Example: suppose a nightly job compares issued certificates with finished cohort
 
 The team's test job stays untouched. Azimuth is added beside it and replaces nothing. A marked test therefore runs twice in CI at first, once in the team's job and once in a launch. A team removes the overlap later with the runner's own filter.
 
-Status states its scope. The quiet line names the number of Requirements, for example "1 Requirement, proven", so nobody takes a quiet line for "the product is proven".
+Status states its scope. The quiet line names the number of Requirements, for example "1 Requirement, proven on this machine", so nobody takes a quiet line for "the product is proven".
 
 There is no count of unmarked tests, because such a figure invites a campaign to mark everything. A test becomes a Check when a change gives a Requirement a reason to need it.
 
@@ -545,11 +585,30 @@ An input is anything that can change a Check's result.
 
 ### Fingerprint
 
+A fingerprint answers one question for one Check: is everything that could change its outcome the same as when it last ran? If it is, the earlier result stands.
+
+**A part is one kind of thing that could change the outcome.** Each part has its own digest, so when a fingerprint differs, Azimuth can say which kind of thing changed.
+
 **A fingerprint is a hash of named parts:** claim, tests, private unit, helpers, start-up, other files, environment, method.
 
-**The method part** holds the provider stack with its versions, the profile digest and the digests of the packages used.
+**The method part says how the measuring was done.** A result obtained in another way is not comparable. The part holds the provider stack with its versions, the profile digest and the digests of the packages used.
 
 **The digest of each part is stored with the result.** Explaining why a Check is owed then costs one comparison.
+
+**Without a provider the fingerprint has four parts.**
+
+| Part | Without a provider | With providers |
+| --- | --- | --- |
+| Claim | the Check's claim text, normalized | the same |
+| Files | one part for every file of the repository. The tree is stored as a commit's tree id plus the entries that differ from it | split into tests, private unit, helpers, start-up and other files |
+| Environment | one fixed value on a developer's machine. No fact is measured | the name of the reference environment |
+| Method | the scheme names, the object format of the repository, and the adapter with its version | plus providers, profile and packages |
+
+"An input changed" names the part and, for files, the files that differ. The core rebuilds the list of the kept result from git and compares it with the current list. When the files part splits, the scheme name changes and every Check is owed once.
+
+One limit. On a developer's machine a tool can change with no file changing, and the fingerprint does not move. The kept pass is then stale on that machine. The guard is the same as for an ignored file: CI runs everything.
+
+Example: drim-dev's `global.json` pins the .NET SDK with roll forward to the latest patch. A developer installs a newer patch. No file changed, so status still says "proven on this machine", although the Checks last ran under the older SDK. The next CI job runs them under the SDK of its own image.
 
 **Code and other input files are hashed as exact bytes, as git stores them.** An invisible difference in code can change behavior: in C# a line ending inside a multi-line string literal is part of the value. Hashing what git stores, not what the working tree shows, keeps a Windows machine and Linux CI on the same fingerprint for the same commit.
 
@@ -562,15 +621,66 @@ An input is anything that can change a Check's result.
 | Deleted in the working tree | no | it is gone |
 | Ignored by git | never | not hashed |
 
-A new file changes the build before it is committed, so tracked files alone are not enough. Staged or unstaged makes no difference. After a commit of exactly that state, CI computes an equal fingerprint, so a local result and a reference result describe the same content.
+A new file changes the build before it is committed, so tracked files alone are not enough. Staged or unstaged makes no difference. After a commit of exactly that state, CI computes equal digests for the claim and the files, so a local result and a reference result describe the same content. They differ only in the environment part.
 
 One limit. An ignored file can change a local result, and Azimuth cannot see it. The merge gate counts reference results, and CI starts from a clean checkout where ignored files do not exist.
 
-Example: the test project of drim-dev's API lists no files to compile, so .NET compiles every `.cs` file in its folder. An agent creates a new test file there and runs `azimuth run` before any `git add`. The file is an input, and the results carry a fingerprint that CI reproduces after the commit. A change to the ignored `frontend/.env.local` moves no fingerprint.
+**The digest of a file is git's own object id.** Azimuth does not hash file content with an algorithm of its own.
+
+|  | A hash of Azimuth's own | Git's object id |
+| --- | --- | --- |
+| "The form git would store" | Azimuth must copy git's rules for line endings and filters | true by construction |
+| A clean checkout | every file is read | git already holds the id of every file, so no file is read |
+| File mode and symlinks | extra rules | already in git's tree |
+| From a digest back to the content | impossible | git shows it, on any clone |
+| Strength | chosen by Azimuth | that of the repository |
+
+For an edited or a new file, git computes the id of the content in the working tree without storing it. The list of a tree holds the path, the mode and the id of each file, as git's own tree does. The object format of the repository is recorded in the method part.
+
+The input is already defined as git's view, so a second hash of the same thing could only disagree with it. And a digest that leads back to content is useful later: anyone with a clone can look at the file a record speaks about, and the server never holds source code.
+
+The weak point. Most repositories use SHA-1, and two crafted files with one id can be made for money. Git cannot store both in one repository, so the forged one never travels past the machine it was made on. The commit id that CI checks out has the same strength, so Azimuth cannot be more certain about content than the commit it is attached to.
+
+Two limits. A file that git was told to assume unchanged is invisible when edited, on that machine only. The inside of a submodule is seen as one commit id.
+
+Example: in a repository of 3,870 tracked files and 130 MB, git gives the ids of all files in 0.03 s and the changed paths in 0.08 s. A SHA-256 over every file takes 1.2 s, on every command that needs a fingerprint.
+
+**A stored tree is a commit plus what differs from it.**
+
+| The tree a run saw | What the store keeps |
+| --- | --- |
+| Exactly a commit | the id of that commit's tree |
+| A commit with local edits | the id of that commit's tree, plus one entry per path that is edited, new or deleted |
+
+Kept or owed is decided by the digest of the files part alone, and the decision never reads the list. The list only explains which files differ, and it is rebuilt from git on demand. If git no longer has that tree, the explanation shrinks: status says "files changed" and names no file. That happens after a branch is deleted and git has cleaned up, or in a shallow clone.
+
+The cost. The explanation depends on git's housekeeping, which Azimuth does not control. No state depends on it.
+
+Example: an agent runs `azimuth run` 40 times in one change, each time with a few edited files on top of the last commit. Each run stores one tree id and a handful of entries, well under a kilobyte. A full list for a repository of 3,870 files would be about half a megabyte each time.
+
+Example: the test project of drim-dev's API lists no files to compile, so .NET compiles every `.cs` file in its folder. An agent creates a new test file there and runs `azimuth run` before any `git add`. The file is an input, and the results carry a digest of the files that CI reproduces after the commit. A change to the ignored `frontend/.env.local` moves no fingerprint.
 
 **Model text is normalized before hashing.** One Unicode form, one kind of line ending, no trailing spaces at line ends. Nothing else is folded. Re-wrapped paragraphs and Markdown styling would need a parser inside the digest, and a parser upgrade would then make every review stale. Characters that only look alike are different text.
 
 **Every digest names the scheme that produced it.** The rules can then change without silent mismatches.
+
+**A scheme is a named rule for computing one kind of digest.** Its name is a word and a number, and the number goes up whenever the same content could give a different digest.
+
+| Scheme | What the rule fixes | Changing it makes |
+| --- | --- | --- |
+| `text-1` | how model text is normalized and hashed | every claim digest different, and with a server every approval and review |
+| `file-1` | the digest of one file's content, which is the object id git gives it | every file digest different |
+| `parts-1` | which parts a fingerprint has, which files go into each, and how they combine | every fingerprint different |
+
+A digest is written with its scheme, as in `text-1:9f3a`, and two digests of different schemes are never equal. The hash algorithm is part of the scheme and is written nowhere else, with one exception: `file-1` uses the algorithm of the repository. One CLI version computes exactly one number of each scheme and never an older one. A result under another number is not comparable, so its Check is owed. The scheme is not a setting: it comes with the CLI version, which the project file pins, so every machine of a project uses the same numbers. The owed reason names the scheme that changed, for example "method changed: `parts-1` became `parts-2`".
+
+There are three schemes and not one, because a change in how files are grouped must not change a digest of model text. With a server, that would make every approval of a person stale for a reason that has nothing to do with what was approved.
+
+The cost. A change of `text` after approvals exist is expensive. That is the reason to keep its rule small.
+
+Open: how approvals survive a new `text` scheme.
+
+Example: the second increment of the core splits the files part, so the CLI moves from `parts-1` to `parts-2`. Every Check is owed once, with the method as the reason. The claim digests stay under `text-1` and the file digests under `file-1`, so the stored lists of files stay valid and one `azimuth run` settles it.
 
 Example: drim-dev has no `.gitattributes`, and 526 tracked text files contain Windows line endings. A cleanup commit changes their bytes without changing a visible character. For code, making Checks owed once is correct. For model files, normalization keeps every review and approval current.
 
@@ -662,9 +772,9 @@ A result counts only if the core produced it in one launch, from start to end.
 | Launch | Computed. One start of a suite's process for any subset of its tests |
 | Adapter | The link to one test runner |
 
-**The adapter sees tests only.** It lists them, gives the build command and reads the runner's report.
+**The adapter sees tests only.** It builds the suite, lists its tests, starts the runner and reports what happened.
 
-**The core owns everything else.** It starts the process, applies the Check rule and writes results.
+**The core owns everything else.** It starts the adapter, applies the Check rule and writes results.
 
 ### A launch from start to end
 
@@ -688,6 +798,22 @@ A result counts only if the core produced it in one launch, from start to end.
 **A suite declares the facilities it needs,** for example Docker or `python3`. Each is proven before the launch.
 
 **A missing facility is never a fail.** The Check is owed with the reason "cannot run here". An agent cannot declare a facility present.
+
+**A facility is a name and a proof command, defined once in the project file.**
+
+| Part | Where | Example |
+| --- | --- | --- |
+| The definition | the project file | `docker`, proven by `docker info` |
+| The need | the suite's declaration | the suite of the API tests needs `docker` |
+| The proof | run by the core before each launch | the command ends with success within a time limit |
+
+A proof is a command, and never a setting. Nothing in the tree and nothing on the command line can say "present". A proof that fails, hangs or is missing means "cannot run here". The core ships no facility, because it knows no tools. `azimuth init` writes none, and a person adds a facility when a suite needs one. Until then the first run on a machine without the facility starts the suite, the launch crashes, and the Checks are owed with the crash as the reason. A change to a definition is class D, because it sits in the project file.
+
+**A weak proof never produces a pass.** With a proof that always succeeds, the suite starts on a machine without the facility, the launch crashes, and the Checks get no result. With a proof that always fails, the Checks are owed and the commit lane fails on them.
+
+The cost. A proof is only as good as its command. `docker info` shows that Docker answers and says nothing about whether it can pull the image the tests need. A bad proof costs time, since a launch then fails late where it could have been refused early. It never costs correctness.
+
+Example: the API tests of drim-dev start PostgreSQL through Testcontainers, so their suite needs `docker`. On a machine with Docker stopped, `azimuth run` runs `docker info`, lists the Checks as "owed: cannot run here (docker)" and ends with success. In CI the commit lane ends with failure for the same state, because the Checks are owed.
 
 **A place is a facility a step can run from,** for example `cluster` or `public`. The word belongs to a method package. The core knows only facility names. The project supplies how each place is reached.
 
@@ -781,6 +907,23 @@ A store restored from the CI system's cache would carry unsigned files into the 
 The cost. On the core rung, selection saves time only on a developer's machine. CI takes as long as a full run of all Checks, which is what a team has today with its own tests. Shorter CI is a concrete reason to add the server.
 
 Example: a project has API Checks and frontend Checks, and a developer edits one page. On the developer's machine only the frontend Checks run. In CI on the core rung all of them run. On the server rung CI finds reference results for the API Checks on equal fingerprints and runs only the frontend ones.
+
+**The lane is named on the command line, and the lane decides the status the command ends with.**
+
+|  | `azimuth run` | `azimuth run --lane commit` |
+| --- | --- | --- |
+| Lane | local, the default | commit |
+| Reads the store | yes | not on the core rung |
+| Ends with failure when | any Check is failed on the current content, whether it ran now or is a known fail | any Check is failed or owed |
+| Ends with success when | the rest is kept, or owed for a reason this machine cannot fix: cannot run here, runs in CI | every Check is kept or passed now |
+
+Nothing is detected from the environment. A wrong guess would make a CI job trust the store, silently. The default is the lane for a desk, and the CI job asks for the commit lane. Anyone may run the commit lane on their own machine as a rehearsal of CI, and its results stay local results.
+
+**A run never stops at the first failure.** It runs everything the lane planned and then reports every Check with its state. A suite that does not build, a launch that crashes or a missing facility stops only its own suite.
+
+**The status follows the state of the tree, never what happened to run this time.** A second run on unchanged content runs nothing, shows the known fail, and ends with failure again.
+
+The cost. A CI job written without the flag runs the local lane, which passes with owed Checks. `azimuth init` prints the CI line with the flag, and the hand over step of the default skill runs the commit lane, so a person sees its outcome before a merge.
 
 **Cost is measured.** Durations are stored and feed ranking and time limits.
 
@@ -926,6 +1069,18 @@ Results are never committed. They live in a folder of the working tree that git 
 
 **Reading uses both places.** A sandboxed session can read the store even where it cannot write it.
 
+**No command empties the store.**
+
+| Situation | What happens |
+| --- | --- |
+| A record written in a format this version cannot read | it counts as absent, so its Check is owed. `azimuth status` says in one line how many such records it skipped |
+| A person wants a clean start | they delete the store's folder. Every Check is then owed, and nothing else changes |
+| A known fail should run again | `azimuth check run <id>` |
+
+Nothing needs such a command: after an upgrade the old records are skipped by rule, and a stuck result is run again by id. It would also be the wrong habit to make easy. Without a server an empty store only costs time. With a server the store also holds records that are not synced yet, and emptying loses evidence. An emptied store cannot hide a failure: a known fail becomes an owed Check, and the next run fails again.
+
+The cost. The store grows and nothing shrinks it. The growth is small, because a tree is stored as a commit's tree id plus the entries that differ from it, and a result is a few lines.
+
 **`azimuth sync` always has a local step.** It moves records from the outbox into the store. What it does next depends on one fact: whether the project's configuration names a server.
 
 | What the project and the machine have | What `azimuth sync` does |
@@ -949,7 +1104,7 @@ Measured on 2026-11-15 with Codex CLI 0.167.0: under its workspace sandbox a com
 
 | Place | Tracked | What is there |
 | --- | --- | --- |
-| `azimuth/project` file, in the model repository | yes | the topology: repositories, areas with mounts, components, reference environments |
+| `azimuth/project.toml`, the project file, in the model repository | yes | the topology: repositories, areas with mounts, components, reference environments |
 | `azimuth/model/<module>/, with README.md, specification.md, realization.md and verification.md` | yes | Requirements, Scenarios, terms, roots, decisions |
 | `azimuth/changes/<name>/` | yes | `proposal.md` and `sources/`. Finished ones move to `changes/finished/` |
 | `azimuth/explorations/<name>/` | yes | `map.md` and `sources/`, with the decision notes |
@@ -960,7 +1115,45 @@ Measured on 2026-11-15 with Codex CLI 0.167.0: under its workspace sandbox a com
 
 **Why the model is visible.** A hidden folder tells a reviewer that its content is tooling. The model is what a person reads to understand the system.
 
-The file format of the two declaration files is decided by the increment that first reads them.
+**The project file is TOML.** It has comments, clean diffs and no indentation rules. Every change to this file is class D, so a person reads it and wants the reason beside the line, which rules out JSON. YAML lets indentation decide meaning and changes the type of an unquoted value silently. The model's own form of headings and `Word: value` lines is made for prose, and this file is nested data.
+
+Its content in the first increment of the core:
+
+```toml
+cli = "0.2.0-alpha.1"
+
+[repository]
+name = "drim-dev"
+target = "main"
+
+[[area]]
+name = "all"
+mounts = ["."]
+
+[[suite]]
+name = "api-tests"
+area = "all"
+path = "backend/src/DrimDev.Api.Tests"
+adapter = "dotnet azimuth-xunit"
+marker = '[Trait("Check", "<id>")]'
+needs = ["docker"]
+
+[[facility]]
+name = "docker"
+proof = "docker info"
+```
+
+| Key | Holds |
+| --- | --- |
+| `cli` | the one exact CLI version |
+| `repository` | the name of this repository and its target branch |
+| `area` | a name and the folders it mounts |
+| `suite` | a name, its area, its folder, the command of its adapter, its marker form, and the facilities it needs |
+| `facility` | a name and its proof command |
+
+The adapter's command in the example is a placeholder.
+
+The cost. Later content, such as components and reference environments, nests deeper, and TOML gets wordy there. The form for a project of several repositories, and the format of `azimuth/repository`, are decided by the increment that first reads them.
 
 **The cost.** Two folders with nearly the same name in one repository. Lint refuses a tracked file under `.azimuth/`.
 
@@ -1023,6 +1216,15 @@ Commands are grouped by noun.
 | `azimuth sync` | Sends local records to the server and brings the records of others for the current tree into the local cache. Results, reviews and work records all travel this way |
 | `azimuth check show <id>` | Shows one Check's state and the reason |
 
+**A command with no noun acts on the whole tree. A command with a noun acts on one named thing.**
+
+| Command | Acts on | Does |
+| --- | --- | --- |
+| `azimuth run` | the whole tree | runs a lane: it plans and runs what is owed |
+| `azimuth check run <id>` | one named Check | runs it on request, also when it is kept or a known fail |
+
+A lane is wider than Checks. Later it also runs Challenges and the start-up guard. `azimuth check run` with no id is an error, so nobody has two ways to say the same thing.
+
 **Four commands are for reading, from the widest to the narrowest.**
 
 | Command | Answers | Quiet when |
@@ -1033,6 +1235,94 @@ Commands are grouped by noun.
 | `azimuth change show` | what did this change do to the model? Added, changed and removed Requirements, Scenarios and Checks, the class of the change, and "rigor lowered" where it applies. By default it compares the branch with its target | the change touches no model file and no test |
 
 They run nothing and need no network. They read the tree and the local store. Each has a form for agents with the same content as structured output, so an agent never parses text meant for a person.
+
+**The structured form is one JSON document, asked for with `--json`.**
+
+| Rule | Why |
+| --- | --- |
+| The flag is `--json`, on the reading commands, `azimuth lint` and `azimuth run` | one flag with one meaning everywhere |
+| With the flag, standard output holds exactly one JSON document, and progress goes to standard error | an agent can parse the output without cleaning it |
+| Nothing is detected. Without the flag the output is text, also when it is piped | no behavior is chosen from the environment |
+| Every document names its format, as in `"format": "status-1"` | a skill can refuse a format it does not know |
+| States and reasons are the same words as in the text output | one vocabulary for a person and an agent |
+| A reading error is a document too, with the format `error-1`, the file, the line and the message | the agent learns where to fix without reading prose |
+
+The name of a format is a word and a number, as for a scheme. The number goes up when a field is renamed, removed or changes its meaning.
+
+The cost. Each document is a promise. A renamed field breaks every skill that reads it, so the skills that ship with the CLI must move with it.
+
+Example: `azimuth status --json` for one Requirement whose Check is kept.
+
+```json
+{
+  "format": "status-1",
+  "requirements": [
+    {
+      "id": "private-api-admits-only-the-bff",
+      "state": "proven",
+      "verification": "not reviewed",
+      "realization": "not reviewed",
+      "approval": "not recorded",
+      "scenarios": [
+        {
+          "id": "other-service-credential-is-refused",
+          "checks": [
+            { "id": "other-service-credential-is-refused", "state": "kept" }
+          ]
+        }
+      ]
+    }
+  ],
+  "skipped_records": 0
+}
+```
+
+**The documents of the first increment and their fields.**
+
+| Format | Printed by | Fields |
+| --- | --- | --- |
+| `status-1` | `azimuth status` | `requirements`, each with `id`, `module`, `state`, `verification`, `realization`, `approval` and `scenarios`. Each Scenario has `id` and `checks`. Each Check has `id`, `state` and `reason`. Then `skipped_records` and `process` |
+| `requirement-1` | `azimuth requirement show` | one Requirement, as in `status-1` |
+| `check-1` | `azimuth check show` | `id`, `requirement`, `scenario`, `suite`, `claim`, `reuse`, `state`, `reason`, `parts_changed`, `files_changed`, `failing_tests`, and `result` with `where`, `commit` and `at` |
+| `change-1` | `azimuth change show` | `target`, `base`, `class`, then `requirements`, `scenarios` and `checks`, each with `added`, `changed` and `removed`. Then `markers_removed`, `not_compared` and `rigor_lowered` |
+| `lint-1` | `azimuth lint` | `findings`, each with `kind`, `file`, `line` and `message` |
+| `run-1` | `azimuth run` and `azimuth check run` | `lane`, `outcome`, `suites` with `name` and `launch`, `checks` with `id`, `state`, `reason`, `failing_tests` and `duration_ms`, and `findings` in the commit lane |
+| `error-1` | any command, on a reading error | `errors`, each with `kind`, `file`, `line` and `message` |
+
+Names are lowercase with underscores. Ids and states are this document's own words: `kept`, `owed`, `passed`, `failed`, `proven`.
+
+**A known fail is `owed` with the reason `failed on these inputs`.** Only a Check that ran in this very command is `passed` or `failed`. So `azimuth status`, which runs nothing, never prints those two.
+
+**Adding a field does not change the number of a format.** A reader ignores a field it does not know. Only renaming, removing or changing the meaning of a field does.
+
+The cost. That rule puts a duty on every reader: a skill that fails on an unknown field breaks at the next release. The skills that ship with the CLI are written that way from the start.
+
+Example: `azimuth run --json` after an agent broke one of two Checks. The ids of the second Check and of the tests are invented.
+
+```json
+{ "format": "run-1", "lane": "local", "outcome": "failure",
+  "suites": [ { "name": "api-tests", "launch": "ok" } ],
+  "checks": [
+    { "id": "other-service-credential-is-refused", "state": "passed", "duration_ms": 412 },
+    { "id": "request-without-credential-is-refused", "state": "failed",
+      "failing_tests": ["AdmissionTests.Refuses_request_without_credential"],
+      "duration_ms": 388 }
+  ] }
+```
+
+A second run on the same content prints both Checks without running them: the first as `kept`, the second as `owed` with the reason `failed on these inputs`, and the outcome is a failure again.
+
+**A command ends with one of three statuses.**
+
+| Status | Meaning | Examples |
+| --- | --- | --- |
+| 0 | the command did its job, and what it judged is fine | a lane that ends with success, lint with no finding, any reading command that could answer |
+| 1 | the command did its job, and the tree is not fine | a failed Check, an owed Check in the commit lane, a lint finding |
+| 2 | the command could not do its job | a reading error, a wrong argument, `azimuth run` under a CLI version other than the pinned one, a missing common ancestor |
+
+Only `azimuth lint` and `azimuth run` judge the tree. The reading commands end with 0 whenever they could answer, also when the answer is "failed". The two failures ask for different actions: after 1 an agent fixes the code or the tests, and after 2 it fixes the model, the command line or the installation. CI needs no knowledge of this, because any value other than 0 fails the job.
+
+The cost. A script that only looks at the status cannot tell a failed Check from an owed one in the commit lane. It has to read the document.
 
 **`azimuth change show` is what a person reads before a merge on the core rung**, where the merge stands for the approval. A removed Check and a loosened `Reuse:` appear there.
 
@@ -1356,6 +1646,44 @@ Unverified: a .NET tool for the file reference graph. It is likely a small Rosly
 
 **A contract is a command plus a report format, documented and versioned.** It is not a plugin compiled into the core. An implementation can be written in any language.
 
+**The contract of a test adapter is one document in and one document out.**
+
+| Part | Rule |
+| --- | --- |
+| Starting it | the core starts the adapter's command from the project file, with no arguments |
+| Request | one JSON document on the adapter's standard input |
+| Report | one JSON document on its standard output. The runner's own output goes to standard error |
+| Verbs | `discover` finds test projects under a folder, for `azimuth init`. `run` builds a suite, lists its tests and runs the ones asked for |
+| Status | 0 when a report was written, also when tests failed. Anything else means the launch crashed |
+| Formats | `adapter-request-1` and `adapter-report-1`, named with a word and a number as everywhere |
+
+A report always lists every marked test of the suite, also the ones not asked for. That is the list the launch compares with the markers lint found in source. A test is the thing that carries the marker: a test with many data rows is one entry, and it failed if any row failed. The adapter reports what happened and judges nothing. Per test it says `passed`, `failed`, `skipped` or `not_run`, with a duration, and whether the Check passed is the core's rule. A build that fails is a report too, with `"build": "failed"` and no tests.
+
+The request goes through standard input and not through arguments, because a lane may ask for hundreds of Check ids, and command lines have length limits and quoting rules that differ between systems.
+
+An adapter is then a few lines in any language. Azimuth's own tests use a small script as an adapter, so testing the core needs no test framework of another stack.
+
+The cost. This is the most public promise of the first increment, and it is made after one adapter. The second adapter will show what it lacks, and a change then means a new number and an update of every adapter.
+
+Example: a run of one Check. The test name is invented.
+
+```json
+{ "format": "adapter-request-1", "verb": "run",
+  "suite": "backend/src/DrimDev.Api.Tests", "marker_key": "Check",
+  "checks": ["other-service-credential-is-refused"] }
+```
+
+```json
+{ "format": "adapter-report-1",
+  "adapter": { "name": "azimuth-xunit", "version": "0.2.0-alpha.1" },
+  "build": "ok",
+  "tests": [
+    { "name": "AdmissionTests.Refuses_credential_of_another_service",
+      "checks": ["other-service-credential-is-refused"],
+      "outcome": "passed", "duration_ms": 412 }
+  ] }
+```
+
 **An adapter is installed and pinned by its stack's own package manager. The core never downloads one.**
 
 | Stack | Installed as | Pinned in |
@@ -1367,6 +1695,20 @@ Unverified: a .NET tool for the file reference graph. It is likely a small Rosly
 The project file names the command of each suite's adapter. The core starts that command and reads its report. The pin is a file of the repository, so it is already an input: an adapter upgrade makes the Checks owed. The adapter reports its version, which goes into the method part of the fingerprint. A test project still references nothing, because a tool sits beside the code.
 
 A missing adapter is a named state. `azimuth run` says which command is missing and how to install it, and `azimuth init` prints the same line for each stack it found.
+
+**The CLI carries a small table of the runners it knows.** That is how `azimuth init` sees a stack whose adapter is absent.
+
+| For each known runner | Example for xUnit | Used for |
+| --- | --- | --- |
+| How to recognize it in a tree | a project file that references xUnit | knowing that the stack exists |
+| The marker form | `[Trait("Check", "<id>")]` | lint |
+| The adapter's command and its install line | a local dotnet tool and the line that installs it | the message about a missing adapter |
+
+Init knows nothing else about a stack.
+
+**`azimuth init` lists suites only for a stack whose adapter is installed.** For another stack it prints the install line and says that this stack's suites are not in the project file. They are added by hand, which is an edit of the project file and so class D. Init never guesses a suite from the names of files.
+
+The cost. Init lists every test project the adapter finds, also ones nobody will mark. Example: a repository has nine test projects, and five of them sit in a folder of prototypes. All nine become suites. They do nothing without a marked test, but every file in their folders is class C.
 
 Adapters are not bundled in the CLI. The .NET adapter must load the test assembly to list tests and their traits, so it is .NET code, and a team in another language would carry it for nothing.
 
@@ -1465,6 +1807,15 @@ They are shown next to the pass and never hidden.
 - The review is stale, or apparatus changed since the review.
 - A Scenario has no Check at all.
 - The Checks are not challenged for the current code.
+
+**The mark "local result only" exists only when the project names a server.** Without one, every result is local, and a mark on everything is a mark on nothing. The quiet line of status then says where the evidence is from.
+
+| The project file | A pass with no reference result | The quiet line |
+| --- | --- | --- |
+| Names no server | no mark | "1 Requirement, proven on this machine" |
+| Names a server | marked "local result only" | "1 Requirement, proven" only when reference results exist |
+
+The cost. Two people can read different status for one commit, because each machine computes status from what it holds. The shared signal on the core rung is the CI job.
 
 ### Challenge states on a Requirement
 
@@ -1567,6 +1918,10 @@ Open: how the order "expectations before code" is proven. Reading it from commit
 - **A reverse view is derived:** for a slice, the Requirements that name it.
 
 Example: all of drim-dev would need 103 root lines for 43 Requirements. 28 of the 43 need one or two.
+
+**Where an area has no profile, a root may only be a file.** A root that names a unit or a kind there is a lint finding of its own: "this root names a kind, and the area has no profile. Use a file root." It is not reported as a name that matches nothing, which would send the author looking for a typo.
+
+The first increment of the core has no structure units. A unit built there would have no reader: no enforcer exists, the planner does not narrow, and reviews arrive later. The cost is that a file list cannot say "also future ones", so a Requirement whose root must be a kind waits for a profile.
 
 **A root is a name. The profile resolves it to source files.** The resolved files are derived each time and are never stored in the account.
 
@@ -1987,6 +2342,22 @@ Example: `specification.md` has the Scenario "a learner without a grant gets 404
 
 **A Requirement id is unique in the whole project and does not contain the module path.** Moving a module is a rename of a folder, and no Requirement gets a new identity.
 
+**A Check id is unique in the whole project too. A Scenario id is unique within its Requirement.** Each id is unique as far as something names it with nothing around it.
+
+| Id of a | Unique within | Because |
+| --- | --- | --- |
+| Requirement | the project | commands, the other two files, records and URLs name it with nothing around it |
+| Check | the project | a marker in test code holds only the Check id, and results are keyed by it |
+| Scenario | its Requirement | nothing ever names a Scenario without its Requirement |
+
+The identity of a Scenario is the pair of Requirement id and Scenario id. The pair does not contain the module path either. In `verification.md` a Scenario heading therefore stands under its Requirement heading. A Scenario heading with no Requirement heading above it is a reading error.
+
+Scenario names repeat by nature, and a rule for the whole project would force a prefix on every one. It would also break merges that neither side can see: two branches each add a Scenario with the same plain name in different modules, and the merged tree has a reading error.
+
+The cost. A Scenario and its Check cannot always share an id. Where two Scenarios share a name, their Check ids must still differ, so the Check id carries the context that the Scenario id leaves out.
+
+Example: two Requirements each have a Scenario `signed-out-visitor-is-refused`. Both are valid. Their Checks are `overview-refuses-signed-out-visitor` and `session-start-refuses-signed-out-visitor`, because a marker names a Check with nothing else beside it.
+
 ### The README of a module
 
 **A module's `README.md` is its explanation.** It says what the module is for, shows the main flow across its Requirements, and says how it relates to its neighbours. It holds no claims and no lists that can be derived.
@@ -2016,6 +2387,10 @@ The reviewing agent of the increment that changed the shape looks at a stale REA
 
 **The cost.** If the reviewer misses a Requirement, its meaning has shifted while its approval still shows as current. A cascade that people ignore protects less than one review that someone reads.
 
+**A term arrives together with approvals.** Its own approval is what makes a term a unit. A definition written once is something a paragraph of prose gives too. Until approvals exist, a definition is plain prose above the first Requirement in `specification.md`. Lint reads it as prose and knows no `Term`. A change to it is class D, because of the file it sits in. The written form of a term is decided when approvals are built.
+
+The cost. Until then a changed definition is one more line in a diff, and nothing tells the person at merge which Requirements lean on it.
+
 Example: the planned model of the lab engine has `labs/platform/catalog`, `labs/platform/sessions`, `labs/platform/engine` and `labs/content/backend-request-execution`. A fourth module under `labs/platform` makes the README of `labs/platform` stale and leaves the README of `labs` current.
 
 ## Lint
@@ -2034,8 +2409,8 @@ Example: the planned model of the lab engine has `labs/platform/catalog`, `labs/
 
 | Finding | What is compared |
 | --- | --- |
-| A Check with no marked test | The model with the adapter's list |
-| A Check with marked tests in two suites | The model with the adapter's list |
+| A Check with no marked test | The model with the markers in source |
+| A Check with marked tests in two suites | The model with the markers in source |
 | A root that matches nothing | `realization.md` with the profile's units |
 | Roots that disagree with the private units of the Requirement's Checks | `realization.md` with the Checks' inputs |
 | A Challenge that changes a file no selected Check depends on | The Challenge with the inputs of its Checks |
@@ -2048,9 +2423,35 @@ Example: the planned model of the lab engine has `labs/platform/catalog`, `labs/
 
 A Scenario with no Check is not a lint finding. It is a gap, and status names it.
 
-**Lint knows no language.** It only compares the answers of the stack contracts with the account.
+**Lint knows no language.** It compares the account with the markers it finds in source by each suite's pattern, and with the answers of the stack contracts that need no build.
 
 **When it runs.** Agents run it after each edit of the account. It is the first step of the commit lane, and a finding blocks that lane.
+
+**The commit lane contains lint, so a CI job is one command.**
+
+| Command | What it does |
+| --- | --- |
+| `azimuth lint` | lint alone. Agents run it after each edit of the model, because it needs no build |
+| `azimuth run` | the local lane. No lint, apart from stopping on a reading error |
+| `azimuth run --lane commit` | lint first, then every Check. Fails on a finding, a failed Check or an owed Check |
+
+The cost. Someone who reads the CI file sees one command and must know that it lints. The output of the lane names lint as its first step.
+
+**A reading error stops every command. A finding fails only lint and the commit lane.** The two are told apart by one test: can the model still be read without guessing?
+
+|  | A reading error | A finding |
+| --- | --- | --- |
+| What it is | the model cannot be read as written | the model reads fine and disagrees with the code or with itself |
+| Examples | an id used twice where it must be unique, a wrong character in an id, `Reuse:` with no reason, a structure word with no id, an unknown key in the project file | a Check with no marked test, a marker that names an unknown Check, a heading in `verification.md` with an unknown id, a line that nearly spells a declaration word |
+| `azimuth lint` | reports it and fails | reports it and fails |
+| `azimuth run`, `azimuth check run`, the reading commands | print the same message, do nothing else, end with failure | work. The affected Check is shown with the state it has |
+| The commit lane | stops there | runs every Check, and ends with failure |
+
+Every command reads the model through the same reader, so a reading error has the same words everywhere. A status computed from a model that could not be read would be a guess: with one id in two modules, nobody can say which Requirement a marker's result belongs to. A finding must not stop a desk, because while an agent builds, a Check without its test is normal for a few minutes.
+
+The cost. One reading error anywhere blinds every command for the whole project, including modules that are fine. The fix is one line, and the message names the place.
+
+Example: an agent copies a Requirement heading from one module into another and forgets to change the id. `azimuth status` prints that the id is declared in two modules, with both paths, and nothing else. Had the agent only forgotten to mark a test, `azimuth status` would work and show that Check as having no marked test.
 
 **What it does not do.**
 
@@ -2059,8 +2460,6 @@ A Scenario with no Check is not a lint finding. It is a gap, and status names it
 - It resolves no tag links in product code and builds no manifests or worksets. None of them exist in this design.
 
 Example: someone renames `Features/CliAuth/CliCredentialOperations.cs`. The root of `stored-cli-secrets-disclose-no-credentials` now matches nothing, and `azimuth lint` reports it at once.
-
-Unverified: listing the markers of xUnit tests may need a build. If it does, lint has two speeds: the account alone without a build, and the full comparison after one.
 
 ## Records and the server
 
@@ -2424,15 +2823,51 @@ Example: the API test project of drim-dev holds a folder `Harnesses/` whose file
 
 **A change to a rigor declaration is class D.** The gate computes from the change's own tree, because new Requirements exist only there. So a change could delete a declared review and need less proof for itself. Counting it as a change of intent means that no grant ever covers it and a person sees it on the change page.
 
-**Removing proof is class D.** A change that removes a Check, or removes a marked test of a Check, is class D. Adding a test or a Check, and editing a test, stay class C. The core knows on both trees which Checks exist and which tests each one enrolls, so "fewer than before" is a comparison of two lists.
+**Removing proof is class D.** A change that removes a Check, or removes a marked test of a Check, is class D. Adding a test or a Check, and editing a test, stay class C. Every result stores the names of the tests it enrolled, so "fewer than before" is a comparison of two lists.
 
 What this does not catch: a test that is kept and emptied, so it asserts nothing. That stays class C. Its guards are Challenges and, where one is declared, the Verification Review.
 
-The cost. A renamed test looks like one test removed and one added, so a pure rename is class D and waits for a person. So does merging two tests into one. The alternative is to trust an agent's word that a removal was only a rename.
+The cost. A renamed test looks like one test removed and one added, so on the server rung a pure rename is class D and waits for a person. So does merging two tests into one. The alternative is to trust an agent's word that a removal was only a rename.
 
 Example: a grant with ceiling C covers the area `api`. An agent's change makes a Check fail. It deletes the test and the Check's line in `verification.md`, and everything else passes. The change is class D, the grant does not apply, and the change page shows "1 Check removed".
 
+**The class has two levels of sight.**
+
+|  | The preview in the CLI | The class the server computes |
+| --- | --- | --- |
+| Reads | declarations and marker lines in source, on both trees | the test names stored with the results of both trees |
+| A removed Check | seen | seen |
+| A removed marker line | seen, as "1 marker removed" | seen |
+| A test deleted under a marker on a class | not seen | seen |
+| A renamed test | not seen | seen, as one removed and one added |
+
+The preview builds nothing, so it knows marker lines and never test names. Counting the tests under a class needs knowledge of the language, which the core does not have.
+
+**The preview says what it cannot see.** For every changed file that holds a marker, `azimuth change show` adds the line "tests in this file were not compared". The scan cannot tell a marker on a class from a marker on a method, so it says this for both.
+
+The cost. On the core rung an agent can delete one test from a marked class, and the preview reports class C. The person's reading of the diff at merge is the only guard there.
+
+Example: a test class in drim-dev has 14 tests and its markers sit on the class. An agent removes one of the 14 to get a green run. No marker line changes. On the core rung `azimuth change show` prints class C and names that file as not compared. On the server rung the result at the head lists 13 test names where the target's result lists 14, and the change is class D.
+
 **The class is status.** It exists only when there is content to compare, and it is computed again after every push. The CLI can compute it from the working tree as a preview. The gate uses only the class the server computes for the head.
+
+**The target branch is named in the project file, and the preview compares with the common ancestor.**
+
+| Question | Answer |
+| --- | --- |
+| Where is the name? | one line per repository in the project file. `azimuth init` writes it from what git already holds locally |
+| Which commit? | the common ancestor of the current commit and the target branch, never the tip of the target |
+| Which copy of the branch? | the remote-tracking one as last fetched, or the local one when no remote exists. The CLI never fetches |
+| On the target branch itself? | the change is the working tree against the last commit |
+| Another base? | `azimuth change show --target <ref>`, for a change that builds on an unmerged one |
+
+The tip of the target holds work that landed after the branch started. Compared with the tip, that work looks like something this change removed. If it added a Check, the preview would say "1 Check removed" and class D for a change that touched nothing of the kind.
+
+A stale target errs upward. If the local copy is old and the branch has merged newer work, the preview shows a wider change and possibly a higher class, and never a lower one. A missing ancestor is a named state: in a shallow clone the CLI says "the common commit is not in this clone" and guesses nothing. Changing the line is class D, as everything in the project file.
+
+The cost. The preview does not show what the change will meet on the target at merge. That stays with the CI job on the merged result, and with the server.
+
+Example: a branch is 22 commits ahead of `main` and 3 behind. Compared with the tip of `main`, those 3 commits would appear as edits this branch undid. Compared with the common ancestor, the change is exactly the 22.
 
 **A grant does not decide what an agent may do.** It decides only whether the finished result merges without a person. A change that ends above the ceiling is not lost. It waits as a finished change for a person to accept or reject.
 
