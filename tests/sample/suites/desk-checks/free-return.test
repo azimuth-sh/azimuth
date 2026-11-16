@@ -1,0 +1,7 @@
+# Check: on-time-return-is-free
+# The marker above stands before the first test, so it enrolls both tests of this file.
+test: returned-on-due-date
+outcome: passed
+
+test: returned-early
+outcome: passed

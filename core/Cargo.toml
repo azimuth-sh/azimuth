@@ -1,0 +1,13 @@
+[package]
+name = "azimuth"
+version = "0.2.0-alpha.1"
+edition = "2021"
+license = "Apache-2.0"
+description = "Azimuth core CLI"
+
+[[bin]]
+name = "azimuth"
+path = "src/main.rs"
+
+# The shipped core carries no dependencies, because it must run in other people's CI.
+[dependencies]

@@ -1,0 +1,31 @@
+[package]
+name = "azimuth-tests"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "End-to-end tests of the azimuth binary on the sample repository, and the apparatus they need"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "text-suite-adapter"
+path = "src/bin/text-suite-adapter.rs"
+
+[[bin]]
+name = "facility-probe"
+path = "src/bin/facility-probe.rs"
+
+[features]
+# The .NET adapter tests need the .NET SDK and the real adapter, so they run only on request.
+dotnet = []
+
+[[test]]
+name = "dotnet_adapter"
+path = "tests/dotnet_adapter.rs"
+required-features = ["dotnet"]
+
+[dependencies]
+serde_json = "1"
+tempfile = "3"
+toml = "0.8"

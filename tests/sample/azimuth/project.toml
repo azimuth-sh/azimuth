@@ -1,0 +1,17 @@
+cli = "0.2.0-alpha.1"
+
+[repository]
+name = "library-desk"
+target = "main"
+
+[[area]]
+name = "all"
+mounts = ["."]
+
+[[suite]]
+name = "desk-checks"
+area = "all"
+path = "suites/desk-checks"
+adapter = "text-suite-adapter"
+marker = "# Check: <id>"
+needs = []
