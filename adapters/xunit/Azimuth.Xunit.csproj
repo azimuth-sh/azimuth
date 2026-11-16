@@ -13,6 +13,17 @@
     <Description>The Azimuth test adapter for xUnit: it builds a suite, lists its marked tests, runs them and reports what happened.</Description>
     <!-- The adapter reports this version with every result, so it must be the package version alone. -->
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <!-- A published version cannot be changed, so the package names where it comes from. -->
+    <Authors>Azimuth</Authors>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://azimuth.sh</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/azimuth-sh/azimuth</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
 
 </Project>

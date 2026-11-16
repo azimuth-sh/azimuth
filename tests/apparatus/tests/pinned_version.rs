@@ -3,13 +3,13 @@
 use azimuth_tests::*;
 
 fn pin(repo: &Repo, value: &str) {
-    repo.replace(PROJECT_FILE, &format!("cli = \"{PINNED_CLI}\""), &format!("cli = \"{value}\""));
+    repo.replace(PROJECT_FILE, &format!("cli = \"{}\"", cli_version()), &format!("cli = \"{value}\""));
 }
 
 // behavior: The project file holds one exact CLI version, and a range is refused
 #[test]
 fn a_version_range_is_a_reading_error() {
-    for range in [">=0.2.0", "^0.2.0-alpha.1", "0.2.*", "~0.2"] {
+    for range in [">=0.2.0", &format!("^{}", cli_version()), "0.2.*", "~0.2"] {
         let repo = Repo::sample();
         pin(&repo, range);
         let line = repo.line_of(PROJECT_FILE, "cli =");
@@ -23,7 +23,7 @@ fn the_exact_pinned_version_works_without_a_warning() {
     let repo = Repo::sample();
     let output = repo.azimuth(&["status", "--json"]);
     output.expect_status(0);
-    assert!(!output.stderr.contains(PINNED_CLI), "a warning about the version on the pinned version:\n{}", output.stderr);
+    assert!(!output.stderr.contains(&cli_version()), "a warning about the version on the pinned version:\n{}", output.stderr);
 }
 
 const READING_COMMANDS: [&[&str]; 5] = [

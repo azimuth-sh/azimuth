@@ -361,6 +361,7 @@ fn the_object_format_of_a_sha_256_repository_is_recorded() {
     let repo = Repo::sample();
     let other = repo.beside("sha256-desk");
     copy_tree(&sample_source(), &other);
+    pin_to_the_cli(&other);
     std::fs::create_dir_all(other.join(".azimuth")).unwrap();
     std::fs::write(other.join(".azimuth/.gitignore"), "*\n").unwrap();
     let init = repo.git_output_in(&other, &["init", "--quiet", "--object-format=sha256", "-b", "main"]);
